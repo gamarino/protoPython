@@ -12487,6 +12487,60 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             if (eq == env->getNotImplementedPrototype()) return eq;
             return (eq == PROTO_TRUE) ? PROTO_FALSE : PROTO_TRUE;
         }));
+    // complex.__radd__(self, other) returns other + self.  Accept
+    // both bound and unbound call shapes (the test
+    // test_explicit_reverse_methods invokes via the type:
+    // `complex.__radd__(3j, 4.0)`).
+    complexPrototype = complexPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__radd__"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (!env || !args || args->getSize(ctx) < 1) return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+            // Two call shapes: bound (self=complex inst, args=[other])
+            // and unbound (self=complex type, args=[inst, other]).
+            // Discriminate by probing whether `self` itself is a
+            // complex value (has real/imag returning numerics).
+            auto getRealImag = [&](const proto::ProtoObject* x, double& r, double& i) -> bool {
+                if (!x || x == PROTO_NONE) return false;
+                if (x->isInteger(ctx)) { r = (double)x->asLong(ctx); i = 0; return true; }
+                if (x->isFloat(ctx)) { r = x->asDouble(ctx); i = 0; return true; }
+                if (x->isBoolean(ctx)) { r = (x == PROTO_TRUE) ? 1.0 : 0.0; i = 0; return true; }
+                const proto::ProtoObject* rr = x->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "real"));
+                const proto::ProtoObject* ii = x->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "imag"));
+                bool gotR = false, gotI = false;
+                if (rr) {
+                    if (rr->isFloat(ctx)) { r = rr->asDouble(ctx); gotR = true; }
+                    else if (rr->isInteger(ctx)) { r = (double)rr->asLong(ctx); gotR = true; }
+                }
+                if (ii) {
+                    if (ii->isFloat(ctx)) { i = ii->asDouble(ctx); gotI = true; }
+                    else if (ii->isInteger(ctx)) { i = (double)ii->asLong(ctx); gotI = true; }
+                }
+                return gotR || gotI;
+            };
+            double ar = 0, ai = 0, br = 0, bi = 0;
+            const proto::ProtoObject* selfArg = self;
+            const proto::ProtoObject* otherArg = args->getAt(ctx, 0);
+            // Bound first: self is the complex receiver.
+            if (!getRealImag(selfArg, ar, ai)) {
+                // Unbound: shift over.
+                if (args->getSize(ctx) < 2) return env->getNotImplementedPrototype();
+                selfArg = args->getAt(ctx, 0);
+                otherArg = args->getAt(ctx, 1);
+                ar = ai = 0;
+                if (!getRealImag(selfArg, ar, ai)) return env->getNotImplementedPrototype();
+            }
+            if (!getRealImag(otherArg, br, bi)) return env->getNotImplementedPrototype();
+            // other + self
+            proto::ProtoObject* res = const_cast<proto::ProtoObject*>(env->getComplexPrototype()->newChild(ctx, true));
+            res->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "real"), ctx->fromDouble(br + ar));
+            res->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "imag"), ctx->fromDouble(bi + ai));
+            res->setAttribute(ctx, env->getClassString(), env->getComplexPrototype());
+            return (const proto::ProtoObject*)res;
+        }));
 
     // 1. Retrieve authoritative prototypes from ProtoSpace.
     // protoCore initialises each space_->Xprototype to objectPrototype
@@ -13078,6 +13132,87 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     floatPrototype = floatPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_float_repr));
     floatPrototype = floatPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, py_float_repr));
     floatPrototype = floatPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__getformat__"), rootContext_->fromMethod(nullptr, py_float_getformat));
+    // float.__radd__/__rsub__/__rmul__/__rtruediv__ — reflected
+    // arithmetic.  Accept both bound and unbound shapes so
+    // `float.__rsub__(3.0, 1)` (test_explicit_reverse_methods) works.
+    // No-capture lambdas (one per op so each gets a unique function
+    // pointer for ProtoMethod).
+    auto floatRArgs = +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+                          const proto::ProtoList* args,
+                          double& a, double& b) -> bool {
+        if (!args || args->getSize(ctx) < 1) return false;
+        auto toDouble = [&](const proto::ProtoObject* x, double& out) -> bool {
+            if (!x || x == PROTO_NONE) return false;
+            if (x->isInteger(ctx)) { out = (double)x->asLong(ctx); return true; }
+            if (x->isFloat(ctx)) { out = x->asDouble(ctx); return true; }
+            if (x->isBoolean(ctx)) { out = (x == PROTO_TRUE) ? 1.0 : 0.0; return true; }
+            return false;
+        };
+        // Bound first: self IS the float receiver.
+        if (toDouble(self, a)) {
+            return toDouble(args->getAt(ctx, 0), b);
+        }
+        // Unbound: shift positionals over.
+        if (args->getSize(ctx) < 2) return false;
+        return toDouble(args->getAt(ctx, 0), a) && toDouble(args->getAt(ctx, 1), b);
+    };
+    static auto floatRArgsStatic = floatRArgs;
+    floatPrototype = floatPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__radd__"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            double a = 0, b = 0;
+            if (!floatRArgsStatic(ctx, self, args, a, b)) {
+                PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+            }
+            return ctx->fromDouble(b + a);
+        }));
+    floatPrototype = floatPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__rsub__"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            double a = 0, b = 0;
+            if (!floatRArgsStatic(ctx, self, args, a, b)) {
+                PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+            }
+            return ctx->fromDouble(b - a);
+        }));
+    floatPrototype = floatPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__rmul__"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            double a = 0, b = 0;
+            if (!floatRArgsStatic(ctx, self, args, a, b)) {
+                PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+            }
+            return ctx->fromDouble(b * a);
+        }));
+    floatPrototype = floatPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__rtruediv__"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            double a = 0, b = 0;
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (!floatRArgsStatic(ctx, self, args, a, b)) {
+                return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+            }
+            if (a == 0.0) {
+                if (env) env->raiseZeroDivisionError(ctx);
+                return nullptr;
+            }
+            return ctx->fromDouble(b / a);
+        }));
 
     boolPrototype = objectPrototype->newChild(rootContext_, true);
     noneTypeProto = objectPrototype->newChild(rootContext_, true);
@@ -16408,6 +16543,8 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                 isImmutablePrim = true; primName = "tuple";
             } else if (frozensetPrototype && tp == frozensetPrototype) {
                 isImmutablePrim = true; primName = "frozenset";
+            } else if (complexPrototype && tp == complexPrototype) {
+                isImmutablePrim = true; primName = "complex";
             } else if (obj->isString(ctx)) {
                 isImmutablePrim = true; primName = "str";
             } else if (obj->isTuple(ctx)) {
