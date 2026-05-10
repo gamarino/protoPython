@@ -7024,6 +7024,32 @@ const proto::ProtoObject* py_object_new(
         }
     }
 
+    // CPython: \`object.__new__(cls)\` is unsafe when cls is a built-in
+    // container whose tp_new builds a non-default layout (list, dict,
+    // tuple, set, frozenset, bytes, bytearray, ...).  Limit the check
+    // to those well-known prototypes — user classes routinely store a
+    // synthesised __new__ that differs from object.__new__ even when
+    // their layout is the default, so a value-based comparison is
+    // unreliable here.
+    if (env) {
+        const proto::ProtoObject* badProtos[] = {
+            env->getListPrototype(), env->getDictPrototype(),
+            env->getTuplePrototype(), env->getSetPrototype(),
+            env->getFrozensetPrototype(), env->getBytesPrototype(),
+        };
+        for (const proto::ProtoObject* bp : badProtos) {
+            if (bp && cls == bp) {
+                std::string clsName = "?";
+                const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
+                if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+                env->raiseTypeError(context,
+                    "object.__new__(" + clsName + ") is not safe, use "
+                    + clsName + ".__new__()");
+                return nullptr;
+            }
+        }
+    }
+
     // Create new instance of cls natively.  newChild attaches `cls` as
     // the protoCore parent — getType() / env->getAttribute("__class__")
     // synthesise the class identity from that link, so we no longer
