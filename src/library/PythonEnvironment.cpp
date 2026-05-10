@@ -4429,8 +4429,16 @@ static const proto::ProtoObject* py_dict_call(
 
     const proto::ProtoObject* cls = positionalParameters && positionalParameters->getSize(context) > 0 ? positionalParameters->getAt(context, 0) : self;
     if (!cls) return PROTO_NONE;
-    proto::ProtoObject* instance = const_cast<proto::ProtoObject*>(cls->newChild(context, true));
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    // CPython: dict accepts at most one positional argument (the
+    // initialiser).  Extras MUST raise TypeError before construction.
+    if (positionalParameters && positionalParameters->getSize(context) > 2 && env) {
+        env->raiseTypeError(context,
+            "dict expected at most 1 argument, got "
+            + std::to_string(positionalParameters->getSize(context) - 1));
+        return nullptr;
+    }
+    proto::ProtoObject* instance = const_cast<proto::ProtoObject*>(cls->newChild(context, true));
     instance->setAttribute(context, env ? env->getClassString() : PythonEnvironment::getInternalString(context, "__class__"), cls);
     const proto::ProtoString* dataName = env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__");
     const proto::ProtoString* keysName = env ? env->getKeysString() : PythonEnvironment::getInternalString(context, "__keys__");
@@ -4539,6 +4547,12 @@ static const proto::ProtoObject* py_dict_call(
                 if (env) {
                     const proto::ProtoString* dataNm = env->getDataString();
                     const proto::ProtoObject* it = env->iter(mapping);
+                    if (!it) {
+                        // env->iter already raised TypeError for
+                        // non-iterables; propagate it instead of silently
+                        // returning an empty dict.
+                        if (env->hasPendingException()) return nullptr;
+                    }
                     if (it) {
                         for (;;) {
                             const proto::ProtoObject* pairObj = env->next(it);
@@ -4568,18 +4582,41 @@ static const proto::ProtoObject* py_dict_call(
 
                             const proto::ProtoObject* k = nullptr;
                             const proto::ProtoObject* v = nullptr;
-                            if (pairT && pairT->getSize(context) >= 2) {
-                                k = pairT->getAt(context, 0);
-                                v = pairT->getAt(context, 1);
-                            } else if (pairL && pairL->getSize(context) >= 2) {
-                                k = pairL->getAt(context, 0);
-                                v = pairL->getAt(context, 1);
+                            unsigned long pairLen = 0;
+                            if (pairT) {
+                                pairLen = pairT->getSize(context);
+                                if (pairLen >= 2) {
+                                    k = pairT->getAt(context, 0);
+                                    v = pairT->getAt(context, 1);
+                                }
+                            } else if (pairL) {
+                                pairLen = pairL->getSize(context);
+                                if (pairLen >= 2) {
+                                    k = pairL->getAt(context, 0);
+                                    v = pairL->getAt(context, 1);
+                                }
                             }
 
                             if (k && v) {
                                 unsigned long hash = k->getHash(context);
                                 if (!d->has(context, hash)) keysList = const_cast<proto::ProtoList*>(keysList->appendLast(context, k));
                                 d = const_cast<proto::ProtoSparseList*>(d->setAt(context, hash, v));
+                            } else {
+                                // CPython: dictionary update sequence
+                                // element must be a 2-element sequence.
+                                // The non-pair (e.g. a scalar `0`, a 1-char
+                                // string, or a 1-element tuple) gets
+                                // rejected at iteration time, not on
+                                // empty completion.
+                                if (!pairT && !pairL) {
+                                    env->raiseTypeError(context,
+                                        "cannot convert dictionary update sequence element to a sequence");
+                                } else {
+                                    env->raiseValueError(context,
+                                        PythonEnvironment::getInternedString(context,
+                                            "dictionary update sequence element has wrong length")->asObject(context));
+                                }
+                                return nullptr;
                             }
                         }
                     }
