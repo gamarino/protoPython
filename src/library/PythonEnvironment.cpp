@@ -12003,6 +12003,71 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // called — never on construction — so `complex(1, 2)` returned a
     // bare wrapper without .real/.imag.
     complexPrototype = complexPrototype->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, protoPython::builtins::py_complex));
+    // CPython compares complex numbers by their (real, imag) values,
+    // not by identity.  Without this the protoCore default falls
+    // back to identity equality and `complex(666, 42) == complex(666, 42)`
+    // is False.
+    complexPrototype = complexPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__eq__"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            if (!args || args->getSize(ctx) < 1) return PROTO_FALSE;
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (!env) return PROTO_FALSE;
+            // Two call shapes: bound (self=complex, args=[other]) and
+            // unbound (self=complexType, args=[a, b]).  Unbound: shift
+            // self over.
+            const proto::ProtoObject* other = nullptr;
+            if (self == env->getComplexPrototype() && args->getSize(ctx) >= 2) {
+                self = args->getAt(ctx, 0);
+                other = args->getAt(ctx, 1);
+            } else {
+                other = args->getAt(ctx, 0);
+            }
+            if (!other || other == PROTO_NONE) return PROTO_FALSE;
+            const proto::ProtoString* realS = PythonEnvironment::getInternedString(ctx, "real");
+            const proto::ProtoString* imagS = PythonEnvironment::getInternedString(ctx, "imag");
+            const proto::ProtoObject* otherType = env->getType(ctx, other);
+            // complex == int/float compares with imag==0; complex ==
+            // complex compares both parts.  For other types,
+            // NotImplemented so the reflected dunder runs.
+            const proto::ProtoObject* sa = self->getAttribute(ctx, realS);
+            const proto::ProtoObject* sb = self->getAttribute(ctx, imagS);
+            const proto::ProtoObject* oa = nullptr;
+            const proto::ProtoObject* ob = nullptr;
+            if (otherType == env->getComplexPrototype()) {
+                oa = other->getAttribute(ctx, realS);
+                ob = other->getAttribute(ctx, imagS);
+            } else if (other->isInteger(ctx) || other->isFloat(ctx)) {
+                oa = other;
+                ob = ctx->fromInteger(0);
+            } else {
+                return env->getNotImplementedPrototype();
+            }
+            auto eqv = [&](const proto::ProtoObject* a, const proto::ProtoObject* b) -> bool {
+                if (a == b) return true;
+                if (!a || !b) return false;
+                const proto::ProtoObject* r = env->binaryOp(a, TokenType::EqEqual, b);
+                return r && env->isTrue(r);
+            };
+            return (eqv(sa, oa) && eqv(sb, ob)) ? PROTO_TRUE : PROTO_FALSE;
+        }));
+    complexPrototype = complexPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__ne__"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (!env) return PROTO_TRUE;
+            const proto::ProtoObject* eqM = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__eq__"));
+            if (!eqM || !eqM->asMethod(ctx)) return PROTO_TRUE;
+            const proto::ProtoObject* eq = eqM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(self), nullptr, args, kwargs);
+            if (eq == env->getNotImplementedPrototype()) return eq;
+            return (eq == PROTO_TRUE) ? PROTO_FALSE : PROTO_TRUE;
+        }));
 
     // 1. Retrieve authoritative prototypes from ProtoSpace.
     // protoCore initialises each space_->Xprototype to objectPrototype
@@ -12517,7 +12582,15 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             if (!args || args->getSize(ctx) < 1) return PROTO_FALSE;
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
             if (!env) return PROTO_FALSE;
-            const proto::ProtoObject* other = args->getAt(ctx, 0);
+            // Bound (self=slice, args=[other]) vs unbound
+            // (self=sliceType, args=[a, b]).
+            const proto::ProtoObject* other = nullptr;
+            if (self == env->getSliceType() && args->getSize(ctx) >= 2) {
+                self = args->getAt(ctx, 0);
+                other = args->getAt(ctx, 1);
+            } else {
+                other = args->getAt(ctx, 0);
+            }
             if (!other || other == PROTO_NONE) return PROTO_FALSE;
             const proto::ProtoObject* otherType = env->getType(ctx, other);
             if (otherType != env->getSliceType()) return env->getNotImplementedPrototype();
