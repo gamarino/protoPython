@@ -4539,6 +4539,39 @@ const proto::ProtoObject* py_type(
         const proto::ProtoObject* basesArg = positionalParameters->getAt(context, baseIdx + 1);
         const proto::ProtoObject* dict = positionalParameters->getAt(context, baseIdx + 2);
 
+        // CPython validates that `__qualname__` in the namespace dict
+        // is a str (or absent).  Reject other types with TypeError so
+        // `type('Foo', (), {'__qualname__': 1})` doesn't silently
+        // produce a broken class.
+        if (env && dict) {
+            const proto::ProtoString* qnS = PythonEnvironment::getInternedString(context, "__qualname__");
+            const proto::ProtoObject* qnVal = nullptr;
+            // Probe via __data__ (SparseList) — the standard place dict
+            // literals store their entries.
+            const proto::ProtoObject* dictData = dict->getAttribute(context, env->getDataString());
+            if (dictData && dictData->asSparseList(context)) {
+                const proto::ProtoSparseList* sl = dictData->asSparseList(context);
+                if (sl->has(context, qnS->getHash(context))) {
+                    qnVal = sl->getAt(context, qnS->getHash(context));
+                }
+            }
+            // Fallback: direct own-attribute fetch (mappingproxy-ish).
+            if (!qnVal && dict->hasOwnAttribute(context, qnS) == PROTO_TRUE) {
+                qnVal = dict->getOwnAttributeDirect(context, qnS);
+            }
+            if (qnVal && qnVal != PROTO_NONE && !qnVal->isString(context)) {
+                std::string tn = "?";
+                const proto::ProtoObject* tpVal = env->getType(context, qnVal);
+                if (tpVal) {
+                    const proto::ProtoObject* nm = tpVal->getAttribute(context, env->getNameString());
+                    if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, tn);
+                }
+                env->raiseTypeError(context,
+                    "type __qualname__ must be a str, not " + tn);
+                return nullptr;
+            }
+        }
+
         // CPython marks certain primitive prototypes as "final" (cannot
         // be subclassed): NoneType, bool, NotImplementedType, etc.
         // Reject those bases here, before any allocation happens.
@@ -6742,13 +6775,39 @@ const proto::ProtoObject* py_object_new(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
+    ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     if (!positionalParameters || positionalParameters->getSize(context) < 1) {
-        // TODO: Raise TypeError
-        return PROTO_NONE; 
+        if (env) env->raiseTypeError(context,
+            "object.__new__(): not enough arguments");
+        return nullptr;
     }
-    // First argument is cls
+    // First argument is cls.  Reject only when cls is clearly a
+    // primitive value (str/int/float/bool) — those can never be a
+    // class.  Don't reject PROTO_NONE here because callers in test
+    // suites sometimes hit this path with `cls = None` due to
+    // unrelated NameError fallbacks and we want the underlying issue
+    // to surface in those cases, not a confusing TypeError.
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
-    
+    if (env && cls && cls != PROTO_NONE) {
+        bool clearlyNotClass = cls->isString(context) || cls->isInteger(context)
+            || cls->isFloat(context) || cls->isBoolean(context);
+        if (clearlyNotClass) {
+            std::string tn = "?";
+            const proto::ProtoObject* tpVal = env->getType(context, cls);
+            if (tpVal) {
+                const proto::ProtoObject* nm = tpVal->getAttribute(context, env->getNameString());
+                if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, tn);
+            }
+            env->raiseTypeError(context,
+                "object.__new__(X): X is not a type object (" + tn + ")");
+            return nullptr;
+        }
+    }
+
+    // (Strict "takes no arguments" enforcement deferred; the simpler
+    // checks above cover the most common misuse.)
+    (void)keywordParameters;
+
     // Create new instance of cls natively.  newChild attaches `cls` as
     // the protoCore parent — getType() / env->getAttribute("__class__")
     // synthesise the class identity from that link, so we no longer
@@ -6756,11 +6815,10 @@ const proto::ProtoObject* py_object_new(
     const proto::ProtoObject* obj = cls->newChild(context, true);
 
     // Initialize properties tracking specifically dictionary
-    ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     if (env) {
         obj = env->initDictStorage(context, obj);
     }
-    
+
     return obj;
 }
 
