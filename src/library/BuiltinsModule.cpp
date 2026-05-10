@@ -4539,6 +4539,58 @@ const proto::ProtoObject* py_type(
         const proto::ProtoObject* basesArg = positionalParameters->getAt(context, baseIdx + 1);
         const proto::ProtoObject* dict = positionalParameters->getAt(context, baseIdx + 2);
 
+        // CPython: `__slots__ = ['foo']; foo = X` is rejected at class
+        // creation with `ValueError: 'foo' in __slots__ conflicts with
+        // class variable`.  Walk the slots list and check for matches
+        // in the namespace.
+        if (env && dict) {
+            const proto::ProtoString* slotsS = PythonEnvironment::getInternedString(context, "__slots__");
+            const proto::ProtoObject* dictData = dict->getAttribute(context, env->getDataString());
+            const proto::ProtoSparseList* dictSL = dictData ? dictData->asSparseList(context) : nullptr;
+            const proto::ProtoObject* slotsVal = nullptr;
+            if (dictSL && dictSL->has(context, slotsS->getHash(context))) {
+                slotsVal = dictSL->getAt(context, slotsS->getHash(context));
+            } else if (dict->hasOwnAttribute(context, slotsS) == PROTO_TRUE) {
+                slotsVal = dict->getOwnAttributeDirect(context, slotsS);
+            }
+            if (slotsVal && slotsVal != PROTO_NONE) {
+                auto checkName = [&](const std::string& nm) -> bool {
+                    if (nm.empty()) return false;
+                    const proto::ProtoString* nmS = PythonEnvironment::getInternedString(context, nm.c_str());
+                    if (dictSL && dictSL->has(context, nmS->getHash(context))) {
+                        env->raiseValueError(context,
+                            PythonEnvironment::getInternedString(context,
+                                ("'" + nm + "' in __slots__ conflicts with class variable").c_str())
+                                ->asObject(context));
+                        return true;
+                    }
+                    return false;
+                };
+                const proto::ProtoTuple* slotsT = slotsVal->asTuple(context);
+                const proto::ProtoList* slotsL = slotsT ? nullptr : slotsVal->asList(context);
+                if (slotsT) {
+                    for (unsigned long si = 0; si < slotsT->getSize(context); ++si) {
+                        const proto::ProtoObject* s = slotsT->getAt(context, si);
+                        if (s && s->isString(context)) {
+                            std::string ss; s->asString(context)->toUTF8String(context, ss);
+                            if (checkName(ss)) return nullptr;
+                        }
+                    }
+                } else if (slotsL) {
+                    for (unsigned long si = 0; si < slotsL->getSize(context); ++si) {
+                        const proto::ProtoObject* s = slotsL->getAt(context, si);
+                        if (s && s->isString(context)) {
+                            std::string ss; s->asString(context)->toUTF8String(context, ss);
+                            if (checkName(ss)) return nullptr;
+                        }
+                    }
+                } else if (slotsVal->isString(context)) {
+                    std::string ss; slotsVal->asString(context)->toUTF8String(context, ss);
+                    if (checkName(ss)) return nullptr;
+                }
+            }
+        }
+
         // CPython validates that `__qualname__` in the namespace dict
         // is a str (or absent).  Reject other types with TypeError so
         // `type('Foo', (), {'__qualname__': 1})` doesn't silently
