@@ -7971,27 +7971,80 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key);
                 const proto::ProtoObject* result = invokeDunder(ctx, container, delItemS, args);
                 if (!result) {
-                    if (env && env->hasPendingException()) continue;
-                    // Fallback for list/dict
-                    const proto::ProtoString* data_name = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
-                    const proto::ProtoObject* data = container->getAttribute(ctx, data_name);
-                    if (data) {
-                        if (data->asList(ctx) && key->isInteger(ctx)) {
-                            long long idx = key->asLong(ctx);
-                            const proto::ProtoList* list = data->asList(ctx);
-                            if (idx >= 0 && static_cast<unsigned long>(idx) < list->getSize(ctx)) {
-                                const proto::ProtoList* newList = ctx->newList();
-                                for (unsigned long j = 0; j < list->getSize(ctx); ++j) {
-                                    if (static_cast<long long>(j) != idx) {
-                                        newList = newList->appendLast(ctx, list->getAt(ctx, static_cast<int>(j)));
-                                    }
+                    if (env && env->hasPendingException()) {
+                        stack.pop_back(); // Pop key
+                        stack.pop_back(); // Pop container
+                        continue;
+                    }
+                    // Fallback for genuine wrapped list / dict instances.
+                    // ProtoObject::asSparseList resolves the attribute
+                    // SparseList of any object (every instance has one),
+                    // so it is not a sufficient discriminator on its own.
+                    // Require the container's type chain to actually
+                    // descend from listPrototype / dictPrototype before
+                    // routing into the __data__-based fallback.
+                    bool handled = false;
+                    bool isContainerList = false;
+                    bool isContainerDict = false;
+                    if (env) {
+                        const proto::ProtoObject* tp = env->getType(ctx, container);
+                        const proto::ProtoObject* listProto = env->getListPrototype();
+                        const proto::ProtoObject* dictProto = env->getDictPrototype();
+                        std::function<bool(const proto::ProtoObject*, const proto::ProtoObject*, int)> isOrDescends =
+                            [&](const proto::ProtoObject* c, const proto::ProtoObject* anchor, int depth) -> bool {
+                                if (!c || c == PROTO_NONE || !anchor || depth > 32) return false;
+                                if (c == anchor) return true;
+                                const proto::ProtoObject* basesAttr =
+                                    c->getAttribute(ctx, env->getBasesString());
+                                const proto::ProtoTuple* basesT =
+                                    basesAttr ? basesAttr->asTuple(ctx) : nullptr;
+                                if (!basesT) return false;
+                                for (unsigned long bi = 0; bi < basesT->getSize(ctx); ++bi) {
+                                    const proto::ProtoObject* b =
+                                        basesT->getAt(ctx, static_cast<int>(bi));
+                                    if (isOrDescends(b, anchor, depth + 1)) return true;
                                 }
-                                const proto::ProtoString* data_name = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
-                                const_cast<proto::ProtoObject*>(container)->setAttribute(ctx, data_name, newList->asObject(ctx));
+                                return false;
+                            };
+                        isContainerList = tp && listProto && isOrDescends(tp, listProto, 0);
+                        isContainerDict = tp && dictProto && isOrDescends(tp, dictProto, 0);
+                    }
+                    const proto::ProtoList* lst = isContainerList ? container->asList(ctx) : nullptr;
+                    const proto::ProtoSparseList* sl =
+                        (!lst && isContainerDict) ? container->asSparseList(ctx) : nullptr;
+                    if (lst && key->isInteger(ctx)) {
+                        long long idx = key->asLong(ctx);
+                        if (idx >= 0 && static_cast<unsigned long>(idx) < lst->getSize(ctx)) {
+                            const proto::ProtoList* newList = ctx->newList();
+                            for (unsigned long j = 0; j < lst->getSize(ctx); ++j) {
+                                if (static_cast<long long>(j) != idx) {
+                                    newList = newList->appendLast(ctx, lst->getAt(ctx, static_cast<int>(j)));
+                                }
                             }
-                        } else if (data->asSparseList(ctx)) {
-                            data->asSparseList(ctx)->removeAt(ctx, key->getHash(ctx));
+                            const proto::ProtoString* data_name = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
+                            const_cast<proto::ProtoObject*>(container)->setAttribute(ctx, data_name, newList->asObject(ctx));
+                            handled = true;
                         }
+                    } else if (sl) {
+                        sl->removeAt(ctx, key->getHash(ctx));
+                        handled = true;
+                    }
+                    if (!handled && env) {
+                        // No __delitem__ method and the container is not
+                        // a wrapped list / dict — raise TypeError to
+                        // match CPython's `'X' object doesn't support
+                        // item deletion`.
+                        std::string typeName = "object";
+                        const proto::ProtoObject* tp = env->getType(ctx, container);
+                        if (tp && tp != PROTO_NONE) {
+                            const proto::ProtoString* nameS = env->getNameString();
+                            const proto::ProtoObject* tn = nameS ? tp->getAttribute(ctx, nameS) : nullptr;
+                            if (tn && tn->isString(ctx)) tn->asString(ctx)->toUTF8String(ctx, typeName);
+                        }
+                        env->raiseTypeError(ctx, "'" + typeName + "' object doesn't support item deletion");
+                        stack.pop_back();
+                        stack.pop_back();
+                        continue;
                     }
                 }
                 stack.pop_back(); // Pop key
