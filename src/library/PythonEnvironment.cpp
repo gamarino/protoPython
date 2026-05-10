@@ -16016,7 +16016,14 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                 const proto::ProtoObject* mroAttr = mroS ? objType->getAttribute(ctx, mroS) : nullptr;
                 const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
                 const proto::ProtoObject* override = nullptr;
-                if (mroT) {
+                // Some built-in prototypes (property, slice…) have an
+                // __mro__ tuple that doesn't include themselves — only
+                // (object,).  Probe objType itself first so own
+                // overrides aren't skipped by the MRO walk.
+                if (objType != objectPrototype && objType->hasOwnAttribute(ctx, setattrS) == PROTO_TRUE) {
+                    override = objType->getAttribute(ctx, setattrS);
+                }
+                if (!override && mroT) {
                     for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
                         const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(i));
                         if (!base || base == PROTO_NONE) continue;

@@ -7470,6 +7470,49 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     propertyProto = propertyProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "getter"),  ctx->fromMethod(nullptr, py_property_getter_method));
     propertyProto = propertyProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "setter"),  ctx->fromMethod(nullptr, py_property_setter_method));
     propertyProto = propertyProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "deleter"), ctx->fromMethod(nullptr, py_property_deleter_method));
+    // CPython: property's fget/fset/fdel/__doc__ are exposed as
+    // member descriptors that reject direct writes — `prop.fget = X`
+    // raises AttributeError.  Override __setattr__ on the prototype
+    // to mirror that contract; everything else falls through to the
+    // standard write path.
+    propertyProto = propertyProto->setAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__setattr__"),
+        ctx->fromMethod(nullptr,
+        +[](proto::ProtoContext* context, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            // Two call shapes: bound (self=prop, args=[name, value])
+            // and unbound (self=null/class, args=[prop, name, value]).
+            const proto::ProtoObject* target = self;
+            const proto::ProtoObject* nameObj = nullptr;
+            const proto::ProtoObject* val = nullptr;
+            unsigned long n = args ? args->getSize(context) : 0UL;
+            if (n >= 3) {
+                target = args->getAt(context, 0);
+                nameObj = args->getAt(context, 1);
+                val = args->getAt(context, 2);
+            } else if (n >= 2) {
+                nameObj = args->getAt(context, 0);
+                val = args->getAt(context, 1);
+            } else {
+                return PROTO_NONE;
+            }
+            if (!nameObj || !nameObj->isString(context)) return PROTO_NONE;
+            std::string nm;
+            nameObj->asString(context)->toUTF8String(context, nm);
+            PythonEnvironment* env = PythonEnvironment::fromContext(context);
+            // CPython treats fget/fset/fdel as readonly member
+            // descriptors, but __doc__ on property IS writable
+            // (test_descr.test_properties exercises `raw.__doc__ = 42`).
+            if (env && (nm == "fget" || nm == "fset" || nm == "fdel")) {
+                env->raiseAttributeErrorWithMessage(context, target,
+                    "readonly attribute", nm);
+                return nullptr;
+            }
+            const proto::ProtoString* key = PythonEnvironment::getInternedString(context, nm.c_str());
+            const_cast<proto::ProtoObject*>(target)->setAttribute(context, key, val);
+            return PROTO_NONE;
+        }));
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "property"), propertyProto);
     
     const proto::ProtoObject* staticmethodProto = ctx->newObject(true);
