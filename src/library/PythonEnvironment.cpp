@@ -9136,10 +9136,34 @@ struct KeyCollector {
     const proto::ProtoList* keysList;
 };
 
+// Names that protoPython adds to every class's own attribute table
+// (for runtime bookkeeping) but that CPython does NOT expose through
+// `cls.__dict__`.  Filtering them out keeps mappingproxy iteration
+// aligned with `Cls.__dict__.keys()` from upstream Python — the test
+// suite asserts on the exact key set.
+static bool isProtopyClassInternalName(const std::string& nm) {
+    return nm == "__mro__"
+        || nm == "__bases__"
+        || nm == "__base__"
+        || nm == "__keys__"
+        || nm == "__data__"
+        || nm == "__is_python_class__"
+        || nm == "__pydict_data__"
+        || nm == "__pydict_keys__"
+        || nm == "__subclasses_list__"
+        || nm == "__name__"
+        || nm == "__qualname__"
+        || nm == "__annotations__"
+        || nm == "__class__";
+}
+
 static void collectKey(proto::ProtoContext* ctx, void* self, unsigned long key, const proto::ProtoObject*) {
     KeyCollector* s = (KeyCollector*)self;
     const proto::ProtoObject* kObj = reinterpret_cast<const proto::ProtoObject*>(key);
     if (kObj && kObj->isString(ctx)) {
+        std::string nm;
+        kObj->asString(ctx)->toUTF8String(ctx, nm);
+        if (isProtopyClassInternalName(nm)) return;
         if (s->env && s->env->getStrPrototype()) kObj = kObj->addParent(ctx, s->env->getStrPrototype());
         s->keysList = s->keysList->appendLast(ctx, kObj);
     }
@@ -9164,13 +9188,32 @@ static const proto::ProtoObject* py_mappingproxy_keys(
         }
 
         const proto::ProtoList* keysList = s.keysList;
-        // Also check __keys__ if it exists (for moved attributes)
+        // Also check __keys__ if it exists (for moved attributes).
+        // Filter against the same internal-name set the collector uses
+        // and de-duplicate so __module__ / __qualname__ etc. don't
+        // appear twice (the collector already added them).
         const proto::ProtoObject* kObj = data->getAttribute(context, env ? env->getKeysString() : PythonEnvironment::getInternedString(context, "__keys__"));
         if (kObj && kObj->asList(context)) {
+            std::unordered_set<std::string> seen;
+            for (unsigned long i = 0; i < keysList->getSize(context); ++i) {
+                const proto::ProtoObject* k = keysList->getAt(context, static_cast<int>(i));
+                if (k && k->isString(context)) {
+                    std::string nm;
+                    k->asString(context)->toUTF8String(context, nm);
+                    seen.insert(nm);
+                }
+            }
             const proto::ProtoList* innerKeys = kObj->asList(context);
             unsigned long iSize = innerKeys->getSize(context);
             for (unsigned long i = 0; i < iSize; ++i) {
-                keysList = keysList->appendLast(context, innerKeys->getAt(context, static_cast<int>(i)));
+                const proto::ProtoObject* k = innerKeys->getAt(context, static_cast<int>(i));
+                if (!k || !k->isString(context)) continue;
+                std::string nm;
+                k->asString(context)->toUTF8String(context, nm);
+                if (isProtopyClassInternalName(nm)) continue;
+                if (seen.count(nm)) continue;
+                seen.insert(nm);
+                keysList = keysList->appendLast(context, k);
             }
         }
         return wrapInDictView(context, keysList, "dict_keys");
@@ -9192,6 +9235,9 @@ static void collectValue(proto::ProtoContext* ctx, void* self, unsigned long key
     ValueCollector* s = (ValueCollector*)self;
     const proto::ProtoObject* kObj = reinterpret_cast<const proto::ProtoObject*>(key);
     if (!kObj || !kObj->isString(ctx)) return;
+    std::string nm;
+    kObj->asString(ctx)->toUTF8String(ctx, nm);
+    if (isProtopyClassInternalName(nm)) return;
     // Read current value via own-only direct fetch — getAttribute would walk
     // the parent chain.
     const proto::ProtoObject* v = s->dataObj->getOwnAttributeDirect(ctx, kObj->asString(ctx));
@@ -9219,13 +9265,42 @@ static const proto::ProtoObject* py_mappingproxy_values(
 
         // Also include values for keys tracked in __keys__ (Python-level dict storage),
         // mirroring py_mappingproxy_keys / _items which also append from __keys__.
+        // Deduplicate by name and skip protoPython internals so the
+        // count matches CPython's curated cls.__dict__ exposure.
         const proto::ProtoObject* kObj = data->getAttribute(context, env ? env->getKeysString() : PythonEnvironment::getInternedString(context, "__keys__"));
         if (kObj && kObj->asList(context)) {
+            std::unordered_set<std::string> seen;
+            // Pre-populate with the names already gathered by collectValue
+            // (keyed by the SparseList walk).  We re-walk attrs to reconstruct
+            // the names since collectValue only stored values.
+            const proto::ProtoSparseList* preAttrs = data->getOwnAttributes(context);
+            if (preAttrs) {
+                struct NameSink {
+                    proto::ProtoContext* ctx;
+                    std::unordered_set<std::string>* seen;
+                } ns{context, &seen};
+                preAttrs->processElements(context, &ns,
+                    +[](proto::ProtoContext* c, void* userData,
+                        unsigned long key, const proto::ProtoObject*) {
+                        NameSink* nsx = static_cast<NameSink*>(userData);
+                        const proto::ProtoObject* kObj2 = reinterpret_cast<const proto::ProtoObject*>(key);
+                        if (!kObj2 || !kObj2->isString(c)) return;
+                        std::string nm;
+                        kObj2->asString(c)->toUTF8String(c, nm);
+                        if (isProtopyClassInternalName(nm)) return;
+                        nsx->seen->insert(nm);
+                    });
+            }
             const proto::ProtoList* innerKeys = kObj->asList(context);
             unsigned long iSize = innerKeys->getSize(context);
             for (unsigned long i = 0; i < iSize; ++i) {
                 const proto::ProtoObject* k = innerKeys->getAt(context, static_cast<int>(i));
                 if (!k || !k->isString(context)) continue;
+                std::string nm;
+                k->asString(context)->toUTF8String(context, nm);
+                if (isProtopyClassInternalName(nm)) continue;
+                if (seen.count(nm)) continue;
+                seen.insert(nm);
                 const proto::ProtoObject* v = data->getOwnAttributeDirect(context, k->asString(context));
                 if (!v) v = PROTO_NONE;
                 s.valuesList = s.valuesList->appendLast(context, v);
@@ -9248,6 +9323,11 @@ static void collectItem(proto::ProtoContext* ctx, void* self, unsigned long key,
     ItemCollector* s = (ItemCollector*)self;
     const proto::ProtoObject* kObj = reinterpret_cast<const proto::ProtoObject*>(key);
     if (!kObj || !kObj->isString(ctx)) return;
+    {
+        std::string nm;
+        kObj->asString(ctx)->toUTF8String(ctx, nm);
+        if (isProtopyClassInternalName(nm)) return;
+    }
     if (s->env && s->env->getStrPrototype()) kObj = kObj->addParent(ctx, s->env->getStrPrototype());
     // SP-C/C3: read the current value via own-only direct fetch.  Using
     // getAttribute would walk the parent chain and could return inherited
@@ -9281,12 +9361,32 @@ static const proto::ProtoObject* py_mappingproxy_items(
         // Also include attributes tracked in __keys__ (Python-level dict storage).
         // SP-C/C3: use own-only direct fetch for the value lookup so we never
         // accidentally return inherited attributes for these names either.
+        // Deduplicate against names the collector already produced and
+        // drop protoPython-internal names.
         const proto::ProtoObject* kObj = data->getAttribute(context, env ? env->getKeysString() : PythonEnvironment::getInternedString(context, "__keys__"));
         if (kObj && kObj->asList(context)) {
+            std::unordered_set<std::string> seen;
+            for (unsigned long i = 0; i < s.itemsList->getSize(context); ++i) {
+                const proto::ProtoObject* pair = s.itemsList->getAt(context, static_cast<int>(i));
+                if (!pair) continue;
+                const proto::ProtoTuple* pt = pair->asTuple(context);
+                if (!pt || pt->getSize(context) < 1) continue;
+                const proto::ProtoObject* pk = pt->getAt(context, 0);
+                if (pk && pk->isString(context)) {
+                    std::string nm;
+                    pk->asString(context)->toUTF8String(context, nm);
+                    seen.insert(nm);
+                }
+            }
             const proto::ProtoList* innerKeys = kObj->asList(context);
             for (unsigned long i = 0; i < innerKeys->getSize(context); ++i) {
                 const proto::ProtoObject* k = innerKeys->getAt(context, static_cast<int>(i));
                 if (!k || !k->isString(context)) continue;
+                std::string nm;
+                k->asString(context)->toUTF8String(context, nm);
+                if (isProtopyClassInternalName(nm)) continue;
+                if (seen.count(nm)) continue;
+                seen.insert(nm);
                 const proto::ProtoObject* v = data->getOwnAttributeDirect(context, k->asString(context));
                 if (!v) v = PROTO_NONE;
                 const proto::ProtoList* pair = context->newList()->appendLast(context, k)->appendLast(context, v);
