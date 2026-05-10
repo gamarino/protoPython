@@ -548,6 +548,8 @@ static const proto::ProtoObject* py_mappingproxy_getitem(
     return nullptr;
 }
 
+static bool isProtopyClassInternalName(const std::string& nm);
+
 static const proto::ProtoObject* py_mappingproxy_contains(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -571,6 +573,13 @@ static const proto::ProtoObject* py_mappingproxy_contains(
              }
 
              if (sKey && data->hasOwnAttribute(context, sKey) == PROTO_TRUE) {
+                 // Filter out protoPython-internal bookkeeping names
+                 // (matches the keys/values/items filtering) so e.g.
+                 // `'__qualname__' in cls.__dict__` reflects what the
+                 // mappingproxy actually exposes, not raw storage.
+                 std::string nm;
+                 sKey->toUTF8String(context, nm);
+                 if (isProtopyClassInternalName(nm)) return PROTO_FALSE;
                  return PROTO_TRUE;
              }
 
