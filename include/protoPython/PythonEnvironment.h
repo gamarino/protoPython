@@ -268,6 +268,7 @@ public:
     static const proto::ProtoObject* py_function_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
     static const proto::ProtoObject* py_method_call(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
     static const proto::ProtoObject* py_method_repr(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+    static const proto::ProtoObject* py_method_new(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
 
     const proto::ProtoObject* getType(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
 

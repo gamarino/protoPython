@@ -11841,6 +11841,22 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     methodPrototype = methodPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, PythonEnvironment::py_method_repr));
     methodPrototype = methodPrototype->setAttribute(rootContext_, py_call, rootContext_->fromMethod(nullptr, PythonEnvironment::py_method_call));
     methodPrototype = methodPrototype->setAttribute(rootContext_, getDunderString, rootContext_->fromMethod(nullptr, PythonEnvironment::py_function_get));
+    // CPython exposes types.MethodType (i.e. the bound-method class)
+    // as a constructor: MethodType(func, instance) returns a fresh
+    // bound method.  Wire __new__ to py_method_new and override
+    // __init__ with a no-op so the inherited object.__init__ doesn't
+    // raise on the extra positional args.
+    methodPrototype = methodPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__new__"),
+        rootContext_->fromMethod(nullptr, PythonEnvironment::py_method_new));
+    methodPrototype = methodPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__init__"),
+        rootContext_->fromMethod(nullptr,
+        [](proto::ProtoContext* ctx, const proto::ProtoObject*,
+           const proto::ParentLink*, const proto::ProtoList*,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            return PROTO_NONE;
+        }));
     methodPrototype = methodPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__doc__"), PROTO_NONE);
     // Bound-method __eq__/__ne__/__hash__: this is the env-owned
     // methodPrototype (env->getMethodPrototype()) — distinct from
@@ -17904,6 +17920,35 @@ const proto::ProtoObject* PythonEnvironment::py_function_get(proto::ProtoContext
     return bound;
 }
 
+const proto::ProtoObject* PythonEnvironment::py_method_new(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return PROTO_NONE;
+    // CPython: types.MethodType(func, instance) — bound-method
+    // constructor.  Accepts exactly two positional args.  The first
+    // arg of the args list is the class (PUSH_NULL CALL ABI); the
+    // second and third are func and instance.
+    int off = 0;
+    if (args && args->getSize(ctx) > 0) {
+        const proto::ProtoObject* a0 = args->getAt(ctx, 0);
+        if (a0 && env->isActuallyAClass(ctx, a0)) off = 1;
+    }
+    unsigned long n = args ? args->getSize(ctx) : 0UL;
+    if (n - off != 2) {
+        env->raiseTypeError(ctx, "method() takes 2 arguments");
+        return nullptr;
+    }
+    const proto::ProtoObject* func = args->getAt(ctx, off);
+    const proto::ProtoObject* instance = args->getAt(ctx, off + 1);
+    const proto::ProtoObject* bound = ctx->newObject(true);
+    if (env->getMethodPrototype()) {
+        bound = bound->addParent(ctx, env->getMethodPrototype());
+        bound = bound->setAttribute(ctx, env->getClassString(), env->getMethodPrototype());
+    }
+    bound = bound->setAttribute(ctx, env->getSelfDunderString(), instance);
+    bound = bound->setAttribute(ctx, env->getFuncDunderString(), func);
+    return bound;
+}
+
 const proto::ProtoObject* PythonEnvironment::py_method_call(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env) return PROTO_NONE;
@@ -17938,32 +17983,58 @@ const proto::ProtoObject* PythonEnvironment::py_method_repr(proto::ProtoContext*
     // `Outer.Inner.method`); fall back to __name__; only as a last
     // resort use the generic reprObject which prints
     // "<function object at 0x...>".
-    std::string fname;
+    // CPython's method_repr probes __qualname__ / __name__ via
+    // tp_getattro; for genuine function objects those land in the
+    // function's own slots and resolve.  For arbitrary callable
+    // INSTANCES (e.g. types.MethodType(MyCallable(), inst)) the
+    // instance has no own qualname/name, so CPython renders "?" — the
+    // class's __qualname__ on the type isn't picked up because the
+    // attribute lookup checks instance-level slots, not the class
+    // dict for those specific names.  Mirror that by looking only at
+    // OWN attributes here.
+    std::string fname = "?";
     if (func) {
-        const proto::ProtoObject* qn = func->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__qualname__"));
+        const proto::ProtoString* qnS = PythonEnvironment::getInternedString(ctx, "__qualname__");
+        const proto::ProtoString* nmS = env->getNameString();
+        const proto::ProtoObject* qn = nullptr;
+        if (func->hasOwnAttribute(ctx, qnS) == PROTO_TRUE) {
+            qn = func->getOwnAttributeDirect(ctx, qnS);
+        }
         if (!qn || qn == PROTO_NONE || !qn->isString(ctx)) {
-            qn = func->getAttribute(ctx, env->getNameString());
+            if (func->hasOwnAttribute(ctx, nmS) == PROTO_TRUE) {
+                qn = func->getOwnAttributeDirect(ctx, nmS);
+            } else {
+                qn = nullptr;
+            }
         }
         if (qn && qn != PROTO_NONE && qn->isString(ctx)) {
             qn->asString(ctx)->toUTF8String(ctx, fname);
         }
     }
-    if (fname.empty()) fname = PythonEnvironment::reprObject(ctx, func);
 
-    // Build the instance description as `<ClsName object at 0x...>` to
-    // mirror CPython without recursing into reprObject (which could
-    // re-enter __repr__ and loop).
+    // Build the instance description.  Two CPython shapes:
+    //   instance is a regular object  → "<ClsName object at 0x...>"
+    //   instance is itself a class    → "<class 'ClsName'>"
+    // (classmethod-bound methods carry the class as their receiver and
+    // CPython renders it via the class's own repr.)
     std::string instDesc = "?";
     if (instance) {
-        const proto::ProtoObject* instCls = env->getType(ctx, instance);
-        std::string clsName = "object";
-        if (instCls) {
-            const proto::ProtoObject* nm = instCls->getAttribute(ctx, env->getNameString());
+        if (env->isActuallyAClass(ctx, instance)) {
+            std::string clsName = "?";
+            const proto::ProtoObject* nm = instance->getAttribute(ctx, env->getNameString());
             if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, clsName);
+            instDesc = "<class '" + clsName + "'>";
+        } else {
+            const proto::ProtoObject* instCls = env->getType(ctx, instance);
+            std::string clsName = "object";
+            if (instCls) {
+                const proto::ProtoObject* nm = instCls->getAttribute(ctx, env->getNameString());
+                if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, clsName);
+            }
+            char ibuf[128];
+            snprintf(ibuf, sizeof(ibuf), "<%s object at %p>", clsName.c_str(), (void*)instance);
+            instDesc = ibuf;
         }
-        char ibuf[128];
-        snprintf(ibuf, sizeof(ibuf), "<%s object at %p>", clsName.c_str(), (void*)instance);
-        instDesc = ibuf;
     }
 
     char buf[1024];
