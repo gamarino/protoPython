@@ -2689,6 +2689,25 @@ static const proto::ProtoObject* py_dict_iter(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    // Unbound form: `dict.__iter__(d)` — self is the dict type itself
+    // (or null) and positional[0] carries the receiver.  Detect by
+    // probing __data__ on the candidate.
+    if (positionalParameters && positionalParameters->getSize(context) >= 1) {
+        const proto::ProtoString* dataS = env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__");
+        const proto::ProtoObject* selfData = self ? self->getAttribute(context, dataS) : nullptr;
+        bool selfIsDict = selfData && selfData->asSparseList(context) != nullptr
+            && (!env || !env->isActuallyAClass(context, self));
+        if (!selfIsDict) {
+            const proto::ProtoObject* candidate = positionalParameters->getAt(context, 0);
+            if (candidate) {
+                const proto::ProtoObject* candData = candidate->getAttribute(context, dataS);
+                if (candData && candData->asSparseList(context)
+                    && (!env || !env->isActuallyAClass(context, candidate))) {
+                    self = candidate;
+                }
+            }
+        }
+    }
     const proto::ProtoString* iterProtoName = PythonEnvironment::getInternedString(context, "__iter_prototype__");
     const proto::ProtoObject* iterProto = env ? env->getAttribute(context, self, iterProtoName) : self->getAttribute(context, iterProtoName);
     if (!iterProto) {
