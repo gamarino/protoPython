@@ -3061,8 +3061,16 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
         }
         if (isInstanceOfSelf) {
             const proto::ProtoString* initS = env ? env->getInitString() : protoPython::PythonEnvironment::getInternalString(ctx, "__init__");
-            // Use env->getAttribute to follow the Python MRO, not the raw protoCore chain.
-            const proto::ProtoObject* initM = env ? env->getAttribute(ctx, self, initS) : self->getAttribute(ctx, initS);
+            // CPython looks __init__ up on type(obj), not on the
+            // class that was called.  When `__new__(cls)` returned a
+            // SUBCLASS instance (e.g. `C(1) → D` where D extends C),
+            // running C.__init__ skips the subclass's customisation
+            // and `d.foo = arg` from D.__init__ never executes.
+            const proto::ProtoObject* objCls = env ? env->getType(ctx, obj) : nullptr;
+            const proto::ProtoObject* initLookupTarget = (objCls && objCls != PROTO_NONE) ? objCls : self;
+            const proto::ProtoObject* initM = env
+                ? env->getAttribute(ctx, initLookupTarget, initS)
+                : initLookupTarget->getAttribute(ctx, initS);
             if (get_env_diag()) {
                 bool isNative = initM && initM->asMethod(ctx) != nullptr;
                 bool hascode = initM && env && env->getCodeString() &&
