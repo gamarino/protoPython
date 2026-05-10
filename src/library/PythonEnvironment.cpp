@@ -11794,8 +11794,24 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             // Mirror the instance dict snapshot py_object_get_dict
             // produces.  Calling that directly returns the live proxy
             // dict, which is what CPython's default __getstate__
-            // surfaces (callers iterate / pickle it).
-            return py_object_get_dict(ctx, obj, nullptr, nullptr, nullptr);
+            // surfaces (callers iterate / pickle it).  When __dict__
+            // raises (bare object() has none), return an empty dict
+            // so pickle/copyreg paths can use a consistent state.
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (env) env->clearPendingException();
+            const proto::ProtoObject* d = py_object_get_dict(ctx, obj, nullptr, nullptr, nullptr);
+            if ((!d || env->hasPendingException()) && env) {
+                env->clearPendingException();
+                const proto::ProtoObject* dp = env->getDictPrototype();
+                if (dp) {
+                    proto::ProtoObject* empty = const_cast<proto::ProtoObject*>(dp->newChild(ctx, true));
+                    empty->setAttribute(ctx, env->getDataString(), ctx->newSparseList()->asObject(ctx));
+                    empty->setAttribute(ctx, env->getKeysString(), ctx->newList()->asObject(ctx));
+                    return (const proto::ProtoObject*)empty;
+                }
+                return PROTO_NONE;
+            }
+            return d;
         }));
     // PH: object.__init_subclass__ is a no-op; classmethod-bound to keep
     // `super().__init_subclass__(**kwargs)` chains terminating cleanly.
