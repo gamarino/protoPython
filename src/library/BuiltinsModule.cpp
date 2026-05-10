@@ -13,6 +13,7 @@
 #include <memory>
 #include <cmath>
 #include <cstdio>
+#include <functional>
 
 namespace protoPython {
 namespace builtins {
@@ -1624,6 +1625,32 @@ static const proto::ProtoObject* py_object_init(
             }
         }
 
+        // ModuleType / its subclasses accept a name argument via the
+        // module constructor protocol.  They don't override __new__
+        // on the proto level (and our C3 MRO doesn't always include
+        // modulePrototype in the linearisation), so walk __bases__
+        // chains manually to detect any module-derived class.
+        if (!isNewOverridden && env && env->getModulePrototype()) {
+            const proto::ProtoObject* inst = positionalParameters && positionalParameters->getSize(context) > 0
+                ? positionalParameters->getAt(context, 0) : nullptr;
+            const proto::ProtoObject* tp = inst ? env->getType(context, inst) : nullptr;
+            std::function<bool(const proto::ProtoObject*, int)> hasModuleAncestor =
+                [&](const proto::ProtoObject* c, int depth) -> bool {
+                    if (!c || c == PROTO_NONE || depth > 32) return false;
+                    if (c == env->getModulePrototype()) return true;
+                    const proto::ProtoObject* basesAttr = c->getAttribute(context, env->getBasesString());
+                    const proto::ProtoTuple* basesT = basesAttr ? basesAttr->asTuple(context) : nullptr;
+                    if (!basesT) return false;
+                    for (unsigned long bi = 0; bi < basesT->getSize(context); ++bi) {
+                        const proto::ProtoObject* b = basesT->getAt(context, static_cast<int>(bi));
+                        if (hasModuleAncestor(b, depth + 1)) return true;
+                    }
+                    return false;
+                };
+            if (tp && hasModuleAncestor(tp, 0)) {
+                isNewOverridden = true;
+            }
+        }
         if (!isNewOverridden) {
             if (positionalParameters && positionalParameters->getSize(context) > 1) {
                 // CPython: object.__init__(self, *extras) raises TypeError
@@ -6924,14 +6951,14 @@ const proto::ProtoObject* py_object_new(
                 // type ends up with mro (C, B, object, A, type)).
                 // Skip object/typePrototype-itself-without-treating-
                 // -object-as-a-stop-marker so we don't miss A or type
-                // sitting further along.  type always counts as
-                // providing both overrides (its __new__/__init__ take
-                // the canonical 3-arg class shape).
+                // sitting further along.  type/module/etc. count as
+                // providing both overrides (their constructors take
+                // canonical positional args).
                 for (unsigned long mi = 0; mi < mroT->getSize(context); ++mi) {
                     const proto::ProtoObject* base = mroT->getAt(context, static_cast<int>(mi));
                     if (!base || base == PROTO_NONE) continue;
                     if (base == env->getObjectPrototype()) continue;
-                    if (base == env->getTypePrototype()) {
+                    if (base == env->getTypePrototype() || base == env->getModulePrototype()) {
                         newOverridden = true;
                         initOverridden = true;
                         break;
