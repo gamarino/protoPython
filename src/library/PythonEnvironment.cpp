@@ -2923,7 +2923,31 @@ std::string PythonEnvironment::reprObject(proto::ProtoContext* context, const pr
     if (obj->isString(context)) {
         std::string s;
         obj->asString(context)->toUTF8String(context, s);
-        return s;
+        // CPython: repr(str) returns the quoted Python literal (single
+        // quotes by default; switch to double quotes if the string
+        // contains an unescaped single quote and no double quote).
+        // Escape backslash, the chosen quote, and standard control
+        // characters (\n / \r / \t).  Used by container reprs (dict,
+        // list, tuple, set) to produce CPython-compatible output.
+        bool hasSingle = false, hasDouble = false;
+        for (char c : s) { if (c == '\'') hasSingle = true; else if (c == '"') hasDouble = true; }
+        char quote = (hasSingle && !hasDouble) ? '"' : '\'';
+        std::string out;
+        out.reserve(s.size() + 2);
+        out += quote;
+        for (char c : s) {
+            if (c == '\\') { out += "\\\\"; continue; }
+            if (c == quote) { out += '\\'; out += c; continue; }
+            switch (c) {
+                case '\n': out += "\\n"; continue;
+                case '\r': out += "\\r"; continue;
+                case '\t': out += "\\t"; continue;
+                default: break;
+            }
+            out += c;
+        }
+        out += quote;
+        return out;
     }
     if (obj->isNone(context)) {
         return "None";
@@ -7904,7 +7928,14 @@ static const proto::ProtoObject* py_str_mod(
         const proto::ProtoObject* arg = dictArg ? dictArg : getNextArg();
         switch (spec) {
             case 's': {
-                std::string s = PythonEnvironment::reprObject(context, arg);
+                // CPython %s calls str(), NOT repr() — string args
+                // come through verbatim (no quotes).
+                std::string s;
+                if (arg && arg != PROTO_NONE && arg->isString(context)) {
+                    arg->asString(context)->toUTF8String(context, s);
+                } else {
+                    s = PythonEnvironment::reprObject(context, arg);
+                }
                 if (fmtWidth.empty() && fmtFlags.empty()) {
                     out += s;
                 } else {
@@ -9022,7 +9053,10 @@ static const proto::ProtoObject* getOrBuildDictView(
     proto = const_cast<proto::ProtoObject*>(proto->setAttribute(context, env->getClassString(), env->getTypePrototype()));
     proto = const_cast<proto::ProtoObject*>(proto->setAttribute(context,
         PythonEnvironment::getInternedString(context, "__is_python_class__"), PROTO_TRUE));
-    // Delegate __iter__ to the underlying list.
+    // Delegate __iter__ to the underlying list by wrapping it as a
+    // proper Python `list` instance — this guarantees the protoCore
+    // parent chain has __iter_prototype__ so py_list_iter finds the
+    // iterator constructor.
     proto = const_cast<proto::ProtoObject*>(proto->setAttribute(context,
         PythonEnvironment::getInternedString(context, "__iter__"),
         context->fromMethod(nullptr,
@@ -9030,11 +9064,16 @@ static const proto::ProtoObject* getOrBuildDictView(
            const proto::ParentLink*, const proto::ProtoList*,
            const proto::ProtoSparseList*) -> const proto::ProtoObject* {
             PythonEnvironment* e = PythonEnvironment::fromContext(ctx);
-            const proto::ProtoString* dataS = e ? e->getDataString() : PythonEnvironment::getInternalString(ctx, "__data__");
+            if (!e) return PROTO_NONE;
+            const proto::ProtoString* dataS = e->getDataString();
             const proto::ProtoObject* d = self->getAttribute(ctx, dataS);
             const proto::ProtoList* l = d ? d->asList(ctx) : nullptr;
             if (!l) return PROTO_NONE;
-            return e ? e->iter(const_cast<proto::ProtoObject*>(d)) : PROTO_NONE;
+            const proto::ProtoObject* lp = e->getListPrototype();
+            if (!lp) return PROTO_NONE;
+            proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(lp->newChild(ctx, true));
+            listObj = const_cast<proto::ProtoObject*>(listObj->setAttribute(ctx, dataS, l->asObject(ctx)));
+            return e->iter(listObj);
         })));
     // __len__ over the data list.
     proto = const_cast<proto::ProtoObject*>(proto->setAttribute(context,
@@ -9072,6 +9111,18 @@ static const proto::ProtoObject* getOrBuildDictView(
     proto = const_cast<proto::ProtoObject*>(proto->setAttribute(context,
         PythonEnvironment::getInternedString(context, "__bases__"),
         context->newTupleFromList(context->newList()->appendLast(context, env->getObjectPrototype()))->asObject(context)));
+    // Fallback: some iteration paths bypass __iter__ and directly
+    // probe __iter_prototype__ (py_list_iter does this when invoked
+    // raw, e.g. through OP_FOR_ITER's fast path).  Borrow listProto's
+    // iterator constructor so those paths still work.
+    if (env->getListPrototype()) {
+        const proto::ProtoString* iterProtoKey =
+            PythonEnvironment::getInternedString(context, "__iter_prototype__");
+        const proto::ProtoObject* listIterProto = env->getListPrototype()->getAttribute(context, iterProtoKey);
+        if (listIterProto && listIterProto != PROTO_NONE) {
+            proto = const_cast<proto::ProtoObject*>(proto->setAttribute(context, iterProtoKey, listIterProto));
+        }
+    }
     // Cache the prototype on the env's dictPrototype as a hidden attr
     // (perpetual via interned key; instance lifetime matches dict's).
     const_cast<proto::ProtoObject*>(dictProto)->setAttribute(context, protoKey, proto);
