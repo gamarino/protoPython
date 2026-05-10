@@ -5657,6 +5657,60 @@ static const proto::ProtoObject* py_property_set(
     return nullptr;
 }
 
+static const proto::ProtoObject* py_property_delete(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList*) {
+    if (!positionalParameters || positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* fdel = self->getAttribute(context, PythonEnvironment::getInternedString(context, "fdel"));
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (fdel && fdel != PROTO_NONE) {
+        if (env) {
+            std::vector<const proto::ProtoObject*> argsVec = {obj};
+            env->callObject(fdel, argsVec);
+        }
+        return PROTO_NONE;
+    }
+    // No deleter — CPython raises AttributeError "property '<name>' of
+    // '<cls>' object has no deleter" symmetric to the no-setter case.
+    if (env) {
+        std::string propName;
+        const proto::ProtoString* nameKey = PythonEnvironment::getInternedString(context, "__name__");
+        const proto::ProtoObject* nameAttr = self->getAttribute(context, nameKey);
+        bool gotName = false;
+        if (nameAttr && nameAttr != PROTO_NONE && nameAttr->isString(context)) {
+            nameAttr->asString(context)->toUTF8String(context, propName);
+            if (propName != "property") gotName = true;
+        }
+        if (!gotName) {
+            propName.clear();
+            const proto::ProtoObject* fget = self->getAttribute(context, PythonEnvironment::getInternedString(context, "fget"));
+            if (fget && fget != PROTO_NONE) {
+                const proto::ProtoObject* fgetName = fget->getAttribute(context, nameKey);
+                if (fgetName && fgetName != PROTO_NONE && fgetName->isString(context)) {
+                    fgetName->asString(context)->toUTF8String(context, propName);
+                }
+            }
+        }
+        std::string typeName = "object";
+        const proto::ProtoObject* cls = env->getType(context, obj);
+        if (cls) {
+            const proto::ProtoObject* clsName = cls->getAttribute(context, nameKey);
+            if (clsName && clsName != PROTO_NONE && clsName->isString(context)) {
+                clsName->asString(context)->toUTF8String(context, typeName);
+            }
+        }
+        std::string message = !propName.empty()
+            ? "property '" + propName + "' of '" + typeName + "' object has no deleter"
+            : "property of '" + typeName + "' object has no deleter";
+        env->raiseAttributeErrorWithMessage(context, obj, message, propName);
+    }
+    return nullptr;
+}
+
 static const proto::ProtoObject* py_property_init(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -5764,6 +5818,26 @@ static const proto::ProtoObject* py_property(
     }
     if (positionalParameters->getSize(context) >= 4) {
         prop = prop->setAttribute(context, PythonEnvironment::getInternedString(context, "fdel"), positionalParameters->getAt(context, 3));
+    }
+    // CPython: property(fget, fset, fdel, doc) records doc on the
+    // instance.  When omitted, fall back to fget.__doc__ so the
+    // descriptor surfaces the wrapped function's docstring.
+    const proto::ProtoString* docKey = PythonEnvironment::getInternedString(context, "__doc__");
+    const proto::ProtoObject* docObj = nullptr;
+    if (positionalParameters->getSize(context) >= 5) {
+        docObj = positionalParameters->getAt(context, 4);
+    } else if (keywordParameters) {
+        docObj = keywordParameters->getAt(context, PythonEnvironment::getInternedString(context, "doc")->getHash(context));
+    }
+    if ((!docObj || docObj == PROTO_NONE) && positionalParameters->getSize(context) >= 2) {
+        const proto::ProtoObject* fget = positionalParameters->getAt(context, 1);
+        if (fget && fget != PROTO_NONE) {
+            const proto::ProtoObject* fdoc = fget->getAttribute(context, docKey);
+            if (fdoc && fdoc != PROTO_NONE) docObj = fdoc;
+        }
+    }
+    if (docObj) {
+        prop = prop->setAttribute(context, docKey, docObj);
     }
 
     if (get_env_diag()) {
@@ -7389,6 +7463,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     propertyProto = propertyProto->setAttribute(ctx, py_name_local, PythonEnvironment::getInternedString(ctx, "property")->asObject(ctx));
     propertyProto = propertyProto->setAttribute(ctx, pEnv->getGetDunderString(), ctx->fromMethod(nullptr, py_property_get));
     propertyProto = propertyProto->setAttribute(ctx, pEnv->getSetDunderString(), ctx->fromMethod(nullptr, py_property_set));
+    propertyProto = propertyProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__delete__"), ctx->fromMethod(nullptr, py_property_delete));
     propertyProto = propertyProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_property));
     const proto::ProtoString* initStr = pEnv ? pEnv->getInitString() : PythonEnvironment::getInternedString(ctx, "__init__");
     propertyProto = propertyProto->setAttribute(ctx, initStr, ctx->fromMethod(nullptr, py_property_init));
