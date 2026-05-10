@@ -10893,6 +10893,7 @@ void PythonEnvironment::raiseRecursionError(proto::ProtoContext* ctx) {
     if (!recursionErrorType) return;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "maximum recursion depth exceeded")->asObject(ctx));
     const proto::ProtoObject* exc = invokePythonCallable(ctx, recursionErrorType, args, nullptr);
+    if (exc && exc != PROTO_NONE) setPendingException(exc);
 }
 
 void PythonEnvironment::raiseAssertionError(proto::ProtoContext* ctx, const proto::ProtoObject* msg) {
