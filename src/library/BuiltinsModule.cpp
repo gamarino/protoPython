@@ -690,21 +690,55 @@ const proto::ProtoObject* py_complex(
         if (!isNumeric) base = 1;
     }
 
+    // Extract numeric value from primitives, complex instances, or
+    // any object exposing .real / .imag (Python duck-typing).
+    auto extractReal = [&](const proto::ProtoObject* x, double& dest, double& destImag) -> bool {
+        if (!x || x == PROTO_NONE) return false;
+        if (x->isDouble(context)) { dest = x->asDouble(context); destImag = 0.0; return true; }
+        if (x->isInteger(context)) { dest = (double)x->asLong(context); destImag = 0.0; return true; }
+        if (x->isBoolean(context)) { dest = x->asBoolean(context) ? 1.0 : 0.0; destImag = 0.0; return true; }
+        if (x->isString(context)) {
+            std::string s;
+            x->asString(context)->toUTF8String(context, s);
+            try { dest = std::stod(s); destImag = 0.0; return true; } catch(...) {}
+            return false;
+        }
+        // Complex / complex subclass: pull .real and .imag.
+        const proto::ProtoString* realS = PythonEnvironment::getInternedString(context, "real");
+        const proto::ProtoString* imagS = PythonEnvironment::getInternedString(context, "imag");
+        const proto::ProtoObject* r = x->getAttribute(context, realS);
+        const proto::ProtoObject* im = x->getAttribute(context, imagS);
+        bool got = false;
+        if (r) {
+            if (r->isDouble(context)) { dest = r->asDouble(context); got = true; }
+            else if (r->isInteger(context)) { dest = (double)r->asLong(context); got = true; }
+        }
+        if (im) {
+            if (im->isDouble(context)) { destImag = im->asDouble(context); got = true; }
+            else if (im->isInteger(context)) { destImag = (double)im->asLong(context); got = true; }
+        }
+        return got;
+    };
+
     if (argCount >= base + 1) {
         const proto::ProtoObject* rObj = positionalParameters->getAt(context, base);
-        if (rObj->isDouble(context)) real = rObj->asDouble(context);
-        else if (rObj->isInteger(context)) real = (double)rObj->asLong(context);
-        else if (rObj->isString(context)) {
-            // Very basic string parsing for now, Python supports "1+2j"
-            std::string s;
-            rObj->asString(context)->toUTF8String(context, s);
-            try { real = std::stod(s); } catch(...) {}
+        double rr = 0.0, ri = 0.0;
+        if (extractReal(rObj, rr, ri)) {
+            real = rr;
+            imag = ri;  // Pick up imaginary part when the arg is a complex.
         }
     }
     if (argCount >= base + 2) {
         const proto::ProtoObject* iObj = positionalParameters->getAt(context, base + 1);
-        if (iObj->isDouble(context)) imag = iObj->asDouble(context);
-        else if (iObj->isInteger(context)) imag = (double)iObj->asLong(context);
+        double ir = 0.0, ii = 0.0;
+        if (extractReal(iObj, ir, ii)) {
+            // Second positional contributes its real part to the
+            // imaginary slot and (if complex) subtracts its imag from
+            // the real per CPython:
+            //   complex(a, b) == complex(a.real - b.imag, a.imag + b.real)
+            imag += ir;
+            real -= ii;
+        }
     }
 
     // Keyword arguments "real" and "imag"
