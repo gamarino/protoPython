@@ -10869,10 +10869,14 @@ static const proto::ProtoObject* py_dict_get(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    const proto::ProtoObject* key = positionalParameters->getAt(context, 0);
-    const proto::ProtoObject* defaultVal = positionalParameters->getSize(context) > 1 ? positionalParameters->getAt(context, 1) : PROTO_NONE;
+    int posOff = 0;
+    const proto::ProtoObject* receiver = dict_self_or_arg(context, self, positionalParameters, &posOff);
+    if (positionalParameters->getSize(context) < static_cast<unsigned long>(1 + posOff)) return PROTO_NONE;
+    const proto::ProtoObject* key = positionalParameters->getAt(context, posOff);
+    const proto::ProtoObject* defaultVal = positionalParameters->getSize(context) > static_cast<unsigned long>(1 + posOff)
+        ? positionalParameters->getAt(context, 1 + posOff) : PROTO_NONE;
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* data = receiver ? receiver->getAttribute(context, dataName) : nullptr;
     const proto::ProtoSparseList* dict = data && data->asSparseList(context) ? data->asSparseList(context) : nullptr;
     if (!dict) return defaultVal;
     unsigned long hash = dictKeyHash(context, key);
