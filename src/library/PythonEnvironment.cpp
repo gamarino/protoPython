@@ -1863,6 +1863,23 @@ static const proto::ProtoObject* py_object_str(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    // Unbound form: `type(obj).__str__(obj)` lands here with
+    // self == null or the class object and positional[0] == the
+    // actual receiver.  Mirror py_object_repr's detection so the
+    // result describes the instance, not the class.
+    if (positionalParameters && positionalParameters->getSize(context) >= 1) {
+        bool selfIsReceiver = false;
+        if (self && env) {
+            const proto::ProtoString* mroS = env->getMroString();
+            if (!mroS || self->hasOwnAttribute(context, mroS) != PROTO_TRUE) {
+                selfIsReceiver = true;
+            }
+        }
+        if (!selfIsReceiver) {
+            const proto::ProtoObject* recv = positionalParameters->getAt(context, 0);
+            if (recv && recv != PROTO_NONE) self = recv;
+        }
+    }
     if (!self || self == PROTO_NONE || (env && self == env->getNonePrototype())) {
         return PythonEnvironment::getInternedString(context, "None")->asObject(context);
     }
@@ -1982,7 +1999,24 @@ static const proto::ProtoObject* py_str_call(
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
         const proto::ProtoObject* cls = env ? env->getType(ctx, x) : x->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__class__"));
         const proto::ProtoString* strS = env ? env->getStrString() : PythonEnvironment::getInternalString(ctx, "__str__");
-        const proto::ProtoObject* strMethod = cls ? cls->getAttribute(ctx, strS) : nullptr;
+        // Walk __mro__ explicitly for the dunder — see py_repr_call
+        // comment.  Falls back to raw chain walk if __mro__ is absent.
+        const proto::ProtoObject* strMethod = nullptr;
+        if (cls) {
+            const proto::ProtoObject* mroAttr = env ? cls->getAttribute(ctx, env->getMroString()) : nullptr;
+            const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+            if (mroT) {
+                for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
+                    const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(i));
+                    if (!base || base == PROTO_NONE) continue;
+                    if (base->hasOwnAttribute(ctx, strS) == PROTO_TRUE) {
+                        strMethod = base->getOwnAttributeDirect(ctx, strS);
+                        break;
+                    }
+                }
+            }
+            if (!strMethod) strMethod = cls->getAttribute(ctx, strS);
+        }
         if (strMethod && strMethod != PROTO_NONE) {
             if (strMethod->asMethod(ctx)) {
                 x = strMethod->asMethod(ctx)(ctx, x, nullptr, env ? env->getEmptyList() : ctx->newList(), nullptr);
@@ -2020,7 +2054,28 @@ static const proto::ProtoObject* py_repr_call(
     ++s_reprDepth;
     const proto::ProtoObject* cls = env ? env->getType(ctx, x) : x->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__class__"));
     const proto::ProtoString* reprS = env ? env->getReprString() : PythonEnvironment::getInternalString(ctx, "__repr__");
-    const proto::ProtoObject* reprMethod = cls ? cls->getAttribute(ctx, reprS) : nullptr;
+    // CPython semantics: __repr__ resolves via the instance type's MRO,
+    // not via the protoCore parent chain.  cls->getAttribute would walk
+    // the class object's parent chain (which threads through type,
+    // whose __repr__ produces the class spelling), so a plain instance
+    // would render as `<class 'C'>` instead of its `<C object at ...>`
+    // repr.  Walk __mro__ explicitly for the dunder lookup.
+    const proto::ProtoObject* reprMethod = nullptr;
+    if (cls) {
+        const proto::ProtoObject* mroAttr = env ? cls->getAttribute(ctx, env->getMroString()) : nullptr;
+        const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+        if (mroT) {
+            for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
+                const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(i));
+                if (!base || base == PROTO_NONE) continue;
+                if (base->hasOwnAttribute(ctx, reprS) == PROTO_TRUE) {
+                    reprMethod = base->getOwnAttributeDirect(ctx, reprS);
+                    break;
+                }
+            }
+        }
+        if (!reprMethod) reprMethod = cls->getAttribute(ctx, reprS);
+    }
     const proto::ProtoObject* result = nullptr;
     if (reprMethod && reprMethod != PROTO_NONE) {
         if (reprMethod->asMethod(ctx)) {
