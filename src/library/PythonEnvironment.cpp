@@ -8475,9 +8475,19 @@ static const proto::ProtoObject* py_str_mod(
             while (i < fmt.size() && fmt[i] != ')') ++i;
             std::string keyName = fmt.substr(keyStart, i - keyStart);
             if (i < fmt.size()) ++i; // skip ')'
+            // CPython: %(key) requires the argument to be a mapping.
+            // Reject None and primitive non-mappings up front.
+            if (!argObj || argObj == PROTO_NONE
+                || argObj->isString(context) || argObj->isInteger(context)
+                || argObj->isFloat(context) || argObj->isBoolean(context)
+                || (env && argObj == env->getNonePrototype())) {
+                if (env) env->raiseTypeError(context,
+                    "format requires a mapping");
+                return nullptr;
+            }
             // Look up the key in the dict argument
             const proto::ProtoString* keyStr = PythonEnvironment::getInternedString(context, keyName.c_str());
-            if (env && argObj && argObj != PROTO_NONE) {
+            if (env) {
                 dictArg = env->getItem(argObj, keyStr->asObject(context), context);
             }
         }
