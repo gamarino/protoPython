@@ -11761,7 +11761,22 @@ static const proto::ProtoObject* py_dict_fromkeys(
 
     const proto::ProtoString* iterS = PythonEnvironment::getInternalString(context, "__iter__");
     const proto::ProtoObject* iterM = iterable->getAttribute(context, iterS);
-    if (!iterM || iterM == PROTO_NONE) return PROTO_NONE;
+    if (!iterM || iterM == PROTO_NONE) {
+        // CPython: dict.fromkeys(non_iterable) raises TypeError.  Silently
+        // returning None hid bugs like `dict.fromkeys(5)` succeeding.
+        if (env) {
+            std::string clsName = "object";
+            const proto::ProtoObject* cls = env->getType(context, iterable);
+            if (cls) {
+                const proto::ProtoObject* nameAttr = cls->getAttribute(context, env->getNameString());
+                if (nameAttr && nameAttr->isString(context)) {
+                    nameAttr->asString(context)->toUTF8String(context, clsName);
+                }
+            }
+            env->raiseTypeError(context, "'" + clsName + "' object is not iterable");
+        }
+        return nullptr;
+    }
     const proto::ProtoObject* itObj = callMethod(iterM, iterable, emptyL);
     if (!itObj || itObj == PROTO_NONE) return PROTO_NONE;
 
