@@ -11934,7 +11934,9 @@ static const proto::ProtoObject* py_dict_popitem(
     }
     unsigned long lastIdx = keys->getSize(context) - 1;
     const proto::ProtoObject* key = keys->getAt(context, static_cast<int>(lastIdx));
-    unsigned long hash = key->getHash(context);
+    // Use the env-aware hash so custom __hash__ overrides bucket
+    // consistently with get/set/pop.
+    unsigned long hash = dictKeyHash(context, key);
     const proto::ProtoObject* value = dict->getAt(context, hash);
     const proto::ProtoSparseList* newDict = dict->removeAt(context, hash);
     const proto::ProtoList* newKeys = context->newList();
