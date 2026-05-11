@@ -8058,7 +8058,16 @@ static const proto::ProtoObject* py_str_upper(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* str = str_from_self(context, self);
-    if (!str) return PROTO_NONE;
+    // Unbound form: str.upper(thing) — self may be the class.
+    if (!str && positionalParameters && positionalParameters->getSize(context) >= 1) {
+        str = str_from_self(context, positionalParameters->getAt(context, 0));
+    }
+    if (!str) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env) env->raiseTypeError(context,
+            "descriptor 'upper' for 'str' objects doesn't apply to a non-str object");
+        return nullptr;
+    }
     std::string s;
     str->toUTF8String(context, s);
     for (char& c : s) {
