@@ -11115,14 +11115,16 @@ static const proto::ProtoObject* py_dict_copy(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoObject* receiver = dict_self_or_arg(context, self, positionalParameters);
+    if (!receiver) return PROTO_NONE;
     const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
-    const proto::ProtoObject* dataObj = self->getAttribute(context, dataName);
+    const proto::ProtoObject* keysObj = receiver->getAttribute(context, keysName);
+    const proto::ProtoObject* dataObj = receiver->getAttribute(context, dataName);
     const proto::ProtoList* keys = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
     const proto::ProtoSparseList* dict = dataObj && dataObj->asSparseList(context) ? dataObj->asSparseList(context) : context->newSparseList();
 
-    const proto::ProtoList* parents = self->getParents(context);
+    const proto::ProtoList* parents = receiver->getParents(context);
     const proto::ProtoObject* parent = parents && parents->getSize(context) > 0 ? parents->getAt(context, 0) : nullptr;
     // Dict copies must be mutable so that subsequent in-place mutations
     // (`d[k] = v`, `del d[k]`, `d.update(other)`, …) persist on the same
@@ -11136,7 +11138,7 @@ static const proto::ProtoObject* py_dict_copy(
 
     // Preserve _generate_next_value attribute (needed for EnumDict)
     const proto::ProtoString* gnvName = PythonEnvironment::getInternalString(context, "_generate_next_value");
-    const proto::ProtoObject* gnvObj = self->getAttribute(context, gnvName);
+    const proto::ProtoObject* gnvObj = receiver->getAttribute(context, gnvName);
     if (gnvObj && gnvObj != PROTO_NONE) {
         if (get_env_diag()) {
             fflush(stderr);
@@ -11306,26 +11308,30 @@ static const proto::ProtoObject* py_dict_setdefault(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    const proto::ProtoObject* key = positionalParameters->getAt(context, 0);
-    const proto::ProtoObject* defaultVal = positionalParameters->getSize(context) > 1 ? positionalParameters->getAt(context, 1) : PROTO_NONE;
+    int posOff = 0;
+    const proto::ProtoObject* receiver = dict_self_or_arg(context, self, positionalParameters, &posOff);
+    if (positionalParameters->getSize(context) < static_cast<unsigned long>(1 + posOff)) return PROTO_NONE;
+    const proto::ProtoObject* key = positionalParameters->getAt(context, posOff);
+    const proto::ProtoObject* defaultVal = positionalParameters->getSize(context) > static_cast<unsigned long>(1 + posOff)
+        ? positionalParameters->getAt(context, 1 + posOff) : PROTO_NONE;
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* data = receiver ? receiver->getAttribute(context, dataName) : nullptr;
     const proto::ProtoSparseList* dict = data && data->asSparseList(context) ? data->asSparseList(context) : nullptr;
-    if (!dict) return PROTO_NONE;
+    if (!dict || !receiver) return PROTO_NONE;
     unsigned long hash = key->getHash(context);
-    
+
     if (dict->has(context, hash)) {
         return dict->getAt(context, hash);
     }
-    
+
     const proto::ProtoSparseList* newDict = dict->setAt(context, hash, defaultVal);
-    self->setAttribute(context, dataName, newDict->asObject(context));
+    const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, newDict->asObject(context));
 
     const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
-    const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
+    const proto::ProtoObject* keysObj = receiver->getAttribute(context, keysName);
     const proto::ProtoList* keysList = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
     keysList = keysList->appendLast(context, key);
-    self->setAttribute(context, keysName, keysList->asObject(context));
+    const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, keysName, keysList->asObject(context));
     return defaultVal;
 }
 
@@ -11342,12 +11348,16 @@ static const proto::ProtoObject* py_dict_pop(
         if (env) env->raiseValueError(context, PythonEnvironment::getInternedString(context, "pop expected at least 1 argument, got 0")->asObject(context));
         return PROTO_NONE;
     }
-    const proto::ProtoObject* key = positionalParameters->getAt(context, 0);
-    const proto::ProtoObject* defaultVal = positionalParameters->getSize(context) > 1 ? positionalParameters->getAt(context, 1) : nullptr;
+    int posOff = 0;
+    const proto::ProtoObject* receiver = dict_self_or_arg(context, self, positionalParameters, &posOff);
+    if (positionalParameters->getSize(context) < static_cast<unsigned long>(1 + posOff)) return PROTO_NONE;
+    const proto::ProtoObject* key = positionalParameters->getAt(context, posOff);
+    const proto::ProtoObject* defaultVal = positionalParameters->getSize(context) > static_cast<unsigned long>(1 + posOff)
+        ? positionalParameters->getAt(context, 1 + posOff) : nullptr;
     const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
-    const proto::ProtoObject* dataObj = self->getAttribute(context, dataName);
+    const proto::ProtoObject* keysObj = receiver ? receiver->getAttribute(context, keysName) : nullptr;
+    const proto::ProtoObject* dataObj = receiver ? receiver->getAttribute(context, dataName) : nullptr;
     const proto::ProtoList* keys = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
     const proto::ProtoSparseList* dict = dataObj && dataObj->asSparseList(context) ? dataObj->asSparseList(context) : nullptr;
     if (!dict) {
@@ -11373,8 +11383,8 @@ static const proto::ProtoObject* py_dict_pop(
         if (kh != hash)
             newKeys = newKeys->appendLast(context, k);
     }
-    self->setAttribute(context, dataName, newDict->asObject(context));
-    self->setAttribute(context, keysName, newKeys->asObject(context));
+    const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, newDict->asObject(context));
+    const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, keysName, newKeys->asObject(context));
     return value;
 }
 
