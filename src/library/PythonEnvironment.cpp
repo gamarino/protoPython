@@ -10236,7 +10236,14 @@ static const proto::ProtoObject* py_str_partition(
     str->toUTF8String(context, s);
     std::string sep;
     posArgs->getAt(context, posOff)->asString(context)->toUTF8String(context, sep);
-    if (sep.empty()) return PROTO_NONE;
+    if (sep.empty()) {
+        // CPython raises ValueError on `s.partition('')`.
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env) env->raiseValueError(context,
+            PythonEnvironment::getInternedString(context,
+                "empty separator")->asObject(context));
+        return nullptr;
+    }
     size_t pos = s.find(sep);
     if (pos == std::string::npos) {
         const proto::ProtoList* lst = context->newList()
@@ -10267,7 +10274,13 @@ static const proto::ProtoObject* py_str_rpartition(
     str->toUTF8String(context, s);
     std::string sep;
     posArgs->getAt(context, posOff)->asString(context)->toUTF8String(context, sep);
-    if (sep.empty()) return PROTO_NONE;
+    if (sep.empty()) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env) env->raiseValueError(context,
+            PythonEnvironment::getInternedString(context,
+                "empty separator")->asObject(context));
+        return nullptr;
+    }
     size_t pos = s.rfind(sep);
     if (pos == std::string::npos) {
         const proto::ProtoList* lst = context->newList()
