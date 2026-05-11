@@ -19383,6 +19383,21 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
         // (set, dict, frozenset…) keep the legacy pointer-based
         // ordering until they grow proper rich comparison methods.
         if (op >= 2 && op <= 5) {
+            // Bound built-in methods (POINTER_TAG_METHOD cells) carry
+            // no rich-comparison dunders, and CPython raises TypeError
+            // when you try to order them.  Detect them via asMethod()
+            // before the user-class check so test_method_wrapper and
+            // test_builtin_function_or_method see the expected error.
+            if (a->asMethod(ctx) && b->asMethod(ctx)) {
+                const char* opName =
+                    (op == 2) ? "<" :
+                    (op == 3) ? "<=" :
+                    (op == 4) ? ">" : ">=";
+                raiseTypeError(ctx,
+                    "'" + std::string(opName) + "' not supported between instances of "
+                    "'method-wrapper' and 'method-wrapper'");
+                return nullptr;
+            }
             const proto::ProtoObject* aType = getType(ctx, a);
             const proto::ProtoObject* bType = getType(ctx, b);
             auto isUserClass = [&](const proto::ProtoObject* t) -> bool {
