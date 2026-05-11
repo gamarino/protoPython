@@ -9709,6 +9709,7 @@ static const proto::ProtoObject* py_str_mod(
             }
             case 'f':
             case 'F': {
+                if (!requireNumeric(spec, arg)) return nullptr;
                 double v = extractDouble(arg);
                 std::string ff = makeFltFmt(fmtPrec.empty() ? 'f' : spec);
                 if (fmtPrec.empty()) ff = std::string("%") + fmtFlags + fmtWidth + ".6f";
@@ -9718,6 +9719,7 @@ static const proto::ProtoObject* py_str_mod(
             }
             case 'e':
             case 'E': {
+                if (!requireNumeric(spec, arg)) return nullptr;
                 double v = extractDouble(arg);
                 char buf[128]; snprintf(buf, sizeof(buf), makeFltFmt(spec).c_str(), v);
                 out += buf;
@@ -9725,18 +9727,33 @@ static const proto::ProtoObject* py_str_mod(
             }
             case 'g':
             case 'G': {
+                if (!requireNumeric(spec, arg)) return nullptr;
                 double v = extractDouble(arg);
                 char buf[128]; snprintf(buf, sizeof(buf), makeFltFmt(spec).c_str(), v);
                 out += buf;
                 break;
             }
             case 'c': {
+                // CPython: %c accepts an int 0..0x10FFFF or a single
+                // character string.  Anything else (None, list, etc.)
+                // raises TypeError: %c requires int or char.  Previously
+                // the non-string branch fell through to asLong on
+                // PROTO_NONE / list / etc. and crashed with the
+                // internal "Object is not an integer type" RuntimeError.
                 if (arg && arg->isString(context)) {
                     std::string s;
                     arg->asString(context)->toUTF8String(context, s);
                     if (!s.empty()) out += s[0];
-                } else if (arg) {
-                    out += static_cast<char>(arg->asLong(context) & 0xFF);
+                } else if (arg && arg != PROTO_NONE
+                           && (arg->isInteger(context) || arg->isBoolean(context))) {
+                    long long v = arg->isInteger(context)
+                        ? arg->asLong(context)
+                        : (arg == PROTO_TRUE ? 1LL : 0LL);
+                    out += static_cast<char>(v & 0xFF);
+                } else {
+                    if (env) env->raiseTypeError(context,
+                        "%c requires int or char");
+                    return nullptr;
                 }
                 break;
             }
