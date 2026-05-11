@@ -3645,17 +3645,23 @@ static const proto::ProtoObject* py_list_reverse(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     (void)parentLink;
-    (void)positionalParameters;
     (void)keywordParameters;
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* selfData = self ? self->getAttribute(context, dataName) : nullptr;
+    const proto::ProtoObject* receiver = self;
+    if ((!selfData || !selfData->asList(context))
+        && positionalParameters && positionalParameters->getSize(context) >= 1) {
+        receiver = positionalParameters->getAt(context, 0);
+    }
+    if (!receiver) return PROTO_NONE;
+    const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
     const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
     if (!list) return PROTO_NONE;
     unsigned long size = list->getSize(context);
     const proto::ProtoList* newList = context->newList();
     for (unsigned long i = size; i > 0; --i)
         newList = newList->appendLast(context, list->getAt(context, static_cast<int>(i - 1)));
-    self->setAttribute(context, dataName, newList->asObject(context));
+    const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, newList->asObject(context));
     return PROTO_NONE;
 }
 
@@ -3845,7 +3851,14 @@ static const proto::ProtoObject* py_list_copy(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* selfData = self ? self->getAttribute(context, dataName) : nullptr;
+    const proto::ProtoObject* receiver = self;
+    if ((!selfData || !selfData->asList(context))
+        && positionalParameters && positionalParameters->getSize(context) >= 1) {
+        receiver = positionalParameters->getAt(context, 0);
+    }
+    if (!receiver) return PROTO_NONE;
+    const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
     const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
     if (!list) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
@@ -3928,16 +3941,27 @@ static const proto::ProtoObject* py_list_index(
     const proto::ProtoSparseList* keywordParameters) {
     if (!positionalParameters || positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* selfData = self ? self->getAttribute(context, dataName) : nullptr;
+    const proto::ProtoObject* receiver = self;
+    int posOff = 0;
+    if ((!selfData || !selfData->asList(context))
+        && positionalParameters->getSize(context) >= 2) {
+        receiver = positionalParameters->getAt(context, 0);
+        posOff = 1;
+    }
+    if (!receiver) return PROTO_NONE;
+    const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
     const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
-    if (!list) return PROTO_NONE;
-    const proto::ProtoObject* value = positionalParameters->getAt(context, 0);
+    if (!list || positionalParameters->getSize(context) < static_cast<unsigned long>(1 + posOff)) return PROTO_NONE;
+    const proto::ProtoObject* value = positionalParameters->getAt(context, posOff);
     long long start = 0;
     long long stop = static_cast<long long>(list->getSize(context));
-    if (positionalParameters->getSize(context) >= 2 && positionalParameters->getAt(context, 1)->isInteger(context))
-        start = positionalParameters->getAt(context, 1)->asLong(context);
-    if (positionalParameters->getSize(context) >= 3 && positionalParameters->getAt(context, 2)->isInteger(context))
-        stop = positionalParameters->getAt(context, 2)->asLong(context);
+    if (positionalParameters->getSize(context) >= static_cast<unsigned long>(2 + posOff)
+        && positionalParameters->getAt(context, 1 + posOff)->isInteger(context))
+        start = positionalParameters->getAt(context, 1 + posOff)->asLong(context);
+    if (positionalParameters->getSize(context) >= static_cast<unsigned long>(3 + posOff)
+        && positionalParameters->getAt(context, 2 + posOff)->isInteger(context))
+        stop = positionalParameters->getAt(context, 2 + posOff)->asLong(context);
     if (start < 0) start = 0;
     for (long long i = start; i < stop && static_cast<unsigned long>(i) < list->getSize(context); ++i) {
         const proto::ProtoObject* elem = list->getAt(context, static_cast<int>(i));
@@ -3945,7 +3969,7 @@ static const proto::ProtoObject* py_list_index(
             return context->fromInteger(i);
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    if (env) env->raiseValueError(context, PythonEnvironment::getInternedString(context, "list.index(x)->asObject(context): x not in list")->asObject(context));
+    if (env) env->raiseValueError(context, PythonEnvironment::getInternedString(context, "x not in list")->asObject(context));
     return PROTO_NONE;
 }
 
@@ -3957,10 +3981,19 @@ static const proto::ProtoObject* py_list_count(
     const proto::ProtoSparseList* keywordParameters) {
     if (!positionalParameters || positionalParameters->getSize(context) < 1) return context->fromInteger(0);
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* selfData = self ? self->getAttribute(context, dataName) : nullptr;
+    const proto::ProtoObject* receiver = self;
+    int posOff = 0;
+    if ((!selfData || !selfData->asList(context))
+        && positionalParameters->getSize(context) >= 2) {
+        receiver = positionalParameters->getAt(context, 0);
+        posOff = 1;
+    }
+    if (!receiver) return context->fromInteger(0);
+    const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
     const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
-    if (!list) return context->fromInteger(0);
-    const proto::ProtoObject* value = positionalParameters->getAt(context, 0);
+    if (!list || positionalParameters->getSize(context) < static_cast<unsigned long>(1 + posOff)) return context->fromInteger(0);
+    const proto::ProtoObject* value = positionalParameters->getAt(context, posOff);
     long count = 0;
     unsigned long size = list->getSize(context);
     for (unsigned long i = 0; i < size; ++i) {
