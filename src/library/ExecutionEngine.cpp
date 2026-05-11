@@ -20,6 +20,12 @@
 
 namespace protoPython {
 
+// Forward-declared in PythonEnvironment.cpp so the dict-key opcodes
+// (OP_BUILD_MAP / OP_MAP_ADD) can share the env-aware hash function
+// with py_dict_getitem / setitem — keeps user-__hash__ overrides
+// (cistr, etc.) consistent across the entire dict pipeline.
+unsigned long pyDictKeyHash(proto::ProtoContext* context, const proto::ProtoObject* key);
+
 // Compact metadata cache pre-computed at createUserFunction time.
 // Stored as a ProtoByteBuffer on the function object (__fn_meta_cache__) so
 // runUserFunctionCall can retrieve all constant values with a single attribute
@@ -5163,7 +5169,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* data = mapObj->getAttribute(ctx, dataString);
                 if (data && data->asSparseList(ctx)) {
                     const proto::ProtoSparseList* sl = data->asSparseList(ctx);
-                    unsigned long h = key->getHash(ctx);
+                    unsigned long h = ::protoPython::pyDictKeyHash(ctx, key);
                     bool isNew = !sl->has(ctx, h);
                     sl = sl->setAt(ctx, h, val);
                     const proto::ProtoObject* newMap = mapObj->setAttribute(ctx, dataString, sl->asObject(ctx));
@@ -6297,12 +6303,15 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.push_back(data->asObject(ctx)); // Root data
             const proto::ProtoList* keys = ctx->newList();
             stack.push_back(keys->asObject(ctx)); // Root keys
-            
+
             size_t baseIdx = stack.size() - 2 - 2 * arg;
             for (int k = 0; k < arg; ++k) {
                 const proto::ProtoObject* key = stack[baseIdx + 2 * k];
                 const proto::ProtoObject* val = stack[baseIdx + 2 * k + 1];
-                data = data->setAt(ctx, key->getHash(ctx), val);
+                // Use the env-aware hash so user __hash__ overrides
+                // (cistr et al.) bucket the same way as
+                // py_dict_getitem / setitem.
+                data = data->setAt(ctx, ::protoPython::pyDictKeyHash(ctx, key), val);
                 stack[stack.size() - 2] = const_cast<proto::ProtoObject*>(data->asObject(ctx)); // Update data root
                 keys = keys->appendLast(ctx, key);
                 stack[stack.size() - 1] = const_cast<proto::ProtoObject*>(keys->asObject(ctx)); // Update keys root

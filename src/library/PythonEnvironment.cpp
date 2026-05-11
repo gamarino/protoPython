@@ -2803,12 +2803,68 @@ static const proto::ProtoObject* py_list_ge(
  * that stores entries via ProtoString* keys (e.g. registerInSysModules).
  * For non-string keys, fall back to ProtoObject::getHash.
  */
+// Public-from-namespace helper so OP_BUILD_MAP / OP_MAP_ADD /
+// OP_STORE_SUBSCR / other dict-key sites can route through the same
+// __hash__-aware bucketing that py_dict_getitem / setitem already use.
+unsigned long pyDictKeyHash(proto::ProtoContext* context, const proto::ProtoObject* key);
+
 static unsigned long dictKeyHash(proto::ProtoContext* context, const proto::ProtoObject* key) {
-    if (key && key->isString(context)) {
+    if (!key) return 0;
+    // For str-subclass / int-subclass / similar wrappers with a user
+    // __hash__ override, dispatch through the user dunder so dict
+    // bucketing matches the override.  cistr (lower-case canonical
+    // hash) is the canonical example: without this, `d[cistr('TWO')]`
+    // and `d[cistr('two')]` land in different buckets even though
+    // they are __eq__ and produce the same __hash__.
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (env) {
+        const proto::ProtoObject* cls = env->getType(context, key);
+        // Skip the dispatch when the type is one of the built-in
+        // primitives — their stored __hash__ is the value-based one,
+        // and falling back to protoCore's primitive hash matches it
+        // bit-for-bit while avoiding the descriptor round-trip.
+        bool isPrimitive = (cls == env->getStrPrototype()
+            || cls == env->getIntPrototype()
+            || cls == env->getFloatPrototype()
+            || cls == env->getBoolPrototype()
+            || cls == env->getBytesPrototype()
+            || cls == env->getTuplePrototype()
+            || cls == env->getNonePrototype());
+        if (!isPrimitive && cls && cls != PROTO_NONE) {
+            const proto::ProtoString* hashS = env->getHashString();
+            // Only consult __hash__ if the type owns one (or inherits
+            // a non-default one).  hasOwnAttribute keeps the cost
+            // bounded to a single AVL lookup per call.
+            const proto::ProtoObject* hM = env->getAttribute(context, cls, hashS, false);
+            if (hM && hM != PROTO_NONE) {
+                const proto::ProtoObject* res = nullptr;
+                if (hM->asMethod(context)) {
+                    res = hM->asMethod(context)(context,
+                        const_cast<proto::ProtoObject*>(key), nullptr,
+                        env->getEmptyList(), nullptr);
+                } else {
+                    const proto::ProtoString* codeS = env->getCodeString();
+                    if (codeS && hM->hasOwnAttribute(context, codeS) == PROTO_TRUE) {
+                        const proto::ProtoList* a = context->newList()->appendLast(context, key);
+                        res = ::protoPython::invokePythonCallable(context, hM, a, nullptr);
+                    }
+                }
+                if (res && res->isInteger(context)) {
+                    long long v = res->asLong(context);
+                    return static_cast<unsigned long>(v);
+                }
+            }
+        }
+    }
+    if (key->isString(context)) {
         const proto::ProtoString* s = key->asString(context);
         if (s) return s->getHash(context);
     }
-    return key ? key->getHash(context) : 0;
+    return key->getHash(context);
+}
+
+unsigned long pyDictKeyHash(proto::ProtoContext* context, const proto::ProtoObject* key) {
+    return dictKeyHash(context, key);
 }
 
 static const proto::ProtoObject* py_dict_getitem(
@@ -17903,6 +17959,38 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
 
     const proto::ProtoObject* res = nullptr;
     if (obj->isString(ctx)) {
+        // ProtoObject::isString returns true for two shapes:
+        //   1. a primitive String cell (POINTER_TAG_STRING/SYMBOL/INLINE)
+        //   2. a wrapper Object cell whose __data__ is a String
+        // For str subclasses (`class cistr(str): pass`), construction
+        // builds shape (2): the instance is a wrapper whose first
+        // parent is the subclass.  Without this branch every cistr
+        // instance reported type() == str, breaking
+        // test_str_subclass_as_dict_key and similar tests that rely
+        // on the subclass identity to dispatch the overridden
+        // __eq__/__hash__.
+        const proto::ProtoString* dataS = getDataString()
+            ? getDataString() : PythonEnvironment::getInternedString(ctx, "__data__");
+        if (dataS && obj->hasOwnAttribute(ctx, dataS) == PROTO_TRUE) {
+            // Wrapper case.  Prefer an own __class__ if the constructor
+            // recorded one (matches the explicit-identity rule used
+            // for other types below).
+            const proto::ProtoString* classS = getClassString();
+            if (classS && obj->hasOwnAttribute(ctx, classS) == PROTO_TRUE) {
+                const proto::ProtoObject* cls = obj->proto::ProtoObject::getAttribute(ctx, classS);
+                if (cls && cls != PROTO_NONE && cls != obj && !cls->isString(ctx)) {
+                    return cls;
+                }
+            }
+            // Otherwise fall back to the wrapper's first parent —
+            // py_str_call sets that to the requested subclass via
+            // `targetCls->newChild`.
+            const proto::ProtoObject* p0 = obj->getFirstParent(ctx);
+            if (p0 && p0 != strPrototype && p0 != obj && p0 != PROTO_NONE
+                && !p0->isString(ctx)) {
+                return p0;
+            }
+        }
         if (bytesPrototype) {
             const proto::ProtoString* classS2 = getClassString();
             const proto::ProtoObject* cls2 = classS2 ? obj->proto::ProtoObject::getAttribute(ctx, classS2) : nullptr;
