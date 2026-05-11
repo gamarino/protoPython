@@ -8101,20 +8101,36 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     staticmethodProto = staticmethodProto->setAttribute(ctx, pEnv->getClassString(), typeProto);
     staticmethodProto = staticmethodProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, "staticmethod")->asObject(ctx));
     
-    // Add MRO so that py_type_getattribute can find descriptor methods
-    const proto::ProtoList* smMroList = ctx->newList()->appendLast(ctx, staticmethodProto)->appendLast(ctx, objectProto);
-    staticmethodProto = staticmethodProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__mro__"), smMroList->asObject(ctx));
-    staticmethodProto = staticmethodProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__bases__"), ctx->newList()->appendLast(ctx, objectProto)->asObject(ctx));
+    // Add MRO so that py_type_getattribute can find descriptor methods.
+    // CPython stores __mro__ and __bases__ as tuples on every type — not
+    // lists.  test_builtin_bases checks `isinstance(tp.__bases__, tuple)`
+    // and len() to enforce the shape.
+    {
+        const proto::ProtoList* smMroList = ctx->newList()->appendLast(ctx, staticmethodProto)->appendLast(ctx, objectProto);
+        const proto::ProtoTuple* smMroTup = ctx->newTupleFromList(smMroList);
+        staticmethodProto = staticmethodProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__mro__"),
+            smMroTup ? smMroTup->asObject(ctx) : smMroList->asObject(ctx));
+        const proto::ProtoList* smBasesList = ctx->newList()->appendLast(ctx, objectProto);
+        const proto::ProtoTuple* smBasesTup = ctx->newTupleFromList(smBasesList);
+        staticmethodProto = staticmethodProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__bases__"),
+            smBasesTup ? smBasesTup->asObject(ctx) : smBasesList->asObject(ctx));
+    }
     staticmethodProto = staticmethodProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__is_python_class__"), PROTO_TRUE);
 
     const proto::ProtoObject* classmethodProto = ctx->newObject(true);
     classmethodProto = classmethodProto->setAttribute(ctx, pEnv->getClassString(), typeProto);
     classmethodProto = classmethodProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, "classmethod")->asObject(ctx));
-    
-    // Add MRO so that py_type_getattribute can find descriptor methods
-    const proto::ProtoList* cmMroList = ctx->newList()->appendLast(ctx, classmethodProto)->appendLast(ctx, objectProto);
-    classmethodProto = classmethodProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__mro__"), cmMroList->asObject(ctx));
-    classmethodProto = classmethodProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__bases__"), ctx->newList()->appendLast(ctx, objectProto)->asObject(ctx));
+
+    {
+        const proto::ProtoList* cmMroList = ctx->newList()->appendLast(ctx, classmethodProto)->appendLast(ctx, objectProto);
+        const proto::ProtoTuple* cmMroTup = ctx->newTupleFromList(cmMroList);
+        classmethodProto = classmethodProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__mro__"),
+            cmMroTup ? cmMroTup->asObject(ctx) : cmMroList->asObject(ctx));
+        const proto::ProtoList* cmBasesList = ctx->newList()->appendLast(ctx, objectProto);
+        const proto::ProtoTuple* cmBasesTup = ctx->newTupleFromList(cmBasesList);
+        classmethodProto = classmethodProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__bases__"),
+            cmBasesTup ? cmBasesTup->asObject(ctx) : cmBasesList->asObject(ctx));
+    }
     classmethodProto = classmethodProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__is_python_class__"), PROTO_TRUE);
 
     classmethodProto = classmethodProto->setAttribute(ctx, pEnv->getGetDunderString(), ctx->fromMethod(nullptr, py_classmethod_get));
