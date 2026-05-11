@@ -9452,6 +9452,43 @@ static const proto::ProtoObject* py_str_mod(
         }
         return 0.0;
     };
+    // Numeric arg validation for %d/%i/%u/%o/%x/%X: CPython raises
+    //   TypeError: %d format: a number is required, not <type>
+    // when the arg is not int / float / bool / wrapped-numeric.  Previously
+    // extractLong silently returned 0 for str / list / None, masking
+    // misuse like `'%d' % 'a'`.
+    auto requireNumeric = [&](char spec, const proto::ProtoObject* x) -> bool {
+        bool isNum = false;
+        if (x && x != PROTO_NONE) {
+            if (x->isInteger(context) || x->isFloat(context) || x->isBoolean(context)) {
+                isNum = true;
+            } else {
+                const proto::ProtoString* dataS = env ? env->getDataString()
+                    : PythonEnvironment::getInternalString(context, "__data__");
+                const proto::ProtoObject* d = x->getAttribute(context, dataS);
+                if (d && d != PROTO_NONE && (d->isInteger(context) || d->isFloat(context))) {
+                    isNum = true;
+                }
+            }
+        }
+        if (!isNum) {
+            if (env) {
+                std::string clsName = "NoneType";
+                if (x && x != PROTO_NONE) {
+                    const proto::ProtoObject* cls = env->getType(context, x);
+                    if (cls) {
+                        const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
+                        if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+                    }
+                }
+                env->raiseTypeError(context,
+                    std::string("%") + spec + " format: a number is required, not " + clsName);
+            }
+            return false;
+        }
+        return true;
+    };
+
     auto extractLong = [&](const proto::ProtoObject* x) -> long long {
         if (!x || x == PROTO_NONE) return 0LL;
         if (x->isInteger(context)) return x->asLong(context);
@@ -9636,30 +9673,35 @@ static const proto::ProtoObject* py_str_mod(
             }
             case 'd':
             case 'i': {
+                if (!requireNumeric(spec, arg)) return nullptr;
                 long long v = extractLong(arg);
                 char buf[64]; snprintf(buf, sizeof(buf), makeIntFmt('d').c_str(), v);
                 out += buf;
                 break;
             }
             case 'u': {
+                if (!requireNumeric(spec, arg)) return nullptr;
                 unsigned long long v = static_cast<unsigned long long>(extractLong(arg));
                 char buf[64]; snprintf(buf, sizeof(buf), makeIntFmt('u').c_str(), v);
                 out += buf;
                 break;
             }
             case 'o': {
+                if (!requireNumeric(spec, arg)) return nullptr;
                 long long v = extractLong(arg);
                 char buf[64]; snprintf(buf, sizeof(buf), makeIntFmt('o').c_str(), v);
                 out += buf;
                 break;
             }
             case 'x': {
+                if (!requireNumeric(spec, arg)) return nullptr;
                 long long v = extractLong(arg);
                 char buf[64]; snprintf(buf, sizeof(buf), makeIntFmt('x').c_str(), v);
                 out += buf;
                 break;
             }
             case 'X': {
+                if (!requireNumeric(spec, arg)) return nullptr;
                 long long v = extractLong(arg);
                 char buf[64]; snprintf(buf, sizeof(buf), makeIntFmt('X').c_str(), v);
                 out += buf;
