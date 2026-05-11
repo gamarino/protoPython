@@ -9421,12 +9421,24 @@ static const proto::ProtoObject* py_str_mod(
     unsigned long argCount = argTuple ? argTuple->getSize(context) : 1;
     unsigned long argIdx = 0;
 
+    // Tracks whether getNextArg fell off the end so the caller can raise
+    // TypeError("not enough arguments for format string") — the prior
+    // behaviour returned PROTO_NONE and silently rendered "None" for the
+    // missing slot.  Treating PROTO_NONE as a sentinel doesn't work
+    // because `'%s' % None` is a legitimate call producing 'None'.
+    bool argExhausted = false;
     auto getNextArg = [&]() -> const proto::ProtoObject* {
         if (argTuple) {
-            if (argIdx >= argTuple->getSize(context)) return PROTO_NONE;
+            if (argIdx >= argTuple->getSize(context)) {
+                argExhausted = true;
+                return PROTO_NONE;
+            }
             return argTuple->getAt(context, static_cast<int>(argIdx++));
         }
-        if (argIdx > 0) return PROTO_NONE;
+        if (argIdx > 0) {
+            argExhausted = true;
+            return PROTO_NONE;
+        }
         argIdx++;
         return argObj;
     };
@@ -9626,6 +9638,16 @@ static const proto::ProtoObject* py_str_mod(
         };
 
         const proto::ProtoObject* arg = dictArg ? dictArg : getNextArg();
+        // CPython: a % conversion that consumes past the supplied tuple
+        // raises TypeError("not enough arguments for format string").
+        // The dictArg path is exempt: %(key)s carries its own argument
+        // identity and never advances argIdx.  '%%' (handled above) also
+        // doesn't consume an arg.
+        if (!dictArg && argExhausted) {
+            if (env) env->raiseTypeError(context,
+                "not enough arguments for format string");
+            return nullptr;
+        }
         switch (spec) {
             case 's': {
                 // CPython %s calls str(), NOT repr() — string args
