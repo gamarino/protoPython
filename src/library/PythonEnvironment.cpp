@@ -5154,9 +5154,186 @@ static const proto::ProtoObject* py_str_maketrans(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    (void)context; (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
-    // return a dummy mapping or None if just satisfying import
-    return context->newSparseList()->asObject(context);
+    (void)self; (void)parentLink; (void)keywordParameters;
+    // CPython:
+    //   str.maketrans(x)             -> dict where x is mapping (int->...)
+    //   str.maketrans(x, y)           -> {ord(x[i]): ord(y[i])} for matching chars
+    //   str.maketrans(x, y, z)        -> as above plus {ord(c): None for c in z}
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !positionalParameters) return PROTO_NONE;
+    unsigned long argc = positionalParameters->getSize(context);
+    proto::ProtoSparseList* result = const_cast<proto::ProtoSparseList*>(context->newSparseList());
+    const proto::ProtoList* keysList = context->newList();
+    auto setEntry = [&](long long key, const proto::ProtoObject* value) {
+        const proto::ProtoObject* keyObj = context->fromInteger(key);
+        unsigned long hash = keyObj->getHash(context);
+        if (!result->has(context, hash)) {
+            keysList = keysList->appendLast(context, keyObj);
+        }
+        result = const_cast<proto::ProtoSparseList*>(result->setAt(context, hash, value));
+    };
+    if (argc == 1) {
+        // Single-arg form: x must be a dict mapping int-or-str keys to
+        // str-or-int-or-None values.  Normalise str keys to ord().
+        const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
+        if (!arg) return PROTO_NONE;
+        const proto::ProtoObject* keysObj = arg->getAttribute(context, env->getKeysString());
+        const proto::ProtoObject* dataObj = arg->getAttribute(context, env->getDataString());
+        const proto::ProtoList* kl = keysObj ? keysObj->asList(context) : nullptr;
+        const proto::ProtoSparseList* sl = dataObj ? dataObj->asSparseList(context) : nullptr;
+        if (!kl || !sl) {
+            env->raiseTypeError(context,
+                "if you give only one argument to maketrans it must be a dict");
+            return nullptr;
+        }
+        for (unsigned long i = 0; i < kl->getSize(context); ++i) {
+            const proto::ProtoObject* k = kl->getAt(context, static_cast<int>(i));
+            const proto::ProtoObject* v = sl->getAt(context, k->getHash(context));
+            long long codePoint = 0;
+            if (k->isInteger(context)) {
+                codePoint = k->asLong(context);
+            } else if (k->isString(context)) {
+                std::string ks;
+                k->asString(context)->toUTF8String(context, ks);
+                if (ks.empty()) continue;
+                codePoint = static_cast<unsigned char>(ks[0]);
+            } else continue;
+            setEntry(codePoint, v ? v : PROTO_NONE);
+        }
+    } else if (argc >= 2) {
+        const proto::ProtoObject* a = positionalParameters->getAt(context, 0);
+        const proto::ProtoObject* b = positionalParameters->getAt(context, 1);
+        if (!a || !b || !a->isString(context) || !b->isString(context)) {
+            env->raiseTypeError(context,
+                "maketrans the first two maketrans arguments must be strings");
+            return nullptr;
+        }
+        std::string sa, sb;
+        a->asString(context)->toUTF8String(context, sa);
+        b->asString(context)->toUTF8String(context, sb);
+        if (sa.size() != sb.size()) {
+            env->raiseValueError(context,
+                PythonEnvironment::getInternedString(context,
+                    "the first two maketrans arguments must have equal length")
+                    ->asObject(context));
+            return nullptr;
+        }
+        for (size_t i = 0; i < sa.size(); ++i) {
+            long long ka = static_cast<unsigned char>(sa[i]);
+            long long kb = static_cast<unsigned char>(sb[i]);
+            setEntry(ka, context->fromInteger(kb));
+        }
+        if (argc >= 3) {
+            const proto::ProtoObject* c = positionalParameters->getAt(context, 2);
+            if (c && c->isString(context)) {
+                std::string sc;
+                c->asString(context)->toUTF8String(context, sc);
+                for (char ch : sc) {
+                    setEntry(static_cast<unsigned char>(ch), PROTO_NONE);
+                }
+            }
+        }
+    }
+    // Wrap as a Python dict instance for normal use.
+    proto::ProtoObject* dictObj = const_cast<proto::ProtoObject*>(env->getDictPrototype()->newChild(context, true));
+    dictObj->setAttribute(context, env->getDataString(), result->asObject(context));
+    dictObj->setAttribute(context, env->getKeysString(), keysList->asObject(context));
+    dictObj->setAttribute(context, env->getClassString(), env->getDictPrototype());
+    return dictObj;
+}
+
+// str.translate(table): apply the mapping returned by str.maketrans
+// (codepoint -> str | int | None).  Codepoints absent from the table
+// pass through unchanged; integer values become characters; None
+// drops the character.
+static const proto::ProtoObject* py_str_translate(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    // Inline str-from-self extraction (the helper is declared later
+    // in the file).  Match the bound and unbound calling shapes.
+    PythonEnvironment* envExtract = PythonEnvironment::fromContext(context);
+    const proto::ProtoString* dataNameExtract = envExtract
+        ? envExtract->getDataString()
+        : PythonEnvironment::getInternalString(context, "__data__");
+    int posOff = 0;
+    const proto::ProtoString* str = nullptr;
+    if (self && self->isString(context)) {
+        str = self->asString(context);
+    } else if (self) {
+        const proto::ProtoObject* d = self->getAttribute(context, dataNameExtract);
+        if (d && d->isString(context)) str = d->asString(context);
+    }
+    if (!str && posArgs && posArgs->getSize(context) >= 1) {
+        const proto::ProtoObject* recv = posArgs->getAt(context, 0);
+        if (recv && recv->isString(context)) {
+            str = recv->asString(context);
+            posOff = 1;
+        } else if (recv) {
+            const proto::ProtoObject* d = recv->getAttribute(context, dataNameExtract);
+            if (d && d->isString(context)) { str = d->asString(context); posOff = 1; }
+        }
+    }
+    if (!str) return PROTO_NONE;
+    if (!posArgs || posArgs->getSize(context) < static_cast<unsigned long>(1 + posOff)) {
+        return str->asObject(context);
+    }
+    const proto::ProtoObject* table = posArgs->getAt(context, posOff);
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoSparseList* sl = nullptr;
+    if (table && env) {
+        const proto::ProtoObject* data = table->getAttribute(context, env->getDataString());
+        if (data) sl = data->asSparseList(context);
+    }
+    if (!sl) {
+        // Without a usable table, the input string is returned
+        // unchanged (matching the behaviour of an empty dict).
+        return str->asObject(context);
+    }
+    std::string s;
+    str->toUTF8String(context, s);
+    std::string out;
+    out.reserve(s.size());
+    for (char ch : s) {
+        long long key = static_cast<unsigned char>(ch);
+        const proto::ProtoObject* keyObj = context->fromInteger(key);
+        unsigned long hash = keyObj->getHash(context);
+        if (!sl->has(context, hash)) {
+            out.push_back(ch);
+            continue;
+        }
+        const proto::ProtoObject* v = sl->getAt(context, hash);
+        if (!v || v == PROTO_NONE) continue;   // drop char
+        if (v->isInteger(context)) {
+            long long cp = v->asLong(context);
+            // Encode as UTF-8.
+            if (cp < 0x80) out.push_back(static_cast<char>(cp));
+            else if (cp < 0x800) {
+                out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+                out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+            } else if (cp < 0x10000) {
+                out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+                out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+                out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+            } else {
+                out.push_back(static_cast<char>(0xF0 | (cp >> 18)));
+                out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+                out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+                out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+            }
+            continue;
+        }
+        if (v->isString(context)) {
+            std::string vs;
+            v->asString(context)->toUTF8String(context, vs);
+            out += vs;
+            continue;
+        }
+        // Unknown value shape: pass through unchanged.
+        out.push_back(ch);
+    }
+    return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_set_len(
@@ -14673,6 +14850,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(rootContext_, py_startswith, rootContext_->fromMethod(nullptr, py_str_startswith));
     strPrototype = strPrototype->setAttribute(rootContext_, py_endswith, rootContext_->fromMethod(nullptr, py_str_endswith));
     strPrototype = strPrototype->setAttribute(rootContext_, py_maketrans, rootContext_->fromMethod(nullptr, py_str_maketrans));
+    strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "translate"),
+        rootContext_->fromMethod(nullptr, py_str_translate));
     const proto::ProtoString* py_find = PythonEnvironment::getInternedString(rootContext_, "find");
     const proto::ProtoString* py_index = PythonEnvironment::getInternedString(rootContext_, "index");
     strPrototype = strPrototype->setAttribute(rootContext_, py_find, rootContext_->fromMethod(nullptr, py_str_find));
