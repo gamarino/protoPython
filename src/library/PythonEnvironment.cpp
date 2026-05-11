@@ -21222,7 +21222,23 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
         backtrace_symbols_fd(array, size, STDERR_FILENO);
         fflush(stderr);
     }
-    raiseTypeError(ctx, "object is not iterable");
+    // CPython includes the type name in the diagnostic:
+    //   "'int' object is not iterable"
+    // The bare "object is not iterable" hid the type and diverged from
+    // upstream's message text, breaking assertRaisesRegex matchers.
+    std::string clsName = "object";
+    if (obj && obj != PROTO_NONE) {
+        const proto::ProtoObject* cls = getType(ctx, obj);
+        if (cls) {
+            const proto::ProtoObject* nameAttr = cls->getAttribute(ctx, getNameString());
+            if (nameAttr && nameAttr->isString(ctx)) {
+                nameAttr->asString(ctx)->toUTF8String(ctx, clsName);
+            }
+        }
+    } else if (!obj || obj == PROTO_NONE) {
+        clsName = "NoneType";
+    }
+    raiseTypeError(ctx, "'" + clsName + "' object is not iterable");
     return nullptr;
 }
 

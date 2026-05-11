@@ -515,7 +515,13 @@ static const proto::ProtoObject* py_iter(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    PythonEnvironment* envEarly = PythonEnvironment::fromContext(context);
+    if (positionalParameters->getSize(context) < 1) {
+        // CPython: `iter()` raises TypeError instead of silently returning None.
+        if (envEarly) envEarly->raiseTypeError(context,
+            "iter expected at least 1 argument, got 0");
+        return nullptr;
+    }
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
 
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
