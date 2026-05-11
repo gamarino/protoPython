@@ -6822,6 +6822,77 @@ static const proto::ProtoObject* py_tuple_iter_next(
     return value;
 }
 
+static const proto::ProtoObject* py_tuple_add(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (!posArgs || posArgs->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
+    auto unwrap = [&](const proto::ProtoObject* x) -> const proto::ProtoTuple* {
+        if (!x) return nullptr;
+        if (const proto::ProtoTuple* t = x->asTuple(context)) return t;
+        const proto::ProtoObject* d = x->getAttribute(context, dataName);
+        return d ? d->asTuple(context) : nullptr;
+    };
+    const proto::ProtoTuple* selfT = unwrap(self);
+    const proto::ProtoObject* otherObj = nullptr;
+    if (!selfT && posArgs->getSize(context) >= 2) {
+        selfT = unwrap(posArgs->getAt(context, 0));
+        otherObj = posArgs->getAt(context, 1);
+    } else {
+        otherObj = posArgs->getAt(context, 0);
+    }
+    const proto::ProtoTuple* otherT = unwrap(otherObj);
+    if (!selfT || !otherT) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoList* result = context->newList();
+    for (unsigned long i = 0; i < selfT->getSize(context); ++i)
+        result = result->appendLast(context, selfT->getAt(context, static_cast<int>(i)));
+    for (unsigned long i = 0; i < otherT->getSize(context); ++i)
+        result = result->appendLast(context, otherT->getAt(context, static_cast<int>(i)));
+    const proto::ProtoTuple* newTup = context->newTupleFromList(result);
+    if (!env || !env->getTuplePrototype()) return newTup ? newTup->asObject(context) : PROTO_NONE;
+    proto::ProtoObject* out = const_cast<proto::ProtoObject*>(env->getTuplePrototype()->newChild(context, true));
+    out->setAttribute(context, dataName, newTup ? newTup->asObject(context) : PROTO_NONE);
+    return out;
+}
+
+static const proto::ProtoObject* py_tuple_mul(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (!posArgs || posArgs->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
+    auto unwrap = [&](const proto::ProtoObject* x) -> const proto::ProtoTuple* {
+        if (!x) return nullptr;
+        if (const proto::ProtoTuple* t = x->asTuple(context)) return t;
+        const proto::ProtoObject* d = x->getAttribute(context, dataName);
+        return d ? d->asTuple(context) : nullptr;
+    };
+    const proto::ProtoTuple* selfT = unwrap(self);
+    const proto::ProtoObject* nObj = nullptr;
+    if (!selfT && posArgs->getSize(context) >= 2) {
+        selfT = unwrap(posArgs->getAt(context, 0));
+        nObj = posArgs->getAt(context, 1);
+    } else {
+        nObj = posArgs->getAt(context, 0);
+    }
+    if (!selfT || !nObj || !nObj->isInteger(context)) return PROTO_NONE;
+    long long n = nObj->asLong(context);
+    if (n < 0) n = 0;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoList* result = context->newList();
+    unsigned long size = selfT->getSize(context);
+    for (long long rep = 0; rep < n; ++rep)
+        for (unsigned long i = 0; i < size; ++i)
+            result = result->appendLast(context, selfT->getAt(context, static_cast<int>(i)));
+    const proto::ProtoTuple* newTup = context->newTupleFromList(result);
+    if (!env || !env->getTuplePrototype()) return newTup ? newTup->asObject(context) : PROTO_NONE;
+    proto::ProtoObject* out = const_cast<proto::ProtoObject*>(env->getTuplePrototype()->newChild(context, true));
+    out->setAttribute(context, dataName, newTup ? newTup->asObject(context) : PROTO_NONE);
+    return out;
+}
+
 static const proto::ProtoObject* py_tuple_contains(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -13530,6 +13601,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_getitem, rootContext_->fromMethod(nullptr, py_tuple_getitem));
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_tuple_iter));
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_contains, rootContext_->fromMethod(nullptr, py_tuple_contains));
+    tuplePrototype = tuplePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__add__"), rootContext_->fromMethod(nullptr, py_tuple_add));
+    tuplePrototype = tuplePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__mul__"), rootContext_->fromMethod(nullptr, py_tuple_mul));
+    tuplePrototype = tuplePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__rmul__"), rootContext_->fromMethod(nullptr, py_tuple_mul));
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_tuple_bool));
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_hash, rootContext_->fromMethod(nullptr, py_tuple_hash));
     const proto::ProtoString* py_tuple_index_name = PythonEnvironment::getInternedString(rootContext_, "index");
