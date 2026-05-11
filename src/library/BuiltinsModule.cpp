@@ -6864,8 +6864,55 @@ static const proto::ProtoObject* py_round(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (positionalParameters->getSize(context) < 1) {
+        // CPython: `round()` raises TypeError: missing required argument.
+        // Returning PROTO_NONE silently let `n = round(); n + 1` blow up far
+        // from the misuse with a confusing 'unsupported operand'.
+        if (env) env->raiseTypeError(context,
+            "round() missing required argument: 'number' (pos 1)");
+        return nullptr;
+    }
     const proto::ProtoObject* n = positionalParameters->getAt(context, 0);
+
+    // CPython: round(non-numeric) raises TypeError naming the type.
+    // Without this guard `round('x')` fell through to n->asDouble (which
+    // returns 0.0) and produced silent 0, and `round(None)` likewise.
+    // Bool is acceptable (subclass of int).  Allow user types that
+    // implement __round__ — fall through to the dunder dispatch below.
+    if (!n->isInteger(context) && !n->isDouble(context) && n != PROTO_TRUE && n != PROTO_FALSE) {
+        const proto::ProtoString* roundS = PythonEnvironment::getInternedString(context, "__round__");
+        const proto::ProtoObject* roundM = env ? env->getAttribute(context, n, roundS, /*raiseError=*/false)
+                                              : n->getAttribute(context, roundS);
+        if (!roundM || roundM == PROTO_NONE) {
+            if (env) {
+                std::string clsName = "object";
+                const proto::ProtoObject* cls = env->getType(context, n);
+                if (cls) {
+                    const proto::ProtoObject* nameAttr = cls->getAttribute(context, env->getNameString());
+                    if (nameAttr && nameAttr->isString(context)) {
+                        nameAttr->asString(context)->toUTF8String(context, clsName);
+                    }
+                }
+                env->raiseTypeError(context,
+                    "type " + clsName + " doesn't define __round__ method");
+            }
+            return nullptr;
+        }
+        // Dispatch user __round__(self, ndigits?)
+        const proto::ProtoList* dArgs = context->newList();
+        if (positionalParameters->getSize(context) >= 2) {
+            dArgs = dArgs->appendLast(context, positionalParameters->getAt(context, 1));
+        }
+        if (roundM->asMethod(context)) {
+            return roundM->asMethod(context)(context, const_cast<proto::ProtoObject*>(n), nullptr, dArgs, nullptr);
+        }
+        const proto::ProtoList* selfArgs = context->newList()->appendLast(context, n);
+        if (positionalParameters->getSize(context) >= 2) {
+            selfArgs = selfArgs->appendLast(context, positionalParameters->getAt(context, 1));
+        }
+        return ::protoPython::invokePythonCallable(context, roundM, selfArgs, nullptr);
+    }
 
     // Determine whether ndigits was provided (and is not None).
     bool hasNdigits = (positionalParameters->getSize(context) >= 2 &&
@@ -6874,6 +6921,12 @@ static const proto::ProtoObject* py_round(
     if (hasNdigits) {
         ndigits = static_cast<int>(positionalParameters->getAt(context, 1)->asLong(context));
     }
+
+    // CPython: bool is a subclass of int, so round(True) == 1 and
+    // round(False) == 0.  Without the explicit branch the bool sentinel
+    // falls through to asDouble (returns 0.0) and rounds to 0 for both.
+    if (n == PROTO_TRUE) return context->fromInteger(1);
+    if (n == PROTO_FALSE) return context->fromInteger(0);
 
     if (n->isInteger(context)) {
         // round(int) and round(int, ndigits) always return int.
