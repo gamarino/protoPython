@@ -8847,7 +8847,24 @@ static const proto::ProtoObject* py_str_strip(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     const proto::ProtoString* str = str_from_self(context, self);
-    if (!str) return PROTO_NONE;
+    int posOff = 0;
+    if (!str && posArgs && posArgs->getSize(context) >= 1) {
+        str = str_from_self(context, posArgs->getAt(context, 0));
+        if (str) posOff = 1;
+    }
+    if (!str) {
+        PythonEnvironment* env_e = PythonEnvironment::fromContext(context);
+        if (env_e) env_e->raiseTypeError(context,
+            "descriptor 'strip' for 'str' objects doesn't apply to a non-str object");
+        return nullptr;
+    }
+    if (posOff > 0) {
+        proto::ProtoList* shifted = const_cast<proto::ProtoList*>(context->newList());
+        for (unsigned long i = posOff; i < posArgs->getSize(context); ++i) {
+            shifted = const_cast<proto::ProtoList*>(shifted->appendLast(context, posArgs->getAt(context, static_cast<int>(i))));
+        }
+        posArgs = shifted;
+    }
     std::string s;
     str->toUTF8String(context, s);
     std::string chars;
