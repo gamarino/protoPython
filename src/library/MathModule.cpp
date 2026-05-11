@@ -409,7 +409,19 @@ static const proto::ProtoObject* py_factorial(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
-    long long n = posArgs->getAt(ctx, 0)->asLong(ctx);
+    const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
+    // CPython rejects non-integer arguments with TypeError
+    // ("factorial() only accepts integral values").  Without this
+    // guard, asLong() on a float / str / etc. threw the protoCore
+    // runtime_error and surfaced as `RuntimeError: internal C++
+    // exception: Object is not an integer type.`
+    if (!arg || (!arg->isInteger(ctx) && !arg->isBoolean(ctx))) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseTypeError(ctx,
+            "factorial() only accepts integral values");
+        return nullptr;
+    }
+    long long n = arg->asLong(ctx);
     if (n < 0) {
         return raise_math_domain(ctx,
             "factorial() not defined for negative values");
