@@ -5837,6 +5837,9 @@ static const proto::ProtoObject* py_int_format(
 }
 
 static const proto::ProtoString* str_from_self(proto::ProtoContext* context, const proto::ProtoObject* self);
+static const proto::ProtoString* str_from_self_or_arg(proto::ProtoContext* context,
+        const proto::ProtoObject* self, const proto::ProtoList* posArgs,
+        int* posOff = nullptr);
 
 static const proto::ProtoObject* py_str_format_dunder(
     proto::ProtoContext* context,
@@ -7309,7 +7312,8 @@ static const proto::ProtoObject* py_str_encode(
     const proto::ProtoSparseList* keywordParameters) {
     (void)parentLink;
     (void)keywordParameters;
-    const proto::ProtoString* s = str_from_self(context, self);
+    int posOff = 0;
+    const proto::ProtoString* s = str_from_self_or_arg(context, self, positionalParameters, &posOff);
     if (!s) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (!env) return PROTO_NONE;
@@ -7322,8 +7326,8 @@ static const proto::ProtoObject* py_str_encode(
     // the UTF-8 bytes — so `_bytes_from_decode_data('with \\xcb')`
     // never raised, breaking test_decode_nonascii_str.
     std::string encoding = "utf-8";
-    if (positionalParameters && positionalParameters->getSize(context) >= 1) {
-        const proto::ProtoObject* enc = positionalParameters->getAt(context, 0);
+    if (positionalParameters && positionalParameters->getSize(context) >= static_cast<unsigned long>(1 + posOff)) {
+        const proto::ProtoObject* enc = positionalParameters->getAt(context, posOff);
         if (enc && enc->isString(context)) {
             enc->asString(context)->toUTF8String(context, encoding);
         }
@@ -8251,7 +8255,7 @@ static const proto::ProtoObject* py_str_iter(
 // can skip the receiver positional in subsequent arg parsing.
 static const proto::ProtoString* str_from_self_or_arg(proto::ProtoContext* context,
         const proto::ProtoObject* self, const proto::ProtoList* posArgs,
-        int* posOff = nullptr) {
+        int* posOff) {
     const proto::ProtoString* s = str_from_self(context, self);
     if (posOff) *posOff = 0;
     if (!s && posArgs && posArgs->getSize(context) >= 1) {
@@ -8799,13 +8803,14 @@ static const proto::ProtoObject* py_str_format(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    const proto::ProtoString* str = str_from_self(context, self);
+    int formatPosOff = 0;
+    const proto::ProtoString* str = str_from_self_or_arg(context, self, positionalParameters, &formatPosOff);
     if (!str) return PROTO_NONE;
     std::string tpl;
     str->toUTF8String(context, tpl);
     std::string out;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    unsigned long autoIdx = 0;
+    unsigned long autoIdx = static_cast<unsigned long>(formatPosOff);
 
     for (size_t i = 0; i < tpl.size(); ++i) {
         if (tpl[i] == '{' && i + 1 < tpl.size() && tpl[i + 1] == '{') {
@@ -8852,8 +8857,8 @@ static const proto::ProtoObject* py_str_format(
                 val = positionalParameters->getAt(context, static_cast<int>(autoIdx));
             autoIdx++;
         } else if (!fieldName.empty() && fieldName[0] >= '0' && fieldName[0] <= '9') {
-            // numeric index
-            unsigned long idx = std::stoul(fieldName);
+            // numeric index — shifted by formatPosOff when called unbound
+            unsigned long idx = std::stoul(fieldName) + static_cast<unsigned long>(formatPosOff);
             if (positionalParameters && idx < positionalParameters->getSize(context))
                 val = positionalParameters->getAt(context, static_cast<int>(idx));
         } else {
@@ -9823,7 +9828,7 @@ static const proto::ProtoObject* py_str_isalpha(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    const proto::ProtoString* str = str_from_self(context, self);
+    const proto::ProtoString* str = str_from_self_or_arg(context, self, posArgs);
     if (!str) return PROTO_FALSE;
     std::string s;
     str->toUTF8String(context, s);
@@ -9837,7 +9842,7 @@ static const proto::ProtoObject* py_str_isdigit(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    const proto::ProtoString* str = str_from_self(context, self);
+    const proto::ProtoString* str = str_from_self_or_arg(context, self, posArgs);
     if (!str) return PROTO_FALSE;
     std::string s;
     str->toUTF8String(context, s);
@@ -9851,7 +9856,7 @@ static const proto::ProtoObject* py_str_isdecimal(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    const proto::ProtoString* str = str_from_self(context, self);
+    const proto::ProtoString* str = str_from_self_or_arg(context, self, posArgs);
     if (!str) return PROTO_FALSE;
     std::string s;
     str->toUTF8String(context, s);
@@ -9865,7 +9870,7 @@ static const proto::ProtoObject* py_str_isnumeric(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    const proto::ProtoString* str = str_from_self(context, self);
+    const proto::ProtoString* str = str_from_self_or_arg(context, self, posArgs);
     if (!str) return PROTO_FALSE;
     std::string s;
     str->toUTF8String(context, s);
@@ -9879,7 +9884,7 @@ static const proto::ProtoObject* py_str_isspace(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    const proto::ProtoString* str = str_from_self(context, self);
+    const proto::ProtoString* str = str_from_self_or_arg(context, self, posArgs);
     if (!str) return PROTO_FALSE;
     std::string s;
     str->toUTF8String(context, s);
@@ -9893,7 +9898,7 @@ static const proto::ProtoObject* py_str_isalnum(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    const proto::ProtoString* str = str_from_self(context, self);
+    const proto::ProtoString* str = str_from_self_or_arg(context, self, posArgs);
     if (!str) return PROTO_FALSE;
     std::string s;
     str->toUTF8String(context, s);
@@ -9907,7 +9912,7 @@ static const proto::ProtoObject* py_str_isupper(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    const proto::ProtoString* str = str_from_self(context, self);
+    const proto::ProtoString* str = str_from_self_or_arg(context, self, posArgs);
     if (!str) return PROTO_FALSE;
     std::string s;
     str->toUTF8String(context, s);
@@ -9921,7 +9926,7 @@ static const proto::ProtoObject* py_str_islower(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    const proto::ProtoString* str = str_from_self(context, self);
+    const proto::ProtoString* str = str_from_self_or_arg(context, self, posArgs);
     if (!str) return PROTO_FALSE;
     std::string s;
     str->toUTF8String(context, s);
@@ -9935,7 +9940,7 @@ static const proto::ProtoObject* py_str_isprintable(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    const proto::ProtoString* str = str_from_self(context, self);
+    const proto::ProtoString* str = str_from_self_or_arg(context, self, posArgs);
     if (!str) return PROTO_FALSE;
     std::string s;
     str->toUTF8String(context, s);
@@ -9948,8 +9953,8 @@ static const proto::ProtoObject* py_str_isprintable(
 static const proto::ProtoObject* py_str_isascii(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
-    const proto::ProtoString* str = str_from_self(context, self);
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* str = str_from_self_or_arg(context, self, posArgs);
     if (!str) return PROTO_FALSE;
     std::string s;
     str->toUTF8String(context, s);
@@ -9961,8 +9966,8 @@ static const proto::ProtoObject* py_str_isascii(
 static const proto::ProtoObject* py_str_isidentifier(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
-    const proto::ProtoString* str = str_from_self(context, self);
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* str = str_from_self_or_arg(context, self, posArgs);
     if (!str) return PROTO_FALSE;
     std::string s;
     str->toUTF8String(context, s);
@@ -10088,11 +10093,12 @@ static const proto::ProtoObject* py_str_zfill(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    const proto::ProtoString* str = str_from_self(context, self);
-    if (!str || posArgs->getSize(context) < 1) return PROTO_NONE;
+    int posOff = 0;
+    const proto::ProtoString* str = str_from_self_or_arg(context, self, posArgs, &posOff);
+    if (!str || !posArgs || posArgs->getSize(context) < static_cast<unsigned long>(1 + posOff)) return PROTO_NONE;
     std::string s;
     str->toUTF8String(context, s);
-    int width = static_cast<int>(posArgs->getAt(context, 0)->asLong(context));
+    int width = static_cast<int>(posArgs->getAt(context, posOff)->asLong(context));
     if (width <= static_cast<int>(s.size())) return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
     size_t sign = 0;
     if (!s.empty() && (s[0] == '+' || s[0] == '-')) sign = 1;
@@ -10106,12 +10112,13 @@ static const proto::ProtoObject* py_str_partition(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    const proto::ProtoString* str = str_from_self(context, self);
-    if (!str || posArgs->getSize(context) < 1) return PROTO_NONE;
+    int posOff = 0;
+    const proto::ProtoString* str = str_from_self_or_arg(context, self, posArgs, &posOff);
+    if (!str || !posArgs || posArgs->getSize(context) < static_cast<unsigned long>(1 + posOff)) return PROTO_NONE;
     std::string s;
     str->toUTF8String(context, s);
     std::string sep;
-    posArgs->getAt(context, 0)->asString(context)->toUTF8String(context, sep);
+    posArgs->getAt(context, posOff)->asString(context)->toUTF8String(context, sep);
     if (sep.empty()) return PROTO_NONE;
     size_t pos = s.find(sep);
     if (pos == std::string::npos) {
@@ -10136,12 +10143,13 @@ static const proto::ProtoObject* py_str_rpartition(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    const proto::ProtoString* str = str_from_self(context, self);
-    if (!str || posArgs->getSize(context) < 1) return PROTO_NONE;
+    int posOff = 0;
+    const proto::ProtoString* str = str_from_self_or_arg(context, self, posArgs, &posOff);
+    if (!str || !posArgs || posArgs->getSize(context) < static_cast<unsigned long>(1 + posOff)) return PROTO_NONE;
     std::string s;
     str->toUTF8String(context, s);
     std::string sep;
-    posArgs->getAt(context, 0)->asString(context)->toUTF8String(context, sep);
+    posArgs->getAt(context, posOff)->asString(context)->toUTF8String(context, sep);
     if (sep.empty()) return PROTO_NONE;
     size_t pos = s.rfind(sep);
     if (pos == std::string::npos) {
@@ -10166,14 +10174,15 @@ static const proto::ProtoObject* py_str_join(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    const proto::ProtoString* sep = str_from_self(context, self);
-    if (!sep || !posArgs || posArgs->getSize(context) < 1) {
+    int posOff = 0;
+    const proto::ProtoString* sep = str_from_self_or_arg(context, self, posArgs, &posOff);
+    if (!sep || !posArgs || posArgs->getSize(context) < static_cast<unsigned long>(1 + posOff)) {
         if (get_env_diag()) fprintf(stderr, "DEBUG: py_str_join invalid args sep=%p posArgs=%p size=%lu\n", (void*)sep, (void*)posArgs, posArgs ? posArgs->getSize(context) : 0);
         return nullptr;
     }
     std::string sepStr;
     sep->toUTF8String(context, sepStr);
-    const proto::ProtoObject* iterable = posArgs->getAt(context, 0);
+    const proto::ProtoObject* iterable = posArgs->getAt(context, posOff);
     
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* it = env ? env->iter(iterable) : nullptr;
