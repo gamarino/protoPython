@@ -7913,6 +7913,51 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     rangeClass = rangeClass->setAttribute(ctx, pEnv ? pEnv->getIterString() : PythonEnvironment::getInternedString(ctx, "__iter__"), ctx->fromMethod(nullptr, py_range_iter));
     rangeClass = rangeClass->setAttribute(ctx, pEnv ? pEnv->getLenString() : PythonEnvironment::getInternedString(ctx, "__len__"), ctx->fromMethod(nullptr, py_range_len));
     rangeClass = rangeClass->setAttribute(ctx, pEnv ? pEnv->getInitString() : PythonEnvironment::getInternedString(ctx, "__init__"), ctx->fromMethod(nullptr, py_python_ignore_init));
+    // range.__reversed__: build a new range with reversed bounds
+    // and iterate it.  CPython returns a range_iterator directly;
+    // protoPython's range walker accepts the same shape.
+    rangeClass = rangeClass->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__reversed__"),
+        ctx->fromMethod(nullptr,
+        +[](proto::ProtoContext* c, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList*,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            PythonEnvironment* env = PythonEnvironment::fromContext(c);
+            if (!self) return PROTO_NONE;
+            const proto::ProtoString* curS = env ? env->getRangeCurString() : PythonEnvironment::getInternedString(c, "__range_cur__");
+            const proto::ProtoString* stopS = env ? env->getRangeStopString() : PythonEnvironment::getInternedString(c, "__range_stop__");
+            const proto::ProtoString* stepS = env ? env->getRangeStepString() : PythonEnvironment::getInternedString(c, "__range_step__");
+            const proto::ProtoObject* curObj = self->getAttribute(c, curS);
+            const proto::ProtoObject* stopObj = self->getAttribute(c, stopS);
+            const proto::ProtoObject* stepObj = self->getAttribute(c, stepS);
+            if (!curObj || !stopObj || !stepObj) return PROTO_NONE;
+            long long start = curObj->asLong(c);
+            long long stop  = stopObj->asLong(c);
+            long long step  = stepObj->asLong(c);
+            if (step == 0) return PROTO_NONE;
+            // Compute the last element of the original range.  For
+            // a forward range, that is start + (n-1)*step where n
+            // is the count.  We then iterate from last down to
+            // (start-step).
+            long long n;
+            if (step > 0) {
+                if (stop <= start) n = 0;
+                else n = (stop - start + step - 1) / step;
+            } else {
+                if (stop >= start) n = 0;
+                else n = (start - stop + (-step) - 1) / (-step);
+            }
+            // Build a plain list of the values in reverse and iter
+            // it — avoids re-entering py_range with possibly
+            // inverted-direction bounds.
+            const proto::ProtoList* lst = c->newList();
+            long long v = start + (n - 1) * step;
+            for (long long i = 0; i < n; ++i) {
+                lst = lst->appendLast(c, c->fromInteger(v));
+                v -= step;
+            }
+            if (env) return env->iter(lst->asObject(c));
+            return lst->asObject(c);
+        }));
     builtins = builtins->setAttribute(ctx, pEnv ? pEnv->getRangeString() : PythonEnvironment::getInternedString(ctx, "range"), rangeClass);
 
     const proto::ProtoObject* zipProto = ctx->newObject(false);
