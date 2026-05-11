@@ -14363,6 +14363,89 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             return ctx->fromDouble(a / b);
         }));
     floatPrototype = floatPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__pow__"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            double a = 0, b = 0;
+            if (!floatRArgsStatic(ctx, self, args, a, b)) {
+                PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+            }
+            return ctx->fromDouble(std::pow(a, b));
+        }));
+    floatPrototype = floatPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__floordiv__"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            double a = 0, b = 0;
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (!floatRArgsStatic(ctx, self, args, a, b)) {
+                return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+            }
+            if (b == 0.0) { if (env) env->raiseZeroDivisionError(ctx); return nullptr; }
+            return ctx->fromDouble(std::floor(a / b));
+        }));
+    floatPrototype = floatPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__mod__"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            double a = 0, b = 0;
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (!floatRArgsStatic(ctx, self, args, a, b)) {
+                return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+            }
+            if (b == 0.0) { if (env) env->raiseZeroDivisionError(ctx); return nullptr; }
+            double m = std::fmod(a, b);
+            if ((m != 0.0) && ((m < 0.0) != (b < 0.0))) m += b;
+            return ctx->fromDouble(m);
+        }));
+    floatPrototype = floatPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__abs__"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            const proto::ProtoObject* x = self;
+            if (!x || (!x->isFloat(ctx) && !x->isInteger(ctx))) {
+                if (args && args->getSize(ctx) >= 1) x = args->getAt(ctx, 0);
+            }
+            if (!x) return PROTO_NONE;
+            double v = 0;
+            if (x->isFloat(ctx)) v = x->asDouble(ctx);
+            else if (x->isInteger(ctx)) v = (double)x->asLong(ctx);
+            else {
+                const proto::ProtoString* dn = PythonEnvironment::getInternalString(ctx, "__data__");
+                const proto::ProtoObject* d = x->getAttribute(ctx, dn);
+                if (d && d->isFloat(ctx)) v = d->asDouble(ctx);
+                else return PROTO_NONE;
+            }
+            return ctx->fromDouble(v < 0.0 ? -v : v);
+        }));
+    floatPrototype = floatPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__pos__"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            const proto::ProtoObject* x = self;
+            if (!x || (!x->isFloat(ctx) && !x->isInteger(ctx))) {
+                if (args && args->getSize(ctx) >= 1) x = args->getAt(ctx, 0);
+            }
+            if (!x) return PROTO_NONE;
+            if (x->isFloat(ctx)) return ctx->fromDouble(x->asDouble(ctx));
+            if (x->isInteger(ctx)) return ctx->fromDouble((double)x->asLong(ctx));
+            const proto::ProtoString* dn = PythonEnvironment::getInternalString(ctx, "__data__");
+            const proto::ProtoObject* d = x->getAttribute(ctx, dn);
+            if (d && d->isFloat(ctx)) return ctx->fromDouble(d->asDouble(ctx));
+            return PROTO_NONE;
+        }));
+    floatPrototype = floatPrototype->setAttribute(rootContext_,
         PythonEnvironment::getInternedString(rootContext_, "__neg__"),
         rootContext_->fromMethod(nullptr,
         +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
