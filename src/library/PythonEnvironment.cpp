@@ -3914,7 +3914,29 @@ static const proto::ProtoObject* py_list_insert(
     const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
     const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
     if (!list) return PROTO_NONE;
-    int index = static_cast<int>(positionalParameters->getAt(context, posOff)->asLong(context));
+    const proto::ProtoObject* idxObj = positionalParameters->getAt(context, posOff);
+    // CPython: list.insert(i, x) requires i to be an integer (bool counts
+    // — subclass of int).  Previously asLong(non-int) panicked with the
+    // internal C++ exception "Object is not an integer type" — a
+    // misleading symptom that hid the real misuse.  Raise the canonical
+    // TypeError naming the bad operand's type.
+    if (!idxObj->isInteger(context) && !idxObj->isBoolean(context)) {
+        PythonEnvironment* envE = PythonEnvironment::fromContext(context);
+        if (envE) {
+            std::string clsName = "object";
+            const proto::ProtoObject* cls = envE->getType(context, idxObj);
+            if (cls) {
+                const proto::ProtoObject* nm = cls->getAttribute(context, envE->getNameString());
+                if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+            }
+            envE->raiseTypeError(context,
+                "'" + clsName + "' object cannot be interpreted as an integer");
+        }
+        return nullptr;
+    }
+    int index = idxObj == PROTO_TRUE ? 1
+              : idxObj == PROTO_FALSE ? 0
+              : static_cast<int>(idxObj->asLong(context));
     const proto::ProtoObject* value = positionalParameters->getAt(context, 1 + posOff);
     unsigned long size = list->getSize(context);
     if (index < 0) index += static_cast<int>(size);
