@@ -19215,6 +19215,69 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
         else if (op == 5) dunder = py_ge_s;
 
         if (dunder) {
+            // CPython "subclass operand wins" rule: when type(b) is a
+            // strict subclass of type(a) AND b's type defines the
+            // dunder (overriding the base), call b's reflected dunder
+            // BEFORE a's.  Without this, `'aBc' == cistr('ABC')` calls
+            // str.__eq__ first, gets False, and never sees cistr's
+            // case-insensitive override.
+            {
+                const proto::ProtoObject* aType = getType(ctx, a);
+                const proto::ProtoObject* bType = getType(ctx, b);
+                if (aType && bType && aType != bType && aType != PROTO_NONE && bType != PROTO_NONE) {
+                    // Check b's type subclasses a's type via __mro__.
+                    bool bIsSubclassOfA = false;
+                    const proto::ProtoObject* mroAttr = bType->getAttribute(ctx, getMroString());
+                    const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+                    if (mroT) {
+                        for (unsigned long i = 1; i < mroT->getSize(ctx); ++i) {
+                            if (mroT->getAt(ctx, static_cast<int>(i)) == aType) {
+                                bIsSubclassOfA = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (bIsSubclassOfA) {
+                        // Reflected dunder for the op.
+                        const proto::ProtoString* refl = nullptr;
+                        if (op == 0) refl = py_eq_s;
+                        else if (op == 1) refl = py_ne_s;
+                        else if (op == 2) refl = py_gt_s;     // a < b -> b > a
+                        else if (op == 3) refl = py_ge_s;
+                        else if (op == 4) refl = py_lt_s;
+                        else if (op == 5) refl = py_le_s;
+                        // Check b's type owns the reflected dunder
+                        // (i.e. overrides — not the inherited default).
+                        bool overrides = refl && bType->hasOwnAttribute(ctx, refl) == PROTO_TRUE;
+                        if (overrides) {
+                            const proto::ProtoObject* rmethod = b->getAttribute(ctx, refl);
+                            const proto::ProtoObject* res = nullptr;
+                            if (rmethod && rmethod->asMethod(ctx)) {
+                                const proto::ProtoList* args = ctx->newList()->appendLast(ctx, a);
+                                res = rmethod->asMethod(ctx)(ctx, b, nullptr, args, getEmptySparseList());
+                            } else if (rmethod && rmethod != PROTO_NONE && !isActuallyAClass(ctx, b)) {
+                                const proto::ProtoString* codeS = getCodeString();
+                                if (codeS && rmethod->hasOwnAttribute(ctx, codeS) == PROTO_TRUE) {
+                                    const proto::ProtoList* sp = ctx->newList()->appendLast(ctx, b)->appendLast(ctx, a);
+                                    res = invokePythonCallable(ctx, rmethod, sp, nullptr);
+                                }
+                            }
+                            const proto::ProtoObject* notImpl = getNotImplementedPrototype();
+                            if (res && res != PROTO_NONE && res != notImpl) {
+                                if (res == PROTO_TRUE || res == PROTO_FALSE || res->isBoolean(ctx)) {
+                                    return res;
+                                }
+                                bool truthy = false;
+                                if (res->isBoolean(ctx)) truthy = res->asBoolean(ctx);
+                                else if (res->isInteger(ctx)) truthy = (res->asLong(ctx) != 0);
+                                else if (res->isString(ctx)) truthy = (res->asString(ctx)->getSize(ctx) > 0);
+                                else truthy = true;
+                                return truthy ? PROTO_TRUE : PROTO_FALSE;
+                            }
+                        }
+                    }
+                }
+            }
             // For `!=`, Python's default object.__ne__ delegates to __eq__ and
             // negates the result.  The protoPython default `__ne__` returns a
             // raw pointer comparison, which disagrees with any `__eq__` the
