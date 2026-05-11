@@ -37,6 +37,7 @@
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
 | **Performance** | **Optimization in Progress** - 2026-05-03 (Phase 8 + GC audit): see Performance Benchmarks section. Microbenchmark geomean **3.06×** slower than CPython 3.14 (now including `memory_pressure` in the suite — 43.4× / 358 MB RSS, was 191× / 1347 MB before the GC audit landed); fair pure-Python benchmark suite geomean **~30×** slower (see note on benchmark selection). Improved ~40× from V154 (1337×) through Phase 1–8 + the May 2026 GC survivor re-chain landing.  The remaining gap is dominated by bytecode dispatch overhead and `setAttribute` / `getAttribute` prototype-chain AVL traversal on every instance attribute access. ⚙️ |
 | **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
+| **test_descr.py conformance (May 2026)** | **90/165 passing** - Detailed semantic sweep brought `test/cpython/test_descr.py` from 104 → 75 issues (55 failures + 20 errors).  See `CHANGELOG.md` v0.3.0 for the per-area breakdown. ✅ |
 
 - ✅ **Generator Delegation**: Full support for `yield` and `yield from` with efficient state persistence.
 - ✅ **Smart Collection Unwrapping**: Seamless bridge between Python objects and native C++ collection methods.
@@ -371,6 +372,27 @@ In priority order:
 | **3** | Beat CPython on `multithread_cpu` (parallel scaling) | planned | currently 1.56× slower; goal <1.0× |
 | **4** | JIT compile hot bytecode regions via the `co_bytecode_native` path | research | crosses the 1.0× threshold on richards/nqueens |
 
+
+---
+
+## 🧪 CPython semantic conformance (May 2026)
+
+`test/cpython/test_descr.py` (165 tests, the descriptor-protocol /
+object-model torture suite from CPython 3.14) is **at 90 passing**
+after the May 2026 sweep — up from **61 passing** at the start of
+the session.  The work hit four broad areas of CPython semantics:
+
+| Area | Examples |
+|------|----------|
+| **Dunder dispatch via `__mro__`** | `str(c)` no longer returns `<class 'C'>`; `c.__bool__()` honours user overrides; `compareObjects` retries the reflected dunder when the forward call returns `NotImplemented`. |
+| **Object / type construction** | `object.__new__(list)` rejected with `"is not safe"`; `list.__new__(NotAList)` rejected; multi-inheritance layout conflicts (`list + dict`, `module + str`) caught; `ModuleType` subclasses accept `name` arg. |
+| **Unbound `Cls.__op__(receiver, …)` form** | Uniform fix across `list / tuple / dict / set / str` for `__add__, __mul__, __eq__, __contains__, __iadd__, __imul__, sort, split, strip, upper`. |
+| **Error semantics** | `**=` TypeError mentions `**=`, not `**`; `'%(key)s' % None` raises `TypeError`; `del d[0]` on non-containers raises; `dict()` validates arg shape; recursive `__str__/__repr__` raises `RecursionError` properly. |
+
+All commits run under `ctest --test-dir build-release` (199/199
+green) — no regressions in protoCore or protoPython unit tests.
+
+See `CHANGELOG.md` v0.3.0 for the per-fix list.
 
 ---
 

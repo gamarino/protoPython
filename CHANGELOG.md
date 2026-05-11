@@ -5,6 +5,123 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-05-10
+
+### CPython conformance sweep (test_descr.py)
+
+Brought `test/cpython/test_descr.py` from **104 failing tests** (early in the
+session) down to **75 issues** (55 failures + 20 errors out of 165 tests)
+in two work sessions of intensive, root-cause-only fixes.  Every change
+was paired with `ctest --test-dir build-release`; ctest stayed at
+**199/199** throughout.
+
+### Added
+
+- **float.__hash__**: native value-based hash matching CPython's
+  `hash(1.0) == hash(1)` contract; subclasses unwrap via `__data__`.
+- **float.__lt__/__le__/__gt__/__ge__/__eq__/__ne__**: comparison dunders
+  on `floatPrototype` (reuse the int comparator that already accepts
+  mixed numeric operands).
+- **list.__imul__**: in-place multiplication on list; previously absent
+  from `listPrototype`.
+- **PYFLAG_HAS_CUSTOM_GETATTR**: new class-flag bit so the
+  `OP_LOAD_ATTR` and `tryFastGetAttribute` fast paths bypass when a
+  user `__getattribute__` override exists in the type's MRO.
+
+### Fixed: dispatch / method resolution
+
+- **`__str__` / `__repr__` lookup walks `__mro__`** (not the protoCore
+  parent chain) so `str(instance)` for a plain user class returns
+  `<C object at 0x…>` rather than the class's `<class 'C'>` spelling.
+- **`runUserClassCall` honours the protoCore parent link** when the
+  instance was built via `self.newChild()`, so primitive-subclass
+  wrappers (e.g. `class cistr(str)`) actually invoke their `__init__`.
+- **`runUserClassCall` detects subclass returns via `__mro__`** rather
+  than `isInstanceOf`, fixing the `C(arg) → D` flow where `__new__`
+  returns a strict subclass.
+- **`compareObjects` tries the reflected dunder** when `a.__op__(b)`
+  returns NotImplemented (`1 == Proxy(1)`, etc.).
+- **`bool()` / `isTruthy` invoke Python user `__bool__` / `__len__`**
+  via `invokePythonCallable` instead of skipping anything whose
+  `asMethod` slot is null.
+
+### Fixed: object / type construction
+
+- **`object.__new__` rejects built-in container `cls`** (list, dict,
+  tuple, set, frozenset, bytes) and any class that inherits from one
+  with a layout-incompatible `__new__` substitution.
+- **`object.__init__` detects `__new__ = object.__new__` re-exports**
+  as non-overridden, so `class B(A): __new__ = object.__new__` still
+  routes through the legacy "pass extras to `__init__`" path.
+- **`object.__new__/__init__` accept ModuleType subclasses**: the C3
+  MRO sometimes drops `modulePrototype`, so we walk `__bases__` to
+  detect module ancestry.
+- **`list.__new__` / `tuple.__new__` / `dict.__new__` reject non-subclass
+  receivers** with `TypeError("X.__new__(Y): Y is not a subtype of X")`.
+- **`type.__new__` rejects multiple-inheritance layout conflicts**
+  (`list + dict`, `module + str`, etc.) and obvious non-type bases
+  (`None`, primitives).
+- **`pow(I(2), I(3), I(5))`** now dispatches through `base.__pow__`
+  when `base`'s type defines an override, even for int / float
+  subclasses that look like primitives via `__data__`.
+
+### Fixed: unbound built-in dunder dispatch
+
+A consistent fix landed for many built-in container dunders so the
+unbound form `Cls.__op__(receiver, ...)` works the same as
+`receiver.__op__(...)`:
+
+- `list.__add__ / __mul__ / __eq__ / __contains__ / __iadd__ /
+  __imul__ / sort`
+- `tuple.__contains__ / __len__`
+- `dict.__eq__ / __len__`
+- `set.__contains__ / __or__ / __and__ / __sub__ / __xor__`
+- `str.__contains__ / split / strip / upper`
+
+Native primitive descriptors (`str.upper`, `str.split`, `str.strip`,
+`list.sort`) now raise CPython-style
+`"descriptor 'X' for 'Y' objects doesn't apply to a non-Y object"`
+when passed an instance of the wrong type.
+
+### Fixed: argument validation
+
+- **`dict()` validates argument shapes**: rejects non-iterables with
+  TypeError, non-2-element iterable items with ValueError ("dictionary
+  update sequence element has wrong length"), and more than one
+  positional argument with TypeError.
+- **`dict(mapping)` gates the native fast path on dictPrototype-derived
+  type**: every Python instance owns `__data__` / `__keys__` for its
+  attribute storage, so the unrestricted check accepted any random
+  object as a dict.
+- **`complex()` / `str()` reject unknown keyword arguments**.
+- **`del d[0]`** on a plain instance raises TypeError ("'D' object
+  doesn't support item deletion") instead of silently no-oping.
+
+### Fixed: error semantics
+
+- **`**=` TypeError mentions `**=`** (not `**`) in the operand-type
+  message.
+- **`str %` formatting** correctly unwraps int / float subclass values
+  via `__data__` for `%d`, `%g`, `%f`, etc.
+- **`%(key)s % None`** raises TypeError ("format requires a mapping")
+  instead of silently inserting `'None'`.
+- **Recursive `__str__` ↔ `__repr__`** raises RecursionError at a
+  proper threshold instead of returning the placeholder `'...'`.
+- **`'in' operator`** falls back to iteration via `__getitem__` for
+  classic-sequence types that only expose item access; gates the
+  native fast path on dict / module so random user instances don't
+  short-circuit through their attribute SparseList.
+
+### Architectural notes
+
+- `getAttribute` / dunder lookup now consistently distinguishes the
+  protoCore parent chain (used internally for type identification)
+  from `__mro__`-driven Python attribute resolution.  The split was
+  the root cause of the `<class 'C'>` mis-rendering and the
+  `bool` / `__contains__` / `pow` Python-user dispatch misses.
+- Every commit in the sweep was paired with `ctest --test-dir
+  build-release`; no regressions were introduced.
+
 ## [0.2.3] - 2026-02-23
 
 ### Fixed
