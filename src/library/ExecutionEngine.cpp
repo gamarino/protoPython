@@ -1474,11 +1474,37 @@ static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
         unsigned long n2 = l2->getSize(ctx);
         for (unsigned long i = 0; i < n1; ++i) resL = const_cast<proto::ProtoList*>(resL->appendLast(ctx, l1->getAt(ctx, i)));
         for (unsigned long i = 0; i < n2; ++i) resL = const_cast<proto::ProtoList*>(resL->appendLast(ctx, l2->getAt(ctx, i)));
-        
-        const proto::ProtoObject* aCls = env ? env->getType(ctx, a) : a->getAttribute(ctx, protoPython::PythonEnvironment::getInternalString(ctx, "__class__"));
-        proto::ProtoObject* resObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
 
-        bool isTuple = env && (aCls == env->getTuplePrototype());
+        const proto::ProtoObject* aCls = env ? env->getType(ctx, a) : a->getAttribute(ctx, protoPython::PythonEnvironment::getInternalString(ctx, "__class__"));
+        // CPython: sequence ops on subclasses without an own __add__
+        // override produce a plain list/tuple, dropping the subclass.
+        // `class T(tuple): pass; T((1,)) + ()` returns `(1,)` whose
+        // type is `tuple`, not `T`.  Detect tuple-vs-list via the MRO
+        // chain and substitute the primitive prototype.
+        bool isTuple = false;
+        bool isList = false;
+        if (env && aCls && aCls != PROTO_NONE) {
+            if (aCls == env->getTuplePrototype()) isTuple = true;
+            else if (aCls == env->getListPrototype()) isList = true;
+            else {
+                const proto::ProtoObject* mroAttr = aCls->getAttribute(ctx, env->getMroString());
+                const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+                if (mroT) {
+                    for (unsigned long mi = 0; mi < mroT->getSize(ctx); ++mi) {
+                        const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(mi));
+                        if (base == env->getTuplePrototype()) { isTuple = true; break; }
+                        if (base == env->getListPrototype()) { isList = true; break; }
+                    }
+                }
+            }
+            // Substitute the primitive prototype so the result drops
+            // the subclass (matches CPython behaviour for unoverridden
+            // sequence dunders).
+            if (isTuple) aCls = env->getTuplePrototype();
+            else if (isList) aCls = env->getListPrototype();
+        }
+
+        proto::ProtoObject* resObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
         const proto::ProtoString* dataS = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
         if (isTuple) {
             // Save setAttribute result: these are immutable persistent objects.
