@@ -4935,14 +4935,28 @@ static const proto::ProtoObject* py_set_contains(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    const proto::ProtoSet* s = self->asSet(context);
-    if (!s) {
-        PythonEnvironment* env = PythonEnvironment::fromContext(context);
-        const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__"));
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoString* dataS = env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__");
+    const proto::ProtoSet* s = self ? self->asSet(context) : nullptr;
+    if (!s && self) {
+        const proto::ProtoObject* data = self->getAttribute(context, dataS);
         s = data ? data->asSet(context) : nullptr;
     }
-    if (!s || positionalParameters->getSize(context) < 1) return PROTO_FALSE;
-    return s->has(context, positionalParameters->getAt(context, 0));
+    const proto::ProtoObject* value = nullptr;
+    if (!s && positionalParameters && positionalParameters->getSize(context) >= 2) {
+        // Unbound: set.__contains__(receiver, value)
+        const proto::ProtoObject* recv = positionalParameters->getAt(context, 0);
+        s = recv ? recv->asSet(context) : nullptr;
+        if (!s && recv) {
+            const proto::ProtoObject* data = recv->getAttribute(context, dataS);
+            s = data ? data->asSet(context) : nullptr;
+        }
+        value = positionalParameters->getAt(context, 1);
+    } else if (positionalParameters && positionalParameters->getSize(context) >= 1) {
+        value = positionalParameters->getAt(context, 0);
+    }
+    if (!s || !value) return PROTO_FALSE;
+    return s->has(context, value);
 }
 
 static const proto::ProtoObject* py_set_bool(
