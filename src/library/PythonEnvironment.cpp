@@ -2188,7 +2188,16 @@ static SliceBounds get_slice_bounds(proto::ProtoContext* context, const proto::P
 
     sb.isSlice = true;
     sb.step = (stepObj && stepObj != PROTO_NONE && stepObj->isInteger(context)) ? stepObj->asLong(context) : 1;
-    if (sb.step == 0) sb.step = 1;  // Defensive; CPython raises ValueError but our caller is more permissive.
+    if (sb.step == 0) {
+        // CPython: `a[::0]` raises `ValueError: slice step cannot be zero`.
+        // Previously this silently normalised step to 1 — `[1,2,3][::0]`
+        // returned the whole list and `del x[::0]` was a no-op.  Raise
+        // through env so the caller's pending-exception check propagates
+        // the failure; set step=1 only as a defensive guard so the
+        // post-error fall-through doesn't divide-by-zero in the loop.
+        if (env) env->raiseValueError(context, PythonEnvironment::getInternedString(context, "slice step cannot be zero")->asObject(context));
+        sb.step = 1;
+    }
 
     bool startProvided = startObj && startObj != PROTO_NONE && startObj->isInteger(context);
     bool stopProvided = stopObj && stopObj != PROTO_NONE && stopObj->isInteger(context);
