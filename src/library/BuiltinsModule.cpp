@@ -7123,7 +7123,18 @@ static const proto::ProtoObject* py_range(
         }
     }
 
-    if (step == 0) return PROTO_NONE;
+    if (step == 0) {
+        // CPython: range() with step == 0 raises ValueError; returning
+        // PROTO_NONE silently produced a None that downstream iteration
+        // crashed on with the internal C++ exception
+        //   "Object is not an integer type"
+        // far from the actual misuse.
+        PythonEnvironment* envE = PythonEnvironment::fromContext(context);
+        if (envE) envE->raiseValueError(context,
+            PythonEnvironment::getInternedString(context,
+                "range() arg 3 must not be zero")->asObject(context));
+        return nullptr;
+    }
 
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoString* curS = env ? env->getRangeCurString() : PythonEnvironment::getInternedString(context, "__range_cur__");
