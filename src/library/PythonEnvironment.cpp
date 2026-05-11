@@ -2615,19 +2615,25 @@ static const proto::ProtoObject* py_list_eq(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoString* dataName = env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__");
+    const proto::ProtoObject* selfData = self ? self->getAttribute(context, dataName) : nullptr;
+    const proto::ProtoObject* receiver = self;
     const proto::ProtoObject* other = positionalParameters->getAt(context, 0);
+    if ((!selfData || !selfData->asList(context)) && positionalParameters->getSize(context) >= 2) {
+        receiver = positionalParameters->getAt(context, 0);
+        other = positionalParameters->getAt(context, 1);
+    }
     // Identity check: covers `cls == cls` when this method is reached via
     // the prototype chain on the class object itself (e.g. dict equality
     // walks values like `list == list`).  Without this, the data extraction
     // below returns null because the class object has no list payload, and
     // we'd return False — incorrect for `list == list`.
-    if (self == other) return PROTO_TRUE;
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoString* dataName = env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
-    const proto::ProtoObject* otherData = (other->hasOwnAttribute(context, dataName) == PROTO_TRUE) ? other->getAttribute(context, dataName) : nullptr;
-    const proto::ProtoList* list = (data && data != PROTO_NONE && data->asList(context)) ? data->asList(context) : self->asList(context);
-    const proto::ProtoList* otherList = (otherData && otherData != PROTO_NONE && otherData->asList(context)) ? otherData->asList(context) : other->asList(context);
+    if (receiver == other) return PROTO_TRUE;
+    const proto::ProtoObject* data = receiver ? receiver->getAttribute(context, dataName) : nullptr;
+    const proto::ProtoObject* otherData = (other && other->hasOwnAttribute(context, dataName) == PROTO_TRUE) ? other->getAttribute(context, dataName) : nullptr;
+    const proto::ProtoList* list = (data && data != PROTO_NONE && data->asList(context)) ? data->asList(context) : (receiver ? receiver->asList(context) : nullptr);
+    const proto::ProtoList* otherList = (otherData && otherData != PROTO_NONE && otherData->asList(context)) ? otherData->asList(context) : (other ? other->asList(context) : nullptr);
     if (!list || !otherList) return PROTO_FALSE;
     if (list == otherList) return PROTO_TRUE;
     unsigned long size = list->getSize(context);
@@ -3562,16 +3568,22 @@ static const proto::ProtoObject* py_list_iadd(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     if (!positionalParameters || positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
+    const proto::ProtoObject* selfData = self ? self->getAttribute(context, dataName) : nullptr;
+    const proto::ProtoObject* receiver = self;
     const proto::ProtoObject* otherObj = positionalParameters->getAt(context, 0);
-    if (!otherObj) return PROTO_NONE;
+    if ((!selfData || !selfData->asList(context)) && positionalParameters->getSize(context) >= 2) {
+        receiver = positionalParameters->getAt(context, 0);
+        otherObj = positionalParameters->getAt(context, 1);
+    }
+    if (!receiver || !otherObj) return PROTO_NONE;
 
     const proto::ProtoList* otherList = otherObj->asList(context);
     if (!otherList) {
-        const proto::ProtoObject* otherData = otherObj->getAttribute(context, PythonEnvironment::getInternalString(context, "__data__"));
+        const proto::ProtoObject* otherData = otherObj->getAttribute(context, dataName);
         if (otherData) otherList = otherData->asList(context);
     }
-    const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
     if (!data || !data->asList(context)) return PROTO_NONE;
     const proto::ProtoList* list = data->asList(context);
     if (!otherList) return PROTO_NONE;
@@ -3581,8 +3593,8 @@ static const proto::ProtoObject* py_list_iadd(
     for (unsigned long i = 0; i < otherSize; ++i) {
         newList = newList->appendLast(context, otherList->getAt(context, static_cast<int>(i)));
     }
-    const_cast<proto::ProtoObject*>(self)->setAttribute(context, dataName, newList->asObject(context));
-    return self;
+    const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, newList->asObject(context));
+    return receiver;
 }
 
 static const proto::ProtoObject* py_list_reverse(
@@ -3796,12 +3808,21 @@ static const proto::ProtoObject* py_list_mul(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(context) < 1) return PROTO_NONE;
-    const proto::ProtoObject* other = posArgs->getAt(context, 0);
-    if (!other->isInteger(context)) return PROTO_NONE;
+    const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
+    const proto::ProtoObject* selfData = self ? self->getAttribute(context, dataName) : nullptr;
+    const proto::ProtoObject* receiver = self;
+    const proto::ProtoObject* other = nullptr;
+    if ((!selfData || !selfData->asList(context)) && posArgs->getSize(context) >= 2) {
+        // Unbound: list.__mul__(lst, n)
+        receiver = posArgs->getAt(context, 0);
+        other = posArgs->getAt(context, 1);
+    } else {
+        other = posArgs->getAt(context, 0);
+    }
+    if (!receiver || !other || !other->isInteger(context)) return PROTO_NONE;
     long long n = other->asLong(context);
     if (n < 0) n = 0;
-    const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
     const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
     if (!list) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
