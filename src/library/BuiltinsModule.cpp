@@ -5614,12 +5614,25 @@ static const proto::ProtoObject* py_min_max(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters,
     bool isMax) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    
+    PythonEnvironment* env0 = PythonEnvironment::fromContext(context);
+    if (positionalParameters->getSize(context) < 1) {
+        if (env0) env0->raiseTypeError(context,
+            isMax ? "max expected at least 1 argument, got 0"
+                  : "min expected at least 1 argument, got 0");
+        return nullptr;
+    }
+
     const proto::ProtoObject* keyFunc = nullptr;
+    const proto::ProtoObject* defaultVal = nullptr;
+    bool hasDefault = false;
     if (keywordParameters) {
         const proto::ProtoString* keyS = PythonEnvironment::getInternedString(context, "key");
         keyFunc = keywordParameters->getAt(context, keyS->getHash(context));
+        const proto::ProtoString* defS = PythonEnvironment::getInternedString(context, "default");
+        if (keywordParameters->has(context, defS->getHash(context))) {
+            defaultVal = keywordParameters->getAt(context, defS->getHash(context));
+            hasDefault = true;
+        }
     }
 
     std::vector<const proto::ProtoObject*> items;
@@ -5640,24 +5653,53 @@ static const proto::ProtoObject* py_min_max(
             }
         }
     } else {
+        // CPython: when called with positional `*args`, `default`
+        // kwarg is NOT allowed.  Raise TypeError to match.
+        if (hasDefault) {
+            if (env0) env0->raiseTypeError(context,
+                isMax ? "Cannot specify a default for max() with multiple positional arguments"
+                      : "Cannot specify a default for min() with multiple positional arguments");
+            return nullptr;
+        }
         for (size_t i = 0; i < positionalParameters->getSize(context); ++i) {
             items.push_back(positionalParameters->getAt(context, i));
         }
     }
 
-    if (items.empty()) return PROTO_NONE;
+    if (items.empty()) {
+        if (hasDefault) return defaultVal;
+        if (env0) env0->raiseValueError(context,
+            PythonEnvironment::getInternedString(context,
+                isMax ? "max() arg is an empty sequence"
+                      : "min() arg is an empty sequence")->asObject(context));
+        return nullptr;
+    }
 
     const proto::ProtoObject* bestItem = items[0];
     const proto::ProtoObject* bestVal = bestItem;
     if (keyFunc && keyFunc != PROTO_NONE) {
-        bestVal = keyFunc->call(context, nullptr, nullptr, keyFunc, context->newList()->appendLast(context, bestItem), nullptr);
+        const proto::ProtoList* kArgs = context->newList()->appendLast(context, bestItem);
+        if (keyFunc->asMethod(context)) {
+            bestVal = keyFunc->asMethod(context)(context,
+                const_cast<proto::ProtoObject*>(keyFunc->asMethodSelf(context)),
+                nullptr, kArgs, nullptr);
+        } else {
+            bestVal = ::protoPython::invokePythonCallable(context, keyFunc, kArgs, nullptr);
+        }
     }
 
     for (size_t i = 1; i < items.size(); ++i) {
         const proto::ProtoObject* currentItem = items[i];
         const proto::ProtoObject* currentVal = currentItem;
         if (keyFunc && keyFunc != PROTO_NONE) {
-            currentVal = keyFunc->call(context, nullptr, nullptr, keyFunc, context->newList()->appendLast(context, currentItem), nullptr);
+            const proto::ProtoList* kArgs = context->newList()->appendLast(context, currentItem);
+            if (keyFunc->asMethod(context)) {
+                currentVal = keyFunc->asMethod(context)(context,
+                    const_cast<proto::ProtoObject*>(keyFunc->asMethodSelf(context)),
+                    nullptr, kArgs, nullptr);
+            } else {
+                currentVal = ::protoPython::invokePythonCallable(context, keyFunc, kArgs, nullptr);
+            }
         }
 
         // Compare via PythonEnvironment::compareObjects so strings,
