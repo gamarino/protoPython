@@ -1903,10 +1903,20 @@ static const proto::ProtoObject* py_getattr(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
+    PythonEnvironment* envEarly = PythonEnvironment::fromContext(context);
+    if (positionalParameters->getSize(context) < 2) {
+        if (envEarly) envEarly->raiseTypeError(context,
+            "getattr expected at least 2 arguments, got "
+            + std::to_string(positionalParameters->getSize(context)));
+        return nullptr;
+    }
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 1);
-    if (!nameObj->isString(context)) return PROTO_NONE;
+    if (!nameObj->isString(context)) {
+        if (envEarly) envEarly->raiseTypeError(context,
+            "attribute name must be string, not 'int'");
+        return nullptr;
+    }
     /* Use canonical ProtoString from content so getAttribute matches setAttribute storage. */
     std::string nameStr;
     nameObj->asString(context)->toUTF8String(context, nameStr);
