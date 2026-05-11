@@ -8679,8 +8679,16 @@ static const proto::ProtoObject* py_str_upper(
 }
 
 // Apply a format spec (like "02d", ".2f", ">10s") to an object's string representation.
+// Mirror CPython's default __format__: when the spec is empty, the
+// conversion is `str(obj)`, not `repr(obj)`.  reprObject quotes strings
+// (`'a'`) which is the right shape for `{!r}` but wrong for `{}`.
 static std::string applyFormatSpec(proto::ProtoContext* context, const proto::ProtoObject* obj, const std::string& spec) {
     if (spec.empty()) {
+        if (obj && obj->isString(context)) {
+            std::string s;
+            obj->asString(context)->toUTF8String(context, s);
+            return s;
+        }
         return PythonEnvironment::reprObject(context, obj);
     }
     // Parse the format spec: [[fill]align][sign][#][0][width][grouping][.precision][type]
@@ -8767,7 +8775,13 @@ static std::string applyFormatSpec(proto::ProtoContext* context, const proto::Pr
         result = buf;
         if (type == '%') result += '%';
     } else if (type == 's' || type == '\0') {
-        result = PythonEnvironment::reprObject(context, obj);
+        // 's' (and the default '\0' for non-numeric types) mirrors str(),
+        // not repr(): a string renders as its bare content, never quoted.
+        if (obj && obj->isString(context)) {
+            obj->asString(context)->toUTF8String(context, result);
+        } else {
+            result = PythonEnvironment::reprObject(context, obj);
+        }
         if (prec >= 0 && static_cast<int>(result.size()) > prec)
             result = result.substr(0, prec);
     } else if (type == 'c') {
@@ -8880,7 +8894,14 @@ static const proto::ProtoObject* py_str_format(
             }
             out += formatSpec.empty() ? s : applyFormatSpec(context, PythonEnvironment::getInternedString(context, s.c_str())->asObject(context), formatSpec);
         } else if (conversion == 's') {
-            std::string s = PythonEnvironment::reprObject(context, val);
+            // !s applies str(), which for str returns the bare content
+            // (no quotes).  reprObject would re-quote it.
+            std::string s;
+            if (val && val->isString(context)) {
+                val->asString(context)->toUTF8String(context, s);
+            } else {
+                s = PythonEnvironment::reprObject(context, val);
+            }
             out += formatSpec.empty() ? s : applyFormatSpec(context, PythonEnvironment::getInternedString(context, s.c_str())->asObject(context), formatSpec);
         } else {
             out += applyFormatSpec(context, val, formatSpec);
