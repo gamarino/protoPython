@@ -5666,6 +5666,148 @@ static const proto::ProtoObject* py_set_union(
     return result;
 }
 
+// set.update(*others): add elements from each iterable to self in place.
+static const proto::ProtoObject* py_set_update(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    int posOff = 0;
+    const proto::ProtoObject* receiver = set_self_or_arg(context, self, posArgs, &posOff);
+    if (!receiver) return PROTO_NONE;
+    const proto::ProtoString* dn = PythonEnvironment::getInternalString(context, "__data__");
+    const proto::ProtoObject* d = receiver->getAttribute(context, dn);
+    const proto::ProtoSet* s = d && d->asSet(context) ? d->asSet(context) : context->newSet();
+    proto::ProtoSet* acc = const_cast<proto::ProtoSet*>(s);
+    for (unsigned long i = posOff; i < posArgs->getSize(context); ++i) {
+        add_iterable_to_set(context, posArgs->getAt(context, static_cast<int>(i)), acc);
+    }
+    const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dn, acc->asObject(context));
+    return PROTO_NONE;
+}
+
+// set.isdisjoint(other): True iff intersection is empty.
+static const proto::ProtoObject* py_set_isdisjoint(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    int posOff = 0;
+    const proto::ProtoObject* receiver = set_self_or_arg(context, self, posArgs, &posOff);
+    if (!receiver) return PROTO_TRUE;
+    const proto::ProtoString* dn = PythonEnvironment::getInternalString(context, "__data__");
+    const proto::ProtoObject* d = receiver->getAttribute(context, dn);
+    const proto::ProtoSet* s = d && d->asSet(context) ? d->asSet(context) : nullptr;
+    if (!s || posArgs->getSize(context) <= static_cast<unsigned long>(posOff)) return PROTO_TRUE;
+    // Walk the other iterable; return False on the first element in s.
+    const proto::ProtoObject* other = posArgs->getAt(context, posOff);
+    proto::ProtoSet* otherSet = const_cast<proto::ProtoSet*>(context->newSet());
+    add_iterable_to_set(context, other, otherSet);
+    const proto::ProtoSetIterator* it = otherSet->getIterator(context);
+    while (it && it->hasNext(context)) {
+        const proto::ProtoObject* v = it->next(context);
+        if (s->has(context, v) == PROTO_TRUE) return PROTO_FALSE;
+        it = it->advance(context);
+    }
+    return PROTO_TRUE;
+}
+
+// set.intersection_update / difference_update / symmetric_difference_update:
+// in-place variants of the named binary set ops.
+static const proto::ProtoObject* py_set_intersection_update(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    int posOff = 0;
+    const proto::ProtoObject* receiver = set_self_or_arg(context, self, posArgs, &posOff);
+    if (!receiver) return PROTO_NONE;
+    const proto::ProtoString* dn = PythonEnvironment::getInternalString(context, "__data__");
+    const proto::ProtoObject* d = receiver->getAttribute(context, dn);
+    const proto::ProtoSet* s = d && d->asSet(context) ? d->asSet(context) : context->newSet();
+    proto::ProtoSet* acc = const_cast<proto::ProtoSet*>(context->newSet());
+    const proto::ProtoSetIterator* it = s->getIterator(context);
+    while (it && it->hasNext(context)) {
+        const proto::ProtoObject* v = it->next(context);
+        bool inAll = true;
+        for (unsigned long i = posOff; i < posArgs->getSize(context) && inAll; ++i) {
+            const proto::ProtoObject* other = posArgs->getAt(context, static_cast<int>(i));
+            const proto::ProtoSet* os = other->asSet(context);
+            if (!os) {
+                const proto::ProtoObject* od = other->getAttribute(context, dn);
+                os = od ? od->asSet(context) : nullptr;
+            }
+            if (os) {
+                if (os->has(context, v) != PROTO_TRUE) inAll = false;
+            } else {
+                // Walk iterable to test membership.
+                proto::ProtoSet* tmp = const_cast<proto::ProtoSet*>(context->newSet());
+                add_iterable_to_set(context, other, tmp);
+                if (tmp->has(context, v) != PROTO_TRUE) inAll = false;
+            }
+        }
+        if (inAll) acc = const_cast<proto::ProtoSet*>(acc->add(context, v));
+        it = it->advance(context);
+    }
+    const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dn, acc->asObject(context));
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_set_difference_update(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    int posOff = 0;
+    const proto::ProtoObject* receiver = set_self_or_arg(context, self, posArgs, &posOff);
+    if (!receiver) return PROTO_NONE;
+    const proto::ProtoString* dn = PythonEnvironment::getInternalString(context, "__data__");
+    const proto::ProtoObject* d = receiver->getAttribute(context, dn);
+    const proto::ProtoSet* s = d && d->asSet(context) ? d->asSet(context) : context->newSet();
+    proto::ProtoSet* removeSet = const_cast<proto::ProtoSet*>(context->newSet());
+    for (unsigned long i = posOff; i < posArgs->getSize(context); ++i) {
+        add_iterable_to_set(context, posArgs->getAt(context, static_cast<int>(i)), removeSet);
+    }
+    proto::ProtoSet* acc = const_cast<proto::ProtoSet*>(context->newSet());
+    const proto::ProtoSetIterator* it = s->getIterator(context);
+    while (it && it->hasNext(context)) {
+        const proto::ProtoObject* v = it->next(context);
+        if (removeSet->has(context, v) != PROTO_TRUE) {
+            acc = const_cast<proto::ProtoSet*>(acc->add(context, v));
+        }
+        it = it->advance(context);
+    }
+    const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dn, acc->asObject(context));
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_set_symmetric_difference_update(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    int posOff = 0;
+    const proto::ProtoObject* receiver = set_self_or_arg(context, self, posArgs, &posOff);
+    if (!receiver) return PROTO_NONE;
+    const proto::ProtoString* dn = PythonEnvironment::getInternalString(context, "__data__");
+    const proto::ProtoObject* d = receiver->getAttribute(context, dn);
+    const proto::ProtoSet* s = d && d->asSet(context) ? d->asSet(context) : context->newSet();
+    if (posArgs->getSize(context) <= static_cast<unsigned long>(posOff)) return PROTO_NONE;
+    proto::ProtoSet* other = const_cast<proto::ProtoSet*>(context->newSet());
+    add_iterable_to_set(context, posArgs->getAt(context, posOff), other);
+    proto::ProtoSet* acc = const_cast<proto::ProtoSet*>(context->newSet());
+    // elements in s not in other
+    const proto::ProtoSetIterator* it = s->getIterator(context);
+    while (it && it->hasNext(context)) {
+        const proto::ProtoObject* v = it->next(context);
+        if (other->has(context, v) != PROTO_TRUE) {
+            acc = const_cast<proto::ProtoSet*>(acc->add(context, v));
+        }
+        it = it->advance(context);
+    }
+    // elements in other not in s
+    const proto::ProtoSetIterator* it2 = other->getIterator(context);
+    while (it2 && it2->hasNext(context)) {
+        const proto::ProtoObject* v = it2->next(context);
+        if (s->has(context, v) != PROTO_TRUE) {
+            acc = const_cast<proto::ProtoSet*>(acc->add(context, v));
+        }
+        it2 = it2->advance(context);
+    }
+    const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dn, acc->asObject(context));
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_set_intersection(
     proto::ProtoContext* context, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
@@ -15147,6 +15289,11 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "symmetric_difference"), rootContext_->fromMethod(nullptr, py_set_symmetric_difference));
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "issubset"), rootContext_->fromMethod(nullptr, py_set_issubset));
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "issuperset"), rootContext_->fromMethod(nullptr, py_set_issuperset));
+    setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "update"), rootContext_->fromMethod(nullptr, py_set_update));
+    setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "isdisjoint"), rootContext_->fromMethod(nullptr, py_set_isdisjoint));
+    setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "intersection_update"), rootContext_->fromMethod(nullptr, py_set_intersection_update));
+    setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "difference_update"), rootContext_->fromMethod(nullptr, py_set_difference_update));
+    setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "symmetric_difference_update"), rootContext_->fromMethod(nullptr, py_set_symmetric_difference_update));
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__or__"), rootContext_->fromMethod(nullptr, py_set_or));
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__and__"), rootContext_->fromMethod(nullptr, py_set_and));
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__sub__"), rootContext_->fromMethod(nullptr, py_set_sub));
