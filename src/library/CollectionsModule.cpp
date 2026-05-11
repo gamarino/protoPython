@@ -260,7 +260,14 @@ static const proto::ProtoObject* py_deque_remove(
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* value = posArgs->getAt(ctx, 0);
     DequeState* state = get_deque_state(ctx, self);
-    if (!state) return PROTO_NONE;
+    if (!state) {
+        protoPython::PythonEnvironment* env =
+            protoPython::PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseTypeError(ctx,
+            "descriptor 'remove' for 'collections.deque' objects "
+            "doesn't apply to a non-deque object");
+        return nullptr;
+    }
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     std::lock_guard<std::mutex> lock(state->mutex);
     for (auto it = state->data.begin(); it != state->data.end(); ++it) {
@@ -289,11 +296,17 @@ static const proto::ProtoObject* py_deque_clear(
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwArgs*/) {
     DequeState* state = get_deque_state(ctx, self);
-    if (state) {
-        std::lock_guard<std::mutex> lock(state->mutex);
-        state->data.clear();
-        state->mutationCount++;
+    if (!state) {
+        protoPython::PythonEnvironment* env =
+            protoPython::PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseTypeError(ctx,
+            "descriptor 'clear' for 'collections.deque' objects "
+            "doesn't apply to a non-deque object");
+        return nullptr;
     }
+    std::lock_guard<std::mutex> lock(state->mutex);
+    state->data.clear();
+    state->mutationCount++;
     return PROTO_NONE;
 }
 
