@@ -12531,6 +12531,7 @@ void PythonEnvironment::raiseIndexError(proto::ProtoContext* ctx, const std::str
     if (!indexErrorType) return;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx));
     const proto::ProtoObject* exc = invokePythonCallable(ctx, indexErrorType, args, nullptr);
+    if (exc && exc != PROTO_NONE) setPendingException(exc);
 }
 
 void PythonEnvironment::raiseStopIteration(proto::ProtoContext* ctx, const proto::ProtoObject* value) {

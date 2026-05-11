@@ -155,18 +155,27 @@ static const proto::ProtoObject* py_deque_pop(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* kwArgs) {
-    
+
     DequeState* state = get_deque_state(ctx, self);
-    if (state) {
-        std::lock_guard<std::mutex> lock(state->mutex);
-        if (!state->data.empty()) {
-            const proto::ProtoObject* val = state->data.back();
-            state->data.pop_back();
-            state->mutationCount++;
-            return val;
-        }
+    if (!state) {
+        protoPython::PythonEnvironment* env =
+            protoPython::PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseTypeError(ctx,
+            "descriptor 'pop' for 'collections.deque' objects "
+            "doesn't apply to a non-deque object");
+        return nullptr;
     }
-    return PROTO_NONE;
+    std::lock_guard<std::mutex> lock(state->mutex);
+    if (state->data.empty()) {
+        protoPython::PythonEnvironment* env =
+            protoPython::PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseIndexError(ctx, "pop from an empty deque");
+        return nullptr;
+    }
+    const proto::ProtoObject* val = state->data.back();
+    state->data.pop_back();
+    state->mutationCount++;
+    return val;
 }
 
 static const proto::ProtoObject* py_deque_popleft(
@@ -175,18 +184,27 @@ static const proto::ProtoObject* py_deque_popleft(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* kwArgs) {
-    
+
     DequeState* state = get_deque_state(ctx, self);
-    if (state) {
-        std::lock_guard<std::mutex> lock(state->mutex);
-        if (!state->data.empty()) {
-            const proto::ProtoObject* val = state->data.front();
-            state->data.pop_front();
-            state->mutationCount++;
-            return val;
-        }
+    if (!state) {
+        protoPython::PythonEnvironment* env =
+            protoPython::PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseTypeError(ctx,
+            "descriptor 'popleft' for 'collections.deque' objects "
+            "doesn't apply to a non-deque object");
+        return nullptr;
     }
-    return PROTO_NONE;
+    std::lock_guard<std::mutex> lock(state->mutex);
+    if (state->data.empty()) {
+        protoPython::PythonEnvironment* env =
+            protoPython::PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseIndexError(ctx, "pop from an empty deque");
+        return nullptr;
+    }
+    const proto::ProtoObject* val = state->data.front();
+    state->data.pop_front();
+    state->mutationCount++;
+    return val;
 }
 
 static const proto::ProtoObject* py_deque_len(
