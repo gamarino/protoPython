@@ -5719,7 +5719,25 @@ static const proto::ProtoObject* py_abs(
     // routing Python-defined `def __abs__(self)` through invokePythonCallable
     // (the previous `asMethod` gate dropped them silently → returned None).
     const proto::ProtoObject* absM = obj->getAttribute(context, PythonEnvironment::getInternedString(context, "__abs__"));
-    if (!absM || absM == PROTO_NONE) return PROTO_NONE;
+    if (!absM || absM == PROTO_NONE) {
+        // CPython: abs(non-numeric) raises TypeError naming the class.
+        // Previously fell through to `return PROTO_NONE`, masking the
+        // misuse — abs('x'), abs([1,2]), abs(None) all silently produced
+        // None instead of TypeError.
+        PythonEnvironment* envE = PythonEnvironment::fromContext(context);
+        if (envE) {
+            std::string clsName = "object";
+            const proto::ProtoObject* cls = envE->getType(context, obj);
+            if (cls) {
+                const proto::ProtoObject* nameAttr = cls->getAttribute(context, envE->getNameString());
+                if (nameAttr && nameAttr->isString(context)) {
+                    nameAttr->asString(context)->toUTF8String(context, clsName);
+                }
+            }
+            envE->raiseTypeError(context, "bad operand type for abs(): '" + clsName + "'");
+        }
+        return nullptr;
+    }
     if (absM->asMethod(context)) {
         return absM->asMethod(context)(context, const_cast<proto::ProtoObject*>(obj), nullptr, context->newList(), nullptr);
     }
