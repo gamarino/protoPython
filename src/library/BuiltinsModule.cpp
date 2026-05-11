@@ -4584,6 +4584,31 @@ const proto::ProtoObject* py_type(
         const proto::ProtoObject* basesArg = positionalParameters->getAt(context, baseIdx + 1);
         const proto::ProtoObject* dict = positionalParameters->getAt(context, baseIdx + 2);
 
+        // CPython: duplicate base classes raise TypeError at class
+        // creation.  Walk the bases tuple looking for any pair of
+        // identical entries.  This catches `type('X', (A, A), {})`
+        // and similar.
+        if (env && basesArg) {
+            const proto::ProtoTuple* basesTuple = basesArg->asTuple(context);
+            if (basesTuple) {
+                unsigned long bn = basesTuple->getSize(context);
+                for (unsigned long i = 0; i < bn; ++i) {
+                    const proto::ProtoObject* bi = basesTuple->getAt(context, static_cast<int>(i));
+                    for (unsigned long j = i + 1; j < bn; ++j) {
+                        const proto::ProtoObject* bj = basesTuple->getAt(context, static_cast<int>(j));
+                        if (bi && bi == bj) {
+                            std::string biName = "?";
+                            const proto::ProtoObject* nm = bi->getAttribute(context, env->getNameString());
+                            if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, biName);
+                            env->raiseTypeError(context,
+                                "duplicate base class " + biName);
+                            return nullptr;
+                        }
+                    }
+                }
+            }
+        }
+
         // CPython: `__slots__ = ['foo']; foo = X` is rejected at class
         // creation with `ValueError: 'foo' in __slots__ conflicts with
         // class variable`.  Walk the slots list and check for matches
