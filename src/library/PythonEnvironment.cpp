@@ -4486,6 +4486,28 @@ static const proto::ProtoObject* py_tuple_call(
     const proto::ProtoObject* cls = positionalParameters && positionalParameters->getSize(context) > 0 ? positionalParameters->getAt(context, 0) : self;
     if (!cls) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    // CPython: tuple.__new__(cls) requires cls to be a subclass of tuple.
+    if (env && cls != env->getTuplePrototype()) {
+        bool subclassOf = false;
+        const proto::ProtoObject* mroAttr = cls->getAttribute(context, env->getMroString());
+        const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
+        if (mroT) {
+            for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+                if (mroT->getAt(context, static_cast<int>(i)) == env->getTuplePrototype()) {
+                    subclassOf = true;
+                    break;
+                }
+            }
+        }
+        if (!subclassOf) {
+            std::string clsName = "?";
+            const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
+            if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+            env->raiseTypeError(context,
+                "tuple.__new__(" + clsName + "): " + clsName + " is not a subtype of tuple");
+            return nullptr;
+        }
+    }
     if (get_env_diag()) fprintf(stderr, "DEBUG: py_tuple_call entry cls=%p repr=%s\n", (void*)cls, PythonEnvironment::reprObject(context, cls).c_str());
     const proto::ProtoObject* instance = cls->newChild(context, true);
     if (get_env_diag()) fprintf(stderr, "DEBUG: py_tuple_call created instance=%p\n", (void*)instance);
