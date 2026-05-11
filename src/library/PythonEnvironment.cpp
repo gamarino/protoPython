@@ -1407,7 +1407,12 @@ static const proto::ProtoObject* py_float_call(
                 x = ctx->fromDouble(std::stod(s));
             } catch (...) {
                 PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-                if (env) env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, ("invalid literal for float(): " + s).c_str())->asObject(ctx));
+                // CPython: `could not convert string to float: 'val'` with
+                // the offending input quoted via repr().  The earlier
+                // "invalid literal for float():" wording matched int() not
+                // float(), and the missing quotes hid empty / whitespace
+                // inputs in the diagnostic.
+                if (env) env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, ("could not convert string to float: '" + s + "'").c_str())->asObject(ctx));
                 return PROTO_NONE;
             }
         } else {
@@ -1678,9 +1683,14 @@ static const proto::ProtoObject* py_int_call(
             } catch (...) {
                 PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
                 if (env) {
-                    char msg[256];
+                    // CPython quotes the offending literal in the message,
+                    // wrapping it in repr() so empty / whitespace / non-ASCII
+                    // strings are visibly delimited:
+                    //   int('')   -> "invalid literal for int() with base 10: ''"
+                    //   int('abc') -> "invalid literal for int() with base 10: 'abc'"
+                    char msg[512];
                     std::snprintf(msg, sizeof(msg),
-                                  "invalid literal for int() with base %d: %s",
+                                  "invalid literal for int() with base %d: '%s'",
                                   (explicitBase < 0 ? 10 : explicitBase), s.c_str());
                     env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, msg)->asObject(ctx));
                 }
