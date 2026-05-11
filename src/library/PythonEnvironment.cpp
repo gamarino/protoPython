@@ -15088,6 +15088,42 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(rootContext_, py_maketrans, rootContext_->fromMethod(nullptr, py_str_maketrans));
     strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "translate"),
         rootContext_->fromMethod(nullptr, py_str_translate));
+    // str.__reversed__: iterate over chars in reverse order.
+    // CPython makes this available so `reversed("abc")` works.
+    strPrototype = strPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__reversed__"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            const proto::ProtoObject* receiver = self;
+            if (receiver && !receiver->isString(ctx) && args && args->getSize(ctx) >= 1) {
+                receiver = args->getAt(ctx, 0);
+            }
+            if (!receiver || !receiver->isString(ctx)) return PROTO_NONE;
+            // Pull the actual string content (handles wrapped str-subclass).
+            const proto::ProtoString* str = receiver->asString(ctx);
+            if (!str) {
+                const proto::ProtoString* dn = env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "__data__");
+                const proto::ProtoObject* d = receiver->getAttribute(ctx, dn);
+                if (d) str = d->asString(ctx);
+            }
+            if (!str) return PROTO_NONE;
+            std::string s;
+            str->toUTF8String(ctx, s);
+            // Build a list of one-char strings in reverse and iter
+            // it.  Mirrors `list(reversed("abc"))` returning the
+            // chars in reverse — protoCore's StringIterator does
+            // not expose a reverse-walk primitive.
+            const proto::ProtoList* lst = ctx->newList();
+            for (auto it = s.rbegin(); it != s.rend(); ++it) {
+                char buf[2] = {*it, 0};
+                lst = lst->appendLast(ctx, PythonEnvironment::getInternedString(ctx, buf)->asObject(ctx));
+            }
+            if (env) return env->iter(lst->asObject(ctx));
+            return lst->asObject(ctx);
+        }));
     const proto::ProtoString* py_find = PythonEnvironment::getInternedString(rootContext_, "find");
     const proto::ProtoString* py_index = PythonEnvironment::getInternedString(rootContext_, "index");
     strPrototype = strPrototype->setAttribute(rootContext_, py_find, rootContext_->fromMethod(nullptr, py_str_find));
