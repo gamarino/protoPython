@@ -193,6 +193,50 @@ the receiver's `__mro__` for tuplePrototype/listPrototype and
 substitute the primitive prototype before wrapping the result,
 matching CPython's unoverridden-dunder semantics.
 
+### Fixed: 20-commit sweep — error fidelity + missing dunders
+
+Twenty back-to-back root-cause fixes for divergences from CPython's
+public surface, every one verified by probe and with ctest 199/199
+throughout.  Highlights:
+
+- **`exception_repr` resolves the actual class via `env->getType`** —
+  the previous `instance->getAttribute("__class__")` walk reached
+  the exception class's `__class__` slot (= `type`) because
+  `exception_init` never set an own `__class__`, so every
+  exception printed as `type('msg')` rather than
+  `ValueError('msg')`, `KeyError('k')`, etc.
+- **`dict.fromkeys(non_iterable)`** now raises
+  `TypeError("'X' object is not iterable")` instead of silently
+  returning `None`.
+- **`set(non_iterable)`** now raises the same `TypeError` instead
+  of silently returning `set()`.
+- **`reversed(obj)`** error message names the type
+  (`'int' object is not reversible`) instead of embedding the
+  receiver's `repr` (`'5' object is not reversible`).
+- **`isinstance`/`issubclass` arg2 validation** — both reject
+  non-class, non-tuple, non-union arguments with TypeError instead
+  of silently returning `False`.  Includes `__args__`-driven union
+  detection so `isinstance(x, int|str)` keeps working.
+- **`getattr` / `hasattr` / `setattr`** raise TypeError when the
+  attribute name is not a string.
+- **`any` / `all`** evaluate truthiness via `env->isTrue` so user
+  `__bool__` / `__len__` dunders run.
+- **`enumerate(it, start=N)`** honours the `start` keyword.
+- **`min` / `max`** raise on empty iterable with no default, accept
+  the `default=` kwarg, and dispatch `key=` correctly.
+- **`ord` / `chr`** raise the standard `TypeError` / `ValueError`
+  with CPython-matching messages.
+- **`range.__reversed__` / `dict.__reversed__` / `str.__reversed__`**
+  installed for direct unbound dispatch and reverse iteration.
+- **`set` update / `isdisjoint` / `intersection_update` /
+  `difference_update` / `symmetric_difference_update`** added.
+- **`math.factorial`** raises `TypeError` on non-integral input,
+  not `RuntimeError`.
+- **`dict.popitem`** routes through `dictKeyHash` so custom
+  `__hash__` types pop correctly.
+- **`dict.pop` / `set.remove`** raise `KeyError`, not bare
+  RuntimeError or ValueError-tagged-as-KeyError.
+
 ### Fixed: str.rsplit three bugs in one
 
 `'hello world'.rsplit('o')` returned `[]`.  Three independent
