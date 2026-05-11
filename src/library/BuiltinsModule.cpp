@@ -1179,6 +1179,15 @@ static const proto::ProtoObject* py_enumerate(
     long long start = 0;
     if (positionalParameters->getSize(context) >= 3 && positionalParameters->getAt(context, 2)->isInteger(context))
         start = positionalParameters->getAt(context, 2)->asLong(context);
+    // Also honor `start=` keyword (enumerate(iter, start=N) shape).
+    if (keywordParameters) {
+        const proto::ProtoString* startS = PythonEnvironment::getInternedString(context, "start");
+        unsigned long sh = startS->getHash(context);
+        if (keywordParameters->has(context, sh)) {
+            const proto::ProtoObject* sv = keywordParameters->getAt(context, sh);
+            if (sv && sv->isInteger(context)) start = sv->asLong(context);
+        }
+    }
 
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoString* enumProtoS = env ? env->getEnumProtoString() : PythonEnvironment::getInternedString(context, "__enumerate_proto__");
