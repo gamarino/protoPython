@@ -10267,14 +10267,36 @@ static const proto::ProtoObject* wrapInDictView(
     return obj;
 }
 
+// Helper: extract receiver for dict methods accepting both bound and
+// unbound calling conventions.  Returns the receiver and skips
+// positional[0] if it was used as receiver shift.
+static const proto::ProtoObject* dict_self_or_arg(proto::ProtoContext* context,
+        const proto::ProtoObject* self, const proto::ProtoList* posArgs,
+        int* posOff = nullptr) {
+    if (posOff) *posOff = 0;
+    const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
+    const proto::ProtoObject* selfKeys = self ? self->getAttribute(context, keysName) : nullptr;
+    if (selfKeys && selfKeys->asList(context)) return self;
+    if (posArgs && posArgs->getSize(context) >= 1) {
+        const proto::ProtoObject* cand = posArgs->getAt(context, 0);
+        const proto::ProtoObject* k = cand ? cand->getAttribute(context, keysName) : nullptr;
+        if (k && k->asList(context)) {
+            if (posOff) *posOff = 1;
+            return cand;
+        }
+    }
+    return self;
+}
+
 static const proto::ProtoObject* py_dict_keys(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoObject* receiver = dict_self_or_arg(context, self, positionalParameters);
     const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
-    const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
+    const proto::ProtoObject* keysObj = receiver ? receiver->getAttribute(context, keysName) : nullptr;
     const proto::ProtoList* keys = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
     return wrapInDictView(context, keys, "dict_keys");
 }
@@ -10285,13 +10307,13 @@ static const proto::ProtoObject* py_dict_values(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoObject* receiver = dict_self_or_arg(context, self, positionalParameters);
     const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
-    // Use virtual getAttribute to correctly resolve mutable dict instance attributes.
-    const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
+    const proto::ProtoObject* keysObj = receiver ? receiver->getAttribute(context, keysName) : nullptr;
     const proto::ProtoList* keys = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
 
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* data = receiver ? receiver->getAttribute(context, dataName) : nullptr;
     const proto::ProtoSparseList* dict = data && data->asSparseList(context) ? data->asSparseList(context) : nullptr;
     if (!dict) return context->newList()->asObject(context);
 
@@ -10311,14 +10333,14 @@ static const proto::ProtoObject* py_dict_items(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    if (!self) return context->newList()->asObject(context);
+    const proto::ProtoObject* receiver = dict_self_or_arg(context, self, positionalParameters);
+    if (!receiver) return context->newList()->asObject(context);
     const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
-    // Use virtual getAttribute to correctly resolve mutable dict instance attributes.
-    const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
+    const proto::ProtoObject* keysObj = receiver->getAttribute(context, keysName);
     const proto::ProtoList* keys = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
 
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
     const proto::ProtoSparseList* dict = data && data->asSparseList(context) ? data->asSparseList(context) : nullptr;
     
     const proto::ProtoList* items = context->newList();
