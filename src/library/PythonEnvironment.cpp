@@ -2390,12 +2390,22 @@ static const proto::ProtoObject* py_list_delitem(
     const proto::ProtoSparseList* keywordParameters) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoString* dataName = env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* selfData = self ? self->getAttribute(context, dataName) : nullptr;
+    const proto::ProtoObject* receiver = self;
+    int posOff = 0;
+    if ((!selfData || !selfData->asList(context))
+        && positionalParameters && positionalParameters->getSize(context) >= 2) {
+        // Unbound: list.__delitem__(lst, idx)
+        receiver = positionalParameters->getAt(context, 0);
+        posOff = 1;
+    }
+    if (!receiver) return PROTO_NONE;
+    const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
     if (!data || !data->asList(context)) return PROTO_NONE;
     const proto::ProtoList* list = data->asList(context);
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    
-    const proto::ProtoObject* indexObj = positionalParameters->getAt(context, 0);
+    if (positionalParameters->getSize(context) < static_cast<unsigned long>(1 + posOff)) return PROTO_NONE;
+
+    const proto::ProtoObject* indexObj = positionalParameters->getAt(context, posOff);
     unsigned long size = list->getSize(context);
 
     // del lst[i:j:k] — drop the selected indices, keep the rest.
@@ -2412,7 +2422,7 @@ static const proto::ProtoObject* py_list_delitem(
             if (drop.count(i)) continue;
             newList = newList->appendLast(context, list->getAt(context, static_cast<int>(i)));
         }
-        self->setAttribute(context, dataName, newList->asObject(context));
+        const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, newList->asObject(context));
         return PROTO_NONE;
     }
 
@@ -2425,7 +2435,7 @@ static const proto::ProtoObject* py_list_delitem(
     if (index < 0) index += static_cast<int>(size);
     if (index < 0 || static_cast<unsigned long>(index) >= size) return PROTO_NONE;
     const proto::ProtoList* newList = list->removeAt(context, index);
-    self->setAttribute(context, dataName, newList->asObject(context));
+    const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, newList->asObject(context));
     return PROTO_NONE;
 }
 
