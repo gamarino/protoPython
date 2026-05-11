@@ -7456,6 +7456,37 @@ static const proto::ProtoObject* py_map_next(
     // local. Without the pin, a GC firing inside the user mapper frees
     // val's backing cells under the running mutator.
     protoPython::PythonEnvironment::TransientPin pinVal(env, val);
+
+    // CPython: map(non_callable, iterable) constructs OK but the first
+    // next() raises TypeError: 'X' object is not callable.  Previously
+    // invokePythonCallable returned val unchanged for non-callable func
+    // (the silent passthrough was masked by env->callObject's tolerance),
+    // so `next(map(5, [1,2,3]))` returned 1 instead of raising.  Check
+    // callability up front by walking type(func).__call__ via getAttribute.
+    if (env) {
+        bool isCallable = false;
+        if (func && func->asMethod(context)) {
+            isCallable = true;
+        } else if (func && func != PROTO_NONE) {
+            const proto::ProtoString* callS = env->getCallString();
+            const proto::ProtoObject* callM = env->getAttribute(context, func, callS, /*raiseError=*/false);
+            if (callM && callM != PROTO_NONE) isCallable = true;
+        }
+        if (!isCallable) {
+            std::string clsName = "NoneType";
+            if (func && func != PROTO_NONE) {
+                const proto::ProtoObject* cls = env->getType(context, func);
+                if (cls) {
+                    const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
+                    if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+                }
+            }
+            env->raiseTypeError(context,
+                "'" + clsName + "' object is not callable");
+            return nullptr;
+        }
+    }
+
     const proto::ProtoObject* res = env ? env->callObject(func, {val}) : nullptr;
     if (!res && env && env->hasPendingException()) {
         return nullptr;
