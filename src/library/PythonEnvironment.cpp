@@ -2591,10 +2591,20 @@ static const proto::ProtoObject* py_list_contains(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* selfData = self ? self->getAttribute(context, dataName) : nullptr;
+    const proto::ProtoObject* receiver = self;
+    const proto::ProtoObject* value = nullptr;
+    if ((!selfData || !selfData->asList(context))
+        && positionalParameters && positionalParameters->getSize(context) >= 2) {
+        // Unbound form: list.__contains__(lst, value)
+        receiver = positionalParameters->getAt(context, 0);
+        value = positionalParameters->getAt(context, 1);
+    } else if (positionalParameters && positionalParameters->getSize(context) >= 1) {
+        value = positionalParameters->getAt(context, 0);
+    }
+    if (!receiver || !value) return PROTO_FALSE;
+    const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
     if (!data || !data->asList(context)) return PROTO_FALSE;
-    if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
-    const proto::ProtoObject* value = positionalParameters->getAt(context, 0);
     return data->asList(context)->has(context, value) ? PROTO_TRUE : PROTO_FALSE;
 }
 
