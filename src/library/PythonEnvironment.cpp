@@ -5230,9 +5230,35 @@ static const proto::ProtoObject* py_set_symmetric_difference(
     return result;
 }
 
+// Helper: accept bound (1 arg) and unbound (2 args) forms.  Returns the
+// (receiver, args) tuple suitable for handing to the underlying binary op.
+// Handles self=null (asMethod was registered with no bound self) by also
+// shifting from positional[0].
+static void unwrap_set_binop_args(proto::ProtoContext* ctx,
+    const proto::ProtoObject*& self, const proto::ProtoList*& args) {
+    if (!args) return;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoString* dataS = env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "__data__");
+    bool selfIsSet = false;
+    if (self) {
+        if (self->asSet(ctx)) selfIsSet = true;
+        else {
+            const proto::ProtoObject* d = self->getAttribute(ctx, dataS);
+            if (d && d->asSet(ctx)) selfIsSet = true;
+        }
+    }
+    if (selfIsSet) return;
+    if (args->getSize(ctx) >= 2) {
+        self = args->getAt(ctx, 0);
+        const proto::ProtoList* shifted = ctx->newList()->appendLast(ctx, args->getAt(ctx, 1));
+        args = shifted;
+    }
+}
+
 static const proto::ProtoObject* py_set_or(
     proto::ProtoContext* context, const proto::ProtoObject* self,
     const proto::ParentLink* parent, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    unwrap_set_binop_args(context, self, args);
     if (args->getSize(context) != 1) return PROTO_NONE;
     return py_set_union(context, self, parent, args, kwargs);
 }
@@ -5240,6 +5266,7 @@ static const proto::ProtoObject* py_set_or(
 static const proto::ProtoObject* py_set_and(
     proto::ProtoContext* context, const proto::ProtoObject* self,
     const proto::ParentLink* parent, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    unwrap_set_binop_args(context, self, args);
     if (args->getSize(context) != 1) return PROTO_NONE;
     return py_set_intersection(context, self, parent, args, kwargs);
 }
@@ -5247,6 +5274,7 @@ static const proto::ProtoObject* py_set_and(
 static const proto::ProtoObject* py_set_sub(
     proto::ProtoContext* context, const proto::ProtoObject* self,
     const proto::ParentLink* parent, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    unwrap_set_binop_args(context, self, args);
     if (args->getSize(context) != 1) return PROTO_NONE;
     return py_set_difference(context, self, parent, args, kwargs);
 }
@@ -5254,6 +5282,7 @@ static const proto::ProtoObject* py_set_sub(
 static const proto::ProtoObject* py_set_xor(
     proto::ProtoContext* context, const proto::ProtoObject* self,
     const proto::ParentLink* parent, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    unwrap_set_binop_args(context, self, args);
     if (args->getSize(context) != 1) return PROTO_NONE;
     return py_set_symmetric_difference(context, self, parent, args, kwargs);
 }
