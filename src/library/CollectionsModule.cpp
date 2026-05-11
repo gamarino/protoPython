@@ -104,9 +104,20 @@ static const proto::ProtoObject* py_deque_append(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* kwArgs) {
-    
+
     DequeState* state = get_deque_state(ctx, self);
-    if (state && posArgs->getSize(ctx) > 0) {
+    if (!state) {
+        // CPython: descriptor doesn't apply to a non-deque object.
+        // Match the standard "descriptor 'X' for 'Y' objects doesn't
+        // apply to a 'Z' object" shape.
+        protoPython::PythonEnvironment* env =
+            protoPython::PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseTypeError(ctx,
+            "descriptor 'append' for 'collections.deque' objects "
+            "doesn't apply to a non-deque object");
+        return nullptr;
+    }
+    if (posArgs->getSize(ctx) > 0) {
         std::lock_guard<std::mutex> lock(state->mutex);
         state->data.push_back(posArgs->getAt(ctx, 0));
         state->mutationCount++;
@@ -120,9 +131,17 @@ static const proto::ProtoObject* py_deque_appendleft(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* kwArgs) {
-    
+
     DequeState* state = get_deque_state(ctx, self);
-    if (state && posArgs->getSize(ctx) > 0) {
+    if (!state) {
+        protoPython::PythonEnvironment* env =
+            protoPython::PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseTypeError(ctx,
+            "descriptor 'appendleft' for 'collections.deque' objects "
+            "doesn't apply to a non-deque object");
+        return nullptr;
+    }
+    if (posArgs->getSize(ctx) > 0) {
         std::lock_guard<std::mutex> lock(state->mutex);
         state->data.push_front(posArgs->getAt(ctx, 0));
         state->mutationCount++;
