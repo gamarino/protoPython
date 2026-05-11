@@ -4694,6 +4694,48 @@ const proto::ProtoObject* py_type(
                     return nullptr;
                 }
             }
+            // CPython: multiple inheritance from incompatible built-in
+            // layouts is rejected at class-creation time (\"multiple
+            // bases have instance lay-out conflict\").  Approximate by
+            // counting distinct built-in container/primitive prototypes
+            // in the bases; more than one is an error.
+            int builtinKinds = 0;
+            const proto::ProtoObject* offender = nullptr;
+            const proto::ProtoObject* layoutBuiltins[] = {
+                env->getStrPrototype(), env->getBytesPrototype(),
+                env->getListPrototype(), env->getDictPrototype(),
+                env->getTuplePrototype(), env->getSetPrototype(),
+                env->getFrozensetPrototype(), env->getIntPrototype(),
+                env->getFloatPrototype(), env->getModulePrototype(),
+            };
+            for (unsigned long i = 0; i < n; ++i) {
+                const proto::ProtoObject* base = basesL ? basesL->getAt(context, i)
+                                                        : basesT->getAt(context, i);
+                for (auto* bp : layoutBuiltins) {
+                    if (!bp) continue;
+                    bool match = (base == bp);
+                    if (!match) {
+                        // Subclass of bp also has its layout.
+                        const proto::ProtoObject* bmro = base ? base->getAttribute(context, env->getMroString()) : nullptr;
+                        const proto::ProtoTuple* bmroT = bmro ? bmro->asTuple(context) : nullptr;
+                        if (bmroT) {
+                            for (unsigned long j = 0; j < bmroT->getSize(context); ++j) {
+                                if (bmroT->getAt(context, static_cast<int>(j)) == bp) { match = true; break; }
+                            }
+                        }
+                    }
+                    if (match) {
+                        if (!offender) offender = bp;
+                        else if (bp != offender) builtinKinds++;
+                        break;
+                    }
+                }
+            }
+            if (builtinKinds > 0) {
+                env->raiseTypeError(context,
+                    "multiple bases have instance lay-out conflict");
+                return nullptr;
+            }
         }
 
         const proto::ProtoObject* targetClass = context->newObject(true);
