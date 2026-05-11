@@ -4959,6 +4959,46 @@ static const proto::ProtoObject* py_dict_call(
                 // Iterable of pairs fallback: use env->iter/next so that self is
                 // correctly bound for generators and other custom iterators.
                 if (env) {
+                    // CPython rejects `dict(obj)` when `obj` is neither
+                    // a mapping (has keys()) nor an iterable (has
+                    // __iter__ or __getitem__).  env->iter has a
+                    // pre-existing fallback that iterates any object's
+                    // attribute SparseList, so we'd otherwise silently
+                    // return {} for arbitrary instances and miss the
+                    // `dict(incomplete mapping)` rejection contract.
+                    //
+                    // Walk the type's protoCore parent chain rather
+                    // than __mro__ — generator-class instances have a
+                    // bare ['object'] MRO yet expose __iter__ through
+                    // the underlying prototype.  Skip objectPrototype
+                    // so we don't accept everything via the trivial
+                    // root.
+                    const proto::ProtoObject* mType = env->getType(context, mapping);
+                    bool hasIterProto = false;
+                    if (mType && mType != PROTO_NONE) {
+                        const proto::ProtoString* iterS = env->getIterString();
+                        const proto::ProtoString* getItemS2 = PythonEnvironment::getInternedString(context, "__getitem__");
+                        const proto::ProtoObject* objProto = env->getObjectPrototype();
+                        const proto::ProtoObject* cur = mType;
+                        int guard = 0;
+                        while (cur && cur != PROTO_NONE && guard++ < 32) {
+                            if (cur != objProto) {
+                                if (cur->hasOwnAttribute(context, iterS) == PROTO_TRUE ||
+                                    cur->hasOwnAttribute(context, getItemS2) == PROTO_TRUE) {
+                                    hasIterProto = true;
+                                    break;
+                                }
+                            }
+                            const proto::ProtoList* parents = cur->getParents(context);
+                            if (!parents || parents->getSize(context) == 0) break;
+                            cur = parents->getAt(context, 0);
+                        }
+                    }
+                    if (!hasIterProto) {
+                        env->raiseTypeError(context,
+                            "cannot convert dictionary update sequence element to a sequence");
+                        return nullptr;
+                    }
                     const proto::ProtoString* dataNm = env->getDataString();
                     const proto::ProtoObject* it = env->iter(mapping);
                     if (!it) {
@@ -4999,15 +5039,55 @@ static const proto::ProtoObject* py_dict_call(
                             unsigned long pairLen = 0;
                             if (pairT) {
                                 pairLen = pairT->getSize(context);
-                                if (pairLen >= 2) {
+                                if (pairLen == 2) {
                                     k = pairT->getAt(context, 0);
                                     v = pairT->getAt(context, 1);
                                 }
                             } else if (pairL) {
                                 pairLen = pairL->getSize(context);
-                                if (pairLen >= 2) {
+                                if (pairLen == 2) {
                                     k = pairL->getAt(context, 0);
                                     v = pairL->getAt(context, 1);
+                                }
+                            } else {
+                                // CPython: a pair element only needs
+                                // to be an iterable yielding exactly
+                                // two values (e.g. a custom class with
+                                // __iter__ returning iter([a, b])).
+                                // Drive __iter__ ourselves; env->next
+                                // already consumes StopIteration on
+                                // exhaustion and returns nullptr.
+                                const proto::ProtoObject* pairIt = env->iter(pairObj);
+                                if (env->hasPendingException()) {
+                                    // env->iter raised — non-iterable
+                                    // element.  Propagate as TypeError.
+                                    return nullptr;
+                                }
+                                if (!pairIt) {
+                                    env->raiseTypeError(context,
+                                        "cannot convert dictionary update sequence element to a sequence");
+                                    return nullptr;
+                                }
+                                const proto::ProtoObject* a = env->next(pairIt);
+                                if (env->hasPendingException()) return nullptr;
+                                if (a) {
+                                    const proto::ProtoObject* b = env->next(pairIt);
+                                    if (env->hasPendingException()) return nullptr;
+                                    if (b) {
+                                        const proto::ProtoObject* extra = env->next(pairIt);
+                                        if (env->hasPendingException()) return nullptr;
+                                        if (!extra) {
+                                            k = a;
+                                            v = b;
+                                            pairLen = 2;
+                                        } else {
+                                            pairLen = 3; // >2 sentinel
+                                        }
+                                    } else {
+                                        pairLen = 1;
+                                    }
+                                } else {
+                                    pairLen = 0;
                                 }
                             }
 
@@ -5015,21 +5095,15 @@ static const proto::ProtoObject* py_dict_call(
                                 unsigned long hash = k->getHash(context);
                                 if (!d->has(context, hash)) keysList = const_cast<proto::ProtoList*>(keysList->appendLast(context, k));
                                 d = const_cast<proto::ProtoSparseList*>(d->setAt(context, hash, v));
+                            } else if (pairLen == 0 && !pairT && !pairL) {
+                                // Couldn't iterate the element at all.
+                                env->raiseTypeError(context,
+                                    "cannot convert dictionary update sequence element to a sequence");
+                                return nullptr;
                             } else {
-                                // CPython: dictionary update sequence
-                                // element must be a 2-element sequence.
-                                // The non-pair (e.g. a scalar `0`, a 1-char
-                                // string, or a 1-element tuple) gets
-                                // rejected at iteration time, not on
-                                // empty completion.
-                                if (!pairT && !pairL) {
-                                    env->raiseTypeError(context,
-                                        "cannot convert dictionary update sequence element to a sequence");
-                                } else {
-                                    env->raiseValueError(context,
-                                        PythonEnvironment::getInternedString(context,
-                                            "dictionary update sequence element has wrong length")->asObject(context));
-                                }
+                                env->raiseValueError(context,
+                                    PythonEnvironment::getInternedString(context,
+                                        "dictionary update sequence element has wrong length")->asObject(context));
                                 return nullptr;
                             }
                         }
@@ -19897,39 +19971,18 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
         const proto::ProtoStringIterator* it = str->getIterator(ctx);
         if (it) return it->asObject(ctx);
     } else if (obj->asSparseList(ctx)) {
-        // Dict iteration (keys).  Every Python instance owns a __data__
-        // SparseList for attribute storage, so an unrestricted asSparseList
-        // check would iterate any object's attribute keys.  Gate on the
-        // type descending from dictPrototype — same discipline as
-        // py_dict_call's mapping fast path.
-        bool isDictLike = false;
-        if (typeObj == dictPrototype) {
-            isDictLike = true;
-        } else if (typeObj && typeObj != PROTO_NONE && dictPrototype) {
-            const proto::ProtoObject* mroAttr = typeObj->getAttribute(ctx, getMroString());
-            const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
-            if (mroT) {
-                for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
-                    if (mroT->getAt(ctx, static_cast<int>(i)) == dictPrototype) {
-                        isDictLike = true;
-                        break;
-                    }
-                }
-            }
-        }
-        if (isDictLike) {
-            const proto::ProtoString* iterProtoName = PythonEnvironment::getInternedString(ctx, "__iter_prototype__");
-            const proto::ProtoObject* iterProto = dictPrototype ? dictPrototype->getAttribute(ctx, iterProtoName) : nullptr;
-            if (iterProto) {
-                const proto::ProtoObject* keysObj = obj->getAttribute(ctx, getKeysString());
-                const proto::ProtoList* keys = keysObj ? keysObj->asList(ctx) : nullptr;
-                if (keys) {
-                    const proto::ProtoListIterator* it = keys->getIterator(ctx);
-                    const proto::ProtoObject* iterObj = iterProto->newChild(ctx, true);
-                    iterObj = iterObj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__iter_list__"), keysObj);
-                    iterObj = iterObj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__iter_it__"), it->asObject(ctx));
-                    return iterObj;
-                }
+        // Dict iteration (keys)
+        const proto::ProtoString* iterProtoName = PythonEnvironment::getInternedString(ctx, "__iter_prototype__");
+        const proto::ProtoObject* iterProto = dictPrototype ? dictPrototype->getAttribute(ctx, iterProtoName) : nullptr;
+        if (iterProto) {
+            const proto::ProtoObject* keysObj = obj->getAttribute(ctx, getKeysString());
+            const proto::ProtoList* keys = keysObj ? keysObj->asList(ctx) : nullptr;
+            if (keys) {
+                const proto::ProtoListIterator* it = keys->getIterator(ctx);
+                const proto::ProtoObject* iterObj = iterProto->newChild(ctx, true);
+                iterObj = iterObj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__iter_list__"), keysObj);
+                iterObj = iterObj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__iter_it__"), it->asObject(ctx));
+                return iterObj;
             }
         }
     } else if (obj->asSet(ctx) || (obj->getPrototype(ctx) && obj->getPrototype(ctx) == setPrototype)) {
