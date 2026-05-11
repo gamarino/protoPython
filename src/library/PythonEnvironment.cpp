@@ -3821,6 +3821,36 @@ static const proto::ProtoObject* py_list_copy(
     return copyObj;
 }
 
+static const proto::ProtoObject* py_list_imul(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
+    const proto::ProtoObject* selfData = self ? self->getAttribute(context, dataName) : nullptr;
+    const proto::ProtoObject* receiver = self;
+    const proto::ProtoObject* other = nullptr;
+    if ((!selfData || !selfData->asList(context)) && posArgs->getSize(context) >= 2) {
+        receiver = posArgs->getAt(context, 0);
+        other = posArgs->getAt(context, 1);
+    } else {
+        other = posArgs->getAt(context, 0);
+    }
+    if (!receiver || !other || !other->isInteger(context)) return PROTO_NONE;
+    long long n = other->asLong(context);
+    if (n < 0) n = 0;
+    const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
+    const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
+    if (!list) return PROTO_NONE;
+    const proto::ProtoList* result = context->newList();
+    unsigned long size = list->getSize(context);
+    for (long long rep = 0; rep < n; ++rep)
+        for (unsigned long i = 0; i < size; ++i)
+            result = result->appendLast(context, list->getAt(context, static_cast<int>(i)));
+    const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, result->asObject(context));
+    return receiver;
+}
+
 static const proto::ProtoObject* py_list_mul(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -13428,6 +13458,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_rmul = PythonEnvironment::getInternedString(rootContext_, "__rmul__");
     listPrototype = listPrototype->setAttribute(rootContext_, py_mul, rootContext_->fromMethod(nullptr, py_list_mul));
     listPrototype = listPrototype->setAttribute(rootContext_, py_rmul, rootContext_->fromMethod(nullptr, py_list_mul));
+    listPrototype = listPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__imul__"), rootContext_->fromMethod(nullptr, py_list_imul));
     listPrototype = listPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__add__"), rootContext_->fromMethod(nullptr, py_list_add));
     listPrototype = listPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__iadd__"), rootContext_->fromMethod(nullptr, py_list_iadd));
 
