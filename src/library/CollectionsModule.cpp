@@ -306,7 +306,14 @@ static const proto::ProtoObject* py_deque_extend(
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* iterable = posArgs->getAt(ctx, 0);
     DequeState* state = get_deque_state(ctx, self);
-    if (!state) return PROTO_NONE;
+    if (!state) {
+        protoPython::PythonEnvironment* env =
+            protoPython::PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseTypeError(ctx,
+            "descriptor 'extend' for 'collections.deque' objects "
+            "doesn't apply to a non-deque object");
+        return nullptr;
+    }
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env) return PROTO_NONE;
     const proto::ProtoObject* it = env->iter(iterable);
@@ -331,7 +338,14 @@ static const proto::ProtoObject* py_deque_extendleft(
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* iterable = posArgs->getAt(ctx, 0);
     DequeState* state = get_deque_state(ctx, self);
-    if (!state) return PROTO_NONE;
+    if (!state) {
+        protoPython::PythonEnvironment* env =
+            protoPython::PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseTypeError(ctx,
+            "descriptor 'extendleft' for 'collections.deque' objects "
+            "doesn't apply to a non-deque object");
+        return nullptr;
+    }
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env) return PROTO_NONE;
     const proto::ProtoObject* it = env->iter(iterable);
