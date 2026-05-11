@@ -4544,9 +4544,31 @@ static const proto::ProtoObject* py_dict_call(
 
     if (positionalParameters && positionalParameters->getSize(context) >= 2) {
         const proto::ProtoObject* mapping = positionalParameters->getAt(context, 1);
-        // Fast path for native dict objects
-        const proto::ProtoObject* d_data = (mapping->hasOwnAttribute(context, dataName) == PROTO_TRUE) ? mapping->getAttribute(context, dataName) : nullptr;
-        const proto::ProtoObject* d_keys = (mapping->hasOwnAttribute(context, keysName) == PROTO_TRUE) ? mapping->getAttribute(context, keysName) : nullptr;
+        // Fast path for native dict objects.  Restricted to instances
+        // whose type descends from dictPrototype — every Python
+        // instance owns __data__ / __keys__ for its attribute storage,
+        // so an unrestricted check treats any random object as a dict
+        // and silently iterates its instance attributes.
+        bool mappingIsDictLike = false;
+        if (env) {
+            const proto::ProtoObject* mt = env->getType(context, mapping);
+            if (mt == env->getDictPrototype()) {
+                mappingIsDictLike = true;
+            } else if (mt && mt != PROTO_NONE) {
+                const proto::ProtoObject* mAttr = mt->getAttribute(context, env->getMroString());
+                const proto::ProtoTuple* mroT = mAttr ? mAttr->asTuple(context) : nullptr;
+                if (mroT) {
+                    for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+                        if (mroT->getAt(context, static_cast<int>(i)) == env->getDictPrototype()) {
+                            mappingIsDictLike = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        const proto::ProtoObject* d_data = (mappingIsDictLike && mapping->hasOwnAttribute(context, dataName) == PROTO_TRUE) ? mapping->getAttribute(context, dataName) : nullptr;
+        const proto::ProtoObject* d_keys = (mappingIsDictLike && mapping->hasOwnAttribute(context, keysName) == PROTO_TRUE) ? mapping->getAttribute(context, keysName) : nullptr;
 
         if (d_data && d_keys && d_data->asSparseList(context) && d_keys->asList(context)) {
             const proto::ProtoSparseList* otherD = d_data->asSparseList(context);
@@ -4563,7 +4585,7 @@ static const proto::ProtoObject* py_dict_call(
             // Check for keys() method (mapping protocol) - use non-raising getAttribute
             const proto::ProtoString* keysS = env ? env->getInternedString(context, "keys") : PythonEnvironment::getInternedString(context, "keys");
             const proto::ProtoObject* keysM = env ? env->getAttribute(context, mapping, keysS, false) : mapping->proto::ProtoObject::getAttribute(context, keysS, false);
-            
+
             if (keysM && keysM != PROTO_NONE) {
                 const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
                 const proto::ProtoObject* keysObj = invokePythonCallable(context, keysM, emptyL, nullptr);
