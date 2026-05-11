@@ -7871,9 +7871,15 @@ static const proto::ProtoObject* py_str_contains(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* str = str_from_self(context, self);
-    if (!str || positionalParameters->getSize(context) < 1) return PROTO_FALSE;
-    const proto::ProtoObject* item = positionalParameters->getAt(context, 0);
-    if (!item->isString(context)) return PROTO_FALSE;
+    const proto::ProtoObject* item = nullptr;
+    if (!str && positionalParameters && positionalParameters->getSize(context) >= 2) {
+        // Unbound: str.__contains__(receiver, needle)
+        str = str_from_self(context, positionalParameters->getAt(context, 0));
+        item = positionalParameters->getAt(context, 1);
+    } else if (positionalParameters && positionalParameters->getSize(context) >= 1) {
+        item = positionalParameters->getAt(context, 0);
+    }
+    if (!str || !item || !item->isString(context)) return PROTO_FALSE;
     std::string haystack;
     str->toUTF8String(context, haystack);
     std::string needle;
