@@ -11885,15 +11885,17 @@ static const proto::ProtoObject* py_dict_pop(
     if (!dict) {
         if (defaultVal) return defaultVal;
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
-        if (env) env->raiseValueError(context, PythonEnvironment::getInternedString(context, "KeyError")->asObject(context));
-        return PROTO_NONE;
+        if (env) env->raiseKeyError(context, key);
+        return nullptr;
     }
-    unsigned long hash = key->getHash(context);
+    // Use the env-aware hash so custom __hash__ overrides bucket
+    // the same way py_dict_setitem / getitem do.
+    unsigned long hash = dictKeyHash(context, key);
     if (!dict->has(context, hash)) {
         if (defaultVal) return defaultVal;
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
-        if (env) env->raiseValueError(context, PythonEnvironment::getInternedString(context, "KeyError")->asObject(context));
-        return PROTO_NONE;
+        if (env) env->raiseKeyError(context, key);
+        return nullptr;
     }
     const proto::ProtoObject* value = dict->getAt(context, hash);
     const proto::ProtoSparseList* newDict = dict->removeAt(context, hash);
@@ -11901,7 +11903,7 @@ static const proto::ProtoObject* py_dict_pop(
     unsigned long size = keys->getSize(context);
     for (unsigned long i = 0; i < size; ++i) {
         const proto::ProtoObject* k = keys->getAt(context, static_cast<int>(i));
-        unsigned long kh = k->getHash(context);
+        unsigned long kh = dictKeyHash(context, k);
         if (kh != hash)
             newKeys = newKeys->appendLast(context, k);
     }
