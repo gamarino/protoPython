@@ -1907,8 +1907,14 @@ static const proto::ProtoObject* py_object_str(
     if (self == PROTO_FALSE) return PythonEnvironment::getInternedString(context, "False")->asObject(context);
 
     // Default str(obj) calls repr(obj), with recursion guard
-    if (s_reprDepth > 5) {
-        return PythonEnvironment::getInternedString(context, "...")->asObject(context);
+    // CPython raises RecursionError when __str__ keeps deferring to
+    // __repr__.  Test against a generous depth (RecursionScope inside
+    // invokeCallable doesn't fire from this native helper because we
+    // didn't enter through a callable frame).
+    if (s_reprDepth > 64) {
+        PythonEnvironment* envRec = PythonEnvironment::fromContext(context);
+        if (envRec) envRec->raiseRecursionError(context);
+        return nullptr;
     }
     const proto::ProtoList* args = context->newList()->appendLast(context, self);
     return py_repr_call(context, nullptr, nullptr, args, nullptr);
@@ -2061,8 +2067,9 @@ static const proto::ProtoObject* py_repr_call(
     const proto::ProtoObject* x = posArgs->getAt(ctx, 0);
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     // Guard against repr/str infinite recursion
-    if (s_reprDepth > 5) {
-        return PythonEnvironment::getInternedString(ctx, "...")->asObject(ctx);
+    if (s_reprDepth > 64) {
+        if (env) env->raiseRecursionError(ctx);
+        return nullptr;
     }
     ++s_reprDepth;
     const proto::ProtoObject* cls = env ? env->getType(ctx, x) : x->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__class__"));
