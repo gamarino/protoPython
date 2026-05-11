@@ -178,7 +178,16 @@ static const proto::ProtoObject* exception_repr(
     const proto::ProtoString* argsName = PythonEnvironment::getInternedString(context, "args");
     const proto::ProtoObject* argsObj = instance->getAttribute(context, argsName);
     const proto::ProtoTuple* args = argsObj && argsObj->isTuple(context) ? argsObj->asTuple(context) : context->newTuple();
-    const proto::ProtoObject* nameObj = instance->getAttribute(context, PythonEnvironment::getInternedString(context, "__class__"));
+    // Resolve the exception's actual class via getType, not via the
+    // prototype chain.  An exception instance has no own __class__
+    // attribute (exception_init never sets one), so a raw getAttribute
+    // walk reaches the exception-class's __class__ slot, which is the
+    // metaclass `type` — producing repr like "type('x not in list')".
+    // env->getType returns the first parent (the actual class) and is
+    // the same source of truth used by `type(e)` from user code.
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* nameObj = env ? env->getType(context, instance)
+                                            : instance->getAttribute(context, PythonEnvironment::getInternedString(context, "__class__"));
     if (nameObj && nameObj != PROTO_NONE) {
         nameObj = nameObj->getAttribute(context, PythonEnvironment::getInternedString(context, "__name__"));
     } else {
