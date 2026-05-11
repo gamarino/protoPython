@@ -4616,39 +4616,41 @@ const proto::ProtoObject* py_type(
                 if (slotsT) {
                     for (unsigned long si = 0; si < slotsT->getSize(context); ++si) {
                         const proto::ProtoObject* s = slotsT->getAt(context, si);
-                        // CPython: each item must be a string;
-                        // a non-string element (e.g. `__slots__ = [1]`)
-                        // raises TypeError at class-creation time.
-                        if (!s || !s->isString(context)) {
+                        if (s && s->isString(context)) {
+                            std::string ss; s->asString(context)->toUTF8String(context, ss);
+                            if (checkName(ss)) return nullptr;
+                        } else if (s && (s->isInteger(context) || s->isFloat(context) || s->isBoolean(context))) {
+                            // CPython rejects numeric slot names at
+                            // class-creation time with TypeError.
                             env->raiseTypeError(context,
                                 "__slots__ items must be strings, not 'int'");
                             return nullptr;
                         }
-                        std::string ss; s->asString(context)->toUTF8String(context, ss);
-                        if (checkName(ss)) return nullptr;
                     }
                 } else if (slotsL) {
                     for (unsigned long si = 0; si < slotsL->getSize(context); ++si) {
                         const proto::ProtoObject* s = slotsL->getAt(context, si);
-                        if (!s || !s->isString(context)) {
+                        if (s && s->isString(context)) {
+                            std::string ss; s->asString(context)->toUTF8String(context, ss);
+                            if (checkName(ss)) return nullptr;
+                        } else if (s && (s->isInteger(context) || s->isFloat(context) || s->isBoolean(context))) {
                             env->raiseTypeError(context,
                                 "__slots__ items must be strings, not 'int'");
                             return nullptr;
                         }
-                        std::string ss; s->asString(context)->toUTF8String(context, ss);
-                        if (checkName(ss)) return nullptr;
                     }
                 } else if (slotsVal->isString(context)) {
                     std::string ss; slotsVal->asString(context)->toUTF8String(context, ss);
                     if (checkName(ss)) return nullptr;
-                } else {
-                    // __slots__ must be a str, an iterable of strings,
-                    // or absent.  CPython rejects bare ints, dicts,
-                    // sets, etc. with TypeError.
+                } else if (slotsVal->isInteger(context) || slotsVal->isFloat(context)
+                           || slotsVal->isBoolean(context)) {
+                    // __slots__ = 1 — clearly not a slot spec.
                     env->raiseTypeError(context,
                         "__slots__ must be a str, iterable of strings, or None");
                     return nullptr;
                 }
+                // Other shapes (generator, set, custom iterable) are
+                // permissive — leave them to downstream consumers.
             }
         }
 
@@ -7144,14 +7146,34 @@ const proto::ProtoObject* py_object_new(
                     if (newOverridden && initOverridden) break;
                 }
             }
-            // CPython: object.__new__ rejects extra args when
-            // __init__ is the default (and so are __new__-only
-            // overrides whose call to object.__new__ leaves the
-            // extras unconsumed).  When __init__ is overridden the
-            // extras have a legitimate landing site downstream, so
-            // accept silently — matches the existing protoPython
-            // behaviour that the rest of the suite depends on.
-            if (!initOverridden) {
+            // CPython: object.__new__(cls, *args) accepts extras
+            // ONLY when __init__ is overridden AND __new__ is the
+            // default.  The override consumes the extras downstream.
+            // Every other shape rejects with TypeError:
+            //   - neither overridden  : nothing consumes them
+            //   - both overridden     : __new__ override would have
+            //     consumed them itself; calling object.__new__ here
+            //     bypasses that path, so the extras are spurious
+            //   - only __new__ ovd   : same as above
+            //
+            // Exception: when type/module is in cls's MRO, the loop
+            // above pre-set both flags as a coarse "constructors take
+            // args" signal.  Honor that by accepting extras — typical
+            // metaclass instantiation like `MetaC('D', bases, ns)`
+            // legitimately threads extras through here.
+            bool typeOrModuleInMro = false;
+            if (mroT) {
+                for (unsigned long mi = 0; mi < mroT->getSize(context); ++mi) {
+                    const proto::ProtoObject* base = mroT->getAt(context, static_cast<int>(mi));
+                    if (base == env->getTypePrototype() || base == env->getModulePrototype()) {
+                        typeOrModuleInMro = true;
+                        break;
+                    }
+                }
+            }
+            bool acceptExtras = typeOrModuleInMro
+                || (initOverridden && !newOverridden);
+            if (!acceptExtras) {
                 std::string clsName = "?";
                 const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
                 if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
