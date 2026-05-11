@@ -165,6 +165,60 @@ metaclass overrides `__setattr__` — bypassing the metaclass's
 intended validation is the exact security hole the guard is
 named after.
 
+### Fixed: int.__repr__ / __str__ re-register on the authoritative prototype
+
+The initial intPrototype init block set `py_int_repr` as
+`__repr__`, but a later step replaced `intPrototype` with
+`space_->smallIntegerPrototype`, dropping the registration.  Result:
+`repr(C(5))` for `class C(int): pass` walked the MRO, found no own
+`__repr__` on int, and fell through to `object.__repr__` → rendered
+`<C object at 0x…>`.  Re-register `__repr__` and `__str__` (both
+pointing at `py_int_repr`) on the authoritative prototype.
+
+### Fixed: complex arithmetic + abs + pow
+
+Installed `complex.__add__ / __sub__ / __mul__ / __truediv__`,
+`__abs__`, and `__pow__` on `complexPrototype`.  Without them
+`complex + int`, `abs(complex)`, and `complex ** int` either
+returned None or raised TypeError.  Results always cast to plain
+complex (dropping any subclass), matching CPython numeric-
+subclass semantics.
+
+### Fixed: tuple/list subclass + drops subclass
+
+`binaryAdd` for tuple+tuple and list+list checked the receiver's
+`__class__` and built the result with the same class — so
+`madtuple((1,)) + ()` returned `madtuple`, not plain tuple.  Walk
+the receiver's `__mro__` for tuplePrototype/listPrototype and
+substitute the primitive prototype before wrapping the result,
+matching CPython's unoverridden-dunder semantics.
+
+### Fixed: str.rsplit three bugs in one
+
+`'hello world'.rsplit('o')` returned `[]`.  Three independent
+issues: the result was a bare ProtoList (no Python list wrapper,
+so repr / iteration saw it as empty); the trailing-prefix push
+duplicated the first element when the no-match branch had
+already pushed it; and `str_from_self` blocked the unbound
+calling shape.  Fixed all three.
+
+### Fixed: str.partition / rpartition empty separator → ValueError
+
+Both methods returned None instead of raising
+`ValueError: empty separator` for the empty-sep case.
+
+### Added: str.maketrans + str.translate full implementations
+
+`str.maketrans` was a stub returning an empty SparseList that
+printed as the entire dict prototype.  `str.translate` did not
+exist.  Implemented both per CPython:
+
+  - `maketrans(x)`           — dict[int|str → str|int|None]
+  - `maketrans(x, y)`         — chars + replacements
+  - `maketrans(x, y, z)`      — + delete-set
+  - `translate(table)`         — UTF-8-aware mapping, None drops,
+                                int→char, str inline-replace.
+
 ### Earlier in the v0.3.0 cycle
 
 ### Added
