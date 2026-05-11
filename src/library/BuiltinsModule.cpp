@@ -1110,6 +1110,25 @@ static const proto::ProtoObject* py_format(
     std::string spec;
     if (positionalParameters->getSize(context) >= 2) {
         const proto::ProtoObject* specObj = positionalParameters->getAt(context, 1);
+        // CPython: format(value, format_spec) requires format_spec to be a str.
+        // Passing an int / None / list / etc. silently fell through and
+        // produced the unspec'd output, hiding the misuse.  Match CPython:
+        //   TypeError: format() argument 2 must be str, not <type>
+        if (specObj && !specObj->isString(context)) {
+            PythonEnvironment* envE = PythonEnvironment::fromContext(context);
+            if (envE) {
+                std::string clsName = "object";
+                const proto::ProtoObject* cls = envE->getType(context, specObj);
+                if (cls) {
+                    const proto::ProtoObject* nameAttr = cls->getAttribute(context, envE->getNameString());
+                    if (nameAttr && nameAttr->isString(context)) {
+                        nameAttr->asString(context)->toUTF8String(context, clsName);
+                    }
+                }
+                envE->raiseTypeError(context, "format() argument 2 must be str, not " + clsName);
+            }
+            return nullptr;
+        }
         if (specObj && specObj->isString(context)) {
             specObj->asString(context)->toUTF8String(context, spec);
         }
