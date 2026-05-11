@@ -2009,11 +2009,21 @@ static const proto::ProtoObject* py_setattr(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    if (positionalParameters->getSize(context) < 3) return PROTO_NONE;
+    PythonEnvironment* envEarlyS = PythonEnvironment::fromContext(context);
+    if (positionalParameters->getSize(context) < 3) {
+        if (envEarlyS) envEarlyS->raiseTypeError(context,
+            "setattr expected 3 arguments, got "
+            + std::to_string(positionalParameters->getSize(context)));
+        return nullptr;
+    }
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 1);
     const proto::ProtoObject* value = positionalParameters->getAt(context, 2);
-    if (!nameObj->isString(context)) return PROTO_NONE;
+    if (!nameObj->isString(context)) {
+        if (envEarlyS) envEarlyS->raiseTypeError(context,
+            "attribute name must be string");
+        return nullptr;
+    }
     std::string nameStr;
     nameObj->asString(context)->toUTF8String(context, nameStr);
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
@@ -3701,10 +3711,20 @@ static const proto::ProtoObject* py_hasattr(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    if (positionalParameters->getSize(context) < 2) return PROTO_FALSE;
+    PythonEnvironment* envEarly = PythonEnvironment::fromContext(context);
+    if (positionalParameters->getSize(context) < 2) {
+        if (envEarly) envEarly->raiseTypeError(context,
+            "hasattr expected 2 arguments, got "
+            + std::to_string(positionalParameters->getSize(context)));
+        return nullptr;
+    }
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 1);
-    if (!nameObj->isString(context)) return PROTO_FALSE;
+    if (!nameObj->isString(context)) {
+        if (envEarly) envEarly->raiseTypeError(context,
+            "hasattr(): attribute name must be string");
+        return nullptr;
+    }
     const proto::ProtoString* nameStr = nameObj->asString(context);
 
     std::string nString;
