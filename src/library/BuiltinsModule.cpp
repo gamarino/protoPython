@@ -5586,11 +5586,72 @@ static const proto::ProtoObject* py_pow(
     const proto::ProtoObject* expObj = positionalParameters->getAt(context, 1);
     bool hasMod = n >= 3;
     const proto::ProtoObject* modObj = hasMod ? positionalParameters->getAt(context, 2) : nullptr;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+
+    // CPython: dispatch through base.__pow__ when the class (or any
+    // MRO entry above the built-in int prototype) defines a user
+    // __pow__ override.  Without this branch, integer-subclasses like
+    // \`class I(int): def __pow__(self, o, m=None): ...\` are silently
+    // bypassed by the bignum fast path because isInteger transparently
+    // follows __data__ for the receiver.
+    if (env) {
+        // Prefer the protoCore parent over env->getType: for
+        // int/float subclass wrappers (\`class I(int):\`), getType
+        // folds back to the built-in prototype and misses the user
+        // class entirely.  When the parent IS a user class, use it
+        // for the override probe.
+        const proto::ProtoObject* baseCls = baseObj->getFirstParent(context);
+        if (!baseCls || baseCls == PROTO_NONE || baseCls == baseObj
+            || baseCls == env->getIntPrototype()
+            || baseCls == env->getFloatPrototype()
+            || baseCls == env->getBoolPrototype()
+            || baseCls == env->getObjectPrototype()) {
+            baseCls = env->getType(context, baseObj);
+        }
+        const proto::ProtoString* powS = PythonEnvironment::getInternedString(context, "__pow__");
+        bool overridden = false;
+        if (baseCls && baseCls != PROTO_NONE
+            && baseCls != env->getIntPrototype()
+            && baseCls != env->getFloatPrototype()
+            && baseCls != env->getBoolPrototype()) {
+            const proto::ProtoObject* mroAttr = baseCls->getAttribute(context, env->getMroString());
+            const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
+            if (mroT) {
+                for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+                    const proto::ProtoObject* m = mroT->getAt(context, static_cast<int>(i));
+                    if (!m || m == PROTO_NONE) continue;
+                    if (m == env->getIntPrototype()
+                        || m == env->getFloatPrototype()
+                        || m == env->getBoolPrototype()
+                        || m == env->getObjectPrototype()) continue;
+                    if (m->hasOwnAttribute(context, powS) == PROTO_TRUE) {
+                        overridden = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (overridden) {
+            const proto::ProtoObject* powMethod = baseObj->getAttribute(context, powS);
+            if (powMethod) {
+                if (powMethod->asMethod(context)) {
+                    proto::ProtoList* args = const_cast<proto::ProtoList*>(context->newList()->appendLast(context, expObj));
+                    if (modObj) args = const_cast<proto::ProtoList*>(args->appendLast(context, modObj));
+                    return powMethod->asMethod(context)(context, baseObj, nullptr, args, nullptr);
+                }
+                // Python-user __pow__ (no asMethod): prepend self so
+                // \`def __pow__(self, other, mod=None)\` binds correctly.
+                proto::ProtoList* args = const_cast<proto::ProtoList*>(
+                    context->newList()->appendLast(context, baseObj)->appendLast(context, expObj));
+                if (modObj) args = const_cast<proto::ProtoList*>(args->appendLast(context, modObj));
+                return ::protoPython::invokePythonCallable(context, powMethod, args, nullptr);
+            }
+        }
+    }
 
     // If any operand is non-integer, try __pow__ dunder on the base
     if (!baseObj->isInteger(context) || !expObj->isInteger(context) ||
         (modObj && !modObj->isInteger(context))) {
-        PythonEnvironment* env = PythonEnvironment::fromContext(context);
         const proto::ProtoObject* powMethod = baseObj->getAttribute(context, PythonEnvironment::getInternedString(context, "__pow__"));
         if (powMethod) {
             proto::ProtoList* args = const_cast<proto::ProtoList*>(context->newList()->appendLast(context, expObj));
