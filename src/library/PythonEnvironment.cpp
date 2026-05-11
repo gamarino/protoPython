@@ -14161,6 +14161,14 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         intPrototype = intPrototype->setAttribute(rootContext_, py_hash,          rootContext_->fromMethod(nullptr, py_int_hash));
         intPrototype = intPrototype->setAttribute(rootContext_, py_bool,          rootContext_->fromMethod(nullptr, py_int_bool));
         intPrototype = intPrototype->setAttribute(rootContext_, py_format_dunder, rootContext_->fromMethod(nullptr, py_int_format));
+        // __repr__ / __str__ — earlier block registered these on the
+        // temporary intPrototype; line 14135 replaces intPrototype with
+        // the authoritative smallIntegerPrototype, so we must re-register
+        // here.  Without these, `repr(C(5))` for `class C(int): pass`
+        // falls through to object.__repr__ and renders as
+        // `<C object at 0x...>` instead of `5`.
+        intPrototype = intPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_int_repr));
+        intPrototype = intPrototype->setAttribute(rootContext_, py_str,  rootContext_->fromMethod(nullptr, py_int_repr));
         intPrototype = intPrototype->setAttribute(rootContext_, py_bit_length_s,  rootContext_->fromMethod(nullptr, py_int_bit_length));
         intPrototype = intPrototype->setAttribute(rootContext_, py_bit_count_s,   rootContext_->fromMethod(nullptr, py_int_bit_count));
         intPrototype = intPrototype->setAttribute(rootContext_, py_from_bytes_s,  rootContext_->fromMethod(nullptr, py_int_from_bytes));
