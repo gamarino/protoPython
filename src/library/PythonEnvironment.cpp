@@ -10965,6 +10965,31 @@ static const proto::ProtoObject* py_dict_keys(
     return wrapInDictView(context, keys, "dict_keys");
 }
 
+// dict.__reversed__: iterate keys in reverse insertion order.
+static const proto::ProtoObject* py_dict_reversed(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList*) {
+    const proto::ProtoObject* receiver = dict_self_or_arg(context, self, positionalParameters);
+    const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
+    const proto::ProtoObject* keysObj = receiver ? receiver->getAttribute(context, keysName) : nullptr;
+    const proto::ProtoList* keys = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
+    // Build a reversed key list and return its iterator.  Cheap
+    // O(n) reversal — dicts are typically small enough for this
+    // not to matter, and the test_descr / inspect call sites
+    // expect a one-shot iterator anyway.
+    const proto::ProtoList* rev = context->newList();
+    unsigned long n = keys->getSize(context);
+    for (long long i = static_cast<long long>(n) - 1; i >= 0; --i) {
+        rev = rev->appendLast(context, keys->getAt(context, static_cast<int>(i)));
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (env) return env->iter(rev->asObject(context));
+    return rev->asObject(context);
+}
+
 static const proto::ProtoObject* py_dict_values(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -16043,6 +16068,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     }
 
     dictPrototype = dictPrototype->setAttribute(rootContext_, keysS, rootContext_->fromMethod(nullptr, py_dict_keys));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__reversed__"), rootContext_->fromMethod(nullptr, py_dict_reversed));
     dictPrototype = dictPrototype->setAttribute(rootContext_, valuesS, rootContext_->fromMethod(nullptr, py_dict_values));
     dictPrototype = dictPrototype->setAttribute(rootContext_, itemsS, rootContext_->fromMethod(nullptr, py_dict_items));
     dictPrototype = dictPrototype->setAttribute(rootContext_, py_get, rootContext_->fromMethod(nullptr, py_dict_get));
