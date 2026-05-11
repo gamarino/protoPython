@@ -2092,13 +2092,27 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
                         }
                     }
                 } else if (env->hasPendingException()) {
-                    // env->iter raised because b is not iterable — clear
-                    // so the operator returns false instead of throwing.
+                    // env->iter raised because b is not iterable.  CPython
+                    // surfaces this as:
+                    //   TypeError: argument of type 'X' is not iterable
+                    // Replace env->iter's generic message with the form
+                    // CPython uses for `x in non_container`.  Without this
+                    // both `5 in 10` and `1 in None` silently returned
+                    // False — a real correctness gap, not a tolerance.
                     env->clearPendingException();
+                    std::string clsName = "object";
+                    const proto::ProtoObject* cls = env->getType(ctx, b);
+                    if (cls) {
+                        const proto::ProtoObject* nm = cls->getAttribute(ctx, env->getNameString());
+                        if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, clsName);
+                    }
+                    env->raiseTypeError(ctx,
+                        "argument of type '" + clsName + "' is not iterable");
+                    return nullptr;
                 }
             }
         }
-        
+
         result = (op == 6) ? found : !found;
         return result ? PROTO_TRUE : PROTO_FALSE;
     }
