@@ -4676,6 +4676,25 @@ const proto::ProtoObject* py_type(
             const proto::ProtoList* basesL = basesArg->asList(context);
             const proto::ProtoTuple* basesT = basesArg->asTuple(context);
             unsigned long n = basesL ? basesL->getSize(context) : (basesT ? basesT->getSize(context) : 0UL);
+            // Reject obvious non-type bases (None, plain primitive
+            // values).  A stricter "must have __mro__" check would
+            // reject built-in opaque types like _io._IOBase that
+            // don't expose __mro__ as an own attribute, so we limit
+            // the rejection to the cases where the base is clearly
+            // a value, not a class.
+            for (unsigned long i = 0; i < n; ++i) {
+                const proto::ProtoObject* base = basesL ? basesL->getAt(context, i)
+                                                        : basesT->getAt(context, i);
+                bool isClearlyNotClass =
+                    !base || base == PROTO_NONE
+                    || (base != PROTO_TRUE && base != PROTO_FALSE
+                        && (base->isString(context) || base->isInteger(context)
+                            || base->isFloat(context)));
+                if (isClearlyNotClass) {
+                    env->raiseTypeError(context, "bases must be types");
+                    return nullptr;
+                }
+            }
             for (unsigned long i = 0; i < n; ++i) {
                 const proto::ProtoObject* base = basesL ? basesL->getAt(context, i)
                                                         : basesT->getAt(context, i);
