@@ -5968,13 +5968,43 @@ static const proto::ProtoObject* py_ord(
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (positionalParameters->getSize(context) < 1) {
+        if (env) env->raiseTypeError(context,
+            "ord() takes exactly one argument (0 given)");
+        return nullptr;
+    }
     const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
-    if (!arg->isString(context)) return PROTO_NONE;
+    if (!arg->isString(context)) {
+        // CPython accepts a length-1 bytes too, but reject anything
+        // else with TypeError.
+        if (env) env->raiseTypeError(context,
+            "ord() expected a character, but a non-string was found");
+        return nullptr;
+    }
     std::string s;
     arg->asString(context)->toUTF8String(context, s);
-    if (s.empty()) return PROTO_NONE;
+    if (s.empty()) {
+        if (env) env->raiseTypeError(context,
+            "ord() expected a character, but string of length 0 found");
+        return nullptr;
+    }
+    // CPython requires exactly one character.  Detect the UTF-8
+    // length of the first code point and compare to the total
+    // byte length.
     unsigned char first = static_cast<unsigned char>(s[0]);
+    size_t expected = 0;
+    if ((first & 0x80) == 0) expected = 1;
+    else if ((first & 0xE0) == 0xC0) expected = 2;
+    else if ((first & 0xF0) == 0xE0) expected = 3;
+    else if ((first & 0xF8) == 0xF0) expected = 4;
+    else expected = 1;
+    if (s.size() != expected) {
+        std::string msg = "ord() expected a character, but string of length "
+            + std::to_string(s.size()) + " found";
+        if (env) env->raiseTypeError(context, msg);
+        return nullptr;
+    }
     if ((first & 0x80) == 0)
         return context->fromInteger(static_cast<long long>(first));
     if ((first & 0xE0) == 0xC0 && s.size() >= 2) {
@@ -6473,11 +6503,25 @@ static const proto::ProtoObject* py_chr(
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (positionalParameters->getSize(context) < 1) {
+        if (env) env->raiseTypeError(context,
+            "chr() takes exactly one argument (0 given)");
+        return nullptr;
+    }
     const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
-    if (!arg->isInteger(context)) return PROTO_NONE;
+    if (!arg->isInteger(context)) {
+        if (env) env->raiseTypeError(context,
+            "chr() expected an integer");
+        return nullptr;
+    }
     long long i = arg->asLong(context);
-    if (i < 0 || i > 0x10FFFF) return PROTO_NONE;
+    if (i < 0 || i > 0x10FFFF) {
+        if (env) env->raiseValueError(context,
+            PythonEnvironment::getInternedString(context,
+                "chr() arg not in range(0x110000)")->asObject(context));
+        return nullptr;
+    }
     char buf[8];
     int n = 0;
     if (i <= 0x7F) {
