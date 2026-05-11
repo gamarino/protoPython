@@ -8542,7 +8542,14 @@ static const proto::ProtoObject* py_str_mod(
             continue;
         }
         ++i;
-        if (i >= fmt.size()) break;
+        if (i >= fmt.size()) {
+            // `'%' % None` and similar: trailing % with no conversion
+            // is incomplete — CPython raises ValueError.
+            if (env) env->raiseValueError(context,
+                PythonEnvironment::getInternedString(context,
+                    "incomplete format")->asObject(context));
+            return nullptr;
+        }
 
         // Dict-style key lookup: %(key)spec
         const proto::ProtoObject* dictArg = nullptr;
@@ -8550,6 +8557,13 @@ static const proto::ProtoObject* py_str_mod(
             ++i; // skip '('
             size_t keyStart = i;
             while (i < fmt.size() && fmt[i] != ')') ++i;
+            if (i >= fmt.size()) {
+                // Unterminated mapping key — `'%(n' % {}`.
+                if (env) env->raiseValueError(context,
+                    PythonEnvironment::getInternedString(context,
+                        "incomplete format key")->asObject(context));
+                return nullptr;
+            }
             std::string keyName = fmt.substr(keyStart, i - keyStart);
             if (i < fmt.size()) ++i; // skip ')'
             // CPython: %(key) requires the argument to be a mapping.
@@ -8585,6 +8599,11 @@ static const proto::ProtoObject* py_str_mod(
                 w = widthArg->asLong(context);
             } else if (widthArg && widthArg->isBoolean(context)) {
                 w = widthArg->asBoolean(context) ? 1 : 0;
+            } else {
+                // `'%*s' % 'abc'` — * requires an int.
+                if (env) env->raiseTypeError(context,
+                    "* wants int");
+                return nullptr;
             }
             if (w < 0) { fmtFlags += '-'; w = -w; }
             fmtWidth = std::to_string(w);
@@ -8603,6 +8622,9 @@ static const proto::ProtoObject* py_str_mod(
                     p = precArg->asLong(context);
                 } else if (precArg && precArg->isBoolean(context)) {
                     p = precArg->asBoolean(context) ? 1 : 0;
+                } else {
+                    if (env) env->raiseTypeError(context, "* wants int");
+                    return nullptr;
                 }
                 if (p < 0) p = 0;
                 fmtPrec += std::to_string(p);
@@ -8612,7 +8634,12 @@ static const proto::ProtoObject* py_str_mod(
             }
         }
 
-        if (i >= fmt.size()) break;
+        if (i >= fmt.size()) {
+            if (env) env->raiseValueError(context,
+                PythonEnvironment::getInternedString(context,
+                    "incomplete format")->asObject(context));
+            return nullptr;
+        }
         char spec = fmt[i];
 
         if (spec == '%') {
@@ -8744,6 +8771,17 @@ static const proto::ProtoObject* py_str_mod(
                 out += spec;
                 break;
         }
+    }
+    // CPython: `'%s' % (1, 2)` — too many args raised
+    // TypeError("not all arguments converted during string
+    // formatting").  Tuple args are exhausted via argIdx; an
+    // unused remainder is the trigger.  Single non-tuple arg is
+    // considered consumed iff argIdx > 0 (i.e. at least one %
+    // spec ran), which covers the `%s' % 'x'` shape too.
+    if (env && argTuple && argIdx < argTuple->getSize(context)) {
+        env->raiseTypeError(context,
+            "not all arguments converted during string formatting");
+        return nullptr;
     }
     return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
 }
