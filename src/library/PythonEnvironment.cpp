@@ -9324,12 +9324,18 @@ static const proto::ProtoObject* py_str_lstrip(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     const proto::ProtoString* str = str_from_self(context, self);
+    int posOff = 0;
+    if (!str && posArgs && posArgs->getSize(context) >= 1) {
+        str = str_from_self(context, posArgs->getAt(context, 0));
+        if (str) posOff = 1;
+    }
     if (!str) return PROTO_NONE;
     std::string s;
     str->toUTF8String(context, s);
     std::string chars;
-    if (posArgs && posArgs->getSize(context) >= 1 && posArgs->getAt(context, 0)->isString(context))
-        posArgs->getAt(context, 0)->asString(context)->toUTF8String(context, chars);
+    if (posArgs && posArgs->getSize(context) >= static_cast<unsigned long>(1 + posOff)
+        && posArgs->getAt(context, posOff)->isString(context))
+        posArgs->getAt(context, posOff)->asString(context)->toUTF8String(context, chars);
     size_t start = 0;
     while (start < s.size() && char_in_chars(static_cast<unsigned char>(s[start]), chars)) start++;
     return PythonEnvironment::getInternedString(context, s.substr(start).c_str())->asObject(context);
@@ -9340,12 +9346,18 @@ static const proto::ProtoObject* py_str_rstrip(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     const proto::ProtoString* str = str_from_self(context, self);
+    int posOff = 0;
+    if (!str && posArgs && posArgs->getSize(context) >= 1) {
+        str = str_from_self(context, posArgs->getAt(context, 0));
+        if (str) posOff = 1;
+    }
     if (!str) return PROTO_NONE;
     std::string s;
     str->toUTF8String(context, s);
     std::string chars;
-    if (posArgs && posArgs->getSize(context) >= 1 && posArgs->getAt(context, 0)->isString(context))
-        posArgs->getAt(context, 0)->asString(context)->toUTF8String(context, chars);
+    if (posArgs && posArgs->getSize(context) >= static_cast<unsigned long>(1 + posOff)
+        && posArgs->getAt(context, posOff)->isString(context))
+        posArgs->getAt(context, posOff)->asString(context)->toUTF8String(context, chars);
     size_t end = s.size();
     while (end > 0 && char_in_chars(static_cast<unsigned char>(s[end - 1]), chars)) end--;
     return PythonEnvironment::getInternedString(context, s.substr(0, end).c_str())->asObject(context);
@@ -9828,14 +9840,19 @@ static const proto::ProtoObject* py_str_center(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     const proto::ProtoString* str = str_from_self(context, self);
-    if (!str || posArgs->getSize(context) < 1) return PROTO_NONE;
+    int posOff = 0;
+    if (!str && posArgs && posArgs->getSize(context) >= 2) {
+        str = str_from_self(context, posArgs->getAt(context, 0));
+        if (str) posOff = 1;
+    }
+    if (!str || posArgs->getSize(context) < static_cast<unsigned long>(1 + posOff)) return PROTO_NONE;
     std::string s;
     str->toUTF8String(context, s);
-    int width = static_cast<int>(posArgs->getAt(context, 0)->asLong(context));
+    int width = static_cast<int>(posArgs->getAt(context, posOff)->asLong(context));
     char fillchar = ' ';
-    if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isString(context)) {
+    if (posArgs->getSize(context) >= static_cast<unsigned long>(2 + posOff) && posArgs->getAt(context, 1 + posOff)->isString(context)) {
         std::string fc;
-        posArgs->getAt(context, 1)->asString(context)->toUTF8String(context, fc);
+        posArgs->getAt(context, 1 + posOff)->asString(context)->toUTF8String(context, fc);
         if (!fc.empty()) fillchar = fc[0];
     }
     if (width <= static_cast<int>(s.size())) return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
@@ -9852,14 +9869,19 @@ static const proto::ProtoObject* py_str_ljust(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     const proto::ProtoString* str = str_from_self(context, self);
-    if (!str || posArgs->getSize(context) < 1) return PROTO_NONE;
+    int posOff = 0;
+    if (!str && posArgs && posArgs->getSize(context) >= 2) {
+        str = str_from_self(context, posArgs->getAt(context, 0));
+        if (str) posOff = 1;
+    }
+    if (!str || posArgs->getSize(context) < static_cast<unsigned long>(1 + posOff)) return PROTO_NONE;
     std::string s;
     str->toUTF8String(context, s);
-    int width = static_cast<int>(posArgs->getAt(context, 0)->asLong(context));
+    int width = static_cast<int>(posArgs->getAt(context, posOff)->asLong(context));
     char fillchar = ' ';
-    if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isString(context)) {
+    if (posArgs->getSize(context) >= static_cast<unsigned long>(2 + posOff) && posArgs->getAt(context, 1 + posOff)->isString(context)) {
         std::string fc;
-        posArgs->getAt(context, 1)->asString(context)->toUTF8String(context, fc);
+        posArgs->getAt(context, 1 + posOff)->asString(context)->toUTF8String(context, fc);
         if (!fc.empty()) fillchar = fc[0];
     }
     if (width <= static_cast<int>(s.size())) return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
@@ -9872,14 +9894,19 @@ static const proto::ProtoObject* py_str_rjust(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     const proto::ProtoString* str = str_from_self(context, self);
-    if (!str || posArgs->getSize(context) < 1) return PROTO_NONE;
+    int posOff = 0;
+    if (!str && posArgs && posArgs->getSize(context) >= 2) {
+        str = str_from_self(context, posArgs->getAt(context, 0));
+        if (str) posOff = 1;
+    }
+    if (!str || posArgs->getSize(context) < static_cast<unsigned long>(1 + posOff)) return PROTO_NONE;
     std::string s;
     str->toUTF8String(context, s);
-    int width = static_cast<int>(posArgs->getAt(context, 0)->asLong(context));
+    int width = static_cast<int>(posArgs->getAt(context, posOff)->asLong(context));
     char fillchar = ' ';
-    if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isString(context)) {
+    if (posArgs->getSize(context) >= static_cast<unsigned long>(2 + posOff) && posArgs->getAt(context, 1 + posOff)->isString(context)) {
         std::string fc;
-        posArgs->getAt(context, 1)->asString(context)->toUTF8String(context, fc);
+        posArgs->getAt(context, 1 + posOff)->asString(context)->toUTF8String(context, fc);
         if (!fc.empty()) fillchar = fc[0];
     }
     if (width <= static_cast<int>(s.size())) return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
