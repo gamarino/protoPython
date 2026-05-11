@@ -13987,6 +13987,77 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             long long combined = hr + 1000003LL * hi;
             return ctx->fromInteger(combined);
         }));
+    // complex.__pos__: return complex(real, imag) cast to plain
+    // complex.  Subclasses of complex inherit the default __pos__
+    // that preserves the subclass; CPython's behaviour for numeric
+    // ops is to drop the subclass (the result's `.__class__` is
+    // complex even when the operand is madcomplex(...)).
+    complexPrototype = complexPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__pos__"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (!env) return PROTO_NONE;
+            const proto::ProtoObject* receiver = self;
+            if (self == env->getComplexPrototype() && args && args->getSize(ctx) >= 1) {
+                receiver = args->getAt(ctx, 0);
+            }
+            if (!receiver) return PROTO_NONE;
+            const proto::ProtoString* realS = PythonEnvironment::getInternedString(ctx, "real");
+            const proto::ProtoString* imagS = PythonEnvironment::getInternedString(ctx, "imag");
+            const proto::ProtoObject* rObj = receiver->getAttribute(ctx, realS);
+            const proto::ProtoObject* iObj = receiver->getAttribute(ctx, imagS);
+            double rv = 0, iv = 0;
+            if (rObj) {
+                if (rObj->isFloat(ctx)) rv = rObj->asDouble(ctx);
+                else if (rObj->isInteger(ctx)) rv = (double)rObj->asLong(ctx);
+            }
+            if (iObj) {
+                if (iObj->isFloat(ctx)) iv = iObj->asDouble(ctx);
+                else if (iObj->isInteger(ctx)) iv = (double)iObj->asLong(ctx);
+            }
+            proto::ProtoObject* res = const_cast<proto::ProtoObject*>(env->getComplexPrototype()->newChild(ctx, true));
+            res->setAttribute(ctx, realS, ctx->fromDouble(rv));
+            res->setAttribute(ctx, imagS, ctx->fromDouble(iv));
+            res->setAttribute(ctx, env->getClassString(), env->getComplexPrototype());
+            return (const proto::ProtoObject*)res;
+        }));
+    // complex.__neg__: return complex(-real, -imag).  Same subclass-
+    // drop semantics as __pos__.
+    complexPrototype = complexPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__neg__"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (!env) return PROTO_NONE;
+            const proto::ProtoObject* receiver = self;
+            if (self == env->getComplexPrototype() && args && args->getSize(ctx) >= 1) {
+                receiver = args->getAt(ctx, 0);
+            }
+            if (!receiver) return PROTO_NONE;
+            const proto::ProtoString* realS = PythonEnvironment::getInternedString(ctx, "real");
+            const proto::ProtoString* imagS = PythonEnvironment::getInternedString(ctx, "imag");
+            const proto::ProtoObject* rObj = receiver->getAttribute(ctx, realS);
+            const proto::ProtoObject* iObj = receiver->getAttribute(ctx, imagS);
+            double rv = 0, iv = 0;
+            if (rObj) {
+                if (rObj->isFloat(ctx)) rv = rObj->asDouble(ctx);
+                else if (rObj->isInteger(ctx)) rv = (double)rObj->asLong(ctx);
+            }
+            if (iObj) {
+                if (iObj->isFloat(ctx)) iv = iObj->asDouble(ctx);
+                else if (iObj->isInteger(ctx)) iv = (double)iObj->asLong(ctx);
+            }
+            proto::ProtoObject* res = const_cast<proto::ProtoObject*>(env->getComplexPrototype()->newChild(ctx, true));
+            res->setAttribute(ctx, realS, ctx->fromDouble(-rv));
+            res->setAttribute(ctx, imagS, ctx->fromDouble(-iv));
+            res->setAttribute(ctx, env->getClassString(), env->getComplexPrototype());
+            return (const proto::ProtoObject*)res;
+        }));
     // complex.__radd__(self, other) returns other + self.  Accept
     // both bound and unbound call shapes (the test
     // test_explicit_reverse_methods invokes via the type:
