@@ -207,6 +207,35 @@ calling shape.  Fixed all three.
 Both methods returned None instead of raising
 `ValueError: empty separator` for the empty-sep case.
 
+### Fixed: str subclass type() + dict-key hash dispatches __hash__
+
+Two coupled bugs that together broke every str-subclass test:
+
+1. `getType` on a str-subclass wrapper returned `str` instead of
+   the subclass.  `ProtoObject::isString` returns true for both
+   raw string primitives AND wrapper Objects whose `__data__` is
+   a string — so the `obj->isString()` branch folded every wrapped
+   subclass instance back to `strPrototype`.  Detect the wrapper
+   shape (POINTER_TAG_OBJECT with own `__data__`) and prefer the
+   wrapper's own `__class__` / first parent before falling back
+   to strPrototype.
+
+2. Dict bucketing used `key->getHash()` everywhere, which for a
+   str-subclass returns the underlying string's hash and ignores
+   any user `__hash__` override.  cistr's case-insensitive
+   `__hash__` was therefore silently bypassed: storing
+   `cistr('TWO'): 1` and looking up `d[cistr('two')]` landed in
+   different buckets despite agreeing on `__eq__` and `__hash__`.
+   `dictKeyHash` now consults `type(key).__hash__` when the type
+   is not a built-in primitive (whose stored `__hash__` already
+   matches the protoCore hash by construction).  Exposed it as
+   `pyDictKeyHash` so OP_BUILD_MAP / OP_MAP_ADD use the same
+   bucketing as py_dict_getitem / setitem.
+
+Effect: `class cistr(str)` instances now report `type(s) == cistr`,
+case-insensitive dict lookups land in the right bucket, and
+`test_str_subclass_as_dict_key` passes.
+
 ### Added: str.maketrans + str.translate full implementations
 
 `str.maketrans` was a stub returning an empty SparseList that
