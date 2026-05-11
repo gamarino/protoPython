@@ -193,6 +193,66 @@ the receiver's `__mro__` for tuplePrototype/listPrototype and
 substitute the primitive prototype before wrapping the result,
 matching CPython's unoverridden-dunder semantics.
 
+### Fixed: 20-commit sweep — silent-None / silent-zero → proper exceptions
+
+Another twenty back-to-back root-cause fixes, every one paired with
+ctest 199/199.  Theme: replace silent PROTO_NONE / asLong panic /
+extractDouble-returns-0 paths with CPython-shaped exceptions that
+name the operand type and tell the user what went wrong.
+
+- **`abs(non_numeric)`** → `TypeError("bad operand type for abs(): 'str'")`
+  (was: silent None).
+- **`a[::0]` for list/tuple/str/range/del** → `ValueError("slice step
+  cannot be zero")` (was: silent normalise step→1 and return the whole
+  thing).
+- **`format(value, non_str_spec)`** → `TypeError("format() argument 2
+  must be str, not int")` (was: silent unformatted value).
+- **`round()` / `round(non_numeric)` / `round(True)`** →
+  `TypeError("round() missing required argument …")` /
+  `TypeError("type str doesn't define __round__ method")` / correct
+  bool→int return (was: silent None / silent 0 / wrong 0).
+- **`int(bad_string)` / `float(bad_string)`** error text quotes the
+  offending literal and uses CPython's exact wording
+  (`could not convert string to float: 'abc'`).
+- **`'%d' % 'a'`** and every other integer / float / char `%`-format
+  → `TypeError("%d format: a number is required, not str")` (was:
+  silent 0 / 0.0 / internal C++ panic for `%c`).
+- **`'%s %s' % ('only one',)`** → `TypeError("not enough arguments for
+  format string")` (was: rendered "None" for the missing slot).
+- **`[1,2] * 2.5` / `(1,2) * 'a'`** → CPython's `unsupported operand
+  type(s) for *` via the NotImplemented sentinel (was: silent None).
+- **`iter()` / `iter(5)`** → `TypeError("iter expected at least 1
+  argument, got 0")` / `TypeError("'int' object is not iterable")`
+  with the operand type embedded (was: silent None / bare message).
+- **`sum(['a','b'], '')`** → `TypeError("sum() can't sum strings [use
+  ''.join(seq) instead]")` (was: int-only accumulator silently
+  produced 0).
+- **`range(0, 10, 0)`** → `ValueError("range() arg 3 must not be
+  zero")` raised at construction (was: silent None → internal C++
+  panic on iteration).
+- **`enumerate(it, 'abc')` / `enumerate(it, start=1.5)`** → typed
+  TypeError (was: silently dropped, start stayed 0).
+- **`next(map(non_callable, …))`** → `TypeError("'X' object is not
+  callable")` (was: silently passed through the value).
+- **`5 in 10` / `'x' in None`** → `TypeError("argument of type 'int'
+  is not iterable")` (was: silently False).
+- **`repr(KeyError(3))`** → `"KeyError(3)"` (was: `"KeyError(<obj>)"`
+  with non-string args replaced by a placeholder).
+- **`del l[10]` past end-of-list** → `IndexError("list assignment
+  index out of range")` (was: silent no-op).
+- **`bin('a')` / `oct('a')`** → `TypeError("bin() argument must be an
+  integer or have an __index__ method")` (was: silent None; only
+  `hex` raised).
+- **`pow()` / `pow(2)`** → `TypeError("pow expected at least 2
+  arguments, got N")` (was: silent None).
+- **`list.insert('a', 0)`** → `TypeError("'str' object cannot be
+  interpreted as an integer")` (was: internal C++ panic
+  "Object is not an integer type").
+
+Sibling fix to the prior round: `exception_repr` now resolves the
+class via `env->getType` so `repr(ValueError(...))` shows
+`ValueError(...)` rather than `type(...)`.
+
 ### Fixed: 20-commit sweep — error fidelity + missing dunders
 
 Twenty back-to-back root-cause fixes for divergences from CPython's
