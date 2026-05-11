@@ -5395,7 +5395,33 @@ static const proto::ProtoObject* py_isinstance(
     }
 
     cls = resolveClassType(env, self, context, cls);
-    
+
+    // CPython: isinstance(x, cls) requires cls to be a class, a
+    // tuple of classes, or a UnionType (already handled above).
+    // Anything else raises TypeError.  Use a permissive "looks like
+    // a class" probe: isActuallyAClass returns false for built-in
+    // type-subclass objects (e.g. types.ModuleType) during certain
+    // bootstrap phases, so widen the check by accepting anything
+    // whose own type is type or that owns __mro__.
+    if (env && cls && !cls->asTuple(context)) {
+        bool looksLikeClass = env->isActuallyAClass(context, cls);
+        if (!looksLikeClass) {
+            const proto::ProtoObject* clsType = env->getType(context, cls);
+            if (clsType == env->getTypePrototype()) looksLikeClass = true;
+        }
+        if (!looksLikeClass) {
+            const proto::ProtoString* mroS = env->getMroString();
+            if (mroS && cls->hasOwnAttribute(context, mroS) == PROTO_TRUE) {
+                looksLikeClass = true;
+            }
+        }
+        if (!looksLikeClass) {
+            env->raiseTypeError(context,
+                "isinstance() arg 2 must be a type, a tuple of types, or a union");
+            return nullptr;
+        }
+    }
+
     if (get_env_diag()) {
         std::string objRepr = env ? env->reprObject(context, obj) : "???";
         std::string clsRepr = env ? env->reprObject(context, cls) : "???";
