@@ -1201,16 +1201,63 @@ static const proto::ProtoObject* py_enumerate(
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
     const proto::ProtoObject* iterable = positionalParameters->getAt(context, 1);
+    ::protoPython::PythonEnvironment* envStart = ::protoPython::PythonEnvironment::fromContext(context);
     long long start = 0;
-    if (positionalParameters->getSize(context) >= 3 && positionalParameters->getAt(context, 2)->isInteger(context))
-        start = positionalParameters->getAt(context, 2)->asLong(context);
+    if (positionalParameters->getSize(context) >= 3) {
+        const proto::ProtoObject* startArg = positionalParameters->getAt(context, 2);
+        // CPython requires the start arg to be an integer (or bool —
+        // subclass of int).  Previously a non-int was silently ignored
+        // and start stayed at 0, masking misuse like
+        // `enumerate(it, 'abc')` and `enumerate(it, 1.5)`.
+        if (startArg->isInteger(context)) {
+            start = startArg->asLong(context);
+        } else if (startArg == PROTO_TRUE) {
+            start = 1;
+        } else if (startArg == PROTO_FALSE) {
+            start = 0;
+        } else {
+            if (envStart) {
+                std::string clsName = "object";
+                const proto::ProtoObject* cls = envStart->getType(context, startArg);
+                if (cls) {
+                    const proto::ProtoObject* nameAttr = cls->getAttribute(context, envStart->getNameString());
+                    if (nameAttr && nameAttr->isString(context)) {
+                        nameAttr->asString(context)->toUTF8String(context, clsName);
+                    }
+                }
+                envStart->raiseTypeError(context,
+                    "'" + clsName + "' object cannot be interpreted as an integer");
+            }
+            return nullptr;
+        }
+    }
     // Also honor `start=` keyword (enumerate(iter, start=N) shape).
     if (keywordParameters) {
         const proto::ProtoString* startS = PythonEnvironment::getInternedString(context, "start");
         unsigned long sh = startS->getHash(context);
         if (keywordParameters->has(context, sh)) {
             const proto::ProtoObject* sv = keywordParameters->getAt(context, sh);
-            if (sv && sv->isInteger(context)) start = sv->asLong(context);
+            if (sv && sv->isInteger(context)) {
+                start = sv->asLong(context);
+            } else if (sv == PROTO_TRUE) {
+                start = 1;
+            } else if (sv == PROTO_FALSE) {
+                start = 0;
+            } else if (sv && sv != PROTO_NONE) {
+                if (envStart) {
+                    std::string clsName = "object";
+                    const proto::ProtoObject* cls = envStart->getType(context, sv);
+                    if (cls) {
+                        const proto::ProtoObject* nameAttr = cls->getAttribute(context, envStart->getNameString());
+                        if (nameAttr && nameAttr->isString(context)) {
+                            nameAttr->asString(context)->toUTF8String(context, clsName);
+                        }
+                    }
+                    envStart->raiseTypeError(context,
+                        "'" + clsName + "' object cannot be interpreted as an integer");
+                }
+                return nullptr;
+            }
         }
     }
 
