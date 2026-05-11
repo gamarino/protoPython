@@ -19897,18 +19897,39 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
         const proto::ProtoStringIterator* it = str->getIterator(ctx);
         if (it) return it->asObject(ctx);
     } else if (obj->asSparseList(ctx)) {
-        // Dict iteration (keys)
-        const proto::ProtoString* iterProtoName = PythonEnvironment::getInternedString(ctx, "__iter_prototype__");
-        const proto::ProtoObject* iterProto = dictPrototype ? dictPrototype->getAttribute(ctx, iterProtoName) : nullptr;
-        if (iterProto) {
-            const proto::ProtoObject* keysObj = obj->getAttribute(ctx, getKeysString());
-            const proto::ProtoList* keys = keysObj ? keysObj->asList(ctx) : nullptr;
-            if (keys) {
-                const proto::ProtoListIterator* it = keys->getIterator(ctx);
-                const proto::ProtoObject* iterObj = iterProto->newChild(ctx, true);
-                iterObj = iterObj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__iter_list__"), keysObj);
-                iterObj = iterObj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__iter_it__"), it->asObject(ctx));
-                return iterObj;
+        // Dict iteration (keys).  Every Python instance owns a __data__
+        // SparseList for attribute storage, so an unrestricted asSparseList
+        // check would iterate any object's attribute keys.  Gate on the
+        // type descending from dictPrototype — same discipline as
+        // py_dict_call's mapping fast path.
+        bool isDictLike = false;
+        if (typeObj == dictPrototype) {
+            isDictLike = true;
+        } else if (typeObj && typeObj != PROTO_NONE && dictPrototype) {
+            const proto::ProtoObject* mroAttr = typeObj->getAttribute(ctx, getMroString());
+            const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+            if (mroT) {
+                for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
+                    if (mroT->getAt(ctx, static_cast<int>(i)) == dictPrototype) {
+                        isDictLike = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (isDictLike) {
+            const proto::ProtoString* iterProtoName = PythonEnvironment::getInternedString(ctx, "__iter_prototype__");
+            const proto::ProtoObject* iterProto = dictPrototype ? dictPrototype->getAttribute(ctx, iterProtoName) : nullptr;
+            if (iterProto) {
+                const proto::ProtoObject* keysObj = obj->getAttribute(ctx, getKeysString());
+                const proto::ProtoList* keys = keysObj ? keysObj->asList(ctx) : nullptr;
+                if (keys) {
+                    const proto::ProtoListIterator* it = keys->getIterator(ctx);
+                    const proto::ProtoObject* iterObj = iterProto->newChild(ctx, true);
+                    iterObj = iterObj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__iter_list__"), keysObj);
+                    iterObj = iterObj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__iter_it__"), it->asObject(ctx));
+                    return iterObj;
+                }
             }
         }
     } else if (obj->asSet(ctx) || (obj->getPrototype(ctx) && obj->getPrototype(ctx) == setPrototype)) {
