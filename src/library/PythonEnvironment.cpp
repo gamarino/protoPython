@@ -4643,6 +4643,21 @@ static const proto::ProtoObject* py_set_call(
                     }
                 }
             }
+        } else if (env) {
+            // CPython: set(non_iterable) -> TypeError.  Without this branch
+            // set(5) silently returned an empty set, masking real bugs and
+            // diverging from list(5)/tuple(5)/dict.fromkeys(5) which all
+            // raise.  Use the same message form as the rest of the runtime.
+            std::string clsName = "object";
+            const proto::ProtoObject* cls2 = env->getType(context, iterable);
+            if (cls2) {
+                const proto::ProtoObject* nameAttr = cls2->getAttribute(context, env->getNameString());
+                if (nameAttr && nameAttr->isString(context)) {
+                    nameAttr->asString(context)->toUTF8String(context, clsName);
+                }
+            }
+            env->raiseTypeError(context, "'" + clsName + "' object is not iterable");
+            return nullptr;
         }
     }
 
