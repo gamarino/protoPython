@@ -5510,7 +5510,16 @@ static const proto::ProtoObject* py_set_remove(
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
     const proto::ProtoObject* data = receiver ? receiver->getAttribute(context, dataName) : nullptr;
     const proto::ProtoSet* s = data && data->asSet(context) ? data->asSet(context) : context->newSet();
-    const proto::ProtoSet* newSet = s->remove(context, positionalParameters->getAt(context, posOff));
+    const proto::ProtoObject* value = positionalParameters->getAt(context, posOff);
+    // CPython: `s.remove(x)` raises KeyError when x is not in s.
+    // discard() is the silent variant.  Note: ProtoSet::has returns
+    // a ProtoObject*, not bool — compare to PROTO_TRUE.
+    if (s->has(context, value) != PROTO_TRUE) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env) env->raiseKeyError(context, value);
+        return nullptr;
+    }
+    const proto::ProtoSet* newSet = s->remove(context, value);
     if (receiver) const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, newSet->asObject(context));
     return PROTO_NONE;
 }
