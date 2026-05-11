@@ -13682,6 +13682,94 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ge__"), rootContext_->fromMethod(nullptr, py_int_ge));
         intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__eq__"), rootContext_->fromMethod(nullptr, py_int_eq));
         intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ne__"), rootContext_->fromMethod(nullptr, py_int_ne));
+        // Unary int dunders.
+        auto intUnary = +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+                            const proto::ProtoList* args, long long& out) -> bool {
+            const proto::ProtoObject* x = self;
+            if (!x || (!x->isInteger(ctx) && !x->isBoolean(ctx))) {
+                if (args && args->getSize(ctx) >= 1) x = args->getAt(ctx, 0);
+            }
+            if (!x) return false;
+            if (x->isInteger(ctx)) { out = x->asLong(ctx); return true; }
+            if (x->isBoolean(ctx)) { out = (x == PROTO_TRUE) ? 1 : 0; return true; }
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            const proto::ProtoString* dn = env ? env->getDataString()
+                : PythonEnvironment::getInternalString(ctx, "__data__");
+            const proto::ProtoObject* d = x->getAttribute(ctx, dn);
+            if (d && d->isInteger(ctx)) { out = d->asLong(ctx); return true; }
+            return false;
+        };
+        static auto intUnaryStatic = intUnary;
+        intPrototype = intPrototype->setAttribute(rootContext_,
+            PythonEnvironment::getInternedString(rootContext_, "__neg__"),
+            rootContext_->fromMethod(nullptr,
+            +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+               const proto::ParentLink*, const proto::ProtoList* args,
+               const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                long long v = 0;
+                if (!intUnaryStatic(ctx, self, args, v)) return PROTO_NONE;
+                return ctx->fromInteger(-v);
+            }));
+        intPrototype = intPrototype->setAttribute(rootContext_,
+            PythonEnvironment::getInternedString(rootContext_, "__pos__"),
+            rootContext_->fromMethod(nullptr,
+            +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+               const proto::ParentLink*, const proto::ProtoList* args,
+               const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                long long v = 0;
+                if (!intUnaryStatic(ctx, self, args, v)) return PROTO_NONE;
+                return ctx->fromInteger(v);
+            }));
+        intPrototype = intPrototype->setAttribute(rootContext_,
+            PythonEnvironment::getInternedString(rootContext_, "__abs__"),
+            rootContext_->fromMethod(nullptr,
+            +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+               const proto::ParentLink*, const proto::ProtoList* args,
+               const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                long long v = 0;
+                if (!intUnaryStatic(ctx, self, args, v)) return PROTO_NONE;
+                return ctx->fromInteger(v < 0 ? -v : v);
+            }));
+        intPrototype = intPrototype->setAttribute(rootContext_,
+            PythonEnvironment::getInternedString(rootContext_, "__invert__"),
+            rootContext_->fromMethod(nullptr,
+            +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+               const proto::ParentLink*, const proto::ProtoList* args,
+               const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                long long v = 0;
+                if (!intUnaryStatic(ctx, self, args, v)) return PROTO_NONE;
+                return ctx->fromInteger(~v);
+            }));
+        intPrototype = intPrototype->setAttribute(rootContext_,
+            PythonEnvironment::getInternedString(rootContext_, "__index__"),
+            rootContext_->fromMethod(nullptr,
+            +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+               const proto::ParentLink*, const proto::ProtoList* args,
+               const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                long long v = 0;
+                if (!intUnaryStatic(ctx, self, args, v)) return PROTO_NONE;
+                return ctx->fromInteger(v);
+            }));
+        intPrototype = intPrototype->setAttribute(rootContext_,
+            PythonEnvironment::getInternedString(rootContext_, "__int__"),
+            rootContext_->fromMethod(nullptr,
+            +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+               const proto::ParentLink*, const proto::ProtoList* args,
+               const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                long long v = 0;
+                if (!intUnaryStatic(ctx, self, args, v)) return PROTO_NONE;
+                return ctx->fromInteger(v);
+            }));
+        intPrototype = intPrototype->setAttribute(rootContext_,
+            PythonEnvironment::getInternedString(rootContext_, "__float__"),
+            rootContext_->fromMethod(nullptr,
+            +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+               const proto::ParentLink*, const proto::ProtoList* args,
+               const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                long long v = 0;
+                if (!intUnaryStatic(ctx, self, args, v)) return PROTO_NONE;
+                return ctx->fromDouble((double)v);
+            }));
         space_->smallIntegerPrototype = const_cast<proto::ProtoObject*>(intPrototype);
     }
 
