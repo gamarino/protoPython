@@ -2712,15 +2712,33 @@ static int compare_lists(proto::ProtoContext* context, const proto::ProtoObject*
     return size < otherSize ? -1 : 1;
 }
 
+// Helper for unbound list comparison dispatch.  Returns receiver/other
+// pair after possibly shifting positional[0] into the receiver slot.
+static void list_cmp_unwrap(proto::ProtoContext* context,
+        const proto::ProtoObject*& self, const proto::ProtoObject*& other,
+        const proto::ProtoList* posArgs) {
+    if (!posArgs || posArgs->getSize(context) < 1) { other = nullptr; return; }
+    other = posArgs->getAt(context, 0);
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoString* dataName = env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__");
+    const proto::ProtoObject* d = self ? self->getAttribute(context, dataName) : nullptr;
+    if ((!d || !d->asList(context)) && posArgs->getSize(context) >= 2) {
+        self = posArgs->getAt(context, 0);
+        other = posArgs->getAt(context, 1);
+    }
+}
+
 static const proto::ProtoObject* py_list_lt(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
+    const proto::ProtoObject* other = nullptr;
+    list_cmp_unwrap(context, self, other, positionalParameters);
+    if (!other) return PROTO_FALSE;
     bool ok = false;
-    int cmp = compare_lists(context, self, positionalParameters->getAt(context, 0), &ok);
+    int cmp = compare_lists(context, self, other, &ok);
     return ok && cmp < 0 ? PROTO_TRUE : PROTO_FALSE;
 }
 
@@ -2730,9 +2748,11 @@ static const proto::ProtoObject* py_list_le(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
+    const proto::ProtoObject* other = nullptr;
+    list_cmp_unwrap(context, self, other, positionalParameters);
+    if (!other) return PROTO_FALSE;
     bool ok = false;
-    int cmp = compare_lists(context, self, positionalParameters->getAt(context, 0), &ok);
+    int cmp = compare_lists(context, self, other, &ok);
     return ok && cmp <= 0 ? PROTO_TRUE : PROTO_FALSE;
 }
 
@@ -2742,9 +2762,11 @@ static const proto::ProtoObject* py_list_gt(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
+    const proto::ProtoObject* other = nullptr;
+    list_cmp_unwrap(context, self, other, positionalParameters);
+    if (!other) return PROTO_FALSE;
     bool ok = false;
-    int cmp = compare_lists(context, self, positionalParameters->getAt(context, 0), &ok);
+    int cmp = compare_lists(context, self, other, &ok);
     return ok && cmp > 0 ? PROTO_TRUE : PROTO_FALSE;
 }
 
@@ -2754,9 +2776,11 @@ static const proto::ProtoObject* py_list_ge(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
+    const proto::ProtoObject* other = nullptr;
+    list_cmp_unwrap(context, self, other, positionalParameters);
+    if (!other) return PROTO_FALSE;
     bool ok = false;
-    int cmp = compare_lists(context, self, positionalParameters->getAt(context, 0), &ok);
+    int cmp = compare_lists(context, self, other, &ok);
     return ok && cmp >= 0 ? PROTO_TRUE : PROTO_FALSE;
 }
 
