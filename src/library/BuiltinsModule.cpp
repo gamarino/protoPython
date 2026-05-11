@@ -4616,22 +4616,38 @@ const proto::ProtoObject* py_type(
                 if (slotsT) {
                     for (unsigned long si = 0; si < slotsT->getSize(context); ++si) {
                         const proto::ProtoObject* s = slotsT->getAt(context, si);
-                        if (s && s->isString(context)) {
-                            std::string ss; s->asString(context)->toUTF8String(context, ss);
-                            if (checkName(ss)) return nullptr;
+                        // CPython: each item must be a string;
+                        // a non-string element (e.g. `__slots__ = [1]`)
+                        // raises TypeError at class-creation time.
+                        if (!s || !s->isString(context)) {
+                            env->raiseTypeError(context,
+                                "__slots__ items must be strings, not 'int'");
+                            return nullptr;
                         }
+                        std::string ss; s->asString(context)->toUTF8String(context, ss);
+                        if (checkName(ss)) return nullptr;
                     }
                 } else if (slotsL) {
                     for (unsigned long si = 0; si < slotsL->getSize(context); ++si) {
                         const proto::ProtoObject* s = slotsL->getAt(context, si);
-                        if (s && s->isString(context)) {
-                            std::string ss; s->asString(context)->toUTF8String(context, ss);
-                            if (checkName(ss)) return nullptr;
+                        if (!s || !s->isString(context)) {
+                            env->raiseTypeError(context,
+                                "__slots__ items must be strings, not 'int'");
+                            return nullptr;
                         }
+                        std::string ss; s->asString(context)->toUTF8String(context, ss);
+                        if (checkName(ss)) return nullptr;
                     }
                 } else if (slotsVal->isString(context)) {
                     std::string ss; slotsVal->asString(context)->toUTF8String(context, ss);
                     if (checkName(ss)) return nullptr;
+                } else {
+                    // __slots__ must be a str, an iterable of strings,
+                    // or absent.  CPython rejects bare ints, dicts,
+                    // sets, etc. with TypeError.
+                    env->raiseTypeError(context,
+                        "__slots__ must be a str, iterable of strings, or None");
+                    return nullptr;
                 }
             }
         }
