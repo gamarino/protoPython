@@ -5972,12 +5972,20 @@ static const proto::ProtoObject* py_pow(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     unsigned long n = positionalParameters->getSize(context);
-    if (n < 2) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    // CPython: pow() requires at least 2 positional args.  Previously
+    // pow() and pow(x) silently returned PROTO_NONE; the misuse then
+    // produced confusing AttributeError downstream when callers used
+    // the result as a number.
+    if (n < 2) {
+        if (env) env->raiseTypeError(context,
+            "pow expected at least 2 arguments, got " + std::to_string(n));
+        return nullptr;
+    }
     const proto::ProtoObject* baseObj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* expObj = positionalParameters->getAt(context, 1);
     bool hasMod = n >= 3;
     const proto::ProtoObject* modObj = hasMod ? positionalParameters->getAt(context, 2) : nullptr;
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
 
     // CPython: dispatch through base.__pow__ when the class (or any
     // MRO entry above the built-in int prototype) defines a user
