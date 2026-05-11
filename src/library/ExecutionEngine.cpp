@@ -1945,9 +1945,35 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
         }
 
         if (!lst) {
-            // Try dictionary keys or __data__ fallback
+            // Try dictionary keys or __data__ fallback.  Restricted to
+            // dict-like b — every Python instance owns __data__/__keys__
+            // for its attribute storage, so an unrestricted check
+            // treats any random object as an empty mapping and the
+            // user's __getitem__-driven iteration never fires.
+            PythonEnvironment* envContains = PythonEnvironment::fromContext(ctx);
+            bool bIsDictLike = false;
+            if (envContains) {
+                const proto::ProtoObject* bt = envContains->getType(ctx, b);
+                if (bt == envContains->getDictPrototype()
+                    || bt == envContains->getModulePrototype()) {
+                    bIsDictLike = true;
+                } else if (bt && bt != PROTO_NONE) {
+                    const proto::ProtoObject* mAttr = bt->getAttribute(ctx, envContains->getMroString());
+                    const proto::ProtoTuple* mroT = mAttr ? mAttr->asTuple(ctx) : nullptr;
+                    if (mroT) {
+                        for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
+                            const proto::ProtoObject* m = mroT->getAt(ctx, static_cast<int>(i));
+                            if (m == envContains->getDictPrototype()
+                                || m == envContains->getModulePrototype()) {
+                                bIsDictLike = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
             const proto::ProtoString* dataS = protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
-            const proto::ProtoObject* data = b->getAttribute(ctx, dataS);
+            const proto::ProtoObject* data = bIsDictLike ? b->getAttribute(ctx, dataS) : nullptr;
             if (data && data != PROTO_NONE) {
                 if (data->asList(ctx)) lst = data->asList(ctx);
                 else if (data->isTuple(ctx)) lst = data->asTuple(ctx)->asList(ctx);
@@ -2011,6 +2037,33 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
                 a->asString(ctx)->toUTF8String(ctx, s_sub);
                 b->asString(ctx)->toUTF8String(ctx, s_full);
                 found = (s_full.find(s_sub) != std::string::npos);
+            } else if (env) {
+                // CPython: when neither __contains__ nor a fast container
+                // path applies, fall back to iteration.  Honours classic
+                // sequences that expose only __getitem__ (e.g. user types
+                // raising IndexError beyond bounds).  env->iter already
+                // synthesises an iterator over getitem(0), getitem(1), …
+                // until IndexError, so this branch covers both __iter__
+                // and the old-style sequence protocol.
+                const proto::ProtoObject* it = env->iter(b);
+                if (it) {
+                    for (;;) {
+                        const proto::ProtoObject* item = env->next(it);
+                        if (!item) {
+                            if (env->hasPendingException()) env->clearPendingException();
+                            break;
+                        }
+                        const proto::ProtoObject* r = env->compareObjects(ctx, a, item, 0);
+                        if (r == PROTO_TRUE) {
+                            found = true;
+                            break;
+                        }
+                    }
+                } else if (env->hasPendingException()) {
+                    // env->iter raised because b is not iterable — clear
+                    // so the operator returns false instead of throwing.
+                    env->clearPendingException();
+                }
             }
         }
         
