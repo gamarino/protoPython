@@ -5587,14 +5587,53 @@ static const proto::ProtoObject* py_issubclass(
     if (positionalParameters->getSize(context) < 2) return PROTO_FALSE;
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* base = positionalParameters->getAt(context, 1);
-    
+
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG py_issubclass: entry cls=%p base=%p\n", (void*)cls, (void*)base);
     }
-    
+
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
     cls = resolveClassType(env, self, context, cls);
     base = resolveClassType(env, self, context, base);
+
+    // CPython: issubclass(cls, base) requires cls to be a class and
+    // base to be a class / tuple of classes / union.  Use the same
+    // permissive "looks like a class" probe as isinstance.
+    auto looksLikeClass = [&](const proto::ProtoObject* x) -> bool {
+        if (!env || !x) return false;
+        if (env->isActuallyAClass(context, x)) return true;
+        const proto::ProtoObject* xt = env->getType(context, x);
+        if (xt == env->getTypePrototype()) return true;
+        const proto::ProtoString* mroS = env->getMroString();
+        if (mroS && x->hasOwnAttribute(context, mroS) == PROTO_TRUE) return true;
+        return false;
+    };
+    if (env && cls && !looksLikeClass(cls)) {
+        env->raiseTypeError(context, "issubclass() arg 1 must be a class");
+        return nullptr;
+    }
+    if (env && base && !base->asTuple(context) && !looksLikeClass(base)) {
+        // Also permit a list of classes (legacy) and PEP-604 union
+        // types.  Reject everything else, with explicit guards
+        // against strings (which would otherwise inherit __args__
+        // from the prototype chain).
+        bool isUnion = false;
+        if (!base->isString(context) && !base->isInteger(context)
+            && !base->isFloat(context) && !base->isBoolean(context)) {
+            const proto::ProtoObject* uargs = base->getAttribute(context,
+                PythonEnvironment::getInternedString(context, "__args__"));
+            if (uargs && uargs != PROTO_NONE
+                && (uargs->asList(context) || uargs->asTuple(context))) {
+                isUnion = true;
+            }
+        }
+        bool isList = !base->isString(context) && base->asList(context) != nullptr;
+        if (!isUnion && !isList) {
+            env->raiseTypeError(context,
+                "issubclass() arg 2 must be a class, a tuple of classes, or a union");
+            return nullptr;
+        }
+    }
     
     // PEP 604: `issubclass(C, A | B)` is `issubclass(C, (A, B))`. Detect
     // UnionType via the same name-based check unionFlattenInto uses, then
