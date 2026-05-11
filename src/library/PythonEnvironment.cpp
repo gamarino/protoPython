@@ -4229,14 +4229,26 @@ static const proto::ProtoObject* py_float_repr(
 static const proto::ProtoObject* py_int_bool(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    // Unbound: int.__bool__(x) — receiver in args[0].
+    const proto::ProtoObject* x = self;
+    auto isIntOrBool = [&](const proto::ProtoObject* v) {
+        return v && (v->isInteger(context) || v == PROTO_TRUE || v == PROTO_FALSE);
+    };
+    if (!isIntOrBool(x) && args && args->getSize(context) >= 1) {
+        x = args->getAt(context, 0);
+    }
+    if (x == PROTO_TRUE) return PROTO_TRUE;
+    if (x == PROTO_FALSE) return PROTO_FALSE;
     const proto::ProtoObject* intObj = nullptr;
-    if (self->isInteger(context)) {
-        intObj = self;
+    if (x && x->isInteger(context)) {
+        intObj = x;
     } else {
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
-        const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__"));
+        const proto::ProtoObject* data = x ? x->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__")) : nullptr;
         if (data && data->isInteger(context)) intObj = data;
+        if (data == PROTO_TRUE) return PROTO_TRUE;
+        if (data == PROTO_FALSE) return PROTO_FALSE;
     }
     if (!intObj) return PROTO_FALSE;
     // integerSign is bignum-safe (returns 0 / -1 / +1 without asLong).
