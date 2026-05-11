@@ -1820,23 +1820,36 @@ static const proto::ProtoObject* py_bool_call(
     const proto::ProtoString* boolS = PythonEnvironment::getInternedString(ctx, "__bool__");
     const proto::ProtoObject* boolMethod = cls ? cls->getAttribute(ctx, boolS)
                                                : obj->getAttribute(ctx, boolS);
-    if (boolMethod && boolMethod != PROTO_NONE && boolMethod->asMethod(ctx)) {
+    if (boolMethod && boolMethod != PROTO_NONE) {
         const proto::ProtoList* emptyL = env ? env->getEmptyList() : ctx->newList();
-        const proto::ProtoObject* res = boolMethod->asMethod(ctx)(ctx,
-            const_cast<proto::ProtoObject*>(obj), nullptr, emptyL, nullptr);
+        const proto::ProtoObject* res = nullptr;
+        if (boolMethod->asMethod(ctx)) {
+            res = boolMethod->asMethod(ctx)(ctx,
+                const_cast<proto::ProtoObject*>(obj), nullptr, emptyL, nullptr);
+        } else {
+            // Python-user-defined __bool__: prepend self for the call.
+            const proto::ProtoList* args = ctx->newList()->appendLast(ctx, obj);
+            res = invokePythonCallable(ctx, boolMethod, args, nullptr);
+        }
         if (res == PROTO_TRUE) return PROTO_TRUE;
         if (res == PROTO_FALSE) return PROTO_FALSE;
         if (res && res->isInteger(ctx)) return res->asLong(ctx) != 0 ? PROTO_TRUE : PROTO_FALSE;
-        return PROTO_FALSE;
+        if (res) return PROTO_FALSE;
     }
 
     const proto::ProtoString* lenS = PythonEnvironment::getInternedString(ctx, "__len__");
     const proto::ProtoObject* lenMethod = cls ? cls->getAttribute(ctx, lenS)
                                               : obj->getAttribute(ctx, lenS);
-    if (lenMethod && lenMethod != PROTO_NONE && lenMethod->asMethod(ctx)) {
+    if (lenMethod && lenMethod != PROTO_NONE) {
         const proto::ProtoList* emptyL = env ? env->getEmptyList() : ctx->newList();
-        const proto::ProtoObject* res = lenMethod->asMethod(ctx)(ctx,
-            const_cast<proto::ProtoObject*>(obj), nullptr, emptyL, nullptr);
+        const proto::ProtoObject* res = nullptr;
+        if (lenMethod->asMethod(ctx)) {
+            res = lenMethod->asMethod(ctx)(ctx,
+                const_cast<proto::ProtoObject*>(obj), nullptr, emptyL, nullptr);
+        } else {
+            const proto::ProtoList* args = ctx->newList()->appendLast(ctx, obj);
+            res = invokePythonCallable(ctx, lenMethod, args, nullptr);
+        }
         if (res && res->isInteger(ctx)) return res->asLong(ctx) != 0 ? PROTO_TRUE : PROTO_FALSE;
     }
 

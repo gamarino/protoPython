@@ -2110,20 +2110,36 @@ static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     if (!cls) cls = obj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__"));
 
     const proto::ProtoObject* boolMethod = cls ? cls->getAttribute(ctx, boolS) : obj->getAttribute(ctx, boolS);
-    if (boolMethod && boolMethod != PROTO_NONE && boolMethod->asMethod(ctx)) {
+    if (boolMethod && boolMethod != PROTO_NONE) {
         const proto::ProtoList* emptyL = env ? env->getEmptyList() : ctx->newList();
-        const proto::ProtoObject* result = boolMethod->asMethod(ctx)(ctx, obj, nullptr, emptyL, nullptr);
+        const proto::ProtoObject* result = nullptr;
+        if (boolMethod->asMethod(ctx)) {
+            result = boolMethod->asMethod(ctx)(ctx, obj, nullptr, emptyL, nullptr);
+        } else {
+            // Python-user-defined __bool__ (no asMethod handle).  Route
+            // through invokePythonCallable with `self` prepended so the
+            // user's `def __bool__(self):` receives the receiver.
+            const proto::ProtoList* args = ctx->newList()->appendLast(ctx, obj);
+            result = invokePythonCallable(ctx, boolMethod, args, nullptr);
+        }
         if (result == PROTO_FALSE) return false;
         if (result == PROTO_TRUE) return true;
-        return isTruthy(ctx, result);
+        if (result) return isTruthy(ctx, result);
     }
 
     // __len__ fallback (before native checks so custom containers win).
     const proto::ProtoString* lenS = env ? env->getLenString() : PythonEnvironment::getInternedString(ctx, "__len__");
     const proto::ProtoObject* lenMethod = cls ? cls->getAttribute(ctx, lenS) : obj->getAttribute(ctx, lenS);
-    if (lenMethod && lenMethod != PROTO_NONE && lenMethod->asMethod(ctx)) {
+    if (lenMethod && lenMethod != PROTO_NONE) {
         const proto::ProtoList* emptyL = env ? env->getEmptyList() : ctx->newList();
-        const proto::ProtoObject* result = lenMethod->asMethod(ctx)(ctx, obj, nullptr, emptyL, nullptr);
+        const proto::ProtoObject* result = nullptr;
+        if (lenMethod->asMethod(ctx)) {
+            result = lenMethod->asMethod(ctx)(ctx, obj, nullptr, emptyL, nullptr);
+        } else {
+            // Python-user-defined __len__: prepend self for the call.
+            const proto::ProtoList* args = ctx->newList()->appendLast(ctx, obj);
+            result = invokePythonCallable(ctx, lenMethod, args, nullptr);
+        }
         if (result && result->isInteger(ctx)) {
             return (result->asLong(ctx) > 0);
         }
