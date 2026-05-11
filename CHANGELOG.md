@@ -5,15 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.0] - 2026-05-10
+## [0.3.0] - 2026-05-11
 
 ### CPython conformance sweep (test_descr.py)
 
 Brought `test/cpython/test_descr.py` from **104 failing tests** (early in the
-session) down to **75 issues** (55 failures + 20 errors out of 165 tests)
-in two work sessions of intensive, root-cause-only fixes.  Every change
+session) down to **73 issues** (55 failures + 18 errors out of 165 tests)
+in three work sessions of intensive, root-cause-only fixes.  Every change
 was paired with `ctest --test-dir build-release`; ctest stayed at
 **199/199** throughout.
+
+### Fixed: str unbound dispatch sweep (session 3, May 2026)
+
+A second wave of unbound built-in dunder fixes landed for `str` methods
+that returned `None` / `False` when invoked as `str.method(receiver, …)`:
+
+- `str.zfill / join / format / encode / partition / rpartition`
+- `str.isalpha / isdigit / isdecimal / isnumeric / isspace / isalnum /
+  isupper / islower / isprintable / isascii / isidentifier`
+- `str.format` numeric indices `{0}`, `{1}`, … and auto-index `{}` are
+  shifted by the receiver offset so the format-string and its
+  arguments line up the same way in both calling conventions.
+
+A second `str.format` bug was uncovered along the way: the default
+conversion (empty spec, `'s'` type, `{!s}`) was rendering strings
+through `reprObject`, producing `"'a'"` for `'{}'.format('a')`
+instead of `"a"`.  Default conversion now mirrors CPython's
+`str(obj)` for strings; `{!r}` keeps its quoting behaviour.
+
+### Fixed: dict() construction strictness
+
+`py_dict_call` no longer accepts arbitrary instances as if they were
+empty mappings.  Three correctness fixes ride on the same commit:
+
+- `dict(obj)` rejects with `TypeError` when `obj` lacks `keys()` and
+  has neither `__iter__` nor `__getitem__` on its type's protoCore
+  parent chain.  The previous fallback iterated any user instance's
+  attribute SparseList and returned `{}` silently
+  (`test_descr.test_dict_constructors`).
+- `dict([entry1, entry2])` works when each entry's only contract is
+  `__iter__` yielding two values (e.g. an `AddressBookEntry` class).
+- `dict([('too', 'long', 'by 1')])` raises `ValueError` (wrong
+  length) instead of dropping the extra element.
+
+### Fixed: bound method ordering raises TypeError
+
+`l.__add__ < l.__add__` returned `True` (raw pointer comparison)
+instead of raising `TypeError`.  `compareObjects` now detects bound
+built-in methods via `asMethod(ctx)` on both operands before the
+user-class fallback and raises the same diagnostic the user-class
+branch raises.  `==` / `!=` keep their existing identity-based
+answer.
+
+### Earlier in the v0.3.0 cycle
 
 ### Added
 
