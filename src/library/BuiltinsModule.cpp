@@ -1281,7 +1281,22 @@ static const proto::ProtoObject* py_reversed(
     const proto::ProtoObject* lenMethod = env ? env->getAttribute(context, obj, lenS, false) : (obj->hasOwnAttribute(context, lenS) == PROTO_TRUE ? obj->getAttribute(context, lenS) : nullptr);
     const proto::ProtoObject* getitemMethod = env ? env->getAttribute(context, obj, getitemS, false) : (obj->hasOwnAttribute(context, getitemS) == PROTO_TRUE ? obj->getAttribute(context, getitemS) : nullptr);
     if (!lenMethod || !getitemMethod) {
-        if (env) env->raiseTypeError(context, "'" + PythonEnvironment::reprObject(context, obj) + "' object is not reversible");
+        if (env) {
+            // CPython names the *class* in this error, not the receiver's
+            // repr — emitting `'5' object is not reversible` or
+            // `'{1, 2, 3}' object is not reversible` (literal value!) was
+            // misleading and broke test-suite assertions that match on
+            // `'int' object is not reversible`.
+            std::string clsName = "object";
+            const proto::ProtoObject* cls = env->getType(context, obj);
+            if (cls) {
+                const proto::ProtoObject* nameAttr = cls->getAttribute(context, env->getNameString());
+                if (nameAttr && nameAttr->isString(context)) {
+                    nameAttr->asString(context)->toUTF8String(context, clsName);
+                }
+            }
+            env->raiseTypeError(context, "'" + clsName + "' object is not reversible");
+        }
         return nullptr;
     }
     
