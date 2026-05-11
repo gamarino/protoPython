@@ -15,6 +15,13 @@ in three work sessions of intensive, root-cause-only fixes.  Every change
 was paired with `ctest --test-dir build-release`; ctest stayed at
 **199/199** throughout.
 
+Across sessions the test_descr.py count improved from 104 → 73 via
+~20 root-cause fixes spread across str unbound dispatch, dict()
+strictness, bound-method ordering, complex hashing, type()
+validation, py_object_new rules, OP_STORE_SUBSCR MRO walk, deque
+trampolines, raiseIndexError, and more — every one paired with
+ctest green.
+
 ### Fixed: str unbound dispatch sweep (session 3, May 2026)
 
 A second wave of unbound built-in dunder fixes landed for `str` methods
@@ -89,6 +96,74 @@ operand's `__mro__` for the left's type, check that the right type
 *owns* the reflected dunder, run it first, fall through unchanged
 on `NotImplemented`.  Doesn't yet help `str`-subclass instances
 because their `type()` still reports `str` (separate bug).
+
+### Fixed: py_object_new tighter rules for extra args
+
+`object.__new__(cls, *args)` was accepting extras whenever
+`__init__` was overridden, even when `__new__` was also overridden.
+CPython rejects that combination: the override on `__new__` is the
+legitimate landing site for extras, so calling `object.__new__`
+directly with extras bypasses the override.  New rule: accept
+extras only when `__init__` is overridden AND `__new__` is the
+default `object.__new__`.  Metaclass / module subclasses get a
+carve-out (their constructor protocol legitimately takes args).
+
+### Fixed: OP_STORE_SUBSCR walks MRO for __setitem__
+
+`L([1,2,3])[slice(1,3)] = [3,2]` raised
+`RuntimeError: Object is not an integer type` for any list
+subclass.  The dispatcher's raw `container->getAttribute` walked
+the protoCore parent chain and returned a tagged-sentinel value
+instead of the inherited native method, sending the dispatch into
+the integer-key fallback that ran `key->asLong()` on the slice.
+Use `env->getAttribute` for the lookup so the Python MRO is
+honoured.
+
+### Fixed: complex.__pos__ / __neg__ / __add__-shape
+
+Installed `__pos__` and `__neg__` slots on `complexPrototype` —
+both cast the result to plain complex, dropping any subclass
+(`(+madcomplex(...)).__class__ is complex`).  Before this `-x`
+returned `None` for any complex value because no slot existed at
+all.
+
+### Fixed: staticmethod / classmethod __bases__/__mro__ as tuples
+
+Both prototypes had list-shaped `__bases__` and `__mro__`.  CPython
+stores them as tuples on every type, and `test_builtin_bases`
+asserts the shape.  Converted via `ctx->newTupleFromList`.
+
+### Fixed: type() rejects duplicate base classes
+
+`type('X', (A, A), {})` and `class X(A, A): pass` silently
+succeeded.  Now raises `TypeError: duplicate base class A` at
+class-creation time.  Does not yet catch general MRO conflicts
+(`type('X', (A, B), {})` where B subclasses A — needs full C3
+linearisation, separate work).
+
+### Fixed: raiseIndexError actually marks the exception pending
+
+The helper built the exception object via `invokePythonCallable`
+but never called `setPendingException`, so callers returning
+nullptr never had their IndexError surface — `deque().pop()`
+silently returned None.
+
+### Fixed: deque trampolines reject non-deque receiver
+
+`deque.append/appendleft/pop/popleft/extend/extendleft/clear/remove`
+all returned silently when `self` lacked the internal
+`__deque_ptr__` external pointer.  All now raise the standard
+"descriptor 'X' for 'collections.deque' objects doesn't apply to
+a non-deque object" TypeError.  `pop`/`popleft` also raise
+IndexError on empty deque.
+
+### Fixed: object.__setattr__ Carlo Verre check for user metaclasses
+
+Extended the existing built-in-type guard to also reject
+`object.__setattr__(cls, ...)` when `cls` is a user class whose
+metaclass overrides `__setattr__` — bypassing the metaclass's
+intended validation is the exact security hole the guard is
+named after.
 
 ### Earlier in the v0.3.0 cycle
 
