@@ -6927,6 +6927,97 @@ static const proto::ProtoObject* py_tuple_mul(
     return out;
 }
 
+// Helper: lexicographic tuple compare, returns ok=false when either
+// operand isn't tuple-shaped or contains an unsupported element type.
+static int compare_tuples(proto::ProtoContext* context,
+        const proto::ProtoObject* a, const proto::ProtoObject* b, bool* ok) {
+    *ok = false;
+    auto unwrap = [&](const proto::ProtoObject* x) -> const proto::ProtoTuple* {
+        if (!x) return nullptr;
+        if (const proto::ProtoTuple* t = x->asTuple(context)) return t;
+        const proto::ProtoString* dn = PythonEnvironment::getInternalString(context, "__data__");
+        const proto::ProtoObject* d = x->getAttribute(context, dn);
+        return d ? d->asTuple(context) : nullptr;
+    };
+    const proto::ProtoTuple* ta = unwrap(a);
+    const proto::ProtoTuple* tb = unwrap(b);
+    if (!ta || !tb) return 0;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    unsigned long sa = ta->getSize(context);
+    unsigned long sb = tb->getSize(context);
+    unsigned long n = std::min(sa, sb);
+    for (unsigned long i = 0; i < n; ++i) {
+        const proto::ProtoObject* ea = ta->getAt(context, static_cast<int>(i));
+        const proto::ProtoObject* eb = tb->getAt(context, static_cast<int>(i));
+        if (ea == eb) continue;
+        if (env) {
+            if (env->objectsEqual(context, ea, eb)) continue;
+            const proto::ProtoObject* r = env->compareObjects(context, ea, eb, 2 /*lt*/);
+            *ok = true;
+            if (r == PROTO_TRUE) return -1;
+            return 1;
+        }
+        int c = ea->compare(context, eb);
+        if (c != 0) { *ok = true; return c; }
+    }
+    *ok = true;
+    if (sa < sb) return -1;
+    if (sa > sb) return 1;
+    return 0;
+}
+
+static const proto::ProtoObject* py_tuple_cmp_dispatch(proto::ProtoContext* ctx,
+        const proto::ProtoObject* self, const proto::ProtoList* args,
+        int op /* 0=lt 1=le 2=gt 3=ge */) {
+    const proto::ProtoObject* other = nullptr;
+    // Detect unbound (cls, a, b) form.
+    auto unwrap = [&](const proto::ProtoObject* x) -> const proto::ProtoTuple* {
+        if (!x) return nullptr;
+        if (const proto::ProtoTuple* t = x->asTuple(ctx)) return t;
+        const proto::ProtoString* dn = PythonEnvironment::getInternalString(ctx, "__data__");
+        const proto::ProtoObject* d = x->getAttribute(ctx, dn);
+        return d ? d->asTuple(ctx) : nullptr;
+    };
+    if (!unwrap(self) && args && args->getSize(ctx) >= 2) {
+        self = args->getAt(ctx, 0);
+        other = args->getAt(ctx, 1);
+    } else if (args && args->getSize(ctx) >= 1) {
+        other = args->getAt(ctx, 0);
+    }
+    if (!self || !other) return PROTO_FALSE;
+    bool ok = false;
+    int c = compare_tuples(ctx, self, other, &ok);
+    if (!ok) return PROTO_FALSE;
+    switch (op) {
+        case 0: return c <  0 ? PROTO_TRUE : PROTO_FALSE;
+        case 1: return c <= 0 ? PROTO_TRUE : PROTO_FALSE;
+        case 2: return c >  0 ? PROTO_TRUE : PROTO_FALSE;
+        case 3: return c >= 0 ? PROTO_TRUE : PROTO_FALSE;
+    }
+    return PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_tuple_lt(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return py_tuple_cmp_dispatch(ctx, self, args, 0);
+}
+static const proto::ProtoObject* py_tuple_le(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return py_tuple_cmp_dispatch(ctx, self, args, 1);
+}
+static const proto::ProtoObject* py_tuple_gt(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return py_tuple_cmp_dispatch(ctx, self, args, 2);
+}
+static const proto::ProtoObject* py_tuple_ge(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return py_tuple_cmp_dispatch(ctx, self, args, 3);
+}
+
 static const proto::ProtoObject* py_tuple_contains(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -13793,6 +13884,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__add__"), rootContext_->fromMethod(nullptr, py_tuple_add));
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__mul__"), rootContext_->fromMethod(nullptr, py_tuple_mul));
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__rmul__"), rootContext_->fromMethod(nullptr, py_tuple_mul));
+    tuplePrototype = tuplePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__lt__"), rootContext_->fromMethod(nullptr, py_tuple_lt));
+    tuplePrototype = tuplePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__le__"), rootContext_->fromMethod(nullptr, py_tuple_le));
+    tuplePrototype = tuplePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__gt__"), rootContext_->fromMethod(nullptr, py_tuple_gt));
+    tuplePrototype = tuplePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ge__"), rootContext_->fromMethod(nullptr, py_tuple_ge));
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_tuple_bool));
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_hash, rootContext_->fromMethod(nullptr, py_tuple_hash));
     const proto::ProtoString* py_tuple_index_name = PythonEnvironment::getInternedString(rootContext_, "index");
