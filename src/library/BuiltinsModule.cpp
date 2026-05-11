@@ -4674,7 +4674,6 @@ const proto::ProtoObject* py_type(
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoObject* typeProto = env ? env->getTypePrototype() : nullptr;
     
-    // Decoration: runUserClassCall moved to py_type_call
     if (!positionalParameters || positionalParameters->getSize(context) == 0) {
         return PROTO_NONE;
     }
@@ -6850,7 +6849,18 @@ static const proto::ProtoObject* py_bin(
             }
         }
     }
-    if (!arg || !arg->isInteger(context)) return PROTO_NONE;
+    if (!arg || !arg->isInteger(context)) {
+        // CPython: bin(non_int) raises
+        //   TypeError: 'X' object cannot be interpreted as an integer
+        // (CPython 3.11+) or
+        //   TypeError: bin() argument must be an integer or have an __index__ method
+        // (older).  Match the hex() wording for consistency across the
+        // bin/oct/hex trio — previously bin('a') silently returned None.
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env) env->raiseTypeError(context,
+            "bin() argument must be an integer or have an __index__ method");
+        return nullptr;
+    }
     std::string out = format_int_with_prefix(context, arg, "0b", 2);
     return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
 }
@@ -6879,7 +6889,12 @@ static const proto::ProtoObject* py_oct(
             }
         }
     }
-    if (!arg || !arg->isInteger(context)) return PROTO_NONE;
+    if (!arg || !arg->isInteger(context)) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env) env->raiseTypeError(context,
+            "oct() argument must be an integer or have an __index__ method");
+        return nullptr;
+    }
     std::string out = format_int_with_prefix(context, arg, "0o", 8);
     return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
 }
