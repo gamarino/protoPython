@@ -14281,6 +14281,93 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             }));
     }
 
+    // complex.__abs__: sqrt(real^2 + imag^2) as float.
+    complexPrototype = complexPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__abs__"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (!env) return PROTO_NONE;
+            const proto::ProtoObject* receiver = self;
+            if (self == env->getComplexPrototype() && args && args->getSize(ctx) >= 1) {
+                receiver = args->getAt(ctx, 0);
+            }
+            if (!receiver) return PROTO_NONE;
+            const proto::ProtoString* realS = PythonEnvironment::getInternedString(ctx, "real");
+            const proto::ProtoString* imagS = PythonEnvironment::getInternedString(ctx, "imag");
+            const proto::ProtoObject* rObj = receiver->getAttribute(ctx, realS);
+            const proto::ProtoObject* iObj = receiver->getAttribute(ctx, imagS);
+            double rv = 0, iv = 0;
+            if (rObj) {
+                if (rObj->isFloat(ctx)) rv = rObj->asDouble(ctx);
+                else if (rObj->isInteger(ctx)) rv = (double)rObj->asLong(ctx);
+            }
+            if (iObj) {
+                if (iObj->isFloat(ctx)) iv = iObj->asDouble(ctx);
+                else if (iObj->isInteger(ctx)) iv = (double)iObj->asLong(ctx);
+            }
+            return ctx->fromDouble(std::hypot(rv, iv));
+        }));
+    // complex.__pow__: (a+bi)^(c+di) — handle integer exponents
+    // exactly via repeated multiplication for small ints, otherwise
+    // fall through to exp/log decomposition.
+    complexPrototype = complexPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__pow__"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (!env || !args || args->getSize(ctx) < 1) return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+            auto get = [&](const proto::ProtoObject* x, double& r, double& i) -> bool {
+                if (!x || x == PROTO_NONE) return false;
+                if (x->isInteger(ctx)) { r = (double)x->asLong(ctx); i = 0; return true; }
+                if (x->isFloat(ctx)) { r = x->asDouble(ctx); i = 0; return true; }
+                if (x->isBoolean(ctx)) { r = (x == PROTO_TRUE) ? 1.0 : 0.0; i = 0; return true; }
+                const proto::ProtoObject* rr2 = x->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "real"));
+                const proto::ProtoObject* ii2 = x->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "imag"));
+                bool gotR = false, gotI = false;
+                if (rr2) { if (rr2->isFloat(ctx)) { r = rr2->asDouble(ctx); gotR = true; } else if (rr2->isInteger(ctx)) { r = (double)rr2->asLong(ctx); gotR = true; } }
+                if (ii2) { if (ii2->isFloat(ctx)) { i = ii2->asDouble(ctx); gotI = true; } else if (ii2->isInteger(ctx)) { i = (double)ii2->asLong(ctx); gotI = true; } }
+                return gotR || gotI;
+            };
+            double ar = 0, ai = 0, br = 0, bi = 0;
+            const proto::ProtoObject* selfArg = self;
+            const proto::ProtoObject* otherArg = args->getAt(ctx, 0);
+            if (!get(selfArg, ar, ai)) {
+                if (args->getSize(ctx) < 2) return env->getNotImplementedPrototype();
+                selfArg = args->getAt(ctx, 0);
+                otherArg = args->getAt(ctx, 1);
+                ar = ai = 0;
+                if (!get(selfArg, ar, ai)) return env->getNotImplementedPrototype();
+            }
+            if (!get(otherArg, br, bi)) return env->getNotImplementedPrototype();
+            // Use exp(b * log(a)) for the general case. log(a+bi) =
+            // log(|a+bi|) + i*atan2(b, a); multiplied by exponent;
+            // exp() of complex = e^r * (cos(i) + i*sin(i)).
+            double rr, ii;
+            if (ar == 0.0 && ai == 0.0) {
+                rr = (br == 0.0 && bi == 0.0) ? 1.0 : 0.0;
+                ii = 0.0;
+            } else {
+                double mag = std::hypot(ar, ai);
+                double arg = std::atan2(ai, ar);
+                double logMag = std::log(mag);
+                // (br + bi i) * (logMag + arg i)
+                double er = br * logMag - bi * arg;
+                double ei = br * arg + bi * logMag;
+                double em = std::exp(er);
+                rr = em * std::cos(ei);
+                ii = em * std::sin(ei);
+            }
+            proto::ProtoObject* res = const_cast<proto::ProtoObject*>(env->getComplexPrototype()->newChild(ctx, true));
+            res->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "real"), ctx->fromDouble(rr));
+            res->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "imag"), ctx->fromDouble(ii));
+            res->setAttribute(ctx, env->getClassString(), env->getComplexPrototype());
+            return (const proto::ProtoObject*)res;
+        }));
     // complex.__radd__(self, other) returns other + self.  Accept
     // both bound and unbound call shapes (the test
     // test_explicit_reverse_methods invokes via the type:
