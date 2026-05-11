@@ -13934,6 +13934,59 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             if (eq == env->getNotImplementedPrototype()) return eq;
             return (eq == PROTO_TRUE) ? PROTO_FALSE : PROTO_TRUE;
         }));
+    // complex.__hash__: value-based, matching CPython's contract
+    // `hash(complex(x, 0)) == hash(x)`.  The default (inherited from
+    // object) falls back to identity, so two complex instances with
+    // identical components hashed differently — breaking subclass
+    // tests like `class madcomplex(complex): pass; hash(madcomplex(a))
+    // == hash(complex(a))`.  CPython uses
+    //   hash(c) = hash(c.real) + sys.hash_info.imag * hash(c.imag)
+    // truncated to Py_hash_t.  Mirror that.
+    complexPrototype = complexPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__hash__"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            const proto::ProtoObject* receiver = self;
+            if (env && self == env->getComplexPrototype()
+                && args && args->getSize(ctx) >= 1) {
+                // Unbound form: `complex.__hash__(c)`.
+                receiver = args->getAt(ctx, 0);
+            }
+            if (!receiver) return ctx->fromInteger(0);
+            const proto::ProtoString* realS = PythonEnvironment::getInternedString(ctx, "real");
+            const proto::ProtoString* imagS = PythonEnvironment::getInternedString(ctx, "imag");
+            const proto::ProtoObject* rObj = receiver->getAttribute(ctx, realS);
+            const proto::ProtoObject* iObj = receiver->getAttribute(ctx, imagS);
+            // Reuse hash() on the components — preserves the
+            // `hash(complex(7, 0)) == hash(7)` invariant because
+            // hash(7) and hash(7.0) already agree in CPython.  Use
+            // the type's __hash__ slot (float.__hash__) rather than
+            // the raw cell hash, which encodes the float's binary
+            // representation, not its value-based hash.
+            const proto::ProtoString* hashS = env ? env->getHashString() : PythonEnvironment::getInternedString(ctx, "__hash__");
+            auto hashOf = [&](const proto::ProtoObject* x) -> long long {
+                if (!x || x == PROTO_NONE) return 0;
+                const proto::ProtoObject* hm = x->getAttribute(ctx, hashS);
+                if (hm && hm->asMethod(ctx)) {
+                    const proto::ProtoObject* hr = hm->asMethod(ctx)(ctx,
+                        const_cast<proto::ProtoObject*>(x), nullptr,
+                        env ? env->getEmptyList() : ctx->newList(), nullptr);
+                    if (hr && hr->isInteger(ctx)) {
+                        return static_cast<long long>(hr->asLong(ctx));
+                    }
+                }
+                return static_cast<long long>(x->getHash(ctx));
+            };
+            long long hr = hashOf(rObj);
+            long long hi = hashOf(iObj);
+            // Py_HASH_IMAG = 1000003 in CPython 3.14.  Combine and
+            // truncate to a signed 64-bit value.
+            long long combined = hr + 1000003LL * hi;
+            return ctx->fromInteger(combined);
+        }));
     // complex.__radd__(self, other) returns other + self.  Accept
     // both bound and unbound call shapes (the test
     // test_explicit_reverse_methods invokes via the type:
