@@ -1775,6 +1775,29 @@ static const proto::ProtoObject* py_object_setattr(
     // allocated user class — i.e. it's one of the built-in
     // primitive prototypes (int, str, list, dict, ...).
     if (env && target && env->isActuallyAClass(context, target)) {
+        // Carlo Verre full rule: object.__setattr__ on a class is only
+        // legal when the class's metaclass uses the default
+        // object.__setattr__.  When the metaclass has its own
+        // __setattr__ that calls object.__setattr__ directly, the call
+        // bypasses the metaclass's intended validation and must be
+        // rejected.  Detect by comparing the metaclass's __setattr__
+        // slot pointer to object's.
+        const proto::ProtoObject* metaCls = env->getType(context, target);
+        if (metaCls && metaCls != env->getTypePrototype()
+            && metaCls != env->getObjectPrototype()) {
+            const proto::ProtoString* setattrS = PythonEnvironment::getInternedString(context, "__setattr__");
+            const proto::ProtoObject* objSetattr = env->getObjectPrototype()
+                ? env->getObjectPrototype()->getAttribute(context, setattrS) : nullptr;
+            const proto::ProtoObject* metaSetattr = metaCls->getAttribute(context, setattrS);
+            if (metaSetattr && objSetattr && metaSetattr != objSetattr) {
+                std::string clsName = "?";
+                const proto::ProtoObject* nm = target->getAttribute(context, env->getNameString());
+                if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+                env->raiseTypeError(context,
+                    "can't apply this __setattr__ to " + clsName);
+                return nullptr;
+            }
+        }
         // Allow setattr on user-defined classes (which routes through
         // type's setattr by inheritance), but reject on built-ins.
         if (target == env->getStrPrototype()
