@@ -8755,6 +8755,9 @@ static const proto::ProtoObject* py_str_lower(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* str = str_from_self(context, self);
+    if (!str && positionalParameters && positionalParameters->getSize(context) >= 1) {
+        str = str_from_self(context, positionalParameters->getAt(context, 0));
+    }
     if (!str) return PROTO_NONE;
     std::string s;
     str->toUTF8String(context, s);
@@ -9074,7 +9077,19 @@ static const proto::ProtoObject* py_str_startswith(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     const proto::ProtoString* str = str_from_self(context, self);
-    if (!str || !posArgs || posArgs->getSize(context) < 1) return PROTO_NONE;
+    int posOff = 0;
+    if (!str && posArgs && posArgs->getSize(context) >= 2) {
+        str = str_from_self(context, posArgs->getAt(context, 0));
+        if (str) posOff = 1;
+    }
+    if (!str || !posArgs || posArgs->getSize(context) < static_cast<unsigned long>(1 + posOff)) return PROTO_NONE;
+    if (posOff > 0) {
+        proto::ProtoList* shifted = const_cast<proto::ProtoList*>(context->newList());
+        for (unsigned long i = posOff; i < posArgs->getSize(context); ++i) {
+            shifted = const_cast<proto::ProtoList*>(shifted->appendLast(context, posArgs->getAt(context, static_cast<int>(i))));
+        }
+        posArgs = shifted;
+    }
     std::string s;
     str->toUTF8String(context, s);
 
@@ -9131,7 +9146,19 @@ static const proto::ProtoObject* py_str_endswith(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     const proto::ProtoString* str = str_from_self(context, self);
-    if (!str || !posArgs || posArgs->getSize(context) < 1) return PROTO_NONE;
+    int posOff = 0;
+    if (!str && posArgs && posArgs->getSize(context) >= 2) {
+        str = str_from_self(context, posArgs->getAt(context, 0));
+        if (str) posOff = 1;
+    }
+    if (!str || !posArgs || posArgs->getSize(context) < static_cast<unsigned long>(1 + posOff)) return PROTO_NONE;
+    if (posOff > 0) {
+        proto::ProtoList* shifted = const_cast<proto::ProtoList*>(context->newList());
+        for (unsigned long i = posOff; i < posArgs->getSize(context); ++i) {
+            shifted = const_cast<proto::ProtoList*>(shifted->appendLast(context, posArgs->getAt(context, static_cast<int>(i))));
+        }
+        posArgs = shifted;
+    }
     std::string s;
     str->toUTF8String(context, s);
 
@@ -9188,12 +9215,17 @@ static const proto::ProtoObject* py_str_replace(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     const proto::ProtoString* str = str_from_self(context, self);
-    if (!str || !posArgs || posArgs->getSize(context) < 2) return PROTO_NONE;
+    int posOff = 0;
+    if (!str && posArgs && posArgs->getSize(context) >= 3) {
+        str = str_from_self(context, posArgs->getAt(context, 0));
+        if (str) posOff = 1;
+    }
+    if (!str || !posArgs || posArgs->getSize(context) < static_cast<unsigned long>(2 + posOff)) return PROTO_NONE;
     std::string s;
     str->toUTF8String(context, s);
 
-    const proto::ProtoObject* oldObj = posArgs->getAt(context, 0);
-    const proto::ProtoObject* newObj = posArgs->getAt(context, 1);
+    const proto::ProtoObject* oldObj = posArgs->getAt(context, 0 + posOff);
+    const proto::ProtoObject* newObj = posArgs->getAt(context, 1 + posOff);
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (!oldObj->isString(context) || !newObj->isString(context)) {
         if (env) env->raiseTypeError(context, "replace args 1 and 2 must be str");
