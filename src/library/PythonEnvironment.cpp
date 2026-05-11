@@ -6100,6 +6100,41 @@ static const proto::ProtoObject* py_str_mul(
     return PythonEnvironment::getInternedString(ctx, out.c_str())->asObject(ctx);
 }
 
+static const proto::ProtoObject* py_float_hash(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    // Extract the underlying double — direct or via __data__ (subclass).
+    double v = 0.0;
+    bool got = false;
+    if (self->isFloat(context)) { v = self->asDouble(context); got = true; }
+    else if (self->isInteger(context)) { v = static_cast<double>(self->asLong(context)); got = true; }
+    else {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        const proto::ProtoObject* data = self->getAttribute(context,
+            env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__"));
+        if (data) {
+            if (data->isFloat(context)) { v = data->asDouble(context); got = true; }
+            else if (data->isInteger(context)) { v = static_cast<double>(data->asLong(context)); got = true; }
+        }
+    }
+    if (!got) return context->fromInteger(0);
+    // CPython: integer-valued floats hash the same as the int.  We only
+    // hit the integer-equivalence path here; non-integral floats fall
+    // through to a deterministic value-based hash (the bit pattern).
+    if (v == (double)(long long)v && !std::isnan(v) && !std::isinf(v)) {
+        long long iv = (long long)v;
+        if (iv == -1) return context->fromInteger(-2);
+        return context->fromInteger(iv);
+    }
+    // Non-integer: hash from the IEEE 754 bit pattern with a small tweak.
+    union { double d; unsigned long long u; } pun;
+    pun.d = v;
+    long long h = static_cast<long long>(pun.u);
+    if (h == -1) h = -2;
+    return context->fromInteger(h);
+}
+
 static const proto::ProtoObject* py_int_hash(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -13622,6 +13657,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // float receivers too — the `<`, `==`, etc. operators are unchanged
     // (they use the runtime's numeric fast path); this only repairs
     // the explicit-dunder route.
+    floatPrototype = floatPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__hash__"), rootContext_->fromMethod(nullptr, py_float_hash));
     floatPrototype = floatPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__lt__"), rootContext_->fromMethod(nullptr, py_int_lt));
     floatPrototype = floatPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__le__"), rootContext_->fromMethod(nullptr, py_int_le));
     floatPrototype = floatPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__gt__"), rootContext_->fromMethod(nullptr, py_int_gt));
