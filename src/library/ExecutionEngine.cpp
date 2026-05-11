@@ -6357,7 +6357,16 @@ const proto::ProtoObject* executeBytecodeRange(
             }
 
             const proto::ProtoString* setItemS = env ? env->getSetItemString() : PythonEnvironment::getInternedString(ctx, "__setitem__");
-            const proto::ProtoObject* setitem = container->getAttribute(ctx, setItemS);
+            // Use env->getAttribute so the MRO is walked instead of
+            // the raw protoCore parent chain.  Some subclass instances
+            // (e.g. `class L(list)`) hit a different path on raw
+            // chain walk that returns a tagged sentinel rather than
+            // the inherited native method, sending the dispatch into
+            // the integer-key fallback below (which then asLong's a
+            // slice and throws "Object is not an integer type").
+            const proto::ProtoObject* setitem = env
+                ? env->getAttribute(ctx, container, setItemS, false)
+                : container->getAttribute(ctx, setItemS);
             if (setitem && setitem != PROTO_NONE) {
                 if (env && env->hasPendingException()) continue;
                 const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key)->appendLast(ctx, value);
