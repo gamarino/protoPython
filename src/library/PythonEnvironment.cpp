@@ -7969,6 +7969,85 @@ static const proto::ProtoObject* py_str_iter(
     return it ? it->asObject(context) : PROTO_NONE;
 }
 
+// Helper: extract str from receiver in bound and unbound forms.  When
+// posOff is non-null, on the unbound match it's set to 1 so the caller
+// can skip the receiver positional in subsequent arg parsing.
+static const proto::ProtoString* str_from_self_or_arg(proto::ProtoContext* context,
+        const proto::ProtoObject* self, const proto::ProtoList* posArgs,
+        int* posOff = nullptr) {
+    const proto::ProtoString* s = str_from_self(context, self);
+    if (posOff) *posOff = 0;
+    if (!s && posArgs && posArgs->getSize(context) >= 1) {
+        s = str_from_self(context, posArgs->getAt(context, 0));
+        if (s && posOff) *posOff = 1;
+    }
+    return s;
+}
+
+enum class StrCmpOp { Lt, Le, Eq, Ne, Gt, Ge };
+
+static const proto::ProtoObject* py_str_cmp_dispatch(proto::ProtoContext* context,
+        const proto::ProtoObject* self, const proto::ProtoList* args,
+        StrCmpOp op) {
+    int posOff = 0;
+    const proto::ProtoString* a = str_from_self_or_arg(context, self, args, &posOff);
+    if (!a || !args || args->getSize(context) < static_cast<unsigned long>(1 + posOff)) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    }
+    const proto::ProtoObject* bObj = args->getAt(context, posOff);
+    if (!bObj || !bObj->isString(context)) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    }
+    const proto::ProtoString* b = bObj->asString(context);
+    std::string sa, sb;
+    a->toUTF8String(context, sa);
+    b->toUTF8String(context, sb);
+    int c = sa.compare(sb);
+    bool r = false;
+    switch (op) {
+        case StrCmpOp::Lt: r = c <  0; break;
+        case StrCmpOp::Le: r = c <= 0; break;
+        case StrCmpOp::Eq: r = c == 0; break;
+        case StrCmpOp::Ne: r = c != 0; break;
+        case StrCmpOp::Gt: r = c >  0; break;
+        case StrCmpOp::Ge: r = c >= 0; break;
+    }
+    return r ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_str_lt(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return py_str_cmp_dispatch(ctx, self, args, StrCmpOp::Lt);
+}
+static const proto::ProtoObject* py_str_le(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return py_str_cmp_dispatch(ctx, self, args, StrCmpOp::Le);
+}
+static const proto::ProtoObject* py_str_eq_dunder(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return py_str_cmp_dispatch(ctx, self, args, StrCmpOp::Eq);
+}
+static const proto::ProtoObject* py_str_ne_dunder(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return py_str_cmp_dispatch(ctx, self, args, StrCmpOp::Ne);
+}
+static const proto::ProtoObject* py_str_gt(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return py_str_cmp_dispatch(ctx, self, args, StrCmpOp::Gt);
+}
+static const proto::ProtoObject* py_str_ge(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return py_str_cmp_dispatch(ctx, self, args, StrCmpOp::Ge);
+}
+
 static const proto::ProtoObject* py_str_contains(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -13525,6 +13604,12 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_str_iter));
     strPrototype = strPrototype->setAttribute(rootContext_, py_getitem, rootContext_->fromMethod(nullptr, py_str_getitem));
     strPrototype = strPrototype->setAttribute(rootContext_, py_contains, rootContext_->fromMethod(nullptr, py_str_contains));
+    strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__lt__"), rootContext_->fromMethod(nullptr, py_str_lt));
+    strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__le__"), rootContext_->fromMethod(nullptr, py_str_le));
+    strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__eq__"), rootContext_->fromMethod(nullptr, py_str_eq_dunder));
+    strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ne__"), rootContext_->fromMethod(nullptr, py_str_ne_dunder));
+    strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__gt__"), rootContext_->fromMethod(nullptr, py_str_gt));
+    strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ge__"), rootContext_->fromMethod(nullptr, py_str_ge));
     strPrototype = strPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_str_bool));
     strPrototype = strPrototype->setAttribute(rootContext_, py_upper, rootContext_->fromMethod(nullptr, py_str_upper));
     strPrototype = strPrototype->setAttribute(rootContext_, py_lower, rootContext_->fromMethod(nullptr, py_str_lower));
