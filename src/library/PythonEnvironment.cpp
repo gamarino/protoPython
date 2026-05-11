@@ -4591,6 +4591,28 @@ static const proto::ProtoObject* py_dict_call(
             + std::to_string(positionalParameters->getSize(context) - 1));
         return nullptr;
     }
+    // CPython: dict.__new__(cls) requires cls to be a subclass of dict.
+    if (env && cls != env->getDictPrototype()) {
+        bool subclassOf = false;
+        const proto::ProtoObject* mroAttr = cls->getAttribute(context, env->getMroString());
+        const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
+        if (mroT) {
+            for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+                if (mroT->getAt(context, static_cast<int>(i)) == env->getDictPrototype()) {
+                    subclassOf = true;
+                    break;
+                }
+            }
+        }
+        if (!subclassOf) {
+            std::string clsName = "?";
+            const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
+            if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+            env->raiseTypeError(context,
+                "dict.__new__(" + clsName + "): " + clsName + " is not a subtype of dict");
+            return nullptr;
+        }
+    }
     proto::ProtoObject* instance = const_cast<proto::ProtoObject*>(cls->newChild(context, true));
     instance->setAttribute(context, env ? env->getClassString() : PythonEnvironment::getInternalString(context, "__class__"), cls);
     const proto::ProtoString* dataName = env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__");
