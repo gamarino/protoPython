@@ -1457,7 +1457,9 @@ static const proto::ProtoObject* py_all(
              return nullptr; // Propagate other errors
         }
         if (val == noneObj) break;
-        if (!val->asBoolean(context)) return PROTO_FALSE;
+        // Use env->isTrue: asBoolean only reads PROTO_TRUE/FALSE
+        // sentinels and would return false for ints, strings, etc.
+        if (!(env && env->isTrue(val))) return PROTO_FALSE;
     }
     return PROTO_TRUE;
 }
@@ -1492,7 +1494,9 @@ static const proto::ProtoObject* py_any(
              return nullptr; // Propagate other errors
         }
         if (val == noneObj) break;
-        if (val->asBoolean(context)) return PROTO_TRUE;
+        // Use env->isTrue: asBoolean only reads PROTO_TRUE/FALSE
+        // sentinels and would return false for ints, strings, etc.
+        if (env && env->isTrue(val)) return PROTO_TRUE;
     }
     return PROTO_FALSE;
 }
