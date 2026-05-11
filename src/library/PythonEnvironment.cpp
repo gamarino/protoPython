@@ -2461,7 +2461,14 @@ static const proto::ProtoObject* py_list_delitem(
 
     int index = static_cast<int>(indexObj->asLong(context));
     if (index < 0) index += static_cast<int>(size);
-    if (index < 0 || static_cast<unsigned long>(index) >= size) return PROTO_NONE;
+    if (index < 0 || static_cast<unsigned long>(index) >= size) {
+        // CPython: `del l[10]` on a 3-element list raises
+        //   IndexError: list assignment index out of range
+        // Previously the helper silently returned PROTO_NONE, leaving
+        // the list unchanged — `del l[oops]` typo was invisible.
+        if (env) env->raiseIndexError(context, "list assignment index out of range");
+        return nullptr;
+    }
     const proto::ProtoList* newList = list->removeAt(context, index);
     const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, newList->asObject(context));
     return PROTO_NONE;
