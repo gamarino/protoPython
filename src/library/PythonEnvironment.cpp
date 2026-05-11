@@ -9415,20 +9415,26 @@ static const proto::ProtoObject* py_str_rsplit(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    const proto::ProtoString* str = str_from_self(context, self);
+    int posOff = 0;
+    const proto::ProtoString* str = str_from_self_or_arg(context, self, posArgs, &posOff);
     if (!str) return PROTO_NONE;
     std::string s;
     str->toUTF8String(context, s);
     std::string sep = " ";
-    if (posArgs->getSize(context) >= 1) {
-        const proto::ProtoObject* sepObj = posArgs->getAt(context, 0);
-        if (sepObj->isString(context)) sepObj->asString(context)->toUTF8String(context, sep);
+    bool sepProvided = false;
+    if (posArgs->getSize(context) >= static_cast<unsigned long>(1 + posOff)) {
+        const proto::ProtoObject* sepObj = posArgs->getAt(context, posOff);
+        if (sepObj && sepObj != PROTO_NONE && sepObj->isString(context)) {
+            sepObj->asString(context)->toUTF8String(context, sep);
+            sepProvided = true;
+        }
     }
     long long maxsplit = -1;
-    if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isInteger(context))
-        maxsplit = posArgs->getAt(context, 1)->asLong(context);
+    if (posArgs->getSize(context) >= static_cast<unsigned long>(2 + posOff)
+        && posArgs->getAt(context, 1 + posOff)->isInteger(context))
+        maxsplit = posArgs->getAt(context, 1 + posOff)->asLong(context);
     const proto::ProtoList* result = context->newList();
-    if (sep.empty()) return PROTO_NONE;
+    if (sep.empty() && sepProvided) return PROTO_NONE;
     std::vector<std::string> parts;
     size_t end = s.size();
     while (maxsplit != 0) {
@@ -9439,17 +9445,33 @@ static const proto::ProtoObject* py_str_rsplit(
             }
         }
         if (pos == std::string::npos) {
+            // Push the entire remaining prefix (possibly empty) and stop.
+            // Without this push the final segment is lost — `rsplit`
+            // previously fell through the loop with `parts` short of
+            // its first element on every input.
             parts.insert(parts.begin(), s.substr(0, end));
+            end = 0;
             break;
         }
         parts.insert(parts.begin(), s.substr(pos + sep.size(), end - (pos + sep.size())));
         end = pos;
         if (maxsplit > 0) maxsplit--;
     }
-    if (end > 0) parts.insert(parts.begin(), s.substr(0, end));
+    // If the loop exited via maxsplit reaching zero, push the
+    // remaining prefix (the part to the left of the rightmost
+    // accepted split).  When the no-match branch already pushed it
+    // above, `end` is zeroed to avoid duplicating.
+    if (end > 0 || (maxsplit == 0 && parts.size() > 0)) {
+        parts.insert(parts.begin(), s.substr(0, end));
+    }
     for (const auto& p : parts)
         result = result->appendLast(context, PythonEnvironment::getInternedString(context, p.c_str())->asObject(context));
-    return result->asObject(context);
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return result->asObject(context);
+    proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(env->getListPrototype()->newChild(context, true));
+    const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
+    listObj->setAttribute(context, dataName, result->asObject(context));
+    return listObj;
 }
 
 static const proto::ProtoObject* py_str_splitlines(
