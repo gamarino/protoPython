@@ -8223,7 +8223,19 @@ static const proto::ProtoObject* py_str_find(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* str = str_from_self(context, self);
-    if (!str || positionalParameters->getSize(context) < 1) return context->fromInteger(-1);
+    int posOff = 0;
+    if (!str && positionalParameters && positionalParameters->getSize(context) >= 2) {
+        str = str_from_self(context, positionalParameters->getAt(context, 0));
+        if (str) posOff = 1;
+    }
+    if (!str || positionalParameters->getSize(context) < static_cast<unsigned long>(1 + posOff)) return context->fromInteger(-1);
+    if (posOff > 0) {
+        proto::ProtoList* shifted = const_cast<proto::ProtoList*>(context->newList());
+        for (unsigned long i = posOff; i < positionalParameters->getSize(context); ++i) {
+            shifted = const_cast<proto::ProtoList*>(shifted->appendLast(context, positionalParameters->getAt(context, static_cast<int>(i))));
+        }
+        positionalParameters = shifted;
+    }
     std::string haystack;
     str->toUTF8String(context, haystack);
     const proto::ProtoObject* subObj = positionalParameters->getAt(context, 0);
@@ -8325,7 +8337,19 @@ static const proto::ProtoObject* py_str_count(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* str = str_from_self(context, self);
-    if (!str || positionalParameters->getSize(context) < 1) return context->fromInteger(0);
+    int posOff = 0;
+    if (!str && positionalParameters && positionalParameters->getSize(context) >= 2) {
+        str = str_from_self(context, positionalParameters->getAt(context, 0));
+        if (str) posOff = 1;
+    }
+    if (!str || positionalParameters->getSize(context) < static_cast<unsigned long>(1 + posOff)) return context->fromInteger(0);
+    if (posOff > 0) {
+        proto::ProtoList* shifted = const_cast<proto::ProtoList*>(context->newList());
+        for (unsigned long i = posOff; i < positionalParameters->getSize(context); ++i) {
+            shifted = const_cast<proto::ProtoList*>(shifted->appendLast(context, positionalParameters->getAt(context, static_cast<int>(i))));
+        }
+        positionalParameters = shifted;
+    }
     std::string haystack;
     str->toUTF8String(context, haystack);
     const proto::ProtoObject* subObj = positionalParameters->getAt(context, 0);
@@ -9569,6 +9593,9 @@ static const proto::ProtoObject* py_str_capitalize(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     const proto::ProtoString* str = str_from_self(context, self);
+    if (!str && posArgs && posArgs->getSize(context) >= 1) {
+        str = str_from_self(context, posArgs->getAt(context, 0));
+    }
     if (!str) return PROTO_NONE;
     std::string s;
     str->toUTF8String(context, s);
@@ -9585,6 +9612,9 @@ static const proto::ProtoObject* py_str_title(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     const proto::ProtoString* str = str_from_self(context, self);
+    if (!str && posArgs && posArgs->getSize(context) >= 1) {
+        str = str_from_self(context, posArgs->getAt(context, 0));
+    }
     if (!str) return PROTO_NONE;
     std::string s;
     str->toUTF8String(context, s);
@@ -9607,6 +9637,9 @@ static const proto::ProtoObject* py_str_swapcase(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     const proto::ProtoString* str = str_from_self(context, self);
+    if (!str && posArgs && posArgs->getSize(context) >= 1) {
+        str = str_from_self(context, posArgs->getAt(context, 0));
+    }
     if (!str) return PROTO_NONE;
     std::string s;
     str->toUTF8String(context, s);
