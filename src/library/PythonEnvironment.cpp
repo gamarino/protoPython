@@ -18001,6 +18001,46 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
                 else truthy = true;  // any other non-empty object is truthy
                 return truthy ? PROTO_TRUE : PROTO_FALSE;
             }
+            // Reflected dispatch: if a.__dunder__(b) returned
+            // NotImplemented (or there was no usable method), try
+            // b.__rdunder__(a).  For ==/!= the reflection is the same
+            // dunder; for <,>,<=,>= the pairs are __lt__/__gt__,
+            // __le__/__ge__.  Matches CPython's PyObject_RichCompare.
+            if (res == notImpl || !res) {
+                const proto::ProtoString* refl = nullptr;
+                if (op == 0) refl = py_eq_s;          // a == b → b.__eq__(a)
+                else if (op == 1) refl = py_ne_s;     // a != b → b.__ne__(a)
+                else if (op == 2) refl = py_gt_s;     // a <  b → b.__gt__(a)
+                else if (op == 3) refl = py_ge_s;     // a <= b → b.__ge__(a)
+                else if (op == 4) refl = py_lt_s;     // a >  b → b.__lt__(a)
+                else if (op == 5) refl = py_le_s;     // a >= b → b.__le__(a)
+                if (refl && b) {
+                    const proto::ProtoObject* rmethod = b->getAttribute(ctx, refl);
+                    const proto::ProtoObject* res2 = nullptr;
+                    if (rmethod && rmethod->asMethod(ctx)) {
+                        const proto::ProtoList* args2 = ctx->newList()->appendLast(ctx, a);
+                        res2 = rmethod->asMethod(ctx)(ctx, b, nullptr, args2, getEmptySparseList());
+                    } else if (rmethod && rmethod != PROTO_NONE && !isActuallyAClass(ctx, b)) {
+                        const proto::ProtoString* codeS = getCodeString();
+                        if (codeS && rmethod->hasOwnAttribute(ctx, codeS) == PROTO_TRUE) {
+                            const proto::ProtoList* sp =
+                                ctx->newList()->appendLast(ctx, b)->appendLast(ctx, a);
+                            res2 = invokePythonCallable(ctx, rmethod, sp, nullptr);
+                        }
+                    }
+                    if (res2 && res2 != PROTO_NONE && res2 != notImpl) {
+                        if (res2 == PROTO_TRUE || res2 == PROTO_FALSE || res2->isBoolean(ctx)) {
+                            return res2;
+                        }
+                        bool truthy2 = false;
+                        if (res2->isBoolean(ctx)) truthy2 = res2->asBoolean(ctx);
+                        else if (res2->isInteger(ctx)) truthy2 = (res2->asLong(ctx) != 0);
+                        else if (res2->isString(ctx)) truthy2 = (res2->asString(ctx)->getSize(ctx) > 0);
+                        else truthy2 = true;
+                        return truthy2 ? PROTO_TRUE : PROTO_FALSE;
+                    }
+                }
+            }
         }
     }
 
