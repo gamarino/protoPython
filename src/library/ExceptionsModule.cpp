@@ -205,13 +205,15 @@ static const proto::ProtoObject* exception_repr(
     for (unsigned long i = 0; i < args->getSize(context) && i < 3; ++i) {
         if (i > 0) out += ", ";
         const proto::ProtoObject* a = args->getAt(context, static_cast<int>(i));
-        if (a->isString(context)) {
-            std::string s;
-            a->asString(context)->toUTF8String(context, s);
-            out += "'" + s + "'";
-        } else {
-            out += "<obj>";
-        }
+        // CPython renders each arg through repr() so containers, ints,
+        // None, etc. round-trip readably:
+        //   KeyError(3)         -> "KeyError(3)"
+        //   ValueError([1,2])   -> "ValueError([1, 2])"
+        //   ValueError(None)    -> "ValueError(None)"
+        // Previously the non-string branch emitted the placeholder
+        // "<obj>" which lost the key/value information at the very
+        // moment a debugger or test most needs it.
+        out += PythonEnvironment::reprObject(context, a);
     }
     out += ")";
     return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
