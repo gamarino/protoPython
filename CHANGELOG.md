@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### CPython conformance sweep (test_descr.py)
 
 Brought `test/cpython/test_descr.py` from **104 failing tests** (early in the
-session) down to **73 issues** (55 failures + 18 errors out of 165 tests)
+session) down to **73 issues** (54 failures + 19 errors out of 165 tests)
 in three work sessions of intensive, root-cause-only fixes.  Every change
 was paired with `ctest --test-dir build-release`; ctest stayed at
 **199/199** throughout.
@@ -56,6 +56,39 @@ built-in methods via `asMethod(ctx)` on both operands before the
 user-class fallback and raises the same diagnostic the user-class
 branch raises.  `==` / `!=` keep their existing identity-based
 answer.
+
+### Fixed: complex.__hash__ (value-based)
+
+Two `complex` instances with identical components hashed
+differently — the type inherited the default identity-based hash
+from `object`.  Subclass tests (`class madcomplex(complex)`) failed
+when comparing against the base class.  Installed a `__hash__` slot
+on `complexPrototype` mirroring CPython's
+`hash(c) = hash(c.real) + Py_HASH_IMAG * hash(c.imag)`; component
+hashing routes through each component's `__hash__` so
+`hash(complex(7, 0)) == hash(7)`.
+
+### Fixed: type() rejects malformed __slots__
+
+`class C(object): __slots__ = 1` and `__slots__ = [1]` silently
+created classes.  CPython rejects both with `TypeError` at class
+creation time.  Tightened the `py_type` slot-collision loop to
+require every element of a tuple/list `__slots__` to be a string;
+added a terminal else branch that rejects bare non-str/list/tuple
+slot values with `__slots__ must be a str, iterable of strings,
+or None`.
+
+### Fixed: subclass operand wins in rich comparison
+
+CPython's `PyObject_RichCompare` runs the right operand's dunder
+*first* when its type is a strict subclass of the left's type AND
+overrides the relevant slot.  Our dispatcher only ran the right
+side as the reflected fallback, so `A() == B()` with a `B(A)` that
+overrides `__eq__` silently skipped the override.  Walk the right
+operand's `__mro__` for the left's type, check that the right type
+*owns* the reflected dunder, run it first, fall through unchanged
+on `NotImplemented`.  Doesn't yet help `str`-subclass instances
+because their `type()` still reports `str` (separate bug).
 
 ### Earlier in the v0.3.0 cycle
 
