@@ -1437,6 +1437,16 @@ static const proto::ProtoObject* py_sum(
     const proto::ProtoObject* start = positionalParameters->getSize(context) >= 2 ? positionalParameters->getAt(context, 1) : context->fromInteger(0);
 
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
+    // CPython explicitly refuses sum() with a string start because the
+    // intent is unambiguously wrong: `sum(['a','b'], '')` builds 'ab'
+    // far less efficiently than `''.join(['a','b'])` and tends to mask
+    // O(n^2) concatenation bugs.  Previously the function silently
+    // dropped the start and returned the int sum.
+    if (start && start->isString(context)) {
+        if (env) env->raiseTypeError(context,
+            "sum() can't sum strings [use ''.join(seq) instead]");
+        return nullptr;
+    }
     const proto::ProtoString* iterS = env ? env->getIterString() : PythonEnvironment::getInternedString(context, "__iter__");
     const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
 
