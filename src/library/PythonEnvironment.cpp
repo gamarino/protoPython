@@ -4041,14 +4041,23 @@ static const proto::ProtoObject* py_list_mul(
     } else {
         other = posArgs->getAt(context, 0);
     }
-    if (!receiver || !other || !other->isInteger(context)) return PROTO_NONE;
-    long long n = other->asLong(context);
+    if (!receiver) return PROTO_NONE;
+    // CPython: list * x where x is not an int-like raises TypeError via the
+    // NotImplemented fallback path.  bool is an int subclass so it counts.
+    // Previously the function silently returned PROTO_NONE on any non-int
+    // operand, so `[1,2] * 2.5` and `[1,2] * 'a'` evaluated to None.
+    // Return the NotImplemented sentinel so the binary-op dispatcher
+    // triggers its TypeError emission.
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    if (!other || (!other->isInteger(context) && !other->isBoolean(context))) {
+        return env->getNotImplementedPrototype();
+    }
+    long long n = other == PROTO_TRUE ? 1LL : (other == PROTO_FALSE ? 0LL : other->asLong(context));
     if (n < 0) n = 0;
     const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
     const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
     if (!list) return PROTO_NONE;
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    if (!env) return PROTO_NONE;
     const proto::ProtoList* result = context->newList();
     unsigned long size = list->getSize(context);
     for (long long rep = 0; rep < n; ++rep)
@@ -7592,10 +7601,16 @@ static const proto::ProtoObject* py_tuple_mul(
     } else {
         nObj = posArgs->getAt(context, 0);
     }
-    if (!selfT || !nObj || !nObj->isInteger(context)) return PROTO_NONE;
-    long long n = nObj->asLong(context);
-    if (n < 0) n = 0;
+    if (!selfT) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    // CPython: tuple * x with non-int x raises TypeError via the
+    // NotImplemented sentinel path.  bool counts (subclass of int).
+    // Returning PROTO_NONE silently produced None for `(1,2) * 2.5`.
+    if (!nObj || (!nObj->isInteger(context) && !nObj->isBoolean(context))) {
+        return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    }
+    long long n = nObj == PROTO_TRUE ? 1LL : (nObj == PROTO_FALSE ? 0LL : nObj->asLong(context));
+    if (n < 0) n = 0;
     const proto::ProtoList* result = context->newList();
     unsigned long size = selfT->getSize(context);
     for (long long rep = 0; rep < n; ++rep)
