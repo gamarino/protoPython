@@ -3062,21 +3062,28 @@ static const proto::ProtoObject* py_dict_eq(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
+    const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
+    const proto::ProtoObject* selfData = self ? self->getAttribute(context, dataName) : nullptr;
+    const proto::ProtoObject* receiver = self;
     const proto::ProtoObject* other = positionalParameters->getAt(context, 0);
+    if ((!selfData || !selfData->asSparseList(context))
+        && positionalParameters->getSize(context) >= 2) {
+        receiver = positionalParameters->getAt(context, 0);
+        other = positionalParameters->getAt(context, 1);
+    }
     // Identity check: short-circuits both `cls == cls` (when this method
     // is reached via the type's __eq__ slot) and the trivial same-dict
     // case without traversing keys.
-    if (self == other) return PROTO_TRUE;
-    const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
-    const proto::ProtoObject* otherData = (other->hasOwnAttribute(context, dataName) == PROTO_TRUE) ? other->getAttribute(context, dataName) : nullptr;
+    if (receiver == other) return PROTO_TRUE;
+    const proto::ProtoObject* data = receiver ? receiver->getAttribute(context, dataName) : nullptr;
+    const proto::ProtoObject* otherData = (other && other->hasOwnAttribute(context, dataName) == PROTO_TRUE) ? other->getAttribute(context, dataName) : nullptr;
     if (!data || !data->asSparseList(context) || !otherData || !otherData->asSparseList(context)) return PROTO_FALSE;
     const proto::ProtoSparseList* dictA = data->asSparseList(context);
     const proto::ProtoSparseList* dictB = otherData->asSparseList(context);
 
     const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
-    const proto::ProtoObject* keysObjA = (self->hasOwnAttribute(context, keysName) == PROTO_TRUE) ? self->getAttribute(context, keysName) : nullptr;
-    const proto::ProtoObject* keysObjB = (other->hasOwnAttribute(context, keysName) == PROTO_TRUE) ? (other->hasOwnAttribute(context, keysName) == PROTO_TRUE) ? other->getAttribute(context, keysName) : nullptr : nullptr;
+    const proto::ProtoObject* keysObjA = (receiver && receiver->hasOwnAttribute(context, keysName) == PROTO_TRUE) ? receiver->getAttribute(context, keysName) : nullptr;
+    const proto::ProtoObject* keysObjB = (other && other->hasOwnAttribute(context, keysName) == PROTO_TRUE) ? other->getAttribute(context, keysName) : nullptr;
     const proto::ProtoList* keysA = keysObjA && keysObjA->asList(context) ? keysObjA->asList(context) : context->newList();
     const proto::ProtoList* keysB = keysObjB && keysObjB->asList(context) ? keysObjB->asList(context) : context->newList();
     if (keysA->getSize(context) != keysB->getSize(context)) return PROTO_FALSE;
@@ -6738,11 +6745,27 @@ static const proto::ProtoObject* py_tuple_contains(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
-    if (!data || !data->asTuple(context)) return PROTO_FALSE;
-    if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
-    const proto::ProtoObject* value = positionalParameters->getAt(context, 0);
-    return data->asTuple(context)->has(context, value) ? PROTO_TRUE : PROTO_FALSE;
+    const proto::ProtoObject* selfTuple = self ? self->asTuple(context) ? self : self->getAttribute(context, dataName) : nullptr;
+    if (selfTuple && !selfTuple->asTuple(context)) selfTuple = self->asTuple(context) ? self : nullptr;
+    const proto::ProtoObject* receiver = self;
+    const proto::ProtoObject* value = nullptr;
+    bool selfIsTuple = self && (self->asTuple(context) != nullptr
+        || (self->getAttribute(context, dataName)
+            && self->getAttribute(context, dataName)->asTuple(context)));
+    if (!selfIsTuple && positionalParameters && positionalParameters->getSize(context) >= 2) {
+        receiver = positionalParameters->getAt(context, 0);
+        value = positionalParameters->getAt(context, 1);
+    } else if (positionalParameters && positionalParameters->getSize(context) >= 1) {
+        value = positionalParameters->getAt(context, 0);
+    }
+    if (!receiver || !value) return PROTO_FALSE;
+    const proto::ProtoTuple* t = receiver->asTuple(context);
+    if (!t) {
+        const proto::ProtoObject* d = receiver->getAttribute(context, dataName);
+        t = d ? d->asTuple(context) : nullptr;
+    }
+    if (!t) return PROTO_FALSE;
+    return t->has(context, value) ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_tuple_bool(
