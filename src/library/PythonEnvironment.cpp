@@ -3670,11 +3670,22 @@ static const proto::ProtoObject* py_list_sort(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     (void)parentLink;
-    (void)positionalParameters;
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* selfData = self ? self->getAttribute(context, dataName) : nullptr;
+    const proto::ProtoObject* receiver = self;
+    // Unbound: list.sort(receiver, **kwargs)
+    if ((!selfData || !selfData->asList(context))
+        && positionalParameters && positionalParameters->getSize(context) >= 1) {
+        receiver = positionalParameters->getAt(context, 0);
+    }
+    const proto::ProtoObject* data = receiver ? receiver->getAttribute(context, dataName) : nullptr;
     const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
-    if (!list) return PROTO_NONE;
+    if (!list) {
+        PythonEnvironment* env_e = PythonEnvironment::fromContext(context);
+        if (env_e) env_e->raiseTypeError(context,
+            "descriptor 'sort' for 'list' objects doesn't apply to a non-list object");
+        return nullptr;
+    }
     unsigned long size = list->getSize(context);
     std::vector<const proto::ProtoObject*> elems(size);
     for (unsigned long i = 0; i < size; ++i)
@@ -3730,7 +3741,7 @@ static const proto::ProtoObject* py_list_sort(
     const proto::ProtoList* newList = context->newList();
     for (const proto::ProtoObject* obj : elems)
         newList = newList->appendLast(context, obj);
-    self->setAttribute(context, dataName, newList->asObject(context));
+    const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, newList->asObject(context));
     return PROTO_NONE;
 }
 
