@@ -3988,6 +3988,51 @@ static int sorted_compare(proto::ProtoContext* context, const proto::ProtoObject
             }
         }
     }
+    // User-defined __lt__ for arbitrary types — sorted() previously
+    // fell through to protoCore's identity/hash compare, which never
+    // honoured user ordering and produced an unsorted-looking result
+    // for user classes that define __lt__.  CPython sorts purely by
+    // < (a < b means a sorts before b).
+    {
+        ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
+        if (env) {
+            const proto::ProtoString* ltS = PythonEnvironment::getInternedString(context, "__lt__");
+            const proto::ProtoObject* ltA = env->getAttribute(context, a, ltS, false);
+            if (ltA && ltA != PROTO_NONE) {
+                const proto::ProtoObject* res = nullptr;
+                const proto::ProtoList* args = context->newList()->appendLast(context, b);
+                if (ltA->asMethod(context)) {
+                    res = ltA->asMethod(context)(context, const_cast<proto::ProtoObject*>(a), nullptr, args, nullptr);
+                } else {
+                    const proto::ProtoString* codeS = env->getCodeString();
+                    bool raw = (codeS && ltA->hasOwnAttribute(context, codeS) == PROTO_TRUE);
+                    const proto::ProtoList* selfArgs = context->newList();
+                    if (raw) selfArgs = selfArgs->appendLast(context, a);
+                    selfArgs = selfArgs->appendLast(context, b);
+                    res = ::protoPython::invokePythonCallable(context, ltA, selfArgs, nullptr);
+                }
+                if (res == PROTO_TRUE) return -1;
+                // Try b < a for the symmetric direction.
+                const proto::ProtoObject* ltB = env->getAttribute(context, b, ltS, false);
+                if (ltB && ltB != PROTO_NONE) {
+                    const proto::ProtoObject* res2 = nullptr;
+                    const proto::ProtoList* args2 = context->newList()->appendLast(context, a);
+                    if (ltB->asMethod(context)) {
+                        res2 = ltB->asMethod(context)(context, const_cast<proto::ProtoObject*>(b), nullptr, args2, nullptr);
+                    } else {
+                        const proto::ProtoString* codeS = env->getCodeString();
+                        bool raw = (codeS && ltB->hasOwnAttribute(context, codeS) == PROTO_TRUE);
+                        const proto::ProtoList* selfArgs = context->newList();
+                        if (raw) selfArgs = selfArgs->appendLast(context, b);
+                        selfArgs = selfArgs->appendLast(context, a);
+                        res2 = ::protoPython::invokePythonCallable(context, ltB, selfArgs, nullptr);
+                    }
+                    if (res2 == PROTO_TRUE) return 1;
+                }
+                return 0;
+            }
+        }
+    }
     int cmp = a->compare(context, b);
     if (cmp != 0) return cmp;
     unsigned long ha = a->getHash(context);

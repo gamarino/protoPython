@@ -4071,6 +4071,49 @@ static int py_sort_cmp(proto::ProtoContext* ctx,
         if (sa > sb) return 1;
         return 0;
     }
+    // Dispatch user-defined __lt__ for arbitrary types — sort()
+    // previously fell through to protoCore's identity-based compare,
+    // which returned 0 for any two distinct user objects and left
+    // the input list unsorted.  CPython uses < exclusively: a < b
+    // means a sorts before b; ties keep input order.
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env) {
+        const proto::ProtoString* ltS = PythonEnvironment::getInternedString(ctx, "__lt__");
+        const proto::ProtoObject* ltA = env->getAttribute(ctx, a, ltS, false);
+        if (ltA && ltA != PROTO_NONE) {
+            const proto::ProtoObject* res = nullptr;
+            const proto::ProtoList* args = ctx->newList()->appendLast(ctx, b);
+            if (ltA->asMethod(ctx)) {
+                res = ltA->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(a), nullptr, args, nullptr);
+            } else {
+                const proto::ProtoString* codeS = env->getCodeString();
+                bool raw = (codeS && ltA->hasOwnAttribute(ctx, codeS) == PROTO_TRUE);
+                const proto::ProtoList* selfArgs = ctx->newList();
+                if (raw) selfArgs = selfArgs->appendLast(ctx, a);
+                selfArgs = selfArgs->appendLast(ctx, b);
+                res = invokePythonCallable(ctx, ltA, selfArgs, nullptr);
+            }
+            if (res == PROTO_TRUE) return -1;
+            // Try b < a for the symmetric result.
+            const proto::ProtoObject* ltB = env->getAttribute(ctx, b, ltS, false);
+            if (ltB && ltB != PROTO_NONE) {
+                const proto::ProtoObject* res2 = nullptr;
+                const proto::ProtoList* args2 = ctx->newList()->appendLast(ctx, a);
+                if (ltB->asMethod(ctx)) {
+                    res2 = ltB->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(b), nullptr, args2, nullptr);
+                } else {
+                    const proto::ProtoString* codeS = env->getCodeString();
+                    bool raw = (codeS && ltB->hasOwnAttribute(ctx, codeS) == PROTO_TRUE);
+                    const proto::ProtoList* selfArgs = ctx->newList();
+                    if (raw) selfArgs = selfArgs->appendLast(ctx, b);
+                    selfArgs = selfArgs->appendLast(ctx, a);
+                    res2 = invokePythonCallable(ctx, ltB, selfArgs, nullptr);
+                }
+                if (res2 == PROTO_TRUE) return 1;
+            }
+            return 0;  // neither a<b nor b<a → equal-for-sort
+        }
+    }
     return a->compare(ctx, b);
 }
 
