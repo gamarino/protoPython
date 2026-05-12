@@ -1847,32 +1847,67 @@ static const proto::ProtoObject* py_sum(
             "sum() can't sum strings [use ''.join(seq) instead]");
         return nullptr;
     }
-    const proto::ProtoString* iterS = env ? env->getIterString() : PythonEnvironment::getInternedString(context, "__iter__");
-    const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
-
-    const proto::ProtoObject* iterMethod = iterable->getAttribute(context, iterS);
-    if (!iterMethod || !iterMethod->asMethod(context)) return PROTO_NONE;
-    const proto::ProtoObject* it = iterMethod->asMethod(context)(context, iterable, nullptr, emptyL, nullptr);
-    if (!it) return start;
-
-    const proto::ProtoString* nextS = env ? env->getNextString() : PythonEnvironment::getInternedString(context, "__next__");
-    const proto::ProtoObject* nextMethod = it->getAttribute(context, nextS);
-    if (!nextMethod || !nextMethod->asMethod(context)) return start;
-
-    // Bignum-safe accumulator: keep the partial sum as a ProtoObject and
-    // use Integer::add so values exceeding int64 are handled correctly.
-    const proto::ProtoObject* acc = start->isInteger(context) ? start : context->fromInteger(0);
-    auto nextFn = nextMethod->asMethod(context);
-    const proto::ProtoObject* noneObj = env ? env->getNonePrototype() : nullptr;
-
+    // Drive iteration through env->iter / env->next so user classes
+    // implementing __iter__ as a Python method work too — the bespoke
+    // asMethod gate that preceded this branch silently returned None
+    // for any Python callable.
+    const proto::ProtoObject* it = env ? env->iter(iterable) : nullptr;
+    if (!it) {
+        if (env && env->hasPendingException()) return nullptr;
+        return start;
+    }
+    PythonEnvironment::TransientPin pinIt(env, it);
+    // Bignum-safe accumulator: keep the partial sum as a ProtoObject so
+    // values exceeding int64 are handled correctly by Integer::add.
+    const proto::ProtoObject* acc = start;
+    bool accIsInt = acc && acc->isInteger(context);
+    bool accIsFloat = acc && acc->isDouble(context);
     for (;;) {
-        const proto::ProtoObject* val = nextFn(context, it, nullptr, emptyL, nullptr);
+        const proto::ProtoObject* val = env->next(it);
         if (!val) {
-             if (env && env->handleExhaustion(context)) break;
-             return nullptr; // Propagate other errors
+            if (env && env->hasPendingException()) return nullptr;
+            break;
         }
-        if (val == noneObj) break;
-        if (val->isInteger(context)) acc = acc->add(context, val);
+        // Promote ints + floats; defer to operator + for anything else.
+        if (val->isInteger(context) && accIsInt) {
+            acc = acc->add(context, val);
+        } else if ((val->isInteger(context) || val->isDouble(context))
+                   && (accIsInt || accIsFloat)) {
+            double a = accIsInt ? (double)acc->asLong(context) : acc->asDouble(context);
+            double b = val->isInteger(context) ? (double)val->asLong(context) : val->asDouble(context);
+            acc = context->fromDouble(a + b);
+            accIsInt = false;
+            accIsFloat = true;
+        } else {
+            // Fallback for arbitrary types: dispatch __add__ on the
+            // running accumulator.  Look up the dunder via env so the
+            // MRO + descriptor protocol kicks in.
+            const proto::ProtoString* addS =
+                PythonEnvironment::getInternedString(context, "__add__");
+            const proto::ProtoObject* addM = env->getAttribute(context, acc, addS, false);
+            if (!addM || addM == PROTO_NONE) {
+                env->raiseTypeError(context,
+                    "unsupported operand type(s) for +: 'NoneType' and 'object'");
+                return nullptr;
+            }
+            const proto::ProtoList* args = context->newList()->appendLast(context, val);
+            if (addM->asMethod(context)) {
+                acc = addM->asMethod(context)(context, acc, nullptr, args, nullptr);
+            } else {
+                extern const proto::ProtoObject* invokePythonCallable(
+                    proto::ProtoContext* ctx, const proto::ProtoObject* callable,
+                    const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+                const proto::ProtoString* codeS = env->getCodeString();
+                bool raw = (codeS && addM->hasOwnAttribute(context, codeS) == PROTO_TRUE);
+                const proto::ProtoList* selfArgs = context->newList();
+                if (raw) selfArgs = selfArgs->appendLast(context, acc);
+                selfArgs = selfArgs->appendLast(context, val);
+                acc = ::protoPython::invokePythonCallable(context, addM, selfArgs, nullptr);
+            }
+            if (!acc) return nullptr;
+            accIsInt = acc->isInteger(context);
+            accIsFloat = acc->isDouble(context);
+        }
     }
     return acc;
 }
