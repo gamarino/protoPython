@@ -2094,9 +2094,17 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
             if (res) {
                 found = isTruthy(ctx, res);
             } else if (env && env->hasPendingException()) {
-                // e.g. frame.__contains__ can set TypeError; treat as not found so "name in globals()" is False
-                env->clearPendingException();
-                found = false;
+                // CPython rule: a __contains__ implementation that raises
+                // — e.g. str.__contains__(non_str) → TypeError — must
+                // propagate; previously this branch swallowed every
+                // pending exception under the rationale "frame.__contains__
+                // can set TypeError, treat as not found".  The blanket
+                // suppression hid genuine type errors at user-facing
+                // sites like `5 in 'hello'`.  Only swallow when the
+                // dunder is missing (no exception path); a raised
+                // TypeError propagates so the caller sees the same
+                // diagnostic CPython emits.
+                return nullptr;
             } else if (b->isString(ctx) && a->isString(ctx)) {
                 std::string s_sub, s_full;
                 a->asString(ctx)->toUTF8String(ctx, s_sub);

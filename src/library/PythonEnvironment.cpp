@@ -8978,7 +8978,26 @@ static const proto::ProtoObject* py_str_contains(
     } else if (positionalParameters && positionalParameters->getSize(context) >= 1) {
         item = positionalParameters->getAt(context, 0);
     }
-    if (!str || !item || !item->isString(context)) return PROTO_FALSE;
+    if (!str) return PROTO_FALSE;
+    if (!item) return PROTO_FALSE;
+    if (!item->isString(context)) {
+        // CPython: `5 in 'hello'` raises
+        //   TypeError: 'in <string>' requires string as left operand, not int
+        // Previously the function silently returned False, masking
+        // type bugs at every call site.
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env) {
+            std::string clsName = "object";
+            const proto::ProtoObject* cls = env->getType(context, item);
+            if (cls) {
+                const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
+                if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+            }
+            env->raiseTypeError(context,
+                "'in <string>' requires string as left operand, not " + clsName);
+        }
+        return nullptr;
+    }
     std::string haystack;
     str->toUTF8String(context, haystack);
     std::string needle;
