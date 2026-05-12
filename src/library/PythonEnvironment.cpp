@@ -9229,7 +9229,13 @@ static const proto::ProtoObject* py_str_rfind(
     std::string haystack;
     str->toUTF8String(context, haystack);
     const proto::ProtoObject* subObj = posArgs->getAt(context, 0);
-    if (!subObj->isString(context)) return context->fromInteger(-1);
+    if (!subObj->isString(context)) {
+        // CPython: rfind requires a str needle.  Silent -1 hid type bugs
+        // exactly the way str.find used to before being fixed.
+        PythonEnvironment* envE = PythonEnvironment::fromContext(context);
+        if (envE) envE->raiseTypeError(context, "substring must be str");
+        return nullptr;
+    }
     std::string needle;
     subObj->asString(context)->toUTF8String(context, needle);
     long long start = 0, end = static_cast<long long>(haystack.size());
@@ -9282,7 +9288,19 @@ static const proto::ProtoObject* py_str_count(
     std::string haystack;
     str->toUTF8String(context, haystack);
     const proto::ProtoObject* subObj = positionalParameters->getAt(context, 0);
-    if (!subObj->isString(context)) return context->fromInteger(0);
+    if (!subObj->isString(context)) {
+        // CPython: str.count requires a str needle.  Returning 0 silently
+        // hid type bugs (e.g. count(5) treated as "no match" rather than
+        // surfacing the misuse).
+        PythonEnvironment* envE = PythonEnvironment::fromContext(context);
+        if (envE) envE->raiseTypeError(context,
+            "must be str, not "
+            + std::string(subObj == PROTO_NONE ? "NoneType"
+                          : subObj->isInteger(context) ? "int"
+                          : subObj->isFloat(context) ? "float"
+                          : "object"));
+        return nullptr;
+    }
     std::string needle;
     subObj->asString(context)->toUTF8String(context, needle);
     if (needle.empty()) return context->fromInteger(static_cast<long long>(haystack.size()) + 1);
