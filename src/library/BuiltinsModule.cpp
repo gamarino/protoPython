@@ -367,12 +367,41 @@ static const proto::ProtoObject* py_len(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoString* lenStr = env ? env->getLenString() : PythonEnvironment::getInternedString(context, "__len__");
     const proto::ProtoObject* lenMethod = env ? env->getAttribute(context, obj, lenStr, false) : (obj->hasOwnAttribute(context, lenStr) == PROTO_TRUE ? obj->getAttribute(context, lenStr) : nullptr);
+    // CPython validates the __len__ return:
+    //   - must be __index__-compatible (int) — else TypeError.
+    //   - must be >= 0 — else ValueError("__len__() should return >= 0").
+    // Previously a negative return was accepted and a non-int silently
+    // fell through to the "has no len()" branch, hiding the real
+    // protocol violation.
+    auto checkLenResult = [&](const proto::ProtoObject* res) -> const proto::ProtoObject* {
+        if (!res) return nullptr;
+        if (!res->isInteger(context) && res != PROTO_TRUE && res != PROTO_FALSE) {
+            if (env) env->raiseTypeError(context,
+                "'X' object cannot be interpreted as an integer");
+            return nullptr;
+        }
+        long long v = res == PROTO_TRUE ? 1
+                    : res == PROTO_FALSE ? 0
+                    : res->asLong(context);
+        if (v < 0) {
+            if (env) env->raiseValueError(context,
+                PythonEnvironment::getInternedString(context,
+                    "__len__() should return >= 0")->asObject(context));
+            return nullptr;
+        }
+        return res == PROTO_TRUE ? context->fromInteger(1)
+             : res == PROTO_FALSE ? context->fromInteger(0)
+             : res;
+    };
     if (lenMethod && lenMethod != PROTO_NONE) {
         if (lenMethod->asMethod(context)) {
             const proto::ProtoList* emptyArgs = env ? env->getEmptyList() : context->newList();
             const proto::ProtoObject* res = lenMethod->asMethod(context)(context, const_cast<proto::ProtoObject*>(obj), nullptr, emptyArgs, nullptr);
-            if (res && res != PROTO_NONE && res->isInteger(context)) {
-                return res;
+            if (!res) return nullptr;  // exception already pending
+            if (res != PROTO_NONE) {
+                const proto::ProtoObject* checked = checkLenResult(res);
+                if (checked) return checked;
+                if (env && env->hasPendingException()) return nullptr;
             }
         } else {
             // Python-level callable: covers user `def __len__(self)`
@@ -390,8 +419,11 @@ static const proto::ProtoObject* py_len(
             // own asMethod / __code__ probe; trust it.
             const proto::ProtoList* args = context->newList()->appendLast(context, obj);
             const proto::ProtoObject* res = ::protoPython::invokePythonCallable(context, lenMethod, args, nullptr);
-            if (res && res != PROTO_NONE && res->isInteger(context)) {
-                return res;
+            if (!res) return nullptr;  // exception already pending
+            if (res != PROTO_NONE) {
+                const proto::ProtoObject* checked = checkLenResult(res);
+                if (checked) return checked;
+                if (env && env->hasPendingException()) return nullptr;
             }
         }
     }
