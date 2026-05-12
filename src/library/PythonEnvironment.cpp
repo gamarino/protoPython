@@ -22120,20 +22120,35 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
             // raw comparison below) when __eq__ declines to answer.
             if (op == 1) {
                 const proto::ProtoObject* eqMethod = a->getAttribute(ctx, py_eq_s);
-                if (eqMethod && eqMethod->asMethod(ctx)) {
-                    const proto::ProtoList* args = ctx->newList();
-                    args = args->appendLast(ctx, b);
-                    const proto::ProtoObject* res = eqMethod->asMethod(ctx)(ctx, a, nullptr, args, getEmptySparseList());
+                if (eqMethod && eqMethod != PROTO_NONE) {
+                    const proto::ProtoObject* res = nullptr;
+                    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, b);
+                    if (eqMethod->asMethod(ctx)) {
+                        res = eqMethod->asMethod(ctx)(ctx, a, nullptr, args, getEmptySparseList());
+                    } else if (!isActuallyAClass(ctx, a)) {
+                        // Python user-defined __eq__ (function with __code__).
+                        // Same guard as the standard dispatch path below: skip
+                        // when `a` is a class (would invoke metaclass __eq__
+                        // with the class as self) or when the attr is an
+                        // opaque ProtoObject placeholder without __code__.
+                        const proto::ProtoString* codeS = getCodeString();
+                        if (codeS && eqMethod->hasOwnAttribute(ctx, codeS) == PROTO_TRUE) {
+                            const proto::ProtoList* selfArgs =
+                                ctx->newList()->appendLast(ctx, a)->appendLast(ctx, b);
+                            res = invokePythonCallable(ctx, eqMethod, selfArgs, nullptr);
+                        }
+                    }
                     const proto::ProtoObject* notImpl = getNotImplementedPrototype();
-                    // Only trust __eq__'s result if it's an actual bool.
-                    // Some native default __eq__ stubs return an opaque
-                    // NotImplemented-like object; fall through to the
-                    // raw compare below in that case.
-                    if (res && res != PROTO_NONE && res != notImpl &&
-                        (res == PROTO_TRUE || res == PROTO_FALSE || res->isBoolean(ctx))) {
-                        if (res == PROTO_TRUE) return PROTO_FALSE;
-                        if (res == PROTO_FALSE) return PROTO_TRUE;
-                        if (res->isBoolean(ctx)) return res->asBoolean(ctx) ? PROTO_FALSE : PROTO_TRUE;
+                    if (res && res != PROTO_NONE && res != notImpl) {
+                        // CPython: default object.__ne__ returns not __eq__,
+                        // accepting any truthy/falsy result — not just bools.
+                        bool truthy;
+                        if (res == PROTO_TRUE) truthy = true;
+                        else if (res == PROTO_FALSE) truthy = false;
+                        else if (res->isBoolean(ctx)) truthy = res->asBoolean(ctx);
+                        else if (res->isInteger(ctx)) truthy = (res->asLong(ctx) != 0);
+                        else truthy = isTrue(res);
+                        return truthy ? PROTO_FALSE : PROTO_TRUE;
                     }
                 }
             }
