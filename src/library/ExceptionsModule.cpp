@@ -403,7 +403,15 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
 
     const proto::ProtoObject* baseExceptionType = make_exception_type(ctx, objectProto, typeProto, "BaseException", objectProto);
     const proto::ProtoObject* exceptionType = make_exception_type(ctx, objectProto, typeProto, "Exception", baseExceptionType);
-    const proto::ProtoObject* keyErrorType = make_exception_type(ctx, objectProto, typeProto, "KeyError", exceptionType);
+    // CPython hierarchy: ArithmeticError and LookupError are intermediate
+    // tiers between Exception and the concrete arithmetic / lookup errors.
+    // Create them up-front so the children below inherit from the right
+    // parent — previously every child was hung directly off Exception,
+    // breaking `issubclass(ZeroDivisionError, ArithmeticError)` and
+    // `except LookupError:` catching KeyError / IndexError.
+    const proto::ProtoObject* arithmeticErrorType = make_exception_type(ctx, objectProto, typeProto, "ArithmeticError", exceptionType);
+    const proto::ProtoObject* lookupErrorType = make_exception_type(ctx, objectProto, typeProto, "LookupError", exceptionType);
+    const proto::ProtoObject* keyErrorType = make_exception_type(ctx, objectProto, typeProto, "KeyError", lookupErrorType);
     const proto::ProtoObject* valueErrorType = make_exception_type(ctx, objectProto, typeProto, "ValueError", exceptionType);
     const proto::ProtoObject* nameErrorType = make_exception_type(ctx, objectProto, typeProto, "NameError", exceptionType);
     const proto::ProtoObject* attributeErrorType = make_exception_type(ctx, objectProto, typeProto, "AttributeError", exceptionType);
@@ -417,14 +425,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoObject* keyboardInterruptType = make_exception_type(ctx, objectProto, typeProto, "KeyboardInterrupt", baseExceptionType);
     const proto::ProtoObject* systemExitType = make_exception_type(ctx, objectProto, typeProto, "SystemExit", baseExceptionType);
     const proto::ProtoObject* recursionErrorType = make_exception_type(ctx, objectProto, typeProto, "RecursionError", exceptionType);
-    const proto::ProtoObject* zeroDivisionErrorType = make_exception_type(ctx, objectProto, typeProto, "ZeroDivisionError", exceptionType);
-    const proto::ProtoObject* indexErrorType = make_exception_type(ctx, objectProto, typeProto, "IndexError", exceptionType);
+    const proto::ProtoObject* zeroDivisionErrorType = make_exception_type(ctx, objectProto, typeProto, "ZeroDivisionError", arithmeticErrorType);
+    const proto::ProtoObject* indexErrorType = make_exception_type(ctx, objectProto, typeProto, "IndexError", lookupErrorType);
     const proto::ProtoObject* eofErrorType = make_exception_type(ctx, objectProto, typeProto, "EOFError", exceptionType);
     const proto::ProtoObject* assertionErrorType = make_exception_type(ctx, objectProto, typeProto, "AssertionError", exceptionType);
-    const proto::ProtoObject* arithmeticErrorType = make_exception_type(ctx, objectProto, typeProto, "ArithmeticError", exceptionType);
-    const proto::ProtoObject* lookupErrorType = make_exception_type(ctx, objectProto, typeProto, "LookupError", exceptionType);
     const proto::ProtoObject* generatorExitType = make_exception_type(ctx, objectProto, typeProto, "GeneratorExit", baseExceptionType);
     const proto::ProtoObject* unboundLocalErrorType = make_exception_type(ctx, objectProto, typeProto, "UnboundLocalError", nameErrorType);
+    // arithmeticErrorType and lookupErrorType created above so KeyError /
+    // IndexError / ZeroDivisionError inherit from them with the right MRO.
     const proto::ProtoObject* stopIterationType = make_exception_type(ctx, objectProto, typeProto, "StopIteration", exceptionType);
     const proto::ProtoObject* stopAsyncIterationType = make_exception_type(ctx, objectProto, typeProto, "StopAsyncIteration", exceptionType);
     const proto::ProtoObject* systemErrorType = make_exception_type(ctx, objectProto, typeProto, "SystemError", exceptionType);
