@@ -1803,6 +1803,15 @@ static const proto::ProtoObject* binaryPower(proto::ProtoContext* ctx,
                 double base_d;
                 try { base_d = static_cast<double>(aa_p->asLong(ctx)); }
                 catch (const std::overflow_error&) { base_d = 0; }
+                // CPython: 0 ** -1 raises
+                //   ZeroDivisionError: 0.0 cannot be raised to a negative power
+                // protoPython returned `inf` (std::pow(0.0, -1) is inf in
+                // IEEE 754) and a downstream subscript / division then
+                // hung the interpreter.  Raise the canonical error.
+                if (base_d == 0.0) {
+                    if (env_pow) env_pow->raiseZeroDivisionError(ctx);
+                    return nullptr;
+                }
                 return ctx->fromDouble(std::pow(base_d, static_cast<double>(exp)));
             }
             // Exponentiation by squaring via Integer::multiply so the

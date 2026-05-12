@@ -6371,6 +6371,16 @@ static const proto::ProtoObject* py_pow(
                     "pow() 2nd argument cannot be negative when 3rd argument specified")->asObject(context));
             return PROTO_NONE;
         }
+        // CPython: pow(0, -n) raises ZeroDivisionError.  Without this
+        // guard the function multiplied 0 by 0 forever via the
+        // exponentiation-by-squaring loop (base stays 0, result stays
+        // 1 from the initial value), then divided 1 by 0 (== inf) on
+        // exit — the caller then hung on the next op.
+        if (baseObj->integerSign(context) == 0) {
+            PythonEnvironment* env = PythonEnvironment::fromContext(context);
+            if (env) env->raiseZeroDivisionError(context);
+            return nullptr;
+        }
         // pow(base, -e) = 1.0 / pow(base, e) — promote to float
         long long pe = -exp;
         const proto::ProtoObject* res = context->fromInteger(1);
