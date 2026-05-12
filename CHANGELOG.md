@@ -193,6 +193,66 @@ the receiver's `__mro__` for tuplePrototype/listPrototype and
 substitute the primitive prototype before wrapping the result,
 matching CPython's unoverridden-dunder semantics.
 
+### Fixed: 20-commit sweep — operator strictness + correctness gaps
+
+Third twenty-commit sweep this session.  Targets operator-form
+strictness for built-in types (where the named method accepts loose
+inputs but `+` / `*` / `|` / `&` / etc. should require matching
+types) and a couple of deeper correctness bugs (floor div/mod
+semantics, str.center fill validation).
+
+Notable items:
+- **`int // int` and `int % int` floor semantics** — protoCore
+  truncates toward zero (C semantics); CPython requires floor toward
+  −∞.  `-5 // 2` now returns `-3` (was `-2`); `-5 % 2` now returns
+  `1` (was `-1`).  Invariant `a == (a // b) * b + (a % b)` holds for
+  every (a, b) ∈ [-7..7] × [-3..-1, 1..3].  Bignum-safe.  Followed
+  by a fast-path commit that skips the adjustment when operands
+  share a sign (3-4× faster on int-heavy code).
+- **`str.center` / `ljust` / `rjust` / `zfill` fill validation** —
+  multi-char or empty or non-str fill silently fell back to space.
+  Now raises `TypeError("The fill character must be exactly one
+  character long")`.  zfill width raised the internal C++ panic
+  instead of TypeError when the width was non-int — both fixed.
+- **`list.pop` / `list.insert` / `range`** — non-int index / count /
+  step crashed with the internal C++ panic.  Now raises
+  `TypeError("'X' object cannot be interpreted as an integer")`.
+  `range(True, 5)` and `range(False, True)` now work (bool is int).
+  `range(stop=10)` raises `TypeError: range() takes no keyword
+  arguments`.
+- **`bytes()` / `bytes` + / *** — `bytes('abc')` was crashing on
+  the asLong path; now raises the standard `string argument without
+  an encoding`.  `bytes([1, 2, 'a'])` and `bytes([1, 2, 300])`
+  raise typed TypeError and ValueError.  `b'ab' + 'cd'` no longer
+  silently encodes — returns NotImplemented for the operator path so
+  the dispatcher emits the canonical TypeError.
+- **`set` operators `&`, `|`, `-`, `^`** — accepted any iterable
+  on the rhs and produced a set silently (`{1,2} & [1,2] == {1,2}`).
+  Now restricted to set / frozenset / dict_keys / dict_items via the
+  NotImplemented sentinel path.
+- **`dict | non-dict`** — returned the self dict unchanged.  Now
+  raises `TypeError("unsupported operand type(s) for |: 'dict' and 'X'")`.
+- **`zip(strict=True)`** — previously ignored the kwarg.  Now raises
+  `ValueError("zip() argument N is shorter/longer than argument 1")`
+  when iterables disagree in length.
+- **`min` / `max` / `sorted` / `list.sort` / `filter`** — non-callable
+  `key=` argument raised TypeError instead of silently passing values
+  through.  Argument-count validation for filter() too.
+- **`int.conjugate()`** — installed as a method on intPrototype
+  (returns self).  Numeric ABC contract.
+- **Error message polish** — `len(5)` now says `object of type 'int'
+  has no len()` instead of embedding the literal value
+  `'5' has no len()`.  `int()` / `float()` ValueError quotes the
+  offending literal and uses CPython's exact wording.  `iter()` and
+  `'in <string>'` errors name the operand type.
+- **`exception_repr`** renders args via `reprObject` instead of the
+  placeholder `<obj>`; `KeyError(3)` now prints as `KeyError(3)`.
+- **__slots__ accepts `__doc__`** — exempt the special-cased
+  docstring-populated slot; otherwise `_typing._SpecialForm` failed
+  to load and cascaded into typing/asyncio/unittest.mock imports.
+- **str.encode validates encoding type** — non-str / None now raise
+  `TypeError("str.encode() argument 'encoding' must be str, not X")`.
+
 ### Fixed: 20-commit sweep — silent-None / silent-zero → proper exceptions
 
 Another twenty back-to-back root-cause fixes, every one paired with
