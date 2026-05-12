@@ -7163,33 +7163,54 @@ static const proto::ProtoObject* py_range(
     long long stop = 0;
     long long step = 1;
 
+    // CPython: range() rejects keyword arguments.
+    //   range(stop=10) -> TypeError: range() takes no keyword arguments
+    // Previously kwargs were ignored and the call fell through to
+    // argsSize==0, producing an empty range silently.
+    if (keywordParameters && keywordParameters->getSize(context) > 0) {
+        PythonEnvironment* envE = PythonEnvironment::fromContext(context);
+        if (envE) envE->raiseTypeError(context, "range() takes no keyword arguments");
+        return nullptr;
+    }
+
+    // Unwrap bool sentinels to int (bool subclasses int in Python).
+    // Previously `range(True, 5)` raised "range() integer arguments
+    // expected" because isInteger excludes the bool sentinels.
+    auto toLong = [&](const proto::ProtoObject* o, bool& ok) -> long long {
+        ok = true;
+        if (o == PROTO_TRUE) return 1;
+        if (o == PROTO_FALSE) return 0;
+        if (o->isInteger(context)) return o->asLong(context);
+        ok = false;
+        return 0;
+    };
+
     unsigned long argsSize = positionalParameters->getSize(context);
     if (argsSize == 1) {
-        const proto::ProtoObject* stopObj = positionalParameters->getAt(context, 0);
-        if (!stopObj->isInteger(context)) {
+        bool ok;
+        stop = toLong(positionalParameters->getAt(context, 0), ok);
+        if (!ok) {
             PythonEnvironment* env = PythonEnvironment::fromContext(context);
             if (env) env->raiseTypeError(context, "range() integer stop argument expected");
             return PROTO_NONE;
         }
-        stop = stopObj->asLong(context);
     } else if (argsSize >= 2) {
-        const proto::ProtoObject* startObj = positionalParameters->getAt(context, 0);
-        const proto::ProtoObject* stopObj = positionalParameters->getAt(context, 1);
-        if (!startObj->isInteger(context) || !stopObj->isInteger(context)) {
+        bool okStart, okStop;
+        start = toLong(positionalParameters->getAt(context, 0), okStart);
+        stop = toLong(positionalParameters->getAt(context, 1), okStop);
+        if (!okStart || !okStop) {
             PythonEnvironment* env = PythonEnvironment::fromContext(context);
             if (env) env->raiseTypeError(context, "range() integer arguments expected");
             return PROTO_NONE;
         }
-        start = startObj->asLong(context);
-        stop = stopObj->asLong(context);
         if (argsSize >= 3) {
-            const proto::ProtoObject* stepObj = positionalParameters->getAt(context, 2);
-            if (!stepObj->isInteger(context)) {
+            bool okStep;
+            step = toLong(positionalParameters->getAt(context, 2), okStep);
+            if (!okStep) {
                 PythonEnvironment* env = PythonEnvironment::fromContext(context);
                 if (env) env->raiseTypeError(context, "range() integer step argument expected");
                 return PROTO_NONE;
             }
-            step = stepObj->asLong(context);
         }
     }
 
