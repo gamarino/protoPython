@@ -15599,6 +15599,20 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                 if (!intUnaryStatic(ctx, self, args, v)) return PROTO_NONE;
                 return ctx->fromDouble((double)v);
             }));
+        // int.conjugate() returns self (CPython numeric ABC contract).
+        // .real / .imag / .numerator / .denominator would require
+        // property/descriptor support that protoPython doesn't expose
+        // for native types yet; they're tracked separately.
+        intPrototype = intPrototype->setAttribute(rootContext_,
+            PythonEnvironment::getInternedString(rootContext_, "conjugate"),
+            rootContext_->fromMethod(nullptr,
+            +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+               const proto::ParentLink*, const proto::ProtoList* args,
+               const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                long long v = 0;
+                if (!intUnaryStatic(ctx, self, args, v)) return PROTO_NONE;
+                return ctx->fromInteger(v);
+            }));
         space_->smallIntegerPrototype = const_cast<proto::ProtoObject*>(intPrototype);
     }
 
