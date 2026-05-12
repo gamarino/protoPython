@@ -3288,13 +3288,39 @@ static const proto::ProtoObject* py_dict_eq(
     return PROTO_TRUE;
 }
 
+// CPython: dict has no defined ordering — `<`, `<=`, `>`, `>=` raise
+//   TypeError: '<' not supported between instances of 'dict' and 'dict'
+// Previously these returned PROTO_NONE, which the binary-op
+// dispatcher interpreted as falsy, so `{1: 1} < {2: 2}` returned
+// False (or sometimes True via identity-equality fallback) instead
+// of raising.
+static const proto::ProtoObject* dict_ordering_typeerror(
+        proto::ProtoContext* context, const proto::ProtoObject*,
+        const proto::ProtoList* posArgs, const char* op) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (env) {
+        std::string otherName = "object";
+        if (posArgs && posArgs->getSize(context) >= 1) {
+            const proto::ProtoObject* other = posArgs->getAt(context, 0);
+            const proto::ProtoObject* cls = env->getType(context, other);
+            if (cls) {
+                const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
+                if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, otherName);
+            }
+        }
+        env->raiseTypeError(context,
+            "'" + std::string(op) + "' not supported between instances of 'dict' and '" + otherName + "'");
+    }
+    return nullptr;
+}
+
 static const proto::ProtoObject* py_dict_lt(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    return PROTO_NONE;
+    return dict_ordering_typeerror(context, self, positionalParameters, "<");
 }
 
 static const proto::ProtoObject* py_dict_le(
@@ -3303,7 +3329,7 @@ static const proto::ProtoObject* py_dict_le(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    return PROTO_NONE;
+    return dict_ordering_typeerror(context, self, positionalParameters, "<=");
 }
 
 static const proto::ProtoObject* py_dict_gt(
@@ -3312,7 +3338,7 @@ static const proto::ProtoObject* py_dict_gt(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    return PROTO_NONE;
+    return dict_ordering_typeerror(context, self, positionalParameters, ">");
 }
 
 static const proto::ProtoObject* py_dict_ge(
@@ -3321,7 +3347,7 @@ static const proto::ProtoObject* py_dict_ge(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    return PROTO_NONE;
+    return dict_ordering_typeerror(context, self, positionalParameters, ">=");
 }
 
 std::string PythonEnvironment::reprObject(proto::ProtoContext* context, const proto::ProtoObject* obj) {
