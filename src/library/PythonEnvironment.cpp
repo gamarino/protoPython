@@ -9031,16 +9031,61 @@ static const proto::ProtoObject* py_bytes_hash(
 static const proto::ProtoObject* py_bytes_hex(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     std::string raw;
     if (!bytes_data_view(context, self, raw))
         return PythonEnvironment::getInternedString(context, "")->asObject(context);
     static const char hex[] = "0123456789abcdef";
+    // CPython: bytes.hex(sep, bytes_per_sep=1) inserts `sep` (a single
+    // ASCII char) between every `bytes_per_sep` raw bytes.  Positive
+    // bytes_per_sep groups from the right; negative groups from the
+    // left.  Previously both args were dropped, so
+    // `b'\x00\x01\x02'.hex(' ')` returned `'000102'` instead of
+    // `'00 01 02'`.
+    std::string sepStr;
+    long long groupSize = 1;
+    bool haveSep = false;
+    if (posArgs && posArgs->getSize(context) >= 1) {
+        const proto::ProtoObject* sepObj = posArgs->getAt(context, 0);
+        if (sepObj && sepObj->isString(context)) {
+            sepObj->asString(context)->toUTF8String(context, sepStr);
+            haveSep = true;
+        }
+    }
+    if (posArgs && posArgs->getSize(context) >= 2) {
+        const proto::ProtoObject* gsObj = posArgs->getAt(context, 1);
+        if (gsObj && gsObj->isInteger(context)) groupSize = gsObj->asLong(context);
+    }
+    if (groupSize == 0) groupSize = 1;
     std::string out;
-    out.reserve(raw.size() * 2);
-    for (unsigned char c : raw) {
-        out += hex[c >> 4];
-        out += hex[c & 0x0f];
+    out.reserve(raw.size() * 2 + (haveSep ? raw.size() : 0));
+    if (!haveSep) {
+        for (unsigned char c : raw) {
+            out += hex[c >> 4];
+            out += hex[c & 0x0f];
+        }
+    } else {
+        // Encode positive groupSize: group from the right.  Negative:
+        // group from the left.  Both forms emit `sep` between groups
+        // and no trailing sep.
+        const long long n = static_cast<long long>(raw.size());
+        const long long g = (groupSize > 0) ? groupSize : -groupSize;
+        for (long long i = 0; i < n; ++i) {
+            // Determine if a separator should precede this byte.  For
+            // positive groupSize (right grouping), a separator appears
+            // before byte i when (n - i) is a positive multiple of g.
+            // For negative groupSize (left grouping), it appears before
+            // byte i when i is a positive multiple of g.
+            if (i > 0) {
+                bool emitSep = (groupSize > 0)
+                    ? ((n - i) % g == 0)
+                    : (i % g == 0);
+                if (emitSep) out += sepStr;
+            }
+            unsigned char c = static_cast<unsigned char>(raw[i]);
+            out += hex[c >> 4];
+            out += hex[c & 0x0f];
+        }
     }
     return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
 }
