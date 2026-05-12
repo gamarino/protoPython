@@ -7518,6 +7518,138 @@ static const proto::ProtoObject* py_range_len(
     return context->fromInteger(count);
 }
 
+// Forward declaration: py_range is defined further down but
+// py_range_getitem (slice branch) needs to call it to build the result.
+static const proto::ProtoObject* py_range(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink, const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters);
+
+// Compute the canonical (start, stop, step, length) of `self` interpreted
+// as a range object.  Returns false if any required private attribute is
+// missing (defensive: every value that py_range builds carries the three).
+static bool range_view(proto::ProtoContext* context, const proto::ProtoObject* self,
+                       long long& start, long long& stop, long long& step,
+                       long long& len) {
+    ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
+    const proto::ProtoString* curS = env ? env->getRangeCurString() : PythonEnvironment::getInternedString(context, "__range_cur__");
+    const proto::ProtoString* stopS = env ? env->getRangeStopString() : PythonEnvironment::getInternedString(context, "__range_stop__");
+    const proto::ProtoString* stepS = env ? env->getRangeStepString() : PythonEnvironment::getInternedString(context, "__range_step__");
+    const proto::ProtoObject* curObj = self ? self->getAttribute(context, curS) : nullptr;
+    const proto::ProtoObject* stopObj = self ? self->getAttribute(context, stopS) : nullptr;
+    const proto::ProtoObject* stepObj = self ? self->getAttribute(context, stepS) : nullptr;
+    if (!curObj || !stopObj || !stepObj) return false;
+    start = curObj->asLong(context);
+    stop = stopObj->asLong(context);
+    step = stepObj->asLong(context);
+    if (step == 0) { len = 0; return true; }
+    if (step > 0) len = (start >= stop) ? 0 : ((stop - start) + (step - 1)) / step;
+    else          len = (start <= stop) ? 0 : ((start - stop) + ((-step) - 1)) / (-step);
+    return true;
+}
+
+// range.__getitem__(i): integer index, bool, __index__ user object, or
+// slice.  Without this, `range(10)[5]` returned None and `range(10)[2:8]`
+// silently produced None (NoneType is not iterable) — both because
+// rangeClass had no __getitem__ registered at all.
+static const proto::ProtoObject* py_range_getitem(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList*) {
+    ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
+    if (!args || args->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* idxObj = args->getAt(context, 0);
+    if (!idxObj) return PROTO_NONE;
+    long long start = 0, stop = 0, step = 0, n = 0;
+    if (!range_view(context, self, start, stop, step, n)) return PROTO_NONE;
+    // Normalise the index argument to an integer or detect a slice.
+    bool isInt = idxObj->isInteger(context);
+    bool isBool = (idxObj == PROTO_TRUE || idxObj == PROTO_FALSE);
+    long long idx = 0;
+    if (isInt) {
+        idx = idxObj->asLong(context);
+    } else if (isBool) {
+        idx = (idxObj == PROTO_TRUE) ? 1 : 0;
+    } else if (env && ((env->getSliceType() && idxObj->isInstanceOf(context, env->getSliceType()) == PROTO_TRUE)
+                       || idxObj->hasOwnAttribute(context, PythonEnvironment::getInternedString(context, "start")) == PROTO_TRUE
+                       || idxObj->hasOwnAttribute(context, PythonEnvironment::getInternedString(context, "stop")) == PROTO_TRUE
+                       || idxObj->hasOwnAttribute(context, PythonEnvironment::getInternedString(context, "step")) == PROTO_TRUE)) {
+        // Slice path: compute (sStart, sStop, sStep) via slice.indices(n)
+        // then build a new range value mapping each slice index i to
+        // start + (sStart + i*sStep) * step.
+        const proto::ProtoString* startS = PythonEnvironment::getInternedString(context, "start");
+        const proto::ProtoString* stopS  = PythonEnvironment::getInternedString(context, "stop");
+        const proto::ProtoString* stepS  = PythonEnvironment::getInternedString(context, "step");
+        const proto::ProtoObject* sStartObj = idxObj->getAttribute(context, startS);
+        const proto::ProtoObject* sStopObj  = idxObj->getAttribute(context, stopS);
+        const proto::ProtoObject* sStepObj  = idxObj->getAttribute(context, stepS);
+        long long sStep = (sStepObj && sStepObj->isInteger(context)) ? sStepObj->asLong(context) : 1;
+        if (sStep == 0) {
+            if (env) env->raiseValueError(context,
+                PythonEnvironment::getInternedString(context, "slice step cannot be zero")->asObject(context));
+            return nullptr;
+        }
+        long long sStart, sStop;
+        if (!sStartObj || sStartObj == PROTO_NONE) sStart = (sStep > 0) ? 0 : n - 1;
+        else {
+            sStart = sStartObj->asLong(context);
+            if (sStart < 0) sStart += n;
+            if (sStep > 0) { if (sStart < 0) sStart = 0; if (sStart > n) sStart = n; }
+            else           { if (sStart < -1) sStart = -1; if (sStart > n - 1) sStart = n - 1; }
+        }
+        if (!sStopObj || sStopObj == PROTO_NONE) sStop = (sStep > 0) ? n : -1;
+        else {
+            sStop = sStopObj->asLong(context);
+            if (sStop < 0) sStop += n;
+            if (sStep > 0) { if (sStop < 0) sStop = 0; if (sStop > n) sStop = n; }
+            else           { if (sStop < -1) sStop = -1; if (sStop > n - 1) sStop = n - 1; }
+        }
+        long long newStart = start + sStart * step;
+        long long newStep  = step * sStep;
+        long long newStop  = start + sStop  * step;
+        const proto::ProtoList* shifted = context->newList()
+            ->appendLast(context, context->fromInteger(newStart))
+            ->appendLast(context, context->fromInteger(newStop))
+            ->appendLast(context, context->fromInteger(newStep));
+        return py_range(context, self, nullptr, shifted, nullptr);
+    } else if (env) {
+        // __index__ protocol on user instances.  Handles both native
+        // (asMethod non-null) and Python-level (function with __code__)
+        // dunders by routing the latter through invokePythonCallable.
+        const proto::ProtoString* indexS = PythonEnvironment::getInternedString(context, "__index__");
+        const proto::ProtoObject* indexM = env->getAttribute(context, idxObj, indexS, false);
+        const proto::ProtoObject* idxRes = nullptr;
+        if (indexM && indexM != PROTO_NONE) {
+            if (indexM->asMethod(context)) {
+                idxRes = indexM->asMethod(context)(context, idxObj, nullptr, context->newList(), nullptr);
+            } else {
+                extern const proto::ProtoObject* invokePythonCallable(
+                    proto::ProtoContext* ctx, const proto::ProtoObject* callable,
+                    const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+                const proto::ProtoList* selfArgs = context->newList()->appendLast(context, idxObj);
+                idxRes = ::protoPython::invokePythonCallable(context, indexM, selfArgs, nullptr);
+            }
+        }
+        if (idxRes && idxRes->isInteger(context)) {
+            idx = idxRes->asLong(context);
+        } else {
+            env->raiseTypeError(context, "range indices must be integers or slices");
+            return nullptr;
+        }
+    } else {
+        return PROTO_NONE;
+    }
+    // Normalise negative index and bounds-check.
+    if (idx < 0) idx += n;
+    if (idx < 0 || idx >= n) {
+        if (env) env->raiseIndexError(context, "range object index out of range");
+        return nullptr;
+    }
+    return context->fromInteger(start + idx * step);
+}
+
 static const proto::ProtoObject* py_range_iter(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -8877,6 +9009,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     rangeClass = rangeClass->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_range_new));
     rangeClass = rangeClass->setAttribute(ctx, pEnv ? pEnv->getIterString() : PythonEnvironment::getInternedString(ctx, "__iter__"), ctx->fromMethod(nullptr, py_range_iter));
     rangeClass = rangeClass->setAttribute(ctx, pEnv ? pEnv->getLenString() : PythonEnvironment::getInternedString(ctx, "__len__"), ctx->fromMethod(nullptr, py_range_len));
+    rangeClass = rangeClass->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__getitem__"), ctx->fromMethod(nullptr, py_range_getitem));
     rangeClass = rangeClass->setAttribute(ctx, pEnv ? pEnv->getInitString() : PythonEnvironment::getInternedString(ctx, "__init__"), ctx->fromMethod(nullptr, py_python_ignore_init));
     // range.__reversed__: build a new range with reversed bounds
     // and iterate it.  CPython returns a range_iterator directly;
