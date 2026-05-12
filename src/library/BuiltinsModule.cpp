@@ -3801,6 +3801,15 @@ static const proto::ProtoObject* py_hash(
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    // CPython contract: bool is an int subclass, so
+    //   hash(True)  == hash(1) == 1
+    //   hash(False) == hash(0) == 0
+    // Previously the bool sentinels routed through object.__hash__
+    // (identity-based) which produced hash(True) == 0 (some pointer
+    // bits >> 4) and broke `True in {1}` for dict / set lookups that
+    // bucket by hash.  Short-circuit before the dunder lookup.
+    if (obj == PROTO_TRUE) return context->fromInteger(1);
+    if (obj == PROTO_FALSE) return context->fromInteger(0);
     const proto::ProtoString* hashS = env ? env->getHashString() : PythonEnvironment::getInternedString(context, "__hash__");
     // CPython hashes via the type's tp_hash slot, not the instance's
     // attribute dict directly.  protoPython's instance attribute lookup
