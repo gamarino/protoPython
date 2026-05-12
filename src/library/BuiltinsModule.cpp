@@ -7676,6 +7676,26 @@ static bool range_locate(proto::ProtoContext* context, const proto::ProtoObject*
     return true;
 }
 
+// CPython: repr(range(10)) == 'range(0, 10)'; repr(range(0, 10, 2)) ==
+// 'range(0, 10, 2)'.  Without this, range objects fell through to the
+// generic object repr and printed '<range object at 0x...>'.
+static const proto::ProtoObject* py_range_repr(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList*,
+    const proto::ProtoSparseList*) {
+    long long start = 0, stop = 0, step = 0, n = 0;
+    if (!range_view(context, self, start, stop, step, n)) return PROTO_NONE;
+    char buf[80];
+    if (step == 1) {
+        std::snprintf(buf, sizeof(buf), "range(%lld, %lld)", start, stop);
+    } else {
+        std::snprintf(buf, sizeof(buf), "range(%lld, %lld, %lld)", start, stop, step);
+    }
+    return PythonEnvironment::getInternedString(context, buf)->asObject(context);
+}
+
 static const proto::ProtoObject* py_range_count(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -9084,6 +9104,27 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     rangeClass = rangeClass->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__getitem__"), ctx->fromMethod(nullptr, py_range_getitem));
     rangeClass = rangeClass->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "count"), ctx->fromMethod(nullptr, py_range_count));
     rangeClass = rangeClass->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "index"), ctx->fromMethod(nullptr, py_range_index));
+    rangeClass = rangeClass->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__repr__"), ctx->fromMethod(nullptr, py_range_repr));
+    rangeClass = rangeClass->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__str__"), ctx->fromMethod(nullptr, py_range_repr));
+    // Install a proper MRO that includes rangeClass itself before
+    // object so dunder lookups (used by str(r) / repr(r) / print(r))
+    // find range.__repr__ instead of falling through to
+    // object.__repr__ on the very next link.  Without this,
+    // type(r).__mro__ == (object,) and the MRO-driven repr / str
+    // dispatch in PythonEnvironment.cpp never reaches our methods.
+    {
+        const proto::ProtoList* mroL = ctx->newList()
+            ->appendLast(ctx, rangeClass);
+        if (objectProto) mroL = mroL->appendLast(ctx, objectProto);
+        rangeClass = rangeClass->setAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__mro__"),
+            ctx->newTupleFromList(mroL)->asObject(ctx));
+        const proto::ProtoList* basesL = ctx->newList();
+        if (objectProto) basesL = basesL->appendLast(ctx, objectProto);
+        rangeClass = rangeClass->setAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__bases__"),
+            ctx->newTupleFromList(basesL)->asObject(ctx));
+    }
     rangeClass = rangeClass->setAttribute(ctx, pEnv ? pEnv->getInitString() : PythonEnvironment::getInternedString(ctx, "__init__"), ctx->fromMethod(nullptr, py_python_ignore_init));
     // range.__reversed__: build a new range with reversed bounds
     // and iterate it.  CPython returns a range_iterator directly;
