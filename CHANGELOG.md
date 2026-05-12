@@ -193,6 +193,87 @@ the receiver's `__mro__` for tuplePrototype/listPrototype and
 substitute the primitive prototype before wrapping the result,
 matching CPython's unoverridden-dunder semantics.
 
+### Fixed: 21-commit sweep — format minilanguage + __index__ protocol + iter validation + dict.update iterables + bool spelling
+
+Fifth twenty-commit sweep this session (21 commits in this round).
+Theme: the PEP 3101 format minilanguage, the `__index__` protocol on
+all four sequence subscripts, tighter error fidelity on bytes
+methods, and one regression cleanup for dict.update against
+iterables.  `ctest --test-dir build` stayed at **199/199** across
+every commit.
+
+Highlights:
+
+- **`int.__format__`** implements the full PEP 3101 minilanguage —
+  fill / align (`<`, `>`, `^`, `=`), sign (`+`, `-`, ` `), `#`
+  alternate form, `0` zero-pad, width, and type (`d`, `b`, `o`, `x`,
+  `X`, `c`, `n`).  Previously the spec was ignored, so `format(42,
+  'x') == '42'` instead of `'2a'`.  Subclasses of `int` and the
+  `True` / `False` singletons unwrap correctly through `format()`.
+- **`str.__format__`** adopts the str-side subset (fill / align /
+  width).  Without it, `format('hi', '<5')` was returning `'hi'`.
+- **`format()` builtin** unwraps int / float subclass instances via
+  `__data__` and routes `True` / `False` through the integer fast
+  path — previously `format(MyInt(42), 'x')` was `None` and
+  `format(True, 'd')` raised the internal C++
+  `"Object is not an integer type"` panic.
+- **`__index__` protocol** is now dispatched by `list[idx]`,
+  `tuple[idx]`, `str[idx]`, and `bytes[idx]` whenever the index is a
+  user-class instance with a `__index__` method.  CPython contract:
+  any object that defines `__index__` is a valid sequence subscript.
+- **`int / float`** carry the missing numeric ABC dunders
+  `__round__`, `__floor__`, `__ceil__`, `__trunc__` so the standard
+  library's `Real` /`Integral` checks succeed and `math.floor(x.f)`
+  works for user instances that delegate to the numeric primitives.
+- **`float.as_integer_ratio()`** gcd-reduces the returned (num, den)
+  pair and preserves the original sign — `(-2.5).as_integer_ratio()`
+  is now `(-5, 2)`, not `(5, 2)` (it was being double-negated through
+  `frexp`).
+- **`dict` ordering** (`<`, `<=`, `>`, `>=`) raises `TypeError` like
+  CPython.  The previous behaviour silently compared by hash and
+  produced arbitrary results.
+- **`bytes` strictness sweep**:
+  - `bytes.__contains__` rejects raw `str` needles with the canonical
+    `"a bytes-like object is required, not 'str'"`.  Was silently
+    coercing the str needle and returning bogus results.
+  - `bytes.find / rfind / count / index / rindex` and
+    `bytes.startswith / endswith` reject `str` arguments with the
+    same message — every byte-input method now follows the same
+    bytes-only protocol.
+- **`UNPACK_SEQUENCE` error messages** embed the expected and
+  actual counts: `"not enough values to unpack (expected 3, got 2)"`
+  and `"too many values to unpack (expected 2)"`, mirroring CPython
+  word for word.
+- **`bytes[True]` / `bytes[False]`** accept bool as an integer index
+  (last sequence type that was missing the bool-as-int handling).
+- **`ord()`** accepts a length-1 `bytes` / `bytearray` argument and
+  returns the single byte's integer value.  Previously only str was
+  accepted, with `ord(b'A')` falling through to attribute walking and
+  returning bogus values.
+- **`iter()`** validates that a user-defined `__iter__` returns an
+  iterator (an object with `__next__`).  Previously `iter(obj)` could
+  return an arbitrary value when `__iter__` returned None or a
+  non-iterator instance.
+- **`py_print`** mirrors `py_float_format_short`'s decimal-window
+  cleanup from commit ae63e77f — `print(1200.0)` is now `'1200.0'`
+  instead of `'1.2e+03'`.  Without it the `repr` / `__str__` path got
+  the fix but bare `print` of a float didn't.
+- **`dict.update(iterable_of_pairs)`** and **`dict.update(**kw)`**
+  finally work.  The previous implementation only handled the
+  mapping-with-`__keys__`/`__data__` shape and silently produced `{}`
+  for `d.update([('a', 1), ('b', 2)])` and friends.  Iterable
+  elements unpack as (key, value) tuples (or lists) of length two —
+  malformed pairs raise the canonical `ValueError` /`TypeError`.
+  Keyword arguments are recovered via `env->getCurrentKwNames()` and
+  merged after the positional argument so kwargs override matching
+  keys.
+- **`bool.__str__` / `bool.__repr__`** spell `'True'` and `'False'`.
+  Without dedicated bool dunders, `str(True)` walked MRO up to
+  `int.__str__` (py_int_repr), which doesn't recognise the
+  PROTO_TRUE / PROTO_FALSE singletons as integers and rendered them
+  as `'0'`.  Only `print(True)` happened to be correct because
+  py_print intercepts the singletons specially.
+
 ### Fixed: 20-commit sweep — bytes-aware constructors + bool subclass parity + None-key dict + complex parser
 
 Fourth twenty-commit sweep this session.  Theme: round out the
