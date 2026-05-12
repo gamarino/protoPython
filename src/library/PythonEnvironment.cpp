@@ -3879,6 +3879,34 @@ static const proto::ProtoObject* py_list_sort(
         }
     }
 
+    // CPython: list.sort(key=non_callable) raises
+    //   TypeError: 'X' object is not callable.
+    // Previously the bad key was applied through the silent-passthrough
+    // invokePythonCallable path; the list ended up in its original
+    // order with no error surface.
+    if (keyFn) {
+        bool isCallable = false;
+        if (keyFn->asMethod(context)) isCallable = true;
+        else if (env) {
+            const proto::ProtoString* callS = env->getCallString();
+            const proto::ProtoObject* cm = env->getAttribute(context, keyFn, callS, false);
+            if (cm && cm != PROTO_NONE) isCallable = true;
+        }
+        if (!isCallable) {
+            if (env) {
+                std::string clsName = "object";
+                const proto::ProtoObject* cls = env->getType(context, keyFn);
+                if (cls) {
+                    const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
+                    if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+                }
+                env->raiseTypeError(context,
+                    "'" + clsName + "' object is not callable");
+            }
+            return nullptr;
+        }
+    }
+
     if (keyFn) {
         // Decorate-sort-undecorate: compute keys once, sort indices stably
         // by the keys, then permute elements.  Mirrors py_sorted's keyed path.

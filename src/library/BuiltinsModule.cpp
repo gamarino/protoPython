@@ -3668,6 +3668,33 @@ static const proto::ProtoObject* py_sorted(
             }
         }
     }
+    // CPython: sorted(it, key=non_callable) raises
+    //   TypeError: 'X' object is not callable.
+    // Previously the bad key was applied via invokePythonCallable's
+    // silent passthrough — the values came through unmapped and the
+    // sort proceeded on the originals.
+    if (keyFn) {
+        bool isCallable = false;
+        if (keyFn->asMethod(context)) isCallable = true;
+        else if (env) {
+            const proto::ProtoString* callS = env->getCallString();
+            const proto::ProtoObject* cm = env->getAttribute(context, keyFn, callS, false);
+            if (cm && cm != PROTO_NONE) isCallable = true;
+        }
+        if (!isCallable) {
+            if (env) {
+                std::string clsName = "object";
+                const proto::ProtoObject* cls = env->getType(context, keyFn);
+                if (cls) {
+                    const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
+                    if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+                }
+                env->raiseTypeError(context,
+                    "'" + clsName + "' object is not callable");
+            }
+            return nullptr;
+        }
+    }
 
     std::vector<const proto::ProtoObject*> elems;
     // Generator-protocol iterators raise StopIteration when exhausted —
