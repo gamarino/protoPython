@@ -1558,9 +1558,19 @@ static const proto::ProtoObject* py_float_as_integer_ratio(
     }
     int exp;
     double m = std::frexp(d, &exp);
+    // frexp preserves the sign in m for negative input; do NOT
+    // re-flip num via `if (d < 0)` — that produced a wrong-sign
+    // result for negative floats:
+    //   (-2.5).as_integer_ratio() returned (5, 2) instead of (-5, 2).
     long long num = static_cast<long long>(m * (1LL << 53));
     long long den = 1LL << (53 - exp);
-    if (d < 0) num = -num;
+    // CPython: as_integer_ratio() returns the ratio in lowest terms
+    // (gcd-reduced).  `(3.5).as_integer_ratio()` should be `(7, 2)`,
+    // not `(7881299347898368, 2251799813685248)`.  Reduce by gcd.
+    auto absll = [](long long v) { return v < 0 ? -v : v; };
+    long long a = absll(num), b = absll(den);
+    while (b != 0) { long long t = a % b; a = b; b = t; }
+    if (a > 1) { num /= a; den /= a; }
     const proto::ProtoList* pair = context->newList()->appendLast(context, context->fromInteger(num))->appendLast(context, context->fromInteger(den));
     const proto::ProtoTuple* tup = context->newTupleFromList(pair);
     return tup ? tup->asObject(context) : PROTO_NONE;
