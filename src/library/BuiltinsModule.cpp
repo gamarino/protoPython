@@ -7175,7 +7175,28 @@ static const proto::ProtoObject* py_round(
                        positionalParameters->getAt(context, 1) != PROTO_NONE);
     int ndigits = 0;
     if (hasNdigits) {
-        ndigits = static_cast<int>(positionalParameters->getAt(context, 1)->asLong(context));
+        // CPython: ndigits must be int (or bool).  Previously asLong on
+        // a non-int operand panicked with the internal C++ exception
+        // "Object is not an integer type" — round(3.5, 1.5) and
+        // round(3.5, 'a') both crashed instead of raising TypeError.
+        const proto::ProtoObject* nd = positionalParameters->getAt(context, 1);
+        if (nd->isInteger(context)) {
+            ndigits = static_cast<int>(nd->asLong(context));
+        } else if (nd == PROTO_TRUE) {
+            ndigits = 1;
+        } else if (nd == PROTO_FALSE) {
+            ndigits = 0;
+        } else if (env) {
+            std::string clsName = "object";
+            const proto::ProtoObject* cls = env->getType(context, nd);
+            if (cls) {
+                const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
+                if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+            }
+            env->raiseTypeError(context,
+                "'" + clsName + "' object cannot be interpreted as an integer");
+            return nullptr;
+        }
     }
 
     // CPython: bool is a subclass of int, so round(True) == 1 and
