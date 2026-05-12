@@ -22768,12 +22768,32 @@ const proto::ProtoObject* PythonEnvironment::buildString(const proto::ProtoObjec
 void PythonEnvironment::storeName(const std::string& name, const proto::ProtoObject* val) {
     proto::ProtoContext* ctx = getCurrentContext();
     if (!ctx) ctx = rootContext_;
-    proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(getCurrentFrame());
-    if (frame) {
-        frame->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, name.c_str()), val);
-    } else {
-        // Store in globals as fallback
-        const_cast<proto::ProtoObject*>(getGlobals())->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, name.c_str()), val);
+    const proto::ProtoString* key = PythonEnvironment::getInternedString(ctx, name.c_str());
+    // protoCore's setAttribute can hand back a new wrapper even on a
+    // mutable object; the previous discard-the-return pattern meant
+    // module-level rebinds (the protopyc-emitted `storeName(x, …)`)
+    // silently dropped the new value, leaving `x` at its previous
+    // binding.  Re-bind the frame / globals slot to the returned
+    // pointer so the change actually sticks, then invalidate the
+    // resolve cache so a subsequent lookupName sees the new value
+    // (the per-thread cache pinned the prior binding for the rest
+    // of the program — the smoking gun behind `x = 5; x += 3;
+    // print(x)` emitting 5 from compiled modules).
+    if (const proto::ProtoObject* frame = getCurrentFrame()) {
+        const proto::ProtoObject* updated = frame->setAttribute(ctx, key, val);
+        if (updated && updated != frame) {
+            setCurrentFrame(const_cast<proto::ProtoObject*>(updated));
+        }
+        invalidateResolveCache();
+        return;
+    }
+    const proto::ProtoObject* g = getGlobals();
+    if (g) {
+        const proto::ProtoObject* updated = g->setAttribute(ctx, key, val);
+        if (updated && updated != g) {
+            setCurrentGlobals(const_cast<proto::ProtoObject*>(updated));
+        }
+        invalidateResolveCache();
     }
 }
 
