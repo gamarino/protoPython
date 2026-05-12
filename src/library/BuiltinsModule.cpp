@@ -718,10 +718,73 @@ const proto::ProtoObject* py_complex(
         if (x->isInteger(context)) { dest = (double)x->asLong(context); destImag = 0.0; return true; }
         if (x->isBoolean(context)) { dest = x->asBoolean(context) ? 1.0 : 0.0; destImag = 0.0; return true; }
         if (x->isString(context)) {
+            // CPython complex('1+2j') parses both real and imaginary
+            // parts.  The previous implementation called std::stod on
+            // the whole string — it only read the leading real part
+            // and silently discarded everything after the first
+            // non-digit, so `complex('1+2j')` returned (1+0j).
+            //
+            // Grammar accepted (matches CPython's _PyComplex_Parse):
+            //   ws? sign? (real (sign imag 'j' | 'j')? | imag 'j') ws?
+            // Examples handled:
+            //   "1+2j", "-3j", "5", "  1.5e2+3j  ", "1-2j", "j", "(1+2j)"
             std::string s;
             x->asString(context)->toUTF8String(context, s);
-            try { dest = std::stod(s); destImag = 0.0; return true; } catch(...) {}
-            return false;
+            size_t i = 0, end = s.size();
+            while (i < end && std::isspace(static_cast<unsigned char>(s[i]))) i++;
+            while (end > i && std::isspace(static_cast<unsigned char>(s[end - 1]))) end--;
+            // Optional surrounding parens: complex("(1+2j)").
+            if (i < end && s[i] == '(' && s[end - 1] == ')') { i++; end--; }
+            std::string body = s.substr(i, end - i);
+            if (body.empty()) return false;
+            // Parse first numeric run (with optional leading sign) using
+            // std::strtod, which returns the consumed length.
+            auto parseRun = [&](size_t off, double& out, size_t& consumed) -> bool {
+                const char* start = body.c_str() + off;
+                char* endp = nullptr;
+                out = std::strtod(start, &endp);
+                consumed = static_cast<size_t>(endp - start);
+                return consumed > 0;
+            };
+            double re = 0.0, im = 0.0;
+            // Special-case bare 'j' or '+j' / '-j' meaning ±1j.
+            if (body == "j" || body == "+j") { dest = 0.0; destImag = 1.0; return true; }
+            if (body == "-j") { dest = 0.0; destImag = -1.0; return true; }
+            size_t pos = 0;
+            double first = 0.0;
+            size_t firstLen = 0;
+            if (!parseRun(pos, first, firstLen)) return false;
+            pos += firstLen;
+            if (pos < body.size() && (body[pos] == 'j' || body[pos] == 'J')) {
+                // Pure imaginary: "3j", "-2j"
+                im = first;
+                pos++;
+                if (pos != body.size()) return false;
+                dest = 0.0; destImag = im; return true;
+            }
+            re = first;
+            if (pos == body.size()) {
+                dest = re; destImag = 0.0; return true;
+            }
+            // Expect '+' / '-' followed by imaginary part with 'j' suffix.
+            if (body[pos] != '+' && body[pos] != '-') return false;
+            // The sign is the start of the imaginary token; let strtod
+            // consume it.  Special-case "+j" / "-j" (no digits).
+            if (pos + 1 < body.size() && (body[pos + 1] == 'j' || body[pos + 1] == 'J')) {
+                im = body[pos] == '+' ? 1.0 : -1.0;
+                pos += 2;
+                if (pos != body.size()) return false;
+                dest = re; destImag = im; return true;
+            }
+            double second = 0.0;
+            size_t secondLen = 0;
+            if (!parseRun(pos, second, secondLen)) return false;
+            pos += secondLen;
+            if (pos >= body.size() || (body[pos] != 'j' && body[pos] != 'J')) return false;
+            im = second;
+            pos++;
+            if (pos != body.size()) return false;
+            dest = re; destImag = im; return true;
         }
         // Complex / complex subclass: pull .real and .imag.
         const proto::ProtoString* realS = PythonEnvironment::getInternedString(context, "real");
@@ -746,6 +809,28 @@ const proto::ProtoObject* py_complex(
         if (extractReal(rObj, rr, ri)) {
             real = rr;
             imag = ri;  // Pick up imaginary part when the arg is a complex.
+        } else {
+            // CPython:
+            //   complex('abc')  -> ValueError("complex() arg is a malformed string")
+            //   complex([])     -> TypeError("complex() first argument must be a string or a number, not 'list'")
+            // Previously a failed extractReal silently produced (0+0j).
+            if (rObj && rObj->isString(context)) {
+                if (env) env->raiseValueError(context,
+                    PythonEnvironment::getInternedString(context,
+                        "complex() arg is a malformed string")->asObject(context));
+                return nullptr;
+            }
+            if (env) {
+                std::string clsName = "object";
+                const proto::ProtoObject* cls = env->getType(context, rObj);
+                if (cls) {
+                    const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
+                    if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+                }
+                env->raiseTypeError(context,
+                    "complex() first argument must be a string or a number, not '" + clsName + "'");
+            }
+            return nullptr;
         }
     }
     if (argCount >= base + 2) {
