@@ -5280,36 +5280,105 @@ const proto::ProtoObject* executeBytecodeRange(
         case OP_DICT_UPDATE: {
             if (stack.size() >= static_cast<size_t>(arg + 1)) {
                 const proto::ProtoObject* from = stack.back();
-                // from remains on stack
                 proto::ProtoObject* toObj = const_cast<proto::ProtoObject*>(stack[stack.size() - arg - 1]);
                 const proto::ProtoString* dataString = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
+                const proto::ProtoString* keysName = protoPython::PythonEnvironment::getInternalString(ctx, "__keys__");
                 const proto::ProtoObject* toData = toObj->getAttribute(ctx, dataString);
                 if (toData && toData->asSparseList(ctx)) {
                     const proto::ProtoSparseList* toSL = toData->asSparseList(ctx);
-                    const proto::ProtoObject* fromData = from->getAttribute(ctx, dataString);
-                    if (fromData && fromData->asSparseList(ctx)) {
+                    const proto::ProtoObject* toKeysObj = toObj->getAttribute(ctx, keysName);
+                    const proto::ProtoList* toKeys = (toKeysObj && toKeysObj->asList(ctx)) ? toKeysObj->asList(ctx) : ctx->newList();
+                    bool merged = false;
+                    // Fast path: source must be an actual dict (or
+                    // dict subclass) — checked via isInstanceOf
+                    // against dictPrototype.  Otherwise the keys() /
+                    // __getitem__ mapping protocol path below applies.
+                    //
+                    // Why isInstanceOf and not hasOwnAttribute on
+                    // __data__/__keys__: every Python class object
+                    // ends up carrying those internal storage slots
+                    // (used by py_type to walk class dicts) even
+                    // though the user never assigned to them.  An
+                    // hasOwnAttribute check would incorrectly take
+                    // the fast path for `{**SomeClass()}` and merge
+                    // the empty internal storage.
+                    bool fromIsDict = env && env->getDictPrototype()
+                        && from->isInstanceOf(ctx, env->getDictPrototype()) == PROTO_TRUE;
+                    const proto::ProtoObject* fromData = fromIsDict ? from->getAttribute(ctx, dataString) : nullptr;
+                    const proto::ProtoObject* fromKeysObj = fromIsDict ? from->getAttribute(ctx, keysName) : nullptr;
+                    if (fromData && fromData->asSparseList(ctx)
+                        && fromKeysObj && fromKeysObj->asList(ctx)) {
                         const proto::ProtoSparseList* fromSL = fromData->asSparseList(ctx);
-                        const proto::ProtoString* keysName = protoPython::PythonEnvironment::getInternalString(ctx, "__keys__");
-                        const proto::ProtoObject* fromKeysObj = from->getAttribute(ctx, keysName);
-                        if (fromKeysObj && fromKeysObj->asList(ctx)) {
-                            const proto::ProtoList* fromKeys = fromKeysObj->asList(ctx);
-                            const proto::ProtoObject* toKeysObj = toObj->getAttribute(ctx, keysName);
-                            const proto::ProtoList* toKeys = (toKeysObj && toKeysObj->asList(ctx)) ? toKeysObj->asList(ctx) : ctx->newList();
-                            for (unsigned long j = 0; j < fromKeys->getSize(ctx); ++j) {
-                                const proto::ProtoObject* k = fromKeys->getAt(ctx, j);
-                                unsigned long h = k->getHash(ctx);
-                                const proto::ProtoObject* v = fromSL->getAt(ctx, h);
-                                
-                                bool isNew = !toSL->has(ctx, h);
-                                toSL = toSL->setAt(ctx, h, v);
-                                if (isNew) toKeys = toKeys->appendLast(ctx, k);
+                        const proto::ProtoList* fromKeys = fromKeysObj->asList(ctx);
+                        for (unsigned long j = 0; j < fromKeys->getSize(ctx); ++j) {
+                            const proto::ProtoObject* k = fromKeys->getAt(ctx, j);
+                            unsigned long h = k->getHash(ctx);
+                            const proto::ProtoObject* v = fromSL->getAt(ctx, h);
+                            bool isNew = !toSL->has(ctx, h);
+                            toSL = toSL->setAt(ctx, h, v);
+                            if (isNew) toKeys = toKeys->appendLast(ctx, k);
+                        }
+                        merged = true;
+                    }
+                    // Fallback: source exposes a `keys()` method
+                    // (custom Mapping subclass / proxy / user class).
+                    // CPython's BUILD_MAP_UNPACK / DICT_UPDATE call
+                    // `keys()` and `__getitem__` to enumerate the
+                    // mapping.  Previously this branch silently
+                    // dropped any non-protoPython mapping shape,
+                    // making `{**M()}` / `f(**M())` produce `{}`.
+                    if (!merged && env) {
+                        const proto::ProtoString* keysS =
+                            protoPython::PythonEnvironment::getInternedString(ctx, "keys");
+                        const proto::ProtoObject* keysM = from->getAttribute(ctx, keysS);
+                        const proto::ProtoString* getitemS =
+                            protoPython::PythonEnvironment::getInternedString(ctx, "__getitem__");
+                        const proto::ProtoObject* getitemM = from->getAttribute(ctx, getitemS);
+                        if (keysM && keysM != PROTO_NONE && getitemM && getitemM != PROTO_NONE) {
+                            auto invokeBound = [&](const proto::ProtoObject* m,
+                                                   const proto::ProtoObject* recv,
+                                                   const proto::ProtoList* args)
+                                    -> const proto::ProtoObject* {
+                                if (!m || m == PROTO_NONE) return nullptr;
+                                if (m->asMethod(ctx)) {
+                                    return m->asMethod(ctx)(ctx,
+                                        const_cast<proto::ProtoObject*>(recv),
+                                        nullptr, args, nullptr);
+                                }
+                                const proto::ProtoString* codeS = env->getCodeString();
+                                bool raw = (codeS && m->hasOwnAttribute(ctx, codeS) == PROTO_TRUE);
+                                const proto::ProtoList* selfArgs = ctx->newList();
+                                if (raw) selfArgs = selfArgs->appendLast(ctx, recv);
+                                unsigned long n = args ? args->getSize(ctx) : 0;
+                                for (unsigned long j = 0; j < n; ++j)
+                                    selfArgs = selfArgs->appendLast(ctx, args->getAt(ctx, j));
+                                return invokePythonCallable(ctx, m, selfArgs, nullptr);
+                            };
+                            const proto::ProtoObject* keysObj =
+                                invokeBound(keysM, from, ctx->newList());
+                            if (keysObj && keysObj != PROTO_NONE) {
+                                const proto::ProtoObject* keyIt = env->iter(keysObj);
+                                if (keyIt) {
+                                    PythonEnvironment::TransientPin pinIt(env, keyIt);
+                                    for (;;) {
+                                        const proto::ProtoObject* k = env->next(keyIt);
+                                        if (!k) break;
+                                        const proto::ProtoList* gA = ctx->newList()->appendLast(ctx, k);
+                                        const proto::ProtoObject* v = invokeBound(getitemM, from, gA);
+                                        if (!v) continue;
+                                        unsigned long h = k->getHash(ctx);
+                                        bool isNew = !toSL->has(ctx, h);
+                                        toSL = toSL->setAt(ctx, h, v);
+                                        if (isNew) toKeys = toKeys->appendLast(ctx, k);
+                                    }
+                                }
                             }
-                            toObj->setAttribute(ctx, keysName, toKeys->asObject(ctx));
-                            toObj->setAttribute(ctx, dataString, toSL->asObject(ctx));
                         }
                     }
+                    toObj->setAttribute(ctx, keysName, toKeys->asObject(ctx));
+                    toObj->setAttribute(ctx, dataString, toSL->asObject(ctx));
                 }
-                stack.pop_back(); // Pop from
+                stack.pop_back();
             }
         } break;
         case OP_LIST_EXTEND: {
