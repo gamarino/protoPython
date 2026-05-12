@@ -23036,20 +23036,33 @@ const proto::ProtoObject* PythonEnvironment::next(const proto::ProtoObject* obj)
     }
 
     const proto::ProtoObject* method = obj->getAttribute(ctx, getNextString());
-    if (method && method->asMethod(ctx)) {
-        const proto::ProtoObject* res = method->asMethod(ctx)(ctx, obj, nullptr, getEmptyList(), nullptr);
-        
-        if (hasPendingException()) {
-            const proto::ProtoObject* exc = peekPendingException();
-            if (isStopIteration(ctx, exc)) {
-                clearPendingException();
-                return nullptr; // Success exhaustion
-            }
-            return nullptr; // Other error
+    if (!method || method == PROTO_NONE) return nullptr;
+    const proto::ProtoObject* res = nullptr;
+    if (method->asMethod(ctx)) {
+        res = method->asMethod(ctx)(ctx, obj, nullptr, getEmptyList(), nullptr);
+    } else {
+        // Python-level __next__ (user class method).  Previously
+        // `list(MyIter(3))` returned [] because env->next checked
+        // only `asMethod` and silently returned exhaustion for any
+        // Python callable.  Drive the user function via
+        // invokePythonCallable with `obj` prepended as self.
+        const proto::ProtoString* codeS = getCodeString();
+        bool isRawFunction = (codeS && method->hasOwnAttribute(ctx, codeS) == PROTO_TRUE);
+        const proto::ProtoList* args = getEmptyList();
+        if (isRawFunction) {
+            args = ctx->newList()->appendLast(ctx, obj);
         }
-        return res; // Can be PROTO_NONE (valid None value) or nullptr (if native caller explicitly returned it for exhaustion)
+        res = invokePythonCallable(ctx, method, args, nullptr);
     }
-    return nullptr;
+    if (hasPendingException()) {
+        const proto::ProtoObject* exc = peekPendingException();
+        if (isStopIteration(ctx, exc)) {
+            clearPendingException();
+            return nullptr; // Success exhaustion
+        }
+        return nullptr; // Other error propagates.
+    }
+    return res; // PROTO_NONE is a legitimate value; nullptr means exhaustion.
 }
 
 void PythonEnvironment::raiseException(const proto::ProtoObject* exc) {
