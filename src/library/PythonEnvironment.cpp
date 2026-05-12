@@ -6922,8 +6922,11 @@ static const proto::ProtoObject* py_int_format(
         width = width * 10 + (spec[i] - '0');
         i++;
     }
-    // Skip [,] / [_] grouping (not fully implemented here).
-    if (i < spec.size() && (spec[i] == ',' || spec[i] == '_')) i++;
+    // [,] / [_] thousands grouping (PEP 378).  CPython inserts the
+    // chosen separator every 3 digits from the right of the integer
+    // part; for hex / oct / bin types `_` groups every 4 digits.
+    char groupChar = '\0';
+    if (i < spec.size() && (spec[i] == ',' || spec[i] == '_')) { groupChar = spec[i]; i++; }
     // [type]
     if (i < spec.size()) type = spec[i];
 
@@ -6973,6 +6976,21 @@ static const proto::ProtoObject* py_int_format(
             return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
         }
         default: pushDigits(mag, 10, hexLo); break;
+    }
+
+    // Apply thousands grouping to the magnitude digits.  For base 10
+    // ('d' / 'n') the group size is 3; for 'b' / 'o' / 'x' / 'X' the
+    // group size is 4 (matches CPython's `_` grouping on those types).
+    if (groupChar != '\0') {
+        int groupSize = (type == 'b' || type == 'o' || type == 'x' || type == 'X') ? 4 : 3;
+        std::string grouped;
+        int count = 0;
+        for (auto it = digits.rbegin(); it != digits.rend(); ++it) {
+            if (count > 0 && count % groupSize == 0) grouped.insert(grouped.begin(), groupChar);
+            grouped.insert(grouped.begin(), *it);
+            ++count;
+        }
+        digits = grouped;
     }
 
     // Build the signed/prefixed body.
@@ -10434,8 +10452,11 @@ static std::string applyFormatSpec(proto::ProtoContext* context, const proto::Pr
     int width = 0;
     while (si < spec.size() && spec[si] >= '0' && spec[si] <= '9')
         width = width * 10 + (spec[si++] - '0');
-    // Grouping
-    if (si < spec.size() && (spec[si] == '_' || spec[si] == ',')) si++;
+    // Grouping (PEP 378 thousands separator).
+    char groupChar = '\0';
+    if (si < spec.size() && (spec[si] == '_' || spec[si] == ',')) {
+        groupChar = spec[si++];
+    }
     // Precision
     int prec = -1;
     if (si < spec.size() && spec[si] == '.') {
@@ -10509,6 +10530,37 @@ static std::string applyFormatSpec(proto::ProtoContext* context, const proto::Pr
         }
     } else {
         result = PythonEnvironment::reprObject(context, obj);
+    }
+
+    // PEP 378 grouping — insert `groupChar` every N digits from the
+    // right of the integer (or "before the decimal point" for floats)
+    // BEFORE the width / alignment pass below.  groupSize is 3 for
+    // base 10, 4 for hex / oct / bin (matches CPython for `_`).
+    if (groupChar != '\0' && !result.empty()) {
+        int groupSize = (type == 'b' || type == 'o' || type == 'x' || type == 'X') ? 4 : 3;
+        // Identify the integer portion.  For floats with a '.' or 'e'
+        // separator the comma applies to digits before that mark.
+        size_t intEnd = result.size();
+        for (size_t k = 0; k < result.size(); ++k) {
+            if (result[k] == '.' || result[k] == 'e' || result[k] == 'E') { intEnd = k; break; }
+        }
+        size_t intStart = 0;
+        // Skip a leading sign / 0x prefix.
+        if (intStart < intEnd && (result[intStart] == '+' || result[intStart] == '-' || result[intStart] == ' ')) ++intStart;
+        if (intStart + 1 < intEnd && result[intStart] == '0'
+            && (result[intStart + 1] == 'x' || result[intStart + 1] == 'X'
+             || result[intStart + 1] == 'o' || result[intStart + 1] == 'b')) intStart += 2;
+        std::string head = result.substr(0, intStart);
+        std::string digits = result.substr(intStart, intEnd - intStart);
+        std::string rest = result.substr(intEnd);
+        std::string grouped;
+        int count = 0;
+        for (auto it = digits.rbegin(); it != digits.rend(); ++it) {
+            if (count > 0 && count % groupSize == 0) grouped.insert(grouped.begin(), groupChar);
+            grouped.insert(grouped.begin(), *it);
+            ++count;
+        }
+        result = head + grouped + rest;
     }
 
     // Apply width and alignment
