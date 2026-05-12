@@ -4685,8 +4685,48 @@ static const proto::ProtoObject* py_bytes_call(
         std::string zeros(static_cast<size_t>(n), '\0');
         return bytes_make_object(context, zeros.data(), static_cast<unsigned long>(zeros.size()));
     }
+    // bytes(str) without an encoding kwarg is a TypeError in CPython:
+    //   "string argument without an encoding"
+    // Previously this fell into the __iter__ branch which iterated
+    // characters and then asLong panicked with the internal C++
+    // exception "Object is not an integer type".  Detect raw strings
+    // and arg counts to emit the canonical TypeError.
+    if (arg->isString(context) && positionalParameters->getSize(context) < 3) {
+        if (env) env->raiseTypeError(context,
+            "string argument without an encoding");
+        return nullptr;
+    }
+    if (arg->isFloat(context) || arg == PROTO_NONE) {
+        if (env) {
+            std::string clsName = arg == PROTO_NONE ? "NoneType" : "float";
+            env->raiseTypeError(context,
+                "cannot convert '" + clsName + "' object to bytes");
+        }
+        return nullptr;
+    }
+    // bytes(str, encoding) — encode the string.  Best-effort utf-8
+    // for now (CPython supports a wide set of codecs).
+    if (arg->isString(context) && positionalParameters->getSize(context) >= 3) {
+        std::string s;
+        arg->asString(context)->toUTF8String(context, s);
+        return bytes_make_object(context, s.data(), static_cast<unsigned long>(s.size()));
+    }
     const proto::ProtoObject* iterAttr = arg->getAttribute(context, PythonEnvironment::getInternalString(context, "__iter__"));
-    if (!iterAttr || !iterAttr->asMethod(context)) return PROTO_NONE;
+    if (!iterAttr || !iterAttr->asMethod(context)) {
+        // Non-iterable non-int / non-str: CPython raises
+        //   TypeError: cannot convert 'X' object to bytes
+        if (env) {
+            std::string clsName = "object";
+            const proto::ProtoObject* cls = env->getType(context, arg);
+            if (cls) {
+                const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
+                if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+            }
+            env->raiseTypeError(context,
+                "cannot convert '" + clsName + "' object to bytes");
+        }
+        return nullptr;
+    }
     const proto::ProtoList* empty = context->newList();
     const proto::ProtoObject* iterResult = iterAttr->asMethod(context)(context, arg, nullptr, empty, nullptr);
     if (!iterResult) return PROTO_NONE;
@@ -4698,10 +4738,30 @@ static const proto::ProtoObject* py_bytes_call(
     for (;;) {
         const proto::ProtoObject* item = nextAttr->asMethod(context)(context, iterResult, nullptr, nextArgs, nullptr);
         if (!item || item == PROTO_NONE) break;
-        long long v = 0;
-        try { v = item->asLong(context); }
-        catch (const std::overflow_error&) { continue; }
-        if (v < 0 || v > 255) continue;
+        if (!item->isInteger(context) && !item->isBoolean(context)) {
+            // CPython: bytes constructor rejects non-int iterable items.
+            //   TypeError: 'X' object cannot be interpreted as an integer
+            if (env) {
+                std::string clsName = "object";
+                const proto::ProtoObject* cls = env->getType(context, item);
+                if (cls) {
+                    const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
+                    if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+                }
+                env->raiseTypeError(context,
+                    "'" + clsName + "' object cannot be interpreted as an integer");
+            }
+            return nullptr;
+        }
+        long long v = item == PROTO_TRUE ? 1
+                    : item == PROTO_FALSE ? 0
+                    : item->asLong(context);
+        if (v < 0 || v > 255) {
+            if (env) env->raiseValueError(context,
+                PythonEnvironment::getInternedString(context,
+                    "bytes must be in range(0, 256)")->asObject(context));
+            return nullptr;
+        }
         out += static_cast<char>(static_cast<unsigned char>(v));
     }
     return bytes_make_object(context, out.data(), static_cast<unsigned long>(out.size()));
