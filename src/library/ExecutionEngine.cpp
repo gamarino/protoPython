@@ -7663,6 +7663,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 // GC reachability now depends on iterObj surviving.
                 PythonEnvironment::TransientPin pinIt(env, iterObj);
                 std::vector<const proto::ProtoObject*> items;
+                int got = 0;
                 for (int j = 0; j < arg; ++j) {
                     const proto::ProtoObject* val = env->next(iterObj);
                     if (!val) {
@@ -7670,20 +7671,31 @@ const proto::ProtoObject* executeBytecodeRange(
                             env->clearPendingException();
                         }
                         if (!env->hasPendingException()) {
-                            env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, "not enough values to unpack")->asObject(ctx));
+                            // CPython embeds the expected and got counts:
+                            //   ValueError: not enough values to unpack (expected 3, got 2)
+                            std::string msg = "not enough values to unpack (expected "
+                                + std::to_string(arg) + ", got " + std::to_string(got) + ")";
+                            env->raiseValueError(ctx,
+                                PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx));
                         }
                         break;
                     }
                     items.push_back(val);
+                    got++;
                 }
                 if (env->hasPendingException()) {
                     i = next_i; continue;
                 }
-                
+
                 // Check if there are too many values
                 const proto::ProtoObject* excess = env->next(iterObj);
                 if (excess) {
-                    env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, "too many values to unpack")->asObject(ctx));
+                    // CPython:
+                    //   ValueError: too many values to unpack (expected 2)
+                    std::string msg = "too many values to unpack (expected "
+                        + std::to_string(arg) + ")";
+                    env->raiseValueError(ctx,
+                        PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx));
                     i = next_i; continue;
                 } else if (env->hasPendingException() && env->isStopIteration(ctx, env->peekPendingException())) {
                     env->clearPendingException();
