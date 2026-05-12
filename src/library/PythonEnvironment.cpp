@@ -10179,24 +10179,95 @@ static const proto::ProtoObject* py_str_format(
             fieldName = field;
         }
 
-        // Resolve value
+        // Split fieldName into a base (digits / identifier / empty) and a
+        // tail of '.attr' / '[index]' access steps.  Without this, format
+        // specifiers like '{0[0]}' and '{0.real}' resolved to the bare
+        // positional value, ignoring every dotted attribute / indexed
+        // access — '{0[0]}'.format([10,20]) returned '[10, 20]'.
+        std::string baseName = fieldName;
+        std::string tail;
+        for (size_t fi = 0; fi < fieldName.size(); ++fi) {
+            if (fieldName[fi] == '.' || fieldName[fi] == '[') {
+                baseName = fieldName.substr(0, fi);
+                tail = fieldName.substr(fi);
+                break;
+            }
+        }
+
+        // Resolve base value via the auto / numeric / keyword rules.
         const proto::ProtoObject* val = PROTO_NONE;
-        if (fieldName.empty()) {
+        if (baseName.empty()) {
             // auto-index
             if (positionalParameters && autoIdx < positionalParameters->getSize(context))
                 val = positionalParameters->getAt(context, static_cast<int>(autoIdx));
             autoIdx++;
-        } else if (!fieldName.empty() && fieldName[0] >= '0' && fieldName[0] <= '9') {
+        } else if (!baseName.empty() && baseName[0] >= '0' && baseName[0] <= '9') {
             // numeric index — shifted by formatPosOff when called unbound
-            unsigned long idx = std::stoul(fieldName) + static_cast<unsigned long>(formatPosOff);
+            unsigned long idx = std::stoul(baseName) + static_cast<unsigned long>(formatPosOff);
             if (positionalParameters && idx < positionalParameters->getSize(context))
                 val = positionalParameters->getAt(context, static_cast<int>(idx));
         } else {
             // keyword
             if (keywordParameters && env) {
-                const proto::ProtoString* keyS = PythonEnvironment::getInternedString(context, fieldName.c_str());
+                const proto::ProtoString* keyS = PythonEnvironment::getInternedString(context, baseName.c_str());
                 const proto::ProtoObject* found = keywordParameters->getAt(context, keyS->getHash(context));
                 if (found) val = found;
+            }
+        }
+
+        // Walk the access tail: each '.attr' becomes a getattr, each
+        // '[key]' a __getitem__ — integer keys converted to int when the
+        // bracketed content parses as decimal, string keys otherwise
+        // (matching CPython's format_spec / PEP 3101 grammar).
+        for (size_t ti = 0; ti < tail.size();) {
+            if (tail[ti] == '.') {
+                size_t end = ti + 1;
+                while (end < tail.size() && tail[end] != '.' && tail[end] != '[') ++end;
+                std::string attrName = tail.substr(ti + 1, end - ti - 1);
+                if (val && val != PROTO_NONE) {
+                    const proto::ProtoString* nm = PythonEnvironment::getInternedString(context, attrName.c_str());
+                    const proto::ProtoObject* next = val->getAttribute(context, nm);
+                    val = next ? next : PROTO_NONE;
+                }
+                ti = end;
+            } else if (tail[ti] == '[') {
+                size_t end = ti + 1;
+                while (end < tail.size() && tail[end] != ']') ++end;
+                std::string keyText = tail.substr(ti + 1, end - ti - 1);
+                bool numeric = !keyText.empty();
+                for (char c : keyText) if (c < '0' || c > '9') { numeric = false; break; }
+                if (val && val != PROTO_NONE) {
+                    if (numeric) {
+                        long long idx = std::stoll(keyText);
+                        const proto::ProtoObject* getitemM = env
+                            ? env->getAttribute(context, val,
+                                PythonEnvironment::getInternedString(context, "__getitem__"), false)
+                            : nullptr;
+                        if (getitemM && getitemM->asMethod(context)) {
+                            const proto::ProtoList* ga = context->newList()
+                                ->appendLast(context, context->fromInteger(idx));
+                            const proto::ProtoObject* next = getitemM->asMethod(context)(
+                                context, val, nullptr, ga, nullptr);
+                            val = next ? next : PROTO_NONE;
+                        }
+                    } else {
+                        const proto::ProtoObject* keyObj =
+                            PythonEnvironment::getInternedString(context, keyText.c_str())->asObject(context);
+                        const proto::ProtoObject* getitemM = env
+                            ? env->getAttribute(context, val,
+                                PythonEnvironment::getInternedString(context, "__getitem__"), false)
+                            : nullptr;
+                        if (getitemM && getitemM->asMethod(context)) {
+                            const proto::ProtoList* ga = context->newList()->appendLast(context, keyObj);
+                            const proto::ProtoObject* next = getitemM->asMethod(context)(
+                                context, val, nullptr, ga, nullptr);
+                            val = next ? next : PROTO_NONE;
+                        }
+                    }
+                }
+                ti = (end < tail.size()) ? end + 1 : tail.size();
+            } else {
+                ++ti;
             }
         }
 
