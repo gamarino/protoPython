@@ -497,7 +497,11 @@ static const proto::ProtoObject* py_print(
             }
         } else if (obj->isDouble(context)) {
             // Shortest round-trip representation matching CPython's str/repr
-            // for floats. std::to_string would emit "3.500000" for 3.5.
+            // for floats.  Mirrors py_float_format_short: pick the smallest
+            // %.*g precision that round-trips, then if the result switched
+            // to scientific notation inside [1e-4, 1e16) re-render with
+            // %.*f at the smallest round-tripping precision so that e.g.
+            // `print(1200.0)` emits "1200.0" instead of "1.2e+03".
             double val = obj->asDouble(context);
             if (std::isnan(val)) {
                 std::cout << "nan";
@@ -507,11 +511,22 @@ static const proto::ProtoObject* py_print(
                 char buf[64];
                 for (int prec = 1; prec <= 17; ++prec) {
                     std::snprintf(buf, sizeof(buf), "%.*g", prec, val);
-                    char* end = nullptr;
-                    double parsed = std::strtod(buf, &end);
+                    char* parseEnd = nullptr;
+                    double parsed = std::strtod(buf, &parseEnd);
                     if (parsed == val) break;
                 }
                 std::string s(buf);
+                double absVal = std::fabs(val);
+                bool hasE = s.find('e') != std::string::npos
+                         || s.find('E') != std::string::npos;
+                if (hasE && val != 0.0 && absVal >= 1e-4 && absVal < 1e16) {
+                    for (int prec = 0; prec <= 17; ++prec) {
+                        std::snprintf(buf, sizeof(buf), "%.*f", prec, val);
+                        char* parseEnd = nullptr;
+                        double parsed = std::strtod(buf, &parseEnd);
+                        if (parsed == val) { s = buf; break; }
+                    }
+                }
                 bool hasDecimal = false;
                 for (char c : s) {
                     if (c == '.' || c == 'e' || c == 'E') { hasDecimal = true; break; }
