@@ -193,6 +193,111 @@ the receiver's `__mro__` for tuplePrototype/listPrototype and
 substitute the primitive prototype before wrapping the result,
 matching CPython's unoverridden-dunder semantics.
 
+### Fixed: 20-commit sweep — range / slice protocol + f-string format spec + int/float parsing + py_print kwargs + bytes.hex/fromhex
+
+Sixth twenty-commit sweep this session.  Theme: the sequence
+protocol on `range` and `slice`, f-string format spec dispatch,
+PEP 515 underscore parsing in `int()` / `float()`, missing
+`print()` kwargs, and round-trip-correct `bytes.hex` /
+`bytes.fromhex`.  `ctest --test-dir build` stayed at **199/199**
+throughout.
+
+Highlights:
+
+- **`range` is finally a real sequence**:
+  - `__getitem__` implemented for int, bool, slice, and the
+    `__index__` protocol.  `range(10)[5]` returns 5, slicing
+    builds a new range with the right (start, stop, step), and
+    out-of-bounds raises `IndexError`.
+  - `.start` / `.stop` / `.step` exposed as public attributes
+    (CPython's read-only properties).
+  - `.count(x)` / `.index(x)` implemented via a shared
+    `range_locate` closed-form (`x = start + i*step`).
+  - `__repr__` / `__str__` produce `range(0, 10)` /
+    `range(start, stop, step)`; rangeClass also gained an
+    `__mro__` so MRO-driven dunder lookups find `range.__repr__`
+    before falling through to `object`.
+- **`slice.indices(length)`** implemented (CPython sequence-mapping
+  helper).  Normalises (start, stop, step) against a sequence
+  length with the full CPython direction / bounds rules; raises
+  `ValueError` on step==0 or negative length.
+- **`str.format` field accessors** — `'{0[0]}'.format([10,20])`
+  used to return `'[10, 20]'`; the dotted attribute and indexed
+  access tail of the field reference are now walked.  `{0.real}`,
+  `{x[key]}`, `{0[a][b]}` all work.
+- **`bytes.startswith` / `endswith` accept a tuple of prefixes**.
+  `b'hello'.startswith((b'xy', b'zz'))` returned True (any tuple
+  matched); now iterates the tuple and returns True only when one
+  alternative matches.
+- **Exception hierarchy** — ArithmeticError and LookupError are
+  now proper intermediate tiers, so `issubclass(ZeroDivisionError,
+  ArithmeticError)`, `issubclass(KeyError, LookupError)`, and
+  `issubclass(IndexError, LookupError)` return True (all returned
+  False before).  `except ArithmeticError:` / `except LookupError:`
+  catch the corresponding concrete errors.
+- **`property.setter` / `.getter` / `.deleter`** — `@x.setter`
+  produced a property whose `p.x` access returned the property
+  object instead of firing fget.  py_property_copy_with dropped
+  setAttribute returns AND nested the copy under the previous
+  property (data-descriptor walk found `__set__` two levels up but
+  the descriptor protocol short-circuited).  Both fixed: every
+  `prop = prop->setAttribute(...)` rebinds, and the copy now
+  parents directly off `self.__class__` (the property class).
+- **`dict.update` rounding** — the previous round's commit broke
+  `import enum` (mappingproxy's `__keys__` / `__data__` are
+  inherited, not own, so the fast path was skipped).  Relax the
+  detection to `getAttribute` and add a `keys()` mapping protocol
+  branch before the iterable-of-pairs branch so dicts proxies and
+  custom Mapping subclasses route correctly.
+- **`int()` string parsing** — three correctness gaps:
+  - `int('0x1F')` returned 31 (auto-detected prefix at base 10).
+    Auto-detect now requires explicit base=0; default base=10
+    rejects prefixes.
+  - `int('1_000_000')` returned 1.  PEP 515 underscores between
+    digits are now accepted; leading / trailing / consecutive
+    underscores raise.
+  - `int('0x1F')` (with auto-detect off) and `int('42.5')`
+    silently returned 0 / 42.  Every digit is validated against
+    the resolved base's alphabet — invalid chars raise
+    `ValueError("invalid literal for int() with base N: '...'")`.
+- **`float()` string parsing** — PEP 515 underscores accepted
+  (rejecting placements adjacent to '.', 'e', 'E', or the sign).
+  Trailing garbage now raises — `float('1.5abc')` was silently
+  returning 1.5 because `std::stod` consumed only the prefix and
+  the consumed count was never checked.
+- **f-string format spec** — `f'{42:05d}'` returned `'42'` and
+  `f'{3.14:.2f}'` returned `'3.140000'`; FormattedValueNode
+  captured `format_spec` but the compiler dropped it.  Emit
+  `format(value, spec)` so f-strings and `'{:spec}'.format(x)`
+  share one code path.
+- **`str.split` / `bytes.split` keyword args** — `maxsplit` and
+  `sep` are now accepted as keyword arguments via
+  `env->getCurrentKwNames()`.  `'a b c'.split(maxsplit=1)` returns
+  `['a', 'b c']`; the bytes form was similarly broken (always
+  splitting everywhere).
+- **`datetime.date.__str__`** + `__mro__` — `str(date(2026,5,12))`
+  emitted the generic `<date object at 0x...>` because the MRO
+  walk on a class with no `__mro__` fell through to
+  `object.__str__`.  Register `__str__` = `isoformat` and set
+  `__mro__ = (date, object)`.
+- **`print()` honours `__str__` / kwargs**:
+  - For non-primitive types, walk type's MRO for `__str__` first;
+    only fall back to reprObject when absent.  Previously
+    `print(date(2026,5,12))` showed `datetime.date(2026, 5, 12)`
+    (the repr).
+  - Honour `sep`, `end`, and `file=sys.stderr` keyword arguments.
+    Buffer the rendered output in an ostringstream so the final
+    destination is selected at flush time.
+- **`bytes.fromhex`** tolerates whitespace between byte pairs.
+  `bytes.fromhex('00 01 02')` returned `b'\x00\x02'`; the parser
+  stepped by 2 and silently dropped one nibble whenever a space
+  landed on an odd index.  Now raises `ValueError` on invalid
+  chars or a dangling nibble.
+- **`bytes.hex(sep, bytes_per_sep=1)`** accepts the separator and
+  group-size arguments (positive → group from the right, negative
+  → group from the left), making it round-trip compatible with
+  the fixed `bytes.fromhex`.
+
 ### Fixed: 21-commit sweep — format minilanguage + __index__ protocol + iter validation + dict.update iterables + bool spelling
 
 Fifth twenty-commit sweep this session (21 commits in this round).
