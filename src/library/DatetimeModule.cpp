@@ -1366,8 +1366,33 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
                                     ctx->fromMethod(nullptr, py_date_timetuple));
     dateType = dateType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "strftime"), 
                                     ctx->fromMethod(nullptr, py_date_strftime));
-    dateType = dateType->setAttribute(ctx, env->getReprString(), 
+    dateType = dateType->setAttribute(ctx, env->getReprString(),
                                     ctx->fromMethod(nullptr, py_date_repr));
+    // CPython: `str(d)` == `d.isoformat()` for a date.  Without an
+    // explicit __str__ on dateType, the MRO walk in
+    // PythonEnvironment::reprObject would either fall through to
+    // object.__str__ (producing `<date object at 0x...>`) or hit our
+    // own __repr__ — but missing __mro__ on dateType caused the same
+    // class of regression that the range class had: the str / repr
+    // dispatcher couldn't find date.__repr__ at all when it walked
+    // an empty MRO.  Install __str__ = isoformat and set __mro__ /
+    // __bases__ so dunder lookups see the date level first.
+    dateType = dateType->setAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__str__"),
+        ctx->fromMethod(nullptr, py_date_isoformat));
+    if (env && env->getObjectPrototype()) {
+        const proto::ProtoList* mroL = ctx->newList()
+            ->appendLast(ctx, dateType)
+            ->appendLast(ctx, env->getObjectPrototype());
+        dateType = dateType->setAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__mro__"),
+            ctx->newTupleFromList(mroL)->asObject(ctx));
+        const proto::ProtoList* basesL = ctx->newList()
+            ->appendLast(ctx, env->getObjectPrototype());
+        dateType = dateType->setAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__bases__"),
+            ctx->newTupleFromList(basesL)->asObject(ctx));
+    }
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "date"), dateType);
 
     // datetime
