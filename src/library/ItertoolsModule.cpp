@@ -59,16 +59,27 @@ static const proto::ProtoObject* py_islice_next(
     const proto::ProtoObject* it = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__islice_it__"));
     const proto::ProtoObject* stopObj = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__islice_stop__"));
     const proto::ProtoObject* idxObj = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__islice_idx__"));
+    const proto::ProtoObject* stepObj = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__islice_step__"));
     if (!it || !stopObj || !idxObj) return PROTO_NONE;
     long long idx = idxObj->asLong(ctx);
     long long stop = stopObj->asLong(ctx);
+    long long step = (stepObj && stepObj->isInteger(ctx)) ? stepObj->asLong(ctx) : 1;
+    if (step < 1) step = 1;
     if (idx >= stop) return nullptr;
-
-    const proto::ProtoObject* nextM = it->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__next__"));
-    if (!nextM || !nextM->asMethod(ctx)) return nullptr;
-    const proto::ProtoObject* val = nextM->asMethod(ctx)(ctx, it, nullptr, ctx->newList(), nullptr);
-    if (!val || val == PROTO_NONE) return nullptr;
-    self->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__islice_idx__"), ctx->fromInteger(idx + 1));
+    // Drive iteration through env->next so user-class __next__
+    // works.  The previous asMethod-only gate dropped any Python
+    // iterator and silently terminated islice at the first step.
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoObject* val = env ? env->next(it) : nullptr;
+    if (!val) return nullptr;
+    // Apply step: after yielding, skip `step - 1` extra items.
+    long long advance = step;
+    for (long long s = 1; s < step && idx + s < stop; ++s) {
+        const proto::ProtoObject* skip = env ? env->next(it) : nullptr;
+        if (!skip) { advance = s + 1; break; }
+    }
+    self->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__islice_idx__"),
+                       ctx->fromInteger(idx + advance));
     return val;
 }
 
@@ -89,16 +100,18 @@ static const proto::ProtoObject* py_islice(
         if (posArgs->getSize(ctx) >= 4) step = posArgs->getAt(ctx, 3)->asLong(ctx);
     }
 
-    const proto::ProtoObject* iterM = iterable->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__iter__"));
-    if (!iterM || !iterM->asMethod(ctx)) return PROTO_NONE;
-    const proto::ProtoObject* it = iterM->asMethod(ctx)(ctx, iterable, nullptr, ctx->newList(), nullptr);
-    if (!it) return PROTO_NONE;
-
+    // Use env->iter so user-class __iter__ works (Python-level
+    // callables are invisible to the bespoke asMethod check).
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoObject* it = env ? env->iter(iterable) : nullptr;
+    if (!it) {
+        if (env && env->hasPendingException()) return nullptr;
+        return PROTO_NONE;
+    }
+    // Consume the `start` prefix before yielding anything.
     for (long long i = 0; i < start; ++i) {
-        const proto::ProtoObject* nextM = it->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__next__"));
-        if (!nextM || !nextM->asMethod(ctx)) break;
-        const proto::ProtoObject* v = nextM->asMethod(ctx)(ctx, it, nullptr, ctx->newList(), nullptr);
-        if (!v || v == PROTO_NONE) break;
+        const proto::ProtoObject* v = env->next(it);
+        if (!v) break;
     }
 
     const proto::ProtoObject* proto = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__islice_proto__"));
@@ -107,6 +120,7 @@ static const proto::ProtoObject* py_islice(
     sl = sl->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__islice_it__"), it);
     sl = sl->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__islice_stop__"), ctx->fromInteger(stop));
     sl = sl->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__islice_idx__"), ctx->fromInteger(start));
+    sl = sl->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__islice_step__"), ctx->fromInteger(step));
     return sl;
 }
 
