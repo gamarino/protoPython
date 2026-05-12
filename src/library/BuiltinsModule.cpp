@@ -406,8 +406,21 @@ static const proto::ProtoObject* py_len(
     if (obj->asSet(context)) return context->fromInteger(obj->asSet(context)->getSize(context));
     if (obj->isString(context)) return context->fromInteger(obj->asString(context)->getSize(context));
 
-    if (env) env->raiseTypeError(context, "'" + PythonEnvironment::reprObject(context, obj) + "' has no len()");
-    return context->fromInteger(0);
+    if (env) {
+        // CPython names the TYPE in this error, not the receiver's repr.
+        // Emitting `'5' has no len()` or `'1.5' has no len()` (the
+        // literal value!) diverged from CPython's
+        //   "object of type 'int' has no len()"
+        // and broke assertRaisesRegex matchers in test suites.
+        std::string clsName = "object";
+        const proto::ProtoObject* cls = env->getType(context, obj);
+        if (cls) {
+            const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
+            if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+        }
+        env->raiseTypeError(context, "object of type '" + clsName + "' has no len()");
+    }
+    return nullptr;
 }
 
 
