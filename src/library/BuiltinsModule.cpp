@@ -1328,6 +1328,26 @@ static const proto::ProtoObject* py_format(
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    // Subclasses of int / float carry their numeric value inside __data__.
+    // Unwrap so the int / float fast paths below recognise them as
+    // numeric and route through the proper minilanguage implementation.
+    {
+        PythonEnvironment* envU = PythonEnvironment::fromContext(context);
+        if (envU && obj && !obj->isInteger(context) && !obj->isDouble(context)) {
+            // bool singletons: route through the integer fast path so
+            // format(True, 'd') == '1' rather than crashing on asLong.
+            if (obj == PROTO_TRUE) {
+                obj = context->fromLong(1);
+            } else if (obj == PROTO_FALSE) {
+                obj = context->fromLong(0);
+            } else {
+                const proto::ProtoObject* data = obj->getAttribute(context, envU->getDataString());
+                if (data && (data->isInteger(context) || data->isDouble(context))) {
+                    obj = data;
+                }
+            }
+        }
+    }
     // Read the format spec from positional[1] when present; default empty.
     std::string spec;
     if (positionalParameters->getSize(context) >= 2) {

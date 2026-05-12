@@ -6716,7 +6716,18 @@ static const proto::ProtoObject* py_int_format(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    long long v = self->asLong(context);
+    // Unwrap subclass instances: format(MyInt(42), ...) hands us a wrapped
+    // object whose underlying integer lives in __data__.  Mirror the
+    // pattern used by py_int_repr / py_int_bool.
+    const proto::ProtoObject* intObj = self;
+    if (!intObj->isInteger(context)) {
+        PythonEnvironment* envU = PythonEnvironment::fromContext(context);
+        const proto::ProtoObject* data = intObj->getAttribute(context,
+            envU ? envU->getDataString()
+                 : PythonEnvironment::getInternalString(context, "__data__"));
+        if (data && data->isInteger(context)) intObj = data;
+    }
+    long long v = intObj->asLong(context);
     // Parse the format spec: [[fill]align][sign][#][0][width][type]
     // CPython format minilanguage subset for int: d (default), b, o, x, X,
     // n (locale, treated as d), c (char).  Previously the spec was
