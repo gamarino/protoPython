@@ -8573,6 +8573,18 @@ static const proto::ProtoObject* py_bytes_contains(
             return PROTO_FALSE;
         }
         needle = static_cast<char>(static_cast<unsigned char>(v));
+    } else if (needleObj->isString(context)) {
+        // CPython: 'a' in b'abc' raises
+        //   TypeError: a bytes-like object is required, not 'str'
+        // bytes_view tolerates raw strings (for internal callers like
+        // bytes.maketrans) so reject explicitly here for the operator
+        // `in` form.  Wrapped bytes / bytearray instances are not raw
+        // strings — isString returns false for them — so they keep
+        // working through bytes_view below.
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env) env->raiseTypeError(context,
+            "a bytes-like object is required, not 'str'");
+        return nullptr;
     } else if (!bytes_view(context, needleObj, needle)) {
         return PROTO_FALSE;
     }
