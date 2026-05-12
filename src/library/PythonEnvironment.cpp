@@ -3566,6 +3566,28 @@ static const proto::ProtoObject* py_list_pop(
         if (idxObj->isInteger(context)) {
             index = static_cast<int>(idxObj->asLong(context));
             if (index < 0) index += static_cast<int>(size);
+        } else if (idxObj == PROTO_TRUE) {
+            index = 1; if (index < 0) index += static_cast<int>(size);
+        } else if (idxObj == PROTO_FALSE) {
+            index = 0;
+        } else {
+            // CPython: l.pop(non_int) raises
+            //   TypeError: 'X' object cannot be interpreted as an integer
+            // Previously the bad index was silently ignored and the last
+            // element popped — making `l.pop('a')` silently identical to
+            // `l.pop()`, masking misuse.
+            PythonEnvironment* envE = PythonEnvironment::fromContext(context);
+            if (envE) {
+                std::string clsName = "object";
+                const proto::ProtoObject* cls = envE->getType(context, idxObj);
+                if (cls) {
+                    const proto::ProtoObject* nm = cls->getAttribute(context, envE->getNameString());
+                    if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+                }
+                envE->raiseTypeError(context,
+                    "'" + clsName + "' object cannot be interpreted as an integer");
+            }
+            return nullptr;
         }
     }
 
