@@ -9139,6 +9139,32 @@ static void bytes_needle_from_arg(proto::ProtoContext* context, const proto::Pro
     bytes_view(context, arg, out);
 }
 
+// Shared start / end helpers: try a single bytes-like prefix / suffix
+// against haystack[start:end].  Returns 1 = match, 0 = mismatch,
+// -1 = invalid argument (caller raises TypeError).
+static int bytes_startswith_one(proto::ProtoContext* context, const std::string& haystack,
+        const proto::ProtoObject* prefArg, long long start, long long end) {
+    if (prefArg && prefArg->isString(context)) return -1;
+    std::string prefix;
+    bytes_needle_from_arg(context, prefArg, prefix);
+    if (start < 0) start = 0;
+    if (end > static_cast<long long>(haystack.size())) end = static_cast<long long>(haystack.size());
+    if (prefix.size() > static_cast<size_t>(end - start) || start > end) return 0;
+    return haystack.compare(static_cast<size_t>(start), prefix.size(), prefix) == 0 ? 1 : 0;
+}
+static int bytes_endswith_one(proto::ProtoContext* context, const std::string& haystack,
+        const proto::ProtoObject* sufArg, long long start, long long end) {
+    if (sufArg && sufArg->isString(context)) return -1;
+    std::string suffix;
+    bytes_needle_from_arg(context, sufArg, suffix);
+    if (start < 0) start = 0;
+    if (end > static_cast<long long>(haystack.size())) end = static_cast<long long>(haystack.size());
+    if (suffix.size() > static_cast<size_t>(end - start) || start > end) return 0;
+    size_t pos = static_cast<size_t>(end) - suffix.size();
+    if (pos < static_cast<size_t>(start)) return 0;
+    return haystack.compare(pos, suffix.size(), suffix) == 0 ? 1 : 0;
+}
+
 static const proto::ProtoObject* py_bytes_startswith(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -9146,25 +9172,34 @@ static const proto::ProtoObject* py_bytes_startswith(
     std::string haystack;
     if (!bytes_data_view(context, self, haystack) || posArgs->getSize(context) < 1) return PROTO_FALSE;
     const proto::ProtoObject* prefArg = posArgs->getAt(context, 0);
-    // CPython: startswith requires a bytes (or tuple of bytes).  Raw
-    // str silently coerced via bytes_view returning True/False.
-    if (prefArg && prefArg->isString(context)) {
-        PythonEnvironment* env = PythonEnvironment::fromContext(context);
-        if (env) env->raiseTypeError(context,
-            "startswith first arg must be bytes or a tuple of bytes, not str");
-        return nullptr;
-    }
-    std::string prefix;
-    bytes_needle_from_arg(context, prefArg, prefix);
     long long start = 0, end = static_cast<long long>(haystack.size());
     if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isInteger(context))
         start = posArgs->getAt(context, 1)->asLong(context);
     if (posArgs->getSize(context) >= 3 && posArgs->getAt(context, 2)->isInteger(context))
         end = posArgs->getAt(context, 2)->asLong(context);
-    if (start < 0) start = 0;
-    if (end > static_cast<long long>(haystack.size())) end = static_cast<long long>(haystack.size());
-    if (prefix.size() > static_cast<size_t>(end - start) || start > end) return PROTO_FALSE;
-    return haystack.compare(static_cast<size_t>(start), prefix.size(), prefix) == 0 ? PROTO_TRUE : PROTO_FALSE;
+    // CPython: prefix may be a tuple of bytes-like; True if any matches.
+    const proto::ProtoTuple* pTup = prefArg ? prefArg->asTuple(context) : nullptr;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (pTup) {
+        unsigned long n = pTup->getSize(context);
+        for (unsigned long i = 0; i < n; ++i) {
+            int r = bytes_startswith_one(context, haystack, pTup->getAt(context, i), start, end);
+            if (r == -1) {
+                if (env) env->raiseTypeError(context,
+                    "startswith first arg must be bytes or a tuple of bytes, not str");
+                return nullptr;
+            }
+            if (r == 1) return PROTO_TRUE;
+        }
+        return PROTO_FALSE;
+    }
+    int r = bytes_startswith_one(context, haystack, prefArg, start, end);
+    if (r == -1) {
+        if (env) env->raiseTypeError(context,
+            "startswith first arg must be bytes or a tuple of bytes, not str");
+        return nullptr;
+    }
+    return r == 1 ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_bytes_endswith(
@@ -9174,25 +9209,33 @@ static const proto::ProtoObject* py_bytes_endswith(
     std::string haystack;
     if (!bytes_data_view(context, self, haystack) || posArgs->getSize(context) < 1) return PROTO_FALSE;
     const proto::ProtoObject* sufArg = posArgs->getAt(context, 0);
-    if (sufArg && sufArg->isString(context)) {
-        PythonEnvironment* env = PythonEnvironment::fromContext(context);
-        if (env) env->raiseTypeError(context,
-            "endswith first arg must be bytes or a tuple of bytes, not str");
-        return nullptr;
-    }
-    std::string suffix;
-    bytes_needle_from_arg(context, sufArg, suffix);
     long long start = 0, end = static_cast<long long>(haystack.size());
     if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isInteger(context))
         start = posArgs->getAt(context, 1)->asLong(context);
     if (posArgs->getSize(context) >= 3 && posArgs->getAt(context, 2)->isInteger(context))
         end = posArgs->getAt(context, 2)->asLong(context);
-    if (start < 0) start = 0;
-    if (end > static_cast<long long>(haystack.size())) end = static_cast<long long>(haystack.size());
-    if (suffix.size() > static_cast<size_t>(end - start) || start > end) return PROTO_FALSE;
-    size_t pos = static_cast<size_t>(end) - suffix.size();
-    if (pos < static_cast<size_t>(start)) return PROTO_FALSE;
-    return haystack.compare(pos, suffix.size(), suffix) == 0 ? PROTO_TRUE : PROTO_FALSE;
+    const proto::ProtoTuple* sTup = sufArg ? sufArg->asTuple(context) : nullptr;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (sTup) {
+        unsigned long n = sTup->getSize(context);
+        for (unsigned long i = 0; i < n; ++i) {
+            int r = bytes_endswith_one(context, haystack, sTup->getAt(context, i), start, end);
+            if (r == -1) {
+                if (env) env->raiseTypeError(context,
+                    "endswith first arg must be bytes or a tuple of bytes, not str");
+                return nullptr;
+            }
+            if (r == 1) return PROTO_TRUE;
+        }
+        return PROTO_FALSE;
+    }
+    int r = bytes_endswith_one(context, haystack, sufArg, start, end);
+    if (r == -1) {
+        if (env) env->raiseTypeError(context,
+            "endswith first arg must be bytes or a tuple of bytes, not str");
+        return nullptr;
+    }
+    return r == 1 ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_bytes_index(
