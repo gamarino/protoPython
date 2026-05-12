@@ -2392,6 +2392,41 @@ static const proto::ProtoObject* py_list_getitem(
         return list->getAt(context, static_cast<int>(index));
     }
 
+    // CPython: __index__ protocol — any object with a __index__
+    // method that returns an int is a valid index.  Without this,
+    // `[10, 20, 30][Idx()]` raised TypeError even when
+    // `class Idx: def __index__(self): return 1` was defined.
+    {
+        PythonEnvironment* envE = PythonEnvironment::fromContext(context);
+        if (envE) {
+            const proto::ProtoString* indexS =
+                PythonEnvironment::getInternedString(context, "__index__");
+            const proto::ProtoObject* indexM = envE->getAttribute(context, indexObj, indexS, /*raiseError=*/false);
+            if (indexM && indexM != PROTO_NONE) {
+                const proto::ProtoObject* idxRes = nullptr;
+                if (indexM->asMethod(context)) {
+                    idxRes = indexM->asMethod(context)(context,
+                        const_cast<proto::ProtoObject*>(indexObj), nullptr,
+                        envE->getEmptyList(), nullptr);
+                } else {
+                    // Python user `def __index__(self):` — invoke with
+                    // self prepended.  Mirrors py_hash / py_len handling.
+                    const proto::ProtoList* sa = context->newList()->appendLast(context, indexObj);
+                    idxRes = ::protoPython::invokePythonCallable(context, indexM, sa, nullptr);
+                }
+                if (idxRes && idxRes->isInteger(context)) {
+                    long long index = idxRes->asLong(context);
+                    if (index < 0) index += size;
+                    if (index < 0 || index >= size) {
+                        envE->raiseIndexError(context, "list index out of range");
+                        return PROTO_NONE;
+                    }
+                    return list->getAt(context, static_cast<int>(index));
+                }
+            }
+        }
+    }
+
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (env) env->raiseTypeError(context, "list indices must be integers or slices");
     return PROTO_NONE;
