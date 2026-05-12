@@ -1752,7 +1752,19 @@ static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
             if ((r != 0.0) && ((r < 0) != (db < 0))) r += db;
             return ctx->fromDouble(r);
         }
-        return aa->modulo(ctx, bb);
+        // CPython: int % int returns Python's floor-modulo — the
+        // remainder has the same sign as the divisor.  protoCore's
+        // Integer::modulo follows C truncation, so
+        //   -5 % 2 produced -1 instead of 1
+        //    5 % -2 produced 1 instead of -1
+        // Adjust by adding the divisor when the raw remainder is
+        // non-zero and its sign differs from the divisor's.
+        const proto::ProtoObject* r = aa->modulo(ctx, bb);
+        if (r->integerSign(ctx) != 0
+            && (r->integerSign(ctx) < 0) != (bb->integerSign(ctx) < 0)) {
+            r = r->add(ctx, bb);
+        }
+        return r;
     }
     if (a->isString(ctx)) {
         // Delegate to str.__mod__ via the Python env attribute lookup (respects strPrototype chain).
@@ -1827,7 +1839,28 @@ static const proto::ProtoObject* binaryFloorDivide(proto::ProtoContext* ctx,
             return PROTO_NONE;
         }
         if (aa_p->isInteger(ctx) && bb_p->isInteger(ctx)) {
-            return aa_p->divide(ctx, bb_p);
+            // CPython uses *floor* division — the result rounds toward
+            // negative infinity, not toward zero.  protoCore's
+            // Integer::divide truncates (C semantics) so
+            //   -5 // 2  produced -2 instead of -3
+            //    5 // -2 produced -2 instead of -3
+            // When operands have opposite signs and the division is
+            // inexact, the truncated quotient must be decremented by 1
+            // to reach the floor.
+            const proto::ProtoObject* q = aa_p->divide(ctx, bb_p);
+            // Check inexactness: q * b != a means we have a remainder.
+            // Sign-disagreement check: a and b have opposite signs and
+            // remainder is non-zero ⇒ subtract 1 from q.
+            const proto::ProtoObject* prod = q->multiply(ctx, bb_p);
+            int cmpProd = prod->compare(ctx, aa_p);
+            if (cmpProd != 0) {
+                int aSign = aa_p->integerSign(ctx);
+                int bSign = bb_p->integerSign(ctx);
+                if ((aSign < 0) != (bSign < 0)) {
+                    q = q->subtract(ctx, ctx->fromInteger(1));
+                }
+            }
+            return q;
         }
         double aa = aa_p->isDouble(ctx) ? aa_p->asDouble(ctx) : static_cast<double>(aa_p->asLong(ctx));
         double bb = bb_p->isDouble(ctx) ? bb_p->asDouble(ctx) : static_cast<double>(bb_p->asLong(ctx));
