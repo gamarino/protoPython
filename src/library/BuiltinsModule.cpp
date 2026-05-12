@@ -7650,6 +7650,65 @@ static const proto::ProtoObject* py_range_getitem(
     return context->fromInteger(start + idx * step);
 }
 
+// CPython: `r.count(x)` returns the number of times x appears (0 or 1
+// for a range — every value is unique).  `r.index(x)` returns its
+// position or raises ValueError.  Without these the typing.Sequence
+// ABC check failed and dataclass equality on a range-typed field
+// silently misbehaved.
+//
+// Shared core: see if x lies on the arithmetic progression
+// start + i*step for some 0 <= i < len, where x is an integer / bool.
+static bool range_locate(proto::ProtoContext* context, const proto::ProtoObject* self,
+                         const proto::ProtoObject* val, long long& outIdx) {
+    long long start = 0, stop = 0, step = 0, n = 0;
+    if (!range_view(context, self, start, stop, step, n) || n == 0) return false;
+    long long v;
+    if (val == PROTO_TRUE) v = 1;
+    else if (val == PROTO_FALSE) v = 0;
+    else if (val && val->isInteger(context)) v = val->asLong(context);
+    else return false;
+    if (step == 0) return false;
+    long long diff = v - start;
+    if (diff % step != 0) return false;
+    long long i = diff / step;
+    if (i < 0 || i >= n) return false;
+    outIdx = i;
+    return true;
+}
+
+static const proto::ProtoObject* py_range_count(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList*) {
+    if (!args || args->getSize(context) < 1) return context->fromInteger(0);
+    long long idx;
+    bool found = range_locate(context, self, args->getAt(context, 0), idx);
+    return context->fromInteger(found ? 1 : 0);
+}
+
+static const proto::ProtoObject* py_range_index(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!args || args->getSize(context) < 1) {
+        if (env) env->raiseTypeError(context, "range.index requires exactly 1 argument");
+        return nullptr;
+    }
+    long long idx;
+    if (!range_locate(context, self, args->getAt(context, 0), idx)) {
+        if (env) env->raiseValueError(context,
+            PythonEnvironment::getInternedString(context,
+                "value not in range")->asObject(context));
+        return nullptr;
+    }
+    return context->fromInteger(idx);
+}
+
 static const proto::ProtoObject* py_range_iter(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -9023,6 +9082,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     rangeClass = rangeClass->setAttribute(ctx, pEnv ? pEnv->getIterString() : PythonEnvironment::getInternedString(ctx, "__iter__"), ctx->fromMethod(nullptr, py_range_iter));
     rangeClass = rangeClass->setAttribute(ctx, pEnv ? pEnv->getLenString() : PythonEnvironment::getInternedString(ctx, "__len__"), ctx->fromMethod(nullptr, py_range_len));
     rangeClass = rangeClass->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__getitem__"), ctx->fromMethod(nullptr, py_range_getitem));
+    rangeClass = rangeClass->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "count"), ctx->fromMethod(nullptr, py_range_count));
+    rangeClass = rangeClass->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "index"), ctx->fromMethod(nullptr, py_range_index));
     rangeClass = rangeClass->setAttribute(ctx, pEnv ? pEnv->getInitString() : PythonEnvironment::getInternedString(ctx, "__init__"), ctx->fromMethod(nullptr, py_python_ignore_init));
     // range.__reversed__: build a new range with reversed bounds
     // and iterate it.  CPython returns a range_iterator directly;
