@@ -8024,6 +8024,43 @@ static const proto::ProtoObject* py_str_encode(
         const proto::ProtoObject* enc = positionalParameters->getAt(context, posOff);
         if (enc && enc->isString(context)) {
             enc->asString(context)->toUTF8String(context, encoding);
+        } else {
+            // CPython: str.encode(non_str) raises (including None).
+            //   TypeError: str.encode() argument 'encoding' must be str, not X
+            // Previously a non-string encoding silently fell back to
+            // utf-8 — `'abc'.encode(5)` produced b'abc' as if no
+            // encoding had been specified, masking misuse.
+            std::string clsName = (!enc || enc == PROTO_NONE) ? "NoneType" : "object";
+            if (enc && enc != PROTO_NONE) {
+                const proto::ProtoObject* cls = env->getType(context, enc);
+                if (cls) {
+                    const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
+                    if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+                }
+            }
+            env->raiseTypeError(context,
+                "str.encode() argument 'encoding' must be str, not " + clsName);
+            return nullptr;
+        }
+    }
+    // Also honour encoding= kwarg.
+    if (keywordParameters && keywordParameters->getSize(context) > 0 && encoding == "utf-8") {
+        const proto::ProtoString* encS = PythonEnvironment::getInternedString(context, "encoding");
+        if (keywordParameters->has(context, encS->getHash(context))) {
+            const proto::ProtoObject* v = keywordParameters->getAt(context, encS->getHash(context));
+            if (v && v->isString(context)) {
+                v->asString(context)->toUTF8String(context, encoding);
+            } else if (v && v != PROTO_NONE) {
+                std::string clsName = "object";
+                const proto::ProtoObject* cls = env->getType(context, v);
+                if (cls) {
+                    const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
+                    if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+                }
+                env->raiseTypeError(context,
+                    "str.encode() argument 'encoding' must be str, not " + clsName);
+                return nullptr;
+            }
         }
     }
     // Lower-case + canonical-form normalisation: 'ASCII', 'us-ascii',
