@@ -7351,6 +7351,19 @@ static const proto::ProtoObject* py_int_cmp(
     if (!lhsNumeric || !rhsNumeric) {
         return env ? env->getNotImplementedPrototype() : PROTO_NONE;
     }
+    // IEEE 754 NaN semantics — NaN compares unequal to everything,
+    // including itself.  protoCore's Float::compare returns 0 for
+    // two NaN values (treating them as identical bit patterns),
+    // so `nan == nan` came back True and `nan != nan` came back
+    // False.  Detect NaN on either side and short-circuit before
+    // dispatching to compare.
+    bool aIsNan = a->isFloat(ctx) && std::isnan(a->asDouble(ctx));
+    bool bIsNan = b->isFloat(ctx) && std::isnan(b->asDouble(ctx));
+    if (aIsNan || bIsNan) {
+        // CPython: every ordering / equality op with NaN returns False
+        // except != which returns True.
+        return (op == IntCmp::Ne) ? PROTO_TRUE : PROTO_FALSE;
+    }
     int cmp = a->compare(ctx, b);  // -1, 0, 1
     bool result = false;
     switch (op) {
@@ -22028,6 +22041,17 @@ bool PythonEnvironment::isResolved(const std::string& name, proto::ProtoContext*
 
 const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext* ctx, const proto::ProtoObject* a, const proto::ProtoObject* b, int op) {
     if (!a || !b) return PROTO_FALSE;
+
+    // IEEE 754 NaN semantics — `nan == nan` is False and
+    // `nan != nan` is True even when both sides are the same
+    // variable.  This MUST come before the identity short-circuit
+    // below; otherwise `x = float('nan'); x == x` resolves to
+    // pointer equality and incorrectly returns True.
+    bool aIsNan = a->isFloat(ctx) && std::isnan(a->asDouble(ctx));
+    bool bIsNan = b->isFloat(ctx) && std::isnan(b->asDouble(ctx));
+    if ((aIsNan || bIsNan) && op >= 0 && op <= 5) {
+        return (op == 1) ? PROTO_TRUE : PROTO_FALSE;
+    }
 
     // Identity short-circuit for == / !=: per Python semantics, an object
     // is always equal to itself.  This guarantees `cls == cls` returns True
