@@ -6554,14 +6554,44 @@ static const proto::ProtoObject* py_ord(
         return nullptr;
     }
     const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
-    if (!arg->isString(context)) {
-        // CPython accepts a length-1 bytes too, but reject anything
-        // else with TypeError.
+    std::string s;
+    // CPython: ord() accepts a single-character str OR a bytes /
+    // bytearray of length 1.  Previously the bytes path raised
+    // "expected a character, but a non-string was found" and tests
+    // matching on the type-aware "single character" wording failed.
+    bool isBytesArg = false;
+    if (arg && !arg->isString(context) && env) {
+        // Match the bytes-wrapper detection used by int(bytes) / float(bytes):
+        // __data__ resolves to a ByteBuffer (or ProtoString carrying raw
+        // octets) on the bytes prototype.
+        const proto::ProtoObject* d = arg->getAttribute(context, env->getDataString());
+        const proto::ProtoObject* cls = env->getType(context, arg);
+        if (d && cls == env->getBytesPrototype()) {
+            if (d->isByteBuffer(context)) {
+                const proto::ProtoByteBuffer* bb = d->asByteBuffer(context);
+                if (bb) { s.assign(bb->getBuffer(context), bb->getSize(context)); isBytesArg = true; }
+            } else if (d->isString(context)) {
+                d->asString(context)->toUTF8String(context, s);
+                isBytesArg = true;
+            }
+        }
+    }
+    if (!isBytesArg && !arg->isString(context)) {
         if (env) env->raiseTypeError(context,
             "ord() expected a character, but a non-string was found");
         return nullptr;
     }
-    std::string s;
+    if (isBytesArg) {
+        // bytes / bytearray: each byte is its own code point.  Single
+        // octet maps to its numeric value; anything else is an error.
+        if (s.size() != 1) {
+            if (env) env->raiseTypeError(context,
+                "ord() expected a character, but string of length "
+                + std::to_string(s.size()) + " found");
+            return nullptr;
+        }
+        return context->fromInteger(static_cast<long long>(static_cast<unsigned char>(s[0])));
+    }
     arg->asString(context)->toUTF8String(context, s);
     if (s.empty()) {
         if (env) env->raiseTypeError(context,
