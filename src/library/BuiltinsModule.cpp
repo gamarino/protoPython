@@ -7,6 +7,7 @@
 #include <protoPython/Tokenizer.h>
 #include <protoCore.h>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -465,13 +466,69 @@ static const proto::ProtoObject* py_print(
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG: py_print called with %lu args\n", positionalParameters->getSize(context));
     }
-    (void)keywordParameters;
     std::string sep = " ";
     std::string end = "\n";
 
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoString* strS = env ? env->getStrString() : PythonEnvironment::getInternedString(context, "__str__");
     const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
+    // print(*args, sep=' ', end='\n', file=sys.stdout, flush=False)
+    // Honour sep and end kwargs.  file / flush are still ignored (we
+    // always emit to std::cout) — supporting custom file objects
+    // through this builtin would require teaching it the file-like
+    // write protocol, which is out of scope here.
+    bool toStderr = false;
+    if (env && keywordParameters && keywordParameters->getSize(context) > 0) {
+        const proto::ProtoTuple* kwNames = env->getCurrentKwNames();
+        if (kwNames) {
+            const proto::ProtoString* sepKey = PythonEnvironment::getInternedString(context, "sep");
+            const proto::ProtoString* endKey = PythonEnvironment::getInternedString(context, "end");
+            const proto::ProtoString* fileKey = PythonEnvironment::getInternedString(context, "file");
+            unsigned long sh = sepKey->getHash(context);
+            unsigned long eh = endKey->getHash(context);
+            unsigned long fh = fileKey->getHash(context);
+            if (keywordParameters->has(context, sh)) {
+                const proto::ProtoObject* v = keywordParameters->getAt(context, sh);
+                if (v && v->isString(context)) {
+                    sep.clear();
+                    v->asString(context)->toUTF8String(context, sep);
+                } else if (v == PROTO_NONE) {
+                    sep = " ";
+                }
+            }
+            if (keywordParameters->has(context, eh)) {
+                const proto::ProtoObject* v = keywordParameters->getAt(context, eh);
+                if (v && v->isString(context)) {
+                    end.clear();
+                    v->asString(context)->toUTF8String(context, end);
+                } else if (v == PROTO_NONE) {
+                    end = "\n";
+                }
+            }
+            if (keywordParameters->has(context, fh)) {
+                // Best-effort routing: detect sys.stderr by comparing
+                // against the module-level singleton.  Any other file
+                // object falls through to stdout (incomplete but
+                // backward-compatible).
+                const proto::ProtoObject* v = keywordParameters->getAt(context, fh);
+                if (v && v != PROTO_NONE) {
+                    const proto::ProtoString* nm = PythonEnvironment::getInternedString(context, "__file_kind__");
+                    const proto::ProtoObject* kind = v->getAttribute(context, nm);
+                    if (kind && kind->isString(context)) {
+                        std::string ks;
+                        kind->asString(context)->toUTF8String(context, ks);
+                        if (ks == "stderr") toStderr = true;
+                    }
+                }
+            }
+        }
+    }
+    // Buffer the rendered output so we can route the final emission to
+    // either std::cout or std::cerr (toStderr) in one shot.  Sub-cases
+    // append to `buffered` via the same operator<< chain they used
+    // before — this keeps the rendering logic untouched while honouring
+    // the print() kwargs.
+    std::ostringstream buffered;
 
     unsigned long size = positionalParameters->getSize(context);
     for (unsigned long i = 0; i < size; ++i) {
@@ -485,15 +542,15 @@ static const proto::ProtoObject* py_print(
             fprintf(stderr, "DEBUG: py_print isNone=%d obj=%p noneProto=%p\n", isNone, (void*)obj, (void*)(env ? env->getNonePrototype() : nullptr));
         }
         if (isNone) {
-            std::cout << "None";
+            buffered << "None";
         } else if (obj->isInteger(context)) {
             // asLong overflows for bignums; route through reprObject which
             // falls back to Integer::toString when the value doesn't fit
             // into long long.
             try {
-                std::cout << std::to_string(obj->asLong(context));
+                buffered << std::to_string(obj->asLong(context));
             } catch (const std::overflow_error&) {
-                std::cout << (env ? env->reprObject(context, obj) : std::string("<int>"));
+                buffered << (env ? env->reprObject(context, obj) : std::string("<int>"));
             }
         } else if (obj->isDouble(context)) {
             // Shortest round-trip representation matching CPython's str/repr
@@ -504,9 +561,9 @@ static const proto::ProtoObject* py_print(
             // `print(1200.0)` emits "1200.0" instead of "1.2e+03".
             double val = obj->asDouble(context);
             if (std::isnan(val)) {
-                std::cout << "nan";
+                buffered << "nan";
             } else if (std::isinf(val)) {
-                std::cout << (val < 0 ? "-inf" : "inf");
+                buffered << (val < 0 ? "-inf" : "inf");
             } else {
                 char buf[64];
                 for (int prec = 1; prec <= 17; ++prec) {
@@ -532,16 +589,16 @@ static const proto::ProtoObject* py_print(
                     if (c == '.' || c == 'e' || c == 'E') { hasDecimal = true; break; }
                 }
                 if (!hasDecimal) s += ".0";
-                std::cout << s;
+                buffered << s;
             }
         } else if (obj->isString(context)) {
             std::string s;
             obj->asString(context)->toUTF8String(context, s);
-            std::cout << s;
+            buffered << s;
         } else if (obj == PROTO_TRUE) {
-            std::cout << "True";
+            buffered << "True";
         } else if (obj == PROTO_FALSE) {
-            std::cout << "False";
+            buffered << "False";
         } else {
             // CPython: print(x) calls str(x), NOT repr(x).  For built-in
             // types that override __str__ (datetime.date.__str__ ==
@@ -584,7 +641,7 @@ static const proto::ProtoObject* py_print(
                     rendered = env->reprObject(context, obj);
                     gotStr = true;
                 }
-                std::cout << rendered;
+                buffered << rendered;
             } else {
                 const proto::ProtoString* reprS = PythonEnvironment::getInternedString(context, "__repr__");
                 const proto::ProtoObject* reprMethod = obj->getAttribute(context, reprS);
@@ -593,19 +650,24 @@ static const proto::ProtoObject* py_print(
                     if (out && out->isString(context)) {
                         std::string s;
                         out->asString(context)->toUTF8String(context, s);
-                        std::cout << s;
+                        buffered << s;
                     } else {
-                        std::cout << "<unprintable>";
+                        buffered << "<unprintable>";
                     }
                 } else {
-                    std::cout << "<unprintable>";
+                    buffered << "<unprintable>";
                 }
             }
         }
 
-        if (i < size - 1) std::cout << sep;
+        if (i < size - 1) buffered << sep;
     }
-    std::cout << end << std::flush;
+    buffered << end;
+    if (toStderr) {
+        std::cerr << buffered.str() << std::flush;
+    } else {
+        std::cout << buffered.str() << std::flush;
+    }
     return env ? env->getNonePrototype() : PROTO_NONE;
 }
 
