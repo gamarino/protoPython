@@ -6862,7 +6862,48 @@ static const proto::ProtoObject* py_str_format_dunder(
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     const proto::ProtoString* s = str_from_self(context, self);
     if (!s) return PROTO_NONE;
-    return s->asObject(context);
+    // Parse format spec: [[fill]align][width].  CPython's str format
+    // minilanguage subset for str: width + alignment + fill char; the
+    // 's' type is the default and only valid type.  Anything else
+    // raises ValueError, but we tolerate it for compatibility.
+    std::string spec;
+    if (posArgs && posArgs->getSize(context) >= 1) {
+        const proto::ProtoObject* specArg = posArgs->getAt(context, 0);
+        if (specArg && specArg->isString(context)) {
+            specArg->asString(context)->toUTF8String(context, spec);
+        }
+    }
+    if (spec.empty()) return s->asObject(context);
+    std::string body;
+    s->toUTF8String(context, body);
+    char fill = ' ';
+    char align = '<';  // str default-aligns left
+    int width = 0;
+    size_t i = 0;
+    if (spec.size() >= 2 && (spec[1] == '<' || spec[1] == '>' || spec[1] == '^' || spec[1] == '=')) {
+        fill = spec[0];
+        align = spec[1];
+        i = 2;
+    } else if (i < spec.size() && (spec[i] == '<' || spec[i] == '>' || spec[i] == '^' || spec[i] == '=')) {
+        align = spec[i];
+        i++;
+    }
+    while (i < spec.size() && spec[i] >= '0' && spec[i] <= '9') {
+        width = width * 10 + (spec[i] - '0');
+        i++;
+    }
+    // Skip trailing type char (s).
+    int padLen = width - static_cast<int>(body.size());
+    if (padLen > 0) {
+        if (align == '<') body = body + std::string(padLen, fill);
+        else if (align == '>') body = std::string(padLen, fill) + body;
+        else if (align == '^') {
+            int left = padLen / 2;
+            int right = padLen - left;
+            body = std::string(left, fill) + body + std::string(right, fill);
+        }
+    }
+    return PythonEnvironment::getInternedString(context, body.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_int_bit_length(
