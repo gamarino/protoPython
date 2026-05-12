@@ -7358,7 +7358,19 @@ static const proto::ProtoObject* py_filter(
     const proto::ProtoSparseList* keywordParameters) {
     (void)parentLink;
     (void)keywordParameters;
-    if (positionalParameters->getSize(context) < 3) return PROTO_NONE;
+    // filter() is dispatched as `cls.__new__(cls, function, iterable)`,
+    // so the positional list always carries the class at index 0.
+    // Anything less than 3 entries means the user invoked
+    // `filter()` / `filter(func)` with too few args — CPython raises
+    // TypeError: filter expected 2 arguments, got N.
+    ::protoPython::PythonEnvironment* env0 = ::protoPython::PythonEnvironment::fromContext(context);
+    if (positionalParameters->getSize(context) < 3) {
+        if (env0) env0->raiseTypeError(context,
+            "filter expected 2 arguments, got "
+            + std::to_string(positionalParameters->getSize(context) >= 1
+                ? positionalParameters->getSize(context) - 1 : 0));
+        return nullptr;
+    }
     const proto::ProtoObject* func = positionalParameters->getAt(context, 1);
     const proto::ProtoObject* iterable = positionalParameters->getAt(context, 2);
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
