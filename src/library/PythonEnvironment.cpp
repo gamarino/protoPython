@@ -9141,23 +9141,60 @@ static const proto::ProtoObject* py_bytes_fromhex(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(context) < 1) return PROTO_NONE;
-    const proto::ProtoObject* strObj = posArgs->getAt(context, 0);
-    if (!strObj->isString(context)) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    // Skip the unbound `cls` receiver — `bytes.fromhex(...)` is
+    // dispatched via type.__call__ which prepends the class.
+    int posOff = 0;
+    const proto::ProtoObject* first = posArgs->getAt(context, 0);
+    if (env && first == env->getBytesPrototype()) {
+        if (posArgs->getSize(context) < 2) {
+            if (env) env->raiseTypeError(context,
+                "fromhex() takes exactly one argument (0 given)");
+            return nullptr;
+        }
+        posOff = 1;
+    }
+    const proto::ProtoObject* strObj = posArgs->getAt(context, posOff);
+    if (!strObj || !strObj->isString(context)) {
+        if (env) env->raiseTypeError(context,
+            "fromhex() argument must be str");
+        return nullptr;
+    }
     std::string hexStr;
     strObj->asString(context)->toUTF8String(context, hexStr);
+    // CPython: bytes.fromhex tolerates one or more ASCII whitespace
+    // characters between byte pairs but rejects any other invalid
+    // character with `ValueError: non-hexadecimal number found in
+    // fromhex() arg at position N`.  Previously the parser stepped
+    // by 2 and silently dropped one nibble whenever a space landed
+    // on an odd index — `bytes.fromhex('00 01 02')` returned
+    // b'\x00\x02' instead of b'\x00\x01\x02'.
+    auto hexVal = [](char c, int& out) {
+        if (c >= '0' && c <= '9') { out = c - '0'; return true; }
+        if (c >= 'a' && c <= 'f') { out = c - 'a' + 10; return true; }
+        if (c >= 'A' && c <= 'F') { out = c - 'A' + 10; return true; }
+        return false;
+    };
+    auto isAsciiWs = [](char c) {
+        return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
+    };
     std::string raw;
-    for (size_t i = 0; i + 1 < hexStr.size(); i += 2) {
-        int hi = 0, lo = 0;
-        char c1 = hexStr[i], c2 = hexStr[i + 1];
-        if (c1 >= '0' && c1 <= '9') hi = c1 - '0';
-        else if (c1 >= 'a' && c1 <= 'f') hi = c1 - 'a' + 10;
-        else if (c1 >= 'A' && c1 <= 'F') hi = c1 - 'A' + 10;
-        else continue;
-        if (c2 >= '0' && c2 <= '9') lo = c2 - '0';
-        else if (c2 >= 'a' && c2 <= 'f') lo = c2 - 'a' + 10;
-        else if (c2 >= 'A' && c2 <= 'F') lo = c2 - 'A' + 10;
-        else continue;
+    size_t i = 0;
+    while (i < hexStr.size()) {
+        while (i < hexStr.size() && isAsciiWs(hexStr[i])) ++i;
+        if (i >= hexStr.size()) break;
+        int hi, lo;
+        if (i + 1 >= hexStr.size() || !hexVal(hexStr[i], hi)
+                                   || !hexVal(hexStr[i + 1], lo)) {
+            char msg[96];
+            std::snprintf(msg, sizeof(msg),
+                "non-hexadecimal number found in fromhex() arg at position %zu", i);
+            if (env) env->raiseValueError(context,
+                PythonEnvironment::getInternedString(context, msg)->asObject(context));
+            return nullptr;
+        }
         raw += static_cast<char>(hi * 16 + lo);
+        i += 2;
     }
     return bytes_make_object(context, raw.data(), static_cast<unsigned long>(raw.size()));
 }
