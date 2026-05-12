@@ -5230,6 +5230,27 @@ bool Compiler::compileFormattedValue(FormattedValueNode* n) {
     if (n->conversion == 'r')      convName = "repr";
     else if (n->conversion == 's') convName = "str";
     else if (n->conversion == 'a') convName = "ascii";
+    // PEP 498: when a format spec is present, render via the format()
+    // builtin so the f-string and `'{:spec}'.format(x)` share one code
+    // path.  Layout the stack as [.., NULL, format, value, spec] before
+    // OP_CALL_FUNCTION 2.  Otherwise leave the bare (possibly
+    // converted) value on the stack — the surrounding OP_BUILD_STRING
+    // handles the str() coercion at join time.
+    if (!n->format_spec.empty()) {
+        if (!emitNameOp("format", TargetCtx::Load, /*pushNull=*/true)) return false;
+        if (convName) {
+            if (!emitNameOp(convName, TargetCtx::Load, /*pushNull=*/true)) return false;
+            if (!compileNode(n->value.get())) return false;
+            emit(OP_CALL_FUNCTION, 1);
+        } else {
+            if (!compileNode(n->value.get())) return false;
+        }
+        int specIdx = addConstant(PythonEnvironment::getInternedString(
+            ctx_, n->format_spec.c_str())->asObject(ctx_));
+        emit(OP_LOAD_CONST, specIdx);
+        emit(OP_CALL_FUNCTION, 2);
+        return true;
+    }
     if (convName) {
         if (!emitNameOp(convName, TargetCtx::Load, /*pushNull=*/true)) return false;
         if (!compileNode(n->value.get())) return false;
