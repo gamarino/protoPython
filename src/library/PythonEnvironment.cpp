@@ -16796,6 +16796,75 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             if (eq == env->getNotImplementedPrototype()) return eq;
             return (eq == PROTO_TRUE) ? PROTO_FALSE : PROTO_TRUE;
         }));
+    // slice.indices(length) — translate (start, stop, step) given the
+    // sequence length into a normalized (s, e, t) triple suitable for
+    // a `for i in range(s, e, t)` loop.  CPython exposes this and the
+    // stdlib (collections.deque, range itself, typing.Sequence helpers,
+    // dataclass __slots__ patterns) calls it directly.  Without it,
+    // `slice(1, 5, 2).indices(10)` raised AttributeError.
+    sliceType = sliceType->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "indices"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (!env) return PROTO_NONE;
+            // Support unbound (slice.indices(s, n)) and bound (s.indices(n)).
+            const proto::ProtoObject* sliceObj = self;
+            const proto::ProtoObject* nObj = nullptr;
+            if (self == env->getSliceType() && args && args->getSize(ctx) >= 2) {
+                sliceObj = args->getAt(ctx, 0);
+                nObj = args->getAt(ctx, 1);
+            } else if (args && args->getSize(ctx) >= 1) {
+                nObj = args->getAt(ctx, 0);
+            }
+            long long n = 0;
+            if (nObj == PROTO_TRUE) n = 1;
+            else if (nObj == PROTO_FALSE) n = 0;
+            else if (nObj && nObj->isInteger(ctx)) n = nObj->asLong(ctx);
+            else { env->raiseTypeError(ctx, "slice indices must be integers"); return nullptr; }
+            if (n < 0) { env->raiseValueError(ctx,
+                PythonEnvironment::getInternedString(ctx,
+                    "length should not be negative")->asObject(ctx)); return nullptr; }
+            const proto::ProtoString* startS = PythonEnvironment::getInternedString(ctx, "start");
+            const proto::ProtoString* stopS  = PythonEnvironment::getInternedString(ctx, "stop");
+            const proto::ProtoString* stepS  = PythonEnvironment::getInternedString(ctx, "step");
+            const proto::ProtoObject* sStartObj = sliceObj->getAttribute(ctx, startS);
+            const proto::ProtoObject* sStopObj  = sliceObj->getAttribute(ctx, stopS);
+            const proto::ProtoObject* sStepObj  = sliceObj->getAttribute(ctx, stepS);
+            long long step = 1;
+            if (sStepObj == PROTO_TRUE) step = 1;
+            else if (sStepObj == PROTO_FALSE) step = 0;
+            else if (sStepObj && sStepObj->isInteger(ctx)) step = sStepObj->asLong(ctx);
+            else if (sStepObj == nullptr || sStepObj == PROTO_NONE) step = 1;
+            if (step == 0) { env->raiseValueError(ctx,
+                PythonEnvironment::getInternedString(ctx,
+                    "slice step cannot be zero")->asObject(ctx)); return nullptr; }
+            long long start, stop;
+            if (!sStartObj || sStartObj == PROTO_NONE) start = (step > 0) ? 0 : n - 1;
+            else {
+                if (sStartObj == PROTO_TRUE) start = 1;
+                else if (sStartObj == PROTO_FALSE) start = 0;
+                else start = sStartObj->asLong(ctx);
+                if (start < 0) start += n;
+                if (step > 0) { if (start < 0) start = 0; if (start > n) start = n; }
+                else           { if (start < -1) start = -1; if (start > n - 1) start = n - 1; }
+            }
+            if (!sStopObj || sStopObj == PROTO_NONE) stop = (step > 0) ? n : -1;
+            else {
+                if (sStopObj == PROTO_TRUE) stop = 1;
+                else if (sStopObj == PROTO_FALSE) stop = 0;
+                else stop = sStopObj->asLong(ctx);
+                if (stop < 0) stop += n;
+                if (step > 0) { if (stop < 0) stop = 0; if (stop > n) stop = n; }
+                else           { if (stop < -1) stop = -1; if (stop > n - 1) stop = n - 1; }
+            }
+            return ctx->newTupleFromList(ctx->newList()
+                ->appendLast(ctx, ctx->fromInteger(start))
+                ->appendLast(ctx, ctx->fromInteger(stop))
+                ->appendLast(ctx, ctx->fromInteger(step)))->asObject(ctx);
+        }));
 
     floatPrototype = objectPrototype->newChild(rootContext_, true);
     floatPrototype = floatPrototype->setAttribute(rootContext_, py_class, typePrototype);
