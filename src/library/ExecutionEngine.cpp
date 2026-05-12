@@ -5381,22 +5381,36 @@ const proto::ProtoObject* executeBytecodeRange(
         case OP_SET_UPDATE: {
             if (stack.size() >= static_cast<size_t>(arg + 1)) {
                 const proto::ProtoObject* iterable = stack.back();
-                // iterable remains on stack
                 proto::ProtoObject* setObj = const_cast<proto::ProtoObject*>(stack[stack.size() - arg - 1]);
                 const proto::ProtoString* dataString = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
                 const proto::ProtoObject* dataObj = setObj->getAttribute(ctx, dataString);
                 if (dataObj && dataObj->asSet(ctx)) {
                     const proto::ProtoSet* s = dataObj->asSet(ctx);
+                    // Fast path: pull elements directly when the iterable is
+                    // a raw / wrapped list or set.  Falls back to the
+                    // env->iter / env->next loop so user classes with
+                    // Python-level __iter__ (the literal `{*src, 'x'}`
+                    // shape) actually contribute their elements — the
+                    // previous list-only path silently dropped them.
                     const proto::ProtoObject* fromData = iterable->getAttribute(ctx, dataString);
                     const proto::ProtoList* fromList = (fromData && fromData->asList(ctx)) ? fromData->asList(ctx) : iterable->asList(ctx);
                     if (fromList) {
                         for (unsigned long j = 0; j < fromList->getSize(ctx); ++j) {
                             s = s->add(ctx, fromList->getAt(ctx, j));
                         }
-                        setObj->setAttribute(ctx, dataString, s->asObject(ctx));
+                    } else if (env) {
+                        const proto::ProtoObject* it = env->iter(iterable);
+                        if (it) {
+                            for (;;) {
+                                const proto::ProtoObject* item = env->next(it);
+                                if (!item) break;
+                                s = s->add(ctx, item);
+                            }
+                        }
                     }
+                    setObj->setAttribute(ctx, dataString, s->asObject(ctx));
                 }
-                stack.pop_back(); // Pop iterable
+                stack.pop_back();
             }
         } break;
         case OP_BUILD_SET: {
