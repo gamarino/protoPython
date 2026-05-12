@@ -9479,6 +9479,15 @@ static const proto::ProtoObject* py_slice_call(
         }
     }
     unsigned long argCount = n - base;
+    // CPython: slice() requires at least 1 positional argument.  Without
+    // this guard `slice()` returned slice(None, None, None) silently —
+    // every misuse looked like a "match everything" slice and the bug
+    // never surfaced.
+    if (argCount == 0) {
+        if (env) env->raiseTypeError(context,
+            "slice expected at least 1 argument, got 0");
+        return nullptr;
+    }
     const proto::ProtoObject* start = PROTO_NONE;
     const proto::ProtoObject* stop = PROTO_NONE;
     const proto::ProtoObject* step = PROTO_NONE;
@@ -9514,12 +9523,17 @@ static const proto::ProtoObject* py_slice_repr(
     const proto::ProtoObject* start = self->getAttribute(context, env ? env->getStartString() : PythonEnvironment::getInternedString(context, "start"));
     const proto::ProtoObject* stop = self->getAttribute(context, env ? env->getStopString() : PythonEnvironment::getInternedString(context, "stop"));
     const proto::ProtoObject* step = self->getAttribute(context, env ? env->getStepString() : PythonEnvironment::getInternedString(context, "step"));
-    std::string s_start = (!start || start == PROTO_NONE) ? "None" : (start->isInteger(context) ? std::to_string(start->asLong(context)) : "None");
-    std::string s_stop = (!stop || stop == PROTO_NONE) ? "None" : (stop->isInteger(context) ? std::to_string(stop->asLong(context)) : "None");
-    std::string out = "slice(" + s_start + ", " + s_stop;
-    if (step && step != PROTO_NONE && (!step->isInteger(context) || step->asLong(context) != 1))
-        out += ", " + (step->isInteger(context) ? std::to_string(step->asLong(context)) : "None");
-    out += ")";
+    // CPython slice repr always includes the third (step) component
+    // even when None or 1: `slice(None, 5, None)`, `slice(1, 10, 2)`,
+    // `slice(1, 10, None)`.  Previously the step was elided unless it
+    // was a non-default int — `slice(5)` printed as `slice(None, 5)`
+    // which doesn't round-trip through `eval(repr(s))`.
+    auto fmt = [&](const proto::ProtoObject* v) -> std::string {
+        if (!v || v == PROTO_NONE) return "None";
+        if (v->isInteger(context)) return std::to_string(v->asLong(context));
+        return PythonEnvironment::reprObject(context, v);
+    };
+    std::string out = "slice(" + fmt(start) + ", " + fmt(stop) + ", " + fmt(step) + ")";
     return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
 }
 
