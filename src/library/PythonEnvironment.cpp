@@ -10176,7 +10176,20 @@ static const proto::ProtoObject* py_str_split(
     long long maxsplit = -1;
     if (posArgs && posArgs->getSize(context) >= 2) {
         const proto::ProtoObject* msObj = posArgs->getAt(context, 1);
-        if (msObj->isInteger(context)) maxsplit = msObj->asLong(context);
+        if (msObj->isInteger(context)) {
+            maxsplit = msObj->asLong(context);
+        } else if (msObj == PROTO_TRUE) {
+            maxsplit = 1;
+        } else if (msObj == PROTO_FALSE) {
+            maxsplit = 0;
+        } else if (msObj != PROTO_NONE) {
+            // CPython: split's maxsplit must be int.  Previously a
+            // non-int was silently dropped (defaulted to -1), so
+            // `'a b c'.split(' ', 'x')` ignored the bad arg.
+            if (env) env->raiseTypeError(context,
+                "'X' object cannot be interpreted as an integer");
+            return nullptr;
+        }
     }
 
     const proto::ProtoList* result = context->newList();
@@ -10239,9 +10252,21 @@ static const proto::ProtoObject* py_str_rsplit(
         }
     }
     long long maxsplit = -1;
-    if (posArgs->getSize(context) >= static_cast<unsigned long>(2 + posOff)
-        && posArgs->getAt(context, 1 + posOff)->isInteger(context))
-        maxsplit = posArgs->getAt(context, 1 + posOff)->asLong(context);
+    if (posArgs->getSize(context) >= static_cast<unsigned long>(2 + posOff)) {
+        const proto::ProtoObject* msObj = posArgs->getAt(context, 1 + posOff);
+        if (msObj->isInteger(context)) {
+            maxsplit = msObj->asLong(context);
+        } else if (msObj == PROTO_TRUE) {
+            maxsplit = 1;
+        } else if (msObj == PROTO_FALSE) {
+            maxsplit = 0;
+        } else if (msObj != PROTO_NONE) {
+            PythonEnvironment* envE = PythonEnvironment::fromContext(context);
+            if (envE) envE->raiseTypeError(context,
+                "'X' object cannot be interpreted as an integer");
+            return nullptr;
+        }
+    }
     const proto::ProtoList* result = context->newList();
     if (sep.empty() && sepProvided) return PROTO_NONE;
     std::vector<std::string> parts;
@@ -10632,8 +10657,23 @@ static const proto::ProtoObject* py_str_replace(
     newObj->asString(context)->toUTF8String(context, newStr);
 
     int count = -1;
-    if (posArgs->getSize(context) >= 3 && posArgs->getAt(context, 2)->isInteger(context)) {
-        count = static_cast<int>(posArgs->getAt(context, 2)->asLong(context));
+    if (posArgs->getSize(context) >= static_cast<unsigned long>(3 + posOff)) {
+        const proto::ProtoObject* cntObj = posArgs->getAt(context, 2 + posOff);
+        if (cntObj->isInteger(context)) {
+            count = static_cast<int>(cntObj->asLong(context));
+        } else if (cntObj == PROTO_TRUE) {
+            count = 1;
+        } else if (cntObj == PROTO_FALSE) {
+            count = 0;
+        } else if (cntObj != PROTO_NONE) {
+            // CPython: str.replace count must be int.  Previously a
+            // non-int was silently dropped to the default -1, so
+            // `'aaa'.replace('a', 'b', 'x')` replaced everything as
+            // if the count had been omitted.
+            if (env) env->raiseTypeError(context,
+                "'X' object cannot be interpreted as an integer");
+            return nullptr;
+        }
     }
 
     std::string result;
