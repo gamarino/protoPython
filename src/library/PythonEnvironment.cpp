@@ -9546,8 +9546,19 @@ static const proto::ProtoObject* py_bytes_removeprefix(
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     std::string raw;
     if (!bytes_data_view(context, self, raw) || !posArgs || posArgs->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* prefArg = posArgs->getAt(context, 0);
+    // CPython: removeprefix on bytes requires a bytes-like argument.
+    // A raw str silently coerced into bytes via bytes_view, producing
+    // surprising matches (`b'hello'.removeprefix('he')` ate "he" as
+    // bytes).  Mirror CPython's stricter contract.
+    if (prefArg && prefArg->isString(context)) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env) env->raiseTypeError(context,
+            "removeprefix() argument must be bytes-like, not str");
+        return nullptr;
+    }
     std::string prefix;
-    bytes_view(context, posArgs->getAt(context, 0), prefix);
+    bytes_view(context, prefArg, prefix);
     if (prefix.size() <= raw.size() && raw.compare(0, prefix.size(), prefix) == 0) {
         std::string out = raw.substr(prefix.size());
         return bytes_make_object(context, out.data(), static_cast<unsigned long>(out.size()));
@@ -9561,8 +9572,15 @@ static const proto::ProtoObject* py_bytes_removesuffix(
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     std::string raw;
     if (!bytes_data_view(context, self, raw) || !posArgs || posArgs->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* sufArg = posArgs->getAt(context, 0);
+    if (sufArg && sufArg->isString(context)) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env) env->raiseTypeError(context,
+            "removesuffix() argument must be bytes-like, not str");
+        return nullptr;
+    }
     std::string suffix;
-    bytes_view(context, posArgs->getAt(context, 0), suffix);
+    bytes_view(context, sufArg, suffix);
     if (suffix.size() <= raw.size() && raw.compare(raw.size() - suffix.size(), suffix.size(), suffix) == 0) {
         std::string out = raw.substr(0, raw.size() - suffix.size());
         return bytes_make_object(context, out.data(), static_cast<unsigned long>(out.size()));
