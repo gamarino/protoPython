@@ -4678,8 +4678,12 @@ static const proto::ProtoObject* py_bytes_getitem(
         return b;
     }
 
-    if (indexObj->isInteger(context)) {
-        int idx = static_cast<int>(indexObj->asLong(context));
+    // bool is an int subclass — accept True/False as 1/0.  Same fix
+    // as list/tuple/str indexing.
+    if (indexObj->isInteger(context) || indexObj == PROTO_TRUE || indexObj == PROTO_FALSE) {
+        int idx = indexObj == PROTO_TRUE ? 1
+                : indexObj == PROTO_FALSE ? 0
+                : static_cast<int>(indexObj->asLong(context));
         if (idx < 0) idx += static_cast<int>(size);
         if (idx < 0 || static_cast<unsigned long>(idx) >= size) {
             PythonEnvironment* env = PythonEnvironment::fromContext(context);
