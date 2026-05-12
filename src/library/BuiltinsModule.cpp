@@ -1095,6 +1095,27 @@ static const proto::ProtoObject* py_repr(
             if (parsed == val) break;
         }
         std::string s(buf);
+        // CPython prefers decimal notation over scientific for values
+        // in [1e-4, 1e16).  `%g` switches to scientific too eagerly
+        // (1e10 -> '1e+10') diverging from CPython's '10000000000.0'.
+        // Detect a fixed-magnitude value in that range and re-render
+        // with %.*f using the same shortest-roundtrip precision.
+        double absVal = std::fabs(val);
+        bool hasE = s.find('e') != std::string::npos || s.find('E') != std::string::npos;
+        if (hasE && val != 0.0 && absVal >= 1e-4 && absVal < 1e16) {
+            // Find the shortest %.*f that round-trips.
+            for (int prec = 0; prec <= 17; ++prec) {
+                std::snprintf(buf, sizeof(buf), "%.*f", prec, val);
+                char* end = nullptr;
+                double parsed = std::strtod(buf, &end);
+                if (parsed == val) { s = buf; break; }
+            }
+        } else if (hasE) {
+            // CPython's exponent style: lowercase 'e', no leading zeros
+            // in the exponent (uses two-digit minimum 'e+10' but no
+            // 'e+010').  %.*g on glibc emits 'e+10' which already
+            // matches; leave alone.
+        }
         bool hasDecimal = false;
         for (char c : s) {
             if (c == '.' || c == 'e' || c == 'E') { hasDecimal = true; break; }
@@ -1145,6 +1166,17 @@ static std::string py_format_float_short(double val) {
         if (parsed == val) break;
     }
     std::string s(buf);
+    // CPython prefers decimal over scientific for values in [1e-4, 1e16).
+    double absVal = std::fabs(val);
+    bool hasE = s.find('e') != std::string::npos || s.find('E') != std::string::npos;
+    if (hasE && val != 0.0 && absVal >= 1e-4 && absVal < 1e16) {
+        for (int prec = 0; prec <= 17; ++prec) {
+            std::snprintf(buf, sizeof(buf), "%.*f", prec, val);
+            char* end = nullptr;
+            double parsed = std::strtod(buf, &end);
+            if (parsed == val) { s = buf; break; }
+        }
+    }
     bool hasDecimal = false;
     for (char c : s) {
         if (c == '.' || c == 'e' || c == 'E') { hasDecimal = true; break; }
