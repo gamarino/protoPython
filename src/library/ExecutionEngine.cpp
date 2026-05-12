@@ -1848,17 +1848,20 @@ static const proto::ProtoObject* binaryFloorDivide(proto::ProtoContext* ctx,
             // inexact, the truncated quotient must be decremented by 1
             // to reach the floor.
             const proto::ProtoObject* q = aa_p->divide(ctx, bb_p);
-            // Check inexactness: q * b != a means we have a remainder.
-            // Sign-disagreement check: a and b have opposite signs and
-            // remainder is non-zero ⇒ subtract 1 from q.
+            // Fast path: same-sign operands (or zero numerator) need
+            // no adjustment — truncation already equals floor.  Sign
+            // check is allocation-free; multiply + compare are not, so
+            // entering them on every int division was a ~3-4x slowdown
+            // on int-heavy code paths (test_descr.py 44s vs 12s).
+            int aSign = aa_p->integerSign(ctx);
+            int bSign = bb_p->integerSign(ctx);
+            if (aSign == 0 || (aSign < 0) == (bSign < 0)) {
+                return q;
+            }
+            // Opposite signs: only adjust when truncation lost a remainder.
             const proto::ProtoObject* prod = q->multiply(ctx, bb_p);
-            int cmpProd = prod->compare(ctx, aa_p);
-            if (cmpProd != 0) {
-                int aSign = aa_p->integerSign(ctx);
-                int bSign = bb_p->integerSign(ctx);
-                if ((aSign < 0) != (bSign < 0)) {
-                    q = q->subtract(ctx, ctx->fromInteger(1));
-                }
+            if (prod->compare(ctx, aa_p) != 0) {
+                q = q->subtract(ctx, ctx->fromInteger(1));
             }
             return q;
         }
