@@ -1428,15 +1428,58 @@ static const proto::ProtoObject* py_float_call(
                     d->asString(ctx)->toUTF8String(ctx, s);
                 }
             }
-            try {
-                x = ctx->fromDouble(std::stod(s));
-            } catch (...) {
+            // Trim surrounding whitespace (CPython allows ' 3.14 ').
+            size_t fb = s.find_first_not_of(" \t\n\r\f\v");
+            size_t fe = s.find_last_not_of(" \t\n\r\f\v");
+            std::string trimmedFloat = (fb == std::string::npos)
+                ? std::string()
+                : s.substr(fb, fe - fb + 1);
+            // PEP 515 — accept underscores between digits (and across
+            // the optional 1e±N exponent boundary).  `float('1_000.5')`
+            // returned 1.0 because std::stod stops at the underscore
+            // and treats the literal as just '1'.  Reject leading /
+            // trailing / consecutive underscores, and any underscore
+            // immediately adjacent to '.', 'e', 'E', or the sign.
+            std::string compact;
+            compact.reserve(trimmedFloat.size());
+            bool valid = !trimmedFloat.empty();
+            bool prevWasDigit = false;
+            bool prevWasUnderscore = false;
+            for (size_t i = 0; i < trimmedFloat.size(); ++i) {
+                char c = trimmedFloat[i];
+                if (c == '_') {
+                    bool nextIsDigit = (i + 1 < trimmedFloat.size())
+                        && (trimmedFloat[i + 1] >= '0' && trimmedFloat[i + 1] <= '9');
+                    if (!prevWasDigit || !nextIsDigit) { valid = false; break; }
+                    prevWasUnderscore = true;
+                    continue;
+                }
+                prevWasDigit = (c >= '0' && c <= '9');
+                prevWasUnderscore = false;
+                compact += c;
+            }
+            if (valid && !prevWasUnderscore) {
+                try {
+                    size_t consumed = 0;
+                    double parsed = std::stod(compact, &consumed);
+                    // Reject trailing garbage — std::stod consumed only
+                    // the prefix.  `float('1.5abc')` and `float('42.5x')`
+                    // must raise, not silently truncate.
+                    if (consumed != compact.size()) {
+                        valid = false;
+                    } else {
+                        x = ctx->fromDouble(parsed);
+                    }
+                } catch (...) {
+                    valid = false;
+                }
+            } else {
+                valid = false;
+            }
+            if (!valid) {
                 PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
                 // CPython: `could not convert string to float: 'val'` with
-                // the offending input quoted via repr().  The earlier
-                // "invalid literal for float():" wording matched int() not
-                // float(), and the missing quotes hid empty / whitespace
-                // inputs in the diagnostic.
+                // the offending input quoted via repr().
                 if (env) env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, ("could not convert string to float: '" + s + "'").c_str())->asObject(ctx));
                 return PROTO_NONE;
             }
