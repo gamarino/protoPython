@@ -5777,23 +5777,40 @@ static const proto::ProtoObject* py_set_repr(
     if (env && self == env->getSetPrototype()) {
         return py_type_repr(context, self, parentLink, positionalParameters, keywordParameters);
     }
+    if (env && self == env->getFrozensetPrototype()) {
+        return py_type_repr(context, self, parentLink, positionalParameters, keywordParameters);
+    }
+    // Detect frozenset vs set from the receiver's class so the wrapper
+    // prefix matches CPython: `frozenset()` / `frozenset({1, 2, 3})`
+    // vs `set()` / `{1, 2, 3}`.
+    bool isFrozen = false;
+    if (env) {
+        const proto::ProtoObject* cls = env->getType(context, self);
+        if (cls && cls == env->getFrozensetPrototype()) isFrozen = true;
+    }
     const proto::ProtoSet* s = self->asSet(context);
-    if (!s || s->getSize(context) == 0) return PythonEnvironment::getInternedString(context, "set()")->asObject(context);
+    // Wrapped set instances store the underlying ProtoSet on __data__.
+    if (!s && env) {
+        const proto::ProtoObject* d = self->getAttribute(context, env->getDataString());
+        if (d) s = d->asSet(context);
+    }
+    if (!s || s->getSize(context) == 0) {
+        const char* empty = isFrozen ? "frozenset()" : "set()";
+        return PythonEnvironment::getInternedString(context, empty)->asObject(context);
+    }
 
-    std::string out = "{";
+    std::string body = "{";
     const proto::ProtoSetIterator* it = s->getIterator(context);
     bool first = true;
     while (it && it->hasNext(context)) {
-        if (!first) out += ", ";
+        if (!first) body += ", ";
         first = false;
         const proto::ProtoObject* item = it->next(context);
-        const proto::ProtoObject* repr = py_object_repr(context, item, nullptr, nullptr, nullptr);
-        std::string s_item;
-        repr->asString(context)->toUTF8String(context, s_item);
-        out += s_item;
+        body += PythonEnvironment::reprObject(context, item);
         it = it->advance(context);
     }
-    out += "}";
+    body += "}";
+    std::string out = isFrozen ? ("frozenset(" + body + ")") : body;
     return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
 }
 
@@ -16032,6 +16049,12 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "frozenset")->asObject(rootContext_));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "frozenset")->asObject(rootContext_));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, py_frozenset_call));
+    // CPython: repr(frozenset()) is 'frozenset()' and
+    // repr(frozenset({1,2,3})) is 'frozenset({1, 2, 3})'.  Reuse the
+    // unified py_set_repr (which detects the receiver's class) instead
+    // of falling through to py_object_repr's "<frozenset object at ...>".
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_set_repr));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, py_set_repr));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(nullptr, py_frozenset_len));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_contains, rootContext_->fromMethod(nullptr, py_frozenset_contains));
     // Step V76: Builtin frozenset requires alias for __contains__ explicitly in some cases
