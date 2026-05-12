@@ -6463,13 +6463,14 @@ static const proto::ProtoObject* py_ascii(
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
-    const proto::ProtoObject* reprMethod = obj->getAttribute(context, env ? env->getReprString() : PythonEnvironment::getInternedString(context, "__repr__"));
-    if (!reprMethod || !reprMethod->asMethod(context)) return PROTO_NONE;
-    const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
-    const proto::ProtoObject* reprObj = reprMethod->asMethod(context)(context, obj, nullptr, emptyL, nullptr);
-    if (!reprObj || !reprObj->isString(context)) return PROTO_NONE;
-    std::string s;
-    reprObj->asString(context)->toUTF8String(context, s);
+    // Use PythonEnvironment::reprObject (the same internal repr used by
+    // repr()) so the int / str / list / dict fast paths fire correctly.
+    // The previous obj->getAttribute('__repr__') lookup got back the
+    // class-level method cell for str literals — its asMethod was a
+    // generic "get repr" trampoline that returned the class repr
+    // (<class 'str'>) instead of the value repr.  reprObject already
+    // routes through the same MRO walk repr() uses.
+    std::string s = PythonEnvironment::reprObject(context, obj);
     
     std::string out;
     for (unsigned char c : s) {
