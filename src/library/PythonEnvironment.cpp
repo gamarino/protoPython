@@ -10867,7 +10867,7 @@ static const proto::ProtoObject* py_str_lower(
 static const proto::ProtoObject* py_str_split(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwargs) {
     const proto::ProtoString* str = str_from_self(context, self);
     int posOff = 0;
     if (!str && posArgs && posArgs->getSize(context) >= 1) {
@@ -10910,21 +10910,50 @@ static const proto::ProtoObject* py_str_split(
     }
 
     long long maxsplit = -1;
+    auto readMaxsplit = [&](const proto::ProtoObject* msObj) -> bool {
+        if (msObj->isInteger(context)) { maxsplit = msObj->asLong(context); return true; }
+        if (msObj == PROTO_TRUE) { maxsplit = 1; return true; }
+        if (msObj == PROTO_FALSE) { maxsplit = 0; return true; }
+        if (msObj == PROTO_NONE) return true;
+        if (env) env->raiseTypeError(context,
+            "'X' object cannot be interpreted as an integer");
+        return false;
+    };
     if (posArgs && posArgs->getSize(context) >= 2) {
-        const proto::ProtoObject* msObj = posArgs->getAt(context, 1);
-        if (msObj->isInteger(context)) {
-            maxsplit = msObj->asLong(context);
-        } else if (msObj == PROTO_TRUE) {
-            maxsplit = 1;
-        } else if (msObj == PROTO_FALSE) {
-            maxsplit = 0;
-        } else if (msObj != PROTO_NONE) {
-            // CPython: split's maxsplit must be int.  Previously a
-            // non-int was silently dropped (defaulted to -1), so
-            // `'a b c'.split(' ', 'x')` ignored the bad arg.
-            if (env) env->raiseTypeError(context,
-                "'X' object cannot be interpreted as an integer");
-            return nullptr;
+        if (!readMaxsplit(posArgs->getAt(context, 1))) return nullptr;
+    }
+    // Accept `maxsplit` as a keyword too — `'a b c'.split(maxsplit=1)`
+    // is idiomatic and used throughout the stdlib; previously it
+    // silently fell back to maxsplit=-1 and split every space.
+    if (kwargs && kwargs->getSize(context) > 0) {
+        const proto::ProtoTuple* kwNames = env ? env->getCurrentKwNames() : nullptr;
+        if (kwNames) {
+            const proto::ProtoString* msKey =
+                PythonEnvironment::getInternedString(context, "maxsplit");
+            unsigned long hash = msKey->getHash(context);
+            if (kwargs->has(context, hash)) {
+                if (!readMaxsplit(kwargs->getAt(context, hash))) return nullptr;
+            }
+            const proto::ProtoString* sepKey =
+                PythonEnvironment::getInternedString(context, "sep");
+            unsigned long sepHash = sepKey->getHash(context);
+            if (kwargs->has(context, sepHash)) {
+                const proto::ProtoObject* skw = kwargs->getAt(context, sepHash);
+                if (skw && skw != PROTO_NONE) {
+                    if (!skw->isString(context)) {
+                        if (env) env->raiseTypeError(context, "split arg 1 must be str or None");
+                        return PROTO_NONE;
+                    }
+                    sep.clear();
+                    skw->asString(context)->toUTF8String(context, sep);
+                    sepIsNone = sep.empty() ? sepIsNone : false;
+                    if (!sepIsNone && sep.empty()) {
+                        if (env) env->raiseValueError(context, PythonEnvironment::getInternedString(context, "empty separator")->asObject(context));
+                        return PROTO_NONE;
+                    }
+                    sepIsNone = false;
+                }
+            }
         }
     }
 
