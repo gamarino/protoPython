@@ -10946,17 +10946,58 @@ static const proto::ProtoObject* py_str_mod(
         switch (spec) {
             case 's': {
                 // CPython %s calls str(), NOT repr() — string args
-                // come through verbatim (no quotes).
+                // come through verbatim (no quotes); user types with
+                // __str__ return their str spelling, not their repr.
+                // Walk type(arg).__mro__ for an own __str__ first and
+                // invoke it before falling through to reprObject.
                 std::string s;
                 if (arg && arg != PROTO_NONE && arg->isString(context)) {
                     arg->asString(context)->toUTF8String(context, s);
                 } else {
-                    s = PythonEnvironment::reprObject(context, arg);
+                    bool gotStr = false;
+                    if (env && arg && arg != PROTO_NONE) {
+                        const proto::ProtoObject* cls = env->getType(context, arg);
+                        const proto::ProtoString* strS = env->getStrString();
+                        const proto::ProtoObject* strMethod = nullptr;
+                        if (cls) {
+                            const proto::ProtoObject* mroAttr = cls->getAttribute(context, env->getMroString());
+                            const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
+                            if (mroT) {
+                                for (unsigned long mi = 0; mi < mroT->getSize(context); ++mi) {
+                                    const proto::ProtoObject* base = mroT->getAt(context, static_cast<int>(mi));
+                                    if (!base || base == PROTO_NONE) continue;
+                                    if (base == env->getObjectPrototype()) break;
+                                    if (base->hasOwnAttribute(context, strS) == PROTO_TRUE) {
+                                        strMethod = base->getOwnAttributeDirect(context, strS);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if (strMethod && strMethod != PROTO_NONE) {
+                            const proto::ProtoObject* res = nullptr;
+                            const proto::ProtoList* eL = env->getEmptyList();
+                            if (strMethod->asMethod(context)) {
+                                res = strMethod->asMethod(context)(context,
+                                    const_cast<proto::ProtoObject*>(arg), nullptr, eL, nullptr);
+                            } else {
+                                const proto::ProtoString* codeS = env->getCodeString();
+                                bool raw = (codeS && strMethod->hasOwnAttribute(context, codeS) == PROTO_TRUE);
+                                const proto::ProtoList* selfArgs = context->newList();
+                                if (raw) selfArgs = selfArgs->appendLast(context, arg);
+                                res = invokePythonCallable(context, strMethod, selfArgs, nullptr);
+                            }
+                            if (res && res->isString(context)) {
+                                res->asString(context)->toUTF8String(context, s);
+                                gotStr = true;
+                            }
+                        }
+                    }
+                    if (!gotStr) s = PythonEnvironment::reprObject(context, arg);
                 }
                 if (fmtWidth.empty() && fmtFlags.empty()) {
                     out += s;
                 } else {
-                    // Apply width and alignment manually for strings
                     int width = fmtWidth.empty() ? 0 : std::stoi(fmtWidth);
                     bool leftAlign = fmtFlags.find('-') != std::string::npos;
                     int pad = width - static_cast<int>(s.size());
