@@ -7798,6 +7798,36 @@ static const proto::ProtoObject* py_tuple_getitem(
         return tuple->getAt(context, static_cast<int>(index));
     }
 
+    // CPython __index__ protocol — same fix as list subscript.
+    {
+        PythonEnvironment* envE = PythonEnvironment::fromContext(context);
+        if (envE) {
+            const proto::ProtoString* indexS =
+                PythonEnvironment::getInternedString(context, "__index__");
+            const proto::ProtoObject* indexM = envE->getAttribute(context, indexObj, indexS, false);
+            if (indexM && indexM != PROTO_NONE) {
+                const proto::ProtoObject* idxRes = nullptr;
+                if (indexM->asMethod(context)) {
+                    idxRes = indexM->asMethod(context)(context,
+                        const_cast<proto::ProtoObject*>(indexObj), nullptr,
+                        envE->getEmptyList(), nullptr);
+                } else {
+                    const proto::ProtoList* sa = context->newList()->appendLast(context, indexObj);
+                    idxRes = ::protoPython::invokePythonCallable(context, indexM, sa, nullptr);
+                }
+                if (idxRes && idxRes->isInteger(context)) {
+                    long long index = idxRes->asLong(context);
+                    if (index < 0) index += size;
+                    if (index < 0 || index >= size) {
+                        envE->raiseIndexError(context, "tuple index out of range");
+                        return PROTO_NONE;
+                    }
+                    return tuple->getAt(context, static_cast<int>(index));
+                }
+            }
+        }
+    }
+
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (env) env->raiseTypeError(context, "tuple indices must be integers or slices");
     return PROTO_NONE;
