@@ -193,6 +193,62 @@ the receiver's `__mro__` for tuplePrototype/listPrototype and
 substitute the primitive prototype before wrapping the result,
 matching CPython's unoverridden-dunder semantics.
 
+### Fixed: 20-commit sweep — bytes-aware constructors + bool subclass parity + None-key dict + complex parser
+
+Fourth twenty-commit sweep this session.  Theme: round out the
+int/bool subclass story, add missing parser branches, and close
+a handful of correctness gaps around hash-keyed lookups.
+
+Highlights:
+
+- **`hash(True)` / `hash(False)`** short-circuit to `1` / `0` so they
+  agree with `hash(1)` / `hash(0)`.  Previously they fell through to
+  identity hash and broke dict / set bucketing for bool/int collisions.
+- **`+True` / `+False`** return int `1` / `0` (not bool) — `type(+True)
+  is int`.  The identity fast path returned the bool sentinel.
+- **`list[True]` / `tuple[True]` / `str[True]`** accept bool as a valid
+  index (subclass-of-int).  Was raising
+  `TypeError: list indices must be integers or slices`.
+- **`divmod(True, 2)`** now works — promotes bool operands to int 1/0.
+- **`int(bytes)` / `float(bytes)`** parse ASCII digits from a bytes /
+  bytearray:  `int(b'123') == 123`, `float(b'-5.5') == -5.5`.
+- **`complex('1+2j')`** full grammar parse: bare 'j' / '+j' / '-j' →
+  ±1j; surrounding parentheses stripped; scientific notation in
+  either component.  Previously only the real part was read.
+- **`complex('abc')` / `complex([])`** raise typed errors
+  (`ValueError: complex() arg is a malformed string`,
+  `TypeError: complex() first argument must be a string or a number, not 'list'`).
+- **`pow(0, -n)` / `0 ** -n`** raise `ZeroDivisionError`.  Previously
+  the float path returned `inf` and a downstream op could hang.
+- **`slice()`** requires at least 1 arg (TypeError); repr always shows
+  three components: `slice(None, 5, None)`, `slice(1, 10, 2)`.
+- **`frozenset` repr** — `frozenset()` and `frozenset({1, 2, 3})`
+  instead of `<frozenset object at 0x…>`.
+- **`str.rfind` / `str.count`** raise `TypeError("substring must be
+  str")` / `TypeError("must be str, not int")` for non-str needles
+  (mirror `str.find`'s existing strictness).
+- **`str.split` / `rsplit` / `replace`** validate maxsplit / count as
+  integer (or bool).  Non-int silently fell back to default.
+- **`round(3.5, 1.5)` / `round(3.5, 'a')`** raise `TypeError` instead
+  of crashing with the internal C++ panic
+  `"Object is not an integer type"`.
+- **`len()` validates `__len__` return** — negative raises ValueError,
+  non-int raises TypeError, matching CPython's protocol.
+- **`map(func, *iterables)`** supports the N-iterable form via splat
+  call.  Previously only the first iterable was used.
+- **`iter(callable, sentinel)`** — the 2-arg form is now implemented;
+  builds a native iterator that calls callable() and stops at sentinel.
+- **`ascii()`** routes through `reprObject` so primitives (`int`,
+  `str`, `None`) repr correctly.  Previously `ascii('abc')` returned
+  `"<class 'str'>"`.
+- **`float` repr / `str(float)`** prefer decimal notation for
+  `|val|` in `[1e-4, 1e16)`, matching CPython.  `repr(1e10)`
+  becomes `'10000000000.0'` (was `'1e+10'`).
+- **`{None: 1}` repr / `.values()` / `.items()`** return `1` /
+  `[1]` / `[(None, 1)]` (was `None` / `[None]` / `[(None, None)]`).
+  Root cause: dict views used `key->getHash()` but setitem stored
+  with `dictKeyHash()`; reunify on the latter.
+
 ### Fixed: 20-commit sweep — operator strictness + correctness gaps
 
 Third twenty-commit sweep this session.  Targets operator-form
