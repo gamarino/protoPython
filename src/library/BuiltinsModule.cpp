@@ -6844,7 +6844,23 @@ static const proto::ProtoObject* py_property_copy_with(
     const proto::ProtoObject* self,
     const char* slotName,
     const proto::ProtoObject* newFn) {
-    proto::ProtoObject* prop = const_cast<proto::ProtoObject*>(self->newChild(context, true));
+    // Build the copy as a fresh child of the SAME class as the original
+    // (its __class__ attribute) so the parent chain stays one level deep —
+    // newChild(self, ...) would otherwise nest the copy under the previous
+    // property and force the data-descriptor walk in
+    // PythonEnvironment::getAttribute to recurse twice to find
+    // property.__set__ on propertyProto.  Some descriptor lookups stop at
+    // the first non-class parent and miss __set__, which is why
+    // `@x.setter` produced a property whose `p.x` access didn't trigger
+    // __get__ even though the lookup itself returned the dispatcher.
+    PythonEnvironment* envEarly = PythonEnvironment::fromContext(context);
+    const proto::ProtoString* classKeyEarly =
+        envEarly ? envEarly->getClassString()
+                 : PythonEnvironment::getInternedString(context, "__class__");
+    const proto::ProtoObject* selfCls = self->getAttribute(context, classKeyEarly);
+    const proto::ProtoObject* prop = (selfCls && selfCls != PROTO_NONE)
+        ? selfCls->newChild(context, true)
+        : self->newChild(context, true);
     const proto::ProtoString* fgetKey = PythonEnvironment::getInternedString(context, "fget");
     const proto::ProtoString* fsetKey = PythonEnvironment::getInternedString(context, "fset");
     const proto::ProtoString* fdelKey = PythonEnvironment::getInternedString(context, "fdel");
@@ -6853,12 +6869,12 @@ static const proto::ProtoObject* py_property_copy_with(
     const proto::ProtoObject* fset = self->getAttribute(context, fsetKey);
     const proto::ProtoObject* fdel = self->getAttribute(context, fdelKey);
     const proto::ProtoObject* cls  = self->getAttribute(context, classKey);
-    if (cls  && cls  != PROTO_NONE) prop->setAttribute(context, classKey, cls);
-    if (fget && fget != PROTO_NONE) prop->setAttribute(context, fgetKey, fget);
-    if (fset && fset != PROTO_NONE) prop->setAttribute(context, fsetKey, fset);
-    if (fdel && fdel != PROTO_NONE) prop->setAttribute(context, fdelKey, fdel);
-    // Override the named slot
-    prop->setAttribute(context, PythonEnvironment::getInternedString(context, slotName), newFn);
+    if (cls  && cls  != PROTO_NONE) prop = prop->setAttribute(context, classKey, cls);
+    if (fget && fget != PROTO_NONE) prop = prop->setAttribute(context, fgetKey, fget);
+    if (fset && fset != PROTO_NONE) prop = prop->setAttribute(context, fsetKey, fset);
+    if (fdel && fdel != PROTO_NONE) prop = prop->setAttribute(context, fdelKey, fdel);
+    prop = prop->setAttribute(context,
+        PythonEnvironment::getInternedString(context, slotName), newFn);
     return prop;
 }
 
