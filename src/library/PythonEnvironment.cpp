@@ -9558,16 +9558,50 @@ static std::string bytes_sep_from_arg(proto::ProtoContext* context, const proto:
 static const proto::ProtoObject* py_bytes_split(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwargs) {
     std::string raw;
     if (!bytes_data_view(context, self, raw)) return PROTO_NONE;
     std::string sep = (posArgs && posArgs->getSize(context) >= 1) ? bytes_sep_from_arg(context, posArgs->getAt(context, 0)) : " ";
     if (sep.empty()) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (!env) return PROTO_NONE;
+    // CPython: bytes.split(sep, maxsplit=-1) — at most maxsplit splits.
+    // Previously the limit was ignored, so b'a b c'.split(maxsplit=1)
+    // produced [b'a', b'b', b'c'] instead of [b'a', b'b c'].
+    long long maxsplit = -1;
+    auto readMaxsplit = [&](const proto::ProtoObject* msObj) -> bool {
+        if (!msObj) return true;
+        if (msObj == PROTO_NONE) return true;
+        if (msObj->isInteger(context)) { maxsplit = msObj->asLong(context); return true; }
+        if (msObj == PROTO_TRUE) { maxsplit = 1; return true; }
+        if (msObj == PROTO_FALSE) { maxsplit = 0; return true; }
+        env->raiseTypeError(context, "maxsplit must be an integer");
+        return false;
+    };
+    if (posArgs && posArgs->getSize(context) >= 2) {
+        if (!readMaxsplit(posArgs->getAt(context, 1))) return nullptr;
+    }
+    if (kwargs && kwargs->getSize(context) > 0) {
+        const proto::ProtoTuple* kwNames = env->getCurrentKwNames();
+        if (kwNames) {
+            const proto::ProtoString* msKey =
+                PythonEnvironment::getInternedString(context, "maxsplit");
+            unsigned long hash = msKey->getHash(context);
+            if (kwargs->has(context, hash)) {
+                if (!readMaxsplit(kwargs->getAt(context, hash))) return nullptr;
+            }
+        }
+    }
     const proto::ProtoList* result = context->newList();
     size_t start = 0;
+    long long count = 0;
     for (;;) {
+        if (maxsplit >= 0 && count >= maxsplit) {
+            std::string seg = raw.substr(start);
+            const proto::ProtoObject* b = bytes_make_object(context, seg.data(), static_cast<unsigned long>(seg.size()));
+            result = result->appendLast(context, b);
+            break;
+        }
         size_t pos = raw.find(sep, start);
         if (pos == std::string::npos) {
             std::string seg = raw.substr(start);
@@ -9579,6 +9613,7 @@ static const proto::ProtoObject* py_bytes_split(
         const proto::ProtoObject* b = bytes_make_object(context, seg.data(), static_cast<unsigned long>(seg.size()));
         result = result->appendLast(context, b);
         start = pos + sep.size();
+        ++count;
     }
     return wrap_list_as_pylist(context, result);
 }
