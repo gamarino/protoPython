@@ -8726,16 +8726,58 @@ static const proto::ProtoObject* py_str_encode(
         else if (c == '-' || c == '_') /* skip */;
         else canon += c;
     }
-    if (canon == "ascii" || canon == "usascii") {
-        for (size_t i = 0; i < raw.size(); ++i) {
-            if (static_cast<unsigned char>(raw[i]) >= 0x80) {
-                env->raiseValueError(context,
-                    PythonEnvironment::getInternedString(context,
-                        "'ascii' codec can't encode character: "
-                        "ordinal not in range(128)")->asObject(context));
-                return nullptr;
-            }
+    // Resolve `errors` argument (positional[2] or errors= kwarg).
+    // CPython accepts 'strict' (default), 'ignore', and 'replace';
+    // 'replace' uses '?' for str encodings.  Previously this was
+    // ignored and 'café'.encode('ascii', errors='ignore') raised
+    // ValueError instead of returning b'caf'.
+    std::string errorsArg = "strict";
+    if (positionalParameters && positionalParameters->getSize(context) >= static_cast<unsigned long>(2 + posOff)) {
+        const proto::ProtoObject* ea = positionalParameters->getAt(context, 1 + posOff);
+        if (ea && ea->isString(context)) ea->asString(context)->toUTF8String(context, errorsArg);
+    }
+    if (keywordParameters && keywordParameters->getSize(context) > 0) {
+        const proto::ProtoString* eS = PythonEnvironment::getInternedString(context, "errors");
+        if (keywordParameters->has(context, eS->getHash(context))) {
+            const proto::ProtoObject* v = keywordParameters->getAt(context, eS->getHash(context));
+            if (v && v->isString(context)) v->asString(context)->toUTF8String(context, errorsArg);
         }
+    }
+    if (canon == "ascii" || canon == "usascii") {
+        // Iterate code points (UTF-8 decoded) and apply the chosen
+        // error handler.  Strict raises on the first non-ASCII
+        // codepoint; ignore drops it; replace emits '?'.  The raw
+        // UTF-8 byte loop would over-emit multibyte sequences as
+        // multiple errors — decode code-point by code-point.
+        std::string out;
+        size_t i = 0;
+        bool errored = false;
+        while (i < raw.size()) {
+            unsigned char c0 = static_cast<unsigned char>(raw[i]);
+            int len = 1;
+            unsigned int cp = c0;
+            if ((c0 & 0x80) == 0) { len = 1; cp = c0; }
+            else if ((c0 & 0xE0) == 0xC0) len = 2;
+            else if ((c0 & 0xF0) == 0xE0) len = 3;
+            else if ((c0 & 0xF8) == 0xF0) len = 4;
+            if (cp < 0x80) {
+                out += static_cast<char>(cp);
+                i += len;
+                continue;
+            }
+            if (errorsArg == "ignore") { i += len; continue; }
+            if (errorsArg == "replace") { out += '?'; i += len; continue; }
+            errored = true;
+            break;
+        }
+        if (errored) {
+            env->raiseValueError(context,
+                PythonEnvironment::getInternedString(context,
+                    "'ascii' codec can't encode character: "
+                    "ordinal not in range(128)")->asObject(context));
+            return nullptr;
+        }
+        return bytes_make_object(context, out.data(), static_cast<unsigned long>(out.size()));
     } else if (canon == "latin1" || canon == "iso88591" || canon == "8859") {
         // latin-1 maps each Unicode code point ≤ 0xFF to a byte.
         // protoPython stores str as UTF-8; iterate code points.
