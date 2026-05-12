@@ -1921,30 +1921,23 @@ static const proto::ProtoObject* py_all(
     if (positionalParameters->getSize(context) < 1) return PROTO_TRUE;
     const proto::ProtoObject* iterable = positionalParameters->getAt(context, 0);
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
-    const proto::ProtoString* iterS = env ? env->getIterString() : PythonEnvironment::getInternedString(context, "__iter__");
-    const proto::ProtoString* nextS = env ? env->getNextString() : PythonEnvironment::getInternedString(context, "__next__");
-
-    const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
-    const proto::ProtoObject* iterMethod = iterable->getAttribute(context, iterS);
-    if (!iterMethod || !iterMethod->asMethod(context)) return PROTO_TRUE;
-    const proto::ProtoObject* it = iterMethod->asMethod(context)(context, iterable, nullptr, emptyL, nullptr);
-    if (!it) return PROTO_TRUE;
-    const proto::ProtoObject* nextMethod = it->getAttribute(context, nextS);
-    if (!nextMethod || !nextMethod->asMethod(context)) return PROTO_TRUE;
-
-    auto nextFn = nextMethod->asMethod(context);
-    const proto::ProtoObject* noneObj = env ? env->getNonePrototype() : nullptr;
-
+    // Route through env->iter / env->next so user iterators work.
+    // The bespoke asMethod gate previously rejected every Python
+    // __iter__ method and returned True for any user iterable —
+    // making `all(MyIter())` always True regardless of contents.
+    const proto::ProtoObject* it = env ? env->iter(iterable) : nullptr;
+    if (!it) {
+        if (env && env->hasPendingException()) return nullptr;
+        return PROTO_TRUE;
+    }
+    PythonEnvironment::TransientPin pinIt(env, it);
     for (;;) {
-        const proto::ProtoObject* val = nextFn(context, it, nullptr, emptyL, nullptr);
+        const proto::ProtoObject* val = env->next(it);
         if (!val) {
-             if (env && env->handleExhaustion(context)) break;
-             return nullptr; // Propagate other errors
+            if (env->hasPendingException()) return nullptr;
+            break;
         }
-        if (val == noneObj) break;
-        // Use env->isTrue: asBoolean only reads PROTO_TRUE/FALSE
-        // sentinels and would return false for ints, strings, etc.
-        if (!(env && env->isTrue(val))) return PROTO_FALSE;
+        if (!env->isTrue(val)) return PROTO_FALSE;
     }
     return PROTO_TRUE;
 }
@@ -1958,30 +1951,19 @@ static const proto::ProtoObject* py_any(
     if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
     const proto::ProtoObject* iterable = positionalParameters->getAt(context, 0);
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
-    const proto::ProtoString* iterS = env ? env->getIterString() : PythonEnvironment::getInternedString(context, "__iter__");
-    const proto::ProtoString* nextS = env ? env->getNextString() : PythonEnvironment::getInternedString(context, "__next__");
-
-    const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
-    const proto::ProtoObject* iterMethod = iterable->getAttribute(context, iterS);
-    if (!iterMethod || !iterMethod->asMethod(context)) return PROTO_FALSE;
-    const proto::ProtoObject* it = iterMethod->asMethod(context)(context, iterable, nullptr, emptyL, nullptr);
-    if (!it) return PROTO_FALSE;
-    const proto::ProtoObject* nextMethod = it->getAttribute(context, nextS);
-    if (!nextMethod || !nextMethod->asMethod(context)) return PROTO_FALSE;
-
-    auto nextFn = nextMethod->asMethod(context);
-    const proto::ProtoObject* noneObj = env ? env->getNonePrototype() : nullptr;
-
+    const proto::ProtoObject* it = env ? env->iter(iterable) : nullptr;
+    if (!it) {
+        if (env && env->hasPendingException()) return nullptr;
+        return PROTO_FALSE;
+    }
+    PythonEnvironment::TransientPin pinIt(env, it);
     for (;;) {
-        const proto::ProtoObject* val = nextFn(context, it, nullptr, emptyL, nullptr);
+        const proto::ProtoObject* val = env->next(it);
         if (!val) {
-             if (env && env->handleExhaustion(context)) break;
-             return nullptr; // Propagate other errors
+            if (env->hasPendingException()) return nullptr;
+            break;
         }
-        if (val == noneObj) break;
-        // Use env->isTrue: asBoolean only reads PROTO_TRUE/FALSE
-        // sentinels and would return false for ints, strings, etc.
-        if (env && env->isTrue(val)) return PROTO_TRUE;
+        if (env->isTrue(val)) return PROTO_TRUE;
     }
     return PROTO_FALSE;
 }
