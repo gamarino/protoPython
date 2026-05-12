@@ -8833,8 +8833,17 @@ static const proto::ProtoObject* py_bytes_startswith(
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     std::string haystack;
     if (!bytes_data_view(context, self, haystack) || posArgs->getSize(context) < 1) return PROTO_FALSE;
+    const proto::ProtoObject* prefArg = posArgs->getAt(context, 0);
+    // CPython: startswith requires a bytes (or tuple of bytes).  Raw
+    // str silently coerced via bytes_view returning True/False.
+    if (prefArg && prefArg->isString(context)) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env) env->raiseTypeError(context,
+            "startswith first arg must be bytes or a tuple of bytes, not str");
+        return nullptr;
+    }
     std::string prefix;
-    bytes_needle_from_arg(context, posArgs->getAt(context, 0), prefix);
+    bytes_needle_from_arg(context, prefArg, prefix);
     long long start = 0, end = static_cast<long long>(haystack.size());
     if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isInteger(context))
         start = posArgs->getAt(context, 1)->asLong(context);
@@ -8852,8 +8861,15 @@ static const proto::ProtoObject* py_bytes_endswith(
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     std::string haystack;
     if (!bytes_data_view(context, self, haystack) || posArgs->getSize(context) < 1) return PROTO_FALSE;
+    const proto::ProtoObject* sufArg = posArgs->getAt(context, 0);
+    if (sufArg && sufArg->isString(context)) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env) env->raiseTypeError(context,
+            "endswith first arg must be bytes or a tuple of bytes, not str");
+        return nullptr;
+    }
     std::string suffix;
-    bytes_needle_from_arg(context, posArgs->getAt(context, 0), suffix);
+    bytes_needle_from_arg(context, sufArg, suffix);
     long long start = 0, end = static_cast<long long>(haystack.size());
     if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isInteger(context))
         start = posArgs->getAt(context, 1)->asLong(context);
