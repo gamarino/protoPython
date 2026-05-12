@@ -17196,8 +17196,35 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     boolPrototype = boolPrototype->setAttribute(rootContext_, py_module, builtinsVal);
     boolPrototype = boolPrototype->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, py_bool_call));
     boolPrototype = boolPrototype->setAttribute(rootContext_, PythonEnvironment::getInternalString(rootContext_, "__init__"), rootContext_->fromMethod(nullptr, protoPython::builtins::py_python_ignore_init));
-    // Update boolean class name and repr
-    boolPrototype = boolPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
+    // CPython: bool.__str__(True) == 'True' and bool.__repr__(False) == 'False'.
+    // Without dedicated dunders here, str(True) walks bool's MRO to int.__str__
+    // (which is py_int_repr) and renders the PROTO_TRUE/PROTO_FALSE singletons
+    // as '0' — they aren't recognised by isInteger().  Install lambdas that
+    // route the two singletons (and the wrapped subclass case via __data__)
+    // to their canonical spellings.
+    auto py_bool_str_lambda = +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+            const proto::ParentLink*, const proto::ProtoList* args,
+            const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+        const proto::ProtoObject* recv = self;
+        // Unbound call form: bool.__str__(x).
+        if (recv == nullptr && args && args->getSize(ctx) >= 1) {
+            recv = args->getAt(ctx, 0);
+        }
+        // Unwrap bool subclass instances.
+        if (recv && recv != PROTO_TRUE && recv != PROTO_FALSE) {
+            PythonEnvironment* envU = PythonEnvironment::fromContext(ctx);
+            if (envU) {
+                const proto::ProtoObject* d = recv->getAttribute(ctx, envU->getDataString());
+                if (d == PROTO_TRUE || d == PROTO_FALSE) recv = d;
+            }
+        }
+        const char* lit = (recv == PROTO_TRUE) ? "True"
+                        : (recv == PROTO_FALSE) ? "False"
+                        : "False";  // any non-bool falsy-ish input
+        return PythonEnvironment::getInternedString(ctx, lit)->asObject(ctx);
+    };
+    boolPrototype = boolPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_bool_str_lambda));
+    boolPrototype = boolPrototype->setAttribute(rootContext_, py_str,  rootContext_->fromMethod(nullptr, py_bool_str_lambda));
 
     // Set MRO and bases for bool BEFORE registering the prototype on
     // space_, otherwise space_->booleanPrototype keeps the pre-update
