@@ -6453,6 +6453,14 @@ static const proto::ProtoObject* py_divmod(
     const proto::ProtoObject* objA = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* objB = positionalParameters->getAt(context, 1);
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    // CPython: bool is an int subclass.  Promote PROTO_TRUE / PROTO_FALSE
+    // to integer 1 / 0 so `divmod(True, 2)` works (previously raised
+    // "divmod() argument must be a number" because the strict isInteger
+    // gate rejected the bool sentinels).
+    if (objA == PROTO_TRUE) objA = context->fromInteger(1);
+    else if (objA == PROTO_FALSE) objA = context->fromInteger(0);
+    if (objB == PROTO_TRUE) objB = context->fromInteger(1);
+    else if (objB == PROTO_FALSE) objB = context->fromInteger(0);
     bool aIsFloat = objA->isDouble(context) || (objA->isInteger(context) && objB->isDouble(context));
     bool bIsFloat = objB->isDouble(context);
     if (aIsFloat || bIsFloat) {
