@@ -11409,7 +11409,12 @@ static const proto::ProtoObject* py_dict_repr(
     for (unsigned long i = 0; i < size && i < limit; ++i) {
         if (i > 0) out += ", ";
         const proto::ProtoObject* key = keys->getAt(context, static_cast<int>(i));
-        const proto::ProtoObject* value = dict->getAt(context, key->getHash(context));
+        // Use dictKeyHash to look up the stored value — matches the
+        // hash py_dict_setitem stored with.  Raw key->getHash() misses
+        // for keys like None whose protoCore hash diverges from the
+        // Python __hash__ value, producing `{None: None}` reprs for
+        // `{None: 1}`.
+        const proto::ProtoObject* value = dict->getAt(context, dictKeyHash(context, key));
         out += PythonEnvironment::reprObject(context, key);
         out += ": ";
         out += PythonEnvironment::reprObject(context, value);
@@ -11640,7 +11645,14 @@ static const proto::ProtoObject* py_dict_values(
     unsigned long size = keys->getSize(context);
     for (unsigned long i = 0; i < size; ++i) {
         const proto::ProtoObject* key = keys->getAt(context, static_cast<int>(i));
-        const proto::ProtoObject* val = dict->getAt(context, key->getHash(context));
+        // Use dictKeyHash (the same function py_dict_setitem stores
+        // with) instead of raw key->getHash().  For keys like None
+        // whose protoCore hash diverges from the Python __hash__ value,
+        // the raw getHash misses the bucket and returns nullptr — the
+        // values() iterator then synthesised PROTO_NONE for every such
+        // key, so d.values() of `{None: 1}` came back as [None] instead
+        // of [1].
+        const proto::ProtoObject* val = dict->getAt(context, dictKeyHash(context, key));
         values = values->appendLast(context, val ? val : PROTO_NONE);
     }
     return wrapInDictView(context, values, "dict_values");
@@ -11668,7 +11680,10 @@ static const proto::ProtoObject* py_dict_items(
         for (unsigned long i = 0; i < size; ++i) {
             const proto::ProtoObject* key = keys->getAt(context, static_cast<int>(i));
             if (!key) continue;
-            const proto::ProtoObject* val = dict->getAt(context, key->getHash(context));
+            // Same dictKeyHash fix as py_dict_values: match the hash
+            // function used by py_dict_setitem so None keys produce
+            // the right value bucket.
+            const proto::ProtoObject* val = dict->getAt(context, dictKeyHash(context, key));
             const proto::ProtoList* pairList = context->newList()->appendLast(context, key)->appendLast(context, val ? val : PROTO_NONE);
             const proto::ProtoObject* pairTuple = context->newTupleFromList(pairList)->asObject(context);
             items = items->appendLast(context, pairTuple);
