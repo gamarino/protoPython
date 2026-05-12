@@ -5076,44 +5076,34 @@ static const proto::ProtoObject* py_set_call(
     if (positionalParameters->getSize(context) >= 2) {
         const proto::ProtoObject* iterable = positionalParameters->getAt(context, 1);
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
-        const proto::ProtoString* iterS = env ? env->getIterString() : PythonEnvironment::getInternalString(context, "__iter__");
-        const proto::ProtoObject* iterM = iterable->getAttribute(context, iterS);
-        if (iterM && iterM->asMethod(context)) {
-            const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
-            const proto::ProtoObject* it = iterM->asMethod(context)(context, iterable, nullptr, emptyL, nullptr);
-            if (it && it != PROTO_NONE) {
-                // `__next__` lives on the iterator's prototype (list_iterator,
-                // tuple_iterator, ...), not OWN on the iterator instance —
-                // walk the chain via getAttribute. The previous hasOwnAttribute
-                // gate dropped every list/tuple iterable silently.
-                const proto::ProtoString* nextS = env ? env->getNextString() : PythonEnvironment::getInternalString(context, "__next__");
-                const proto::ProtoObject* nextM = it->getAttribute(context, nextS);
-                if (nextM && nextM->asMethod(context)) {
-                    for (;;) {
-                        const proto::ProtoObject* item = nextM->asMethod(context)(context, it, nullptr, emptyL, nullptr);
-                        if (!item) {
-                            if (env && env->handleExhaustion(context)) break;
-                            break; // Stop iteration correctly
-                        }
-                        s = s->add(context, item);
+        // Drive iteration through env->iter / env->next so user
+        // classes with Python-level __iter__ / __next__ work too —
+        // the previous direct asMethod check skipped every Python
+        // callable and rejected the iterable as not iterable.
+        const proto::ProtoObject* it = env ? env->iter(iterable) : nullptr;
+        if (!it) {
+            if (env && env->hasPendingException()) return nullptr;
+            if (env) {
+                std::string clsName = "object";
+                const proto::ProtoObject* cls2 = env->getType(context, iterable);
+                if (cls2) {
+                    const proto::ProtoObject* nameAttr = cls2->getAttribute(context, env->getNameString());
+                    if (nameAttr && nameAttr->isString(context)) {
+                        nameAttr->asString(context)->toUTF8String(context, clsName);
                     }
                 }
+                env->raiseTypeError(context, "'" + clsName + "' object is not iterable");
             }
-        } else if (env) {
-            // CPython: set(non_iterable) -> TypeError.  Without this branch
-            // set(5) silently returned an empty set, masking real bugs and
-            // diverging from list(5)/tuple(5)/dict.fromkeys(5) which all
-            // raise.  Use the same message form as the rest of the runtime.
-            std::string clsName = "object";
-            const proto::ProtoObject* cls2 = env->getType(context, iterable);
-            if (cls2) {
-                const proto::ProtoObject* nameAttr = cls2->getAttribute(context, env->getNameString());
-                if (nameAttr && nameAttr->isString(context)) {
-                    nameAttr->asString(context)->toUTF8String(context, clsName);
-                }
-            }
-            env->raiseTypeError(context, "'" + clsName + "' object is not iterable");
             return nullptr;
+        }
+        PythonEnvironment::TransientPin pinIt(env, it);
+        for (;;) {
+            const proto::ProtoObject* item = env->next(it);
+            if (!item) {
+                if (env && env->hasPendingException()) return nullptr;
+                break;
+            }
+            s = s->add(context, item);
         }
     }
 
