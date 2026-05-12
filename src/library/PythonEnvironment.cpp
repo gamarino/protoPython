@@ -15835,6 +15835,29 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                 if (!intUnaryStatic(ctx, self, args, v)) return PROTO_NONE;
                 return ctx->fromInteger(v);
             }));
+        // int.__floor__ / __ceil__ / __trunc__ / __round__ — all
+        // return self for integer receivers (no rounding needed).
+        // CPython exposes these so generic numeric code that
+        // calls type(x).__floor__(x) etc. works uniformly across
+        // int and float.
+        auto intIdentity = [&](const char* name) {
+            intPrototype = intPrototype->setAttribute(rootContext_,
+                PythonEnvironment::getInternedString(rootContext_, name),
+                rootContext_->fromMethod(nullptr,
+                +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+                   const proto::ParentLink*, const proto::ProtoList* args,
+                   const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                    long long v = 0;
+                    if (!intUnaryStatic(ctx, self, args, v)) return PROTO_NONE;
+                    return ctx->fromInteger(v);
+                }));
+        };
+        intIdentity("__floor__");
+        intIdentity("__ceil__");
+        intIdentity("__trunc__");
+        // __round__ accepts optional ndigits; for int receivers,
+        // round(int, ndigits) == int.  Same identity as above.
+        intIdentity("__round__");
         space_->smallIntegerPrototype = const_cast<proto::ProtoObject*>(intPrototype);
     }
 
@@ -16409,6 +16432,65 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     floatPrototype = floatPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_float_repr));
     floatPrototype = floatPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, py_float_repr));
     floatPrototype = floatPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__getformat__"), rootContext_->fromMethod(nullptr, py_float_getformat));
+    // CPython: float exposes __round__, __floor__, __ceil__, __trunc__
+    // as numeric ABC methods.  Without these, direct dunder calls like
+    // (3.5).__round__(1) raised AttributeError and numeric protocols
+    // that iterate the supported set missed float.
+    floatPrototype = floatPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__round__"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            // Delegate to the builtin `round` so banker's rounding +
+            // ndigits semantics match exactly.  Build a forwarding
+            // call site: round(self, *args).
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (!env || !self) return PROTO_NONE;
+            const proto::ProtoObject* roundFn = env->getBuiltins()->getAttribute(ctx,
+                PythonEnvironment::getInternedString(ctx, "round"));
+            if (!roundFn || !roundFn->asMethod(ctx)) return PROTO_NONE;
+            const proto::ProtoList* fwd = ctx->newList()->appendLast(ctx, self);
+            if (args) {
+                for (unsigned long i = 0; i < args->getSize(ctx); ++i) {
+                    fwd = fwd->appendLast(ctx, args->getAt(ctx, static_cast<int>(i)));
+                }
+            }
+            return roundFn->asMethod(ctx)(ctx, env->getBuiltins(), nullptr, fwd, nullptr);
+        }));
+    floatPrototype = floatPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__floor__"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList*,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            double d = 0.0;
+            if (self && self->isDouble(ctx)) d = self->asDouble(ctx);
+            else return PROTO_NONE;
+            return ctx->fromInteger(static_cast<long long>(std::floor(d)));
+        }));
+    floatPrototype = floatPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__ceil__"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList*,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            double d = 0.0;
+            if (self && self->isDouble(ctx)) d = self->asDouble(ctx);
+            else return PROTO_NONE;
+            return ctx->fromInteger(static_cast<long long>(std::ceil(d)));
+        }));
+    floatPrototype = floatPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__trunc__"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList*,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            double d = 0.0;
+            if (self && self->isDouble(ctx)) d = self->asDouble(ctx);
+            else return PROTO_NONE;
+            return ctx->fromInteger(static_cast<long long>(d));
+        }));
     // float.__lt__/__le__/__gt__/__ge__/__eq__/__ne__: missing on the
     // prototype, so direct dunder calls (e.g. `(100.0).__eq__(3.0)` or
     // `float.__eq__(100.0, 3.0)`) fell through to objectPrototype's
