@@ -9639,6 +9639,37 @@ static const proto::ProtoObject* py_str_getitem(
         return PythonEnvironment::getInternedString(context, c)->asObject(context);
     }
 
+    // CPython __index__ protocol — same fix as list / tuple subscript.
+    {
+        PythonEnvironment* envE = PythonEnvironment::fromContext(context);
+        if (envE) {
+            const proto::ProtoString* indexS =
+                PythonEnvironment::getInternedString(context, "__index__");
+            const proto::ProtoObject* indexM = envE->getAttribute(context, indexObj, indexS, false);
+            if (indexM && indexM != PROTO_NONE) {
+                const proto::ProtoObject* idxRes = nullptr;
+                if (indexM->asMethod(context)) {
+                    idxRes = indexM->asMethod(context)(context,
+                        const_cast<proto::ProtoObject*>(indexObj), nullptr,
+                        envE->getEmptyList(), nullptr);
+                } else {
+                    const proto::ProtoList* sa = context->newList()->appendLast(context, indexObj);
+                    idxRes = ::protoPython::invokePythonCallable(context, indexM, sa, nullptr);
+                }
+                if (idxRes && idxRes->isInteger(context)) {
+                    int idx = static_cast<int>(idxRes->asLong(context));
+                    if (idx < 0) idx += static_cast<int>(size);
+                    if (idx < 0 || static_cast<unsigned long>(idx) >= size) {
+                        envE->raiseIndexError(context, "string index out of range");
+                        return PROTO_NONE;
+                    }
+                    char c[2] = { s[static_cast<size_t>(idx)], '\0' };
+                    return PythonEnvironment::getInternedString(context, c)->asObject(context);
+                }
+            }
+        }
+    }
+
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (env) env->raiseTypeError(context, "string indices must be integers or slices");
     return PROTO_NONE;
