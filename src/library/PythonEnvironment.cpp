@@ -1724,18 +1724,83 @@ static const proto::ProtoObject* py_int_call(
             std::string digits = trimmed;
             int signLen = 0;
             if (!digits.empty() && (digits[0] == '+' || digits[0] == '-')) signLen = 1;
-            // Strip 0x / 0o / 0b prefix only in base-0 (auto-detect) mode or
-            // when the prefix matches the explicit base.  Stripping in other
-            // bases would silently change semantics.
+            // CPython: int() accepts PEP 515 underscores between digits.
+            // `int('1_000_000') == 1000000`, `int('1__000')` is rejected.
+            // Strip underscores after a leading digit; reject a leading
+            // underscore, trailing underscore, or consecutive underscores
+            // up front.
+            {
+                bool valid = true;
+                std::string compact;
+                compact.reserve(digits.size());
+                bool prevUnderscore = false;
+                bool sawDigit = false;
+                for (size_t di = 0; di < digits.size(); ++di) {
+                    char c = digits[di];
+                    if ((di == 0 || di == static_cast<size_t>(signLen)) && (c == '+' || c == '-')) {
+                        compact += c;
+                        continue;
+                    }
+                    if (c == '_') {
+                        if (!sawDigit || prevUnderscore) { valid = false; break; }
+                        prevUnderscore = true;
+                        continue;
+                    }
+                    sawDigit = true;
+                    prevUnderscore = false;
+                    compact += c;
+                }
+                if (valid && !prevUnderscore) digits = compact;
+            }
+            // Strip 0x / 0o / 0b prefix only when the caller explicitly
+            // asked for base 0 (auto-detect) or for the matching base.
+            // CPython rule: in base 10 (the default) a 0x / 0o / 0b
+            // prefix is invalid syntax — `int('0x1F')` raises
+            // `invalid literal for int() with base 10: '0x1F'`.
             if (digits.size() >= static_cast<size_t>(signLen + 2) && digits[signLen] == '0') {
                 char p = digits[signLen + 1];
-                bool autoDetect = (explicitBase < 0 || explicitBase == 0);
+                bool autoDetect = (explicitBase == 0);
                 if ((p == 'x' || p == 'X') && (autoDetect || explicitBase == 16)) {
                     base = 16; digits.erase(signLen + 1, 1); digits.erase(signLen, 1);
                 } else if ((p == 'o' || p == 'O') && (autoDetect || explicitBase == 8)) {
                     base = 8;  digits.erase(signLen + 1, 1); digits.erase(signLen, 1);
                 } else if ((p == 'b' || p == 'B') && (autoDetect || explicitBase == 2)) {
                     base = 2;  digits.erase(signLen + 1, 1); digits.erase(signLen, 1);
+                }
+            }
+            // Validate every character against `base`'s digit alphabet
+            // before handing the string to fromString — protoCore's
+            // parser silently stops at the first invalid char and
+            // returns the prefix it consumed (e.g. `fromString("0x1F",
+            // 10)` returned 0 instead of raising).  Match CPython:
+            //   int('0x1F')        -> ValueError (no auto-detect at base 10)
+            //   int('42.5')        -> ValueError
+            //   int('abc', 16)     -> 2748
+            //   int('+42')         -> 42
+            {
+                size_t vi = static_cast<size_t>(signLen);
+                bool sawDigit = false;
+                bool valid = (vi <= digits.size());
+                for (; valid && vi < digits.size(); ++vi) {
+                    char c = digits[vi];
+                    int dv = -1;
+                    if (c >= '0' && c <= '9') dv = c - '0';
+                    else if (c >= 'a' && c <= 'z') dv = 10 + (c - 'a');
+                    else if (c >= 'A' && c <= 'Z') dv = 10 + (c - 'A');
+                    if (dv < 0 || dv >= base) { valid = false; break; }
+                    sawDigit = true;
+                }
+                if (!valid || !sawDigit) {
+                    PythonEnvironment* envV = PythonEnvironment::fromContext(ctx);
+                    if (envV) {
+                        char msg[512];
+                        std::snprintf(msg, sizeof(msg),
+                            "invalid literal for int() with base %d: '%s'",
+                            (explicitBase < 0 ? 10 : explicitBase), s.c_str());
+                        envV->raiseValueError(ctx,
+                            PythonEnvironment::getInternedString(ctx, msg)->asObject(ctx));
+                    }
+                    return nullptr;
                 }
             }
             try {
