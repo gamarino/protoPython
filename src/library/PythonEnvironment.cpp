@@ -12780,10 +12780,14 @@ static const proto::ProtoObject* py_dict_update(
     const proto::ProtoSparseList* dict = dataObj && dataObj->asSparseList(context) ? dataObj->asSparseList(context) : context->newSparseList();
 
     if (other && other != PROTO_NONE) {
-        // Use non-raising check for internal attributes
-        const proto::ProtoObject* otherKeysObj = (other->hasOwnAttribute(context, keysName) == PROTO_TRUE) ? (other->hasOwnAttribute(context, keysName) == PROTO_TRUE) ? other->getAttribute(context, keysName) : nullptr : nullptr;
+        // Accept __keys__ / __data__ whether they're own attributes or
+        // inherited.  A mappingproxy (e.g. `cls.__dict__`) doesn't store
+        // them directly but proxies them from the wrapped dict — the
+        // earlier hasOwnAttribute-only check missed those and forced the
+        // mapping proxy through the iterable / keys() path below.
+        const proto::ProtoObject* otherKeysObj = other->getAttribute(context, keysName);
         const proto::ProtoList* otherKeys = otherKeysObj && otherKeysObj->asList(context) ? otherKeysObj->asList(context) : nullptr;
-        const proto::ProtoObject* otherDataObj = (other->hasOwnAttribute(context, dataName) == PROTO_TRUE) ? (other->hasOwnAttribute(context, dataName) == PROTO_TRUE) ? other->getAttribute(context, dataName) : nullptr : nullptr;
+        const proto::ProtoObject* otherDataObj = other->getAttribute(context, dataName);
         const proto::ProtoSparseList* otherDict = otherDataObj && otherDataObj->asSparseList(context) ? otherDataObj->asSparseList(context) : nullptr;
 
         // Both __keys__ (key list) and __data__ (sparse list) are required:
@@ -12816,6 +12820,95 @@ static const proto::ProtoObject* py_dict_update(
                 }
             }
         } else if (env) {
+            // CPython contract: dict.update(other) walks `other.keys()`
+            // when `other` exposes a keys method (mapping protocol);
+            // otherwise it iterates `other` and unpacks each element as
+            // a (key, value) pair (sequence protocol).  The order
+            // matters: a dict proxy / MappingProxyType / mappingproxy is
+            // iterable (its __iter__ yields keys, NOT pairs), so
+            // skipping the keys-method check and falling through to the
+            // pair-unpack branch would raise
+            //   "dictionary update sequence element has wrong length"
+            // for every single key — which is exactly what broke
+            // `enum.py` when classdict.update(EnumClass.__dict__) ran.
+            // Look up keys / __getitem__ on `other` — protoCore's chain
+            // walk reaches both user classes (instance → class → object)
+            // and mappingproxy proxies (proxy → wrapped dict).
+            const proto::ProtoString* keysS =
+                PythonEnvironment::getInternedString(context, "keys");
+            const proto::ProtoObject* keysM = other->getAttribute(context, keysS);
+            if (keysM && keysM != PROTO_NONE) {
+                const proto::ProtoObject* getItemM = other->getAttribute(context,
+                    PythonEnvironment::getInternedString(context, "__getitem__"));
+                if (getItemM && getItemM != PROTO_NONE) {
+                    extern const proto::ProtoObject* invokePythonCallable(
+                        proto::ProtoContext* ctx, const proto::ProtoObject* callable,
+                        const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+                    auto invokeBound = [&](const proto::ProtoObject* m,
+                                            const proto::ProtoObject* recv,
+                                            const proto::ProtoList* args)
+                            -> const proto::ProtoObject* {
+                        if (!m || m == PROTO_NONE) return nullptr;
+                        if (m->asMethod(context)) {
+                            return m->asMethod(context)(context,
+                                const_cast<proto::ProtoObject*>(recv),
+                                nullptr, args, nullptr);
+                        }
+                        const proto::ProtoList* withSelf = context->newList()->appendLast(context, recv);
+                        unsigned long an = args ? args->getSize(context) : 0;
+                        for (unsigned long ai = 0; ai < an; ++ai)
+                            withSelf = withSelf->appendLast(context, args->getAt(context, ai));
+                        return invokePythonCallable(context, m, withSelf, nullptr);
+                    };
+                    const proto::ProtoObject* keysObj =
+                        invokeBound(keysM, other, context->newList());
+                    if (keysObj && keysObj != PROTO_NONE) {
+                        PythonEnvironment::TransientPin pinKeys(env, keysObj);
+                        const proto::ProtoList* keysList = keysObj->asList(context);
+                        if (keysList) {
+                            unsigned long kn = keysList->getSize(context);
+                            for (unsigned long ki = 0; ki < kn; ++ki) {
+                                const proto::ProtoObject* k = keysList->getAt(context, static_cast<int>(ki));
+                                const proto::ProtoList* ga = context->newList()->appendLast(context, k);
+                                const proto::ProtoObject* v = invokeBound(getItemM, other, ga);
+                                if (!v) continue;
+                                unsigned long hash = k->getHash(context);
+                                dict = dict->setAt(context, hash, v);
+                                bool found = false;
+                                for (unsigned long j = 0; j < keys->getSize(context); ++j) {
+                                    if (keys->getAt(context, static_cast<int>(j))->getHash(context) == hash) { found = true; break; }
+                                }
+                                if (!found) keys = keys->appendLast(context, k);
+                            }
+                        } else {
+                            // keys() returned an iterator, not a list — walk via env->iter.
+                            const proto::ProtoObject* keyIt = env->iter(keysObj);
+                            if (keyIt) {
+                                PythonEnvironment::TransientPin pinKeyIt(env, keyIt);
+                                for (;;) {
+                                    const proto::ProtoObject* k = env->next(keyIt);
+                                    if (!k) {
+                                        if (env->hasPendingException()) return nullptr;
+                                        break;
+                                    }
+                                    const proto::ProtoList* ga = context->newList()->appendLast(context, k);
+                                    const proto::ProtoObject* v = invokeBound(getItemM, other, ga);
+                                    if (!v) continue;
+                                    unsigned long hash = k->getHash(context);
+                                    dict = dict->setAt(context, hash, v);
+                                    bool found = false;
+                                    for (unsigned long j = 0; j < keys->getSize(context); ++j) {
+                                        if (keys->getAt(context, static_cast<int>(j))->getHash(context) == hash) { found = true; break; }
+                                    }
+                                    if (!found) keys = keys->appendLast(context, k);
+                                }
+                            }
+                        }
+                    }
+                    // Fall through to write-back at the bottom.
+                    goto kwargs_phase;
+                }
+            }
             // CPython: dict.update(iterable_of_pairs) walks the iterable
             // and unpacks each element as a (key, value) pair.  Without
             // this path, `d.update([('a', 1), ('b', 2)])` silently
@@ -12882,6 +12975,7 @@ static const proto::ProtoObject* py_dict_update(
         }
     }
 
+kwargs_phase:
     // CPython: dict.update(**kwargs) — merge keyword args last so they
     // override any matching keys produced by the positional argument.
     // kwarg names live in the CALL_KW kwnames tuple on the call stack;
