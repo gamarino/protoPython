@@ -12007,6 +12007,23 @@ static const proto::ProtoObject* py_dict_update(
     const proto::ProtoObject* dataObj = (target->hasOwnAttribute(context, dataName) == PROTO_TRUE) ? target->getAttribute(context, dataName) : nullptr;
     const proto::ProtoSparseList* dict = dataObj && dataObj->asSparseList(context) ? dataObj->asSparseList(context) : context->newSparseList();
 
+    // Helper: store a (key, value) pair into the partial keys/dict
+    // structures and propagate the write to module __dict__ as needed.
+    auto storeKV = [&](const proto::ProtoObject* key, const proto::ProtoObject* value) {
+        unsigned long hash = key->getHash(context);
+        dict = dict->setAt(context, hash, value);
+        bool foundKey = false;
+        for (unsigned long j = 0; j < keys->getSize(context); ++j) {
+            if (keys->getAt(context, static_cast<int>(j))->getHash(context) == hash) { foundKey = true; break; }
+        }
+        if (!foundKey) keys = keys->appendLast(context, key);
+        bool isModule = env && target->isInstanceOf(context, env->getModulePrototype()) == PROTO_TRUE;
+        if (key->isString(context) && isModule) {
+            if (env) env->setAttribute(context, target, key->asString(context), value);
+            else const_cast<proto::ProtoObject*>(target)->setAttribute(context, key->asString(context), value);
+        }
+    };
+
     if (other && other != PROTO_NONE) {
         // Use non-raising check for internal attributes
         const proto::ProtoObject* otherKeysObj = (other->hasOwnAttribute(context, keysName) == PROTO_TRUE) ? (other->hasOwnAttribute(context, keysName) == PROTO_TRUE) ? other->getAttribute(context, keysName) : nullptr : nullptr;
@@ -12025,23 +12042,101 @@ static const proto::ProtoObject* py_dict_update(
                 const proto::ProtoObject* key = otherKeys->getAt(context, static_cast<int>(i));
                 const proto::ProtoObject* value = otherDict->getAt(context, key->getHash(context));
                 if (!value) continue;
-
-                unsigned long hash = key->getHash(context);
-                dict = dict->setAt(context, hash, value);
-                bool found = false;
-                for (unsigned long j = 0; j < keys->getSize(context); ++j) {
-                    if (keys->getAt(context, static_cast<int>(j))->getHash(context) == hash) { found = true; break; }
+                storeKV(key, value);
+            }
+        } else if (env) {
+            // CPython falls back to "iterable of key-value pairs" when
+            // `other` has no keys() method.  Previously protoPython
+            // silently dropped the update — `d.update([('a', 1), ('b', 2)])`
+            // returned an empty dict.  Detect by absence of __keys__ /
+            // __data__ and walk the iterable: each item must itself be
+            // iterable of length 2; raise ValueError on the wrong shape
+            // and TypeError on a non-iterable outer arg.
+            const proto::ProtoString* iterS = env->getIterString();
+            const proto::ProtoObject* iterM = other->getAttribute(context, iterS);
+            if (!iterM || !iterM->asMethod(context)) {
+                std::string clsName = "object";
+                const proto::ProtoObject* cls = env->getType(context, other);
+                if (cls) {
+                    const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
+                    if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
                 }
-                if (!found) keys = keys->appendLast(context, key);
-
-                // If it's a module, also set as attribute. 
-                // CRITICAL FIX: Guard against poisoning the dict class or other core prototypes.
-                // We only sync to attributes if the target is a Module.
-                bool isModule = env && target->isInstanceOf(context, env->getModulePrototype()) == PROTO_TRUE;
-                if (key->isString(context) && isModule) {
-                    if (env) env->setAttribute(context, target, key->asString(context), value);
-                    else const_cast<proto::ProtoObject*>(target)->setAttribute(context, key->asString(context), value);
+                env->raiseTypeError(context,
+                    "'" + clsName + "' object is not iterable");
+                return nullptr;
+            }
+            const proto::ProtoList* emptyL = env->getEmptyList();
+            const proto::ProtoObject* it = iterM->asMethod(context)(context, other, nullptr, emptyL, nullptr);
+            if (it && it != PROTO_NONE) {
+                const proto::ProtoString* nextS = env->getNextString();
+                const proto::ProtoObject* nextM = it->getAttribute(context, nextS);
+                if (nextM && nextM->asMethod(context)) {
+                    long long itemIdx = 0;
+                    for (;;) {
+                        const proto::ProtoObject* item = nextM->asMethod(context)(context, it, nullptr, emptyL, nullptr);
+                        if (!item) { env->handleExhaustion(context); break; }
+                        if (item == PROTO_NONE) break;
+                        // Each item must be an iterable of length 2.
+                        const proto::ProtoList* asL = item->asList(context);
+                        const proto::ProtoTuple* asT = item->asTuple(context);
+                        const proto::ProtoObject* k = nullptr;
+                        const proto::ProtoObject* v = nullptr;
+                        unsigned long sz = 0;
+                        if (asL) {
+                            sz = asL->getSize(context);
+                            if (sz == 2) {
+                                k = asL->getAt(context, 0);
+                                v = asL->getAt(context, 1);
+                            }
+                        } else if (asT) {
+                            sz = asT->getSize(context);
+                            if (sz == 2) {
+                                k = asT->getAt(context, 0);
+                                v = asT->getAt(context, 1);
+                            }
+                        }
+                        if (!k || !v) {
+                            env->raiseValueError(context,
+                                PythonEnvironment::getInternedString(context,
+                                    ("dictionary update sequence element #"
+                                    + std::to_string(itemIdx)
+                                    + " has length " + std::to_string(sz)
+                                    + "; 2 is required").c_str())->asObject(context));
+                            return nullptr;
+                        }
+                        storeKV(k, v);
+                        itemIdx++;
+                    }
                 }
+            }
+        }
+    }
+
+    // CPython: dict.update accepts kwargs after the positional `other`.
+    //   d.update(a=1, b=2)
+    //   d.update({'x': 10}, y=20)
+    // Previously every kwarg was ignored — the function silently used
+    // only the positional dict.  Iterate the kwarg sparse list via its
+    // companion key tuple (kwNames-style is not stored on this entry
+    // path, so we walk the SparseList directly via the env-supplied
+    // tracker function).  Each kwarg key is a str symbol stored
+    // separately; reconstruct via the env's name-tracking helper.
+    if (keywordParameters && keywordParameters->getSize(context) > 0) {
+        // Iterate the kw tuple pushed by the call site if available;
+        // otherwise iterate the sparse list and rely on values that
+        // already carry their own keys (rare for primitive callers).
+        // env->iterKwargs is the canonical accessor.
+        const proto::ProtoTuple* kwNamesTup = env ? env->getCurrentKwNames() : nullptr;
+        if (kwNamesTup) {
+            for (unsigned long i = 0; i < kwNamesTup->getSize(context); ++i) {
+                const proto::ProtoObject* keyObj = kwNamesTup->getAt(context, static_cast<int>(i));
+                if (!keyObj || !keyObj->isString(context)) continue;
+                const proto::ProtoString* keyS = keyObj->asString(context);
+                unsigned long h = keyS->getHash(context);
+                if (!keywordParameters->has(context, h)) continue;
+                const proto::ProtoObject* v = keywordParameters->getAt(context, h);
+                if (!v) continue;
+                storeKV(keyObj, v);
             }
         }
     }
