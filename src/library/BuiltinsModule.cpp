@@ -570,6 +570,60 @@ static const proto::ProtoObject* py_iter(
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
 
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
+
+    // CPython: `iter(callable, sentinel)` returns an iterator that
+    // calls callable() each step and yields the result until the value
+    // equals sentinel (then StopIteration).  Previously this 2-arg
+    // form was ignored — the function dispatched the single-arg
+    // protocol and produced an attribute walk over `callable.n` or
+    // similar internal state, returning bogus values.
+    if (positionalParameters->getSize(context) >= 2 && env) {
+        const proto::ProtoObject* sentinel = positionalParameters->getAt(context, 1);
+        // Build a tiny iterator object that holds the callable and
+        // sentinel and has a __next__ method.  Storage keys are
+        // perpetual interned strings to avoid GC churn.
+        const proto::ProtoString* funcS =
+            PythonEnvironment::getInternedString(context, "__callable_iter_func__");
+        const proto::ProtoString* sentS =
+            PythonEnvironment::getInternedString(context, "__callable_iter_sentinel__");
+        const proto::ProtoString* nextS = env->getNextString();
+        const proto::ProtoString* iterS = env->getIterString();
+        proto::ProtoObject* it = const_cast<proto::ProtoObject*>(
+            env->getObjectPrototype()->newChild(context, true));
+        it->setAttribute(context, funcS, obj);
+        it->setAttribute(context, sentS, sentinel);
+        it->setAttribute(context, iterS, context->fromMethod(nullptr,
+            +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+               const proto::ParentLink*, const proto::ProtoList*,
+               const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                return self;  // iter(iter) == iter
+            }));
+        it->setAttribute(context, nextS, context->fromMethod(nullptr,
+            +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+               const proto::ParentLink*, const proto::ProtoList*,
+               const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                PythonEnvironment* e = PythonEnvironment::fromContext(ctx);
+                if (!e || !self) return nullptr;
+                const proto::ProtoString* fS =
+                    PythonEnvironment::getInternedString(ctx, "__callable_iter_func__");
+                const proto::ProtoString* sS =
+                    PythonEnvironment::getInternedString(ctx, "__callable_iter_sentinel__");
+                const proto::ProtoObject* func = self->getAttribute(ctx, fS);
+                const proto::ProtoObject* sent = self->getAttribute(ctx, sS);
+                if (!func) return nullptr;
+                const proto::ProtoObject* result = e->callObject(func, {});
+                if (!result) return nullptr;
+                // Compare result to sentinel via Python equality.
+                const proto::ProtoObject* eq = e->compareObjects(ctx, result, sent, 0);
+                if (eq == PROTO_TRUE) {
+                    e->raiseStopIteration(ctx);
+                    return nullptr;
+                }
+                return result;
+            }));
+        return it;
+    }
+
     if (env) {
         if (get_env_diag()) {
             fprintf(stderr, "DEBUG: py_iter(obj=%p, repr=%s)\n", (void*)obj, PythonEnvironment::reprObject(context, obj).c_str());
