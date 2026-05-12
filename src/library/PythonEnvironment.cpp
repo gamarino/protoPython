@@ -21588,12 +21588,35 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
         fflush(stderr);
     }
     if (method) {
+        const proto::ProtoObject* result = nullptr;
         if (method->asMethod(ctx)) {
-            return method->asMethod(ctx)(ctx, obj, nullptr, getEmptyList(), nullptr);
+            result = method->asMethod(ctx)(ctx, obj, nullptr, getEmptyList(), nullptr);
         } else {
             const proto::ProtoList* callArgs = ctx->newList()->appendLast(ctx, obj);
-            return invokePythonCallable(ctx, method, callArgs, nullptr);
+            result = invokePythonCallable(ctx, method, callArgs, nullptr);
         }
+        if (!result) return nullptr;  // pending exception
+        // CPython: __iter__ must return an iterator (an object with
+        // __next__).  A user `def __iter__(self): return 'not_iter'`
+        // or `return None` diverged silently — protoPython returned
+        // the placeholder and downstream iteration walked its chars
+        // or produced an empty list.  Validate now.
+        const proto::ProtoObject* nextCheck = (result == PROTO_NONE) ? nullptr
+            : getAttribute(ctx, result, getNextString(), /*raiseError=*/false);
+        if (result == PROTO_NONE || !nextCheck || nextCheck == PROTO_NONE) {
+            std::string clsName = (result == PROTO_NONE) ? "NoneType" : "object";
+            if (result != PROTO_NONE) {
+                const proto::ProtoObject* cls = getType(ctx, result);
+                if (cls) {
+                    const proto::ProtoObject* nm = cls->getAttribute(ctx, getNameString());
+                    if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, clsName);
+                }
+            }
+            raiseTypeError(ctx,
+                "iter() returned non-iterator of type '" + clsName + "'");
+            return nullptr;
+        }
+        return result;
     }
 
 
