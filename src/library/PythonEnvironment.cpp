@@ -2313,8 +2313,14 @@ static const proto::ProtoObject* py_list_getitem(
         return res;
     }
 
-    if (indexObj->isInteger(context)) {
-        long long index = indexObj->asLong(context);
+    // bool is an int subclass in Python (True -> 1, False -> 0).  The
+    // strict isInteger gate previously rejected `[1,2,3][True]` with
+    // "list indices must be integers or slices" even though CPython
+    // accepts bool index transparently.
+    if (indexObj->isInteger(context) || indexObj == PROTO_TRUE || indexObj == PROTO_FALSE) {
+        long long index = indexObj == PROTO_TRUE ? 1
+                        : indexObj == PROTO_FALSE ? 0
+                        : indexObj->asLong(context);
         if (index < 0) index += size;
         if (index < 0 || index >= size) {
             PythonEnvironment* env = PythonEnvironment::fromContext(context);
@@ -2361,8 +2367,11 @@ static const proto::ProtoObject* py_list_setitem(
     const proto::ProtoObject* value = positionalParameters->getAt(context, argOff + 1);
     unsigned long size = list->getSize(context);
 
-    if (indexObj->isInteger(context)) {
-        int index = static_cast<int>(indexObj->asLong(context));
+    // Honour bool as int (subclass) for list assignment too.
+    if (indexObj->isInteger(context) || indexObj == PROTO_TRUE || indexObj == PROTO_FALSE) {
+        int index = indexObj == PROTO_TRUE ? 1
+                  : indexObj == PROTO_FALSE ? 0
+                  : static_cast<int>(indexObj->asLong(context));
         if (index < 0) index += static_cast<int>(size);
         if (index < 0 || static_cast<unsigned long>(index) >= size) return PROTO_NONE;
         const proto::ProtoList* newList = list->setAt(context, index, value);
@@ -7612,8 +7621,12 @@ static const proto::ProtoObject* py_tuple_getitem(
         return tupObj;
     }
 
-    if (indexObj->isInteger(context)) {
-        long long index = indexObj->asLong(context);
+    // bool subclasses int — accept True/False as 1/0.  Same fix as
+    // list/str indexing.
+    if (indexObj->isInteger(context) || indexObj == PROTO_TRUE || indexObj == PROTO_FALSE) {
+        long long index = indexObj == PROTO_TRUE ? 1
+                        : indexObj == PROTO_FALSE ? 0
+                        : indexObj->asLong(context);
         if (index < 0) index += size;
         if (index < 0 || index >= size) {
             if (get_env_diag()) {
@@ -7625,7 +7638,7 @@ static const proto::ProtoObject* py_tuple_getitem(
         }
         return tuple->getAt(context, static_cast<int>(index));
     }
-    
+
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (env) env->raiseTypeError(context, "tuple indices must be integers or slices");
     return PROTO_NONE;
@@ -9369,8 +9382,11 @@ static const proto::ProtoObject* py_str_getitem(
         return PythonEnvironment::getInternedString(context, sub.c_str())->asObject(context);
     }
 
-    if (indexObj->isInteger(context)) {
-        int idx = static_cast<int>(indexObj->asLong(context));
+    // bool subclasses int — accept True/False as 1/0.
+    if (indexObj->isInteger(context) || indexObj == PROTO_TRUE || indexObj == PROTO_FALSE) {
+        int idx = indexObj == PROTO_TRUE ? 1
+                : indexObj == PROTO_FALSE ? 0
+                : static_cast<int>(indexObj->asLong(context));
         if (idx < 0) idx += static_cast<int>(size);
         if (idx < 0 || static_cast<unsigned long>(idx) >= size) {
             PythonEnvironment* env = PythonEnvironment::fromContext(context);
@@ -9380,7 +9396,7 @@ static const proto::ProtoObject* py_str_getitem(
         char c[2] = { s[static_cast<size_t>(idx)], '\0' };
         return PythonEnvironment::getInternedString(context, c)->asObject(context);
     }
-    
+
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (env) env->raiseTypeError(context, "string indices must be integers or slices");
     return PROTO_NONE;
