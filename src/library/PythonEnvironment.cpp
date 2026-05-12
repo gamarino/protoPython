@@ -1632,9 +1632,36 @@ static const proto::ProtoObject* py_int_call(
                     return nullptr;
                 }
             }
-        } else if (val->isString(ctx)) {
+        } else if (val->isString(ctx) || [&]() -> bool {
+                // CPython: int() accepts bytes / bytearray containing ASCII
+                // digits — `int(b'123')` returns 123.  Detect a bytes wrapper
+                // (own __data__ is ByteBuffer or ProtoString and class is
+                // bytes/bytearray) and steer into the string-parsing branch.
+                PythonEnvironment* envP = PythonEnvironment::fromContext(ctx);
+                if (!envP) return false;
+                const proto::ProtoObject* d = val->getAttribute(ctx,
+                    envP->getDataString());
+                if (!d) return false;
+                const proto::ProtoObject* cls = envP->getType(ctx, val);
+                return cls == envP->getBytesPrototype()
+                    && (d->isByteBuffer(ctx) || d->isString(ctx));
+            }()) {
             std::string s;
-            val->asString(ctx)->toUTF8String(ctx, s);
+            if (val->isString(ctx)) {
+                val->asString(ctx)->toUTF8String(ctx, s);
+            } else {
+                // bytes path: read the raw octets directly from __data__.
+                PythonEnvironment* envBV = PythonEnvironment::fromContext(ctx);
+                const proto::ProtoObject* d = envBV
+                    ? val->getAttribute(ctx, envBV->getDataString())
+                    : nullptr;
+                if (d && d->isByteBuffer(ctx)) {
+                    const proto::ProtoByteBuffer* bb = d->asByteBuffer(ctx);
+                    if (bb) s.assign(bb->getBuffer(ctx), bb->getSize(ctx));
+                } else if (d && d->isString(ctx)) {
+                    d->asString(ctx)->toUTF8String(ctx, s);
+                }
+            }
             // Trim surrounding whitespace (CPython allows " 42 ").
             size_t b = s.find_first_not_of(" \t\n\r\f\v");
             size_t e = s.find_last_not_of(" \t\n\r\f\v");
