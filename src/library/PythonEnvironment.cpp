@@ -7890,6 +7890,20 @@ static const proto::ProtoObject* py_int_from_bytes(
         }
     }
     bool little = (byteorderStr == "little");
+    // CPython: int.from_bytes(bytes, byteorder, *, signed=False).
+    // When signed=True the highest-order bit of the most-significant
+    // byte is treated as a two's-complement sign bit and the value is
+    // returned as a negative integer.  Previously the signed kwarg
+    // was ignored and 0xff... always came back as a large positive.
+    bool isSigned = false;
+    if (kw) {
+        const proto::ProtoString* ss = PythonEnvironment::getInternalString(context, "signed");
+        if (ss && kw->has(context, ss->getHash(context))) {
+            const proto::ProtoObject* sv = kw->getAt(context, ss->getHash(context));
+            if (sv == PROTO_TRUE) isSigned = true;
+            else if (sv && sv->isInteger(context)) isSigned = (sv->asLong(context) != 0);
+        }
+    }
     // Build the integer one byte at a time via shiftLeft + add,
     // so values larger than 64 bits are handled correctly.
     const proto::ProtoObject* result = context->fromInteger(0);
@@ -7902,6 +7916,19 @@ static const proto::ProtoObject* py_int_from_bytes(
             consume(static_cast<unsigned char>(bytesStr[i - 1]));
     } else {
         for (unsigned char c : bytesStr) consume(c);
+    }
+    // Apply two's-complement reinterpretation if signed and the
+    // highest bit is set.  `result -= 2^(8*nbytes)` flips the
+    // sign correctly for any bit width via Integer::subtract.
+    if (isSigned && !bytesStr.empty()) {
+        unsigned char topByte = static_cast<unsigned char>(little
+            ? bytesStr[bytesStr.size() - 1]
+            : bytesStr[0]);
+        if (topByte & 0x80) {
+            const proto::ProtoObject* limit = context->fromInteger(1);
+            limit = limit->shiftLeft(context, static_cast<long long>(bytesStr.size() * 8));
+            result = result->subtract(context, limit);
+        }
     }
     return result;
 }
@@ -7926,9 +7953,40 @@ static const proto::ProtoObject* py_int_to_bytes(
         }
     }
     bool little = (byteorderStr == "little");
+    // CPython: int.to_bytes(length, byteorder, *, signed=False).
+    // When signed=False, negative values raise OverflowError.
+    // When signed=True, negative values are encoded as two's
+    // complement; the magnitude check uses 2^(length*8 - 1).
+    bool isSigned = false;
+    if (kw) {
+        const proto::ProtoString* ss = PythonEnvironment::getInternalString(context, "signed");
+        if (ss && kw->has(context, ss->getHash(context))) {
+            const proto::ProtoObject* sv = kw->getAt(context, ss->getHash(context));
+            if (sv == PROTO_TRUE) isSigned = true;
+            else if (sv && sv->isInteger(context)) isSigned = (sv->asLong(context) != 0);
+        }
+    }
+    PythonEnvironment* envR = PythonEnvironment::fromContext(context);
+    bool isNeg = self->isInteger(context) && self->asLong(context) < 0;
+    if (isNeg && !isSigned) {
+        // Closest match: ValueError until we expose an OverflowError raise.
+        if (envR) envR->raiseValueError(context,
+            PythonEnvironment::getInternedString(context,
+                "can't convert negative int to unsigned")->asObject(context));
+        return nullptr;
+    }
+    // Encode magnitude.  For negative signed values, encode
+    // (2^(length*8) + self) so the resulting byte string is the
+    // two's-complement representation.
+    const proto::ProtoObject* value = self;
+    if (isNeg) {
+        const proto::ProtoObject* limit = context->fromInteger(1);
+        limit = limit->shiftLeft(context, static_cast<long long>(length * 8));
+        value = limit->add(context, self);
+    }
     // Bignum-safe extraction: peel one byte at a time via & 0xff and >> 8.
     const proto::ProtoObject* mask = context->fromInteger(0xff);
-    const proto::ProtoObject* cur = self->abs(context);
+    const proto::ProtoObject* cur = value->abs(context);
     std::string out;
     out.reserve(static_cast<size_t>(length));
     for (int i = 0; i < length; ++i) {
@@ -7936,6 +7994,16 @@ static const proto::ProtoObject* py_int_to_bytes(
         unsigned char byte = static_cast<unsigned char>(lowByte->asLong(context) & 0xff);
         out += static_cast<char>(byte);
         cur = cur->shiftRight(context, 8);
+    }
+    // Overflow check: any non-zero remainder after `length` bytes
+    // means the value doesn't fit (e.g. 256.to_bytes(1, 'big')
+    // silently returned b'\x00' before).
+    long long remainder = cur->isInteger(context) ? cur->asLong(context) : 0;
+    if (remainder != 0) {
+        if (envR) envR->raiseValueError(context,
+            PythonEnvironment::getInternedString(context,
+                "int too big to convert")->asObject(context));
+        return nullptr;
     }
     if (!little) std::reverse(out.begin(), out.end());
     // Backed by ProtoByteBuffer so all 256 byte values round-trip exactly.
