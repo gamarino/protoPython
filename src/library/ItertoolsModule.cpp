@@ -949,6 +949,63 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(nullptr, py_filterfalse));
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "filterfalse"), filterfalseProto);
 
+    // itertools.pairwise(iterable) — 3.10+.  Yields successive overlapping
+    // pairs (s[0],s[1]), (s[1],s[2]), ... from the source iterable.
+    // Stored state on the result: the source iterator and the previous
+    // value (`__pairwise_prev__`, sentinel = the proto itself meaning
+    // "first call hasn't run yet").
+    auto py_pairwise_next = +[](proto::ProtoContext* c,
+                                const proto::ProtoObject* self,
+                                const proto::ParentLink*,
+                                const proto::ProtoList*,
+                                const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+        const proto::ProtoObject* it = self->getAttribute(c,
+            PythonEnvironment::getInternedString(c, "__pairwise_it__"));
+        if (!it) return nullptr;
+        PythonEnvironment* env = PythonEnvironment::fromContext(c);
+        const proto::ProtoString* prevS =
+            PythonEnvironment::getInternedString(c, "__pairwise_prev__");
+        const proto::ProtoObject* prev = self->getAttribute(c, prevS);
+        bool hasPrev = self->hasOwnAttribute(c, prevS) == PROTO_TRUE
+                       && prev && prev != PROTO_NONE;
+        if (!hasPrev) {
+            const proto::ProtoObject* first = env ? env->next(it) : nullptr;
+            if (!first) return nullptr;
+            self->setAttribute(c, prevS, first);
+            prev = first;
+        }
+        const proto::ProtoObject* cur = env ? env->next(it) : nullptr;
+        if (!cur) return nullptr;
+        self->setAttribute(c, prevS, cur);
+        const proto::ProtoList* pair = c->newList()->appendLast(c, prev)->appendLast(c, cur);
+        return c->newTupleFromList(pair)->asObject(c);
+    };
+    auto py_pairwise = +[](proto::ProtoContext* c,
+                           const proto::ProtoObject* self,
+                           const proto::ParentLink*,
+                           const proto::ProtoList* posArgs,
+                           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+        if (!posArgs || posArgs->getSize(c) < 1) return PROTO_NONE;
+        const proto::ProtoObject* iterable = posArgs->getAt(c, 0);
+        PythonEnvironment* env = PythonEnvironment::fromContext(c);
+        const proto::ProtoObject* it = env ? env->iter(iterable) : nullptr;
+        if (!it) return PROTO_NONE;
+        const proto::ProtoObject* proto = self->getAttribute(c,
+            PythonEnvironment::getInternedString(c, "__pairwise_proto__"));
+        if (!proto) return PROTO_NONE;
+        const proto::ProtoObject* pw = proto->newChild(c, true);
+        pw = pw->setAttribute(c, PythonEnvironment::getInternedString(c, "__pairwise_it__"), it);
+        return pw;
+    };
+    const proto::ProtoObject* pairwiseProto = ctx->newObject(false);
+    pairwiseProto = pairwiseProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__iter__"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(pairwiseProto), py_iter_self));
+    pairwiseProto = pairwiseProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__next__"),
+        ctx->fromMethod(nullptr, py_pairwise_next));
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__pairwise_proto__"), pairwiseProto);
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "pairwise"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_pairwise));
+
     return mod;
 }
 
