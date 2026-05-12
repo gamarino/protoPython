@@ -1400,9 +1400,34 @@ static const proto::ProtoObject* py_float_call(
         else if (val->isBoolean(ctx)) {
             x = ctx->fromDouble(val == PROTO_TRUE ? 1.0 : 0.0);
         }
-        else if (val->isString(ctx)) {
+        else if (val->isString(ctx) || [&]() -> bool {
+                // CPython: float() accepts bytes / bytearray containing
+                // ASCII decimal digits.  Detect a bytes wrapper the same
+                // way py_int_call does and steer into the parsing path.
+                PythonEnvironment* envP = PythonEnvironment::fromContext(ctx);
+                if (!envP) return false;
+                const proto::ProtoObject* d = val->getAttribute(ctx,
+                    envP->getDataString());
+                if (!d) return false;
+                const proto::ProtoObject* cls = envP->getType(ctx, val);
+                return cls == envP->getBytesPrototype()
+                    && (d->isByteBuffer(ctx) || d->isString(ctx));
+            }()) {
             std::string s;
-            val->asString(ctx)->toUTF8String(ctx, s);
+            if (val->isString(ctx)) {
+                val->asString(ctx)->toUTF8String(ctx, s);
+            } else {
+                PythonEnvironment* envBV = PythonEnvironment::fromContext(ctx);
+                const proto::ProtoObject* d = envBV
+                    ? val->getAttribute(ctx, envBV->getDataString())
+                    : nullptr;
+                if (d && d->isByteBuffer(ctx)) {
+                    const proto::ProtoByteBuffer* bb = d->asByteBuffer(ctx);
+                    if (bb) s.assign(bb->getBuffer(ctx), bb->getSize(ctx));
+                } else if (d && d->isString(ctx)) {
+                    d->asString(ctx)->toUTF8String(ctx, s);
+                }
+            }
             try {
                 x = ctx->fromDouble(std::stod(s));
             } catch (...) {
