@@ -28,6 +28,66 @@
 
 ---
 
+## Current Status (2026-05-12) — post-seventh-twenty-commit sweep
+
+Seven twenty-commit sweeps landed between 2026-05-07 and
+2026-05-12 (approx 140 root-cause fixes; see CHANGELOG for the
+per-round breakdown).  Headline area: user-class iterators
+(`__iter__` / `__next__` / `__lt__` / `__eq__`) now flow
+end-to-end through the builtins — sum / set / list.sort /
+sorted / all / any / starmap / accumulate / islice and the
+`{*…}` / `{**…}` literal forms all honour Python-level dunders.
+PEP 378 thousands separators land, signed= on
+`int.from_bytes` / `to_bytes`, format spec dispatch through
+the format() builtin, datetime / time / timedelta proper
+str / repr via __mro__, dict.update with arbitrary mappings,
+exception hierarchy aligns ArithmeticError / LookupError, and
+f-strings finally apply their format spec.
+
+### Build & test infrastructure (2026-05-12)
+
+| Component                                 | Result |
+| :---                                      | :--- |
+| `ctest` (protoPython + protoCore)         | **199 / 199** pass, 0 fail (was 183/183 on 2026-05-07).  No SwarmTest disabled. |
+| Seven 20-commit sweeps                    | Each commit preserves `ctest --test-dir build` 199/199 — no regression introduced. |
+
+### What changed since 2026-05-07
+
+This block isn't a re-audit of the 19-test ground-truth catalog
+(that runs in a different environment).  Instead it summarises
+the seven 20-commit sweeps from 2026-05-07 to 2026-05-12 by
+theme — each fix is a root-cause correction to a divergence
+from CPython's documented contract, paired with `ctest 199/199`
+across every individual commit.
+
+| Theme                                    | Fixes |
+| :---                                     | :--- |
+| User `__iter__` / `__next__` end-to-end  | env->next dispatches Python `__next__`; set / sum / all / any / sorted / list.sort / starmap / accumulate / islice / pairwise / set literal `{*…}` / dict literal `{**…}` all route through env. |
+| Format minilanguage (PEP 3101 + PEP 378) | int / float / str __format__ implement full spec (fill / align / sign / `#` / `0` / width / type d/b/o/x/X/c); thousands separators (`,` / `_`) on str.format + int.__format__; format() unwraps int/float subclasses; f-string emits `format(value, spec)` so spec actually applies. |
+| Numeric parsing strictness               | int() rejects `0x…` at default base 10; int / float accept PEP 515 underscores; float() rejects trailing garbage; int.from_bytes / to_bytes honour signed=; signed two's-complement encoding. |
+| Sequence protocol on range / slice       | range gains __getitem__ / count / index / start / stop / step / __repr__ + __mro__; slice.indices(length) implements CPython sequence-mapping helper. |
+| Iterator validation                      | iter() validates `__iter__` returns an iterator with __next__; raises TypeError on misuse. |
+| Print / str / format dispatch via __mro__ | py_print walks __mro__ for __str__ before reprObject; %s in str.__mod__ dispatches __str__; bool / datetime.date / datetime / time / timedelta carry __str__ + __mro__ so all three converge on the right spelling. |
+| Mapping protocol                         | dict.update accepts iterable-of-pairs and **kwargs; OP_DICT_UPDATE adds keys()/__getitem__ fallback for arbitrary Mapping; mappingproxy fast-path detected via getAttribute (not hasOwnAttribute). |
+| Container str / repr                     | bool → 'True' / 'False'; range → 'range(0, 10)'; datetime.date → isoformat; py_print float window aligned with py_float_format_short. |
+| Bytes strictness sweep                   | __contains__ / find / rfind / count / startswith / endswith / removeprefix / removesuffix reject str needles; bytes.fromhex tolerates whitespace; bytes.hex accepts sep + bytes_per_sep; bytes.split honours maxsplit kwarg; bytes.startswith/endswith accept tuple of prefixes. |
+| Exception hierarchy                      | ArithmeticError / LookupError are proper bases of ZeroDivisionError / KeyError / IndexError (issubclass / except-clause both behave correctly). |
+| User dunder dispatch                     | __ne__ derives from Python __eq__; sort uses Python __lt__; property.setter / .getter / .deleter rebind setAttribute returns and parent off the property class. |
+| NaN semantics                            | IEEE 754: nan == nan → False, nan != nan → True even for the same variable (identity short-circuit defeated). |
+| Misc                                     | str.istitle; itertools.pairwise; itertools.starmap / accumulate / islice fixes; str.split / bytes.split kwargs; print() sep / end / file kwargs; str.format `.attr` / `[key]` field accessors; bytes.hex / fromhex round-trip; str.encode errors=. |
+
+### Cumulative changes (2026-04-30 → 2026-05-12)
+
+* `ctest`: 163 → **199** (+36).
+* Round-by-round CHANGELOG entries: 7 twenty-commit sweeps,
+  ~140 root-cause fixes total, every commit paired with
+  ctest green.
+* Stdlib correctness deltas land throughout the file; the
+  current round notes are immediately below ("21-commit
+  sweep — format minilanguage…", etc.) for traceability.
+
+---
+
 ## Current Status (2026-05-07) — post-Sprint-1-4 audit-driven sweep
 
 Re-ran the 19-test ground-truth audit and the conformity suite against

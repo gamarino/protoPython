@@ -193,6 +193,98 @@ the receiver's `__mro__` for tuplePrototype/listPrototype and
 substitute the primitive prototype before wrapping the result,
 matching CPython's unoverridden-dunder semantics.
 
+### Fixed: 20-commit sweep — user __iter__ / __next__ + dispatch fixes + format minilanguage + datetime repr + mapping protocol
+
+Seventh twenty-commit sweep this session.  Theme: get user-class
+iterators and Python-level dunders to flow end-to-end through
+the builtins.  Most of the round is wiring the same env->iter /
+env->next + invokePythonCallable dispatch that the previous
+rounds opened up — into the consumers that had bespoke
+asMethod-only walks (sum, set, all, any, sorted, list.sort,
+starmap, accumulate, islice, dict literal **).  Also: itertools
+gains pairwise, PEP 378 thousands separators land, signed=
+keyword on int.from_bytes / to_bytes, %s str-dispatch, str /
+datetime / time / timedelta proper str via __mro__.
+
+`ctest --test-dir build` stayed at **199/199** throughout.
+
+Highlights:
+
+- **str.istitle**: the only is*-family method missing from
+  strPrototype.  Walks the bytes ASCII-only with a two-bit
+  cased/saw-cased state machine.
+- **datetime / time / timedelta __str__ + __mro__**: str(dt) etc.
+  returned the generic `<X object at 0x...>` because the three
+  types had __repr__ registered but no __mro__, so the dunder
+  dispatcher walked an empty MRO and fell through to
+  object.__repr__.  Added MRO chains and __str__ aliases.
+- **bytes.removeprefix / removesuffix** reject str argument with
+  the canonical "argument must be bytes-like, not str" — the
+  bytes_view silent coercion was eating the str needle.
+- **env->next** dispatches Python-level `__next__` via
+  invokePythonCallable, not only native methods.  Fixes
+  list(MyIter()), for x in MyIter(), set(MyIter()), and every
+  downstream consumer that drives an iterator through env.
+- **set() constructor** routes iteration through env->iter /
+  env->next so user iterables work (previously `set(MyIter())`
+  raised "not iterable").
+- **sum()** drives iteration through env, accepts user
+  iterables, mixes ints + floats correctly (`sum([1, 2.5])` ==
+  3.5; was 1), and dispatches user-defined __add__ via
+  getAttribute + invokePythonCallable.
+- **all() / any()** route through env so `all(MyIter())` /
+  `any(MyIter())` actually iterate (were always True / False).
+- **sorted() / list.sort()** dispatch user-defined `__lt__` for
+  arbitrary types — `sorted([C(3), C(1), C(2)])` was returning
+  the input unchanged because protoCore's identity compare
+  produced 0 for any two distinct user objects.
+- **__ne__ derivation** invokes Python-level `__eq__` via
+  invokePythonCallable when negation is needed; previously the
+  `op == 1` fast path checked only `asMethod` and fell through
+  to identity for any class whose `__eq__` was a Python method.
+- **OP_SET_UPDATE** iterates user __iter__ for the `{*iterable,
+  ...}` set-literal form.  `{*Src(), 'x'}` produced `{'x'}` only
+  before; now produces `{'a', 'b', 'c', 'x'}`.
+- **itertools.islice** honours `step` (the third positional
+  was stored but never applied to the result iterator) and
+  accepts user-class iterables.
+- **NaN comparison**: `nan == nan` returned True (because
+  identity short-circuited before float dispatch); add an IEEE
+  754 NaN guard in both py_int_cmp and compareObjects.  The
+  guard MUST run before the identity check or `x = float('nan');
+  x == x` would silently match by pointer.
+- **int.from_bytes / int.to_bytes**: honour `signed=` keyword.
+  from_bytes flips the sign via 2^(8N) subtraction when the
+  high bit is set; to_bytes rejects negatives when signed=False,
+  encodes two's-complement when signed=True, and raises on
+  overflow.
+- **str.__mod__**: `'%s' % x` walks type(x).__mro__ for __str__
+  before falling through to reprObject.  User classes with both
+  __str__ and __repr__ now correctly render via __str__ for %s
+  (the documented contract); %r remains reprObject.
+- **itertools.starmap** unpacks tuple args correctly (was
+  passing the tuple itself as one arg), accepts user iterables
+  via env->iter, and dispatches lambdas via invokePythonCallable.
+- **itertools.accumulate** honours the `initial=` keyword (3.8+):
+  yields the initial value first AND seeds the running total.
+- **itertools.pairwise** added (was missing entirely; the 3.10+
+  helper that yields successive overlapping pairs).
+- **str.format + int.__format__**: PEP 378 thousands separator
+  (`{:,}` / `{:_}`) now inserts the separator every 3 digits
+  for decimal types and every 4 for hex/oct/bin.  Earlier the
+  separator was parsed but discarded.
+- **OP_DICT_UPDATE** mapping protocol fallback: `{**M()}` /
+  `f(**M())` produced `{}` for any user class with `keys()` and
+  `__getitem__` because the OP_DICT_UPDATE handler only knew
+  the native __keys__/__data__ shape and every Python class
+  inherits an empty internal __data__ via dictPrototype.  Gate
+  the fast path on `isInstanceOf(dictPrototype)` and add a
+  keys()-based fallback for arbitrary Mapping objects.
+- **str.encode(errors=)**: 'ignore' / 'replace' / 'strict'
+  handlers actually apply to the ascii / latin-1 paths.  The
+  errors keyword was being parsed but dropped, so every error
+  defaulted to strict regardless of the explicit choice.
+
 ### Fixed: 20-commit sweep — range / slice protocol + f-string format spec + int/float parsing + py_print kwargs + bytes.hex/fromhex
 
 Sixth twenty-commit sweep this session.  Theme: the sequence
