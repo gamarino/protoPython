@@ -7727,24 +7727,42 @@ static const proto::ProtoObject* py_map(
     (void)keywordParameters;
     if (positionalParameters->getSize(context) < 3) return PROTO_NONE;
     const proto::ProtoObject* func = positionalParameters->getAt(context, 1);
-    const proto::ProtoObject* iterable = positionalParameters->getAt(context, 2);
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
-    const proto::ProtoString* mapProtoS = env ? env->getMapProtoString() : PythonEnvironment::getInternedString(context, "__map_proto__");
     const proto::ProtoString* mapFuncS = env ? env->getMapFuncString() : PythonEnvironment::getInternedString(context, "__map_func__");
     const proto::ProtoString* mapIterS = env ? env->getMapIterString() : PythonEnvironment::getInternedString(context, "__map_iter__");
     const proto::ProtoObject* noneObj = env ? env->getNonePrototype() : nullptr;
 
-    const proto::ProtoObject* it = py_iter(context, nullptr, nullptr, context->newList()->appendLast(context, iterable), nullptr);
-    if (!it || it == noneObj) {
-        if (get_env_diag()) fprintf(stderr, "DEBUG: py_map failing: py_iter returned None or nullptr\n");
-        return PROTO_NONE;
+    // CPython: map(func, *iterables) supports N>=1 iterables.  Build
+    // an iterator from each and stash them as a list on __map_iter__
+    // (single-iterable case keeps storing the iterator directly so
+    // the existing fast path in py_map_next is unaffected).
+    unsigned long nIter = positionalParameters->getSize(context) - 2;
+    const proto::ProtoObject* iterStorage = nullptr;
+    if (nIter == 1) {
+        const proto::ProtoObject* iterable = positionalParameters->getAt(context, 2);
+        const proto::ProtoObject* it = py_iter(context, nullptr, nullptr, context->newList()->appendLast(context, iterable), nullptr);
+        if (!it || it == noneObj) {
+            if (get_env_diag()) fprintf(stderr, "DEBUG: py_map failing: py_iter returned None or nullptr\n");
+            return PROTO_NONE;
+        }
+        iterStorage = it;
+    } else {
+        const proto::ProtoList* iters = context->newList();
+        for (unsigned long i = 0; i < nIter; ++i) {
+            const proto::ProtoObject* iterable = positionalParameters->getAt(context, 2 + i);
+            const proto::ProtoObject* it = py_iter(context, nullptr, nullptr, context->newList()->appendLast(context, iterable), nullptr);
+            if (!it || it == noneObj) return PROTO_NONE;
+            iters = iters->appendLast(context, it);
+        }
+        iterStorage = iters->asObject(context);
     }
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* mapObj = cls->newChild(context, true);
     mapObj = mapObj->setAttribute(context, mapFuncS, func);
-    mapObj = mapObj->setAttribute(context, mapIterS, it);
+    mapObj = mapObj->setAttribute(context, mapIterS, iterStorage);
     if (get_env_diag()) {
-        fprintf(stderr, "DEBUG: py_map created mapObj=%p func=%p iter=%p\n", (void*)mapObj, (void*)func, (void*)it);
+        fprintf(stderr, "DEBUG: py_map created mapObj=%p func=%p iter=%p (n=%lu)\n",
+            (void*)mapObj, (void*)func, (void*)iterStorage, nIter);
         fflush(stderr);
     }
     return mapObj;
@@ -7760,38 +7778,66 @@ static const proto::ProtoObject* py_map_next(
     const proto::ProtoString* nextS = env ? env->getNextString() : PythonEnvironment::getInternedString(context, "__next__");
 
     const proto::ProtoObject* func = self->getAttribute(context, funcS);
-    const proto::ProtoObject* it = self->getAttribute(context, iterS);
-    if (!func || !it) {
+    const proto::ProtoObject* iterStorage = self->getAttribute(context, iterS);
+    if (!func || !iterStorage) {
         if (get_env_diag()) {
-            fprintf(stderr, "DEBUG: py_map_next failing: func=%p it=%p\n", (void*)func, (void*)it);
+            fprintf(stderr, "DEBUG: py_map_next failing: func=%p it=%p\n", (void*)func, (void*)iterStorage);
             fflush(stderr);
         }
         return nullptr;
     }
-    const proto::ProtoObject* nextM = it->getAttribute(context, nextS);
-    if (!nextM || !nextM->asMethod(context)) {
-        if (get_env_diag()) {
-            fprintf(stderr, "DEBUG: py_map_next failing: it=%p nextM=%p\n", (void*)it, (void*)nextM);
-            fflush(stderr);
-        }
-        return nullptr;
-    }
-    
+    // Multi-iterable case: iterStorage is a ProtoList of N iterators.
+    // Pull one value from each (any exhaustion ends the map) and call
+    // func(*values).  Single-iterable case keeps the original fast path
+    // where iterStorage IS the iterator.
+    const proto::ProtoList* itersList = iterStorage->asList(context);
     const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
-    const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, emptyL, nullptr);
-    if (!val) {
-        if (get_env_diag()) {
-            fprintf(stderr, "DEBUG: py_map_next: it=%p __next__ returned nullptr (end of iteration)\n", (void*)it);
-            fflush(stderr);
+    std::vector<const proto::ProtoObject*> vals;
+    if (itersList) {
+        unsigned long n = itersList->getSize(context);
+        vals.reserve(n);
+        for (unsigned long i = 0; i < n; ++i) {
+            const proto::ProtoObject* it = itersList->getAt(context, static_cast<int>(i));
+            const proto::ProtoObject* nextM = it->getAttribute(context, nextS);
+            if (!nextM || !nextM->asMethod(context)) return nullptr;
+            const proto::ProtoObject* v = nextM->asMethod(context)(context, it, nullptr, emptyL, nullptr);
+            if (!v) {
+                // Any iterator exhausted → end of map.
+                return nullptr;
+            }
+            vals.push_back(v);
         }
-        return nullptr;
+    } else {
+        const proto::ProtoObject* it = iterStorage;
+        const proto::ProtoObject* nextM = it->getAttribute(context, nextS);
+        if (!nextM || !nextM->asMethod(context)) {
+            if (get_env_diag()) {
+                fprintf(stderr, "DEBUG: py_map_next failing: it=%p nextM=%p\n", (void*)it, (void*)nextM);
+                fflush(stderr);
+            }
+            return nullptr;
+        }
+        const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, emptyL, nullptr);
+        if (!val) {
+            if (get_env_diag()) {
+                fprintf(stderr, "DEBUG: py_map_next: it=%p __next__ returned nullptr (end of iteration)\n", (void*)it);
+                fflush(stderr);
+            }
+            return nullptr;
+        }
+        vals.push_back(val);
     }
 
-    // Pin val across the user-function call: callObject runs Python
-    // bytecode that may trigger GC, and `val` lives only in this C++
-    // local. Without the pin, a GC firing inside the user mapper frees
-    // val's backing cells under the running mutator.
-    protoPython::PythonEnvironment::TransientPin pinVal(env, val);
+    // Pin every value across the user-function call: callObject runs
+    // Python bytecode that may trigger GC, and `vals` lives only in
+    // this C++ local. TransientPin is non-movable so use unique_ptr
+    // to keep one alive per value across the call site.
+    std::vector<std::unique_ptr<protoPython::PythonEnvironment::TransientPin>> pins;
+    pins.reserve(vals.size());
+    for (auto* v : vals) {
+        pins.emplace_back(std::make_unique<protoPython::PythonEnvironment::TransientPin>(env, v));
+    }
+    const proto::ProtoObject* val = vals.size() == 1 ? vals[0] : nullptr;
 
     // CPython: map(non_callable, iterable) constructs OK but the first
     // next() raises TypeError: 'X' object is not callable.  Previously
@@ -7823,7 +7869,16 @@ static const proto::ProtoObject* py_map_next(
         }
     }
 
-    const proto::ProtoObject* res = env ? env->callObject(func, {val}) : nullptr;
+    const proto::ProtoObject* res = nullptr;
+    if (env) {
+        // Single-iterable: call with one positional; multi-iterable:
+        // splat the collected values.
+        if (vals.size() == 1) {
+            res = env->callObject(func, {val});
+        } else {
+            res = env->callObject(func, std::vector<const proto::ProtoObject*>(vals.begin(), vals.end()));
+        }
+    }
     if (!res && env && env->hasPendingException()) {
         return nullptr;
     }
