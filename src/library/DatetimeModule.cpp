@@ -1278,8 +1278,29 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     timedeltaType = timedeltaType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "total_seconds"), 
                                                ctx->fromMethod(nullptr, py_timedelta_total_seconds));
 
-    timedeltaType = timedeltaType->setAttribute(ctx, env->getReprString(), 
+    timedeltaType = timedeltaType->setAttribute(ctx, env->getReprString(),
                                               ctx->fromMethod(nullptr, py_timedelta_repr));
+    // CPython: `str(td)` and `print(td)` produce a human-readable
+    // 'D days, HH:MM:SS' / 'HH:MM:SS' rendering distinct from repr's
+    // 'timedelta(days=D, seconds=S, ...)'.  Until a dedicated
+    // str method exists, fall back to repr — but it must still be
+    // registered as __str__ so the MRO walk in py_print finds it
+    // instead of falling through to object.__str__.
+    timedeltaType = timedeltaType->setAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__str__"),
+        ctx->fromMethod(nullptr, py_timedelta_repr));
+    if (env && env->getObjectPrototype()) {
+        const proto::ProtoList* mroL = ctx->newList()
+            ->appendLast(ctx, timedeltaType)
+            ->appendLast(ctx, env->getObjectPrototype());
+        timedeltaType = timedeltaType->setAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__mro__"),
+            ctx->newTupleFromList(mroL)->asObject(ctx));
+        const proto::ProtoList* basesL = ctx->newList()->appendLast(ctx, env->getObjectPrototype());
+        timedeltaType = timedeltaType->setAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__bases__"),
+            ctx->newTupleFromList(basesL)->asObject(ctx));
+    }
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "timedelta"), timedeltaType);
 
     // tzinfo
@@ -1437,30 +1458,66 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
                                           ctx->fromMethod(nullptr, py_datetime_strftime));
     datetimeType = datetimeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "combine"), 
                                           ctx->fromMethod(nullptr, py_datetime_combine));
-    datetimeType = datetimeType->setAttribute(ctx, env->getReprString(), 
+    datetimeType = datetimeType->setAttribute(ctx, env->getReprString(),
                                           ctx->fromMethod(nullptr, py_datetime_repr));
+    datetimeType = datetimeType->setAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__str__"),
+        ctx->fromMethod(nullptr, py_datetime_isoformat));
+    // MRO so the dunder dispatcher finds datetime.__repr__ /
+    // __str__ before falling through to object.__repr__.  Same
+    // pattern as the date / range fixes — without __mro__ the
+    // MRO walk is empty and reprObject's fallback emits the
+    // generic '<X object at 0xADDR>' string.
+    if (env && env->getObjectPrototype()) {
+        const proto::ProtoList* mroL = ctx->newList()
+            ->appendLast(ctx, datetimeType)
+            ->appendLast(ctx, dateType)
+            ->appendLast(ctx, env->getObjectPrototype());
+        datetimeType = datetimeType->setAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__mro__"),
+            ctx->newTupleFromList(mroL)->asObject(ctx));
+        const proto::ProtoList* basesL = ctx->newList()->appendLast(ctx, dateType);
+        datetimeType = datetimeType->setAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__bases__"),
+            ctx->newTupleFromList(basesL)->asObject(ctx));
+    }
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "datetime"), datetimeType);
 
     // time
     const proto::ProtoObject* timeType = ctx->newObject(false);
     if (env && env->getTypePrototype()) timeType = timeType->setAttribute(ctx, env->getClassString(), env->getTypePrototype());
     if (env && env->getObjectPrototype()) timeType = timeType->addParent(ctx, env->getObjectPrototype());
-    timeType = timeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"), 
+    timeType = timeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"),
                                     PythonEnvironment::getInternedString(ctx, "time")->asObject(ctx));
-    timeType = timeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__new__"), 
+    timeType = timeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__new__"),
                                     ctx->fromMethod(nullptr, py_time_new));
     timeType = timeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__call__"), callBridge);
-    timeType = timeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__lt__"), 
+    timeType = timeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__lt__"),
                                     ctx->fromMethod(nullptr, py_time_lt));
-    timeType = timeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__eq__"), 
+    timeType = timeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__eq__"),
                                     ctx->fromMethod(nullptr, py_time_eq));
-    timeType = timeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "replace"), 
+    timeType = timeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "replace"),
                                     ctx->fromMethod(nullptr, py_time_replace));
 
-    timeType = timeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "isoformat"), 
+    timeType = timeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "isoformat"),
                                     ctx->fromMethod(nullptr, py_time_isoformat));
-    timeType = timeType->setAttribute(ctx, env->getReprString(), 
+    timeType = timeType->setAttribute(ctx, env->getReprString(),
                                     ctx->fromMethod(nullptr, py_time_repr));
+    timeType = timeType->setAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__str__"),
+        ctx->fromMethod(nullptr, py_time_isoformat));
+    if (env && env->getObjectPrototype()) {
+        const proto::ProtoList* mroL = ctx->newList()
+            ->appendLast(ctx, timeType)
+            ->appendLast(ctx, env->getObjectPrototype());
+        timeType = timeType->setAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__mro__"),
+            ctx->newTupleFromList(mroL)->asObject(ctx));
+        const proto::ProtoList* basesL = ctx->newList()->appendLast(ctx, env->getObjectPrototype());
+        timeType = timeType->setAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__bases__"),
+            ctx->newTupleFromList(basesL)->asObject(ctx));
+    }
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "time"), timeType);
 
     return mod;
