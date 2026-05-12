@@ -7325,9 +7325,26 @@ static const proto::ProtoObject* py_zip(
         if (!it || it == noneObj) return PROTO_NONE;
         itersList = itersList->appendLast(context, it);
     }
+    // strict= kwarg: when set, py_zip_next raises ValueError if the
+    // input iterables have different lengths.  Without this the
+    // shorter iterable simply truncated the result, hiding the misuse.
+    bool strict = false;
+    if (keywordParameters && env) {
+        const proto::ProtoString* strictS = PythonEnvironment::getInternedString(context, "strict");
+        unsigned long sh = strictS->getHash(context);
+        if (keywordParameters->has(context, sh)) {
+            const proto::ProtoObject* v = keywordParameters->getAt(context, sh);
+            if (v == PROTO_TRUE) strict = true;
+            else if (v && v->isInteger(context)) strict = (v->asLong(context) != 0);
+        }
+    }
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* zipObj = cls->newChild(context, true);
     zipObj = zipObj->setAttribute(context, zipItersS, itersList->asObject(context));
+    if (strict) {
+        const proto::ProtoString* strictMarkS = PythonEnvironment::getInternedString(context, "__zip_strict__");
+        zipObj = zipObj->setAttribute(context, strictMarkS, PROTO_TRUE);
+    }
     return zipObj;
 }
 
@@ -7347,14 +7364,54 @@ static const proto::ProtoObject* py_zip_next(
 
     const proto::ProtoList* resList = context->newList();
     const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
+    // strict=True: when an iterator runs out, every remaining iterator
+    // must ALSO be exhausted.  If not, raise ValueError naming the
+    // mismatching argument index.  Track exhaustion per-iterator.
+    const proto::ProtoString* strictMarkS = PythonEnvironment::getInternedString(context, "__zip_strict__");
+    bool strict = self->getAttribute(context, strictMarkS) == PROTO_TRUE;
+    long long firstExhaustedAt = -1;
 
     for (unsigned long i = 0; i < n; ++i) {
         const proto::ProtoObject* it = iters->getAt(context, static_cast<int>(i));
         const proto::ProtoObject* nextM = it ? it->getAttribute(context, nextS) : nullptr;
         if (!nextM || !nextM->asMethod(context)) return nullptr;
         const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, emptyL, nullptr);
-        if (!val) return nullptr;
+        if (!val) {
+            if (env && env->hasPendingException()) env->clearPendingException();
+            if (!strict) return nullptr;
+            firstExhaustedAt = static_cast<long long>(i);
+            break;
+        }
         resList = resList->appendLast(context, val);
+    }
+    if (strict && firstExhaustedAt >= 0) {
+        // The first `firstExhaustedAt` iterators each yielded a value
+        // this round; the one at firstExhaustedAt was exhausted.
+        // Verify the remaining iterators are ALSO exhausted; if not,
+        // emit the canonical error referencing the longer argument.
+        if (firstExhaustedAt > 0) {
+            // Iterator 0 still has data — argument 1 is longer.
+            if (env) env->raiseValueError(context,
+                PythonEnvironment::getInternedString(context,
+                    ("zip() argument " + std::to_string(firstExhaustedAt + 1)
+                     + " is shorter than argument 1").c_str())->asObject(context));
+            return nullptr;
+        }
+        for (unsigned long j = firstExhaustedAt + 1; j < n; ++j) {
+            const proto::ProtoObject* it = iters->getAt(context, static_cast<int>(j));
+            const proto::ProtoObject* nextM = it ? it->getAttribute(context, nextS) : nullptr;
+            if (!nextM || !nextM->asMethod(context)) continue;
+            const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, emptyL, nullptr);
+            if (val) {
+                if (env) env->raiseValueError(context,
+                    PythonEnvironment::getInternedString(context,
+                        ("zip() argument " + std::to_string(j + 1)
+                         + " is longer than argument 1").c_str())->asObject(context));
+                return nullptr;
+            }
+            if (env && env->hasPendingException()) env->clearPendingException();
+        }
+        return nullptr;
     }
     return env ? env->newTuple(resList) : context->newTupleFromList(resList)->asObject(context);
 }
