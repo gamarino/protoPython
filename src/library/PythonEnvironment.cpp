@@ -4473,6 +4473,21 @@ static std::string py_float_format_short(double val) {
         if (parsed == val) break;
     }
     std::string s(buf);
+    // CPython prefers decimal over scientific for values in [1e-4, 1e16).
+    // %.*g switches to e-notation eagerly for whole-number values whose
+    // mantissa is 1.0 and exponent >= 5 (1e10 -> '1e+10' instead of
+    // '10000000000.0').  Detect a scientific result inside the window
+    // and re-render with %.*f at the smallest precision that round-trips.
+    double absVal = std::fabs(val);
+    bool hasE = s.find('e') != std::string::npos || s.find('E') != std::string::npos;
+    if (hasE && val != 0.0 && absVal >= 1e-4 && absVal < 1e16) {
+        for (int prec = 0; prec <= 17; ++prec) {
+            std::snprintf(buf, sizeof(buf), "%.*f", prec, val);
+            char* end = nullptr;
+            double parsed = std::strtod(buf, &end);
+            if (parsed == val) { s = buf; break; }
+        }
+    }
     // Whole-number floats need an explicit ".0" suffix so `repr(1.0) ==
     // "1.0"` and the eval round-trip preserves the type.  Skip when the
     // result already carries a decimal mark or scientific exponent.
