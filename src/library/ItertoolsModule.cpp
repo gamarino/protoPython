@@ -449,6 +449,17 @@ static const proto::ProtoObject* py_accumulate_next(
     const proto::ProtoObject* nextM = it->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__next__"));
     if (!nextM || !nextM->asMethod(ctx)) return nullptr;
 
+    // When `initial` was supplied, the first call yields it
+    // verbatim — both `__accum_pending__` and `__accum_total__`
+    // are pre-set to the initial value.  Clear pending and return.
+    const proto::ProtoString* pendingS =
+        PythonEnvironment::getInternedString(ctx, "__accum_pending__");
+    const proto::ProtoObject* pending = self->getAttribute(ctx, pendingS);
+    if (pending && pending != PROTO_NONE
+        && self->hasOwnAttribute(ctx, pendingS) == PROTO_TRUE) {
+        self->setAttribute(ctx, pendingS, PROTO_NONE);
+        return pending;
+    }
     if (!totalObj || totalObj == PROTO_NONE) {
         const proto::ProtoObject* first = nextM->asMethod(ctx)(ctx, it, nullptr, ctx->newList(), nullptr);
         if (!first || first == PROTO_NONE) return nullptr;
@@ -473,19 +484,43 @@ static const proto::ProtoObject* py_accumulate_next(
 
 static const proto::ProtoObject* py_accumulate(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwargs) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* iterable = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* func = (posArgs->getSize(ctx) >= 2) ? posArgs->getAt(ctx, 1) : PROTO_NONE;
-    const proto::ProtoObject* iterM = iterable->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__iter__"));
-    if (!iterM || !iterM->asMethod(ctx)) return PROTO_NONE;
-    const proto::ProtoObject* it = iterM->asMethod(ctx)(ctx, iterable, nullptr, ctx->newList(), nullptr);
+    // CPython: itertools.accumulate(iterable, func=None, *, initial=None).
+    // When `initial` is provided, it's yielded first AND used as the
+    // seed of the running total (the iterator emits len+1 elements
+    // instead of len).  Previously the kwarg was dropped silently.
+    const proto::ProtoObject* initialVal = nullptr;
+    if (kwargs && kwargs->getSize(ctx) > 0) {
+        const proto::ProtoString* initS =
+            PythonEnvironment::getInternedString(ctx, "initial");
+        if (kwargs->has(ctx, initS->getHash(ctx))) {
+            initialVal = kwargs->getAt(ctx, initS->getHash(ctx));
+        }
+    }
+    // Drive iteration through env->iter so user-class __iter__ works.
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoObject* it = env ? env->iter(iterable) : nullptr;
     if (!it) return PROTO_NONE;
     const proto::ProtoObject* proto = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__accumulate_proto__"));
     if (!proto) return PROTO_NONE;
     const proto::ProtoObject* acc = proto->newChild(ctx, true);
     acc = acc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__accum_it__"), it);
-    acc = acc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__accum_total__"), PROTO_NONE);
+    // Seed the total with the initial value when supplied.  __accum_next
+    // checks for PROTO_NONE / nullptr to detect "first call"; storing
+    // the initial here biases the running total without yielding a
+    // value at the first step — handled by a separate "pending" slot
+    // so the first next() returns the initial verbatim.
+    const proto::ProtoObject* totalSeed = PROTO_NONE;
+    if (initialVal && initialVal != PROTO_NONE) {
+        totalSeed = initialVal;
+        acc = acc->setAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__accum_pending__"),
+            initialVal);
+    }
+    acc = acc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__accum_total__"), totalSeed);
     acc = acc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__accum_func__"), func ? func : PROTO_NONE);
     return acc;
 }
