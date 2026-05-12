@@ -21621,7 +21621,14 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
 
 
 
-    // Optimization: if it already has __next__, it's an iterator (return self)
+    // Optimization: if it already has __next__, it's an iterator (return self).
+    // Note: this accepts the irregular "only __next__, no __iter__" shape,
+    // which CPython rejects.  Restoring it because some internal carriers
+    // (range iterators, certain generators) reach this branch with __next__
+    // available but __iter__ unset on the prototype chain — without it
+    // class B (with both) silently produces an empty list at the for-loop
+    // boundary.  Class N with only __next__ stays accepted; that's tracked
+    // as a separate strictness gap.
     const proto::ProtoObject* nextMethod = obj->getAttribute(ctx, getNextString());
     if (nextMethod && nextMethod->asMethod(ctx)) {
         return obj;
