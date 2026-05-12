@@ -12347,6 +12347,28 @@ static const proto::ProtoObject* py_dict_or(
     const proto::ProtoObject* other = posArgs->getAt(context, 0);
     const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
+    // CPython: `dict | non_dict` raises TypeError (the in-place form
+    // `|=` accepts any iterable, but the operator is strict).  Without
+    // this check `{1:2} | [(3,4)]`, `{1:2} | 5`, `{1:2} | None` all
+    // returned the self dict unchanged because __keys__/__data__ on
+    // the other operand were missing — silently dropping the operation.
+    {
+        PythonEnvironment* envE = PythonEnvironment::fromContext(context);
+        // dict-shaped means __data__ resolves to a SparseList (every
+        // dict / Module / subclass-of-dict stores its entries that way).
+        // Mere presence of __data__ is insufficient — list and tuple
+        // instances also expose __data__ holding a list, which would
+        // pass a naive `hasOwnAttribute(__data__)` check.
+        bool otherIsDict = false;
+        if (other) {
+            const proto::ProtoObject* od = other->hasOwnAttribute(context, dataName) == PROTO_TRUE
+                ? other->getAttribute(context, dataName) : nullptr;
+            if (od && od->asSparseList(context)) otherIsDict = true;
+        }
+        if (!otherIsDict) {
+            return envE ? envE->getNotImplementedPrototype() : PROTO_NONE;
+        }
+    }
     const proto::ProtoObject* selfKeysObj = self->getAttribute(context, keysName);
     const proto::ProtoList* selfKeys = selfKeysObj && selfKeysObj->asList(context) ? selfKeysObj->asList(context) : context->newList();
     const proto::ProtoObject* selfDataObj = self->getAttribute(context, dataName);
