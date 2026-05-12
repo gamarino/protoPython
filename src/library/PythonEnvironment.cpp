@@ -11784,6 +11784,42 @@ static const proto::ProtoObject* py_str_islower(
     return std::any_of(s.begin(), s.end(), [](unsigned char c) { return std::isalpha(c); }) ? PROTO_TRUE : PROTO_FALSE;
 }
 
+// str.istitle(): True iff the string is non-empty, has at least one
+// cased character, and every cased character is preceded by an
+// uncased character (or by no character at all).  An "uncased"
+// character is any non-letter (digits, punctuation, whitespace).
+// Implementation walks the bytes ASCII-only — accented Latin
+// letters are treated as uncased, matching the runtime's
+// historical ASCII-only is* family behaviour.
+static const proto::ProtoObject* py_str_istitle(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* str = str_from_self_or_arg(context, self, posArgs);
+    if (!str) return PROTO_FALSE;
+    std::string s;
+    str->toUTF8String(context, s);
+    if (s.empty()) return PROTO_FALSE;
+    bool prevCased = false;     // previous char was a letter
+    bool sawCased = false;      // any cased char seen so far
+    for (unsigned char c : s) {
+        bool isU = std::isupper(c) != 0;
+        bool isL = std::islower(c) != 0;
+        bool isAlpha = isU || isL;
+        if (isU) {
+            // Uppercase only valid at the start of a new word, i.e.
+            // not directly following another cased char.
+            if (prevCased) return PROTO_FALSE;
+        } else if (isL) {
+            // Lowercase only valid as the continuation of a cased word.
+            if (!prevCased) return PROTO_FALSE;
+        }
+        prevCased = isAlpha;
+        if (isAlpha) sawCased = true;
+    }
+    return sawCased ? PROTO_TRUE : PROTO_FALSE;
+}
+
 static const proto::ProtoObject* py_str_isprintable(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -16851,6 +16887,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(rootContext_, py_isupper, rootContext_->fromMethod(nullptr, py_str_isupper));
     strPrototype = strPrototype->setAttribute(rootContext_, py_islower, rootContext_->fromMethod(nullptr, py_str_islower));
     strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "isidentifier"), rootContext_->fromMethod(nullptr, py_str_isidentifier));
+    strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "istitle"), rootContext_->fromMethod(nullptr, py_str_istitle));
     strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "isprintable"), rootContext_->fromMethod(nullptr, py_str_isprintable));
     strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "isascii"), rootContext_->fromMethod(nullptr, py_str_isascii));
     strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "isdecimal"), rootContext_->fromMethod(nullptr, py_str_isdecimal));
