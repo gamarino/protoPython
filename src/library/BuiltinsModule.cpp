@@ -4815,6 +4815,15 @@ const proto::ProtoObject* py_type(
             if (slotsVal && slotsVal != PROTO_NONE) {
                 auto checkName = [&](const std::string& nm) -> bool {
                     if (nm.empty()) return false;
+                    // CPython special-cases `__doc__` in __slots__: even
+                    // when the class has a docstring (which writes
+                    // __doc__ into the namespace), the slot is allowed
+                    // because the docstring value populates the slot
+                    // directly rather than shadowing it.  Without this
+                    // exemption `class A: """doc"""; __slots__ = ('__doc__',)`
+                    // raised in our runtime, blocking lib/_typing.py
+                    // (which uses this pattern in _SpecialForm).
+                    if (nm == "__doc__") return false;
                     const proto::ProtoString* nmS = PythonEnvironment::getInternedString(context, nm.c_str());
                     if (dictSL && dictSL->has(context, nmS->getHash(context))) {
                         env->raiseValueError(context,
