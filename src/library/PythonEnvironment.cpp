@@ -10641,6 +10641,49 @@ static const proto::ProtoObject* py_str_isidentifier(
     return PROTO_TRUE;
 }
 
+// Validate the fill character for str.center/ljust/rjust.
+// CPython contract: must be a str of length exactly 1.  None / int / list
+// or multi-char / empty str all raise TypeError.  Returns true and sets
+// *out to the chosen char; returns false (with a pending TypeError) on
+// failure.  width validation is shared too: non-int raises TypeError.
+static bool str_pad_extract(proto::ProtoContext* context,
+                            const proto::ProtoList* posArgs,
+                            int posOff, const char* methodName,
+                            int* width_out, char* fill_out) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* widthObj = posArgs->getAt(context, posOff);
+    if (!widthObj->isInteger(context) && !widthObj->isBoolean(context)) {
+        if (env) env->raiseTypeError(context,
+            std::string("'") + (widthObj->isString(context) ? "str"
+                              : widthObj->isFloat(context) ? "float"
+                              : "object")
+            + "' object cannot be interpreted as an integer");
+        return false;
+    }
+    *width_out = static_cast<int>(widthObj == PROTO_TRUE ? 1
+                                : widthObj == PROTO_FALSE ? 0
+                                : widthObj->asLong(context));
+    *fill_out = ' ';
+    if (posArgs->getSize(context) >= static_cast<unsigned long>(2 + posOff)) {
+        const proto::ProtoObject* fcObj = posArgs->getAt(context, 1 + posOff);
+        if (!fcObj->isString(context)) {
+            if (env) env->raiseTypeError(context,
+                std::string("The fill character must be exactly one character long"));
+            return false;
+        }
+        std::string fc;
+        fcObj->asString(context)->toUTF8String(context, fc);
+        if (fc.size() != 1) {
+            if (env) env->raiseTypeError(context,
+                std::string("The fill character must be exactly one character long"));
+            return false;
+        }
+        *fill_out = fc[0];
+    }
+    (void)methodName;
+    return true;
+}
+
 static const proto::ProtoObject* py_str_center(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -10654,13 +10697,9 @@ static const proto::ProtoObject* py_str_center(
     if (!str || posArgs->getSize(context) < static_cast<unsigned long>(1 + posOff)) return PROTO_NONE;
     std::string s;
     str->toUTF8String(context, s);
-    int width = static_cast<int>(posArgs->getAt(context, posOff)->asLong(context));
-    char fillchar = ' ';
-    if (posArgs->getSize(context) >= static_cast<unsigned long>(2 + posOff) && posArgs->getAt(context, 1 + posOff)->isString(context)) {
-        std::string fc;
-        posArgs->getAt(context, 1 + posOff)->asString(context)->toUTF8String(context, fc);
-        if (!fc.empty()) fillchar = fc[0];
-    }
+    int width;
+    char fillchar;
+    if (!str_pad_extract(context, posArgs, posOff, "center", &width, &fillchar)) return nullptr;
     if (width <= static_cast<int>(s.size())) return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
     int pad = width - static_cast<int>(s.size());
     int left = pad / 2, right = pad - left;
@@ -10683,13 +10722,9 @@ static const proto::ProtoObject* py_str_ljust(
     if (!str || posArgs->getSize(context) < static_cast<unsigned long>(1 + posOff)) return PROTO_NONE;
     std::string s;
     str->toUTF8String(context, s);
-    int width = static_cast<int>(posArgs->getAt(context, posOff)->asLong(context));
-    char fillchar = ' ';
-    if (posArgs->getSize(context) >= static_cast<unsigned long>(2 + posOff) && posArgs->getAt(context, 1 + posOff)->isString(context)) {
-        std::string fc;
-        posArgs->getAt(context, 1 + posOff)->asString(context)->toUTF8String(context, fc);
-        if (!fc.empty()) fillchar = fc[0];
-    }
+    int width;
+    char fillchar;
+    if (!str_pad_extract(context, posArgs, posOff, "ljust", &width, &fillchar)) return nullptr;
     if (width <= static_cast<int>(s.size())) return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
     s.append(width - static_cast<int>(s.size()), fillchar);
     return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
@@ -10708,13 +10743,9 @@ static const proto::ProtoObject* py_str_rjust(
     if (!str || posArgs->getSize(context) < static_cast<unsigned long>(1 + posOff)) return PROTO_NONE;
     std::string s;
     str->toUTF8String(context, s);
-    int width = static_cast<int>(posArgs->getAt(context, posOff)->asLong(context));
-    char fillchar = ' ';
-    if (posArgs->getSize(context) >= static_cast<unsigned long>(2 + posOff) && posArgs->getAt(context, 1 + posOff)->isString(context)) {
-        std::string fc;
-        posArgs->getAt(context, 1 + posOff)->asString(context)->toUTF8String(context, fc);
-        if (!fc.empty()) fillchar = fc[0];
-    }
+    int width;
+    char fillchar;
+    if (!str_pad_extract(context, posArgs, posOff, "rjust", &width, &fillchar)) return nullptr;
     if (width <= static_cast<int>(s.size())) return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
     std::string result(width - static_cast<int>(s.size()), fillchar);
     result += s;
@@ -10758,7 +10789,27 @@ static const proto::ProtoObject* py_str_zfill(
     if (!str || !posArgs || posArgs->getSize(context) < static_cast<unsigned long>(1 + posOff)) return PROTO_NONE;
     std::string s;
     str->toUTF8String(context, s);
-    int width = static_cast<int>(posArgs->getAt(context, posOff)->asLong(context));
+    // CPython: zfill requires an int width.  Previously asLong panicked
+    // with the internal C++ exception "Object is not an integer type" on
+    // non-int input — fix to raise the canonical TypeError.
+    const proto::ProtoObject* widthObj = posArgs->getAt(context, posOff);
+    if (!widthObj->isInteger(context) && !widthObj->isBoolean(context)) {
+        PythonEnvironment* envE = PythonEnvironment::fromContext(context);
+        if (envE) {
+            std::string clsName = "object";
+            const proto::ProtoObject* cls = envE->getType(context, widthObj);
+            if (cls) {
+                const proto::ProtoObject* nm = cls->getAttribute(context, envE->getNameString());
+                if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+            }
+            envE->raiseTypeError(context,
+                "'" + clsName + "' object cannot be interpreted as an integer");
+        }
+        return nullptr;
+    }
+    int width = widthObj == PROTO_TRUE ? 1
+              : widthObj == PROTO_FALSE ? 0
+              : static_cast<int>(widthObj->asLong(context));
     if (width <= static_cast<int>(s.size())) return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
     size_t sign = 0;
     if (!s.empty() && (s[0] == '+' || s[0] == '-')) sign = 1;
