@@ -5062,8 +5062,17 @@ const proto::ProtoObject* executeBytecodeRange(
         case OP_UNARY_POSITIVE: {
             if (stack.empty()) { i = next_i; continue; }
             const proto::ProtoObject* a = stack.back();
-            if (isEmbeddedValue(ctx, a)) {
-                // Numeric literal / bool / None — `+x` is identity.
+            // CPython: +bool produces int, not bool.  +True -> 1, +False -> 0.
+            // The previous identity fast path returned the bool sentinel
+            // unchanged, breaking the `type(+True) is int` invariant
+            // and the dict-key-hash compatibility check used by the
+            // numeric ABC.
+            if (a == PROTO_TRUE) {
+                stack.back() = ctx->fromInteger(1);
+            } else if (a == PROTO_FALSE) {
+                stack.back() = ctx->fromInteger(0);
+            } else if (isEmbeddedValue(ctx, a)) {
+                // Other numeric literal — `+x` is identity.
             } else {
                 const proto::ProtoString* posS = env ? env->getPosString() : PythonEnvironment::getInternedString(ctx, "__pos__");
                 const proto::ProtoObject* result = invokeDunder(ctx, a, posS, ctx->newList());
