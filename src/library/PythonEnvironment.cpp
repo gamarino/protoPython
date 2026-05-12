@@ -6717,9 +6717,138 @@ static const proto::ProtoObject* py_int_format(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     long long v = self->asLong(context);
-    char buf[32];
-    snprintf(buf, sizeof(buf), "%lld", v);
-    return PythonEnvironment::getInternedString(context, buf)->asObject(context);
+    // Parse the format spec: [[fill]align][sign][#][0][width][type]
+    // CPython format minilanguage subset for int: d (default), b, o, x, X,
+    // n (locale, treated as d), c (char).  Previously the spec was
+    // ignored entirely, so format(42, 'x') / '05d' / '+d' / '#x' all
+    // returned the bare decimal string.
+    std::string spec;
+    if (posArgs && posArgs->getSize(context) >= 1) {
+        const proto::ProtoObject* specArg = posArgs->getAt(context, 0);
+        if (specArg && specArg->isString(context)) {
+            specArg->asString(context)->toUTF8String(context, spec);
+        }
+    }
+    if (spec.empty()) {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%lld", v);
+        return PythonEnvironment::getInternedString(context, buf)->asObject(context);
+    }
+    // Parse spec.
+    char fill = ' ';
+    char align = '\0';
+    char sign = '-';
+    bool altForm = false;
+    bool zeroPad = false;
+    int width = 0;
+    char type = 'd';
+    size_t i = 0;
+    // [[fill]align]: align is one of < > ^ =, fill is any char before it.
+    if (spec.size() >= 2 && (spec[1] == '<' || spec[1] == '>' || spec[1] == '^' || spec[1] == '=')) {
+        fill = spec[0];
+        align = spec[1];
+        i = 2;
+    } else if (i < spec.size() && (spec[i] == '<' || spec[i] == '>' || spec[i] == '^' || spec[i] == '=')) {
+        align = spec[i];
+        i++;
+    }
+    // [sign]
+    if (i < spec.size() && (spec[i] == '+' || spec[i] == '-' || spec[i] == ' ')) {
+        sign = spec[i];
+        i++;
+    }
+    // [#]
+    if (i < spec.size() && spec[i] == '#') { altForm = true; i++; }
+    // [0]
+    if (i < spec.size() && spec[i] == '0') {
+        zeroPad = true;
+        if (align == '\0') { fill = '0'; align = '='; }
+        i++;
+    }
+    // [width]
+    while (i < spec.size() && spec[i] >= '0' && spec[i] <= '9') {
+        width = width * 10 + (spec[i] - '0');
+        i++;
+    }
+    // Skip [,] / [_] grouping (not fully implemented here).
+    if (i < spec.size() && (spec[i] == ',' || spec[i] == '_')) i++;
+    // [type]
+    if (i < spec.size()) type = spec[i];
+
+    // Build the digit string for the chosen base.
+    bool isNeg = (v < 0);
+    unsigned long long mag = isNeg ? static_cast<unsigned long long>(-(v + 1)) + 1ULL
+                                   : static_cast<unsigned long long>(v);
+    std::string digits;
+    const char* hexLo = "0123456789abcdef";
+    const char* hexHi = "0123456789ABCDEF";
+    auto pushDigits = [&](unsigned long long n, int base, const char* alphabet) {
+        if (n == 0) { digits = "0"; return; }
+        while (n) { digits.insert(digits.begin(), alphabet[n % base]); n /= static_cast<unsigned long long>(base); }
+    };
+    std::string prefix;
+    switch (type) {
+        case 'd': case 'n': pushDigits(mag, 10, hexLo); break;
+        case 'b': pushDigits(mag, 2, hexLo); if (altForm) prefix = "0b"; break;
+        case 'o': pushDigits(mag, 8, hexLo); if (altForm) prefix = "0o"; break;
+        case 'x': pushDigits(mag, 16, hexLo); if (altForm) prefix = "0x"; break;
+        case 'X': pushDigits(mag, 16, hexHi); if (altForm) prefix = "0X"; break;
+        case 'c': {
+            // single-character: int → str of length 1.
+            if (mag > 0x10FFFF || isNeg) {
+                PythonEnvironment* env = PythonEnvironment::fromContext(context);
+                if (env) env->raiseValueError(context,
+                    PythonEnvironment::getInternedString(context,
+                        "%c arg not in range(0x110000)")->asObject(context));
+                return nullptr;
+            }
+            std::string out;
+            unsigned long cp = static_cast<unsigned long>(mag);
+            if (cp <= 0x7F) out.push_back(static_cast<char>(cp));
+            else if (cp <= 0x7FF) {
+                out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+                out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+            } else if (cp <= 0xFFFF) {
+                out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+                out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+                out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+            } else {
+                out.push_back(static_cast<char>(0xF0 | (cp >> 18)));
+                out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+                out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+                out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+            }
+            return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
+        }
+        default: pushDigits(mag, 10, hexLo); break;
+    }
+
+    // Build the signed/prefixed body.
+    std::string signStr;
+    if (isNeg) signStr = "-";
+    else if (sign == '+') signStr = "+";
+    else if (sign == ' ') signStr = " ";
+    std::string body = signStr + prefix + digits;
+
+    // Pad to width.
+    int padLen = width - static_cast<int>(body.size());
+    if (padLen > 0) {
+        if (align == '\0') align = '>';  // numbers right-align by default
+        if (align == '=') {
+            // Insert pad between sign/prefix and digits.
+            std::string pad(padLen, fill);
+            body = signStr + prefix + pad + digits;
+        } else if (align == '<') {
+            body += std::string(padLen, fill);
+        } else if (align == '^') {
+            int left = padLen / 2;
+            int right = padLen - left;
+            body = std::string(left, fill) + body + std::string(right, fill);
+        } else {  // '>' (default)
+            body = std::string(padLen, fill) + body;
+        }
+    }
+    return PythonEnvironment::getInternedString(context, body.c_str())->asObject(context);
 }
 
 static const proto::ProtoString* str_from_self(proto::ProtoContext* context, const proto::ProtoObject* self);
