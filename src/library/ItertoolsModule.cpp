@@ -3,6 +3,14 @@
 #include <string>
 
 namespace protoPython {
+
+// Forward declaration: invokePythonCallable lives in
+// PythonEnvironment.cpp inside namespace protoPython.  We need it
+// in starmap's dispatch path for Python-level callables.
+extern const proto::ProtoObject* invokePythonCallable(
+    proto::ProtoContext* ctx, const proto::ProtoObject* callable,
+    const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+
 namespace itertools {
 
 static const proto::ProtoObject* py_count_next(
@@ -636,34 +644,61 @@ static const proto::ProtoObject* py_starmap_next(
     const proto::ProtoObject* func = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__starmap_func__"));
     const proto::ProtoObject* it = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__starmap_it__"));
     if (!func || !it) return nullptr;
-    const proto::ProtoObject* nextM = it->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__next__"));
-    if (!nextM || !nextM->asMethod(ctx)) return nullptr;
-    const proto::ProtoObject* argsObj = nextM->asMethod(ctx)(ctx, it, nullptr, ctx->newList(), nullptr);
-    if (!argsObj || argsObj == PROTO_NONE) return nullptr;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    // Drive iteration through env->next so generators / user iterators
+    // work in addition to list / tuple iterators.
+    const proto::ProtoObject* argsObj = env ? env->next(it) : nullptr;
+    if (!argsObj) return nullptr;
 
-    const proto::ProtoList* args = argsObj->asList(ctx);
-    if (!args) {
-        // If it's not a list, try converting it to one
-        const proto::ProtoObject* iterM = argsObj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__iter__"));
-        if (iterM && iterM->asMethod(ctx)) {
-            const proto::ProtoObject* tempIt = iterM->asMethod(ctx)(ctx, argsObj, nullptr, ctx->newList(), nullptr);
-            if (tempIt) {
+    // Unpack the yielded element into a positional arg list.  Accept
+    // tuple (BUILD_TUPLE), list (raw), wrapped tuple/list via __data__,
+    // or any iterable.  The previous asList-only check silently dropped
+    // every tuple — `starmap(pow, [(2,3), (3,2)])` produced 1-arg calls.
+    const proto::ProtoList* args = nullptr;
+    if (auto* t = argsObj->asTuple(ctx)) {
+        const proto::ProtoList* L = ctx->newList();
+        for (unsigned long i = 0; i < t->getSize(ctx); ++i)
+            L = L->appendLast(ctx, t->getAt(ctx, static_cast<int>(i)));
+        args = L;
+    } else if (auto* l = argsObj->asList(ctx)) {
+        args = l;
+    } else {
+        // Wrapped tuple / list: look at __data__.
+        const proto::ProtoString* dataS = PythonEnvironment::getInternedString(ctx, "__data__");
+        const proto::ProtoObject* d = argsObj->getAttribute(ctx, dataS);
+        if (d) {
+            if (auto* t2 = d->asTuple(ctx)) {
                 const proto::ProtoList* L = ctx->newList();
-                const proto::ProtoObject* nAttr = tempIt->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__next__"));
-                if (nAttr && nAttr->asMethod(ctx)) {
-                    while (const proto::ProtoObject* val = nAttr->asMethod(ctx)(ctx, tempIt, nullptr, ctx->newList(), nullptr)) {
-                        L = L->appendLast(ctx, val);
-                    }
-                }
+                for (unsigned long i = 0; i < t2->getSize(ctx); ++i)
+                    L = L->appendLast(ctx, t2->getAt(ctx, static_cast<int>(i)));
                 args = L;
+            } else if (auto* l2 = d->asList(ctx)) {
+                args = l2;
             }
         }
     }
+    if (!args && env) {
+        // Last-resort fallback: drive __iter__ via env so user
+        // iterables also work.
+        const proto::ProtoObject* tempIt = env->iter(argsObj);
+        if (tempIt) {
+            const proto::ProtoList* L = ctx->newList();
+            for (;;) {
+                const proto::ProtoObject* v = env->next(tempIt);
+                if (!v) break;
+                L = L->appendLast(ctx, v);
+            }
+            args = L;
+        }
+    }
     if (!args) return nullptr;
-
-    const proto::ProtoObject* callM = func->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__call__"));
-    if (!callM || !callM->asMethod(ctx)) return nullptr;
-    return callM->asMethod(ctx)(ctx, func, nullptr, args, nullptr);
+    // Dispatch the callable.  Prefer asMethod for native callables;
+    // fall back to invokePythonCallable for Python functions /
+    // bound methods / class instances with __call__.
+    if (func->asMethod(ctx)) {
+        return func->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(func), nullptr, args, nullptr);
+    }
+    return invokePythonCallable(ctx, func, args, nullptr);
 }
 
 static const proto::ProtoObject* py_starmap(
@@ -675,9 +710,10 @@ static const proto::ProtoObject* py_starmap(
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     const proto::ProtoObject* func = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* iterable = posArgs->getAt(ctx, 1);
-    const proto::ProtoObject* iterM = iterable->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__iter__"));
-    if (!iterM || !iterM->asMethod(ctx)) return PROTO_NONE;
-    const proto::ProtoObject* it = iterM->asMethod(ctx)(ctx, iterable, nullptr, ctx->newList(), nullptr);
+    // Drive iteration through env->iter so user-class __iter__
+    // (a Python method) works in addition to native iterators.
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoObject* it = env ? env->iter(iterable) : nullptr;
     if (!it) return PROTO_NONE;
     const proto::ProtoObject* proto = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__starmap_proto__"));
     if (!proto) return PROTO_NONE;
