@@ -12692,7 +12692,7 @@ static const proto::ProtoObject* py_dict_update(
                 }
                 if (!found) keys = keys->appendLast(context, key);
 
-                // If it's a module, also set as attribute. 
+                // If it's a module, also set as attribute.
                 // CRITICAL FIX: Guard against poisoning the dict class or other core prototypes.
                 // We only sync to attributes if the target is a Module.
                 bool isModule = env && target->isInstanceOf(context, env->getModulePrototype()) == PROTO_TRUE;
@@ -12701,9 +12701,100 @@ static const proto::ProtoObject* py_dict_update(
                     else const_cast<proto::ProtoObject*>(target)->setAttribute(context, key->asString(context), value);
                 }
             }
+        } else if (env) {
+            // CPython: dict.update(iterable_of_pairs) walks the iterable
+            // and unpacks each element as a (key, value) pair.  Without
+            // this path, `d.update([('a', 1), ('b', 2)])` silently
+            // produced `{}` because the absence of __keys__/__data__ on a
+            // list caused the loop above to be skipped entirely.
+            const proto::ProtoObject* it = env->iter(other);
+            if (!it) {
+                if (env->hasPendingException()) return nullptr;
+            }
+            if (it) {
+                PythonEnvironment::TransientPin pinIt(env, it);
+                for (;;) {
+                    const proto::ProtoObject* pair = env->next(it);
+                    if (!pair) {
+                        if (env->hasPendingException()) return nullptr;
+                        break;
+                    }
+                    PythonEnvironment::TransientPin pinPair(env, pair);
+                    // Try tuple / list directly, then follow __data__ for
+                    // wrapped tuple subclasses (BUILD_TUPLE shape).
+                    const proto::ProtoTuple* pt = pair->asTuple(context);
+                    const proto::ProtoList* pl = pt ? nullptr : pair->asList(context);
+                    if (!pt && !pl) {
+                        const proto::ProtoObject* pd = pair->getAttribute(context, dataName);
+                        if (pd) {
+                            pt = pd->asTuple(context);
+                            if (!pt) pl = pd->asList(context);
+                        }
+                    }
+                    const proto::ProtoObject* k = nullptr;
+                    const proto::ProtoObject* v = nullptr;
+                    unsigned long pairLen = 0;
+                    if (pt) {
+                        pairLen = pt->getSize(context);
+                        if (pairLen == 2) { k = pt->getAt(context, 0); v = pt->getAt(context, 1); }
+                    } else if (pl) {
+                        pairLen = pl->getSize(context);
+                        if (pairLen == 2) { k = pl->getAt(context, 0); v = pl->getAt(context, 1); }
+                    }
+                    if (!k) {
+                        if (pairLen != 0 && pairLen != 2) {
+                            env->raiseValueError(context,
+                                PythonEnvironment::getInternedString(context,
+                                    "dictionary update sequence element has wrong length")->asObject(context));
+                        } else {
+                            env->raiseTypeError(context,
+                                "cannot convert dictionary update sequence element to a sequence");
+                        }
+                        return nullptr;
+                    }
+                    unsigned long hash = k->getHash(context);
+                    dict = dict->setAt(context, hash, v);
+                    bool found = false;
+                    for (unsigned long j = 0; j < keys->getSize(context); ++j) {
+                        if (keys->getAt(context, static_cast<int>(j))->getHash(context) == hash) { found = true; break; }
+                    }
+                    if (!found) keys = keys->appendLast(context, k);
+                    bool isModule = target->isInstanceOf(context, env->getModulePrototype()) == PROTO_TRUE;
+                    if (k->isString(context) && isModule) {
+                        env->setAttribute(context, target, k->asString(context), v);
+                    }
+                }
+            }
         }
     }
-    
+
+    // CPython: dict.update(**kwargs) — merge keyword args last so they
+    // override any matching keys produced by the positional argument.
+    // kwarg names live in the CALL_KW kwnames tuple on the call stack;
+    // recover them via env->getCurrentKwNames() and walk in order.
+    if (env && keywordParameters && keywordParameters->getSize(context) > 0) {
+        const proto::ProtoTuple* kwNames = env->getCurrentKwNames();
+        if (kwNames) {
+            unsigned long kwSize = kwNames->getSize(context);
+            for (unsigned long i = 0; i < kwSize; ++i) {
+                const proto::ProtoObject* keyObj = kwNames->getAt(context, static_cast<int>(i));
+                if (!keyObj || !keyObj->isString(context)) continue;
+                const proto::ProtoString* ks = keyObj->asString(context);
+                unsigned long hash = ks->getHash(context);
+                if (!keywordParameters->has(context, hash)) continue;
+                const proto::ProtoObject* v = keywordParameters->getAt(context, hash);
+                dict = dict->setAt(context, hash, v ? v : PROTO_NONE);
+                bool found = false;
+                for (unsigned long j = 0; j < keys->getSize(context); ++j) {
+                    if (keys->getAt(context, static_cast<int>(j))->getHash(context) == hash) { found = true; break; }
+                }
+                if (!found) keys = keys->appendLast(context, keyObj);
+                bool isModule = target->isInstanceOf(context, env->getModulePrototype()) == PROTO_TRUE;
+                if (isModule) env->setAttribute(context, target, ks, v ? v : PROTO_NONE);
+            }
+        }
+    }
+
     if (env) {
         env->setAttribute(context, target, keysName, keys->asObject(context));
         env->setAttribute(context, target, dataName, dict->asObject(context));
