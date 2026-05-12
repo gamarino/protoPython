@@ -5856,6 +5856,33 @@ static const proto::ProtoObject* py_min_max(
             hasDefault = true;
         }
     }
+    // CPython: min(it, key=non_callable) raises
+    //   TypeError: 'X' object is not callable
+    // Previously a non-callable key was applied via the silent
+    // passthrough in invokePythonCallable, so `min([1,2,3], key=5)`
+    // returned 1 without surfacing the misuse.  Validate up front.
+    if (keyFunc && keyFunc != PROTO_NONE) {
+        bool isCallable = false;
+        if (keyFunc->asMethod(context)) isCallable = true;
+        else if (env0) {
+            const proto::ProtoString* callS = env0->getCallString();
+            const proto::ProtoObject* cm = env0->getAttribute(context, keyFunc, callS, false);
+            if (cm && cm != PROTO_NONE) isCallable = true;
+        }
+        if (!isCallable) {
+            if (env0) {
+                std::string clsName = "object";
+                const proto::ProtoObject* cls = env0->getType(context, keyFunc);
+                if (cls) {
+                    const proto::ProtoObject* nm = cls->getAttribute(context, env0->getNameString());
+                    if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+                }
+                env0->raiseTypeError(context,
+                    "'" + clsName + "' object is not callable");
+            }
+            return nullptr;
+        }
+    }
 
     std::vector<const proto::ProtoObject*> items;
     if (positionalParameters->getSize(context) == 1) {
