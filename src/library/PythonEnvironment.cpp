@@ -8119,8 +8119,17 @@ static const proto::ProtoObject* py_bytes_mul(
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (!posArgs || posArgs->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* nObj = posArgs->getAt(context, 0);
-    if (!nObj->isInteger(context)) return PROTO_NONE;
-    long long n = nObj->asLong(context);
+    // CPython: bytes * non-int returns NotImplemented so the binary-op
+    // dispatcher emits TypeError.  Previously the silent PROTO_NONE
+    // produced None for `b'ab' * 2.5` instead of the canonical
+    // "unsupported operand type(s) for *".
+    if (!nObj->isInteger(context) && !nObj->isBoolean(context)) {
+        PythonEnvironment* envE = PythonEnvironment::fromContext(context);
+        return envE ? envE->getNotImplementedPrototype() : PROTO_NONE;
+    }
+    long long n = nObj == PROTO_TRUE ? 1LL
+                : nObj == PROTO_FALSE ? 0LL
+                : nObj->asLong(context);
     if (n <= 0) return bytes_make_object(context, nullptr, 0);
     std::string raw;
     if (!bytes_data_view(context, self, raw)) return bytes_make_object(context, nullptr, 0);
@@ -8136,9 +8145,34 @@ static const proto::ProtoObject* py_bytes_add(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (!posArgs || posArgs->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* other = posArgs->getAt(context, 0);
+    // CPython: bytes accepts only bytes / bytearray for concatenation.
+    // bytes_view tolerates ProtoString primitives so callers like
+    // bytes.maketrans accept str; but for the operator-level + the
+    // CPython rule is strict — raw str must raise TypeError, not be
+    // implicitly encoded.  Reject:
+    //   - raw ProtoString (b'ab' + 'cd')
+    // Anything that does NOT look bytes-shaped returns NotImplemented
+    // so the binary-op dispatcher emits the standard
+    // "unsupported operand type(s) for +: 'bytes' and 'X'".
+    PythonEnvironment* envE = PythonEnvironment::fromContext(context);
+    bool otherIsBytes = false;
+    if (other && !other->isString(context)) {
+        if (other->isByteBuffer(context)) otherIsBytes = true;
+        else {
+            const proto::ProtoString* dataS = PythonEnvironment::getInternalString(context, "__data__");
+            const proto::ProtoObject* d = other->getAttribute(context, dataS);
+            if (d && d->isByteBuffer(context)) otherIsBytes = true;
+        }
+    }
+    if (!otherIsBytes) {
+        return envE ? envE->getNotImplementedPrototype() : PROTO_NONE;
+    }
     std::string a, b;
     if (!bytes_data_view(context, self, a)) return PROTO_NONE;
-    if (!bytes_view(context, posArgs->getAt(context, 0), b)) return PROTO_NONE;
+    if (!bytes_view(context, other, b)) {
+        return envE ? envE->getNotImplementedPrototype() : PROTO_NONE;
+    }
     std::string out = a + b;
     return bytes_make_object(context, out.data(),
         static_cast<unsigned long>(out.size()));
