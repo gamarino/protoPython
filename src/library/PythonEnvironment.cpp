@@ -6096,11 +6096,47 @@ static void unwrap_set_binop_args(proto::ProtoContext* ctx,
     }
 }
 
+// CPython contract: the binary set operators &, |, -, ^ require BOTH
+// operands to be set-like (set, frozenset, or dict-view).  The named
+// methods (intersection/union/difference/symmetric_difference) accept
+// any iterable, but the operator form is strict.  Previously the
+// operators delegated unconditionally to the named methods, so
+// `{1,2} & [1,2]` quietly computed `{1,2}` from list __contains__.
+// Return NotImplemented for non-set operands so the binary-op
+// dispatcher emits "unsupported operand type(s) for &: 'set' and 'list'".
+static bool set_op_other_is_setlike(proto::ProtoContext* context,
+                                    const proto::ProtoObject* other) {
+    if (!other) return false;
+    if (other->asSet(context)) return true;
+    // Wrapped set / frozenset instance: __data__ is a ProtoSet.
+    const proto::ProtoString* dataS = PythonEnvironment::getInternalString(context, "__data__");
+    const proto::ProtoObject* d = other->getAttribute(context, dataS);
+    if (d && d->asSet(context)) return true;
+    // dict_keys / dict_items views also use set semantics in CPython.
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (env) {
+        const proto::ProtoObject* cls = env->getType(context, other);
+        if (cls) {
+            const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
+            if (nm && nm->isString(context)) {
+                std::string name;
+                nm->asString(context)->toUTF8String(context, name);
+                if (name == "dict_keys" || name == "dict_items") return true;
+            }
+        }
+    }
+    return false;
+}
+
 static const proto::ProtoObject* py_set_or(
     proto::ProtoContext* context, const proto::ProtoObject* self,
     const proto::ParentLink* parent, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
     unwrap_set_binop_args(context, self, args);
     if (args->getSize(context) != 1) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!set_op_other_is_setlike(context, args->getAt(context, 0))) {
+        return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    }
     return py_set_union(context, self, parent, args, kwargs);
 }
 
@@ -6109,6 +6145,10 @@ static const proto::ProtoObject* py_set_and(
     const proto::ParentLink* parent, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
     unwrap_set_binop_args(context, self, args);
     if (args->getSize(context) != 1) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!set_op_other_is_setlike(context, args->getAt(context, 0))) {
+        return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    }
     return py_set_intersection(context, self, parent, args, kwargs);
 }
 
@@ -6117,6 +6157,10 @@ static const proto::ProtoObject* py_set_sub(
     const proto::ParentLink* parent, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
     unwrap_set_binop_args(context, self, args);
     if (args->getSize(context) != 1) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!set_op_other_is_setlike(context, args->getAt(context, 0))) {
+        return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    }
     return py_set_difference(context, self, parent, args, kwargs);
 }
 
@@ -6125,6 +6169,10 @@ static const proto::ProtoObject* py_set_xor(
     const proto::ParentLink* parent, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
     unwrap_set_binop_args(context, self, args);
     if (args->getSize(context) != 1) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!set_op_other_is_setlike(context, args->getAt(context, 0))) {
+        return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    }
     return py_set_symmetric_difference(context, self, parent, args, kwargs);
 }
 
