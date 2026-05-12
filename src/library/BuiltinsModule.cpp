@@ -543,8 +543,48 @@ static const proto::ProtoObject* py_print(
         } else if (obj == PROTO_FALSE) {
             std::cout << "False";
         } else {
+            // CPython: print(x) calls str(x), NOT repr(x).  For built-in
+            // types that override __str__ (datetime.date.__str__ ==
+            // isoformat, etc.) the two diverge, so print falling through
+            // to reprObject emitted `datetime.date(2026, 5, 12)` instead
+            // of `2026-05-12`.  Walk the type's MRO for __str__ first;
+            // if absent, fall back to reprObject which is exactly what
+            // CPython's object.__str__ does.
+            std::string rendered;
+            bool gotStr = false;
             if (env) {
-                std::cout << env->reprObject(context, obj);
+                const proto::ProtoString* strS = env->getStrString();
+                const proto::ProtoObject* cls = env->getType(context, obj);
+                const proto::ProtoObject* strMethod = nullptr;
+                if (cls) {
+                    const proto::ProtoObject* mroAttr = cls->getAttribute(context, env->getMroString());
+                    const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
+                    if (mroT) {
+                        for (unsigned long mi = 0; mi < mroT->getSize(context); ++mi) {
+                            const proto::ProtoObject* base = mroT->getAt(context, static_cast<int>(mi));
+                            if (!base || base == PROTO_NONE) continue;
+                            if (base == env->getObjectPrototype()) break;
+                            if (base->hasOwnAttribute(context, strS) == PROTO_TRUE) {
+                                strMethod = base->getOwnAttributeDirect(context, strS);
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (strMethod && strMethod != PROTO_NONE && strMethod->asMethod(context)) {
+                    const proto::ProtoObject* out = strMethod->asMethod(context)(
+                        context, const_cast<proto::ProtoObject*>(obj), nullptr,
+                        emptyL, nullptr);
+                    if (out && out->isString(context)) {
+                        out->asString(context)->toUTF8String(context, rendered);
+                        gotStr = true;
+                    }
+                }
+                if (!gotStr) {
+                    rendered = env->reprObject(context, obj);
+                    gotStr = true;
+                }
+                std::cout << rendered;
             } else {
                 const proto::ProtoString* reprS = PythonEnvironment::getInternedString(context, "__repr__");
                 const proto::ProtoObject* reprMethod = obj->getAttribute(context, reprS);
