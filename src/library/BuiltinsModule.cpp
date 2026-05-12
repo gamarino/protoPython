@@ -7758,10 +7758,23 @@ static const proto::ProtoObject* py_range(
     const proto::ProtoString* stepS = env ? env->getRangeStepString() : PythonEnvironment::getInternedString(context, "__range_step__");
 
     const proto::ProtoObject* rangeObj = self ? self->newChild(context, true) : context->newObject(false);
-    rangeObj = rangeObj->setAttribute(context, curS, context->fromInteger(start));
-    rangeObj = rangeObj->setAttribute(context, stopS, context->fromInteger(stop));
-    rangeObj = rangeObj->setAttribute(context, stepS, context->fromInteger(step));
-    
+    const proto::ProtoObject* startVal = context->fromInteger(start);
+    const proto::ProtoObject* stopVal  = context->fromInteger(stop);
+    const proto::ProtoObject* stepVal  = context->fromInteger(step);
+    rangeObj = rangeObj->setAttribute(context, curS, startVal);
+    rangeObj = rangeObj->setAttribute(context, stopS, stopVal);
+    rangeObj = rangeObj->setAttribute(context, stepS, stepVal);
+    // Public CPython properties: r.start, r.stop, r.step.  Store the
+    // canonical integer values as plain attributes so user code that
+    // introspects them works the same way as CPython's read-only
+    // member descriptors.  __range_*__ stays for the runtime hot path
+    // (iter / len / getitem) so this addition is purely additive.
+    rangeObj = rangeObj->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "start"), startVal);
+    rangeObj = rangeObj->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "stop"),  stopVal);
+    rangeObj = rangeObj->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "step"),  stepVal);
     return rangeObj;
 }
 
