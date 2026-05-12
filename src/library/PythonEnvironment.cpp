@@ -8742,6 +8742,28 @@ static const proto::ProtoObject* py_bytes_fromhex(
     return bytes_make_object(context, raw.data(), static_cast<unsigned long>(raw.size()));
 }
 
+// CPython bytes.find / rfind / count / index / rindex require an
+// int or bytes-like needle.  Raw str silently coerced into bytes
+// via bytes_view, returning the byte-offset of the str interpreted
+// as bytes — `b'abc'.find('b')` returned 1 instead of raising
+// TypeError("argument should be integer or bytes-like object, not 'str'").
+// Returns true iff the needle is OK; sets pending TypeError on str.
+static bool bytes_needle_validate(proto::ProtoContext* context,
+                                  const proto::ProtoObject* sub) {
+    if (!sub) return false;
+    if (sub->isInteger(context) || sub == PROTO_TRUE || sub == PROTO_FALSE) return true;
+    if (sub->isString(context)) {
+        // Reject a raw ProtoString primitive.  Wrapped bytes / bytearray
+        // are not raw strings — isString returns false for those carrier
+        // shapes — so they keep working.
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env) env->raiseTypeError(context,
+            "argument should be integer or bytes-like object, not 'str'");
+        return false;
+    }
+    return true;
+}
+
 static const proto::ProtoObject* py_bytes_find(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -8750,6 +8772,7 @@ static const proto::ProtoObject* py_bytes_find(
     if (!bytes_data_view(context, self, haystack) || posArgs->getSize(context) < 1)
         return context->fromInteger(-1);
     const proto::ProtoObject* sub = posArgs->getAt(context, 0);
+    if (!bytes_needle_validate(context, sub)) return nullptr;
     long long start = 0, end = static_cast<long long>(haystack.size());
     if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isInteger(context))
         start = posArgs->getAt(context, 1)->asLong(context);
@@ -8773,6 +8796,7 @@ static const proto::ProtoObject* py_bytes_count(
     if (!bytes_data_view(context, self, haystack) || posArgs->getSize(context) < 1)
         return context->fromInteger(0);
     const proto::ProtoObject* sub = posArgs->getAt(context, 0);
+    if (!bytes_needle_validate(context, sub)) return nullptr;
     long long start = 0, end = static_cast<long long>(haystack.size());
     if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isInteger(context))
         start = posArgs->getAt(context, 1)->asLong(context);
@@ -8864,6 +8888,7 @@ static const proto::ProtoObject* py_bytes_rfind(
     if (!bytes_data_view(context, self, haystack) || posArgs->getSize(context) < 1)
         return context->fromInteger(-1);
     const proto::ProtoObject* sub = posArgs->getAt(context, 0);
+    if (!bytes_needle_validate(context, sub)) return nullptr;
     long long start = 0, end = static_cast<long long>(haystack.size());
     if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isInteger(context))
         start = posArgs->getAt(context, 1)->asLong(context);
