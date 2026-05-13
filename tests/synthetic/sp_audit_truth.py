@@ -186,6 +186,26 @@ def classify(exit_code: int, stdout: str, stderr: str) -> str:
         if "0 of" in last10_text and "had failures" in last10_text:
             return "PASS_CUSTOM"
 
+    # 6a: IMPORT_FAIL -- the test never got a chance to run because an
+    # `import` near the top of the file failed.  Distinguishing this from
+    # CRASH matters because IMPORT_FAIL is a runtime gap (a missing module
+    # or a broken stdlib shim) NOT a divergence the test itself diagnoses,
+    # so it should land in a separate column when reporting deltas.
+    # Heuristic: a non-zero exit, no unittest summary at all
+    # (i.e. unittest's collector never reached), and a traceback in
+    # stderr ending in ModuleNotFoundError / ImportError.  The
+    # `unittest` collector emits its own summary even when zero tests
+    # ran, so "Ran 0 tests" absent + an import error in stderr is the
+    # signature.
+    if exit_code != 0:
+        ran_marker = "Ran " in stdout and " tests in " in stdout
+        import_marker = (
+            "ModuleNotFoundError" in stderr
+            or "ImportError" in stderr
+        )
+        if import_marker and not ran_marker:
+            return "IMPORT_FAIL"
+
     # 6: CRASH
     if exit_code != 0:
         return "CRASH"
