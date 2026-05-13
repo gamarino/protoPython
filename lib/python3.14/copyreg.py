@@ -60,10 +60,73 @@ _new_type = type(int.__new__)
 def _reduce_ex(self, proto):
     # CPython routes protocol >= 2 through a dedicated C-level path on
     # object.__reduce_ex__; protoPython's py_object_reduce_ex delegates
-    # everything here.  The proto<2 layout (cls/base/state tuple) is a
-    # compatible (if slower) fallback for the higher protocols, so drop
-    # the original `assert proto < 2` rather than raising.
+    # everything here.  For proto >= 2 we mirror that C path so the
+    # reduction shape matches: a 5-tuple of
+    # (__newobj__ / __newobj_ex__, (cls, *args) or (cls, args, kwargs),
+    #  state, listitems, dictitems).  For proto < 2 fall through to the
+    # legacy 3/4-tuple `(cls, base, state)` shape.
     cls = self.__class__
+    if proto >= 2:
+        # Resolve newargs via __getnewargs_ex__ / __getnewargs__.  Per
+        # PEP 307, __getnewargs_ex__ takes precedence and selects the
+        # __newobj_ex__ flavour; __getnewargs__ goes through __newobj__.
+        getnewargs_ex = getattr(self, "__getnewargs_ex__", None)
+        if getnewargs_ex is not None:
+            newargs = getnewargs_ex()
+            if (not isinstance(newargs, tuple)
+                or len(newargs) != 2
+                or not isinstance(newargs[0], tuple)
+                or not isinstance(newargs[1], dict)):
+                raise TypeError(
+                    f"__getnewargs_ex__ should return a tuple of "
+                    f"(args, kwargs), not {type(newargs).__name__}")
+            args, kwargs = newargs
+            if kwargs:
+                func = __newobj_ex__
+                func_args = (cls, args, kwargs)
+            else:
+                func = __newobj__
+                func_args = (cls,) + args
+        else:
+            getnewargs = getattr(self, "__getnewargs__", None)
+            if getnewargs is not None:
+                args = getnewargs()
+                if not isinstance(args, tuple):
+                    raise TypeError(
+                        f"__getnewargs__ should return a tuple, "
+                        f"not {type(args).__name__}")
+            else:
+                args = ()
+            func = __newobj__
+            func_args = (cls,) + args
+        # state: __getstate__() if defined, else __dict__ / None.
+        # CPython normalises the empty-state cases to None so the
+        # unpickler skips the restore_state step; mirror that to keep
+        # the 5-tuple equal to CPython's reduction output.
+        getstate = getattr(self, "__getstate__", None)
+        if getstate is not None:
+            state = getstate()
+            if not state:
+                state = None
+        else:
+            try:
+                state = self.__dict__
+            except AttributeError:
+                state = None
+            if not state:
+                state = None
+        # listitems / dictitems: per CPython, list and dict subclasses
+        # expose their iteration so the unpickler can rebuild the
+        # container's payload after constructing the bare instance.
+        # Use an explicit MRO walk rather than isinstance() because the
+        # latter reports protoPython instances of unrelated classes as
+        # dict-compatible (their internal __data__ shape collides with
+        # dict's runtime check).
+        _mro = type(self).__mro__
+        listitems = iter(self) if any(c is list for c in _mro) else None
+        dictitems = iter(self.items()) if any(c is dict for c in _mro) else None
+        return func, func_args, state, listitems, dictitems
+    # Legacy proto<2 path.
     for base in cls.__mro__:
         if hasattr(base, '__flags__') and not base.__flags__ & _HEAPTYPE:
             break
@@ -100,17 +163,17 @@ def _reduce_ex(self, proto):
                             f"defining __getstate__ cannot be pickled "
                             f"with protocol {proto}") from None
         try:
-            dict = self.__dict__
+            state_dict = self.__dict__
         except AttributeError:
-            dict = None
+            state_dict = None
     else:
         if (type(self).__getstate__ is object.__getstate__ and
             getattr(self, "__slots__", None)):
             raise TypeError("a class that defines __slots__ without "
                             "defining __getstate__ cannot be pickled")
-        dict = getstate()
-    if dict:
-        return _reconstructor, args, dict
+        state_dict = getstate()
+    if state_dict:
+        return _reconstructor, args, state_dict
     else:
         return _reconstructor, args
 
