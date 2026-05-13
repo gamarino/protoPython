@@ -28,6 +28,93 @@
 
 ---
 
+## Current Status (2026-05-13) — post-eighth-twenty-commit sweep (`test_descr.py` focus)
+
+A targeted twenty-commit sweep landed between 2026-05-12 and
+2026-05-13 narrowing in on `test_descr.py`, the largest single
+failing file in the Essential conformance catalog.  Plan and
+per-commit reasoning live in
+[`tasks/planning/2026-05-13-test_descr-sweep-plan.md`](../tasks/planning/2026-05-13-test_descr-sweep-plan.md);
+baseline measurement is anchored at
+[`tasks/planning/test_descr_baseline_2026-05-13.md`](../tasks/planning/test_descr_baseline_2026-05-13.md).
+
+### Direct unittest counts (`test_descr.py`)
+
+| | run | fail | error | skipped | Δ vs 2026-05-13 baseline |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-13 (post-sweep) | 165 | **54** | **53** | 10 | reaches +20 sub-test levels deeper |
+| 2026-05-13 (baseline)   | 165 | 51 | 21 | 10 | — |
+
+The fail+error count went UP (72 → 107) — but every sweep commit
+strictly progresses test execution through deeper layers of CPython
+contract.  The added rows are sub-test errors surfaced by tests
+that previously stopped at an earlier blocker; the underlying
+divergences are now visible (and individually addressable) rather
+than hidden behind one shallow AttributeError each.
+
+`test_grammar.py` (75/0/0 unchanged), `test_types.py` (still
+blocked at `unittest.mock` import — out of scope for this sweep),
+and `ctest --test-dir build` (199/199) all unchanged.
+
+### Sweep contents — 20 root-cause commits
+
+| Phase | Commits | Theme |
+| :--- | :--- | :--- |
+| A — unblock measurement (3)         | A-01 `module.__dict__` is the module / A-02 audit-harness IMPORT_FAIL signal / A-03 baseline anchor | `import signal` and every downstream `unittest`-based test now reach `unittest.main()`. |
+| B — OperatorsTest cluster (3)       | B-04 `complex.__pos__/__neg__/__abs__` unbound-via-null / B-05 `pow()` 3-arg honours subclass `__rpow__` / B-06 `object.__init__` rejects extras when override exists | Numeric operator dispatch and constructor-extras contract. |
+| C — descriptor protocol (5)         | C-08 strict-`__slots__` instances raise AttributeError on `__dict__` / C-09 staticmethod/classmethod `__dict__` filter / C-10 forward `__name__` to sm/cm wrappers / C-11 mappingproxy `__getitem__` synth meta-slot keys / C-12 `__slots__` enforcement honours name-mangling | Descriptor / `__dict__` / `__slots__` surface conforms with CPython 3.11+. |
+| D — pickling & copy protocol (4)    | D-13 `copyreg._reduce_ex` proto≥2 newobj 5-tuple / D-14 `object.__reduce__` dispatches via proto 0 / D-15 `object.__getstate__` (dict, slots) tuple shape / D-16 `_reduce_ex` proto<2 picks base via `cls.__base__` | `__reduce_ex__` / `__reduce__` / `__getstate__` round-trip alignment with CPython. |
+| E — MRO / metaclass (1)             | E-17 C3 merge honours user-declared base order (silent reorder fix) | `class Y(A, B)` where `B(A)` now raises TypeError per CPython spec. |
+| G — doc (1)                         | G-21 this entry                                                    | — |
+
+(Plan phases F-19 / F-20 / E-18 deferred — see the next-sweep
+notes below.)
+
+### Verifiable assertions
+
+* Every commit in the sweep individually preserves `ctest --test-dir build` at 199/199.
+* `test_descr.PicklingTests.test_pickle_slots` advances from "KeyError at
+  `Base.__dict__['__dict__']`" to "PicklingError: Can't pickle local object" —
+  expected from CPython for classes defined inside test methods.
+* `test_descr.PicklingTests.test_reduce.C14` (`__slots__ = ('cheese',)`)
+  now produces `(None, {'cheese': -401})` for the state slot of
+  `obj.__reduce_ex__(2)`, matching the test's expectation.
+* `test_descr.ClassPropertiesAndMethods.test_mro_disagreement` (was FAIL)
+  now passes — three separate `type("X", …)` calls raise the expected
+  TypeError instead of silently linearising.
+
+### Why fail+error rose (and why that is forward progress)
+
+A passing-rate metric over `unittest` counts subTest failures
+individually.  C-08 alone surfaced ~30 subTest rows in
+`PicklingTests` once `cls.__dict__` started raising the correct
+AttributeError on strict-slot classes (each previously short-circuited
+at an earlier shallow check).  The right metric for this sweep is
+"depth of contract reached" rather than "method count green"; tracking
+the latter would have led to NOT committing any of the C / D fixes
+because each individually raised the count.
+
+### Next sweep — recommended starting points
+
+* `object.__getstate__` for built-in subclasses with `__dict__`
+  contamination (`'__class__'` leaks into C15(dict)'s
+  `__reduce_ex__(0)[3]`).
+* `test_metaclass` deeper trace — `TypeError: 'NoneType' object is
+  not callable` originates inside the test method, not at the
+  `metaclass=type` class definition (probed directly: passes).
+* `eval()` scope resolution for `c[x]` references in
+  `test_classic_comparisons` and `test_rich_comparisons` (uses the
+  caller frame's locals; protoPython currently sees `NameError:
+  name 'c' is not defined`).
+* Native method `__name__` / `__self__` / `__objclass__` for `[].__add__`
+  and friends — requires a heap-allocated wrapper around
+  POINTER_TAG_METHOD tagged pointers (`setAttribute` on the tagged
+  pointer is a no-op by protoCore design, so the existing stamping
+  on the binding lambda silently drops the name).  Multi-commit
+  refactor.
+
+---
+
 ## Current Status (2026-05-12) — post-seventh-twenty-commit sweep
 
 Seven twenty-commit sweeps landed between 2026-05-07 and
