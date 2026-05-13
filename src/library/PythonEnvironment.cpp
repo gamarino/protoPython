@@ -15748,38 +15748,164 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         [](proto::ProtoContext* ctx, const proto::ProtoObject* self,
            const proto::ParentLink*, const proto::ProtoList* args,
            const proto::ProtoSparseList*) -> const proto::ProtoObject* {
-            PythonEnvironment* envInner = PythonEnvironment::fromContext(ctx);
-            if (!envInner) return PROTO_NONE;
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (!env) return PROTO_NONE;
             // Bound (self=instance) vs unbound (self=null/objectProto,
             // args=[instance]) dispatch — same shape py_object_reduce
             // resolves.
             const proto::ProtoObject* obj = self;
-            if ((!obj || obj == envInner->getObjectPrototype())
+            if ((!obj || obj == env->getObjectPrototype())
                 && args && args->getSize(ctx) >= 1) {
                 obj = args->getAt(ctx, 0);
             }
             if (!obj) return PROTO_NONE;
-            // Mirror the instance dict snapshot py_object_get_dict
-            // produces.  Calling that directly returns the live proxy
-            // dict, which is what CPython's default __getstate__
-            // surfaces (callers iterate / pickle it).  When __dict__
-            // raises (bare object() has none), return an empty dict
-            // so pickle/copyreg paths can use a consistent state.
-            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-            if (env) env->clearPendingException();
-            const proto::ProtoObject* d = py_object_get_dict(ctx, obj, nullptr, nullptr, nullptr);
-            if ((!d || env->hasPendingException()) && env) {
-                env->clearPendingException();
-                const proto::ProtoObject* dp = env->getDictPrototype();
-                if (dp) {
-                    proto::ProtoObject* empty = const_cast<proto::ProtoObject*>(dp->newChild(ctx, true));
-                    empty->setAttribute(ctx, env->getDataString(), ctx->newSparseList()->asObject(ctx));
-                    empty->setAttribute(ctx, env->getKeysString(), ctx->newList()->asObject(ctx));
-                    return (const proto::ProtoObject*)empty;
-                }
-                return PROTO_NONE;
+
+            // CPython object.__getstate__ semantics (PEP 690 / 3.11+):
+            //   * No __slots__ → return instance __dict__ when non-empty,
+            //     else None.
+            //   * __slots__ defined → return (instance_dict, slots_state)
+            //     2-tuple; either side is None when empty.
+            // Walk the MRO collecting slot names and reading the
+            // matching attributes off `obj`.
+            const proto::ProtoObject* cls = env->getType(ctx, obj);
+            const proto::ProtoString* slotsS = env->getSlotsString();
+            const proto::ProtoString* mroS = env->getMroString();
+            const proto::ProtoTuple* mroT = nullptr;
+            if (cls && cls != PROTO_NONE && mroS) {
+                const proto::ProtoObject* mroObj = cls->getAttribute(ctx, mroS);
+                if (mroObj) mroT = mroObj->asTuple(ctx);
             }
-            return d;
+            bool hasSlots = false;
+            const proto::ProtoObject* slotsDict = nullptr;
+            if (mroT && slotsS) {
+                const proto::ProtoObject* dp = env->getDictPrototype();
+                auto recordSlot = [&](const std::string& slotName,
+                                       const proto::ProtoObject* defCls) {
+                    if (slotName.empty()) return;
+                    if (slotName == "__dict__" || slotName == "__weakref__") return;
+                    // Apply CPython slot name mangling: `__x` (not ending
+                    // in `__`) is rewritten to `_<cls>__x` against the
+                    // defining class — same transform setAttribute's slots
+                    // enforcement walk uses to honour writes.
+                    std::string lookupName = slotName;
+                    const proto::ProtoString* nameDunderS = env->getNameString();
+                    if (slotName.size() >= 2 && slotName.substr(0, 2) == "__"
+                        && !(slotName.size() >= 4
+                             && slotName.substr(slotName.size() - 2) == "__")
+                        && defCls && defCls != PROTO_NONE && nameDunderS) {
+                        const proto::ProtoObject* clsNameObj =
+                            defCls->getAttribute(ctx, nameDunderS);
+                        if (clsNameObj && clsNameObj->isString(ctx)) {
+                            std::string clsName;
+                            clsNameObj->asString(ctx)->toUTF8String(ctx, clsName);
+                            size_t startPos = 0;
+                            while (startPos < clsName.size()
+                                   && clsName[startPos] == '_') ++startPos;
+                            if (startPos < clsName.size()) {
+                                lookupName = "_" + clsName.substr(startPos) + slotName;
+                            }
+                        }
+                    }
+                    const proto::ProtoString* slotKey =
+                        PythonEnvironment::getInternedString(ctx, lookupName.c_str());
+                    if (!slotKey) return;
+                    if (obj->hasOwnAttribute(ctx, slotKey) != PROTO_TRUE) return;
+                    const proto::ProtoObject* v = obj->getOwnAttributeDirect(ctx, slotKey);
+                    if (!v) return;
+                    if (!slotsDict && dp) {
+                        proto::ProtoObject* nd = const_cast<proto::ProtoObject*>(dp->newChild(ctx, true));
+                        nd->setAttribute(ctx, env->getDataString(),
+                                          ctx->newSparseList()->asObject(ctx));
+                        nd->setAttribute(ctx, env->getKeysString(),
+                                          ctx->newList()->asObject(ctx));
+                        slotsDict = nd;
+                    }
+                    if (slotsDict) {
+                        const proto::ProtoString* origKey =
+                            PythonEnvironment::getInternedString(ctx, slotName.c_str());
+                        const proto::ProtoObject* dataS = slotsDict->getAttribute(ctx, env->getDataString());
+                        const proto::ProtoObject* keysS = slotsDict->getAttribute(ctx, env->getKeysString());
+                        const proto::ProtoSparseList* dl =
+                            dataS ? dataS->asSparseList(ctx) : nullptr;
+                        const proto::ProtoList* kl =
+                            keysS ? keysS->asList(ctx) : nullptr;
+                        if (dl && kl) {
+                            const proto::ProtoSparseList* dl2 =
+                                dl->setAt(ctx, origKey->getHash(ctx), v);
+                            const proto::ProtoList* kl2 =
+                                kl->appendLast(ctx, origKey->asObject(ctx));
+                            slotsDict = const_cast<proto::ProtoObject*>(
+                                slotsDict->setAttribute(ctx, env->getDataString(), dl2->asObject(ctx)));
+                            slotsDict = const_cast<proto::ProtoObject*>(
+                                slotsDict->setAttribute(ctx, env->getKeysString(), kl2->asObject(ctx)));
+                        }
+                    }
+                };
+                for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
+                    const proto::ProtoObject* base = mroT->getAt(ctx, i);
+                    if (!base || base == PROTO_NONE) continue;
+                    if (base == env->getObjectPrototype()) continue;
+                    if (base->hasOwnAttribute(ctx, slotsS) != PROTO_TRUE) continue;
+                    hasSlots = true;
+                    const proto::ProtoObject* slotsVal = base->getOwnAttributeDirect(ctx, slotsS);
+                    if (!slotsVal || slotsVal == PROTO_NONE) continue;
+                    const proto::ProtoTuple* sT = slotsVal->asTuple(ctx);
+                    const proto::ProtoList* sL = sT ? nullptr : slotsVal->asList(ctx);
+                    if (sT) {
+                        for (unsigned long si = 0; si < sT->getSize(ctx); ++si) {
+                            const proto::ProtoObject* s = sT->getAt(ctx, si);
+                            if (s && s->isString(ctx)) {
+                                std::string sn; s->asString(ctx)->toUTF8String(ctx, sn);
+                                recordSlot(sn, base);
+                            }
+                        }
+                    } else if (sL) {
+                        for (unsigned long si = 0; si < sL->getSize(ctx); ++si) {
+                            const proto::ProtoObject* s = sL->getAt(ctx, si);
+                            if (s && s->isString(ctx)) {
+                                std::string sn; s->asString(ctx)->toUTF8String(ctx, sn);
+                                recordSlot(sn, base);
+                            }
+                        }
+                    } else if (slotsVal->isString(ctx)) {
+                        std::string sn; slotsVal->asString(ctx)->toUTF8String(ctx, sn);
+                        recordSlot(sn, base);
+                    }
+                }
+            }
+
+            // Instance __dict__ (only meaningful when the class does NOT
+            // declare strict __slots__; py_object_get_dict raises in that
+            // case, which we swallow with clearPendingException).
+            env->clearPendingException();
+            const proto::ProtoObject* instDict =
+                py_object_get_dict(ctx, obj, nullptr, nullptr, nullptr);
+            if (!instDict || env->hasPendingException()) {
+                env->clearPendingException();
+                instDict = nullptr;
+            }
+            bool instDictEmpty = true;
+            if (instDict && instDict != PROTO_NONE) {
+                const proto::ProtoObject* kObj = instDict->getAttribute(ctx, env->getKeysString());
+                const proto::ProtoList* kL = kObj ? kObj->asList(ctx) : nullptr;
+                if (kL && kL->getSize(ctx) > 0) instDictEmpty = false;
+            }
+            const proto::ProtoObject* instDictOrNone =
+                (instDict && !instDictEmpty) ? instDict : PROTO_NONE;
+            const proto::ProtoObject* slotsOrNone =
+                slotsDict ? slotsDict : PROTO_NONE;
+
+            if (hasSlots) {
+                // Return (instance_dict, slots_state) — mirrors CPython
+                // _PyObject_GetState's "(state, slots_state)" layout.  C14
+                // in test_descr.test_reduce expects (None, {'cheese': -401}).
+                const proto::ProtoList* tup = ctx->newList()
+                    ->appendLast(ctx, instDictOrNone)
+                    ->appendLast(ctx, slotsOrNone);
+                return env->newTuple(tup);
+            }
+            // No slots: surface __dict__ directly (CPython convention).
+            return instDictOrNone;
         }));
     // PH: object.__init_subclass__ is a no-op; classmethod-bound to keep
     // `super().__init_subclass__(**kwargs)` chains terminating cleanly.
