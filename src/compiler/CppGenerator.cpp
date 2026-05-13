@@ -1049,7 +1049,17 @@ bool CppGenerator::generateReturn(ReturnNode* n) {
         *out_ << ")";
         return true;
     }
-    *out_ << "throw ";
+    // Plain C++ return.  Earlier revisions used `throw X` so that the
+    // function-wrapper try/catch caught the value uniformly; the cost
+    // was a full stack unwind per return (frame walking, possible
+    // exception payload allocation, destructor runs).  On fib(25) that
+    // path alone added ~hundreds of ms across 242k recursive returns.
+    // A plain `return` exits the C++ function immediately — exactly
+    // the same shape as Python `return`, and the wrapper try/catch
+    // still catches the few throws we still emit for control flow
+    // sentinels.  No semantic change versus the previous throw-based
+    // scheme for the standard "return at end of function body" case.
+    *out_ << "return ";
     if (n->value) {
         if (!generateNode(n->value.get())) return false;
     } else {
