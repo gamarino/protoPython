@@ -21930,6 +21930,35 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
         bool hasDict = false;
         bool nameInSlots = false;
         std::string nameStr;  // computed lazily inside the slots-hit branch
+        // CPython name-mangling for slot entries: a slot literal of the form
+        // `__x` (starts with two underscores, does NOT end with two) is
+        // mangled at access time by the compiler into `_<cls>__x`, where
+        // <cls> is the defining class's name with leading underscores
+        // stripped.  Without applying the same transform to the slot literal
+        // here, `class C: __slots__ = ['__a']` + `self.__a = 1` would store
+        // into `_C__a` but the enforcement walk would only accept `__a`.
+        auto mangleAgainstClass = [&](const std::string& slotName,
+                                       const proto::ProtoObject* defCls) -> std::string {
+            if (slotName.size() < 2 || slotName.substr(0, 2) != "__") return slotName;
+            if (slotName.size() >= 4
+                && slotName.substr(slotName.size() - 2) == "__") return slotName;
+            if (!defCls || defCls == PROTO_NONE) return slotName;
+            const proto::ProtoObject* clsNameObj =
+                nameString ? defCls->getAttribute(ctx, nameString) : nullptr;
+            if (!clsNameObj || !clsNameObj->isString(ctx)) return slotName;
+            std::string clsName;
+            clsNameObj->asString(ctx)->toUTF8String(ctx, clsName);
+            size_t startPos = 0;
+            while (startPos < clsName.size() && clsName[startPos] == '_') ++startPos;
+            if (startPos == clsName.size()) return slotName;
+            return "_" + clsName.substr(startPos) + slotName;
+        };
+        auto slotMatches = [&](const std::string& ss,
+                               const proto::ProtoObject* defCls) -> bool {
+            if (ss == nameStr) return true;
+            std::string mangled = mangleAgainstClass(ss, defCls);
+            return !mangled.empty() && mangled == nameStr;
+        };
         for (unsigned long mi = 0; mi < mroT->getSize(ctx); ++mi) {
             const proto::ProtoObject* base = mroT->getAt(ctx, mi);
             if (!base || base == PROTO_NONE) continue;
@@ -21948,7 +21977,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                             const proto::ProtoObject* s = slotsT->getAt(ctx, si);
                             if (s && s->isString(ctx)) {
                                 std::string ss; s->asString(ctx)->toUTF8String(ctx, ss);
-                                if (ss == nameStr) { nameInSlots = true; break; }
+                                if (slotMatches(ss, base)) { nameInSlots = true; break; }
                             }
                         }
                     } else if (slotsL) {
@@ -21956,12 +21985,12 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                             const proto::ProtoObject* s = slotsL->getAt(ctx, si);
                             if (s && s->isString(ctx)) {
                                 std::string ss; s->asString(ctx)->toUTF8String(ctx, ss);
-                                if (ss == nameStr) { nameInSlots = true; break; }
+                                if (slotMatches(ss, base)) { nameInSlots = true; break; }
                             }
                         }
                     } else if (slotsObj->isString(ctx)) {
                         std::string ss; slotsObj->asString(ctx)->toUTF8String(ctx, ss);
-                        if (ss == nameStr) nameInSlots = true;
+                        if (slotMatches(ss, base)) nameInSlots = true;
                     }
                 }
             } else {
