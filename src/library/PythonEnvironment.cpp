@@ -501,6 +501,14 @@ static const proto::ProtoObject* py_mappingproxy_repr(
     return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
 }
 
+// Forward declaration: clsNeedsMetaSlotSynthesis is defined later, but
+// py_mappingproxy_getitem (below) and py_mappingproxy_contains (further
+// below) both need to consult it to keep their CPython meta-slot synthesis
+// in lockstep.
+static bool clsNeedsMetaSlotSynthesis(proto::ProtoContext* ctx,
+                                       PythonEnvironment* env,
+                                       const proto::ProtoObject* cls);
+
 static const proto::ProtoObject* py_mappingproxy_getitem(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -530,6 +538,29 @@ static const proto::ProtoObject* py_mappingproxy_getitem(
              if (sKey && data->hasOwnAttribute(context, sKey) == PROTO_TRUE) {
                  const proto::ProtoObject* res = data->getOwnAttributeDirect(context, sKey);
                  if (res) return res;
+             }
+
+             // Mirror py_mappingproxy_contains: synthesise the CPython meta-slot
+             // names (__dict__, __doc__, __firstlineno__, __static_attributes__,
+             // __weakref__) for regular Python classes when
+             // clsNeedsMetaSlotSynthesis() says they should be exposed.  Without
+             // this branch `'__dict__' in cls.__dict__` returns True while
+             // `cls.__dict__['__dict__']` raises KeyError — the same key is
+             // reported as both present and absent.  Surface the chain-walk
+             // value (which for built-in slots is the actual getset descriptor)
+             // or hand back PROTO_NONE; downstream code that branches on
+             // `dict_descr.__set__` semantics still trips AttributeError on
+             // None, matching CPython's read-only contract.
+             if (sKey) {
+                 std::string nm;
+                 sKey->toUTF8String(context, nm);
+                 bool isSynth = (nm == "__dict__" || nm == "__doc__"
+                     || nm == "__firstlineno__" || nm == "__static_attributes__"
+                     || nm == "__weakref__");
+                 if (isSynth && clsNeedsMetaSlotSynthesis(context, env, data)) {
+                     const proto::ProtoObject* chained = data->getAttribute(context, sKey);
+                     return (chained && chained != PROTO_NONE) ? chained : PROTO_NONE;
+                 }
              }
 
              // SP-C/C3: do NOT fall back to env->getItem(data, key).  For native
