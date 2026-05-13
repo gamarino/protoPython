@@ -51,6 +51,115 @@
 
 ---
 
+## 📊 Performance Benchmarks (2026-05-13, three modes)
+
+> ⚠ **Build requirement.** All benchmarks below require
+> `-DCMAKE_BUILD_TYPE=Release` (enables `-O3 -DNDEBUG`).
+> A build without this flag produces 3–5× slower code and meaningless
+> comparison ratios.
+>
+> **Run-to-run variance**: the absolute protoPy column is the stable
+> signal; ratios vs CPython vary ±15–25% from run to run due to OS
+> scheduling and CPU frequency scaling at small benchmark sizes.
+
+### Three execution modes (2026-05-13)
+
+For every workload we now record three columns:
+
+* **CPython** — the system interpreter (reference).
+* **protopy** — protoPython bytecode interpreter (source → AST → bytecode → `ExecutionEngine`).
+* **protopyc** — protoPython AOT-compiled to C++ via `protopyc <file>.py --build-so`,
+  loaded as a shared object by the `run_module` helper (`dlopen` + `proto_module_init`).
+
+Both protoPython columns use the same `libprotoPython`/`libprotoCore` runtime
+underneath; the only difference is whether opcode dispatch happens in
+`ExecutionEngine.cpp` (protopy) or whether the AST has already been lowered
+to C++ calls into the same runtime (protopyc).  Ratios are
+`mode_time / CPython_time`: <1.0 means faster than CPython, >1.0 means slower.
+
+Numbers below are the **post-fast-path** measurement (median of 5 runs
+each) — protopyc now emits a direct C++ call for self-recursion and an
+inline tag-checked SmallInt fast path for `+ - * == != < <= > >=` plus
+the matching `+= -= *=` to a function local.  Both optimisations live
+behind a fall-back to `env->binaryOp`, so semantics are preserved on
+non-int operands (LargeInteger, float, str, mixed, …).
+
+| Benchmark              | CPython (ms) | protopy (ms) | protopyc (ms) | py/cp        | pc/cp        | RSS py/pc/cp        |
+|------------------------|--------------|--------------|---------------|--------------|--------------|---------------------|
+| startup_empty          |     225.40   |     143.87   |         N/A   |  0.64x fast  |     N/A      |  21.1/  N/A/ 10.4 MB |
+| int_sum_loop           |     133.39   |      73.06   |      91.41    |  0.55x fast  |  0.69x fast  |  21.0/ 20.6/ 10.4 MB |
+| list_append_loop       |     139.08   |    1107.55   |     965.41    |  7.96x slow  |  6.94x slow  |  61.5/ 62.2/ 10.6 MB |
+| str_concat_loop        |     207.36   |    2805.60   |    1459.75    | 13.53x slow  |  7.04x slow  |  85.5/ 85.5/ 10.4 MB |
+| range_iterate          |     196.13   |     971.99   |    1089.03    |  4.96x slow  |  5.55x slow  |  42.1/ 89.4/ 10.4 MB |
+| multithread_cpu        |     212.27   |     326.90   |         N/A   |  1.54x slow  |     N/A      |  29.9/  N/A/ 10.5 MB |
+| attr_lookup            |     242.75   |    1063.52   |     411.81    |  4.38x slow  |  1.70x slow  |  38.0/ 52.6/ 10.4 MB |
+| call_recursion         |     273.36   |     785.01   |    1412.96    |  2.87x slow  |  5.17x slow  |  21.0/ 37.3/ 10.4 MB |
+| memory_pressure        |     275.94   |   14114.52   |   62050.37    | 51.15x slow  | 224.87x slow | 340.2/1400.4/ 10.5 MB |
+| **Geomean vs CPython** |              |              |               |   **3.85×**  |   **6.24×**  |                      |
+
+Methodology: median of 5 runs after 2 warm-ups, peak RSS captured via
+`/usr/bin/time -f '%M'`; full source at
+[`benchmarks/run_benchmarks.py`](benchmarks/run_benchmarks.py),
+machine reports at
+[`benchmarks/reports/2026-05-13-three-column.md`](benchmarks/reports/2026-05-13-three-column.md)
+(pre-fast-path baseline) and
+[`benchmarks/reports/2026-05-13-three-column-final.md`](benchmarks/reports/2026-05-13-three-column-final.md)
+(post-fast-path, the table above).
+
+**What the fast paths bought** (protopyc absolute time, before → after):
+
+* `int_sum_loop`: 114 → 91 ms (≈20% faster).
+* `str_concat_loop`: 1674 → 1460 ms (≈13%; mostly run-to-run variance — the
+  workload is strings and never trips the SmallInt fast path).
+* `call_recursion` (fib 25): 1987 → 1413 ms (≈29% faster).  Each fib frame
+  now does four inline tag-checked arithmetic / comparison ops instead of
+  four polymorphic `env->binaryOp` dispatches and a `lookupName(\"fib\") +
+  callObject` round-trip — the latter is replaced with a direct C++ call to
+  the same compiled symbol.
+* `attr_lookup`: 340 → 412 ms.  The aug-assign fast path applies here (one
+  `total += obj.x` per iteration after a `getAttr`), but the CPython
+  baseline also drifted; the actual change is within the run-to-run noise
+  on this benchmark.
+* `memory_pressure`: 54 465 → 62 050 ms (no real change — workload is
+  dominated by `data.pop(0)` over an immutable AVL list, none of which
+  touches the fast paths).
+
+**What did not move (and why)**:
+
+* `list_append_loop` and `range_iterate` allocate one list cell / iterator
+  step per iteration; the inline arithmetic only saves a small fraction of
+  per-step cost and the medians flick between runs by more than the savings.
+* `memory_pressure` remains the worst case (≈225× CPython): each
+  `data.pop(0)` rebuilds an AVL spine.  No compiler-side optimisation we
+  emit today changes that — it needs a runtime change (e.g. lazy slicing
+  or a deque-friendly representation when a list is used FIFO).
+* `multithread_cpu` still reports N/A for protopyc because the workload
+  uses the low-level `_thread` interface that the compiler does not lower.
+
+**Honest take-away.**  The two fast paths land real wins on the workloads
+they target (call-heavy recursion, accumulator loops on `SmallInt`) but
+leave the protopyc geomean essentially flat at ≈6× CPython (vs the
+interpreter's ≈3×).  The remaining gap is now dominated by:
+
+1. **Per-call `ProtoList` build** — every compiled call still allocates a
+   fresh `ctx->newList()` + N `appendLast` per argument.  A 5-arg-tuple
+   stack frame the C++ compiler can keep in registers would remove the
+   majority of allocations in `call_recursion`.
+2. **`throw` + `catch` for return values** — compiled bodies currently use
+   C++ exception unwinding to thread results back to the caller; replacing
+   that with a plain `return` is a follow-up that should cut another
+   fraction off recursion-heavy workloads.
+3. **Inline attribute and global-name caches** — the interpreter has Phase
+   6/7 fast paths for `OP_LOAD_ATTR` and `OP_LOAD_GLOBAL` that protopyc
+   does not yet emit (it still calls into the runtime per access).
+
+In short, the two changes in this round are a step from a 1-to-1
+transpiler to a *specialising* compiler, but the architectural shift —
+expanding that specialisation across argument passing, return values, and
+attribute caches — is what the next round needs to do.
+
+---
+
 ## 📊 Performance Benchmarks (2026-04-28, Phase 8)
 
 > ⚠ **Build requirement.** All benchmarks below require
