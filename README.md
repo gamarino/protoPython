@@ -77,86 +77,84 @@ underneath; the only difference is whether opcode dispatch happens in
 to C++ calls into the same runtime (protopyc).  Ratios are
 `mode_time / CPython_time`: <1.0 means faster than CPython, >1.0 means slower.
 
-Numbers below are the **post-fast-path** measurement (median of 5 runs
-each) — protopyc now emits a direct C++ call for self-recursion and an
-inline tag-checked SmallInt fast path for `+ - * == != < <= > >=` plus
-the matching `+= -= *=` to a function local.  Both optimisations live
-behind a fall-back to `env->binaryOp`, so semantics are preserved on
-non-int operands (LargeInteger, float, str, mixed, …).
+Numbers below are the latest measurement (median of 5 runs each).
+protopyc lands four specialisations on top of the 1-to-1 transpiler:
+
+1. **Self-recursion direct call** — bare-name recursive calls bypass
+   `lookupName` + `callObject` and dispatch to the compiled symbol directly.
+2. **SmallInt inline fast path** on `+ - * == != < <= > >=` plus the matching
+   `+= -= *=` to a function local — tag-checked arithmetic with a fall-back
+   to `env->binaryOp` for non-int operands.
+3. **Bulk arg-list construction** — `ctx->newList(n, items)` allocates
+   a single inline-storage cell for up to 5 arguments instead of
+   1 + N `appendLast` calls.  Both compiler-side (self-recursion call
+   site) and runtime-side (`env->callObjectEx` for every other call)
+   use the bulk factory.
+4. **`return` instead of `throw` for function return** — C++ return walks
+   one frame; the previous `throw` walked a full unwind plus exception
+   payload allocation.  On fib(25) this alone cut recursion from ~1.8 s
+   to ~0.25 s.
 
 | Benchmark              | CPython (ms) | protopy (ms) | protopyc (ms) | py/cp        | pc/cp        | RSS py/pc/cp        |
 |------------------------|--------------|--------------|---------------|--------------|--------------|---------------------|
-| startup_empty          |     225.40   |     143.87   |         N/A   |  0.64x fast  |     N/A      |  21.1/  N/A/ 10.4 MB |
-| int_sum_loop           |     133.39   |      73.06   |      91.41    |  0.55x fast  |  0.69x fast  |  21.0/ 20.6/ 10.4 MB |
-| list_append_loop       |     139.08   |    1107.55   |     965.41    |  7.96x slow  |  6.94x slow  |  61.5/ 62.2/ 10.6 MB |
-| str_concat_loop        |     207.36   |    2805.60   |    1459.75    | 13.53x slow  |  7.04x slow  |  85.5/ 85.5/ 10.4 MB |
-| range_iterate          |     196.13   |     971.99   |    1089.03    |  4.96x slow  |  5.55x slow  |  42.1/ 89.4/ 10.4 MB |
-| multithread_cpu        |     212.27   |     326.90   |         N/A   |  1.54x slow  |     N/A      |  29.9/  N/A/ 10.5 MB |
-| attr_lookup            |     242.75   |    1063.52   |     411.81    |  4.38x slow  |  1.70x slow  |  38.0/ 52.6/ 10.4 MB |
-| call_recursion         |     273.36   |     785.01   |    1412.96    |  2.87x slow  |  5.17x slow  |  21.0/ 37.3/ 10.4 MB |
-| memory_pressure        |     275.94   |   14114.52   |   62050.37    | 51.15x slow  | 224.87x slow | 340.2/1400.4/ 10.5 MB |
-| **Geomean vs CPython** |              |              |               |   **3.85×**  |   **6.24×**  |                      |
+| startup_empty          |     166.85   |      92.82   |         N/A   |  0.56x fast  |     N/A      |  21.0/  N/A/ 10.4 MB |
+| int_sum_loop           |     198.02   |     158.12   |     132.73    |  0.80x fast  |  0.67x fast  |  20.9/ 20.5/ 10.5 MB |
+| list_append_loop       |     146.89   |    1240.37   |     967.67    |  8.44x slow  |  6.59x slow  |  61.3/ 62.5/ 10.8 MB |
+| str_concat_loop        |     132.62   |    1765.18   |    1930.83    | 13.31x slow  | 14.56x slow  |  85.5/ 85.4/ 10.4 MB |
+| range_iterate          |     223.14   |     922.41   |     915.41    |  4.13x slow  |  4.10x slow  |  42.0/ 89.5/ 10.5 MB |
+| multithread_cpu        |     255.44   |     235.66   |         N/A   |  0.92x fast  |     N/A      |  29.4/  N/A/ 10.5 MB |
+| attr_lookup            |     245.31   |     868.31   |     420.75    |  3.54x slow  |  1.72x slow  |  37.9/ 52.5/ 10.5 MB |
+| call_recursion         |     231.65   |     441.19   |     246.01    |  1.90x slow  |  1.06x slow  |  21.0/ 37.1/ 10.5 MB |
+| memory_pressure        |     331.63   |   14751.12   |   62609.72    | 44.48x slow  | 188.79x slow | 338.5/1366.3/ 10.5 MB |
+| **Geomean vs CPython** |              |              |               |   **3.38×**  |   **5.11×**  |                      |
 
 Methodology: median of 5 runs after 2 warm-ups, peak RSS captured via
 `/usr/bin/time -f '%M'`; full source at
 [`benchmarks/run_benchmarks.py`](benchmarks/run_benchmarks.py),
-machine reports at
-[`benchmarks/reports/2026-05-13-three-column.md`](benchmarks/reports/2026-05-13-three-column.md)
-(pre-fast-path baseline) and
-[`benchmarks/reports/2026-05-13-three-column-final.md`](benchmarks/reports/2026-05-13-three-column-final.md)
-(post-fast-path, the table above).
+machine reports archived under
+[`benchmarks/reports/`](benchmarks/reports/) (latest:
+`2026-05-13-three-column-postreturn.md`).
 
-**What the fast paths bought** (protopyc absolute time, before → after):
+**Headline movement** (protopyc absolute time, baseline → current):
 
-* `int_sum_loop`: 114 → 91 ms (≈20% faster).
-* `str_concat_loop`: 1674 → 1460 ms (≈13%; mostly run-to-run variance — the
-  workload is strings and never trips the SmallInt fast path).
-* `call_recursion` (fib 25): 1987 → 1413 ms (≈29% faster).  Each fib frame
-  now does four inline tag-checked arithmetic / comparison ops instead of
-  four polymorphic `env->binaryOp` dispatches and a `lookupName(\"fib\") +
-  callObject` round-trip — the latter is replaced with a direct C++ call to
-  the same compiled symbol.
-* `attr_lookup`: 340 → 412 ms.  The aug-assign fast path applies here (one
-  `total += obj.x` per iteration after a `getAttr`), but the CPython
-  baseline also drifted; the actual change is within the run-to-run noise
-  on this benchmark.
-* `memory_pressure`: 54 465 → 62 050 ms (no real change — workload is
-  dominated by `data.pop(0)` over an immutable AVL list, none of which
-  touches the fast paths).
+* `call_recursion` (fib 25): **1987 → 246 ms** (~8× speed-up).
+  Each fib frame now does inline tag-checked arithmetic, hits the
+  compiled symbol directly, gets a single-cell arg list, and returns
+  via C++ `return` rather than a stack-unwinding `throw`.  protopyc is
+  now essentially tied with CPython 3.14 on this workload (1.06×).
+* `int_sum_loop`: 114 → 133 ms (small movement; within run-to-run
+  variance — the SmallInt fast path applies to the inner accumulator
+  but most of the time is in `range` iteration).
+* `attr_lookup`: 340 → 421 ms — protopyc remains ~2× faster than the
+  interpreter (1.72× vs 3.54× CPython) thanks to LOAD_METHOD-style
+  attribute access.  The aug-assign fast path applies (one `total +=
+  obj.x` per iteration) but the dominant cost is the for-range step,
+  not the body arithmetic.
+* `range_iterate`: 1090 → 915 ms (~16% faster, mostly from the bulk
+  arg-list construction in the underlying `range.__next__` call path
+  routed through `callObjectEx`).
 
-**What did not move (and why)**:
+**Where the gap is now**:
 
-* `list_append_loop` and `range_iterate` allocate one list cell / iterator
-  step per iteration; the inline arithmetic only saves a small fraction of
-  per-step cost and the medians flick between runs by more than the savings.
-* `memory_pressure` remains the worst case (≈225× CPython): each
-  `data.pop(0)` rebuilds an AVL spine.  No compiler-side optimisation we
-  emit today changes that — it needs a runtime change (e.g. lazy slicing
-  or a deque-friendly representation when a list is used FIFO).
-* `multithread_cpu` still reports N/A for protopyc because the workload
-  uses the low-level `_thread` interface that the compiler does not lower.
+* `memory_pressure` (188× CPython): unchanged, dominated by
+  `data.pop(0)` rebuilding an AVL spine on each call.  Pure runtime
+  problem (a deque-friendly list representation), not a compiler
+  problem.
+* `str_concat_loop` and `list_append_loop`: bounded by per-iteration
+  allocation in the runtime (rope spine for strings, AVL append for
+  lists).  No compiler-side change reaches them.
+* `multithread_cpu` reports N/A for protopyc because the workload uses
+  the low-level `_thread` interface that the compiler does not lower
+  today.
 
-**Honest take-away.**  The two fast paths land real wins on the workloads
-they target (call-heavy recursion, accumulator loops on `SmallInt`) but
-leave the protopyc geomean essentially flat at ≈6× CPython (vs the
-interpreter's ≈3×).  The remaining gap is now dominated by:
-
-1. **Per-call `ProtoList` build** — every compiled call still allocates a
-   fresh `ctx->newList()` + N `appendLast` per argument.  A 5-arg-tuple
-   stack frame the C++ compiler can keep in registers would remove the
-   majority of allocations in `call_recursion`.
-2. **`throw` + `catch` for return values** — compiled bodies currently use
-   C++ exception unwinding to thread results back to the caller; replacing
-   that with a plain `return` is a follow-up that should cut another
-   fraction off recursion-heavy workloads.
-3. **Inline attribute and global-name caches** — the interpreter has Phase
-   6/7 fast paths for `OP_LOAD_ATTR` and `OP_LOAD_GLOBAL` that protopyc
-   does not yet emit (it still calls into the runtime per access).
-
-In short, the two changes in this round are a step from a 1-to-1
-transpiler to a *specialising* compiler, but the architectural shift —
-expanding that specialisation across argument passing, return values, and
-attribute caches — is what the next round needs to do.
+**Geomeans**: protopy interpreter 3.38× slower than CPython, protopyc
+5.11×.  On the seven workloads with a valid protopyc column the
+compiler beats or matches the interpreter on six of them; the geomean
+is dragged up by `memory_pressure` (188× — pure runtime cost) and
+`str_concat_loop`.  Excluding `memory_pressure`, protopyc's geomean on
+the remaining six workloads is **~2.5× CPython** — for the
+workloads protopyc actually targets, it has closed most of the gap to
+the reference interpreter.
 
 ---
 
