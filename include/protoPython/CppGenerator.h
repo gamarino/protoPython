@@ -60,6 +60,7 @@ private:
     bool generateTupleLiteral(TupleLiteralNode* n);
     bool generateSetLiteral(SetLiteralNode* n);
     bool generateNamedExpr(NamedExprNode* n);
+    bool generateConditionalExpr(ConditionalExprNode* n);
     bool generateFor(ForNode* n);
     bool generateTry(TryNode* n);
     bool generateRaise(RaiseNode* n);

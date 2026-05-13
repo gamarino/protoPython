@@ -142,9 +142,26 @@ bool CppGenerator::generateNode(ASTNode* node) {
         return generateSetComp(n);
     } else if (auto* n = dynamic_cast<GeneratorExpNode*>(node)) {
         return generateGeneratorExp(n);
+    } else if (auto* n = dynamic_cast<ConditionalExprNode*>(node)) {
+        return generateConditionalExpr(n);
     }
 
     *out_ << "/* Unsupported node: " << typeid(*node).name() << " */";
+    return true;
+}
+
+bool CppGenerator::generateConditionalExpr(ConditionalExprNode* n) {
+    // Python `body if test else orelse`.  C++ ternary short-circuits the
+    // same way Python does (only one of body/orelse is evaluated), so the
+    // straight lowering works as long as test goes through env->isTrue
+    // to honour Python truthiness on arbitrary objects.
+    *out_ << "(env->isTrue(";
+    if (!generateNode(n->test.get())) return false;
+    *out_ << ") ? (";
+    if (!generateNode(n->body.get())) return false;
+    *out_ << ") : (";
+    if (!generateNode(n->orelse.get())) return false;
+    *out_ << "))";
     return true;
 }
 
@@ -1660,6 +1677,10 @@ void CppGenerator::collectNameRefs(ASTNode* node, std::unordered_set<std::string
     } else if (auto* n = dynamic_cast<NamedExprNode*>(node)) {
         collectNameRefs(n->target.get(), refs);
         collectNameRefs(n->value.get(), refs);
+    } else if (auto* n = dynamic_cast<ConditionalExprNode*>(node)) {
+        collectNameRefs(n->test.get(), refs);
+        collectNameRefs(n->body.get(), refs);
+        collectNameRefs(n->orelse.get(), refs);
     } else if (auto* n = dynamic_cast<ListCompNode*>(node)) {
         collectNameRefs(n->elt.get(), refs);
         for (auto& c : n->generators) {
