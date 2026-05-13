@@ -59,7 +59,11 @@ def workload(max_depth):
 
 
 def main():
-    max_depth = 14
+    max_depth = 7  # default tuned so all three modes finish per-script
+                   # wall time under the runner's 240 s timeout.
+                   # protopyc currently does ~2 s/iter at depth=7 (12 s
+                   # for the 6-iter script); raising to 8 would push the
+                   # protopyc column to ~60 s/script.
     if len(sys.argv) > 1:
         max_depth = int(sys.argv[1])
     if max_depth < 4:

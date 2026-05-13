@@ -421,15 +421,30 @@ def main():
                           f"PROTOPY_NOWARN=1 to silence.", flush=True)
     
     benchmarks = [
-        ("startup_empty", "abc", True), # specialized
-        ("int_sum_loop", "int_sum_loop.py", False),
+        # Existing microbenchmark suite — designed to stress one path each.
+        ("startup_empty",    "abc", True), # specialized
+        ("int_sum_loop",     "int_sum_loop.py", False),
         ("list_append_loop", "list_append_loop.py", False),
-        ("str_concat_loop", "str_concat_loop.py", False),
-        ("range_iterate", "range_iterate.py", False),
-        ("multithread_cpu", "multithreaded_cpu.py", False),
-        ("attr_lookup", "attr_lookup.py", False),
-        ("call_recursion", "call_recursion.py", False),
-        ("memory_pressure", "memory_pressure.py", False),
+        ("str_concat_loop",  "str_concat_loop.py", False),
+        ("range_iterate",    "range_iterate.py", False),
+        ("multithread_cpu",  "multithreaded_cpu.py", False),
+        ("attr_lookup",      "attr_lookup.py", False),
+        ("call_recursion",   "call_recursion.py", False),
+        ("memory_pressure",  "memory_pressure.py", False),
+
+        # pyperformance subset — recognised CPython benchmarks, used here
+        # for a more realistic workload comparison.  Each script warms
+        # up internally and runs five timed iterations; the wall-clock
+        # number the harness records includes interpreter / loader
+        # startup but is dominated by the workload at these sizes.
+        # Defaults were tuned down where the original CPython size was
+        # impractical to run under protoPython (binary_trees default
+        # 14 = ~30 min under protopyc; sieve default 50k = ~8 s/iter).
+        ("pyperf_fib",           "pyperf/bench_fib.py", False),
+        ("pyperf_binary_trees",  "pyperf/bench_binary_trees.py", False),
+        ("pyperf_nqueens",       "pyperf/bench_nqueens.py", False),
+        ("pyperf_richards_lite", "pyperf/bench_richards_lite.py", False),
+        ("pyperf_sieve",         "pyperf/bench_sieve.py", False),
     ]
 
     results = {}

@@ -31,7 +31,11 @@ def primes_below(n):
 
 
 def main():
-    n = 50000
+    # Default tuned so all three modes finish within a reasonable budget.
+    # protoPython's ProtoList write is O(log N) (AVL tree), so larger N
+    # blows the protopy/protopyc columns up faster than CPython's
+    # amortised O(1) C-array.
+    n = 5000
     if len(sys.argv) > 1:
         n = int(sys.argv[1])
 
