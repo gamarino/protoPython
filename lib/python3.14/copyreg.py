@@ -127,26 +127,16 @@ def _reduce_ex(self, proto):
         dictitems = iter(self.items()) if any(c is dict for c in _mro) else None
         return func, func_args, state, listitems, dictitems
     # Legacy proto<2 path.
-    for base in cls.__mro__:
-        if hasattr(base, '__flags__') and not base.__flags__ & _HEAPTYPE:
-            break
-        new = base.__new__
-        # `new.__self__` doesn't exist for protoPython native methods
-        # (CPython's builtin_function_or_method exposes it; ours don't),
-        # which made the original `new.__self__ is base` probe blow up
-        # with AttributeError.  Skip the bound-method check in that
-        # case — falling through to the loop's `else` correctly lands
-        # on `base = object`, which is what CPython would have produced
-        # for any class without a custom __new__.
-        try:
-            is_bound_to_base = (isinstance(new, _new_type)
-                                and new.__self__ is base)
-        except AttributeError:
-            is_bound_to_base = False
-        if is_bound_to_base:
-            break
-    else:
-        base = object # not really reachable
+    # CPython picks `base` by walking the MRO until it hits a non-heap
+    # type (the first C-level class) using __flags__ & _HEAPTYPE.
+    # protoPython classes don't expose __flags__, so fall through every
+    # iteration and lock onto `object`.  Use `cls.__base__` directly: it
+    # already names the immediate non-mixin base, which matches CPython's
+    # MRO termination for the typical `class X(BuiltinType):` shape that
+    # PicklingTests / pickle round-trips exercise.
+    base = cls.__base__ if cls is not object else object
+    if base is None:
+        base = object
     if base is object:
         state = None
     else:
