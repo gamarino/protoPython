@@ -47,19 +47,67 @@ of the block.
 
 ### Phase A — Unblock measurement (3 commits)
 
-* **A-01.  `signal` module: insert into `sys.modules` before
-  executing module body.**  CPython's importlib sets
-  `sys.modules[name] = module` *before* running the module body so
-  the module is observable from within its own init.  protoPython's
-  importer inserts after.  signal.py's first non-trivial statement
-  calls `enum._convert_('Signals', __name__, …)` which reads
-  `sys.modules[__name__]` — that's why `unittest.signals.py`
-  blows up importing `signal` and every test built on unittest
-  cascades.  Fix: move the registration into the module slot to
-  the start of import-finalisation, before `proto_module_init` /
-  body execution.  Cross-check: re-run `import signal`, `import
-  unittest`, both should print OK; `test_grammar.py` should
-  collect.
+* **A-01.  `module.__dict__` must return a live proxy aliased to
+  the module's attribute storage — currently returns a stale
+  snapshot dict.**
+
+  Initial diagnosis was that `sys.modules[name]` wasn't populated
+  before module-body execution.  Live trace (with `PROTO_MOD_DIAG=1`)
+  showed `sys.modules['signal']` IS populated correctly before
+  signal.py's body runs, and the lookup returns the right module
+  object.  The actual divergence is one level down: `module.__dict__`
+  returns a **new snapshot object on every access** rather than a
+  reference to the live attribute storage.
+
+  Reproduction at the Python level:
+  ```
+  >>> import os, sys
+  >>> m1 = sys.modules['os']
+  >>> m2 = sys.modules['os']
+  >>> m1 is m2              # True (sys.modules invariant intact)
+  True
+  >>> m1.__dict__ is m2.__dict__
+  False                     # BUG: two different __dict__ objects
+  >>> m1.__dict__ is m1
+  False                     # BUG: code at register-time tried to alias
+                            # __dict__ -> module but a later setattr
+                            # rebinds __dict__ to something else
+  ```
+  This breaks signal.py because:
+  ```
+  _IntEnum._convert_('Signals', __name__, ...)
+  # inside _convert_:
+  #     module_globals = sys.modules[module].__dict__   # snapshot A
+  #     ...
+  #     module_globals[name] = cls                      # writes into A
+  #                                                       (does propagate
+  #                                                       to module via
+  #                                                       __setitem__, but
+  #                                                       A.get(name) still
+  #                                                       reads the stale
+  #                                                       snapshot)
+  ```
+  The first `_convert_('Signals', ...)` succeeds but somewhere in
+  the chain the live module's `__name__` attribute is clobbered
+  to `None`.  The second `_convert_('Handlers', __name__, ...)`
+  picks up the new value, calls `sys.modules[None]`, and that
+  KeyError is what the traceback ultimately reports as
+  `ModuleNotFoundError: No module named 'signal'`.
+
+  Fix: make `module.__dict__` return the module itself
+  consistently, AND ensure the import / class-creation paths
+  don't overwrite the `__dict__` slot after the alias is
+  established.  Two follow-on tasks:
+   * (a) Trace the `__dict__` re-binding — likely
+     `runUserClassCall` or `executeModule` setting a different
+     `__dict__` after the initial alias.
+   * (b) Pin the alias once during module construction and
+     refuse subsequent re-binds (or treat them as setattr to
+     the module).
+
+  Cross-check after fix: `m1.__dict__ is m1` -> True for any
+  sys.modules entry; `import signal` succeeds; `import unittest`
+  succeeds; `test_grammar.py` collects.
 * **A-02.  Conformity harness: skip blockers without
   silent-success.**  Update `tests/conformity/run_conformity.py`
   (or equivalent) so a CRASH at import is reported as

@@ -1031,6 +1031,22 @@ static const proto::ProtoObject* py_object_get_dict(
         }
     }
 
+    // CPython invariant for modules: `m.__dict__ is m.__dict__` is True
+    // across calls AND mutations via `m.__dict__[k] = v` are observable
+    // through `m.k`.  Returning a fresh proxy here would break BOTH
+    // because the proxy's snapshot reads are stale by the time another
+    // call site asks for `m.__dict__`, and signal.py's `_IntEnum._convert_`
+    // chain depends on the live-alias semantics (the second `_convert_`
+    // call reads `__name__` after the first one wrote enum members
+    // through `module_globals` — observed `__name__` is `None` instead
+    // of `'signal'`, exploding the next `sys.modules[None]` lookup).
+    // Return the module itself, mirroring what executeModule's
+    // setAttribute(__dict__, self) was trying to alias but losing to
+    // this prototype-method dispatch.
+    if (env->getModulePrototype() && env->getType(context, self) == env->getModulePrototype()) {
+        return self;
+    }
+
     if (env->isActuallyAClass(context, self)) {
         // Classes have MappingProxy (read-only view)
         proto::ProtoObject* proxy = const_cast<proto::ProtoObject*>(env->getMappingProxyPrototype()->newChild(context, true));
