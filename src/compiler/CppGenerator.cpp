@@ -924,6 +924,47 @@ bool CppGenerator::generateAugAssign(AugAssignNode* n) {
         // / global case still goes through env->augAssignName.
         auto it = std::find(orderedLocalVars_.begin(), orderedLocalVars_.end(), nameNode->id);
         if (it != orderedLocalVars_.end()) {
+            // SmallInt fast path on `local += rhs`-style augmented arithmetic.
+            // Mirrors generateBinOp: tag-check both operands, inline the
+            // arithmetic, fall back to env->binaryOp otherwise.  Covers the
+            // common `total += i` accumulator loop that dominates many
+            // benchmarks.
+            const char* arithOp = nullptr;
+            bool overflow = false;
+            switch (n->op) {
+                case TokenType::PlusAssign:  arithOp = "+"; break;
+                case TokenType::MinusAssign: arithOp = "-"; break;
+                case TokenType::StarAssign:  arithOp = "*"; overflow = true; break;
+                default: break;
+            }
+            if (arithOp) {
+                *out_ << "local_" << nameNode->id
+                      << " = ([&]() -> const proto::ProtoObject* {\n"
+                      << "        const proto::ProtoObject* __a = local_" << nameNode->id << ";\n"
+                      << "        const proto::ProtoObject* __b = ";
+                if (!generateNode(n->value.get())) return false;
+                *out_ << ";\n"
+                      << "        if (__a && __b && __a->isInteger(ctx) && __b->isInteger(ctx)) {\n"
+                      << "            long __va = __a->asLong(ctx);\n"
+                      << "            long __vb = __b->asLong(ctx);\n";
+                if (overflow) {
+                    *out_ << "            long __vr;\n"
+                          << "            if (!__builtin_mul_overflow(__va, __vb, &__vr)) return ctx->fromInteger(__vr);\n";
+                } else {
+                    *out_ << "            return ctx->fromInteger(__va " << arithOp << " __vb);\n";
+                }
+                *out_ << "        }\n"
+                      << "        return env->binaryOp(__a, protoPython::TokenType::";
+                switch (n->op) {
+                    case TokenType::PlusAssign:  *out_ << "Plus"; break;
+                    case TokenType::MinusAssign: *out_ << "Minus"; break;
+                    case TokenType::StarAssign:  *out_ << "Star"; break;
+                    default: *out_ << "Plus"; break;
+                }
+                *out_ << ", __b);\n"
+                      << "    })()";
+                return true;
+            }
             *out_ << "local_" << nameNode->id << " = env->binaryOp(local_"
                   << nameNode->id << ", protoPython::TokenType::";
             switch (n->op) {
