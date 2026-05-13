@@ -229,6 +229,21 @@ def _fmt_ratio(num, den):
     return f"{r:>5.2f}{suffix}"
 
 
+# Benchmarks excluded from the geomean.  Their ratio against CPython is
+# not a meaningful "is the runtime fast?" signal:
+#
+# * memory_pressure: protoCore deliberately defers garbage collection
+#   until the working set forces it (concurrent GC with a tiny
+#   stop-the-world window).  The workload's wall time is dominated by
+#   how the runtime SCHEDULES collection, not by how fast it executes
+#   user code, and the ratio is therefore an indicator of memory
+#   policy under stress — not a like-for-like comparison with CPython's
+#   reference-counted, eager-deallocation model.  We still report the
+#   number for transparency but flag it as INFO and leave it out of the
+#   geomean.
+GEOMEAN_EXCLUDE = {"memory_pressure"}
+
+
 def format_report(results):
     """Render the markdown table.  Each result is a dict
     {protopy: (t, rss), cpython: (...), protopyc: (...)} where each entry
@@ -246,6 +261,7 @@ def format_report(results):
         "* **protopyc** — protoPython AOT-compiled to C++ via `protopyc --build-so`, loaded as a shared object.",
         "",
         "Ratios are protoPython-mode / CPython-time: <1.0 = faster than CPython, >1.0 = slower.",
+        "Rows tagged `[INFO]` are reported for transparency but do NOT participate in the geomean — see the report footer.",
         "",
         header,
         sep,
@@ -253,6 +269,7 @@ def format_report(results):
 
     py_ratios = []
     pc_ratios = []
+    info_notes = []
 
     for name, modes in results.items():
         cp = modes.get("cpython")
@@ -272,18 +289,23 @@ def format_report(results):
         py_ratio_str = _fmt_ratio(tp,  tc)
         pc_ratio_str = _fmt_ratio(tpc, tc) if tpc is not None else "    N/A   "
 
-        if tp is not None and tc and tc > 0:
-            py_ratios.append(tp / tc)
-        if tpc is not None and tc and tc > 0:
-            pc_ratios.append(tpc / tc)
+        in_geomean = name not in GEOMEAN_EXCLUDE
+        if in_geomean:
+            if tp is not None and tc and tc > 0:
+                py_ratios.append(tp / tc)
+            if tpc is not None and tc and tc > 0:
+                pc_ratios.append(tpc / tc)
+        else:
+            info_notes.append(name)
 
         rss_parts = []
         for r in (rp, rpc, rc):
             rss_parts.append(f"{r/1024:>5.1f}" if r else "  N/A")
         rss_str = "/".join(rss_parts) + " MB"
 
+        label = name + (" [INFO]" if not in_geomean else "")
         lines.append(
-            f"| {name:<22} | {cp_str}   | {py_str}   | {pc_str}    | {py_ratio_str:<12} | {pc_ratio_str:<12} | {rss_str:<19} |"
+            f"| {label:<22} | {cp_str}   | {py_str}   | {pc_str}    | {py_ratio_str:<12} | {pc_ratio_str:<12} | {rss_str:<19} |"
         )
 
     def geomean(xs):
@@ -297,9 +319,26 @@ def format_report(results):
     py_gm_str = f"{py_gm:>5.2f}x" if py_gm else "  N/A"
     pc_gm_str = f"{pc_gm:>5.2f}x" if pc_gm else "  N/A"
     lines.append(sep)
+    n_rows = len(py_ratios)
     lines.append(
-        f"| {'Geomean vs CPython':<22} | {'':>10}   | {'':>10}   | {'':>10}    | {py_gm_str:<12} | {pc_gm_str:<12} | {'':<19} |"
+        f"| {'Geomean (n='+str(n_rows)+')':<22} | {'':>10}   | {'':>10}   | {'':>10}    | {py_gm_str:<12} | {pc_gm_str:<12} | {'':<19} |"
     )
+
+    if info_notes:
+        lines.append("")
+        lines.append("`[INFO]` rows excluded from the geomean:")
+        for nm in info_notes:
+            if nm == "memory_pressure":
+                lines.append(
+                    "* **memory_pressure** — protoCore defers GC until the working "
+                    "set forces it (concurrent collector, tiny STW window).  The wall "
+                    "time on this workload reflects collection scheduling under "
+                    "stress, not user-code throughput; the ratio against CPython's "
+                    "reference-counted eager-deallocation model is not "
+                    "comparable apples-to-apples.  Reported for transparency."
+                )
+            else:
+                lines.append(f"* **{nm}** — excluded.")
 
     return "\n".join(lines) + "\n"
 
