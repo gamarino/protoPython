@@ -295,12 +295,38 @@ public:
     void augAssignAttr(const proto::ProtoObject* obj, const std::string& attr, TokenType op, const proto::ProtoObject* value);
     void augAssignItem(const proto::ProtoObject* container, const proto::ProtoObject* key, TokenType op, const proto::ProtoObject* value);
     const proto::ProtoObject* callObject(const proto::ProtoObject* callable, const std::vector<const proto::ProtoObject*>& args);
+    /**
+     * Method-call helper used by protopyc-compiled code for `obj.attr(args...)`.
+     *
+     * Uses LOAD_METHOD-style attribute resolution: when the attribute is a
+     * plain function reachable through `obj`'s prototype chain, the raw
+     * function is returned and `self` is prepended to `args` here, mirroring
+     * what the bytecode interpreter's LOAD_METHOD + CALL pair does.  For
+     * already-bound callables (Python bound methods carrying `__self__`,
+     * staticmethod, classmethod, callable instances …) the resolved value
+     * is invoked as-is with `args` unchanged.
+     *
+     * This is the entry point compiled call-sites need so that user-defined
+     * methods see `self` in `args[0]` exactly as their prologue expects.
+     */
+    const proto::ProtoObject* callMethod(const proto::ProtoObject* obj, const std::string& attr, const std::vector<const proto::ProtoObject*>& args);
     const proto::ProtoObject* callObjectEx(const proto::ProtoObject* callable, 
                                           const std::vector<const proto::ProtoObject*>& args,
                                           const std::vector<std::pair<std::string, const proto::ProtoObject*>>& keywords,
                                           const proto::ProtoObject* starargs = nullptr,
                                           const proto::ProtoObject* kwargs = nullptr);
     const proto::ProtoObject* buildString(const proto::ProtoObject** parts, size_t count);
+    // Convenience overload for the protopyc-emitted call form, which
+    // uses an initializer-list / std::vector of pointers — the same
+    // shape callObject takes.  Forwards to the pointer-array variant
+    // via a stable local copy because vector::data() returns
+    // `const T* const*` and the pointer-array variant expects
+    // `const T**`.
+    const proto::ProtoObject* buildString(const std::vector<const proto::ProtoObject*>& parts) {
+        if (parts.empty()) return buildString(nullptr, 0);
+        std::vector<const proto::ProtoObject*> copy(parts);
+        return buildString(copy.data(), copy.size());
+    }
     const proto::ProtoObject* getItem(const proto::ProtoObject* container, const proto::ProtoObject* key, proto::ProtoContext* ctx = nullptr);
     void setItem(const proto::ProtoObject* container, const proto::ProtoObject* key, const proto::ProtoObject* value, proto::ProtoContext* ctx = nullptr);
     const proto::ProtoObject* initDictStorage(proto::ProtoContext* ctx, const proto::ProtoObject* obj);

@@ -134,10 +134,18 @@ bool CppGenerator::generateNode(ASTNode* node) {
         return generateNamedExpr(n);
     } else if (auto* n = dynamic_cast<SetLiteralNode*>(node)) {
         return generateSetLiteral(n);
+    } else if (auto* n = dynamic_cast<ListCompNode*>(node)) {
+        return generateListComp(n);
+    } else if (auto* n = dynamic_cast<DictCompNode*>(node)) {
+        return generateDictComp(n);
+    } else if (auto* n = dynamic_cast<SetCompNode*>(node)) {
+        return generateSetComp(n);
+    } else if (auto* n = dynamic_cast<GeneratorExpNode*>(node)) {
+        return generateGeneratorExp(n);
     }
-    
+
     *out_ << "/* Unsupported node: " << typeid(*node).name() << " */";
-    return true; 
+    return true;
 }
 
 bool CppGenerator::generateConstant(ConstantNode* n) {
@@ -162,13 +170,21 @@ bool CppGenerator::generateConstant(ConstantNode* n) {
 }
 
 bool CppGenerator::generateName(NameNode* n) {
-    if (inStateMachine_) {
-        // Check if it's a local variable
-        auto it = std::find(orderedLocalVars_.begin(), orderedLocalVars_.end(), n->id);
-        if (it != orderedLocalVars_.end()) {
-            *out_ << "local_" << n->id;
-            return true;
-        }
+    // Use the function-local C++ variable for any name that
+    // generateFunctionInternal declared as `local_<id>`.  Previously
+    // this gating was tied to `inStateMachine_` (generators only),
+    // so `def f(x, y): return x + y` lowered to
+    //   throw env->binaryOp(env->lookupName("x"), Plus, env->lookupName("y"))
+    // — and lookupName had no way to reach a function-local binding
+    // because `storeName` lived on the module frame.  Result: every
+    // function returned PROTO_NONE / raised NameError on first
+    // argument reference.  Recognising `orderedLocalVars_` regardless
+    // of state-machine mode fixes both regular and generator
+    // functions uniformly.
+    auto it = std::find(orderedLocalVars_.begin(), orderedLocalVars_.end(), n->id);
+    if (it != orderedLocalVars_.end()) {
+        *out_ << "local_" << n->id;
+        return true;
     }
     *out_ << "env->lookupName(\"" << n->id << "\")";
     return true;
@@ -183,6 +199,22 @@ bool CppGenerator::generateCall(CallNode* n) {
 
     if (!hasUnpacking) {
         if (n->keywords.empty()) {
+            // For `obj.attr(args)` route through env->callMethod, which uses
+            // LOAD_METHOD-style attribute resolution and prepends `self` to
+            // args when the resolved attribute is a raw function on the
+            // class chain — matching the prologue protopyc emits for every
+            // generated function (`local_self = args->getAt(0)`).
+            if (auto* att = dynamic_cast<AttributeNode*>(n->func.get())) {
+                *out_ << "env->callMethod(";
+                if (!generateNode(att->value.get())) return false;
+                *out_ << ", \"" << att->attr << "\", {";
+                for (size_t i = 0; i < n->args.size(); ++i) {
+                    if (i > 0) *out_ << ", ";
+                    if (!generateNode(n->args[i].get())) return false;
+                }
+                *out_ << "})";
+                return true;
+            }
             *out_ << "env->callObject(";
             if (!generateNode(n->func.get())) return false;
             *out_ << ", {";
@@ -263,12 +295,15 @@ bool CppGenerator::generateAnnAssign(AnnAssignNode* n) {
 
 bool CppGenerator::generateAssignToTarget(ASTNode* target, const std::string& valueExpr) {
     if (auto* nameNode = dynamic_cast<NameNode*>(target)) {
-        if (inStateMachine_) {
-            auto it = std::find(orderedLocalVars_.begin(), orderedLocalVars_.end(), nameNode->id);
-            if (it != orderedLocalVars_.end()) {
-                *out_ << "local_" << nameNode->id << " = " << valueExpr;
-                return true;
-            }
+        // Same rule as generateName: use the C++ local for any name
+        // declared as such by generateFunctionInternal, regardless of
+        // state-machine vs regular-function mode.  Module-level
+        // bindings (orderedLocalVars_ empty) still route through
+        // env->storeName so they hit the module's globals.
+        auto it = std::find(orderedLocalVars_.begin(), orderedLocalVars_.end(), nameNode->id);
+        if (it != orderedLocalVars_.end()) {
+            *out_ << "local_" << nameNode->id << " = " << valueExpr;
+            return true;
         }
         *out_ << "env->storeName(\"" << nameNode->id << "\", " << valueExpr << ")";
         return true;
@@ -412,20 +447,21 @@ bool CppGenerator::generateContinue(ContinueNode* n) {
 }
 
 bool CppGenerator::generateFunctionDef(FunctionDefNode* n) {
-    return generateFunctionInternal(n->name, n->parameters, n->vararg, n->kwarg, n->body.get(), n->decorator_list, false);
+    return generateFunctionInternal(n->name, n->parameters, n->vararg, n->kwarg, n->body.get(), n->decorator_list, false, &n->defaults);
 }
 
 bool CppGenerator::generateAsyncFunctionDef(AsyncFunctionDefNode* n) {
-    return generateFunctionInternal(n->name, n->parameters, n->vararg, n->kwarg, n->body.get(), n->decorator_list, true);
+    return generateFunctionInternal(n->name, n->parameters, n->vararg, n->kwarg, n->body.get(), n->decorator_list, true, &n->defaults);
 }
 
-bool CppGenerator::generateFunctionInternal(const std::string& name, 
+bool CppGenerator::generateFunctionInternal(const std::string& name,
                                          const std::vector<std::string>& parameters,
                                          const std::string& vararg,
                                          const std::string& kwarg,
                                          ASTNode* body,
                                          const std::vector<std::unique_ptr<ASTNode>>& decorator_list,
-                                         bool isAsync) {
+                                         bool isAsync,
+                                         const std::vector<std::unique_ptr<ASTNode>>* defaults) {
     // Save state for nested functions
     bool oldInStateMachine = inStateMachine_;
     int oldStateCount = stateCount_;
@@ -436,11 +472,45 @@ bool CppGenerator::generateFunctionInternal(const std::string& name,
     localVars_.clear();
     orderedLocalVars_.clear();
     collectLocals(body, localVars_);
-    
+    // Parameters are also locals — collectLocals only walks the body,
+    // so without this insertion, references like `def f(x): return x + 1`
+    // emitted `env->lookupName("x")` and missed the C++ `local_x`
+    // declared by the function prologue.  Add params so generateName /
+    // generateAssignToTarget / generateAugAssign use `local_<param>`.
+    for (const auto& p : parameters) localVars_.insert(p);
+    if (!vararg.empty()) localVars_.insert(vararg);
+    if (!kwarg.empty()) localVars_.insert(kwarg);
+
     // Sort locals for consistent state management
     std::vector<std::string> orderedLocals(localVars_.begin(), localVars_.end());
     std::sort(orderedLocals.begin(), orderedLocals.end());
     orderedLocalVars_ = orderedLocals;
+
+    // Compute free variables: names referenced in body that are not local
+    // here but ARE local in some enclosing function scope.  These are the
+    // closure-captured variables; their current values must be snapshotted
+    // at the def site and read back as `local_<name>` in the prologue.
+    auto oldFreeVars = freeVars_;
+    freeVars_.clear();
+    {
+        std::unordered_set<std::string> bodyRefs;
+        collectNameRefs(body, bodyRefs);
+        for (const auto& nm : bodyRefs) {
+            if (localVars_.count(nm)) continue;
+            for (auto it = enclosingLocals_.rbegin(); it != enclosingLocals_.rend(); ++it) {
+                if (it->count(nm)) { freeVars_.insert(nm); break; }
+            }
+        }
+    }
+    std::vector<std::string> orderedFreeVars(freeVars_.begin(), freeVars_.end());
+    std::sort(orderedFreeVars.begin(), orderedFreeVars.end());
+    // Free vars become local_<name> in the prologue, so add them to
+    // localVars_/orderedLocalVars_ — generateName needs to see them as
+    // "use local_<id>, not env->lookupName".
+    for (const auto& fv : orderedFreeVars) {
+        localVars_.insert(fv);
+        orderedLocalVars_.push_back(fv);
+    }
 
     bool isGenerator = containsYieldOrAwait(body);
     
@@ -506,13 +576,27 @@ bool CppGenerator::generateFunctionInternal(const std::string& name,
             *out_ << "    initialLocals = initialLocals->setAt(ctx, " << i << ", PROTO_NONE);\n";
         }
         
-        // Bind parameters to initial locals
+        // Bind parameters to initial locals (with defaults aligned to the
+        // last N positional params, matching PEP semantics).
         *out_ << "    unsigned long nPos = args ? args->getSize(ctx) : 0;\n";
+        const size_t numDefaultsGen = defaults ? defaults->size() : 0;
+        const size_t defaultStartGen = parameters.size() > numDefaultsGen
+                                            ? parameters.size() - numDefaultsGen
+                                            : 0;
         for (size_t i = 0; i < parameters.size(); ++i) {
              auto it = std::find(orderedLocals.begin(), orderedLocals.end(), parameters[i]);
              if (it != orderedLocals.end()) {
                  int idx = std::distance(orderedLocals.begin(), it);
-                 *out_ << "    if (nPos > " << i << ") initialLocals = initialLocals->setAt(ctx, " << idx << ", args->getAt(ctx, " << i << "));\n";
+                 if (i >= defaultStartGen && defaults) {
+                     *out_ << "    initialLocals = initialLocals->setAt(ctx, " << idx
+                           << ", (nPos > " << i << ") ? args->getAt(ctx, " << i << ") : ";
+                     if (!generateNode((*defaults)[i - defaultStartGen].get())) return false;
+                     *out_ << ");\n";
+                 } else {
+                     *out_ << "    if (nPos > " << i
+                           << ") initialLocals = initialLocals->setAt(ctx, " << idx
+                           << ", args->getAt(ctx, " << i << "));\n";
+                 }
              }
         }
         *out_ << "    gen = const_cast<proto::ProtoObject*>(gen->setAttribute(ctx, env->getGiLocalsString(), initialLocals->asObject(ctx)));\n";
@@ -526,32 +610,85 @@ bool CppGenerator::generateFunctionInternal(const std::string& name,
         *out_ << "    auto* env = protoPython::PythonEnvironment::get(ctx);\n";
         *out_ << "    unsigned long nPos = args ? args->getSize(ctx) : 0;\n";
         
-        // Bind parameters
+        // Bind parameters.  Trailing parameters may carry default values
+        // (PEP-style: defaults align to the LAST N positional params).
+        const size_t numDefaults = defaults ? defaults->size() : 0;
+        const size_t defaultStart = parameters.size() > numDefaults
+                                        ? parameters.size() - numDefaults
+                                        : 0;
         for (size_t i = 0; i < parameters.size(); ++i) {
-             *out_ << "    const proto::ProtoObject* local_" << parameters[i] << " = (nPos > " << i << ") ? args->getAt(ctx, " << i << ") : PROTO_NONE;\n";
+             *out_ << "    const proto::ProtoObject* local_" << parameters[i]
+                   << " = (nPos > " << i << ") ? args->getAt(ctx, " << i << ") : ";
+             if (i >= defaultStart && defaults) {
+                 if (!generateNode((*defaults)[i - defaultStart].get())) return false;
+             } else {
+                 *out_ << "PROTO_NONE";
+             }
+             *out_ << ";\n";
         }
-        // Initialize other locals
+        // Initialize other locals (skip free vars — they're declared
+        // separately from `self->getAttribute(...)` just below).
         for (const auto& loc : orderedLocals) {
+            if (freeVars_.count(loc)) continue;
             bool isParam = std::find(parameters.begin(), parameters.end(), loc) != parameters.end();
             if (!isParam) {
                 *out_ << "    const proto::ProtoObject* local_" << loc << " = PROTO_NONE;\n";
             }
         }
+        // Closure-captured variables are passed via `self` (asMethodSelf):
+        // at definition time the enclosing scope built a closure storage
+        // object holding each free var's current value, and ctx->fromMethod
+        // bound that storage to this function.  Read them out as locals so
+        // body references resolve through `local_<name>` like any other
+        // local — generateName remains uniform.
+        for (const auto& fv : orderedFreeVars) {
+            *out_ << "    const proto::ProtoObject* local_" << fv
+                  << " = self ? self->getAttribute(ctx, protoPython::PythonEnvironment::getInternedString(ctx, \""
+                  << fv << "\")) : PROTO_NONE;\n";
+        }
+
+        // Push our own scope onto enclosingLocals_ so any nested function
+        // can recognise OUR locals (including free vars promoted to locals
+        // by the closure read above) when computing its own free vars.
+        enclosingLocals_.push_back(localVars_);
+        for (const auto& fv : freeVars_) enclosingLocals_.back().insert(fv);
 
         *out_ << "    try {\n";
-        if (!generateNode(body)) return false;
+        if (!generateNode(body)) {
+            enclosingLocals_.pop_back();
+            return false;
+        }
         *out_ << "    } catch (const proto::ProtoObject* retVal) { return retVal; }\n";
         *out_ << "    return PROTO_NONE;\n";
         *out_ << "}\n";
+
+        enclosingLocals_.pop_back();
     }
 
     // Append to header
     header_ << funcStream.str();
 
-    // Registration in module init
+    // Registration in module init / enclosing scope.
     out_ = oldOut;
-    *out_ << "    const proto::ProtoObject* func_" << name << " = ctx->fromMethod(nullptr, " << cppFuncName << ")";
-    
+    // Closure capture: snapshot every free variable's CURRENT value into
+    // a fresh storage object and bind it as the function's `self` so the
+    // function's prologue can read them back.  No free vars ⇒ pass nullptr
+    // (legacy shape, matches non-closure functions).
+    std::string closureExpr = "nullptr";
+    if (!orderedFreeVars.empty()) {
+        std::string closureVar = "__closure" + uniqueSuffix;
+        *out_ << "    auto* " << closureVar << " = const_cast<proto::ProtoObject*>(ctx->newObject(true));\n";
+        for (const auto& fv : orderedFreeVars) {
+            *out_ << "    " << closureVar
+                  << " = const_cast<proto::ProtoObject*>(" << closureVar
+                  << "->setAttribute(ctx, protoPython::PythonEnvironment::getInternedString(ctx, \""
+                  << fv << "\"), local_" << fv << "));\n";
+        }
+        closureExpr = closureVar;
+    }
+    *out_ << "    const proto::ProtoObject* func_" << name
+          << " = ctx->fromMethod(" << closureExpr << ", " << cppFuncName << ")";
+
     if (!decorator_list.empty()) {
         for (auto it = decorator_list.rbegin(); it != decorator_list.rend(); ++it) {
             *out_ << ";\n    func_" << name << " = env->callObject(";
@@ -567,6 +704,7 @@ bool CppGenerator::generateFunctionInternal(const std::string& name,
     stateCount_ = oldStateCount;
     orderedLocalVars_ = oldOrderedLocals;
     localVars_ = oldLocalVars;
+    freeVars_ = oldFreeVars;
 
     return true;
 }
@@ -647,6 +785,35 @@ bool CppGenerator::generateClassDef(ClassDefNode* n) {
 
 bool CppGenerator::generateAugAssign(AugAssignNode* n) {
     if (auto* nameNode = dynamic_cast<NameNode*>(n->target.get())) {
+        // Function-local case: lower to a C++ assignment using the
+        // existing `local_<name>` and env->binaryOp, so the new value
+        // updates the C++ local in place (no env round-trip).  Module
+        // / global case still goes through env->augAssignName.
+        auto it = std::find(orderedLocalVars_.begin(), orderedLocalVars_.end(), nameNode->id);
+        if (it != orderedLocalVars_.end()) {
+            *out_ << "local_" << nameNode->id << " = env->binaryOp(local_"
+                  << nameNode->id << ", protoPython::TokenType::";
+            switch (n->op) {
+                case TokenType::PlusAssign:        *out_ << "Plus"; break;
+                case TokenType::MinusAssign:       *out_ << "Minus"; break;
+                case TokenType::StarAssign:        *out_ << "Star"; break;
+                case TokenType::SlashAssign:       *out_ << "Slash"; break;
+                case TokenType::ModuloAssign:      *out_ << "Modulo"; break;
+                case TokenType::DoubleSlashAssign: *out_ << "DoubleSlash"; break;
+                case TokenType::DoubleStarAssign:  *out_ << "DoubleStar"; break;
+                case TokenType::AndAssign:         *out_ << "BitAnd"; break;
+                case TokenType::OrAssign:          *out_ << "BitOr"; break;
+                case TokenType::XorAssign:         *out_ << "BitXor"; break;
+                case TokenType::LShiftAssign:      *out_ << "LShift"; break;
+                case TokenType::RShiftAssign:      *out_ << "RShift"; break;
+                case TokenType::AtAssign:          *out_ << "At"; break;
+                default:                            *out_ << "Plus"; break;
+            }
+            *out_ << ", ";
+            if (!generateNode(n->value.get())) return false;
+            *out_ << ")";
+            return true;
+        }
         *out_ << "env->augAssignName(\"" << nameNode->id << "\", ";
     } else if (auto* attrNode = dynamic_cast<AttributeNode*>(n->target.get())) {
         *out_ << "env->augAssignAttr(";
@@ -664,11 +831,20 @@ bool CppGenerator::generateAugAssign(AugAssignNode* n) {
     }
     
     switch (n->op) {
-        case TokenType::PlusAssign: *out_ << "protoPython::TokenType::PlusAssign"; break;
-        case TokenType::MinusAssign: *out_ << "protoPython::TokenType::MinusAssign"; break;
-        case TokenType::StarAssign: *out_ << "protoPython::TokenType::StarAssign"; break;
-        case TokenType::SlashAssign: *out_ << "protoPython::TokenType::SlashAssign"; break;
-        default: *out_ << "protoPython::TokenType::PlusAssign"; break;
+        case TokenType::PlusAssign:        *out_ << "protoPython::TokenType::PlusAssign"; break;
+        case TokenType::MinusAssign:       *out_ << "protoPython::TokenType::MinusAssign"; break;
+        case TokenType::StarAssign:        *out_ << "protoPython::TokenType::StarAssign"; break;
+        case TokenType::SlashAssign:       *out_ << "protoPython::TokenType::SlashAssign"; break;
+        case TokenType::ModuloAssign:      *out_ << "protoPython::TokenType::ModuloAssign"; break;
+        case TokenType::DoubleSlashAssign: *out_ << "protoPython::TokenType::DoubleSlashAssign"; break;
+        case TokenType::DoubleStarAssign:  *out_ << "protoPython::TokenType::DoubleStarAssign"; break;
+        case TokenType::AndAssign:         *out_ << "protoPython::TokenType::AndAssign"; break;
+        case TokenType::OrAssign:          *out_ << "protoPython::TokenType::OrAssign"; break;
+        case TokenType::XorAssign:         *out_ << "protoPython::TokenType::XorAssign"; break;
+        case TokenType::LShiftAssign:      *out_ << "protoPython::TokenType::LShiftAssign"; break;
+        case TokenType::RShiftAssign:      *out_ << "protoPython::TokenType::RShiftAssign"; break;
+        case TokenType::AtAssign:          *out_ << "protoPython::TokenType::AtAssign"; break;
+        default:                            *out_ << "protoPython::TokenType::PlusAssign"; break;
     }
     *out_ << ", ";
     if (!generateNode(n->value.get())) return false;
@@ -982,8 +1158,23 @@ bool CppGenerator::generateLambda(LambdaNode* n) {
     *out_ << "        auto* env = protoPython::PythonEnvironment::get(ctx);\n";
     *out_ << "        // Bind parameters\n";
     *out_ << "        unsigned long nPos = args ? args->getSize(ctx) : 0;\n";
-    for (size_t i = 0; i < n->parameters.size(); ++i) {
-        *out_ << "        if (nPos > " << i << ") env->storeName(\"" << n->parameters[i] << "\", args->getAt(ctx, " << i << "));\n";
+    {
+        const size_t numDefaultsLam = n->defaults.size();
+        const size_t defaultStartLam = n->parameters.size() > numDefaultsLam
+                                            ? n->parameters.size() - numDefaultsLam
+                                            : 0;
+        for (size_t i = 0; i < n->parameters.size(); ++i) {
+            if (i >= defaultStartLam) {
+                *out_ << "        env->storeName(\"" << n->parameters[i]
+                      << "\", (nPos > " << i << ") ? args->getAt(ctx, " << i << ") : ";
+                if (!generateNode(n->defaults[i - defaultStartLam].get())) return false;
+                *out_ << ");\n";
+            } else {
+                *out_ << "        if (nPos > " << i
+                      << ") env->storeName(\"" << n->parameters[i]
+                      << "\", args->getAt(ctx, " << i << "));\n";
+            }
+        }
     }
 
     if (!n->vararg.empty()) {
@@ -1178,6 +1369,137 @@ void CppGenerator::collectLocals(ASTNode* node, std::unordered_set<std::string>&
     }
 }
 
+void CppGenerator::collectNameRefs(ASTNode* node, std::unordered_set<std::string>& refs) {
+    if (!node) return;
+    if (auto* n = dynamic_cast<NameNode*>(node)) {
+        refs.insert(n->id);
+        return;
+    }
+    // Nested functions/classes/lambdas create their own scope.  Walking
+    // into their bodies here would conflate inner-scope references with
+    // the outer function's free variables.  We treat them as opaque.
+    if (dynamic_cast<FunctionDefNode*>(node) ||
+        dynamic_cast<AsyncFunctionDefNode*>(node) ||
+        dynamic_cast<ClassDefNode*>(node) ||
+        dynamic_cast<LambdaNode*>(node)) {
+        return;
+    }
+    if (auto* n = dynamic_cast<SuiteNode*>(node)) {
+        for (auto& s : n->statements) collectNameRefs(s.get(), refs);
+    } else if (auto* n = dynamic_cast<AssignNode*>(node)) {
+        for (auto& t : n->targets) collectNameRefs(t.get(), refs);
+        collectNameRefs(n->value.get(), refs);
+    } else if (auto* n = dynamic_cast<AugAssignNode*>(node)) {
+        collectNameRefs(n->target.get(), refs);
+        collectNameRefs(n->value.get(), refs);
+    } else if (auto* n = dynamic_cast<AnnAssignNode*>(node)) {
+        collectNameRefs(n->target.get(), refs);
+        if (n->value) collectNameRefs(n->value.get(), refs);
+    } else if (auto* n = dynamic_cast<IfNode*>(node)) {
+        collectNameRefs(n->test.get(), refs);
+        collectNameRefs(n->body.get(), refs);
+        if (n->orelse) collectNameRefs(n->orelse.get(), refs);
+    } else if (auto* n = dynamic_cast<WhileNode*>(node)) {
+        collectNameRefs(n->test.get(), refs);
+        collectNameRefs(n->body.get(), refs);
+        if (n->orelse) collectNameRefs(n->orelse.get(), refs);
+    } else if (auto* n = dynamic_cast<ForNode*>(node)) {
+        collectNameRefs(n->target.get(), refs);
+        collectNameRefs(n->iter.get(), refs);
+        collectNameRefs(n->body.get(), refs);
+        if (n->orelse) collectNameRefs(n->orelse.get(), refs);
+    } else if (auto* n = dynamic_cast<TryNode*>(node)) {
+        collectNameRefs(n->body.get(), refs);
+        for (auto& h : n->handlers) {
+            if (h.type) collectNameRefs(h.type.get(), refs);
+            collectNameRefs(h.body.get(), refs);
+        }
+        if (n->orelse) collectNameRefs(n->orelse.get(), refs);
+        if (n->finalbody) collectNameRefs(n->finalbody.get(), refs);
+    } else if (auto* n = dynamic_cast<WithNode*>(node)) {
+        for (auto& it : n->items) {
+            collectNameRefs(it.context_expr.get(), refs);
+            if (it.optional_vars) collectNameRefs(it.optional_vars.get(), refs);
+        }
+        collectNameRefs(n->body.get(), refs);
+    } else if (auto* n = dynamic_cast<ReturnNode*>(node)) {
+        if (n->value) collectNameRefs(n->value.get(), refs);
+    } else if (auto* n = dynamic_cast<YieldNode*>(node)) {
+        if (n->value) collectNameRefs(n->value.get(), refs);
+    } else if (auto* n = dynamic_cast<AwaitNode*>(node)) {
+        if (n->value) collectNameRefs(n->value.get(), refs);
+    } else if (auto* n = dynamic_cast<CallNode*>(node)) {
+        collectNameRefs(n->func.get(), refs);
+        for (auto& a : n->args) collectNameRefs(a.get(), refs);
+        for (auto& kw : n->keywords) collectNameRefs(kw.second.get(), refs);
+    } else if (auto* n = dynamic_cast<BinOpNode*>(node)) {
+        collectNameRefs(n->left.get(), refs);
+        collectNameRefs(n->right.get(), refs);
+    } else if (auto* n = dynamic_cast<UnaryOpNode*>(node)) {
+        collectNameRefs(n->operand.get(), refs);
+    } else if (auto* n = dynamic_cast<AttributeNode*>(node)) {
+        collectNameRefs(n->value.get(), refs);
+    } else if (auto* n = dynamic_cast<SubscriptNode*>(node)) {
+        collectNameRefs(n->value.get(), refs);
+        collectNameRefs(n->index.get(), refs);
+    } else if (auto* n = dynamic_cast<SliceNode*>(node)) {
+        if (n->start) collectNameRefs(n->start.get(), refs);
+        if (n->stop) collectNameRefs(n->stop.get(), refs);
+        if (n->step) collectNameRefs(n->step.get(), refs);
+    } else if (auto* n = dynamic_cast<ListLiteralNode*>(node)) {
+        for (auto& e : n->elements) collectNameRefs(e.get(), refs);
+    } else if (auto* n = dynamic_cast<TupleLiteralNode*>(node)) {
+        for (auto& e : n->elements) collectNameRefs(e.get(), refs);
+    } else if (auto* n = dynamic_cast<SetLiteralNode*>(node)) {
+        for (auto& e : n->elements) collectNameRefs(e.get(), refs);
+    } else if (auto* n = dynamic_cast<DictLiteralNode*>(node)) {
+        for (auto& k : n->keys) if (k) collectNameRefs(k.get(), refs);
+        for (auto& v : n->values) collectNameRefs(v.get(), refs);
+    } else if (auto* n = dynamic_cast<JoinedStrNode*>(node)) {
+        for (auto& v : n->values) collectNameRefs(v.get(), refs);
+    } else if (auto* n = dynamic_cast<FormattedValueNode*>(node)) {
+        collectNameRefs(n->value.get(), refs);
+    } else if (auto* n = dynamic_cast<StarredNode*>(node)) {
+        collectNameRefs(n->value.get(), refs);
+    } else if (auto* n = dynamic_cast<NamedExprNode*>(node)) {
+        collectNameRefs(n->target.get(), refs);
+        collectNameRefs(n->value.get(), refs);
+    } else if (auto* n = dynamic_cast<ListCompNode*>(node)) {
+        collectNameRefs(n->elt.get(), refs);
+        for (auto& c : n->generators) {
+            collectNameRefs(c.iter.get(), refs);
+            for (auto& cond : c.ifs) collectNameRefs(cond.get(), refs);
+        }
+    } else if (auto* n = dynamic_cast<SetCompNode*>(node)) {
+        collectNameRefs(n->elt.get(), refs);
+        for (auto& c : n->generators) {
+            collectNameRefs(c.iter.get(), refs);
+            for (auto& cond : c.ifs) collectNameRefs(cond.get(), refs);
+        }
+    } else if (auto* n = dynamic_cast<GeneratorExpNode*>(node)) {
+        collectNameRefs(n->elt.get(), refs);
+        for (auto& c : n->generators) {
+            collectNameRefs(c.iter.get(), refs);
+            for (auto& cond : c.ifs) collectNameRefs(cond.get(), refs);
+        }
+    } else if (auto* n = dynamic_cast<DictCompNode*>(node)) {
+        collectNameRefs(n->key.get(), refs);
+        collectNameRefs(n->value.get(), refs);
+        for (auto& c : n->generators) {
+            collectNameRefs(c.iter.get(), refs);
+            for (auto& cond : c.ifs) collectNameRefs(cond.get(), refs);
+        }
+    } else if (auto* n = dynamic_cast<RaiseNode*>(node)) {
+        if (n->exc) collectNameRefs(n->exc.get(), refs);
+        if (n->cause) collectNameRefs(n->cause.get(), refs);
+    } else if (auto* n = dynamic_cast<DeleteNode*>(node)) {
+        for (auto& t : n->targets) collectNameRefs(t.get(), refs);
+    } else if (auto* n = dynamic_cast<AssertNode*>(node)) {
+        collectNameRefs(n->test.get(), refs);
+        if (n->msg) collectNameRefs(n->msg.get(), refs);
+    }
+}
+
 bool CppGenerator::containsYieldOrAwait(ASTNode* node) {
     if (!node) return false;
     if (dynamic_cast<YieldNode*>(node)) return true;
@@ -1215,6 +1537,148 @@ bool CppGenerator::containsYieldOrAwait(ASTNode* node) {
         if (n->value && containsYieldOrAwait(n->value.get())) return true;
     }
     return false;
+}
+
+// =========================================================================
+// Comprehensions — list / set / dict comprehensions and generator
+// expressions all share a nested for-loop structure that walks each
+// generator's iterable (left to right), evaluates each `if` filter,
+// and finally evaluates the element expression and appends it to the
+// accumulator.  Generator expressions are emitted as eager list
+// builds for the compiled form (matches CPython's runtime behaviour
+// closely enough for iteration consumers; a future improvement
+// could emit a real lazy generator state machine here).
+// =========================================================================
+
+bool CppGenerator::emitComprehensionAssign(ASTNode* target, const std::string& valExpr) {
+    if (auto* nm = dynamic_cast<NameNode*>(target)) {
+        *out_ << "            env->storeName(\"" << nm->id << "\", " << valExpr << ");\n";
+        return true;
+    }
+    if (auto* tup = dynamic_cast<TupleLiteralNode*>(target)) {
+        // for a, b in ... — unpack via the same helper assignments use.
+        if (!generateAssignToTarget(tup, valExpr)) return false;
+        *out_ << ";\n";
+        return true;
+    }
+    *out_ << "            /* unsupported comp target */\n";
+    return true;
+}
+
+bool CppGenerator::emitComprehensionBody(const std::vector<Comprehension>& generators,
+                                          size_t depth,
+                                          ASTNode* elt,
+                                          ASTNode* dictKey,
+                                          int kind) {
+    static int compNestId = 0;
+    int id = compNestId++;
+    const Comprehension& g = generators[depth];
+
+    *out_ << "        {\n";
+    *out_ << "            auto* __cit_" << id << " = env->iter(";
+    if (!generateNode(g.iter.get())) return false;
+    *out_ << ");\n";
+    *out_ << "            while (true) {\n";
+    *out_ << "                auto* __cval_" << id << " = env->next(__cit_" << id << ");\n";
+    *out_ << "                if (env->hasPendingException()) { (void)env->takePendingException(); break; }\n";
+    *out_ << "                if (!__cval_" << id << ") break;\n";
+
+    std::ostringstream valVar;
+    valVar << "__cval_" << id;
+    if (!emitComprehensionAssign(g.target.get(), valVar.str())) return false;
+
+    for (auto& f : g.ifs) {
+        *out_ << "            if (env->isTrue(";
+        if (!generateNode(f.get())) return false;
+        *out_ << ")) {\n";
+    }
+
+    if (depth + 1 < generators.size()) {
+        if (!emitComprehensionBody(generators, depth + 1, elt, dictKey, kind)) return false;
+    } else {
+        if (kind == 0 || kind == 3) {
+            // List / generator-as-list — append to accumulator list.
+            *out_ << "                acc = acc->appendLast(ctx, ";
+            if (!generateNode(elt)) return false;
+            *out_ << ");\n";
+        } else if (kind == 1) {
+            // Set — append + add via env-aware set semantics.
+            *out_ << "                __set_acc = __set_acc->add(ctx, ";
+            if (!generateNode(elt)) return false;
+            *out_ << ");\n";
+        } else if (kind == 2) {
+            // Dict — set key/value on the accumulator's __data__ / __keys__.
+            *out_ << "                {\n";
+            *out_ << "                    auto* __k = ";
+            if (!generateNode(dictKey)) return false;
+            *out_ << ";\n";
+            *out_ << "                    auto* __v = ";
+            if (!generateNode(elt)) return false;
+            *out_ << ";\n";
+            *out_ << "                    env->setItem(__dict_acc, __k, __v);\n";
+            *out_ << "                }\n";
+        }
+    }
+
+    for (size_t i = 0; i < g.ifs.size(); ++i) *out_ << "            }\n";
+    *out_ << "            }\n";  // while
+    *out_ << "        }\n";      // block
+    return true;
+}
+
+bool CppGenerator::generateListComp(ListCompNode* n) {
+    if (!n) return false;
+    *out_ << "([&]() -> const proto::ProtoObject* {\n";
+    *out_ << "        auto* listObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));\n";
+    *out_ << "        auto* acc = ctx->newList();\n";
+    if (!emitComprehensionBody(n->generators, 0, n->elt.get(), nullptr, 0)) return false;
+    *out_ << "        listObj->setAttribute(ctx, env->getDataString(), acc->asObject(ctx));\n";
+    *out_ << "        if (env->getListPrototype()) listObj->addParent(ctx, env->getListPrototype());\n";
+    *out_ << "        return listObj;\n";
+    *out_ << "    })()";
+    return true;
+}
+
+bool CppGenerator::generateGeneratorExp(GeneratorExpNode* n) {
+    // Eager list — consumers (sum, max, set(...), tuple(...), etc.)
+    // iterate the result the same way.  A lazy real generator state
+    // machine is future work.
+    if (!n) return false;
+    *out_ << "([&]() -> const proto::ProtoObject* {\n";
+    *out_ << "        auto* listObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));\n";
+    *out_ << "        auto* acc = ctx->newList();\n";
+    if (!emitComprehensionBody(n->generators, 0, n->elt.get(), nullptr, 3)) return false;
+    *out_ << "        listObj->setAttribute(ctx, env->getDataString(), acc->asObject(ctx));\n";
+    *out_ << "        if (env->getListPrototype()) listObj->addParent(ctx, env->getListPrototype());\n";
+    *out_ << "        return listObj;\n";
+    *out_ << "    })()";
+    return true;
+}
+
+bool CppGenerator::generateSetComp(SetCompNode* n) {
+    if (!n) return false;
+    *out_ << "([&]() -> const proto::ProtoObject* {\n";
+    *out_ << "        auto* setObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));\n";
+    *out_ << "        auto* __set_acc = ctx->newSet();\n";
+    if (!emitComprehensionBody(n->generators, 0, n->elt.get(), nullptr, 1)) return false;
+    *out_ << "        setObj->setAttribute(ctx, env->getDataString(), __set_acc->asObject(ctx));\n";
+    *out_ << "        if (env->getSetPrototype()) setObj->addParent(ctx, env->getSetPrototype());\n";
+    *out_ << "        return setObj;\n";
+    *out_ << "    })()";
+    return true;
+}
+
+bool CppGenerator::generateDictComp(DictCompNode* n) {
+    if (!n) return false;
+    *out_ << "([&]() -> const proto::ProtoObject* {\n";
+    *out_ << "        auto* __dict_acc = const_cast<proto::ProtoObject*>(ctx->newObject(true));\n";
+    *out_ << "        if (env->getDictPrototype()) __dict_acc->addParent(ctx, env->getDictPrototype());\n";
+    *out_ << "        __dict_acc->setAttribute(ctx, env->getDataString(), ctx->newSparseList()->asObject(ctx));\n";
+    *out_ << "        __dict_acc->setAttribute(ctx, env->getKeysString(), ctx->newList()->asObject(ctx));\n";
+    if (!emitComprehensionBody(n->generators, 0, n->value.get(), n->key.get(), 2)) return false;
+    *out_ << "        return __dict_acc;\n";
+    *out_ << "    })()";
+    return true;
 }
 
 } // namespace protoPython

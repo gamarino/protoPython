@@ -22982,6 +22982,47 @@ const proto::ProtoObject* PythonEnvironment::getAttr(const proto::ProtoObject* o
     return obj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, attr.c_str()));
 }
 
+const proto::ProtoObject* PythonEnvironment::callMethod(const proto::ProtoObject* obj,
+                                                       const std::string& attr,
+                                                       const std::vector<const proto::ProtoObject*>& args) {
+    proto::ProtoContext* ctx = getCurrentContext();
+    if (!ctx) ctx = rootContext_;
+    if (!obj || obj == PROTO_NONE) {
+        // Match `obj.attr(...)` on None: getAttribute raises AttributeError
+        // here; mirror the interpreter by surfacing that error.
+        callObject(getAttribute(ctx, obj, PythonEnvironment::getInternedString(ctx, attr.c_str())), args);
+        return nullptr;
+    }
+    const proto::ProtoString* nameS = PythonEnvironment::getInternedString(ctx, attr.c_str());
+
+    // Match LOAD_METHOD: when the attribute lives on the prototype chain
+    // (not directly on `obj`'s own dict), it's a method.  Look it up raw
+    // (no descriptor binding) and prepend `obj` to args so the callee sees
+    // `self` in args[0] — the convention every protopyc-generated function
+    // prologue relies on.  When the attribute IS an own attribute of `obj`,
+    // it is a regular value bound to the instance (a callable stored in
+    // the instance dict, a Python bound method, a property's __get__
+    // result, …) and we invoke it through the normal getAttribute path so
+    // descriptors and bound-method binding run.
+    if (obj->hasOwnAttribute(ctx, nameS) != PROTO_TRUE) {
+        const proto::ProtoObject* raw = obj->getAttribute(ctx, nameS);
+        if (raw && raw != PROTO_NONE) {
+            std::vector<const proto::ProtoObject*> bound;
+            bound.reserve(args.size() + 1);
+            bound.push_back(obj);
+            for (auto* a : args) bound.push_back(a);
+            return callObject(raw, bound);
+        }
+    }
+
+    // Attribute lives on the instance: descriptor protocol / bound-method
+    // semantics apply via getAttribute, and the caller's args go through
+    // unchanged (no self-prepend — the resolved value is already bound
+    // to obj if it is a method).
+    const proto::ProtoObject* method = getAttribute(ctx, obj, nameS, true);
+    return callObject(method, args);
+}
+
 void PythonEnvironment::setAttr(const proto::ProtoObject* obj, const std::string& attr, const proto::ProtoObject* val) {
     proto::ProtoContext* ctx = rootContext_;
     if (!obj) return;
@@ -23458,10 +23499,19 @@ bool PythonEnvironment::isException(const proto::ProtoObject* exc, const proto::
 void PythonEnvironment::augAssignName(const std::string& name, TokenType op, const proto::ProtoObject* value) {
     TokenType binOp;
     switch (op) {
-        case TokenType::PlusAssign: binOp = TokenType::Plus; break;
-        case TokenType::MinusAssign: binOp = TokenType::Minus; break;
-        case TokenType::StarAssign: binOp = TokenType::Star; break;
-        case TokenType::SlashAssign: binOp = TokenType::Slash; break;
+        case TokenType::PlusAssign:        binOp = TokenType::Plus; break;
+        case TokenType::MinusAssign:       binOp = TokenType::Minus; break;
+        case TokenType::StarAssign:        binOp = TokenType::Star; break;
+        case TokenType::SlashAssign:       binOp = TokenType::Slash; break;
+        case TokenType::ModuloAssign:      binOp = TokenType::Modulo; break;
+        case TokenType::DoubleSlashAssign: binOp = TokenType::DoubleSlash; break;
+        case TokenType::DoubleStarAssign:  binOp = TokenType::DoubleStar; break;
+        case TokenType::AndAssign:         binOp = TokenType::BitAnd; break;
+        case TokenType::OrAssign:          binOp = TokenType::BitOr; break;
+        case TokenType::XorAssign:         binOp = TokenType::BitXor; break;
+        case TokenType::LShiftAssign:      binOp = TokenType::LShift; break;
+        case TokenType::RShiftAssign:      binOp = TokenType::RShift; break;
+        case TokenType::AtAssign:          binOp = TokenType::At; break;
         default: return;
     }
     const proto::ProtoObject* oldVal = lookupName(name);
@@ -23472,10 +23522,19 @@ void PythonEnvironment::augAssignName(const std::string& name, TokenType op, con
 void PythonEnvironment::augAssignAttr(const proto::ProtoObject* obj, const std::string& attr, TokenType op, const proto::ProtoObject* value) {
     TokenType binOp;
     switch (op) {
-        case TokenType::PlusAssign: binOp = TokenType::Plus; break;
-        case TokenType::MinusAssign: binOp = TokenType::Minus; break;
-        case TokenType::StarAssign: binOp = TokenType::Star; break;
-        case TokenType::SlashAssign: binOp = TokenType::Slash; break;
+        case TokenType::PlusAssign:        binOp = TokenType::Plus; break;
+        case TokenType::MinusAssign:       binOp = TokenType::Minus; break;
+        case TokenType::StarAssign:        binOp = TokenType::Star; break;
+        case TokenType::SlashAssign:       binOp = TokenType::Slash; break;
+        case TokenType::ModuloAssign:      binOp = TokenType::Modulo; break;
+        case TokenType::DoubleSlashAssign: binOp = TokenType::DoubleSlash; break;
+        case TokenType::DoubleStarAssign:  binOp = TokenType::DoubleStar; break;
+        case TokenType::AndAssign:         binOp = TokenType::BitAnd; break;
+        case TokenType::OrAssign:          binOp = TokenType::BitOr; break;
+        case TokenType::XorAssign:         binOp = TokenType::BitXor; break;
+        case TokenType::LShiftAssign:      binOp = TokenType::LShift; break;
+        case TokenType::RShiftAssign:      binOp = TokenType::RShift; break;
+        case TokenType::AtAssign:          binOp = TokenType::At; break;
         default: return;
     }
     const proto::ProtoObject* oldVal = getAttr(obj, attr);
@@ -23486,10 +23545,19 @@ void PythonEnvironment::augAssignAttr(const proto::ProtoObject* obj, const std::
 void PythonEnvironment::augAssignItem(const proto::ProtoObject* container, const proto::ProtoObject* key, TokenType op, const proto::ProtoObject* value) {
     TokenType binOp;
     switch (op) {
-        case TokenType::PlusAssign: binOp = TokenType::Plus; break;
-        case TokenType::MinusAssign: binOp = TokenType::Minus; break;
-        case TokenType::StarAssign: binOp = TokenType::Star; break;
-        case TokenType::SlashAssign: binOp = TokenType::Slash; break;
+        case TokenType::PlusAssign:        binOp = TokenType::Plus; break;
+        case TokenType::MinusAssign:       binOp = TokenType::Minus; break;
+        case TokenType::StarAssign:        binOp = TokenType::Star; break;
+        case TokenType::SlashAssign:       binOp = TokenType::Slash; break;
+        case TokenType::ModuloAssign:      binOp = TokenType::Modulo; break;
+        case TokenType::DoubleSlashAssign: binOp = TokenType::DoubleSlash; break;
+        case TokenType::DoubleStarAssign:  binOp = TokenType::DoubleStar; break;
+        case TokenType::AndAssign:         binOp = TokenType::BitAnd; break;
+        case TokenType::OrAssign:          binOp = TokenType::BitOr; break;
+        case TokenType::XorAssign:         binOp = TokenType::BitXor; break;
+        case TokenType::LShiftAssign:      binOp = TokenType::LShift; break;
+        case TokenType::RShiftAssign:      binOp = TokenType::RShift; break;
+        case TokenType::AtAssign:          binOp = TokenType::At; break;
         default: return;
     }
     const proto::ProtoObject* oldVal = getItem(container, key);

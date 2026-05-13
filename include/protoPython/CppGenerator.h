@@ -41,13 +41,14 @@ private:
     bool generateContinue(ContinueNode* n);
     bool generateFunctionDef(FunctionDefNode* n);
     bool generateAsyncFunctionDef(AsyncFunctionDefNode* n);
-    bool generateFunctionInternal(const std::string& name, 
+    bool generateFunctionInternal(const std::string& name,
                                  const std::vector<std::string>& parameters,
                                  const std::string& vararg,
                                  const std::string& kwarg,
                                  ASTNode* body,
                                  const std::vector<std::unique_ptr<ASTNode>>& decorator_list,
-                                 bool isAsync);
+                                 bool isAsync,
+                                 const std::vector<std::unique_ptr<ASTNode>>* defaults = nullptr);
     bool generateReturn(ReturnNode* n);
     bool generateYield(YieldNode* n);
     bool generateAwait(AwaitNode* n);
@@ -75,11 +76,37 @@ private:
     bool generateStarred(StarredNode* n);
     bool generateAnnAssign(AnnAssignNode* n);
     bool generateAssignToTarget(ASTNode* target, const std::string& valueExpr);
+    bool generateListComp(ListCompNode* n);
+    bool generateDictComp(DictCompNode* n);
+    bool generateSetComp(SetCompNode* n);
+    bool generateGeneratorExp(GeneratorExpNode* n);
+    // Shared body emitter for comprehension nests.  `kind`:
+    //   0 = list, 1 = set, 2 = dict, 3 = generator-as-list (eager).
+    bool emitComprehensionBody(const std::vector<Comprehension>& generators,
+                               size_t depth,
+                               ASTNode* elt,
+                               ASTNode* dictKey,
+                               int kind);
+    // Bind a comprehension's target (single name, or tuple unpack) to
+    // the iterator's current value, declared as `local_<name>` in C++.
+    bool emitComprehensionAssign(ASTNode* target, const std::string& valExpr);
     
     bool inStateMachine_ = false;
     int stateCount_ = 0;
     std::unordered_set<std::string> localVars_;
     std::vector<std::string> orderedLocalVars_;
+    // Stack of enclosing function-scope locals, used to identify free
+    // variables when a nested function references a name that is local
+    // to an outer function (a Python closure).  Indexed outermost-first.
+    std::vector<std::unordered_set<std::string>> enclosingLocals_;
+    // Free variables of the function currently being emitted.  These are
+    // the names whose values must be captured from the enclosing scope at
+    // definition time and read from the closure storage object (passed via
+    // `self`) when the function runs.
+    std::unordered_set<std::string> freeVars_;
+    // Collect every `NameNode` identifier referenced under `node` — the
+    // raw set of names the body reads, before subtracting locals.
+    void collectNameRefs(ASTNode* node, std::unordered_set<std::string>& refs);
 };
 
 } // namespace protoPython
