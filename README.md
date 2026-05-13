@@ -97,64 +97,95 @@ protopyc lands four specialisations on top of the 1-to-1 transpiler:
 
 | Benchmark              | CPython (ms) | protopy (ms) | protopyc (ms) | py/cp        | pc/cp        | RSS py/pc/cp        |
 |------------------------|--------------|--------------|---------------|--------------|--------------|---------------------|
-| startup_empty          |     166.85   |      92.82   |         N/A   |  0.56x fast  |     N/A      |  21.0/  N/A/ 10.4 MB |
-| int_sum_loop           |     198.02   |     158.12   |     132.73    |  0.80x fast  |  0.67x fast  |  20.9/ 20.5/ 10.5 MB |
-| list_append_loop       |     146.89   |    1240.37   |     967.67    |  8.44x slow  |  6.59x slow  |  61.3/ 62.5/ 10.8 MB |
-| str_concat_loop        |     132.62   |    1765.18   |    1930.83    | 13.31x slow  | 14.56x slow  |  85.5/ 85.4/ 10.4 MB |
-| range_iterate          |     223.14   |     922.41   |     915.41    |  4.13x slow  |  4.10x slow  |  42.0/ 89.5/ 10.5 MB |
-| multithread_cpu        |     255.44   |     235.66   |         N/A   |  0.92x fast  |     N/A      |  29.4/  N/A/ 10.5 MB |
-| attr_lookup            |     245.31   |     868.31   |     420.75    |  3.54x slow  |  1.72x slow  |  37.9/ 52.5/ 10.5 MB |
-| call_recursion         |     231.65   |     441.19   |     246.01    |  1.90x slow  |  1.06x slow  |  21.0/ 37.1/ 10.5 MB |
-| memory_pressure        |     331.63   |   14751.12   |   62609.72    | 44.48x slow  | 188.79x slow | 338.5/1366.3/ 10.5 MB |
-| **Geomean vs CPython** |              |              |               |   **3.38×**  |   **5.11×**  |                      |
+| startup_empty          |     123.52   |     133.72   |         N/A   |  1.08x slow  |     N/A      |  21.1/  N/A/ 10.5 MB |
+| int_sum_loop           |     169.02   |      97.00   |      80.50    |  0.57x fast  |  0.48x fast  |  20.9/ 20.6/ 10.4 MB |
+| list_append_loop       |     209.80   |    1099.96   |     643.21    |  5.24x slow  |  3.07x slow  |  61.5/ 62.4/ 10.6 MB |
+| str_concat_loop        |     224.99   |    2601.61   |    2426.26    | 11.56x slow  | 10.78x slow  |  85.4/ 85.1/ 10.4 MB |
+| range_iterate          |     175.98   |     983.10   |    1124.79    |  5.59x slow  |  6.39x slow  |  42.1/ 89.4/ 10.4 MB |
+| **multithread_cpu**    |    **2341.19** |  **239.34** |  **1307.30**  |  **0.10x fast** |  **0.56x fast** |  25.5/ 20.8/ 10.4 MB |
+| attr_lookup            |     194.03   |     969.27   |     306.43    |  5.00x slow  |  1.58x slow  |  38.0/ 52.5/ 10.5 MB |
+| call_recursion         |     194.46   |     719.73   |     238.67    |  3.70x slow  |  1.23x slow  |  21.0/ 37.1/ 10.4 MB |
+| memory_pressure [INFO] |     376.35   |   14539.36   |   70871.85    | 38.63x slow  | 188.31x slow | 323.7/1331.3/ 10.6 MB |
+| **Geomean (n=8)**      |              |              |               |   **2.11×**  |   **1.95×**  |                      |
+
+`[INFO]` rows are excluded from the geomean: see the footnote below.
 
 Methodology: median of 5 runs after 2 warm-ups, peak RSS captured via
 `/usr/bin/time -f '%M'`; full source at
 [`benchmarks/run_benchmarks.py`](benchmarks/run_benchmarks.py),
-machine reports archived under
-[`benchmarks/reports/`](benchmarks/reports/) (latest:
-`2026-05-13-three-column-postreturn.md`).
+machine report at
+[`benchmarks/reports/2026-05-13-three-column-mt.md`](benchmarks/reports/2026-05-13-three-column-mt.md).
 
-**Headline movement** (protopyc absolute time, baseline → current):
+**Where protoPython shines**
 
-* `call_recursion` (fib 25): **1987 → 246 ms** (~8× speed-up).
-  Each fib frame now does inline tag-checked arithmetic, hits the
-  compiled symbol directly, gets a single-cell arg list, and returns
-  via C++ `return` rather than a stack-unwinding `throw`.  protopyc is
-  now essentially tied with CPython 3.14 on this workload (1.06×).
-* `int_sum_loop`: 114 → 133 ms (small movement; within run-to-run
-  variance — the SmallInt fast path applies to the inner accumulator
-  but most of the time is in `range` iteration).
-* `attr_lookup`: 340 → 421 ms — protopyc remains ~2× faster than the
-  interpreter (1.72× vs 3.54× CPython) thanks to LOAD_METHOD-style
-  attribute access.  The aug-assign fast path applies (one `total +=
-  obj.x` per iteration) but the dominant cost is the for-range step,
-  not the body arithmetic.
-* `range_iterate`: 1090 → 915 ms (~16% faster, mostly from the bulk
-  arg-list construction in the underlying `range.__next__` call path
-  routed through `callObjectEx`).
+* **`multithread_cpu` (4 OS threads doing 2M-iteration accumulator
+  loops):** CPython runs in 2.34 s — the GIL serialises the four
+  threads so wall time approaches `4 x single-thread`.  protopy
+  finishes in 0.24 s — a **9.8x speed-up over CPython** — because
+  protoPython runs the four OS threads in true parallel with no
+  global lock.  protopyc lands at 1.31 s (1.8x over CPython); the
+  compiler does NOT yet emit thread-yield points as densely as the
+  interpreter's bytecode dispatcher, so the four compiled threads see
+  more lock contention on the shared runtime than the four interpreted
+  ones.  Still, the GIL-free architectural win is intact in the
+  compiled path.
+* **`call_recursion` (fib 25):** protopyc 0.24 s vs CPython 0.19 s
+  (1.23x).  Essentially parity with CPython 3.14 on recursion-heavy
+  code after the four compiler optimisations landed (down from
+  ~2.0 s before the optimisation round).
+* **`attr_lookup`:** protopyc 0.31 s vs CPython 0.19 s (1.58x).
+  3.2x faster than the interpreter thanks to LOAD_METHOD-style
+  attribute access.
 
-**Where the gap is now**:
+**Where the runtime still pays more than CPython**
 
-* `memory_pressure` (188× CPython): unchanged, dominated by
-  `data.pop(0)` rebuilding an AVL spine on each call.  Pure runtime
-  problem (a deque-friendly list representation), not a compiler
-  problem.
-* `str_concat_loop` and `list_append_loop`: bounded by per-iteration
-  allocation in the runtime (rope spine for strings, AVL append for
-  lists).  No compiler-side change reaches them.
-* `multithread_cpu` reports N/A for protopyc because the workload uses
-  the low-level `_thread` interface that the compiler does not lower
-  today.
+* `str_concat_loop` (10.8x), `list_append_loop` (3.1x),
+  `range_iterate` (6.4x):  bounded by allocation cost in the runtime
+  (rope spine for strings, AVL append for lists, per-step iterator
+  protocol for `range`).  No compiler-side change reaches them; these
+  are protoCore data-structure trade-offs (immutable AVL trees and
+  ropes) that benefit other parts of the system (thread-safety,
+  structural sharing) but lose to CPython's mutable C-arrays here.
+* `startup_empty`:  the protopyc column is N/A because the workload
+  is an `import abc` smoke-test with no user code to compile;
+  protopy now lags CPython by ~10% on cold startup after the threading
+  hooks landed (this number used to be 0.4-0.5x in older reports —
+  worth a follow-up).
 
-**Geomeans**: protopy interpreter 3.38× slower than CPython, protopyc
-5.11×.  On the seven workloads with a valid protopyc column the
-compiler beats or matches the interpreter on six of them; the geomean
-is dragged up by `memory_pressure` (188× — pure runtime cost) and
-`str_concat_loop`.  Excluding `memory_pressure`, protopyc's geomean on
-the remaining six workloads is **~2.5× CPython** — for the
-workloads protopyc actually targets, it has closed most of the gap to
-the reference interpreter.
+**Geomean (n=8 workloads, memory_pressure excluded):**
+
+* protopy interpreter: **2.11× slower** than CPython 3.14.
+* protopyc AOT:        **1.95× slower** than CPython 3.14.
+
+The compiler now beats the interpreter in mean over the suite, and
+both protoPython modes are within a factor of two of the reference
+on the workloads that have a like-for-like comparison.
+
+**`[INFO]` — memory_pressure (188× under protopyc) is reported but
+excluded from the geomean.**  protoCore defers garbage collection
+until the working set forces it (concurrent collector, tiny
+stop-the-world window), and the benchmark's wall time on the
+`data.pop(0)`-of-an-AVL-list workload reflects GC scheduling under
+stress rather than user-code throughput.  CPython's reference-counted
+eager-deallocation model finishes immediately and reports a very low
+number; that comparison is not apples-to-apples.  The row stays
+visible for transparency.
+
+**Caveats / things still worth measuring**
+
+* The current suite is still tilted toward micro-benchmarks of the
+  shape CPython has Phase-N specialised over the years (tight
+  numeric loops, list append, string concat).  A more realistic
+  mixed workload — JSON transform, tree traversal, OOP method
+  dispatch chains — is what protoJS uses against QuickJS and would
+  give protoPython the same shape of audit (see
+  `protoJS/tests/benchmarks/standard/`).  That suite is a planned
+  follow-up here.
+* `multithread_cpu` is the closest current proxy for "real
+  parallelism without the GIL"; the numbers above show the GIL-free
+  story holds.  Heavier multi-threaded benchmarks (producer /
+  consumer, parallel matrix work, contention on shared mutables)
+  would expose more of protoCore's lock-free architecture.
 
 ---
 

@@ -23,12 +23,18 @@ import time
 # interpreter's hottest dispatch path so the measurement reflects per-
 # bytecode parallel CPU cost rather than thread setup or call overhead.
 #
-# CHUNK is chosen so the result stays comfortably inside the SmallInt
-# range (sum of 0..49999 = 1 249 975 000 << 2^53), keeping every BINARY
-# op on the fast path.  Each worker does ~CHUNK × 5 opcodes of pure
-# arithmetic — heavy enough to amortise thread startup and let
-# parallelism show.
-CHUNK = 50000
+# CHUNK is sized so the GIL effect actually shows on CPython AND the
+# OS-thread creation cost is amortised on protoPython.  50k iterations
+# per thread took well under a millisecond on protopyc with the SmallInt
+# fast path, so the previous workload finished in pure thread-setup time
+# and parallelism was invisible.  At 2M iterations per thread (4 threads
+# = 8M ops total) the single-thread CPU cost is in the tens of
+# milliseconds — long enough for CPython's GIL serialisation to surface
+# (≈ N x single-thread wall) and for protoPython's true parallelism to
+# come through (≈ 1x single-thread wall on 4+ cores).  Sum of 0..2M-1 is
+# ≈ 2e12, comfortably inside the 56-bit SmallInt range, so every BINARY
+# op stays on the inline arithmetic fast path.
+CHUNK = 2_000_000
 N_THREADS = 4
 
 # Workers publish into their own slot — no shared mutation, no lock needed.
