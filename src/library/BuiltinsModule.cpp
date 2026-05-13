@@ -4553,7 +4553,25 @@ static const proto::ProtoList* computeC3MRO(proto::ProtoContext* context, const 
             mros.push_back(context->newList()->appendLast(context, baseCls));
         }
     }
-    
+
+    // CPython's C3 merge includes the literal `bases` tuple as the final
+    // merge input.  Without it, the constraint that the user-declared base
+    // order be preserved is lost — `class Y(A, B)` where `B(A)` linearises
+    // to `(Y, B, A, object)` (silently re-ordering A and B) instead of
+    // raising TypeError.  test_descr.test_mro_disagreement asserts the
+    // TypeError, so add the bases as a merge input — but only when there
+    // is more than one base.  For a single-base class the bases tuple
+    // adds no extra constraint, and downstream code (e.g. py_type's
+    // base / __new__ resolution for module subclasses) assumes
+    // `mros.size() == bases.size()` and breaks if we extend the vector.
+    if (bases->getSize(context) >= 2) {
+        const proto::ProtoList* basesAsList = context->newList();
+        for (size_t i = 0; i < bases->getSize(context); ++i) {
+            basesAsList = basesAsList->appendLast(context, bases->getAt(context, i));
+        }
+        mros.push_back(basesAsList);
+    }
+
     const proto::ProtoList* result = context->newList()->appendLast(context, cls);
     
     // Optimized C3 merge: track cursor-style heads instead of slicing lists
