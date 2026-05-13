@@ -2151,24 +2151,74 @@ static const proto::ProtoObject* py_object_init(
                 isNewOverridden = true;
             }
         }
-        if (!isNewOverridden) {
-            if (positionalParameters && positionalParameters->getSize(context) > 1) {
-                // CPython: object.__init__(self, *extras) raises TypeError
-                // when __new__ isn't overridden — the extras came from
-                // outside and __new__ didn't consume them.  An
-                // overridden __init__ alone isn't enough, because
-                // object.__init__ is what gets the extras here.
+        // CPython's object_init in typeobject.c, when called with extras:
+        //   if (tp_init != object_init)  -> raise (init was supposed to consume them)
+        //   if (tp_new == object_new)    -> raise (no consumer at all)
+        //   else                         -> ACCEPT (new consumed them already)
+        //
+        // i.e. extras are OK ONLY when `__new__` is overridden AND `__init__`
+        // is the default.  Every other combination rejects.  Previously
+        // protoPython only checked `!isNewOverridden` and accepted whenever
+        // `isNewOverridden` regardless of `isInitOverridden`, which let
+        // test_descr.test_object_new case 8 silently pass:
+        //   class A(object):
+        //       def __new__(cls, foo): return object.__new__(cls)
+        //       def __init__(self, foo): self.foo = foo
+        //   self.assertRaises(TypeError, object.__init__, A(3), 5)  # was missed
+        //
+        // Wrinkle for protoPython: ModuleType / its subclasses don't have
+        // their own __init__ override registered at the prototype level
+        // (modules construct via a C-level path), so the test
+        // `class MM(types.ModuleType): def __init__(self, name): MT.__init__(self, name)`
+        // routes MT.__init__(self, name) through py_object_init.  CPython
+        // would route to module_init which accepts the name arg.  Detect
+        // this by treating "has a module ancestor" as a strong signal
+        // that extras come from the module-construction protocol and
+        // should be accepted, ignoring isInitOverridden for that case.
+        bool extras = positionalParameters && positionalParameters->getSize(context) > 1;
+        if (extras) {
+            // hasModuleAncestor flag from earlier in this function (line
+            // ~2133): when set, the class derives from modulePrototype
+            // somewhere in its bases.  Module instantiation receives a
+            // name argument that py_object_init must not reject.
+            bool exemptModule = false;
+            if (env && env->getModulePrototype()) {
+                const proto::ProtoObject* inst = positionalParameters->getAt(context, 0);
+                const proto::ProtoObject* tp = inst ? env->getType(context, inst) : nullptr;
+                std::function<bool(const proto::ProtoObject*, int)> walk =
+                    [&](const proto::ProtoObject* c, int depth) -> bool {
+                        if (!c || c == PROTO_NONE || depth > 32) return false;
+                        if (c == env->getModulePrototype()) return true;
+                        const proto::ProtoObject* basesAttr = c->getAttribute(context, env->getBasesString());
+                        const proto::ProtoTuple* basesT = basesAttr ? basesAttr->asTuple(context) : nullptr;
+                        if (!basesT) return false;
+                        for (unsigned long bi = 0; bi < basesT->getSize(context); ++bi) {
+                            if (walk(basesT->getAt(context, static_cast<int>(bi)), depth + 1)) return true;
+                        }
+                        return false;
+                    };
+                if (tp && walk(tp, 0)) exemptModule = true;
+            }
+            bool reject = !exemptModule && (isInitOverridden || !isNewOverridden);
+            if (reject) {
                 if (env) {
-                    std::string msg = clsName.empty()
-                        ? std::string("object.__init__() takes exactly one argument")
-                        : (clsName + ".__init__() takes exactly one argument (the instance to initialize)");
+                    // CPython has two distinct messages here — pick the
+                    // one whose check would have fired first.
+                    std::string msg;
+                    if (isInitOverridden) {
+                        msg = "object.__init__() takes exactly one argument (the instance to initialize)";
+                    } else {
+                        msg = clsName.empty()
+                            ? std::string("object.__init__() takes exactly one argument")
+                            : (clsName + ".__init__() takes exactly one argument (the instance to initialize)");
+                    }
                     env->raiseTypeError(context, msg);
                 }
                 return nullptr;
             }
-        } else {
             if (get_env_diag()) {
-                 fprintf(stderr, "DEBUG: py_object_init IGNORING args for class '%s' (new_over=%d, init_over=%d)\n", clsName.c_str(), isNewOverridden, isInitOverridden);
+                fprintf(stderr, "DEBUG: py_object_init ACCEPTING extras for class '%s' (new_over=%d, init_over=%d, exempt_module=%d)\n",
+                        clsName.c_str(), isNewOverridden, isInitOverridden, exemptModule);
             }
         }
     }
