@@ -229,19 +229,17 @@ def _fmt_ratio(num, den):
     return f"{r:>5.2f}{suffix}"
 
 
-# Benchmarks excluded from the geomean.  Their ratio against CPython is
-# not a meaningful "is the runtime fast?" signal:
-#
-# * memory_pressure: protoCore deliberately defers garbage collection
-#   until the working set forces it (concurrent GC with a tiny
-#   stop-the-world window).  The workload's wall time is dominated by
-#   how the runtime SCHEDULES collection, not by how fast it executes
-#   user code, and the ratio is therefore an indicator of memory
-#   policy under stress — not a like-for-like comparison with CPython's
-#   reference-counted, eager-deallocation model.  We still report the
-#   number for transparency but flag it as INFO and leave it out of the
-#   geomean.
-GEOMEAN_EXCLUDE = {"memory_pressure"}
+# Benchmarks excluded from the geomean.  Set is empty by default; the
+# entry that used to live here was `memory_pressure`, kept out while a
+# missing GC handshake in compiled code made its ratio against CPython
+# reflect GC scheduling rather than throughput (working-set blow-up
+# to 1366 MB / 188x CPython on the affected report).  Once protopyc
+# started emitting `ctx->safepoint()` at every loop iteration, the GC
+# could run cooperatively while a compiled worker was hot, the working
+# set collapsed (1366 MB -> 45 MB) and the ratio fell to ~2x CPython —
+# i.e. an actual workload comparison again, so the row rejoins the
+# geomean.
+GEOMEAN_EXCLUDE = set()
 
 
 def format_report(results):
@@ -261,11 +259,10 @@ def format_report(results):
         "* **protopyc** — protoPython AOT-compiled to C++ via `protopyc --build-so`, loaded as a shared object.",
         "",
         "Ratios are protoPython-mode / CPython-time: <1.0 = faster than CPython, >1.0 = slower.",
-        "Rows tagged `[INFO]` are reported for transparency but do NOT participate in the geomean — see the report footer.",
-        "",
-        header,
-        sep,
     ]
+    if GEOMEAN_EXCLUDE:
+        lines.append("Rows tagged `[INFO]` are reported for transparency but do NOT participate in the geomean — see the report footer.")
+    lines.extend(["", header, sep])
 
     py_ratios = []
     pc_ratios = []

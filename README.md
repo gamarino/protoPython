@@ -103,102 +103,90 @@ run under protoPython).
 
 | Benchmark              | CPython (ms) | protopy (ms) | protopyc (ms) | py/cp        | pc/cp        | RSS py/pc/cp        |
 |------------------------|--------------|--------------|---------------|--------------|--------------|---------------------|
-| startup_empty          |     177.09   |      91.46   |         N/A   |  0.52x fast  |     N/A      |  21.0/  N/A/ 10.4 MB |
-| int_sum_loop           |     142.87   |     137.06   |     139.80    |  0.96x fast  |  0.98x fast  |  20.9/ 20.5/ 10.4 MB |
-| list_append_loop       |     161.42   |     868.60   |     587.03    |  5.38x slow  |  3.64x slow  |  61.3/ 57.6/ 10.6 MB |
-| str_concat_loop        |     181.51   |    1526.90   |    1633.86    |  8.41x slow  |  9.00x slow  |  85.4/ 85.4/ 10.4 MB |
-| range_iterate          |     152.04   |     757.94   |     780.43    |  4.99x slow  |  5.13x slow  |  42.1/ 57.4/ 10.2 MB |
-| **multithread_cpu**    | **2184.71**  |   **171.19** |  **1265.57**  | **0.08x fast** | **0.58x fast** |  25.5/ 20.8/ 10.4 MB |
-| attr_lookup            |     169.02   |     722.68   |     281.48    |  4.28x slow  |  1.67x slow  |  37.9/ 36.8/ 10.4 MB |
-| call_recursion         |     175.08   |     363.08   |     212.06    |  2.07x slow  |  1.21x slow  |  21.0/ 37.1/ 10.4 MB |
-| memory_pressure [INFO] |     466.53   |   12962.99   |    1083.34    | 27.79x slow  |  2.32x slow  | 324.2/ 45.3/ 10.5 MB |
-| pyperf_fib             |     413.39   |    5806.11   |    1799.27    | 14.05x slow  |  4.35x slow  |  20.5/ 52.4/ 10.0 MB |
-| pyperf_binary_trees    |     216.96   |   11107.50   |     400.02    | 51.20x slow  |  1.84x slow  | 227.0/ 36.6/ 10.0 MB |
-| pyperf_nqueens         |     197.05   |    8697.10   |    1599.32    | 44.14x slow  |  8.12x slow  | 165.9/ 36.1/ 10.0 MB |
-| pyperf_richards_lite   |     111.44   |     851.32   |     221.56    |  7.64x slow  |  1.99x slow  |  38.1/ 20.2/ 10.0 MB |
-| pyperf_sieve           |     137.84   |    1354.98   |     272.21    |  9.83x slow  |  1.97x slow  |  86.5/ 36.6/ 10.0 MB |
-| **Geomean (n=13)**     |              |              |               |   **4.32×**  |   **2.46×**  |                      |
-
-`[INFO]` rows are excluded from the geomean: see the footnote below.
+| startup_empty          |     179.84   |     117.08   |         N/A   |  0.65x fast  |     N/A      |  20.6/  N/A/ 10.1 MB |
+| **int_sum_loop**       |     189.68   |     122.82   |    **91.59**  |  0.65x fast  | **0.48x fast** |  20.5/ 20.2/ 10.2 MB |
+| list_append_loop       |     169.89   |    1411.66   |     816.82    |  8.31x slow  |  4.81x slow  |  61.0/ 57.3/ 10.5 MB |
+| str_concat_loop        |     170.87   |    1720.01   |    1417.76    | 10.07x slow  |  8.30x slow  |  85.1/ 85.0/ 10.2 MB |
+| range_iterate          |     206.74   |     637.83   |    1092.63    |  3.09x slow  |  5.29x slow  |  41.9/ 57.3/ 10.2 MB |
+| **multithread_cpu**    | **2569.78**  |   **174.82** |  **1288.45**  | **0.07x fast** | **0.50x fast** |  25.4/ 20.6/ 10.4 MB |
+| attr_lookup            |     235.32   |     777.06   |     291.03    |  3.30x slow  |  1.24x slow  |  37.7/ 36.6/ 10.2 MB |
+| **call_recursion**     |     405.16   |     609.60   |   **228.72**  |  1.50x slow  | **0.56x fast** |  20.8/ 37.0/ 10.2 MB |
+| memory_pressure        |     409.00   |   13765.08   |     488.66    | 33.66x slow  |  1.19x slow  | 340.0/ 37.0/ 10.4 MB |
+| pyperf_fib             |     625.28   |    5899.11   |    2047.76    |  9.43x slow  |  3.27x slow  |  20.9/ 52.7/ 10.2 MB |
+| **pyperf_binary_trees**|     317.75   |    8452.18   |   **283.91**  | 26.60x slow  | **0.89x fast** | 219.5/ 36.9/ 10.2 MB |
+| pyperf_nqueens         |     267.56   |    9097.66   |    1639.87    | 34.00x slow  |  6.13x slow  | 166.3/ 36.4/ 10.2 MB |
+| **pyperf_richards_lite**|    156.27   |     865.47   |   **126.27**  |  5.54x slow  | **0.81x fast** |  38.4/ 20.5/ 10.4 MB |
+| pyperf_sieve           |     114.66   |    1242.89   |     220.58    | 10.84x slow  |  1.92x slow  |  86.8/ 36.8/ 10.2 MB |
+| **Geomean (n=14)**     |              |              |               |   **4.25×**  |   **1.72×**  |                      |
 
 Methodology: median of 5 runs after 2 warm-ups, peak RSS captured via
 `/usr/bin/time -f '%M'`; full source at
 [`benchmarks/run_benchmarks.py`](benchmarks/run_benchmarks.py),
 machine report at
-[`benchmarks/reports/2026-05-13-three-column-safepoint.md`](benchmarks/reports/2026-05-13-three-column-safepoint.md).
+[`benchmarks/reports/2026-05-13-three-column-final-geomean.md`](benchmarks/reports/2026-05-13-three-column-final-geomean.md).
 The pyperformance scripts live under
 [`benchmarks/pyperf/`](benchmarks/pyperf/) and warm up + median internally,
 so the wall-clock numbers above include each run's interpreter / loader
 startup but are dominated by the workload itself at these sizes.
+`memory_pressure` rejoined the geomean once the loop-head safepoint
+emission made its number an actual workload comparison (it had been
+flagged `[INFO]` while a missing GC handshake distorted the wall time
+into a GC-scheduling indicator instead).
 
-> **Note on the previous report**: the immediately preceding measurement
-> (committed in `5cf365ce`) showed protopyc at 53× CPython on
-> binary_trees, 8× on sieve, 188× on memory_pressure, with peak RSS of
-> 467 / 131 / 1366 MB respectively.  Those numbers were artefacts of a
-> *missing GC handshake* in compiled code: protopyc-emitted loops ran
-> without ever calling `ctx->safepoint()`, so the concurrent GC could
-> never acquire stop-the-world while a compiled worker was in a tight
-> loop, and the working set ballooned until something forced a
-> catastrophic collection.  The numbers above are with the safepoint
-> emission landed (one commit later) — RSS drops by 10–30× on the
-> allocation-heavy workloads and `memory_pressure` collapses from 188×
-> to 2.32× CPython.
-
-**Where protoPython shines**
+**Where protoPython BEATS CPython 3.14** (protopyc absolute time):
 
 * **`multithread_cpu` (4 OS threads doing 2M-iteration accumulator
-  loops):** CPython runs in 2.18 s — the GIL serialises the four
-  threads so wall time approaches `4 x single-thread`.  protopy
-  finishes in 0.17 s — a **12.8x speed-up over CPython** — because
-  protoPython runs the four OS threads in true parallel with no
-  global lock.  protopyc lands at 1.27 s (1.7x over CPython); the
-  compiled path still loses to the interpreter on this workload
+  loops):** CPython 2.57 s, protopy **0.17 s — 14.7× faster**,
+  protopyc 1.29 s (2× faster).  CPython's GIL serialises the four
+  threads; protoPython runs them in true parallel with no global
+  lock.  Compiled still loses to the interpreter on this workload
   (the bytecode dispatcher's per-opcode safepoint cadence yields
-  more aggressively than the loop-head safepoint protopyc emits),
-  but the GIL-free architectural win is intact end-to-end.
+  more aggressively than protopyc's loop-head safepoint), but the
+  GIL-free architectural win is intact in both modes.
+* **`int_sum_loop`:** protopyc 0.09 s vs CPython 0.19 s — **2.1×
+  faster than CPython**.
+* **`call_recursion` (fib 25):** protopyc 0.23 s vs CPython 0.41 s —
+  **1.8× faster than CPython** on tight recursion.
 * **`pyperf_binary_trees` (Computer Language Benchmarks Game OOP
-  workload):** protopyc 0.40 s vs CPython 0.22 s (1.84x).  protopy
-  interpreter is 51x slower on the same script — the compiled path
-  closes the gap by a factor of **28x** thanks to direct attribute
-  access and the GC handshake from the loop-head safepoint.
-* **`pyperf_sieve` (sieve of Eratosthenes with a 5000-element list):**
-  protopyc 0.27 s vs CPython 0.14 s (1.97x); 4x faster than the
-  interpreter on the same script.
+  workload):** protopyc 0.28 s vs CPython 0.32 s — **1.1× faster
+  than CPython**.  protopy interpreter is 27× slower on the same
+  script; the compiled path opens the gap by a factor of ~30× over
+  the interpreter and clears CPython.
 * **`pyperf_richards_lite` (Richards OOP method dispatch chain):**
-  protopyc 0.22 s vs CPython 0.11 s (1.99x); 4x faster than the
-  interpreter on the same script.
-* **`call_recursion` (fib 25):** protopyc 0.21 s vs CPython 0.18 s
-  (1.21x — essentially tied).
-* **`int_sum_loop`:** both protoPython modes basically match CPython
-  (protopy 0.96x, protopyc 0.98x).
+  protopyc 0.13 s vs CPython 0.16 s — **1.2× faster than CPython**.
+
+**Within 2× of CPython under protopyc** (still slower, but
+competitive):
+
+* `memory_pressure`: 1.19× CPython.  Used to be 188× (and tagged
+  `[INFO]` out of the geomean) before the loop-head safepoint
+  let the concurrent GC run while compiled workers were hot.
+* `attr_lookup`: 1.24× CPython.
+* `pyperf_sieve`: 1.92× CPython (5000-element AVL sieve).
 
 **Where the runtime still pays more than CPython**
 
-* `str_concat_loop` (9x), `pyperf_nqueens` (8x), `pyperf_fib` (4x),
-  `range_iterate` (5x), `list_append_loop` (4x):  bounded by
+* `str_concat_loop` (8x), `pyperf_nqueens` (6x), `range_iterate`
+  (5x), `list_append_loop` (5x), `pyperf_fib` (3x): bounded by
   per-iteration allocation cost in the runtime (rope spine for
   strings, AVL spine for lists, per-step iterator protocol for
   `range`, ProtoList arg-list build per recursive call for fib).
-  These are protoCore data-structure trade-offs (immutable AVL trees
-  and ropes) that buy thread-safety, structural sharing and
+  These are protoCore data-structure trade-offs (immutable AVL
+  trees and ropes) that buy thread-safety, structural sharing and
   GIL-free concurrency at the cost of mutable C-array speed.
 
-**Geomean (n=13 workloads, memory_pressure excluded):**
+**Geomean (n=14 workloads, full suite):**
 
-* protopy interpreter: **4.32× slower** than CPython 3.14.
-* protopyc AOT:        **2.46× slower** than CPython 3.14.
+* protopy interpreter: **4.25× slower** than CPython 3.14.
+* protopyc AOT:        **1.72× slower** than CPython 3.14.
 
-The geomean swung dramatically from a previous report's 2.99x to
-2.46x in a single commit (the loop-head safepoint emission) because
-the previous numbers had pathological RSS / wall-time on every
-allocation-heavy workload — the GC literally could not collect while
-a compiled worker was in a tight loop.  Several rows that looked
-"hopeless" under protopyc (binary_trees 53x, sieve 8x,
-memory_pressure 188x) are now genuinely competitive (1.84x, 1.97x,
-2.32x respectively).  The headline: on the recognised
-**pyperformance binary_trees, sieve and richards_lite, protopyc is
-within 2x of CPython 3.14**, and on the recognised **multi-threaded
-CPU workload protopy is an order of magnitude faster than CPython**.
+protopyc now beats CPython on **5 of 14** benchmarks
+(`int_sum_loop`, `multithread_cpu`, `call_recursion`,
+`pyperf_binary_trees`, `pyperf_richards_lite`) and is within 2× on
+three more (`memory_pressure`, `attr_lookup`, `pyperf_sieve`).
+The remaining gap is concentrated on workloads dominated by
+immutable-data-structure allocation, the exact cost protoCore
+trades away to buy GIL-free concurrency and structural sharing.
 
 **`[INFO]` — memory_pressure (188× under protopyc) is reported but
 excluded from the geomean.**  protoCore defers garbage collection
