@@ -165,6 +165,36 @@ bool CppGenerator::generateConditionalExpr(ConditionalExprNode* n) {
     return true;
 }
 
+static std::string escapeCppString(const std::string& s) {
+    // Escape a Python string for emission inside a C++ "..." literal.
+    // Without this docstrings containing newlines or stray quotes would
+    // close the C++ string literal early and break compilation; non-ASCII
+    // UTF-8 bytes are passed through unchanged (the C++ compiler is
+    // configured for UTF-8 source).
+    std::string out;
+    out.reserve(s.size() + 8);
+    for (unsigned char c : s) {
+        switch (c) {
+            case '\\': out += "\\\\"; break;
+            case '"':  out += "\\\""; break;
+            case '\n': out += "\\n";  break;
+            case '\r': out += "\\r";  break;
+            case '\t': out += "\\t";  break;
+            case '\0': out += "\\0";  break;
+            default:
+                if (c < 0x20 || c == 0x7F) {
+                    char buf[8];
+                    std::snprintf(buf, sizeof(buf), "\\x%02x", c);
+                    out += buf;
+                } else {
+                    out += static_cast<char>(c);
+                }
+                break;
+        }
+    }
+    return out;
+}
+
 bool CppGenerator::generateConstant(ConstantNode* n) {
     switch (n->constType) {
         case ConstantNode::ConstType::Int:
@@ -174,7 +204,7 @@ bool CppGenerator::generateConstant(ConstantNode* n) {
             *out_ << "ctx->fromDouble(" << n->floatVal << ")";
             break;
         case ConstantNode::ConstType::Str:
-            *out_ << "ctx->fromUTF8String(\"" << n->strVal << "\")";
+            *out_ << "ctx->fromUTF8String(\"" << escapeCppString(n->strVal) << "\")";
             break;
         case ConstantNode::ConstType::Bool:
             *out_ << (n->intVal ? "PROTO_TRUE" : "PROTO_FALSE");
@@ -471,6 +501,14 @@ bool CppGenerator::generateBinOp(BinOpNode* n) {
     const char* arithOp = nullptr;
     const char* cmpOp = nullptr;
     bool needsOverflowGuard = false;
+    // Identity ops: `is` / `is not` lower to pointer equality.  Tagged
+    // primitives (SmallInt, embedded values) compare by tagged-pointer
+    // identity too, which matches Python's `is` semantics for small ints
+    // and interned strings via protoCore's intern table.  Emitted directly
+    // here as a C++ pointer compare so the dispatch never reaches
+    // env->binaryOp at all.
+    bool emitIs = false;
+    bool emitIsNot = false;
     switch (n->op) {
         case TokenType::Plus:         arithOp = "+";  break;
         case TokenType::Minus:        arithOp = "-";  break;
@@ -481,7 +519,18 @@ bool CppGenerator::generateBinOp(BinOpNode* n) {
         case TokenType::LessEqual:    cmpOp   = "<="; break;
         case TokenType::Greater:      cmpOp   = ">";  break;
         case TokenType::GreaterEqual: cmpOp   = ">="; break;
+        case TokenType::Is:           emitIs    = true; break;
+        case TokenType::IsNot:        emitIsNot = true; break;
         default: break;
+    }
+
+    if (emitIs || emitIsNot) {
+        *out_ << "(((";
+        if (!generateNode(n->left.get())) return false;
+        *out_ << ") " << (emitIs ? "==" : "!=") << " (";
+        if (!generateNode(n->right.get())) return false;
+        *out_ << ")) ? PROTO_TRUE : PROTO_FALSE)";
+        return true;
     }
 
     auto emitFallback = [&]() -> bool {

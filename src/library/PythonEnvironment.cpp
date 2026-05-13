@@ -22655,6 +22655,12 @@ const proto::ProtoObject* PythonEnvironment::binaryOp(const proto::ProtoObject* 
             case TokenType::Star: return ctx->fromInteger(av * bv);
             case TokenType::Slash: return (bv != 0) ? ctx->fromDouble((double)av / bv) : (raiseZeroDivisionError(ctx), PROTO_NONE);
             case TokenType::Modulo: return (bv != 0) ? ctx->fromInteger(av % bv) : (raiseZeroDivisionError(ctx), PROTO_NONE);
+            case TokenType::DoubleSlash: return (bv != 0) ? ctx->fromInteger(av / bv) : (raiseZeroDivisionError(ctx), PROTO_NONE);
+            case TokenType::LShift: return ctx->fromInteger(av << bv);
+            case TokenType::RShift: return ctx->fromInteger(av >> bv);
+            case TokenType::BitAnd: return ctx->fromInteger(av & bv);
+            case TokenType::BitOr:  return ctx->fromInteger(av | bv);
+            case TokenType::BitXor: return ctx->fromInteger(av ^ bv);
             default: break;
         }
     } else if (a->isDouble(ctx) || b->isDouble(ctx)) {
