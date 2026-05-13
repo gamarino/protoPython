@@ -7392,13 +7392,19 @@ static const proto::ProtoObject* py_classmethod(
             }
             cm->setAttribute(context, annS, ann);
         }
-        static const char* const fwd[] = {
-            "__name__", "__qualname__", "__module__", "__wrapped__", nullptr
-        };
-        for (int i = 0; fwd[i]; ++i) {
-            const proto::ProtoString* k = PythonEnvironment::getInternedString(context, fwd[i]);
-            if (func->hasOwnAttribute(context, k) == PROTO_TRUE) {
-                const proto::ProtoObject* v = func->getOwnAttributeDirect(context, k);
+        // Same wrapped-is-function gate as py_staticmethod — forward
+        // the introspection names only when the wrapped value carries
+        // __code__.  Built-in primitives don't, and forwarding their
+        // class-level __name__ etc. would leak into cm.__dict__.
+        const proto::ProtoString* codeS = PythonEnvironment::getInternedString(context, "__code__");
+        bool wrappedIsFunction = func && (func->hasAttribute(context, codeS) == PROTO_TRUE);
+        if (wrappedIsFunction) {
+            static const char* const fwd[] = {
+                "__name__", "__qualname__", "__module__", "__wrapped__", nullptr
+            };
+            for (int i = 0; fwd[i]; ++i) {
+                const proto::ProtoString* k = PythonEnvironment::getInternedString(context, fwd[i]);
+                const proto::ProtoObject* v = func->getAttribute(context, k);
                 if (v && v != PROTO_NONE) cm->setAttribute(context, k, v);
             }
         }
@@ -7533,22 +7539,24 @@ static const proto::ProtoObject* py_staticmethod(
             }
             sm->setAttribute(context, annS, ann);
         }
-        // The rest (`__name__`, `__qualname__`, `__module__`) only land
-        // on the staticmethod instance if the wrapped FUNCTION ITSELF
-        // owns them (not via inheritance through the function's class).
-        // CPython's staticmethod descriptor reads these from __func__
-        // dynamically; mirror that by forwarding only own attributes.
-        // Without the own-attribute gate, `staticmethod(None).__dict__`
-        // included `__qualname__='NoneType'` and `__module__='builtins'`
-        // — both inherited from NoneType — which test_descr line 1823
-        // explicitly checks against.
-        static const char* const fwd[] = {
-            "__name__", "__qualname__", "__module__", "__wrapped__", nullptr
-        };
-        for (int i = 0; fwd[i]; ++i) {
-            const proto::ProtoString* k = PythonEnvironment::getInternedString(context, fwd[i]);
-            if (func->hasOwnAttribute(context, k) == PROTO_TRUE) {
-                const proto::ProtoObject* v = func->getOwnAttributeDirect(context, k);
+        // The rest (`__name__`, `__qualname__`, `__module__`) land on the
+        // staticmethod instance only when the wrapped value is a real
+        // FUNCTION (carries `__code__`).  CPython's staticmethod
+        // descriptor reads them through __func__ dynamically; we mirror
+        // that by forwarding when the wrapped value looks like a
+        // function, but not when it's a built-in primitive (None, int,
+        // str, …) whose `__name__` would otherwise leak from the type
+        // — `staticmethod(None).__dict__` then incorrectly carried
+        // `__qualname__='NoneType'` and `__module__='builtins'`.
+        const proto::ProtoString* codeS = PythonEnvironment::getInternedString(context, "__code__");
+        bool wrappedIsFunction = func && (func->hasAttribute(context, codeS) == PROTO_TRUE);
+        if (wrappedIsFunction) {
+            static const char* const fwd[] = {
+                "__name__", "__qualname__", "__module__", "__wrapped__", nullptr
+            };
+            for (int i = 0; fwd[i]; ++i) {
+                const proto::ProtoString* k = PythonEnvironment::getInternedString(context, fwd[i]);
+                const proto::ProtoObject* v = func->getAttribute(context, k);
                 if (v && v != PROTO_NONE) sm->setAttribute(context, k, v);
             }
         }

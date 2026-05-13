@@ -1209,21 +1209,31 @@ static const proto::ProtoObject* py_object_get_dict(
                     if (!keyObj || !keyObj->isString(ctx)) return;
                     const proto::ProtoString* ks = keyObj->asString(ctx);
                     std::string nm; ks->toUTF8String(ctx, nm);
-                    // Skip the built-in storage and class hooks.
+                    // Always skip the runtime's own internal storage —
+                    // these never belong in any user-visible __dict__.
                     if (nm == "__data__" || nm == "__keys__"
                         || nm == "__pydict_data__" || nm == "__pydict_keys__"
-                        || nm == "__class__" || nm == "__is_python_class__"
-                        || nm == "__name__" || nm == "__bases__"
-                        || nm == "__mro__") return;
-                    // staticmethod / classmethod: also strip the wrapper-
-                    // internal storage names (`func`, `__func__`,
-                    // `__wrapped__`, `__annotations__`) — they're needed
-                    // on the instance for attribute access but never
-                    // appear in CPython's instance dict (CPython exposes
-                    // them through type-level descriptors).
+                        || nm == "__is_python_class__") return;
                     if (s->stripWrapperInternals) {
-                        if (nm == "func" || nm == "__func__" || nm == "__wrapped__"
-                            || nm == "__annotations__") return;
+                        // staticmethod / classmethod: hide the wrapper-
+                        // internal storage names (`func`, `__func__`,
+                        // `__wrapped__`, `__annotations__`, `__class__`)
+                        // — they're needed on the instance for attribute
+                        // access but never appear in CPython's instance
+                        // dict.  KEEP `__name__`, `__module__`,
+                        // `__qualname__`, `__doc__` — those ARE part of
+                        // the user-visible wrapper dict per CPython
+                        // (e.g. classmethod(f).__dict__ contains
+                        // `__name__: 'f'`).
+                        if (nm == "func" || nm == "__func__"
+                            || nm == "__wrapped__" || nm == "__annotations__"
+                            || nm == "__class__") return;
+                    } else {
+                        // Built-in subclass snapshot: hide the class-shape
+                        // attributes the instance shouldn't surface in its
+                        // own __dict__ (they belong to the type).
+                        if (nm == "__class__" || nm == "__name__"
+                            || nm == "__bases__" || nm == "__mro__") return;
                     }
                     s->dl = s->dl->setAt(ctx, ks->getHash(ctx), val);
                     if (!s->kl->has(ctx, keyObj)) {
