@@ -1054,6 +1054,77 @@ static const proto::ProtoObject* py_object_get_dict(
         return proxy;
     }
 
+    // CPython __slots__ semantics: an instance of `class C: __slots__ = []`
+    // (and similar — every base in the MRO declares __slots__ and none of
+    // them includes the literal '__dict__') has NO `__dict__` attribute.
+    // Attempting to read it raises AttributeError.
+    //
+    // Rule: walk type(self).__mro__.  If every base (other than object)
+    // owns its own `__slots__` AND none of those slots-tuples contains
+    // the string `'__dict__'`, the instance is "dict-less" and we must
+    // raise AttributeError here.  Any single base without an own
+    // `__slots__` (or that declares __dict__ as a slot) re-introduces
+    // a per-instance dict.
+    //
+    // test_descr.test_slots line 1109 is the canonical reproducer:
+    //   class C0(object):
+    //       __slots__ = []
+    //   x = C0()
+    //   self.assertNotHasAttr(x, "__dict__")
+    {
+        const proto::ProtoObject* cls = env->getType(context, self);
+        if (cls && cls != PROTO_NONE && cls != env->getObjectPrototype()) {
+            const proto::ProtoObject* mroAttr = cls->getAttribute(context, env->getMroString());
+            const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
+            const proto::ProtoString* slotsS = env->getSlotsString();
+            const proto::ProtoString* dictS = PythonEnvironment::getInternedString(context, "__dict__");
+            bool allBasesHaveStrictSlots = true;
+            bool slotsExposeDict = false;
+            unsigned long bases = mroT ? mroT->getSize(context) : 0;
+            // A class without any MRO falls through to "has dict" — be
+            // conservative; only enforce strict-slots when we can walk
+            // the MRO entirely.
+            if (bases == 0) allBasesHaveStrictSlots = false;
+            for (unsigned long i = 0; i < bases && allBasesHaveStrictSlots; ++i) {
+                const proto::ProtoObject* base = mroT->getAt(context, static_cast<int>(i));
+                if (!base || base == PROTO_NONE) continue;
+                if (base == env->getObjectPrototype()) continue;  // object adds no slots semantically
+                if (base->hasOwnAttribute(context, slotsS) != PROTO_TRUE) {
+                    // A base without own __slots__ contributes a __dict__.
+                    allBasesHaveStrictSlots = false;
+                    break;
+                }
+                // Inspect the slots tuple/list for an explicit '__dict__'.
+                const proto::ProtoObject* slotsVal = base->getOwnAttributeDirect(context, slotsS);
+                if (slotsVal && slotsVal != PROTO_NONE) {
+                    auto checkSlotName = [&](const proto::ProtoObject* nm) {
+                        if (nm && nm->isString(context)) {
+                            std::string sn; nm->asString(context)->toUTF8String(context, sn);
+                            if (sn == "__dict__") slotsExposeDict = true;
+                        }
+                    };
+                    if (const proto::ProtoTuple* t = slotsVal->asTuple(context)) {
+                        for (unsigned long si = 0; si < t->getSize(context); ++si) {
+                            checkSlotName(t->getAt(context, static_cast<int>(si)));
+                        }
+                    } else if (const proto::ProtoList* l = slotsVal->asList(context)) {
+                        for (unsigned long si = 0; si < l->getSize(context); ++si) {
+                            checkSlotName(l->getAt(context, static_cast<int>(si)));
+                        }
+                    } else if (slotsVal->isString(context)) {
+                        // CPython accepts a single string as __slots__.
+                        std::string sn; slotsVal->asString(context)->toUTF8String(context, sn);
+                        if (sn == "__dict__") slotsExposeDict = true;
+                    }
+                }
+            }
+            if (allBasesHaveStrictSlots && !slotsExposeDict) {
+                env->raiseAttributeError(context, self, std::string("__dict__"));
+                return nullptr;
+            }
+        }
+    }
+
     // Instances have a mutable dict.
     // PI: The returned dict is now a true write-through proxy.  Its
     // __setitem__ / __delitem__ delegate to env->setAttribute /
