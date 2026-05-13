@@ -1241,6 +1241,34 @@ static const proto::ProtoObject* py_repr(
         return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
     }
     if (obj->isString(context)) {
+        // Honour subclass __repr__ before the literal-string fast path —
+        // `class S(str): def __repr__(self): return self + " r"` is a
+        // common pattern (test_descr.test_str_of_str_subclass).  Mirror
+        // the int subclass branch above: when type(obj) is not the
+        // canonical str prototype, dispatch through the descriptor
+        // protocol.
+        protoPython::PythonEnvironment* env_pe = protoPython::PythonEnvironment::fromContext(context);
+        if (env_pe && env_pe->getStrPrototype()) {
+            const proto::ProtoObject* cls = env_pe->getType(context, obj);
+            if (cls && cls != env_pe->getStrPrototype()) {
+                const proto::ProtoString* reprS = env_pe->getReprString();
+                const proto::ProtoObject* reprM = cls->getAttribute(context, reprS);
+                if (reprM && reprM != PROTO_NONE) {
+                    if (reprM->asMethod(context)) {
+                        const proto::ProtoObject* res = reprM->asMethod(context)(context,
+                            const_cast<proto::ProtoObject*>(obj), nullptr, context->newList(), nullptr);
+                        if (res && res->isString(context)) return res;
+                    } else {
+                        const proto::ProtoString* codeS = env_pe->getCodeString();
+                        if (codeS && reprM->hasOwnAttribute(context, codeS) == PROTO_TRUE) {
+                            const proto::ProtoList* selfArgs = context->newList()->appendLast(context, obj);
+                            const proto::ProtoObject* res = ::protoPython::invokePythonCallable(context, reprM, selfArgs, nullptr);
+                            if (res && res->isString(context)) return res;
+                        }
+                    }
+                }
+            }
+        }
         std::string s;
         obj->asString(context)->toUTF8String(context, s);
         std::string out = "'";
