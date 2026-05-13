@@ -1,17 +1,38 @@
 #!/usr/bin/env python3
 """
-Benchmark harness for protoPython vs CPython.
-Runs workloads N times, records median wall time.
-Usage: PROTOPY_BIN=/path/to/protopy python3 run_benchmarks.py [--output reports/YYYY-MM-DD.md]
-       CPYTHON_BIN=python3.14 (optional, default python3)
+Benchmark harness for protoPython vs CPython, three-column edition.
+
+For every workload we measure three execution modes:
+
+* **CPython** — the system interpreter (reference).
+* **protopy** — protoPython source → AST → bytecode → ExecutionEngine,
+  the same path users run interactively.
+* **protopyc** — protoPython compiled via the AOT pipeline:
+  `protopyc <file>.py --build-so` produces a `module.so` that
+  `run_module` loads through `dlopen` + `proto_module_init`.
+
+The protopyc column captures only benchmarks the compiler can lower
+correctly; modules that fail to build (e.g. relying on features the
+compiler does not yet emit) report N/A for that column without
+affecting the CPython / protopy comparison.
+
+Usage:
+  PROTOPY_BIN=/path/to/protopy \\
+  PROTOPYC_BIN=/path/to/protopyc \\
+  RUN_MODULE_BIN=/path/to/run_module \\
+  python3 run_benchmarks.py [--output reports/YYYY-MM-DD.md]
+
+Optional env: CPYTHON_BIN=python3.14, LD_LIBRARY_PATH_BENCH=extra:paths.
 """
 
 import argparse
 import math
 import os
 import platform
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,7 +59,7 @@ def median(lst):
 def run_cmd(cmd, cwd=None, timeout=60, stderr_file=None, env=None, verbose=False):
     """Run command; return (elapsed_ms, returncode, timed_out, peak_rss_kb)."""
     # Use /usr/bin/time -f "%M" to get peak RSS in KB
-    time_cmd = ["/usr/bin/time", "-f", "%M"] + cmd
+    time_cmd = ["/usr/bin/time", "-f", "%M"] + list(cmd)
     start = time.perf_counter()
     stderr_handle = None
     is_protopy = cmd and "protopy" in os.path.basename(cmd[0])
@@ -92,68 +113,195 @@ def _script_paths(script_path):
     return rel, str(script.resolve())
 
 
-def bench_generic(name, script_name, protopy_bin, cpython_bin, timeout=60, trace_file=None, verbose=False):
-    """Generic benchmark runner."""
+def compile_protopyc(script, protopyc_bin, work_dir, lib_env, verbose=False):
+    """Compile `script` (a .py path) into work_dir/module.so via protopyc.
+
+    Returns the path to module.so on success, None on failure.  Build output
+    is captured for the caller's verbose mode; the directory is left
+    populated so a follow-up `run_module` call can `dlopen` the .so."""
+    work_dir = Path(work_dir)
+    work_dir.mkdir(parents=True, exist_ok=True)
+    dst = work_dir / Path(script).name
+    shutil.copyfile(script, dst)
+    so_path = work_dir / "module.so"
+    if so_path.exists():
+        so_path.unlink()
+    try:
+        proc = subprocess.run(
+            [protopyc_bin, str(dst), "--build-so"],
+            cwd=str(work_dir),
+            env={**os.environ, **lib_env},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired:
+        if verbose:
+            print(f"    protopyc build TIMEOUT for {script.name}", flush=True)
+        return None
+    if proc.returncode != 0 or not so_path.exists():
+        if verbose:
+            print(f"    protopyc build FAILED for {script.name}: rc={proc.returncode}", flush=True)
+            tail = (proc.stderr or proc.stdout or "")[-400:]
+            if tail:
+                print(f"      {tail}", flush=True)
+        return None
+    return so_path
+
+
+def bench_generic(name, script_name, protopy_bin, cpython_bin,
+                  protopyc_bin=None, run_module_bin=None, lib_env=None,
+                  timeout=60, trace_file=None, verbose=False):
+    """Generic benchmark runner.  Returns a dict with optional times and RSS
+    per mode — keys protopy/cpython/protopyc map to (median_ms, median_rss_kb)
+    or to None when that mode is unavailable / failed / timed out."""
     script = SCRIPT_DIR / script_name
     if not script.exists():
-        return None, None, None, None
+        return {"protopy": None, "cpython": None, "protopyc": None}
     script_protopy, script_cpy = _script_paths(script)
-    times_p, times_c = [], []
-    rss_p, rss_c = [], []
-    
+    lib_env = lib_env or {}
+
+    # Try compiling for protopyc up front; subsequent runs reuse the .so.
+    so_path = None
+    if protopyc_bin and run_module_bin:
+        work_dir = Path(tempfile.mkdtemp(prefix=f"protopyc_bench_{name}_"))
+        so_path = compile_protopyc(script, protopyc_bin, work_dir, lib_env, verbose=verbose)
+
+    times_p, times_c, times_pc = [], [], []
+    rss_p, rss_c, rss_pc = [], [], []
+
     for _ in range(WARMUP_RUNS):
         run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy], timeout=timeout, stderr_file=trace_file, verbose=verbose)
         run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
-    
+        if so_path:
+            run_cmd([run_module_bin, str(so_path)], cwd=str(so_path.parent),
+                    env=lib_env, timeout=timeout, verbose=verbose)
+
     for i in range(N_RUNS):
         if verbose: print(f"    {name} protopy {i+1}/{N_RUNS}:", end="")
         tp, _, to, rp = run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy], timeout=timeout, stderr_file=trace_file, verbose=verbose)
         if not to:
             times_p.append(tp)
             rss_p.append(rp)
-        
+
         if verbose: print(f"    {name} cpython {i+1}/{N_RUNS}:", end="")
         tc, _, to, rc = run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
         if not to:
             times_c.append(tc)
             rss_c.append(rc)
-            
-    return (median(times_p) if times_p else None, median(times_c) if times_c else None,
-            median(rss_p) if rss_p else None, median(rss_c) if rss_c else None)
+
+        if so_path:
+            if verbose: print(f"    {name} protopyc {i+1}/{N_RUNS}:", end="")
+            tpc, _, to, rpc = run_cmd(
+                [run_module_bin, str(so_path)],
+                cwd=str(so_path.parent),
+                env=lib_env,
+                timeout=timeout, verbose=verbose,
+            )
+            if not to:
+                times_pc.append(tpc)
+                rss_pc.append(rpc)
+
+    def pack(times, rss):
+        if not times:
+            return None
+        return (median(times), median(rss) if rss else None)
+
+    return {
+        "protopy":  pack(times_p,  rss_p),
+        "cpython":  pack(times_c,  rss_c),
+        "protopyc": pack(times_pc, rss_pc) if so_path else None,
+    }
+
+
+def _fmt_time(t):
+    if t is None:
+        return "        N/A"
+    return f"{t:>10.2f}"
+
+
+def _fmt_ratio(num, den):
+    if num is None or den is None or den <= 0:
+        return "    N/A   "
+    r = num / den
+    suffix = "x slow" if r >= 1 else "x fast"
+    return f"{r:>5.2f}{suffix}"
 
 
 def format_report(results):
+    """Render the markdown table.  Each result is a dict
+    {protopy: (t, rss), cpython: (...), protopyc: (...)} where each entry
+    may be None for an unavailable mode."""
+    header = "| Benchmark              | CPython (ms) | protopy (ms) | protopyc (ms) | py/cp        | pc/cp        | RSS py/pc/cp        |"
+    sep    = "|------------------------|--------------|--------------|---------------|--------------|--------------|---------------------|"
     lines = [
-        "```",
-        "┌──────────────────────────────────────────────────────────────────────────────────────┐",
-        "│ Performance Audit: protoPython vs CPython 3.14                                       │",
-        f"│ (median of {N_RUNS} runs, timeouts excluded)                                                │",
-        f"│ {datetime.now(timezone.utc).strftime('%Y-%m-%d')} {platform.system()} {platform.machine()}                                           │",
-        "├────────────────────────┬──────────────┬──────────────┬──────────────┬────────────────┤",
-        "│ Benchmark              │ Time P (ms)  │ Time C (ms)  │ Ratio        │ Peak RSS (P/C) │",
-        "├────────────────────────┼──────────────┼──────────────┼──────────────┼────────────────┤",
+        f"# protoPython performance audit — {datetime.now(timezone.utc).strftime('%Y-%m-%d')}",
+        "",
+        f"Platform: {platform.system()} {platform.machine()}, median of {N_RUNS} runs (timeouts excluded).",
+        "",
+        "Three execution modes per workload:",
+        "* **CPython** — the system interpreter (reference).",
+        "* **protopy** — protoPython bytecode interpreter.",
+        "* **protopyc** — protoPython AOT-compiled to C++ via `protopyc --build-so`, loaded as a shared object.",
+        "",
+        "Ratios are protoPython-mode / CPython-time: <1.0 = faster than CPython, >1.0 = slower.",
+        "",
+        header,
+        sep,
     ]
-    ratios = []
-    for name, (tp, tc, rp, rc) in results.items():
-        tp_str = f"{tp:>10.2f}" if tp is not None else "   TIMEOUT"
-        tc_str = f"{tc:>10.2f}" if tc is not None else "   TIMEOUT"
-        if tp is not None and tc is not None and tc > 0:
-            ratio = tp / tc
-            ratios.append(ratio)
-            label = "slower" if ratio >= 1 else "faster"
-            ratio_str = f"{ratio:.2f}x {label:<6}"
-        else:
-            ratio_str = "timeout"
-        
-        mem_str = f"{rp/1024:>5.1f}/{rc/1024:>5.1f}MB" if rp and rc else "N/A"
-        lines.append(f"│ {name:<22} │ {tp_str}   │ {tc_str}   │ {ratio_str:<12} │ {mem_str:<14} │")
-    
-    gm = math.exp(sum(math.log(r) for r in ratios) / len(ratios)) if ratios else 0
-    lines.append("├────────────────────────┼──────────────┼──────────────┼──────────────┼────────────────┤")
-    lines.append(f"│ Geomean Time Ratio     │              │              │ {gm:>5.2f}x        │                │")
-    lines.append("└──────────────────────────────────────────────────────────────────────────────────────┘")
-    lines.append("```")
-    return "\n".join(lines)
+
+    py_ratios = []
+    pc_ratios = []
+
+    for name, modes in results.items():
+        cp = modes.get("cpython")
+        py = modes.get("protopy")
+        pc = modes.get("protopyc")
+
+        tp = py[0] if py else None
+        tc = cp[0] if cp else None
+        tpc = pc[0] if pc else None
+        rp = py[1] if py and py[1] else None
+        rc = cp[1] if cp and cp[1] else None
+        rpc = pc[1] if pc and pc[1] else None
+
+        py_str  = _fmt_time(tp)
+        cp_str  = _fmt_time(tc)
+        pc_str  = _fmt_time(tpc)
+        py_ratio_str = _fmt_ratio(tp,  tc)
+        pc_ratio_str = _fmt_ratio(tpc, tc) if tpc is not None else "    N/A   "
+
+        if tp is not None and tc and tc > 0:
+            py_ratios.append(tp / tc)
+        if tpc is not None and tc and tc > 0:
+            pc_ratios.append(tpc / tc)
+
+        rss_parts = []
+        for r in (rp, rpc, rc):
+            rss_parts.append(f"{r/1024:>5.1f}" if r else "  N/A")
+        rss_str = "/".join(rss_parts) + " MB"
+
+        lines.append(
+            f"| {name:<22} | {cp_str}   | {py_str}   | {pc_str}    | {py_ratio_str:<12} | {pc_ratio_str:<12} | {rss_str:<19} |"
+        )
+
+    def geomean(xs):
+        xs = [x for x in xs if x and x > 0]
+        if not xs:
+            return None
+        return math.exp(sum(math.log(x) for x in xs) / len(xs))
+
+    py_gm = geomean(py_ratios)
+    pc_gm = geomean(pc_ratios)
+    py_gm_str = f"{py_gm:>5.2f}x" if py_gm else "  N/A"
+    pc_gm_str = f"{pc_gm:>5.2f}x" if pc_gm else "  N/A"
+    lines.append(sep)
+    lines.append(
+        f"| {'Geomean vs CPython':<22} | {'':>10}   | {'':>10}   | {'':>10}    | {py_gm_str:<12} | {pc_gm_str:<12} | {'':<19} |"
+    )
+
+    return "\n".join(lines) + "\n"
 
 
 def main():
@@ -172,6 +320,41 @@ def main():
         print("Set PROTOPY_BIN environment variable.")
         return 1
     cpython_bin = os.environ.get("CPYTHON_BIN", "python3")
+    protopyc_bin = os.environ.get("PROTOPYC_BIN")
+    run_module_bin = os.environ.get("RUN_MODULE_BIN")
+    extra_ld = os.environ.get("LD_LIBRARY_PATH_BENCH", "")
+    lib_env = {"LD_LIBRARY_PATH": extra_ld + (":" + os.environ.get("LD_LIBRARY_PATH", "") if os.environ.get("LD_LIBRARY_PATH") else "")} if extra_ld else {}
+
+    # Auto-derive paths from PROTOPY_BIN layout when the user did not set
+    # PROTOPYC_BIN / RUN_MODULE_BIN explicitly.  PROTOPY_BIN typically lives
+    # at <build>/src/runtime/protopy; protopyc is at <build>/src/compiler/
+    # protopyc and the run_module helper sits in <repo>/test/compiler/.  We
+    # also seed LD_LIBRARY_PATH so the loader can find libprotoPython /
+    # libprotoCore that the compiled .so links against.
+    if protopy_bin:
+        bin_path = Path(protopy_bin).resolve()
+        build_dir = bin_path.parent.parent.parent if len(bin_path.parts) > 3 else None
+        if build_dir:
+            if not protopyc_bin:
+                guess = build_dir / "src" / "compiler" / "protopyc"
+                if guess.is_file():
+                    protopyc_bin = str(guess)
+            if not run_module_bin:
+                rm_guess = PROJECT_ROOT / "test" / "compiler" / "run_module"
+                if rm_guess.is_file():
+                    run_module_bin = str(rm_guess)
+            if not extra_ld:
+                ld_parts = [
+                    str(build_dir / "src" / "library"),
+                    str(build_dir / "protoCore"),
+                ]
+                existing = os.environ.get("LD_LIBRARY_PATH", "")
+                lib_env = {"LD_LIBRARY_PATH": ":".join(ld_parts + ([existing] if existing else []))}
+
+    if protopyc_bin and run_module_bin:
+        print(f"protopyc column enabled: protopyc={protopyc_bin}, run_module={run_module_bin}")
+    else:
+        print("protopyc column DISABLED (set PROTOPYC_BIN + RUN_MODULE_BIN to enable).")
 
     # Stale-binary guard: protopy links to libprotoCore.so from a sibling
     # protoCore build directory.  If a release-mode build_release/ exists
@@ -214,8 +397,7 @@ def main():
     for name, script, is_mod in benchmarks:
         print(f"Running {name}...")
         if name == "startup_empty":
-            tp, tc, rp, rc = bench_generic("startup", script, protopy_bin, cpython_bin, args.timeout, verbose=args.verbose) # Won't work as it expects .py
-            # Fix for startup_empty which uses --module
+            # No source file; the protopyc column is not meaningful here.
             times_p, times_c, rss_p, rss_c = [], [], [], []
             for _ in range(WARMUP_RUNS):
                 run_cmd([protopy_bin, "--module", "abc"])
@@ -225,9 +407,18 @@ def main():
                 times_p.append(tp); rss_p.append(rp)
                 tc, _, _, rc = run_cmd([cpython_bin, "-c", "import abc"])
                 times_c.append(tc); rss_c.append(rc)
-            results[name] = (median(times_p), median(times_c), median(rss_p), median(rss_c))
+            results[name] = {
+                "protopy":  (median(times_p), median(rss_p)) if times_p else None,
+                "cpython":  (median(times_c), median(rss_c)) if times_c else None,
+                "protopyc": None,
+            }
         else:
-            results[name] = bench_generic(name, script, protopy_bin, cpython_bin, args.timeout, verbose=args.verbose)
+            results[name] = bench_generic(
+                name, script, protopy_bin, cpython_bin,
+                protopyc_bin=protopyc_bin, run_module_bin=run_module_bin,
+                lib_env=lib_env,
+                timeout=args.timeout, verbose=args.verbose,
+            )
 
     report = format_report(results)
     print(report)
