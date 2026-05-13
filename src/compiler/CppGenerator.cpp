@@ -423,6 +423,99 @@ bool CppGenerator::generateUnaryOp(UnaryOpNode* n) {
 }
 
 bool CppGenerator::generateBinOp(BinOpNode* n) {
+    // SmallInt inline fast path for the operations that dominate tight
+    // numeric loops (arithmetic + comparison).  If both operands are
+    // protoCore tagged SmallIntegers at runtime, the result is computed
+    // inline with two getAt-style reads and one C++ arithmetic op,
+    // skipping the full env->binaryOp dispatch (which routes through
+    // typed __add__ / __mul__ / __cmp__ lookups and method calls per
+    // call).  Anything else (LargeInteger, str, list, mixed types, …)
+    // falls back to env->binaryOp so semantics stay identical.
+    //
+    // Long C++ overflow is impossible for the arithmetic ops here:
+    // protoCore SmallInts hold a 56-bit signed payload, so the sum,
+    // difference or product of two 56-bit values fits in a 64-bit long
+    // (worst case is ~112 bits multiplicatively — handled by the safe
+    // overflow check below; the additive ops cannot overflow long at
+    // all).  ctx->fromInteger transparently promotes back to a
+    // LargeInteger when the result steps outside the SmallInt range.
+    const char* arithOp = nullptr;
+    const char* cmpOp = nullptr;
+    bool needsOverflowGuard = false;
+    switch (n->op) {
+        case TokenType::Plus:         arithOp = "+";  break;
+        case TokenType::Minus:        arithOp = "-";  break;
+        case TokenType::Star:         arithOp = "*";  needsOverflowGuard = true; break;
+        case TokenType::EqEqual:      cmpOp   = "=="; break;
+        case TokenType::NotEqual:     cmpOp   = "!="; break;
+        case TokenType::Less:         cmpOp   = "<";  break;
+        case TokenType::LessEqual:    cmpOp   = "<="; break;
+        case TokenType::Greater:      cmpOp   = ">";  break;
+        case TokenType::GreaterEqual: cmpOp   = ">="; break;
+        default: break;
+    }
+
+    auto emitFallback = [&]() -> bool {
+        *out_ << "env->binaryOp(__a, ";
+        switch (n->op) {
+            case TokenType::Plus:         *out_ << "protoPython::TokenType::Plus"; break;
+            case TokenType::Minus:        *out_ << "protoPython::TokenType::Minus"; break;
+            case TokenType::Star:         *out_ << "protoPython::TokenType::Star"; break;
+            case TokenType::EqEqual:      *out_ << "protoPython::TokenType::EqEqual"; break;
+            case TokenType::NotEqual:     *out_ << "protoPython::TokenType::NotEqual"; break;
+            case TokenType::Less:         *out_ << "protoPython::TokenType::Less"; break;
+            case TokenType::LessEqual:    *out_ << "protoPython::TokenType::LessEqual"; break;
+            case TokenType::Greater:      *out_ << "protoPython::TokenType::Greater"; break;
+            case TokenType::GreaterEqual: *out_ << "protoPython::TokenType::GreaterEqual"; break;
+            default: break;
+        }
+        *out_ << ", __b)";
+        return true;
+    };
+
+    if (arithOp) {
+        *out_ << "([&]() -> const proto::ProtoObject* {\n";
+        *out_ << "        const proto::ProtoObject* __a = ";
+        if (!generateNode(n->left.get())) return false;
+        *out_ << ";\n";
+        *out_ << "        const proto::ProtoObject* __b = ";
+        if (!generateNode(n->right.get())) return false;
+        *out_ << ";\n";
+        *out_ << "        if (__a && __b && __a->isInteger(ctx) && __b->isInteger(ctx)) {\n";
+        *out_ << "            long __va = __a->asLong(ctx);\n";
+        *out_ << "            long __vb = __b->asLong(ctx);\n";
+        if (needsOverflowGuard) {
+            *out_ << "            long __vr;\n";
+            *out_ << "            if (!__builtin_mul_overflow(__va, __vb, &__vr)) return ctx->fromInteger(__vr);\n";
+        } else {
+            *out_ << "            return ctx->fromInteger(__va " << arithOp << " __vb);\n";
+        }
+        *out_ << "        }\n";
+        *out_ << "        return ";
+        emitFallback();
+        *out_ << ";\n";
+        *out_ << "    })()";
+        return true;
+    }
+    if (cmpOp) {
+        *out_ << "([&]() -> const proto::ProtoObject* {\n";
+        *out_ << "        const proto::ProtoObject* __a = ";
+        if (!generateNode(n->left.get())) return false;
+        *out_ << ";\n";
+        *out_ << "        const proto::ProtoObject* __b = ";
+        if (!generateNode(n->right.get())) return false;
+        *out_ << ";\n";
+        *out_ << "        if (__a && __b && __a->isInteger(ctx) && __b->isInteger(ctx)) {\n";
+        *out_ << "            return (__a->asLong(ctx) " << cmpOp << " __b->asLong(ctx)) ? PROTO_TRUE : PROTO_FALSE;\n";
+        *out_ << "        }\n";
+        *out_ << "        return ";
+        emitFallback();
+        *out_ << ";\n";
+        *out_ << "    })()";
+        return true;
+    }
+
+    // No SmallInt specialisation for this op — emit the generic dispatch.
     *out_ << "env->binaryOp(";
     if (!generateNode(n->left.get())) return false;
     *out_ << ", ";
