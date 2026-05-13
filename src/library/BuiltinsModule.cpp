@@ -6474,6 +6474,57 @@ static const proto::ProtoObject* py_pow(
     bool hasMod = n >= 3;
     const proto::ProtoObject* modObj = hasMod ? positionalParameters->getAt(context, 2) : nullptr;
 
+    // CPython "subclass on the right" rule for the three-arg pow:
+    // when `type(exp)` is a subclass of `type(base)` AND that subclass
+    // defines its own `__rpow__`, try `exp.__rpow__(base, mod)` BEFORE
+    // base.__pow__.  Without this branch, `pow(2, I(3), 5)` with
+    //   class I(int):
+    //       def __rpow__(self, other, mod=None):
+    //           return I(pow(int(other), int(self), int(mod)))
+    // silently falls through to the bignum fast path and returns
+    // a plain int instead of I — observed as
+    // test_binary_operator_override line 3601 (`pow(2, I(3), 5)` == "3").
+    if (env) {
+        const proto::ProtoObject* baseCls = env->getType(context, baseObj);
+        const proto::ProtoObject* expCls  = env->getType(context, expObj);
+        if (baseCls && expCls && baseCls != expCls && expCls != PROTO_NONE
+            && baseCls != PROTO_NONE) {
+            // Subclass relation: walk expCls's __mro__ looking for baseCls.
+            const proto::ProtoObject* mroAttr = expCls->getAttribute(context, env->getMroString());
+            const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
+            bool expIsSubclass = false;
+            if (mroT) {
+                for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+                    if (mroT->getAt(context, static_cast<int>(i)) == baseCls) {
+                        expIsSubclass = true;
+                        break;
+                    }
+                }
+            }
+            if (expIsSubclass) {
+                const proto::ProtoString* rpowS = PythonEnvironment::getInternedString(context, "__rpow__");
+                // Check that expCls overrides __rpow__ (not inherited from baseCls/object).
+                bool expOverridesRpow = expCls->hasOwnAttribute(context, rpowS) == PROTO_TRUE;
+                if (expOverridesRpow) {
+                    const proto::ProtoObject* rpowM = expObj->getAttribute(context, rpowS);
+                    if (rpowM && rpowM != PROTO_NONE) {
+                        proto::ProtoList* args = const_cast<proto::ProtoList*>(
+                            context->newList()->appendLast(context, baseObj));
+                        if (modObj) args = const_cast<proto::ProtoList*>(args->appendLast(context, modObj));
+                        if (rpowM->asMethod(context)) {
+                            return rpowM->asMethod(context)(context, expObj, nullptr, args, nullptr);
+                        }
+                        // Python-user __rpow__: prepend self.
+                        proto::ProtoList* selfArgs = const_cast<proto::ProtoList*>(
+                            context->newList()->appendLast(context, expObj)->appendLast(context, baseObj));
+                        if (modObj) selfArgs = const_cast<proto::ProtoList*>(selfArgs->appendLast(context, modObj));
+                        return ::protoPython::invokePythonCallable(context, rpowM, selfArgs, nullptr);
+                    }
+                }
+            }
+        }
+    }
+
     // CPython: dispatch through base.__pow__ when the class (or any
     // MRO entry above the built-in int prototype) defines a user
     // __pow__ override.  Without this branch, integer-subclasses like
