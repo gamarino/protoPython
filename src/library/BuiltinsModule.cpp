@@ -7333,15 +7333,74 @@ static const proto::ProtoObject* py_classmethod(
         cm->setAttribute(context, PythonEnvironment::getInternedString(context, "func"), func);
         cm->setAttribute(context, PythonEnvironment::getInternedString(context, "__func__"), func);
         // Forward introspection attributes from the wrapped function
-        // (CPython parity — see py_staticmethod for rationale).
+        // (CPython parity — see py_staticmethod for rationale).  Do NOT
+        // forward `__dict__` (would alias cm.__dict__ to func.__dict__)
+        // or `__annotations__` (would smuggle a dict-prototype-shaped
+        // container into cm.__dict__) — both are accessed lazily via
+        // the wrapped function in CPython, not stored on the
+        // classmethod instance.  test_classmethods line 1633 checks
+        //   cm.__dict__ == {'__doc__': 'f docstring',
+        //                   '__module__': '__main__', '__qualname__': '<...>'}
+        // — so only the introspection forwards below land in __dict__.
+        // Same own-attribute gate as py_staticmethod: forward only what
+        // the wrapped function ITSELF defines (not what its class
+        // contributes via inheritance), and __doc__ specifically follows
+        // the class chain because CPython stores the wrapped value's
+        // docstring (which may come from the class) into the wrapper's
+        // own __doc__ slot.
+        const proto::ProtoString* docS = PythonEnvironment::getInternedString(context, "__doc__");
+        {
+            const proto::ProtoObject* v = func->getAttribute(context, docS);
+            if (v) cm->setAttribute(context, docS, v);
+        }
+        // Same __annotations__ handling as py_staticmethod — forward
+        // a real user annotation dict, else materialise {}.  See the
+        // heuristic comment over there for why the broken default
+        // (`function.__annotations__` aliased to dict prototype's dict)
+        // is rejected via magic-key detection.
+        const proto::ProtoString* annS = PythonEnvironment::getInternedString(context, "__annotations__");
+        {
+            auto looksLikeUserAnnotations = [&](const proto::ProtoObject* d) -> bool {
+                if (!d || d == PROTO_NONE) return false;
+                const proto::ProtoObject* keysO = d->getAttribute(context, env->getKeysString());
+                const proto::ProtoList* kl = keysO ? keysO->asList(context) : nullptr;
+                if (!kl) return false;
+                unsigned long n = kl->getSize(context);
+                if (n == 0) return true;
+                for (unsigned long i = 0; i < n && i < 8; ++i) {
+                    const proto::ProtoObject* k = kl->getAt(context, static_cast<int>(i));
+                    if (!k || !k->isString(context)) continue;
+                    std::string s; k->asString(context)->toUTF8String(context, s);
+                    if (s == "__class__" || s == "__mro__" || s == "__bases__"
+                        || s == "__getitem__" || s == "__setitem__") return false;
+                }
+                return true;
+            };
+            const proto::ProtoObject* ann = nullptr;
+            if (func->hasOwnAttribute(context, annS) == PROTO_TRUE) {
+                const proto::ProtoObject* v = func->getOwnAttributeDirect(context, annS);
+                if (looksLikeUserAnnotations(v)) ann = v;
+            }
+            if (!ann) {
+                proto::ProtoObject* empty =
+                    const_cast<proto::ProtoObject*>(env->getDictPrototype()
+                        ? env->getDictPrototype()->newChild(context, true)
+                        : context->newObject(true));
+                empty = const_cast<proto::ProtoObject*>(empty->setAttribute(context, env->getDataString(), context->newSparseList()->asObject(context)));
+                empty = const_cast<proto::ProtoObject*>(empty->setAttribute(context, env->getKeysString(), context->newList()->asObject(context)));
+                ann = empty;
+            }
+            cm->setAttribute(context, annS, ann);
+        }
         static const char* const fwd[] = {
-            "__name__", "__qualname__", "__doc__", "__module__",
-            "__annotations__", "__dict__", "__wrapped__", nullptr
+            "__name__", "__qualname__", "__module__", "__wrapped__", nullptr
         };
         for (int i = 0; fwd[i]; ++i) {
             const proto::ProtoString* k = PythonEnvironment::getInternedString(context, fwd[i]);
-            const proto::ProtoObject* v = func->getAttribute(context, k);
-            if (v) cm->setAttribute(context, k, v);
+            if (func->hasOwnAttribute(context, k) == PROTO_TRUE) {
+                const proto::ProtoObject* v = func->getOwnAttributeDirect(context, k);
+                if (v && v != PROTO_NONE) cm->setAttribute(context, k, v);
+            }
         }
         const proto::ProtoString* wrapS = PythonEnvironment::getInternedString(context, "__wrapped__");
         if (cm->hasOwnAttribute(context, wrapS) != PROTO_TRUE) {
@@ -7392,23 +7451,106 @@ static const proto::ProtoObject* py_staticmethod(
         // `__annotations__` (assertHasattr-style) and decorator chains rely on
         // `__wrapped__`. Copy over what's available — missing source attrs
         // become `None` which matches CPython for absent annotations/doc.
+        //
+        // BUT DO NOT forward `__dict__` or `__annotations__` as instance
+        // attributes.  Doing so makes `sm.__dict__` return the *function's*
+        // dict (a confusing aliasing — every staticmethod that wraps the same
+        // function shares storage), and `sm.__annotations__` smuggles a
+        // reference to the dict-prototype-style annotations container into
+        // the staticmethod's own dict where test_descr line 1823 checks for
+        //   self.assertEqual(sm.__dict__, {'__doc__': None.__doc__})
+        // CPython exposes `sm.__annotations__` via a descriptor that reads
+        // through to `__func__.__annotations__` lazily; we get the same
+        // observable behaviour by leaving the attribute UNSET on the
+        // instance and letting attribute lookup fall through to the
+        // wrapped function via py_staticmethod_get / __func__ access.
+        // Always forward __doc__ via class-chain (CPython initialises
+        // staticmethod's __doc__ slot from the wrapped value's __doc__
+        // even when that value is None — `None.__doc__` is the NoneType
+        // class docstring and that's what CPython stores).
+        const proto::ProtoString* docS = PythonEnvironment::getInternedString(context, "__doc__");
+        {
+            const proto::ProtoObject* v = func->getAttribute(context, docS);
+            if (v) sm->setAttribute(context, docS, v);
+        }
+        // CPython exposes `staticmethod(fn).__annotations__` as a
+        // descriptor that returns fn.__annotations__ (lazily {} for a
+        // function with no explicit annotations).  protoPython's
+        // function-creation path leaves __annotations__ unset, so
+        // attribute access falls through to the dict prototype's
+        // __dict__ — a non-empty bag of method objects.  Initialise a
+        // fresh `{}` here and forward the function's own annotations
+        // when present; this makes both `hasattr(sm, '__annotations__')`
+        // and `sm.__annotations__ == {}` true for un-annotated wrapped
+        // functions (test_descr.test_staticmethod_annotations_without_dict_access).
+        const proto::ProtoString* annS = PythonEnvironment::getInternedString(context, "__annotations__");
+        {
+            // Forward the function's own __annotations__ only when it's
+            // a *real* dict that the user populated (size > 0 with string
+            // keys).  protoPython's function-creation path leaves
+            // __annotations__ aliased to the dict prototype's __dict__
+            // when no annotations were given — a non-empty bag of method
+            // objects, definitely not what CPython exposes — so any
+            // forward that doesn't look like a user annotation map is
+            // replaced by a fresh {}.
+            auto looksLikeUserAnnotations = [&](const proto::ProtoObject* d) -> bool {
+                if (!d || d == PROTO_NONE) return false;
+                const proto::ProtoObject* keysO = d->getAttribute(context, env->getKeysString());
+                const proto::ProtoList* kl = keysO ? keysO->asList(context) : nullptr;
+                if (!kl) return false;
+                unsigned long n = kl->getSize(context);
+                if (n == 0) return true;  // legitimately empty user dict
+                // A real annotations dict's keys are plain identifiers
+                // ('x', 'return', etc.).  The broken default has keys
+                // like '__class__', '__mro__', '__bases__' — magic
+                // names.  If we see any of those, treat the whole dict
+                // as the broken default.
+                for (unsigned long i = 0; i < n && i < 8; ++i) {
+                    const proto::ProtoObject* k = kl->getAt(context, static_cast<int>(i));
+                    if (!k || !k->isString(context)) continue;
+                    std::string s; k->asString(context)->toUTF8String(context, s);
+                    if (s == "__class__" || s == "__mro__" || s == "__bases__"
+                        || s == "__getitem__" || s == "__setitem__") return false;
+                }
+                return true;
+            };
+            const proto::ProtoObject* ann = nullptr;
+            if (func->hasOwnAttribute(context, annS) == PROTO_TRUE) {
+                const proto::ProtoObject* v = func->getOwnAttributeDirect(context, annS);
+                if (looksLikeUserAnnotations(v)) ann = v;
+            }
+            if (!ann) {
+                // Materialise a fresh empty dict.  newChild on the dict
+                // prototype with the canonical __data__/__keys__ slots
+                // matches `dict()`.
+                proto::ProtoObject* empty =
+                    const_cast<proto::ProtoObject*>(env->getDictPrototype()
+                        ? env->getDictPrototype()->newChild(context, true)
+                        : context->newObject(true));
+                empty = const_cast<proto::ProtoObject*>(empty->setAttribute(context, env->getDataString(), context->newSparseList()->asObject(context)));
+                empty = const_cast<proto::ProtoObject*>(empty->setAttribute(context, env->getKeysString(), context->newList()->asObject(context)));
+                ann = empty;
+            }
+            sm->setAttribute(context, annS, ann);
+        }
+        // The rest (`__name__`, `__qualname__`, `__module__`) only land
+        // on the staticmethod instance if the wrapped FUNCTION ITSELF
+        // owns them (not via inheritance through the function's class).
+        // CPython's staticmethod descriptor reads these from __func__
+        // dynamically; mirror that by forwarding only own attributes.
+        // Without the own-attribute gate, `staticmethod(None).__dict__`
+        // included `__qualname__='NoneType'` and `__module__='builtins'`
+        // — both inherited from NoneType — which test_descr line 1823
+        // explicitly checks against.
         static const char* const fwd[] = {
-            "__name__", "__qualname__", "__doc__", "__module__",
-            "__annotations__", "__dict__", "__wrapped__", nullptr
+            "__name__", "__qualname__", "__module__", "__wrapped__", nullptr
         };
         for (int i = 0; fwd[i]; ++i) {
             const proto::ProtoString* k = PythonEnvironment::getInternedString(context, fwd[i]);
-            // Only forward attributes the wrapped function genuinely *has*.
-            // hasOwnAttribute is too restrictive (it'd miss `__name__` from
-            // the function prototype's defaults), but a plain `getAttribute`
-            // returning PROTO_NONE means "absent in chain or set-to-None"
-            // — propagating it would clobber the staticmethod prototype's
-            // own `__wrapped__ = None` placeholder check downstream and
-            // make hasattr(sm, "__wrapped__") report a None slot. Skip
-            // PROTO_NONE so we honor "the wrapped function didn't define
-            // this either".
-            const proto::ProtoObject* v = func->getAttribute(context, k);
-            if (v && v != PROTO_NONE) sm->setAttribute(context, k, v);
+            if (func->hasOwnAttribute(context, k) == PROTO_TRUE) {
+                const proto::ProtoObject* v = func->getOwnAttributeDirect(context, k);
+                if (v && v != PROTO_NONE) sm->setAttribute(context, k, v);
+            }
         }
         // __wrapped__ defaults to the function itself when not already set.
         const proto::ProtoString* wrapS = PythonEnvironment::getInternedString(context, "__wrapped__");

@@ -1160,9 +1160,34 @@ static const proto::ProtoObject* py_object_get_dict(
         }
     }
 
+    // staticmethod / classmethod instances need the same filtered-snapshot
+    // treatment that built-in subclasses get: their py_*method constructors
+    // store `func`, `__func__`, `__class__`, `__wrapped__` as instance
+    // attributes (needed for getattr fall-through), but `instance.__dict__`
+    // must NOT expose them — CPython's staticmethod / classmethod instance
+    // dict only carries the user's introspection forwards (`__doc__`,
+    // `__module__`, `__qualname__` and anything the user sets directly).
+    // test_descr line 1823:
+    //   self.assertEqual(staticmethod(None).__dict__, {'__doc__': None.__doc__})
+    // Detect via the class's `__name__` so this works even without a
+    // dedicated env-level prototype accessor.
+    bool isStaticOrClassMethod = false;
+    {
+        const proto::ProtoObject* selfCls = env->getType(context, mutableSelf);
+        if (selfCls && selfCls != PROTO_NONE) {
+            const proto::ProtoObject* nameAttr = selfCls->getAttribute(context, env->getNameString());
+            if (nameAttr && nameAttr->isString(context)) {
+                std::string nm; nameAttr->asString(context)->toUTF8String(context, nm);
+                if (nm == "staticmethod" || nm == "classmethod") {
+                    isStaticOrClassMethod = true;
+                }
+            }
+        }
+    }
+
     const proto::ProtoObject* data = nullptr;
     const proto::ProtoObject* keys = nullptr;
-    if (isBuiltinSubclass) {
+    if (isBuiltinSubclass || isStaticOrClassMethod) {
         // Snapshot: walk the own-attribute SparseList, skip the
         // built-in's internal slots and our own __pydict_* book-keeping,
         // and build fresh __data__/__keys__ for the proxy.
@@ -1174,7 +1199,8 @@ static const proto::ProtoObject* py_object_get_dict(
                 proto::ProtoContext* ctx;
                 const proto::ProtoSparseList* dl;
                 const proto::ProtoList* kl;
-            } sn{context, dl, kl};
+                bool stripWrapperInternals;
+            } sn{context, dl, kl, isStaticOrClassMethod};
             attrs->processElements(context, &sn,
                 +[](proto::ProtoContext* ctx, void* userData,
                     unsigned long key, const proto::ProtoObject* val) {
@@ -1189,6 +1215,16 @@ static const proto::ProtoObject* py_object_get_dict(
                         || nm == "__class__" || nm == "__is_python_class__"
                         || nm == "__name__" || nm == "__bases__"
                         || nm == "__mro__") return;
+                    // staticmethod / classmethod: also strip the wrapper-
+                    // internal storage names (`func`, `__func__`,
+                    // `__wrapped__`, `__annotations__`) — they're needed
+                    // on the instance for attribute access but never
+                    // appear in CPython's instance dict (CPython exposes
+                    // them through type-level descriptors).
+                    if (s->stripWrapperInternals) {
+                        if (nm == "func" || nm == "__func__" || nm == "__wrapped__"
+                            || nm == "__annotations__") return;
+                    }
                     s->dl = s->dl->setAt(ctx, ks->getHash(ctx), val);
                     if (!s->kl->has(ctx, keyObj)) {
                         s->kl = s->kl->appendLast(ctx, keyObj);
