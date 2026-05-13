@@ -1485,18 +1485,19 @@ static const proto::ProtoObject* py_object_reduce(
     }
     if (!obj) return PROTO_NONE;
 
-    // Forward to copyreg._reduce_ex(obj, 2) — same handler that
-    // py_object_reduce_ex uses for proto<2 fallback.  Avoids any
-    // sensitivity to whether `__reduce_ex__` retrieved off the class
-    // chain is bound vs unbound vs already a method-wrapper: we just
-    // call copyreg directly with the receiver and the protocol.
+    // CPython's `object.__reduce__(self)` invokes the common reduce
+    // helper with protocol 0 (object___reduce___impl in typeobject.c:
+    // `return _common_reduce(self, 0)`), so the returned tuple has the
+    // proto<2 `(copyreg._reconstructor, (cls, base, state))` shape — not
+    // the proto>=2 newobj 5-tuple.  Pickle's recursion + custom-state
+    // discovery in test_pickle_slots relies on that.
     if (env) {
         const proto::ProtoObject* copyregMod = env->importModule("copyreg");
         if (copyregMod && copyregMod != PROTO_NONE) {
             const proto::ProtoString* reduceExName = PythonEnvironment::getInternedString(context, "_reduce_ex");
             const proto::ProtoObject* reduceExFunc = copyregMod->getAttribute(context, reduceExName);
             if (reduceExFunc && reduceExFunc != PROTO_NONE) {
-                return env->callObject(reduceExFunc, {obj, context->fromInteger(2)});
+                return env->callObject(reduceExFunc, {obj, context->fromInteger(0)});
             }
         }
     }
