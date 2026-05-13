@@ -16403,8 +16403,20 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
            const proto::ProtoSparseList*) -> const proto::ProtoObject* {
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
             if (!env) return PROTO_NONE;
+            // Receiver resolution must cover three calling shapes:
+            //   bound method:           self = instance,    args = []
+            //   unbound class method:   self = prototype,   args = [instance]
+            //   unbound via fromMethod: self = nullptr,     args = [instance]
+            //     (this last shape is what `complex.__pos__(a)` produces
+            //     in protoPython because fromMethod(nullptr, …) leaves
+            //     `asMethodSelf` as null; invokeCallable then forwards
+            //     `self = nullptr` and the instance lands in args[0].
+            //     Previously this case fell through to `return PROTO_NONE`,
+            //     so `complex.__pos__(100j)` returned None instead of 100j,
+            //     breaking OperatorsTest.test_complexes' unop_test loop.)
             const proto::ProtoObject* receiver = self;
-            if (self == env->getComplexPrototype() && args && args->getSize(ctx) >= 1) {
+            if ((!receiver || receiver == env->getComplexPrototype())
+                && args && args->getSize(ctx) >= 1) {
                 receiver = args->getAt(ctx, 0);
             }
             if (!receiver) return PROTO_NONE;
@@ -16437,8 +16449,12 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
            const proto::ProtoSparseList*) -> const proto::ProtoObject* {
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
             if (!env) return PROTO_NONE;
+            // Same receiver-resolution as __pos__ above: cover the
+            // bound, unbound-via-prototype and unbound-via-nullptr
+            // calling shapes uniformly.
             const proto::ProtoObject* receiver = self;
-            if (self == env->getComplexPrototype() && args && args->getSize(ctx) >= 1) {
+            if ((!receiver || receiver == env->getComplexPrototype())
+                && args && args->getSize(ctx) >= 1) {
                 receiver = args->getAt(ctx, 0);
             }
             if (!receiver) return PROTO_NONE;
@@ -16692,8 +16708,11 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
            const proto::ProtoSparseList*) -> const proto::ProtoObject* {
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
             if (!env) return PROTO_NONE;
+            // Same receiver-resolution as __pos__: cover bound + the
+            // two unbound calling shapes (self=prototype OR self=null).
             const proto::ProtoObject* receiver = self;
-            if (self == env->getComplexPrototype() && args && args->getSize(ctx) >= 1) {
+            if ((!receiver || receiver == env->getComplexPrototype())
+                && args && args->getSize(ctx) >= 1) {
                 receiver = args->getAt(ctx, 0);
             }
             if (!receiver) return PROTO_NONE;
