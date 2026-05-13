@@ -445,8 +445,15 @@ bool CppGenerator::generateIf(IfNode* n) {
 }
 
 bool CppGenerator::generateWhile(WhileNode* n) {
+    // Cooperative GC safepoint at the top of each iteration.  The
+    // interpreter polls ctx->safepoint() every 64 opcodes inside the
+    // bytecode dispatch loop; without this, a CPU-bound compiled thread
+    // that never allocates will keep running indefinitely and the GC
+    // thread (and every other thread parked waiting for STW) stalls.
+    // The check is a single relaxed atomic load on the fast path.
     if (n->orelse) {
         *out_ << "while (true) {\n";
+        *out_ << "    ctx->safepoint();\n";
         *out_ << "    if (!env->isTrue(";
         if (!generateNode(n->test.get())) return false;
         *out_ << ")) {\n";
@@ -460,6 +467,7 @@ bool CppGenerator::generateWhile(WhileNode* n) {
         *out_ << "while (env->isTrue(";
         if (!generateNode(n->test.get())) return false;
         *out_ << ")) {\n";
+        *out_ << "    ctx->safepoint();\n";
         if (!generateNode(n->body.get())) return false;
         *out_ << ";\n}\n";
     }
@@ -1298,6 +1306,7 @@ bool CppGenerator::generateFor(ForNode* n) {
     if (!generateNode(n->iter.get())) return false;
     *out_ << ");\n";
     *out_ << "        while (true) {\n";
+    *out_ << "            ctx->safepoint();\n";
     *out_ << "            auto* __val_" << id << " = env->next(__iter_" << id << ");\n";
     *out_ << "            if (env->hasPendingException()) {\n";
     *out_ << "                (void)env->takePendingException();\n";
