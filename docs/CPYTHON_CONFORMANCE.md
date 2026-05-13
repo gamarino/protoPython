@@ -28,6 +28,73 @@
 
 ---
 
+## Current Status (2026-05-13) — post-ninth-sweep (round 2, partial)
+
+The ninth sweep targets the residual `test_descr.py` failures that
+remained after round 1 (commits `30381e7d..933e9ef7`).  Plan:
+[`tasks/planning/2026-05-13-test_descr-sweep-plan-round2.md`](../tasks/planning/2026-05-13-test_descr-sweep-plan-round2.md).
+Round 2 landed only the first phase (Phase H — instance-dict
+cleanup + str-subclass repr) before time forced a docs commit; the
+remaining phases (I, J, K, L, M, N) carry over to the next sweep.
+
+### Direct unittest counts (`test_descr.py`)
+
+| | run | fail | error | skipped | Δ vs post-round-1 |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-13 (post-round-2 partial) | 165 | **52** | **53** | 10 | −2 fail |
+| 2026-05-13 (post-round-1)         | 165 | 54 | 53 | 10 | — |
+
+### Round-2 commits that landed
+
+| Commit | Theme |
+| :--- | :--- |
+| `b8fddb95` planning round-2 | Plan doc for the 21-commit follow-up sweep. |
+| `674c653f` H-22 | `syncAttr` excludes `__class__` and other class-shape keys from the canonical `__data__`/`__keys__` slots, so `C15({'q':1}).__dict__` no longer leaks `__class__` into the pickle reduce-protocol state. |
+| `4ecdefdd` H-23 | `repr()` honours user-defined `__repr__` on `str` subclasses (e.g. `octetstring`).  Mirrors the int-subclass dispatch that was already in place; previously the str fast-path emitted the literal-string form unconditionally. |
+| `8e29e91e` H-24 | `copyreg._reduce_ex` preserves the user's `__getstate__()` return value — empty dict from a deliberate `def __getstate__(self): return {}` no longer gets normalised to `None`.  Required by PicklingTests.test_special_method_lookup. |
+
+### Deferred (round-3 candidates)
+
+* **J-27 / J-28 / J-29 / J-30 — native bound method introspection.**
+  Heap-allocating a wrapper for `[].__add__` so it carries
+  `__name__ = '__add__'`, `__self__`, `__objclass__` is a multi-day
+  refactor.  Attempted during this round (`b6omji83u` build), got
+  the introspection surface right (`type(l.append).__name__ ==
+  'method'`, `l.append.__name__ == 'append'`) but cascaded a
+  signature regression in `invokeCallable` for raw native methods
+  routed via the new wrapper's `__call__` — `iter()` returned None
+  for stdlib generators inside `namedtuple`, blocking pickle
+  / functools imports.  Reverted.  Requires either (a) teaching
+  `methodPrototype.__call__` to detect "first-class C method" and
+  bypass the prepend-self step, or (b) carrying the bound
+  tagged-pointer as `__func__` and adapting the `__call__`
+  dispatch.  Plan: split into a binding-only commit
+  (heap wrapper construction) and a separate `__call__` dispatch
+  commit so the regression scope is narrower.
+* **I-25 / I-26 — `eval()` scope.**  protoPython's
+  `getCurrentFrame()` returns the frame object but our `f_locals`
+  resolution drops back to the module object, so `dir()` / `eval()`
+  treat function-level scopes as the surrounding module.
+  Needs a proper Frame.f_locals materialiser.
+* **K-31 / K-32 / K-33 — pickling slot reconstruction.**  Now that
+  H-22 cleans the instance dict and H-24 keeps user `__getstate__`
+  intact, the round-trip is closer but `test_pickle_slots` /
+  `test_reduce_copying` still trip on "Can't pickle local object"
+  for classes defined inside test methods — a different layer
+  (qualified-name lookup at pickle load time).
+* **L / M / N** — slot corner cases, `super()` chains, `__doc__` on
+  built-in descriptors.
+
+### Why fail+error is still high but not regressing
+
+Same dynamic as round 1: every blocker removed surfaces a handful
+of sub-test errors as tests run further.  Round 2's H-22 / H-23 /
+H-24 are surgical correctness fixes that match CPython behaviour
+even though the raw counter only moves by 2.  See round 1's
+"Why fail+error rose" paragraph for the long form.
+
+---
+
 ## Current Status (2026-05-13) — post-eighth-twenty-commit sweep (`test_descr.py` focus)
 
 A targeted twenty-commit sweep landed between 2026-05-12 and
