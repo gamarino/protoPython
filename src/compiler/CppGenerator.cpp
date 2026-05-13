@@ -215,6 +215,29 @@ bool CppGenerator::generateCall(CallNode* n) {
                 *out_ << "})";
                 return true;
             }
+            // Self-recursion fast path: when the call target is the bare
+            // name of the function currently being emitted, skip the whole
+            // env->lookupName → env->callObject → invokeCallable polymorphic
+            // chain and call the C++ symbol directly.  We forward our own
+            // `self` (closure storage) so nested closures keep working.
+            // Assumes the function name has not been rebound by the body —
+            // breaking that assumption would require a runtime guard, which
+            // costs more than the optimisation buys on tight recursion.
+            if (auto* nm = dynamic_cast<NameNode*>(n->func.get())) {
+                if (!currentFuncName_.empty() && nm->id == currentFuncName_) {
+                    *out_ << "([&]() -> const proto::ProtoObject* {\n";
+                    *out_ << "        auto* __args = ctx->newList();\n";
+                    for (size_t i = 0; i < n->args.size(); ++i) {
+                        *out_ << "        __args = __args->appendLast(ctx, ";
+                        if (!generateNode(n->args[i].get())) return false;
+                        *out_ << ");\n";
+                    }
+                    *out_ << "        return " << currentFuncCppName_
+                          << "(ctx, self, nullptr, __args, nullptr);\n";
+                    *out_ << "    })()";
+                    return true;
+                }
+            }
             *out_ << "env->callObject(";
             if (!generateNode(n->func.get())) return false;
             *out_ << ", {";
@@ -513,12 +536,27 @@ bool CppGenerator::generateFunctionInternal(const std::string& name,
     }
 
     bool isGenerator = containsYieldOrAwait(body);
-    
+
     // Use a unique suffix for top-level C++ function names
     static int functionCounter = 0;
     std::string uniqueSuffix = "_" + std::to_string(++functionCounter);
     std::string cppFuncName = "py_func_" + name + uniqueSuffix;
     std::string cppContName = "py_cont_" + name + uniqueSuffix;
+
+    // Publish the current function identity so generateCall can detect
+    // self-recursion and emit a direct C++ call instead of routing the
+    // recursive site through env->lookupName + env->callObject.  Only the
+    // standard (non-generator) path benefits today; generators run inside
+    // a state machine whose entry shape differs.
+    std::string oldCurrentFuncName = currentFuncName_;
+    std::string oldCurrentFuncCppName = currentFuncCppName_;
+    if (!isGenerator) {
+        currentFuncName_ = name;
+        currentFuncCppName_ = cppFuncName;
+    } else {
+        currentFuncName_.clear();
+        currentFuncCppName_.clear();
+    }
 
     std::ostream* oldOut = out_;
     std::ostringstream funcStream;
@@ -705,6 +743,8 @@ bool CppGenerator::generateFunctionInternal(const std::string& name,
     orderedLocalVars_ = oldOrderedLocals;
     localVars_ = oldLocalVars;
     freeVars_ = oldFreeVars;
+    currentFuncName_ = oldCurrentFuncName;
+    currentFuncCppName_ = oldCurrentFuncCppName;
 
     return true;
 }

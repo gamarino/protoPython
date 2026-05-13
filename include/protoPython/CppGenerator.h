@@ -95,6 +95,13 @@ private:
     int stateCount_ = 0;
     std::unordered_set<std::string> localVars_;
     std::vector<std::string> orderedLocalVars_;
+    // While emitting a function body, the Python-level name of the
+    // function being generated and the unique C++ symbol it lowers to.
+    // generateCall consults these to short-circuit self-recursion as a
+    // direct C++ call to the same compiled symbol, bypassing the
+    // env->callObject → invokeCallable → asMethod polymorphic chain.
+    std::string currentFuncName_;
+    std::string currentFuncCppName_;
     // Stack of enclosing function-scope locals, used to identify free
     // variables when a nested function references a name that is local
     // to an outer function (a Python closure).  Indexed outermost-first.
