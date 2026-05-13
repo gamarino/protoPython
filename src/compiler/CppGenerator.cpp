@@ -223,15 +223,27 @@ bool CppGenerator::generateCall(CallNode* n) {
             // Assumes the function name has not been rebound by the body —
             // breaking that assumption would require a runtime guard, which
             // costs more than the optimisation buys on tight recursion.
+            //
+            // Build the args list through protoCore's bulk-construct
+            // factory: ctx->newList(n, items) returns a single inline-
+            // storage cell when n ≤ 5, replacing 1 + N appendLast
+            // allocations.  fib(25) with two args per frame goes from
+            // 3 cells per call to 1.
             if (auto* nm = dynamic_cast<NameNode*>(n->func.get())) {
                 if (!currentFuncName_.empty() && nm->id == currentFuncName_) {
                     *out_ << "([&]() -> const proto::ProtoObject* {\n";
-                    *out_ << "        auto* __args = ctx->newList();\n";
+                    *out_ << "        const proto::ProtoObject* __argv[] = {";
                     for (size_t i = 0; i < n->args.size(); ++i) {
-                        *out_ << "        __args = __args->appendLast(ctx, ";
+                        if (i > 0) *out_ << ", ";
                         if (!generateNode(n->args[i].get())) return false;
-                        *out_ << ");\n";
                     }
+                    // Zero-arg case: emit a single nullptr placeholder
+                    // so the array is non-empty; newList(0, items) ignores
+                    // items anyway, but C++ forbids zero-size arrays.
+                    if (n->args.empty()) *out_ << "nullptr";
+                    *out_ << "};\n";
+                    *out_ << "        auto* __args = ctx->newList(" << n->args.size()
+                          << "u, __argv);\n";
                     *out_ << "        return " << currentFuncCppName_
                           << "(ctx, self, nullptr, __args, nullptr);\n";
                     *out_ << "    })()";

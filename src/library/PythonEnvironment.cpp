@@ -22801,15 +22801,25 @@ const proto::ProtoObject* PythonEnvironment::callObject(const proto::ProtoObject
     return callObjectEx(callable, args, {});
 }
 
-const proto::ProtoObject* PythonEnvironment::callObjectEx(const proto::ProtoObject* callable, 
+const proto::ProtoObject* PythonEnvironment::callObjectEx(const proto::ProtoObject* callable,
                                       const std::vector<const proto::ProtoObject*>& args,
                                       const std::vector<std::pair<std::string, const proto::ProtoObject*>>& keywords,
                                       const proto::ProtoObject* starargs,
                                       const proto::ProtoObject* kwargs) {
     proto::ProtoContext* ctx = rootContext_;
-    const proto::ProtoList* plArgs = ctx->newList();
-    for (auto* arg : args) plArgs = plArgs->appendLast(ctx, arg);
-    
+    // Use protoCore's bulk-construct list factory when the argument count
+    // is known and we are not extending via starargs.  For up to 5
+    // arguments this produces a single inline-storage cell instead of
+    // 1 + N appendLast allocations — material on call-heavy workloads
+    // (recursion, hot loops calling user functions).
+    const proto::ProtoList* plArgs;
+    if (!starargs || starargs == PROTO_NONE) {
+        plArgs = ctx->newList(static_cast<unsigned>(args.size()), args.data());
+    } else {
+        plArgs = ctx->newList();
+        for (auto* arg : args) plArgs = plArgs->appendLast(ctx, arg);
+    }
+
     if (starargs && starargs != PROTO_NONE) {
         const proto::ProtoObject* it = this->iter(starargs);
         if (it) {
