@@ -100,14 +100,17 @@ def _reduce_ex(self, proto):
             func = __newobj__
             func_args = (cls,) + args
         # state: __getstate__() if defined, else __dict__ / None.
-        # CPython normalises the empty-state cases to None so the
-        # unpickler skips the restore_state step; mirror that to keep
-        # the 5-tuple equal to CPython's reduction output.
+        # Crucial: do NOT normalise an empty-dict user-defined
+        # __getstate__ to None.  CPython's object.__getstate__ handles
+        # the "no state" → None mapping internally and returns None when
+        # both __dict__ and slots are empty; a user that explicitly
+        # returns `{}` is intentionally signalling "empty dict state",
+        # not "no state".  test_descr.PicklingTests.test_special_method_lookup
+        # has a Picky.__getstate__ returning `{}` and asserts
+        # `reduce_value[2] == {}` precisely to catch this distinction.
         getstate = getattr(self, "__getstate__", None)
         if getstate is not None:
             state = getstate()
-            if not state:
-                state = None
         else:
             try:
                 state = self.__dict__
