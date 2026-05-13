@@ -24099,7 +24099,18 @@ static void syncAttr(proto::ProtoContext* ctx, void* self, unsigned long key, co
         if (ks && ks != sCtx->dataName && ks != sCtx->keysName) {
             std::string kstr;
             ks->toUTF8String(ctx, kstr);
-            if (kstr != "__data__" && kstr != "__keys__") {
+            // Universal exclusion list — these keys describe the class
+            // identity or back the runtime's own dict-storage proxy and
+            // never belong in a user-visible instance dict.  Without this
+            // filter, py_object_get_dict's "raw __data__" else-branch
+            // surfaces `__class__` (and friends) inside `obj.__dict__`
+            // for dict/list/set subclasses, contaminating pickle's reduce
+            // protocol state.
+            if (kstr != "__data__" && kstr != "__keys__"
+                && kstr != "__pydict_data__" && kstr != "__pydict_keys__"
+                && kstr != "__is_python_class__"
+                && kstr != "__class__" && kstr != "__name__"
+                && kstr != "__bases__" && kstr != "__mro__") {
                 // protoCore's attribute SparseList is keyed by the
                 // `ProtoString*` pointer cast to ulong, but a Python `dict`
                 // keys by `key->getHash(ctx)` (string content hash). The
