@@ -8977,50 +8977,68 @@ const proto::ProtoObject* py_object_new(
         if (clsIsPython && (extraCount > 0 || hasKwargs)) {
             const proto::ProtoString* newS = env->getNewString();
             const proto::ProtoString* initS = env->getInitString();
+            // py_type wraps a class-body `__new__` in a staticmethod, so
+            // a raw `getOwnAttributeDirect(__new__)` yields the wrapper,
+            // not the function it was assigned from.  Unwrap via
+            // `__func__` so `__new__ = object.__new__` compares equal to
+            // the raw default and is correctly treated as NOT overridden.
+            const proto::ProtoString* funcDunderS =
+                PythonEnvironment::getInternedString(context, "__func__");
+            auto unwrap = [&](const proto::ProtoObject* o) -> const proto::ProtoObject* {
+                if (!o || o == PROTO_NONE) return o;
+                const proto::ProtoObject* fn = o->getAttribute(context, funcDunderS);
+                return (fn && fn != PROTO_NONE) ? fn : o;
+            };
             // Capture object's default __new__ / __init__ so we can
             // tell apart "B explicitly stores object.__new__ as its own
             // attribute" (still semantically the default — CPython
             // treats this as NOT overridden) from a genuine override.
             const proto::ProtoObject* defNew = env->getObjectPrototype()
-                ? env->getObjectPrototype()->getAttribute(context, newS) : nullptr;
+                ? unwrap(env->getObjectPrototype()->getAttribute(context, newS)) : nullptr;
             const proto::ProtoObject* defInit = env->getObjectPrototype()
-                ? env->getObjectPrototype()->getAttribute(context, initS) : nullptr;
+                ? unwrap(env->getObjectPrototype()->getAttribute(context, initS)) : nullptr;
             const proto::ProtoObject* mroAttr = cls->getAttribute(context, env->getMroString());
             const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
             bool newOverridden = false;
             bool initOverridden = false;
             if (mroT) {
-                // Walk the full MRO.  Our C3 linearisation occasionally
-                // places `object` before sibling bases in mixin
-                // hierarchies (e.g. `class C(B, A)` where A inherits
-                // type ends up with mro (C, B, object, A, type)).
-                // Skip object/typePrototype-itself-without-treating-
-                // -object-as-a-stop-marker so we don't miss A or type
-                // sitting further along.  type/module/etc. count as
-                // providing both overrides (their constructors take
-                // canonical positional args).
+                // Walk the MRO in C3 order.  `__new__` / `__init__`
+                // resolve to the FIRST class in the MRO that defines
+                // them — exactly what `cls.__new__` would bind — so the
+                // "overridden?" verdict must be taken from that first
+                // definition and the scan for that slot must then stop.
+                // Continuing to scan would let an ancestor's override
+                // shadow a more-derived class's `__new__ = object.__new__`
+                // re-export (test_restored_object_new's class B), which
+                // CPython treats as the default, not an override.
+                // type/module count as providing both overrides (their
+                // constructors take canonical positional args).
+                bool newFound = false;
+                bool initFound = false;
                 for (unsigned long mi = 0; mi < mroT->getSize(context); ++mi) {
                     const proto::ProtoObject* base = mroT->getAt(context, static_cast<int>(mi));
                     if (!base || base == PROTO_NONE) continue;
                     if (base == env->getObjectPrototype()) continue;
                     if (base == env->getTypePrototype() || base == env->getModulePrototype()) {
-                        newOverridden = true;
-                        initOverridden = true;
+                        if (!newFound)  { newFound = true;  newOverridden = true; }
+                        if (!initFound) { initFound = true; initOverridden = true; }
                         break;
                     }
-                    if (!newOverridden && base->hasOwnAttribute(context, newS) == PROTO_TRUE) {
+                    if (!newFound && base->hasOwnAttribute(context, newS) == PROTO_TRUE) {
                         // A re-export of object.__new__ (e.g.
                         // `__new__ = object.__new__`) is NOT a true
                         // override.  Compare against the default to
                         // distinguish.
-                        const proto::ProtoObject* ownNew = base->getOwnAttributeDirect(context, newS);
+                        newFound = true;
+                        const proto::ProtoObject* ownNew = unwrap(base->getOwnAttributeDirect(context, newS));
                         if (ownNew != defNew) newOverridden = true;
                     }
-                    if (!initOverridden && base->hasOwnAttribute(context, initS) == PROTO_TRUE) {
-                        const proto::ProtoObject* ownInit = base->getOwnAttributeDirect(context, initS);
+                    if (!initFound && base->hasOwnAttribute(context, initS) == PROTO_TRUE) {
+                        initFound = true;
+                        const proto::ProtoObject* ownInit = unwrap(base->getOwnAttributeDirect(context, initS));
                         if (ownInit != defInit) initOverridden = true;
                     }
-                    if (newOverridden && initOverridden) break;
+                    if (newFound && initFound) break;
                 }
             }
             // CPython: object.__new__(cls, *args) accepts extras
