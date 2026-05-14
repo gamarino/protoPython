@@ -18501,6 +18501,15 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     ellipsisType = ellipsisType->setAttribute(rootContext_, py_module, builtinsVal);
     ellipsisType = ellipsisType->setAttribute(rootContext_, py_repr, PythonEnvironment::getInternedString(rootContext_, "Ellipsis")->asObject(rootContext_));
     ellipsisType = ellipsisType->setAttribute(rootContext_, py_call, rootContext_->fromMethod(nullptr, py_ellipsis_type_call));
+    // Q-70: __mro__ for ellipsis (matches Q-69 for NoneType).
+    {
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(rootContext_, "__mro__");
+        const proto::ProtoList* mroList = rootContext_->newList()
+            ->appendLast(rootContext_, ellipsisType)
+            ->appendLast(rootContext_, objectPrototype);
+        ellipsisType = ellipsisType->setAttribute(rootContext_, mroS,
+            rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
+    }
     ellipsisPrototype = ellipsisType->newChild(rootContext_, false);
     ellipsisPrototype = ellipsisPrototype->setAttribute(rootContext_, py_class, ellipsisType);
 
@@ -18512,6 +18521,15 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     notImplType = notImplType->setAttribute(rootContext_, py_module, builtinsVal);
     notImplType = notImplType->setAttribute(rootContext_, py_repr, PythonEnvironment::getInternedString(rootContext_, "NotImplemented")->asObject(rootContext_));
     notImplType = notImplType->setAttribute(rootContext_, py_call, rootContext_->fromMethod(nullptr, py_notimplemented_type_call));
+    // Q-70: __mro__ for NotImplementedType.
+    {
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(rootContext_, "__mro__");
+        const proto::ProtoList* mroList = rootContext_->newList()
+            ->appendLast(rootContext_, notImplType)
+            ->appendLast(rootContext_, objectPrototype);
+        notImplType = notImplType->setAttribute(rootContext_, mroS,
+            rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
+    }
     notImplementedPrototype = notImplType->newChild(rootContext_, false);
     notImplementedPrototype = notImplementedPrototype->setAttribute(rootContext_, py_class, notImplType);
 
