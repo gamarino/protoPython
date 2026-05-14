@@ -9830,6 +9830,13 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     rangeIterProto = rangeIterProto->setAttribute(ctx, py_name_local, PythonEnvironment::getInternedString(ctx, "range_iterator")->asObject(ctx));
     rangeIterProto = rangeIterProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(nullptr, py_self_iter));
     rangeIterProto = rangeIterProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(nullptr, py_range_next));
+    // Q-80: __mro__ for range_iterator.
+    {
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
+        const proto::ProtoList* mroList = ctx->newList()->appendLast(ctx, rangeIterProto);
+        if (objectProto) mroList = mroList->appendLast(ctx, objectProto);
+        rangeIterProto = rangeIterProto->setAttribute(ctx, mroS, ctx->newTupleFromList(mroList)->asObject(ctx));
+    }
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "range_iterator"), rangeIterProto);
     pEnv->setRangeIteratorProto(rangeIterProto);
     // Wire the native cell prototype so ProtoRangeIteratorImplementation tagged pointers
