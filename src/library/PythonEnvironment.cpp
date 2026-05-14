@@ -21511,7 +21511,63 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                             gaRes = gaM->asMethod(ctx)(ctx,
                                 const_cast<proto::ProtoObject*>(obj), nullptr, gaArgs, nullptr);
                         } else {
-                            gaRes = invokePythonCallable(ctx, gaM, gaArgs, nullptr);
+                            // `__getattribute__` may be bound to a plain
+                            // Python function (the common `def
+                            // __getattribute__(self, name)` case) OR to a
+                            // descriptor *instance* — anything with its own
+                            // `__get__` but no `__code__`.  For the latter
+                            // the descriptor protocol applies:
+                            // `gaM.__get__(obj, base)` yields the real
+                            // callable, which is then invoked with just
+                            // `(name,)`.  Without this, invokePythonCallable
+                            // falls through to the metaclass `__call__` and
+                            // mis-instantiates the descriptor's class.
+                            const proto::ProtoString* codeS = getCodeString();
+                            const proto::ProtoString* getDunderS =
+                                PythonEnvironment::getInternedString(ctx, "__get__");
+                            bool isPlainFunction = codeS &&
+                                gaM->hasOwnAttribute(ctx, codeS) == PROTO_TRUE;
+                            // Resolve `gaM.__get__` exactly as the data-descriptor
+                            // path below does: raw lookup on the descriptor, then
+                            // on its type, and ALWAYS pass `gaM` as the explicit
+                            // self (the env-level getAttribute does not reliably
+                            // bind here, so a bare invoke would mis-bind self to
+                            // `obj`).
+                            const proto::ProtoObject* getM = isPlainFunction
+                                ? nullptr : gaM->getAttribute(ctx, getDunderS);
+                            const proto::ProtoObject* gaMType =
+                                (!isPlainFunction && (!getM || getM == PROTO_NONE))
+                                    ? getType(ctx, gaM) : nullptr;
+                            if (gaMType && gaMType != PROTO_NONE) {
+                                getM = getAttribute(ctx, gaMType, getDunderS, false);
+                            }
+                            if (getM && getM != PROTO_NONE) {
+                                const proto::ProtoList* getArgs =
+                                    ctx->newList()->appendLast(ctx, obj)
+                                                  ->appendLast(ctx, base);
+                                const proto::ProtoObject* bound = nullptr;
+                                if (getM->asMethod(ctx)) {
+                                    bound = getM->asMethod(ctx)(ctx,
+                                        const_cast<proto::ProtoObject*>(gaM), nullptr,
+                                        getArgs, nullptr);
+                                } else {
+                                    const proto::ProtoList* fullArgs =
+                                        ctx->newList()->appendLast(ctx, gaM)
+                                                      ->appendLast(ctx, obj)
+                                                      ->appendLast(ctx, base);
+                                    bound = invokePythonCallable(ctx, getM, fullArgs, nullptr);
+                                }
+                                if (hasPendingException()) return nullptr;
+                                if (bound && bound != PROTO_NONE) {
+                                    const proto::ProtoList* callArgs =
+                                        ctx->newList()->appendLast(ctx, name->asObject(ctx));
+                                    gaRes = invokePythonCallable(ctx, bound, callArgs, nullptr);
+                                } else {
+                                    gaRes = invokePythonCallable(ctx, gaM, gaArgs, nullptr);
+                                }
+                            } else {
+                                gaRes = invokePythonCallable(ctx, gaM, gaArgs, nullptr);
+                            }
                         }
                         if (hasPendingException()) {
                             // Let __getattr__ fallback handle AttributeError.
