@@ -721,6 +721,15 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
                                                  ctx->fromMethod(nullptr, py_deque_iterator_next));
     deque_iterator = deque_iterator->setAttribute(ctx, env->getIterString(),
                                                  ctx->fromMethod(nullptr, py_collections_dummy)); // self iter
+    // R5-82: __mro__ for _deque_iterator.
+    if (env && env->getObjectPrototype()) {
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
+        const proto::ProtoList* mroList = ctx->newList()
+            ->appendLast(ctx, deque_iterator)
+            ->appendLast(ctx, env->getObjectPrototype());
+        deque_iterator = deque_iterator->setAttribute(ctx, mroS,
+            ctx->newTupleFromList(mroList)->asObject(ctx));
+    }
     
     dequePrototype = dequePrototype->setAttribute(ctx, env->getIterString(),
                                                  ctx->fromMethod(nullptr, py_deque_iter));
@@ -736,6 +745,15 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
                                                   ctx->fromMethod(nullptr, py_deque_reverse_iterator_next));
     deque_reverse_iterator = deque_reverse_iterator->setAttribute(ctx, env->getIterString(),
                                                   ctx->fromMethod(nullptr, py_collections_dummy)); // self iter
+    // R5-82: __mro__ for _deque_reverse_iterator.
+    if (env && env->getObjectPrototype()) {
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
+        const proto::ProtoList* mroList = ctx->newList()
+            ->appendLast(ctx, deque_reverse_iterator)
+            ->appendLast(ctx, env->getObjectPrototype());
+        deque_reverse_iterator = deque_reverse_iterator->setAttribute(ctx, mroS,
+            ctx->newTupleFromList(mroList)->asObject(ctx));
+    }
     
     dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_reverse_iterator_proto__"), deque_reverse_iterator);
 
