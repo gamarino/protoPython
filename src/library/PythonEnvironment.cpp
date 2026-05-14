@@ -2417,9 +2417,17 @@ static const proto::ProtoObject* py_str_call(
     
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!targetCls || (env && targetCls == env->getStrPrototype())) {
+        // `str(x)` must yield a *plain* str even when x is a str
+        // subclass instance — `str(S("12345")).__class__ is str`.
+        // asString() returns the receiver itself for a plain string
+        // and unwraps the __data__ payload for a subclass wrapper.
+        if (x && x->isString(ctx)) {
+            const proto::ProtoString* ps = x->asString(ctx);
+            if (ps) return ps->asObject(ctx);
+        }
         return x;
     }
-    
+
     // Subclass instantiation
     proto::ProtoObject* instance = const_cast<proto::ProtoObject*>(targetCls->newChild(ctx, true));
     const proto::ProtoString* dataName = env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "__data__");
@@ -2978,15 +2986,38 @@ static const proto::ProtoObject* py_str_iter_next(
     // `c != s[0]` could both come back True.  Returning the canonical
     // string directly lets the string fast-path handle equality and
     // ordering uniformly with `s[0]`, which is the same representation.
+    // Encode the codepoint to UTF-8 and build the one-character result
+    // from an explicit byte length.  The old `{ char, '\0' }` +
+    // getInternedString form truncated codepoint 0 to the empty string
+    // (strlen stops at the NUL) and mangled any codepoint above 0x7F.
+    auto cpToStr = [&](unsigned int cp) -> const proto::ProtoObject* {
+        uint8_t ub[4];
+        int ulen = 0;
+        if (cp < 0x80u) {
+            ub[ulen++] = static_cast<uint8_t>(cp);
+        } else if (cp < 0x800u) {
+            ub[ulen++] = static_cast<uint8_t>(0xC0u | (cp >> 6));
+            ub[ulen++] = static_cast<uint8_t>(0x80u | (cp & 0x3Fu));
+        } else if (cp < 0x10000u) {
+            ub[ulen++] = static_cast<uint8_t>(0xE0u | (cp >> 12));
+            ub[ulen++] = static_cast<uint8_t>(0x80u | ((cp >> 6) & 0x3Fu));
+            ub[ulen++] = static_cast<uint8_t>(0x80u | (cp & 0x3Fu));
+        } else {
+            ub[ulen++] = static_cast<uint8_t>(0xF0u | (cp >> 18));
+            ub[ulen++] = static_cast<uint8_t>(0x80u | ((cp >> 12) & 0x3Fu));
+            ub[ulen++] = static_cast<uint8_t>(0x80u | ((cp >> 6) & 0x3Fu));
+            ub[ulen++] = static_cast<uint8_t>(0x80u | (cp & 0x3Fu));
+        }
+        uint8_t rem[4]; uint8_t remCount = 0;
+        const proto::ProtoString* res = proto::ProtoString::fromUTF8Buffer(
+            context, ub, static_cast<size_t>(ulen), nullptr, 0, rem, &remCount);
+        return res ? res->asObject(context) : PROTO_NONE;
+    };
     if (value) {
         if (((uintptr_t)value & 0x3FF) == 129) {
-            char c = static_cast<char>((uintptr_t)value >> 10);
-            char strBuf[2] = {c, '\0'};
-            return PythonEnvironment::getInternedString(context, strBuf)->asObject(context);
+            return cpToStr(static_cast<unsigned int>((uintptr_t)value >> 10) & 0x1FFFFFu);
         } else if (value->isInteger(context)) {
-            char c = static_cast<char>(value->asLong(context));
-            char strBuf[2] = {c, '\0'};
-            return PythonEnvironment::getInternedString(context, strBuf)->asObject(context);
+            return cpToStr(static_cast<unsigned int>(value->asLong(context)) & 0x1FFFFFu);
         } else if (value->isString(context)) {
             return value;
         }
