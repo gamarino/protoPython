@@ -4756,12 +4756,30 @@ const proto::ProtoObject* py_genericalias_repr(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* origin = self->getAttribute(context, PythonEnvironment::getInternedString(context, "__origin__"));
     const proto::ProtoObject* args = self->getAttribute(context, PythonEnvironment::getInternedString(context, "__args__"));
-    
-    std::string originRepr = env ? env->reprObject(context, origin) : "???";
+
+    // CPython renders the origin via its qualified name, NOT `repr(cls)`.
+    // `repr(tuple)` is `<class 'tuple'>` — wrong for the GenericAlias
+    // surface.  Use __qualname__ when available, fall back to __name__,
+    // and finally reprObject as a last resort.
+    std::string originRepr;
+    if (origin && origin != PROTO_NONE) {
+        const proto::ProtoString* qnS = PythonEnvironment::getInternedString(context, "__qualname__");
+        const proto::ProtoObject* qn = origin->getAttribute(context, qnS);
+        if (!qn || qn == PROTO_NONE || !qn->isString(context)) {
+            const proto::ProtoString* nmS = env ? env->getNameString()
+                : PythonEnvironment::getInternedString(context, "__name__");
+            qn = origin->getAttribute(context, nmS);
+        }
+        if (qn && qn->isString(context)) {
+            qn->asString(context)->toUTF8String(context, originRepr);
+        } else {
+            originRepr = env ? env->reprObject(context, origin) : "?";
+        }
+    } else {
+        originRepr = "?";
+    }
+
     std::string argsRepr = env ? env->reprObject(context, args) : "???";
-    
-    // CPython format: origin[args]
-    // If args is a tuple, repr(args) is (x, y). We want [x, y].
     if (args && args->isTuple(context)) {
         if (argsRepr.size() >= 2 && argsRepr.front() == '(' && argsRepr.back() == ')') {
             argsRepr = "[" + argsRepr.substr(1, argsRepr.size() - 2) + "]";
@@ -4769,7 +4787,7 @@ const proto::ProtoObject* py_genericalias_repr(
     } else {
         argsRepr = "[" + argsRepr + "]";
     }
-    
+
     return context->fromUTF8String((originRepr + argsRepr).c_str());
 }
 
