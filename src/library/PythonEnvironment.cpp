@@ -20931,7 +20931,24 @@ bool PythonEnvironment::isActuallyAClass(proto::ProtoContext* ctx, const proto::
         // attribute resolution) so we don't recurse through getType ->
         // getAttribute -> isActuallyAClass.
         const proto::ProtoObject* p = obj->getFirstParent(ctx);
-        if (p == modulePrototype) return false;
+        if (p == modulePrototype) {
+            // A module *subclass* (`class MM(type(sys))`) also has
+            // modulePrototype as its first parent, so getFirstParent
+            // alone can't tell it apart from a module *instance*.
+            // The reliable signal is __mro__[0]: py_type builds a
+            // subclass with the subclass itself at __mro__[0], whereas
+            // executeModule copies modulePrototype's __mro__ verbatim
+            // onto an instance (so __mro__[0] == modulePrototype).
+            // Without this, getAttribute routes the subclass through
+            // its metaclass MRO and resolves `__new__` to type.__new__.
+            const proto::ProtoString* mroS = getMroString();
+            const proto::ProtoObject* mroV = mroS
+                ? obj->proto::ProtoObject::getAttribute(ctx, mroS) : nullptr;
+            const proto::ProtoTuple* mroT = mroV ? mroV->asTuple(ctx) : nullptr;
+            bool ownMro = mroT && mroT->getSize(ctx) > 0 &&
+                          mroT->getAt(ctx, 0) == obj;
+            if (!ownMro) return false;
+        }
     }
     // Phase 4: every Python class tags itself with __is_python_class__
     // = True as an own attribute at construction time (py_type for the
