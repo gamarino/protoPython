@@ -44,7 +44,13 @@ pickle(super, pickle_super)
 # Support for pickling new-style objects
 
 def _reconstructor(cls, base, state):
-    if base is object:
+    # `base is None` happens when `_reduce_ex(obj, proto<2)` couldn't
+    # resolve a C-level base for cls — protoPython's MRO walk falls
+    # through when no base has `__flags__` set (D-16 changed that
+    # branch to `cls.__base__`, but a few pickle round-trips that
+    # carry an already-serialised None still land here).  Treat the
+    # missing-base case the same as `base is object`.
+    if base is None or base is object:
         obj = object.__new__(cls)
     else:
         obj = base.__new__(cls, state)
