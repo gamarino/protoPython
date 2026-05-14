@@ -4779,13 +4779,37 @@ const proto::ProtoObject* py_genericalias_repr(
         originRepr = "?";
     }
 
-    std::string argsRepr = env ? env->reprObject(context, args) : "???";
-    if (args && args->isTuple(context)) {
-        if (argsRepr.size() >= 2 && argsRepr.front() == '(' && argsRepr.back() == ')') {
-            argsRepr = "[" + argsRepr.substr(1, argsRepr.size() - 2) + "]";
+    // Render each arg.  When an arg is a class, prefer its
+    // __qualname__ (CPython compact form `tuple[int, str]`); otherwise
+    // fall back to reprObject.
+    auto renderArg = [&](const proto::ProtoObject* a) -> std::string {
+        if (!a || a == PROTO_NONE) return env ? env->reprObject(context, a) : "None";
+        if (env && env->isActuallyAClass(context, a)) {
+            const proto::ProtoString* qnS = PythonEnvironment::getInternedString(context, "__qualname__");
+            const proto::ProtoObject* qn = a->getAttribute(context, qnS);
+            if (!qn || qn == PROTO_NONE || !qn->isString(context)) {
+                const proto::ProtoString* nmS = env->getNameString();
+                qn = a->getAttribute(context, nmS);
+            }
+            if (qn && qn->isString(context)) {
+                std::string s;
+                qn->asString(context)->toUTF8String(context, s);
+                return s;
+            }
         }
+        return env ? env->reprObject(context, a) : "?";
+    };
+    std::string argsRepr;
+    if (args && args->isTuple(context)) {
+        const proto::ProtoTuple* tup = args->asTuple(context);
+        argsRepr = "[";
+        for (unsigned long i = 0; i < tup->getSize(context); ++i) {
+            if (i > 0) argsRepr += ", ";
+            argsRepr += renderArg(tup->getAt(context, static_cast<int>(i)));
+        }
+        argsRepr += "]";
     } else {
-        argsRepr = "[" + argsRepr + "]";
+        argsRepr = "[" + renderArg(args) + "]";
     }
 
     return context->fromUTF8String((originRepr + argsRepr).c_str());
