@@ -18469,6 +18469,18 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     noneTypeProto = noneTypeProto->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "NoneType")->asObject(rootContext_));
     noneTypeProto = noneTypeProto->setAttribute(rootContext_, py_module, builtinsVal);
     noneTypeProto = noneTypeProto->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
+    // Q-69: __mro__ = (NoneType, object).  Without this, reprObject's
+    // MRO walk only finds object's __repr__ for None instances, AND any
+    // code that introspects `type(None).__mro__` sees just `(object,)`
+    // (missing NoneType itself).
+    {
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(rootContext_, "__mro__");
+        const proto::ProtoList* mroList = rootContext_->newList()
+            ->appendLast(rootContext_, noneTypeProto)
+            ->appendLast(rootContext_, objectPrototype);
+        noneTypeProto = noneTypeProto->setAttribute(rootContext_, mroS,
+            rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
+    }
 
     // Support for primitive None (PROTO_NONE) attributes via prototype
     noneTypeProto = noneTypeProto->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_none_bool));
