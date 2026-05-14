@@ -9993,6 +9993,19 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     // Reuse the same flatten/dedupe builder so chained ops stay flat.
     genericAliasProto = genericAliasProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__or__"), ctx->fromMethod(nullptr, py_uniontype_or));
     genericAliasProto = genericAliasProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__ror__"), ctx->fromMethod(nullptr, py_uniontype_ror));
+    // Set __mro__ so reprObject's MRO walk finds GenericAlias's own
+    // __repr__ before falling through to objectPrototype.__repr__.
+    // Without this, `repr(tuple[int, str])` produced the default
+    // "<GenericAlias object at 0x…>" because the MRO contained only
+    // [object] and the walk landed on py_object_repr.
+    {
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
+        const proto::ProtoList* mroList = ctx->newList()
+            ->appendLast(ctx, genericAliasProto);
+        if (objectProto) mroList = mroList->appendLast(ctx, objectProto);
+        genericAliasProto = genericAliasProto->setAttribute(ctx, mroS,
+            ctx->newTupleFromList(mroList)->asObject(ctx));
+    }
     pEnv->setGenericAliasProto(genericAliasProto);
 
     // Initialize UnionType prototype
