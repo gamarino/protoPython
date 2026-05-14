@@ -15277,6 +15277,61 @@ static const proto::ProtoObject* py_module_keys(
     return listObj;
 }
 
+// module.values() — iterate module global values (CPython parity for
+// `module.__dict__.values()`).  Mirrors py_module_keys + py_module_items
+// but yields the bound value for each non-internal key.  Required by
+// any caller that walks `builtins.__dict__.values()` (e.g.
+// test_descr.test_builtin_bases).
+static const proto::ProtoObject* py_module_values(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList*,
+    const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoList* result = context->newList();
+    if (!self || self == PROTO_NONE) return result->asObject(context);
+    const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
+    const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
+    const proto::ProtoList* keysList = keysObj && keysObj->asList(context) ? keysObj->asList(context) : nullptr;
+    if (keysList) {
+        unsigned long size = keysList->getSize(context);
+        for (unsigned long i = 0; i < size; ++i) {
+            const proto::ProtoObject* keyObj = keysList->getAt(context, static_cast<int>(i));
+            if (!keyObj || !keyObj->isString(context)) continue;
+            std::string name;
+            keyObj->asString(context)->toUTF8String(context, name);
+            if (isModuleInternalAttr(name)) continue;
+            const proto::ProtoObject* val = self->getAttribute(context, keyObj->asString(context));
+            if (val) result = result->appendLast(context, val);
+        }
+    } else {
+        const proto::ProtoSparseList* attrs = self->getOwnAttributes(context);
+        if (attrs) {
+            auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
+            while (it && it->hasNext(context)) {
+                unsigned long key = it->nextKey(context);
+                const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
+                const proto::ProtoObject* val = it->nextValue(context);
+                if (keyObj && keyObj->isString(context) && val) {
+                    std::string name;
+                    keyObj->asString(context)->toUTF8String(context, name);
+                    if (!isModuleInternalAttr(name)) {
+                        result = result->appendLast(context, val);
+                    }
+                }
+                it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
+            }
+        }
+    }
+    if (env && env->getListPrototype()) {
+        const proto::ProtoObject* listObj = env->getListPrototype()->newChild(context, true);
+        listObj->setAttribute(context, env->getDataString(), result->asObject(context));
+        return listObj;
+    }
+    return result->asObject(context);
+}
+
 // module.copy() — return a Python-dict snapshot of the module's attributes.
 // CPython convention: `module.__dict__` IS a dict, and `.copy()` is a dict
 // method.  protoPython's modules use protoCore-level attribute storage and
@@ -18443,6 +18498,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         rootContext_->fromMethod(nullptr, py_module_items));
     modulePrototype = modulePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "keys"),
         rootContext_->fromMethod(nullptr, py_module_keys));
+    modulePrototype = modulePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "values"),
+        rootContext_->fromMethod(nullptr, py_module_values));
     modulePrototype = modulePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "update"),
         rootContext_->fromMethod(nullptr, py_module_update));
     modulePrototype = modulePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "copy"),
