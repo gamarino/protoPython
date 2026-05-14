@@ -15822,6 +15822,46 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
            const proto::ProtoSparseList*) -> const proto::ProtoObject* {
             return ctx->fromInteger(16);
         }));
+    // Q-77: object.__dir__ returns a list of attribute names — used by
+    // dir(obj) on instances without their own __dir__.  Walks the
+    // protoCore own-attribute table; downstream code may augment.
+    objectPrototype = objectPrototype->setAttribute(rootContext_,
+        getInternedString(rootContext_, "__dir__"),
+        rootContext_->fromMethod(nullptr,
+        [](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            const proto::ProtoObject* obj = self;
+            if ((!obj || (env && obj == env->getObjectPrototype()))
+                && args && args->getSize(ctx) >= 1) {
+                obj = args->getAt(ctx, 0);
+            }
+            const proto::ProtoList* result = ctx->newList();
+            if (!obj || !env) {
+                return env && env->getListPrototype()
+                    ? env->getListPrototype()->newChild(ctx, true)
+                        ->setAttribute(ctx, env->getDataString(), result->asObject(ctx))
+                    : result->asObject(ctx);
+            }
+            const proto::ProtoSparseList* attrs = obj->getOwnAttributes(ctx);
+            if (attrs) {
+                auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(ctx));
+                while (it && it->hasNext(ctx)) {
+                    unsigned long key = it->nextKey(ctx);
+                    const proto::ProtoObject* k = reinterpret_cast<const proto::ProtoObject*>(key);
+                    if (k && k->isString(ctx)) {
+                        result = result->appendLast(ctx, k);
+                    }
+                    it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
+                }
+            }
+            const proto::ProtoObject* listObj = env->getListPrototype()
+                ? env->getListPrototype()->newChild(ctx, true)
+                : ctx->newObject(true);
+            listObj = listObj->setAttribute(ctx, env->getDataString(), result->asObject(ctx));
+            return listObj;
+        }));
     objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__reduce_ex__"), rootContext_->fromMethod(nullptr, py_object_reduce_ex));
     objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__reduce__"), rootContext_->fromMethod(nullptr, py_object_reduce));
     // PEP 690 / Python 3.11+ — object.__getstate__ exposes the
