@@ -2892,7 +2892,18 @@ static const proto::ProtoObject* py_eval(
         if (env) globals = const_cast<proto::ProtoObject*>(env->getGlobals());
     }
     if (!globals) globals = const_cast<proto::ProtoObject*>(context->newObject(false));
-    if (!locals) locals = globals;
+    if (!locals) {
+        // CPython: bare `eval(expr)` evaluates in the CALLER's namespace.
+        // py_eval is a native trampoline that pushes no Python frame, so
+        // getCurrentFrame() is the calling Python function's frame — and
+        // any function that calls eval is compiled forceMapped (its
+        // locals live on the frame as attributes), so the frame IS the
+        // caller's local namespace.  Without this, `eval("c[x]")` where
+        // c/x are function locals raises NameError.
+        const proto::ProtoObject* callerFrame = PythonEnvironment::getCurrentFrame();
+        locals = (callerFrame && callerFrame != PROTO_NONE)
+            ? const_cast<proto::ProtoObject*>(callerFrame) : globals;
+    }
 
     GlobalsScope gscope(globals);
     // Note: currently runCodeObject runs in one frame/namespace.

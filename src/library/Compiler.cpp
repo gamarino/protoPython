@@ -3183,40 +3183,21 @@ static void collectNestedScopeFreeVarsImpl(ASTNode* node, std::unordered_set<std
 /** Returns non-empty string if body has dynamic locals access; reason for slot fallback. */
 static std::string getDynamicLocalsReason(ASTNode* node) {
     if (!node) return "";
-    if (auto* call = dynamic_cast<CallNode*>(node)) {
-        if (call->func) {
-            if (auto* nm = dynamic_cast<NameNode*>(call->func.get())) {
-                if (nm->id == "locals") return "locals";
-                if (nm->id == "exec") return "exec";
-                if (nm->id == "eval") return "eval";
-            }
-        }
-    }
-    if (auto* suite = dynamic_cast<SuiteNode*>(node)) {
-        for (auto& st : suite->statements) {
-            std::string r = getDynamicLocalsReason(st.get());
-            if (!r.empty()) return r;
-        }
-        return "";
-    }
-    if (auto* iff = dynamic_cast<IfNode*>(node)) {
-        std::string r = getDynamicLocalsReason(iff->body.get());
-        if (!r.empty()) return r;
-        if (iff->orelse) return getDynamicLocalsReason(iff->orelse.get());
-        return "";
-    }
-    if (auto* fn = dynamic_cast<FunctionDefNode*>(node)) {
-        return getDynamicLocalsReason(fn->body.get());
-    }
-    if (auto* f = dynamic_cast<ForNode*>(node)) {
-        return getDynamicLocalsReason(f->body.get());
-    }
-    if (auto* af = dynamic_cast<AsyncForNode*>(node)) {
-        std::string r = getDynamicLocalsReason(af->body.get());
-        if (!r.empty()) return r;
-        if (af->orelse) return getDynamicLocalsReason(af->orelse.get());
-        return "";
-    }
+    // A function that references eval / exec / locals / vars anywhere
+    // in its body must keep its locals on the frame (forceMapped) so
+    // those builtins can see them.  The previous hand-rolled recursion
+    // only descended into Suite / If / For / FunctionDef bodies, so
+    // `return eval(...)`, `x = eval(...)`, a bare `eval(...)` statement
+    // and uses inside while / try / with were all missed and the
+    // function's frame was wrongly skipped.  collectUsedNames performs
+    // the full recursive walk; over-detecting (e.g. `eval` used as a
+    // plain name) only costs a frame allocation, never correctness.
+    std::unordered_set<std::string> used;
+    collectUsedNames(node, used);
+    if (used.count("locals")) return "locals";
+    if (used.count("exec")) return "exec";
+    if (used.count("eval")) return "eval";
+    if (used.count("vars")) return "vars";
     return "";
 }
 
