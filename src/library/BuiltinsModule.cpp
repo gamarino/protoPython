@@ -10017,6 +10017,15 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     unionTypeProto = unionTypeProto->setAttribute(ctx, pEnv->getReprString(), ctx->fromMethod(nullptr, py_uniontype_repr));
     unionTypeProto = unionTypeProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__or__"), ctx->fromMethod(nullptr, py_uniontype_or));
     unionTypeProto = unionTypeProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__ror__"), ctx->fromMethod(nullptr, py_uniontype_ror));
+    // Mirror Q-65: anchor __mro__ so reprObject finds the UnionType
+    // __repr__ before falling back to object's default.
+    {
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
+        const proto::ProtoList* mroList = ctx->newList()->appendLast(ctx, unionTypeProto);
+        if (objectProto) mroList = mroList->appendLast(ctx, objectProto);
+        unionTypeProto = unionTypeProto->setAttribute(ctx, mroS,
+            ctx->newTupleFromList(mroList)->asObject(ctx));
+    }
     unionTypeProto = unionTypeProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__eq__"), ctx->fromMethod(nullptr, py_uniontype_eq));
     unionTypeProto = unionTypeProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__hash__"), ctx->fromMethod(nullptr, py_uniontype_hash));
     pEnv->setUnionTypeProto(unionTypeProto);
