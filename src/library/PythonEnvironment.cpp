@@ -1001,6 +1001,98 @@ static const proto::ProtoObject* py_type_del_annotations(
     return PROTO_NONE;
 }
 
+// Returns the CPython name of an immutable built-in type prototype, or
+// nullptr for heap (user-defined) classes.  Mirrors the inline list in
+// setAttribute's __bases__ guard — used by the type.__doc__ getset
+// descriptor to reject mutation of immutable types.
+static const char* immutableBuiltinTypeName(PythonEnvironment* env,
+                                             const proto::ProtoObject* obj) {
+    if (!env || !obj) return nullptr;
+    if (obj == env->getIntPrototype())        return "int";
+    if (obj == env->getFloatPrototype())      return "float";
+    if (obj == env->getBoolPrototype())       return "bool";
+    if (obj == env->getStrPrototype())        return "str";
+    if (obj == env->getBytesPrototype())      return "bytes";
+    if (obj == env->getListPrototype())       return "list";
+    if (obj == env->getDictPrototype())       return "dict";
+    if (obj == env->getSetPrototype())        return "set";
+    if (obj == env->getFrozensetPrototype())  return "frozenset";
+    if (obj == env->getTuplePrototype())      return "tuple";
+    if (obj == env->getObjectPrototype())     return "object";
+    if (obj == env->getTypePrototype())       return "type";
+    return nullptr;
+}
+
+// fget for the type.__doc__ getset descriptor.  Returns the class's own
+// docstring, or None when undocumented — never AttributeError, preserving
+// the invariant that `cls.__doc__` is always readable (relied on by
+// functools.wraps / signal._wraps).
+static const proto::ProtoObject* py_type_get_doc(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList*,
+    const proto::ProtoSparseList*) {
+    if (!self) return PROTO_NONE;
+    const proto::ProtoString* docS = PythonEnvironment::getInternedString(context, "__doc__");
+    if (self->hasOwnAttribute(context, docS) == PROTO_TRUE) {
+        const proto::ProtoObject* d = self->getOwnAttributeDirect(context, docS);
+        return d ? d : PROTO_NONE;
+    }
+    return PROTO_NONE;
+}
+
+// fset for the type.__doc__ getset descriptor.  Immutable built-in types
+// reject the assignment with TypeError; heap (user-defined) classes store
+// the docstring as their own attribute.
+static const proto::ProtoObject* py_type_set_doc(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList*) {
+    if (!self || !args || args->getSize(context) < 2) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const char* immName = immutableBuiltinTypeName(env, self);
+    if (immName) {
+        if (env) env->raiseTypeError(context,
+            std::string("cannot set '__doc__' attribute of immutable type '") + immName + "'");
+        return nullptr;
+    }
+    const proto::ProtoObject* value = args->getAt(context, 1);
+    const proto::ProtoString* docS = PythonEnvironment::getInternedString(context, "__doc__");
+    const_cast<proto::ProtoObject*>(self)->proto::ProtoObject::setAttribute(context, docS, value);
+    return PROTO_NONE;
+}
+
+// fdel for the type.__doc__ getset descriptor.  CPython rejects deletion
+// of __doc__ on every type: immutable types report "cannot set", heap
+// types report "cannot delete".
+static const proto::ProtoObject* py_type_del_doc(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList*,
+    const proto::ProtoSparseList*) {
+    if (!self) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return nullptr;
+    const char* immName = immutableBuiltinTypeName(env, self);
+    if (immName) {
+        env->raiseTypeError(context,
+            std::string("cannot set '__doc__' attribute of immutable type '") + immName + "'");
+        return nullptr;
+    }
+    std::string clsName = "?";
+    const proto::ProtoObject* nm = self->getAttribute(context, env->getNameString());
+    if (nm && nm != PROTO_NONE && nm->isString(context)) {
+        nm->asString(context)->toUTF8String(context, clsName);
+    }
+    env->raiseTypeError(context,
+        "cannot delete '__doc__' attribute of type '" + clsName + "'");
+    return nullptr;
+}
+
 static const proto::ProtoObject* py_object_hash(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -16719,13 +16811,25 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     dictDescr->setAttribute(rootContext_, py_name, dictString->asObject(rootContext_));
 
     typePrototype = typePrototype->setAttribute(rootContext_, dictString, dictDescr);
-    // Default __doc__ to None on typePrototype (classes inherit this
-    // when they do not declare a docstring of their own — CPython
-    // semantics). Without this, accessing `cls.__doc__` on a class
-    // that has no explicit docstring raises AttributeError, breaking
-    // stdlib patterns such as signal._wraps that copy docstrings:
-    // `wrapper.__doc__ = wrapped.__doc__`.
-    typePrototype = typePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__doc__"), PROTO_NONE);
+    // type.__doc__ is a getset descriptor (CPython parity): fget returns
+    // the class's own docstring or None (never AttributeError — stdlib
+    // patterns such as signal._wraps rely on `cls.__doc__` being
+    // readable); fset stores the docstring on heap classes and rejects
+    // immutable built-in types with TypeError; fdel rejects deletion on
+    // every type.  Reading `cls.__doc__` for an undocumented class still
+    // yields None: objectPrototype keeps its plain `__doc__ = None`
+    // attribute, which the base-MRO walk resolves before the metaclass
+    // descriptor.
+    {
+        proto::ProtoObject* docDescr = const_cast<proto::ProtoObject*>(getSetDescriptorPrototype->newChild(rootContext_, true));
+        const proto::ProtoString* docString = PythonEnvironment::getInternedString(rootContext_, "__doc__");
+        docDescr->setAttribute(rootContext_, py_class, getSetDescriptorPrototype);
+        docDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fget"), rootContext_->fromMethod(nullptr, py_type_get_doc));
+        docDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fset"), rootContext_->fromMethod(nullptr, py_type_set_doc));
+        docDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fdel"), rootContext_->fromMethod(nullptr, py_type_del_doc));
+        docDescr->setAttribute(rootContext_, py_name, docString->asObject(rootContext_));
+        typePrototype = typePrototype->setAttribute(rootContext_, docString, docDescr);
+    }
 
     // Register __annotations__ on type
     proto::ProtoObject* annDescr = const_cast<proto::ProtoObject*>(getSetDescriptorPrototype->newChild(rootContext_, true));
