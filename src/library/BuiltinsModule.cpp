@@ -5303,6 +5303,15 @@ const proto::ProtoObject* py_type(
 
         if (obj == PROTO_NONE) return env->getNoneTypePrototype();
 
+        // STRUCT-1: `type([].append)` must report `method`.  protoCore's
+        // POINTER_TAG_METHOD tagged pointers carry no parent chain so
+        // env->getType folds them to objectPrototype; intercept here at
+        // the `type()` builtin (rather than in getType, which the
+        // OP_LOAD_ATTR fast path relies on for descriptor-flag probes).
+        if (obj && env && env->getMethodPrototype() && obj->isMethod(context)) {
+            return env->getMethodPrototype();
+        }
+
         if (get_env_diag()) {
             std::string oRepr = env ? env->reprObject(context, obj) : "???";
             fprintf(stderr, "DEBUG: py_type(obj=%p repr='%s')\n", (void*)obj, oRepr.c_str());

@@ -1333,6 +1333,33 @@ private:
     std::unordered_map<std::string, const proto::ProtoString*> internPool_;
     std::mutex internMutex_;
 
+    // STRUCT-1: native-method introspection side table.  Maps a native
+    // ProtoMethod function pointer to the attribute name it was
+    // registered under and the prototype that owns it.  Populated by a
+    // one-time post-bootstrap walk (registerNativeMethodNames()).  Lets
+    // env->getAttribute synthesise `__name__` / `__qualname__` /
+    // `__objclass__` for POINTER_TAG_METHOD bound methods (e.g.
+    // `[].__add__.__name__ == '__add__'`) without changing the
+    // tagged-pointer binding form — keeping all 300+ asMethod() call
+    // sites intact.
+    struct NativeMethodInfo {
+        std::string name;
+        const proto::ProtoObject* owningClass;
+    };
+    std::unordered_map<const void*, NativeMethodInfo> nativeMethodNames_;
+public:
+    /** Record a native method fn-pointer -> (name, owning class). */
+    void recordNativeMethodName(const void* fnPtr, const std::string& name,
+                                 const proto::ProtoObject* owningClass);
+    /** Look up the registered name for a native ProtoMethod fn-pointer.
+     *  Returns nullptr in outName when unknown. */
+    bool lookupNativeMethodInfo(const void* fnPtr, std::string& outName,
+                                 const proto::ProtoObject** outOwningClass) const;
+    /** One-time post-bootstrap walk: scan every built-in prototype's
+     *  own attributes and register each native-method value. */
+    void registerNativeMethodNames(proto::ProtoContext* ctx);
+private:
+
     /** Incremented on invalidateResolveCache(); per-thread caches check this (lock-free). */
     mutable std::atomic<uint64_t> resolveCacheGeneration_{0};
     std::istream* stdin_{&std::cin};

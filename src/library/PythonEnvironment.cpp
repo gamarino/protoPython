@@ -19642,6 +19642,11 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
              this->callObject(*exc, {});
         }
     }
+    // STRUCT-1: one-time post-bootstrap walk to populate the
+    // native-method introspection side table.  Runs after every
+    // built-in prototype is fully wired so `[].__add__.__name__`
+    // can resolve the descriptor key.
+    registerNativeMethodNames(rootContext_);
     // Final prototype initialization diagnostic removed
 }
 
@@ -21280,6 +21285,58 @@ static inline bool fastGetattrDisabled() {
 const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, bool raiseError, bool* outIsUnboundFunc) {
     if (outIsUnboundFunc) *outIsUnboundFunc = false;
     if (!obj || !name) return nullptr;
+
+    // STRUCT-1: native-method introspection.  A POINTER_TAG_METHOD
+    // bound method (`[].__add__`, `list.append`, …) cannot carry
+    // per-instance attributes, so `__name__` / `__qualname__` /
+    // `__objclass__` / `__self__` are synthesised here from the
+    // post-bootstrap side table keyed by the method's fn-pointer.
+    // This keeps the tagged-pointer binding form intact — none of the
+    // 300+ asMethod() call sites change.
+    if (obj->isMethod(ctx) && !nativeMethodNames_.empty()) {
+        const proto::ProtoString* nameDunder = getNameString();
+        const proto::ProtoString* qnameDunder =
+            PythonEnvironment::getInternedString(ctx, "__qualname__");
+        const proto::ProtoString* selfDunder = getSelfDunderString();
+        const proto::ProtoString* objclassDunder =
+            PythonEnvironment::getInternedString(ctx, "__objclass__");
+        bool wantName     = (nameDunder && name == nameDunder);
+        bool wantQualname = (qnameDunder && name == qnameDunder);
+        bool wantSelf     = (selfDunder && name == selfDunder);
+        bool wantObjclass = (objclassDunder && name == objclassDunder);
+        if (wantName || wantQualname || wantSelf || wantObjclass) {
+            proto::ProtoMethod fn = obj->asMethod(ctx);
+            std::string methodName;
+            const proto::ProtoObject* owningClass = nullptr;
+            bool known = fn && lookupNativeMethodInfo(
+                reinterpret_cast<const void*>(fn), methodName, &owningClass);
+            if (wantSelf) {
+                const proto::ProtoObject* boundSelf = obj->asMethodSelf(ctx);
+                if (boundSelf) return boundSelf;
+                // Unbound native method has no __self__ — fall through
+                // to the normal chain (raises AttributeError if absent).
+            } else if (known) {
+                if (wantName) {
+                    return PythonEnvironment::getInternedString(ctx, methodName.c_str())->asObject(ctx);
+                }
+                if (wantObjclass) {
+                    if (owningClass && owningClass != PROTO_NONE) return owningClass;
+                } else if (wantQualname) {
+                    std::string ql;
+                    if (owningClass && owningClass != PROTO_NONE) {
+                        const proto::ProtoObject* ownNm =
+                            owningClass->getAttribute(ctx, nameDunder);
+                        if (ownNm && ownNm->isString(ctx)) {
+                            ownNm->asString(ctx)->toUTF8String(ctx, ql);
+                            ql += ".";
+                        }
+                    }
+                    ql += methodName;
+                    return PythonEnvironment::getInternedString(ctx, ql.c_str())->asObject(ctx);
+                }
+            }
+        }
+    }
 
     if (!fastGetattrDisabled()) {
         const proto::ProtoObject* fast = tryFastGetAttribute(this, ctx, obj, name, outIsUnboundFunc);
@@ -24554,6 +24611,60 @@ bool PythonEnvironment::handleExhaustion(proto::ProtoContext* ctx) {
         return true;
     }
     return false;
+}
+
+// STRUCT-1: native-method introspection side table.
+void PythonEnvironment::recordNativeMethodName(const void* fnPtr,
+        const std::string& name, const proto::ProtoObject* owningClass) {
+    if (!fnPtr) return;
+    // First registration wins — a method is canonically known by the
+    // name it was first bound under (mirrors CPython's tp_methods table).
+    if (nativeMethodNames_.find(fnPtr) != nativeMethodNames_.end()) return;
+    nativeMethodNames_[fnPtr] = NativeMethodInfo{ name, owningClass };
+}
+
+bool PythonEnvironment::lookupNativeMethodInfo(const void* fnPtr,
+        std::string& outName, const proto::ProtoObject** outOwningClass) const {
+    if (!fnPtr) return false;
+    auto it = nativeMethodNames_.find(fnPtr);
+    if (it == nativeMethodNames_.end()) return false;
+    outName = it->second.name;
+    if (outOwningClass) *outOwningClass = it->second.owningClass;
+    return true;
+}
+
+void PythonEnvironment::registerNativeMethodNames(proto::ProtoContext* ctx) {
+    if (!ctx) return;
+    // Walk every built-in prototype's own attributes; for each value
+    // that is a native ProtoMethod, record fn-pointer -> (name, proto).
+    const proto::ProtoObject* prototypes[] = {
+        objectPrototype, typePrototype, listPrototype, dictPrototype,
+        tuplePrototype, strPrototype, bytesPrototype, intPrototype,
+        floatPrototype, boolPrototype, setPrototype, frozensetPrototype,
+        methodPrototype, functionPrototype, modulePrototype,
+        mappingProxyPrototype, getSetDescriptorPrototype, framePrototype,
+        generatorPrototype, sliceType, nonePrototype, complexPrototype,
+    };
+    for (const proto::ProtoObject* proto : prototypes) {
+        if (!proto || proto == PROTO_NONE) continue;
+        const proto::ProtoSparseList* attrs = proto->getOwnAttributes(ctx);
+        if (!attrs) continue;
+        auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(ctx));
+        while (it && it->hasNext(ctx)) {
+            unsigned long key = it->nextKey(ctx);
+            const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
+            const proto::ProtoObject* val = it->nextValue(ctx);
+            if (keyObj && keyObj->isString(ctx) && val && val->isMethod(ctx)) {
+                proto::ProtoMethod fn = val->asMethod(ctx);
+                if (fn) {
+                    std::string nm;
+                    keyObj->asString(ctx)->toUTF8String(ctx, nm);
+                    recordNativeMethodName(reinterpret_cast<const void*>(fn), nm, proto);
+                }
+            }
+            it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
+        }
+    }
 }
 
 void PythonEnvironment::registerNativeModule(NativeModuleProvider* provider, const std::string& name, std::function<const proto::ProtoObject*(proto::ProtoContext*)> init) {
