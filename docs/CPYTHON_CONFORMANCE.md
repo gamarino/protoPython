@@ -28,6 +28,77 @@
 
 ---
 
+## Current Status (2026-05-13) — post-ninth-sweep (round 2, final)
+
+Final consolidation of round 2.  Two additional commits landed
+after the "continued" entry; both target real correctness issues in
+the runtime, even when they do not move the unittest counter.
+
+### Direct unittest counts (`test_descr.py`)
+
+| | run | fail | error | skipped | Δ vs continued |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-13 (round-2 final)     | 165 | **50** | **53** | 10 | 0 |
+| 2026-05-13 (round-2 continued) | 165 | 50 | 53 | 10 | — |
+
+### Additional round-2 commits since the "continued" entry
+
+| Commit | Theme |
+| :--- | :--- |
+| `fa9ac6e1` I-29 | `createUserFunction` initialises both `__dict__` and `__annotations__` as proper empty dicts (canonical `__data__` SparseList + `__keys__` List slots).  Resolves the "function.__annotations__ aliased to dict-prototype's `__dict__`" pathology at the SOURCE — every `def f(): pass` now reports `f.__annotations__ == {}` instead of a 30-key dict-method bag. |
+| `3308e076` J-30 | `setattr` rejects `__bases__` assignment on built-in immutable types (int / float / bool / str / bytes / list / dict / set / frozenset / tuple / object / type) with the canonical CPython "cannot set '__bases__' attribute of immutable type '<name>'" TypeError.  Removes a corruption vector: `list.__bases__ = (dict,)` no longer mutates the live `listPrototype` mid-suite. |
+
+### Round-2 summary
+
+| Phase | Commits | Net delta (F/E) |
+| :--- | ---: | :--- |
+| H (instance dict cleanup + str repr + getstate)         | H-22, H-23, H-24 | -1 fail |
+| I (property doc + annotations heuristic + slots + mp)   | I-25, I-26, I-27, I-28, I-29 | -3 fail |
+| J (immutable bases guard)                               | J-30             | 0 |
+| Planning + docs                                         | b8fddb95, 6373ef32, 459d9fd6, this entry | 0 |
+| **Total round 2**                                       | **13**           | **-4 fail** |
+
+Net cumulative: round 1 (54F+53E) → round 2 (50F+53E) = −4 fail.
+ctest, test_grammar, test_types all unchanged across the sweep.
+
+### Still carried over to round 3
+
+Same architectural blockers as the partial entry, refined by what
+landed:
+
+* **Native method introspection** (J-27..J-30 scope): heap-wrapper
+  approach attempted twice in round 2, both reverted (regression in
+  `invokeCallable`'s raw-method signature contract triggers `iter()
+  returned None` from `namedtuple`).  Needs a co-designed change in
+  `methodPrototype.__call__` to detect "wrapping unbound C method"
+  and bypass the prepend-self step.
+* **Lazy `__annotations__` on classmethod / staticmethod**: K-32
+  attempted to skip the eager materialise when the wrapped function
+  has empty annotations.  Broke
+  `test_classmethod_without_dict_access` (which asserts
+  `cm.__annotations__ == {}` works even before `cm.__dict__` is
+  read).  Reverted.  Needs a real lazy property descriptor.
+* **`super()` argument forwarding** when bound through `__set_name__`-style
+  attribute access — `self.__super.meth(a)` drops `a`.
+* **`__class__` override at class body level**: `class FakeStr:
+  __class__ = str` — protoPython's class creator doesn't honor the
+  assignment, so `FakeStr.__dict__['__class__']` returns the
+  metaclass (type) instead of the override.  Probably needs an
+  explicit class-body intercept for `__class__`.
+* **Function-level locals materialisation** (still pending for
+  `dir()` / `eval()` scope).
+* **Dict-subclass instance-dict separation** (still pending for
+  test_multiple_inheritance's `_C__state` leak into `D({…}).keys()`).
+* **GC-coupled** `test_delete_hook` / `test_subtype_resurrection`
+  / `test_remove_subclass` / `test_cycle_through_dict`.
+
+The "depth of contract reached" metric continues to climb: every
+round 2 commit either eliminated a long-standing correctness issue
+in the runtime (H-22, H-23, I-29, J-30) or unblocked a test for
+deeper sub-test discovery (H-24, I-25..I-28).
+
+---
+
 ## Current Status (2026-05-13) — post-ninth-sweep (round 2, continued)
 
 Round 2 continuation extended the previous H-class commits with five
