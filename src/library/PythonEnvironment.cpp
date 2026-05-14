@@ -15810,6 +15810,18 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, py_object_str));
     objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__format__"), rootContext_->fromMethod(nullptr, py_object_format));
     objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__hash__"), rootContext_->fromMethod(nullptr, py_object_hash));
+    // Q-76: every CPython object inherits __sizeof__ from object — it
+    // returns an opaque platform-dependent byte count.  Stub it as a
+    // small constant; downstream code that checks `obj.__sizeof__()`
+    // (e.g. sys.getsizeof, some test fixtures) at least gets an int.
+    objectPrototype = objectPrototype->setAttribute(rootContext_,
+        getInternedString(rootContext_, "__sizeof__"),
+        rootContext_->fromMethod(nullptr,
+        [](proto::ProtoContext* ctx, const proto::ProtoObject*,
+           const proto::ParentLink*, const proto::ProtoList*,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            return ctx->fromInteger(16);
+        }));
     objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__reduce_ex__"), rootContext_->fromMethod(nullptr, py_object_reduce_ex));
     objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__reduce__"), rootContext_->fromMethod(nullptr, py_object_reduce));
     // PEP 690 / Python 3.11+ — object.__getstate__ exposes the
