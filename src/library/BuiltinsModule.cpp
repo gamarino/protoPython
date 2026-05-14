@@ -5405,37 +5405,70 @@ const proto::ProtoObject* py_type(
                     }
                     return false;
                 };
-                const proto::ProtoTuple* slotsT = slotsVal->asTuple(context);
-                const proto::ProtoList* slotsL = slotsT ? nullptr : slotsVal->asList(context);
-                if (slotsT) {
-                    for (unsigned long si = 0; si < slotsT->getSize(context); ++si) {
-                        const proto::ProtoObject* s = slotsT->getAt(context, si);
-                        if (s && s->isString(context)) {
-                            std::string ss; s->asString(context)->toUTF8String(context, ss);
-                            if (checkName(ss)) return nullptr;
-                        } else if (s && (s->isInteger(context) || s->isFloat(context) || s->isBoolean(context))) {
-                            // CPython rejects numeric slot names at
-                            // class-creation time with TypeError.
-                            env->raiseTypeError(context,
-                                "__slots__ items must be strings, not 'int'");
-                            return nullptr;
+                // CPython validates every __slots__ item: it must be a
+                // `str` (else `TypeError: __slots__ items must be
+                // strings, not 'X'`) and a valid identifier (else
+                // `TypeError: __slots__ must be identifiers`).  Returns
+                // true when it raised — caller propagates with nullptr.
+                auto isSlotIdentifier = [](const std::string& nm) -> bool {
+                    if (nm.empty()) return false;
+                    auto isStart = [](unsigned char c) {
+                        return c == '_' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+                    };
+                    auto isCont = [&](unsigned char c) {
+                        return isStart(c) || (c >= '0' && c <= '9');
+                    };
+                    if (!isStart(static_cast<unsigned char>(nm[0]))) return false;
+                    for (size_t i = 1; i < nm.size(); ++i) {
+                        if (!isCont(static_cast<unsigned char>(nm[i]))) return false;
+                    }
+                    return true;
+                };
+                auto validateSlotItem = [&](const proto::ProtoObject* s) -> bool {
+                    if (!s) return false;
+                    if (!s->isString(context)) {
+                        std::string tName = "object";
+                        const proto::ProtoObject* sCls = env->getType(context, s);
+                        if (sCls && sCls != PROTO_NONE) {
+                            const proto::ProtoObject* nm =
+                                sCls->getAttribute(context, env->getNameString());
+                            if (nm && nm->isString(context))
+                                nm->asString(context)->toUTF8String(context, tName);
                         }
+                        env->raiseTypeError(context,
+                            "__slots__ items must be strings, not '" + tName + "'");
+                        return true;
+                    }
+                    std::string ss; s->asString(context)->toUTF8String(context, ss);
+                    // An embedded NUL survives in the ProtoString's char
+                    // count even when toUTF8String stops the std::string
+                    // at it — `"foo\0bar"` is not a valid identifier.
+                    if (s->asString(context)->getSize(context) != ss.size() ||
+                        !isSlotIdentifier(ss)) {
+                        env->raiseTypeError(context, "__slots__ must be identifiers");
+                        return true;
+                    }
+                    return checkName(ss);
+                };
+                // isString must be probed before asList: a ProtoString's
+                // asList yields its character list, which would route a
+                // single-string `__slots__ = "abc"` through the per-item
+                // loop and reject each char-string spuriously.
+                const proto::ProtoTuple* slotsT = slotsVal->isString(context)
+                    ? nullptr : slotsVal->asTuple(context);
+                const proto::ProtoList* slotsL = (slotsT || slotsVal->isString(context))
+                    ? nullptr : slotsVal->asList(context);
+                if (slotsVal->isString(context)) {
+                    std::string ss; slotsVal->asString(context)->toUTF8String(context, ss);
+                    if (checkName(ss)) return nullptr;
+                } else if (slotsT) {
+                    for (unsigned long si = 0; si < slotsT->getSize(context); ++si) {
+                        if (validateSlotItem(slotsT->getAt(context, si))) return nullptr;
                     }
                 } else if (slotsL) {
                     for (unsigned long si = 0; si < slotsL->getSize(context); ++si) {
-                        const proto::ProtoObject* s = slotsL->getAt(context, si);
-                        if (s && s->isString(context)) {
-                            std::string ss; s->asString(context)->toUTF8String(context, ss);
-                            if (checkName(ss)) return nullptr;
-                        } else if (s && (s->isInteger(context) || s->isFloat(context) || s->isBoolean(context))) {
-                            env->raiseTypeError(context,
-                                "__slots__ items must be strings, not 'int'");
-                            return nullptr;
-                        }
+                        if (validateSlotItem(slotsL->getAt(context, si))) return nullptr;
                     }
-                } else if (slotsVal->isString(context)) {
-                    std::string ss; slotsVal->asString(context)->toUTF8String(context, ss);
-                    if (checkName(ss)) return nullptr;
                 } else if (slotsVal->isInteger(context) || slotsVal->isFloat(context)
                            || slotsVal->isBoolean(context)) {
                     // __slots__ = 1 — clearly not a slot spec.
