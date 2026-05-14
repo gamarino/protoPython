@@ -16248,6 +16248,34 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     unionTypePrototype = unionTypePrototype->setAttribute(rootContext_, py_module, builtinsVal);
     unionTypePrototype = unionTypePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_union_type_repr));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, getItemString, rootContext_->fromMethod(nullptr, py_mappingproxy_getitem));
+    // CPython rejects every mutation on a mappingproxy with TypeError
+    // "'mappingproxy' object does not support item assignment" (or
+    // "deletion").  Without explicit `__setitem__` / `__delitem__`
+    // overrides, protoPython falls back to a generic dict-shaped path
+    // and silently accepted the write, letting `type.__dict__['k'] = v`
+    // succeed.  Bind read-only stubs here.
+    mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__setitem__"),
+        rootContext_->fromMethod(nullptr,
+        [](proto::ProtoContext* ctx, const proto::ProtoObject*,
+           const proto::ParentLink*, const proto::ProtoList*,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (env) env->raiseTypeError(ctx,
+                "'mappingproxy' object does not support item assignment");
+            return nullptr;
+        }));
+    mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__delitem__"),
+        rootContext_->fromMethod(nullptr,
+        [](proto::ProtoContext* ctx, const proto::ProtoObject*,
+           const proto::ParentLink*, const proto::ProtoList*,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (env) env->raiseTypeError(ctx,
+                "'mappingproxy' object does not support item deletion");
+            return nullptr;
+        }));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__contains__"), rootContext_->fromMethod(nullptr, py_mappingproxy_contains));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "get"), rootContext_->fromMethod(nullptr, py_mappingproxy_get));
     // SP-C/C3: own-only __iter__ and __len__ so iter(cls.__dict__) and
