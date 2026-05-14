@@ -16237,6 +16237,16 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         }
     ));
     methodPrototype = methodPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__doc__"), PROTO_NONE);
+    // Q-71: __mro__ for method prototype so `type([].append).__mro__`
+    // reports `(method, object)` instead of `(object,)`.
+    {
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(rootContext_, "__mro__");
+        const proto::ProtoList* mroList = rootContext_->newList()
+            ->appendLast(rootContext_, methodPrototype)
+            ->appendLast(rootContext_, objectPrototype);
+        methodPrototype = methodPrototype->setAttribute(rootContext_, mroS,
+            rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
+    }
     // Bound-method equality: two bound methods are equal iff they share
     // the same `__self__` (by identity) and the same underlying
     // function/native pointer.  Without this, every fresh `obj.method`
