@@ -18625,6 +18625,16 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     modulePrototype = modulePrototype->setAttribute(rootContext_, getModuleString(), builtinsVal);
     // Register items()/keys()/update() so that module.__dict__.items() / .update() works
     // (module.__dict__ = module itself, so these are called on the module directly)
+    // Q-75: __mro__ = (module, object) so type(builtins).__mro__
+    // reports the canonical chain instead of `(object,)`.
+    {
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(rootContext_, "__mro__");
+        const proto::ProtoList* mroList = rootContext_->newList()
+            ->appendLast(rootContext_, modulePrototype)
+            ->appendLast(rootContext_, objectPrototype);
+        modulePrototype = modulePrototype->setAttribute(rootContext_, mroS,
+            rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
+    }
     modulePrototype = modulePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "items"),
         rootContext_->fromMethod(nullptr, py_module_items));
     modulePrototype = modulePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "keys"),
