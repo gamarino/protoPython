@@ -16136,8 +16136,12 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                     hasSlots = true;
                     const proto::ProtoObject* slotsVal = base->getOwnAttributeDirect(ctx, slotsS);
                     if (!slotsVal || slotsVal == PROTO_NONE) continue;
-                    const proto::ProtoTuple* sT = slotsVal->asTuple(ctx);
-                    const proto::ProtoList* sL = sT ? nullptr : slotsVal->asList(ctx);
+                    // isString before asList — a single-string `__slots__`
+                    // must be one slot, not its character list.
+                    const proto::ProtoTuple* sT = slotsVal->isString(ctx)
+                        ? nullptr : slotsVal->asTuple(ctx);
+                    const proto::ProtoList* sL = (sT || slotsVal->isString(ctx))
+                        ? nullptr : slotsVal->asList(ctx);
                     if (sT) {
                         for (unsigned long si = 0; si < sT->getSize(ctx); ++si) {
                             const proto::ProtoObject* s = sT->getAt(ctx, si);
@@ -22677,8 +22681,14 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                 const proto::ProtoObject* slotsObj = base->getOwnAttributeDirect(ctx, slotsS);
                 if (slotsObj && slotsObj != PROTO_NONE) {
                     // Iterate slots: tuple, list, or single string.
-                    const proto::ProtoTuple* slotsT = slotsObj->asTuple(ctx);
-                    const proto::ProtoList* slotsL = slotsT ? nullptr : slotsObj->asList(ctx);
+                    // isString must be probed before asList — a ProtoString's
+                    // asList yields its character list, which would shred a
+                    // single-string `__slots__ = "abc"` into per-char slots
+                    // and reject the real `abc` attribute.
+                    const proto::ProtoTuple* slotsT = slotsObj->isString(ctx)
+                        ? nullptr : slotsObj->asTuple(ctx);
+                    const proto::ProtoList* slotsL = (slotsT || slotsObj->isString(ctx))
+                        ? nullptr : slotsObj->asList(ctx);
                     if (slotsT) {
                         for (unsigned long si = 0; si < slotsT->getSize(ctx); ++si) {
                             const proto::ProtoObject* s = slotsT->getAt(ctx, si);

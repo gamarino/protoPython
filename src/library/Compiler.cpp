@@ -368,8 +368,21 @@ bool Compiler::compileConstant(ConstantNode* n) {
             obj = ctx_->fromDouble(n->floatVal);
         }
     }
-    else if (n->constType == ConstantNode::ConstType::Str)
-        obj = PythonEnvironment::getInternedString(ctx_, n->strVal.c_str())->asObject(ctx_);
+    else if (n->constType == ConstantNode::ConstType::Str) {
+        if (n->strVal.find('\0') != std::string::npos) {
+            // Embedded NUL: getInternedString's strlen would truncate
+            // the literal at the first 0x00.  Build from an explicit
+            // byte length instead (interning is skipped for this rare
+            // case — correctness over the dedup optimisation).
+            uint8_t rem[4]; uint8_t remCount = 0;
+            const proto::ProtoString* res = proto::ProtoString::fromUTF8Buffer(
+                ctx_, reinterpret_cast<const uint8_t*>(n->strVal.data()),
+                n->strVal.size(), nullptr, 0, rem, &remCount);
+            obj = res ? res->asObject(ctx_) : PROTO_NONE;
+        } else {
+            obj = PythonEnvironment::getInternedString(ctx_, n->strVal.c_str())->asObject(ctx_);
+        }
+    }
     else if (n->constType == ConstantNode::ConstType::Bytes) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx_);
         if (env && env->getBytesPrototype()) {
