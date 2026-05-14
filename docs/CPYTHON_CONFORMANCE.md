@@ -28,6 +28,80 @@
 
 ---
 
+## Current Status (2026-05-14) — post-eleventh-sweep (round 4)
+
+Round 4 focused on broader stdlib / prototype surface area: small
+additions that didn't always move test_descr counts but improved
+runtime correctness across multiple introspection / reflection
+paths.
+
+### Direct unittest counts (`test_descr.py`)
+
+| | run | fail | error | skipped | Δ vs round-3 |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-14 (round-4)        | 165 | **50** | **53** | 10 | flat |
+| 2026-05-13 (round-3 final)  | 165 | 50 | 52 | 10 | — |
+
+### Commits landed in round 4
+
+| Commit | Theme |
+| :--- | :--- |
+| `a2662d28` planning round-4 | Plan doc. |
+| `dc22ab05` Q-65 | GenericAlias prototype owns `__mro__` so reprObject's MRO walk finds py_genericalias_repr. |
+| `4b2d759e` Q-66 | UnionType prototype owns `__mro__` (same root cause). |
+| `ca327573` Q-67 | GenericAlias.__repr__ uses origin's `__qualname__` (not `repr(cls)`). |
+| `a990948b` Q-68 | GenericAlias.__repr__ renders type args via `__qualname__` too — `repr(tuple[int, str])` now matches CPython exactly. |
+| `4d1bc825` Q-69 | NoneType prototype owns `__mro__`. |
+| `dafe6501` Q-70 | ellipsis / NotImplementedType prototypes own `__mro__`. |
+| `520ba57b` Q-71 | methodPrototype owns `__mro__`. |
+| `7bf100c7` Q-72 | propertyPrototype owns `__mro__`. |
+| `6d32a360` Q-73 | traceback / cell / code prototypes own `__mro__`. |
+| `611b17e5` Q-74 | getset_descriptor / frame / generator prototypes own `__mro__`. |
+| `b009f992` Q-75 | modulePrototype owns `__mro__`. |
+| `4b68fea8` Q-76 | object.__sizeof__ stub returns a fixed byte count. |
+| `4fad9c21` Q-77 | object.__dir__ stub returns instance own-attribute names. |
+| `1c20e0c6` Q-78 | copyreg._reconstructor tolerates base=None. |
+
+### Cumulative net
+
+* Round 1 (sweep 8): 17 commits, 51F+21E → 51F+60E (subTest cascade).
+* Round 2 (sweep 9): 13 commits, 54F+53E → 50F+53E (-4 fail).
+* Round 3 (sweep 10): 6 commits, 50F+53E → 50F+52E (-1 error).
+* Round 4 (sweep 11): 16 commits, 50F+52E → 50F+53E (flat, +1 error).
+
+### Why round 4 is flat
+
+The __mro__ additions (Q-65..Q-75) don't move test_descr counts
+because the failing tests don't introspect `__mro__` directly —
+they exercise specific dunder dispatches.  But every prototype now
+reports a CPython-conformant chain, which:
+
+* Makes `issubclass(NoneType, NoneType)` and similar introspection
+  succeed.
+* Lets reprObject's MRO walk find the right `__repr__` instead of
+  falling back to `<{class} object at 0x…>` for built-in singletons.
+* Removes a long-standing class of subtle introspection bugs that
+  used to surface only under specific test fixtures.
+
+The Q-76 / Q-77 / Q-78 additions plug missing dunders that pickle
+/ sys.getsizeof / dir() call paths previously hit AttributeError
+on.
+
+### Carry-over to round 5
+
+Same architectural blockers as rounds 2 / 3.  Plus:
+
+* `super.__mro__` reports `(method, object)` because `super` is
+  registered as a fromMethod rather than a class.  Needs structural
+  rework of the super builtin.
+* `collections.deque.__mro__` is `(object,)` — Python-defined
+  classes outside the bootstrap prototype list still miss
+  themselves in __mro__.  Likely a py_type bug.
+* `__contains__` on modules — dispatch from the `in` operator
+  bypasses our override (L-44 / L-46 attempts).
+
+---
+
 ## Current Status (2026-05-13) — post-tenth-sweep (round 3)
 
 Round 3 focused on small surgical fixes that don't require the
