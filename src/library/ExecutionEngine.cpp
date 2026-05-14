@@ -1470,7 +1470,14 @@ static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
         std::string s1, s2;
         a->asString(ctx)->toUTF8String(ctx, s1);
         b->asString(ctx)->toUTF8String(ctx, s2);
-        return PythonEnvironment::getInternedString(ctx, (s1 + s2).c_str())->asObject(ctx);
+        // Explicit length: a c_str()-based construction truncates the
+        // concatenation at the first embedded NUL (`'a' + chr(0)`).
+        std::string sc = s1 + s2;
+        uint8_t rem[4]; uint8_t remCount = 0;
+        const proto::ProtoString* res = proto::ProtoString::fromUTF8Buffer(
+            ctx, reinterpret_cast<const uint8_t*>(sc.data()), sc.size(),
+            nullptr, 0, rem, &remCount);
+        return res ? res->asObject(ctx) : PROTO_NONE;
     }
     const proto::ProtoList* l1 = a->asList(ctx);
     if (!l1) {

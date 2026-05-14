@@ -7779,8 +7779,16 @@ static const proto::ProtoObject* py_chr(
         buf[n++] = static_cast<char>(0x80 | ((i >> 6) & 0x3F));
         buf[n++] = static_cast<char>(0x80 | (i & 0x3F));
     }
-    buf[n] = '\0';
-    return PythonEnvironment::getInternedString(context, buf)->asObject(context);
+    // Decode from an explicit byte count, not a NUL-terminated C
+    // string: chr(0) encodes to a single 0x00 byte, and every
+    // c_str()-based path (getInternedString, fromUTF8, fromStdString)
+    // would stop at it and yield the empty string.
+    uint8_t rem[4];
+    uint8_t remCount = 0;
+    const proto::ProtoString* result = proto::ProtoString::fromUTF8Buffer(
+        context, reinterpret_cast<const uint8_t*>(buf), static_cast<size_t>(n),
+        nullptr, 0, rem, &remCount);
+    return result ? result->asObject(context) : PROTO_NONE;
 }
 
 // Format an integer (small or big) as `prefix + digit-string` in the

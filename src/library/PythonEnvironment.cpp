@@ -7811,7 +7811,15 @@ static const proto::ProtoObject* py_str_add(
     std::string sa, sb;
     a->asString(ctx)->toUTF8String(ctx, sa);
     other->asString(ctx)->toUTF8String(ctx, sb);
-    return PythonEnvironment::getInternedString(ctx, (sa + sb).c_str())->asObject(ctx);
+    // Decode with an explicit length: a c_str()-based construction
+    // would truncate the concatenation at the first embedded NUL
+    // (e.g. `'a' + chr(0) + 'b'`).
+    std::string sc = sa + sb;
+    uint8_t rem[4]; uint8_t remCount = 0;
+    const proto::ProtoString* res = proto::ProtoString::fromUTF8Buffer(
+        ctx, reinterpret_cast<const uint8_t*>(sc.data()), sc.size(),
+        nullptr, 0, rem, &remCount);
+    return res ? res->asObject(ctx) : PROTO_NONE;
 }
 
 // String repetition: str.__mul__(self, count). count must be int (or bool).
@@ -10518,7 +10526,11 @@ static const proto::ProtoObject* py_str_getitem(
         for (long long i = sb.start; (sb.step > 0 ? i < sb.stop : i > sb.stop); i += sb.step) {
             sub += s[static_cast<size_t>(i)];
         }
-        return PythonEnvironment::getInternedString(context, sub.c_str())->asObject(context);
+        uint8_t rem_[4]; uint8_t remN_ = 0;
+        const proto::ProtoString* res_ = proto::ProtoString::fromUTF8Buffer(
+            context, reinterpret_cast<const uint8_t*>(sub.data()), sub.size(),
+            nullptr, 0, rem_, &remN_);
+        return res_ ? res_->asObject(context) : PROTO_NONE;
     }
 
     // bool subclasses int — accept True/False as 1/0.
@@ -10532,8 +10544,11 @@ static const proto::ProtoObject* py_str_getitem(
             if (env) env->raiseIndexError(context, "string index out of range");
             return PROTO_NONE;
         }
-        char c[2] = { s[static_cast<size_t>(idx)], '\0' };
-        return PythonEnvironment::getInternedString(context, c)->asObject(context);
+        unsigned char cb_ = static_cast<unsigned char>(s[static_cast<size_t>(idx)]);
+        uint8_t rem_[4]; uint8_t remN_ = 0;
+        const proto::ProtoString* res_ = proto::ProtoString::fromUTF8Buffer(
+            context, &cb_, 1, nullptr, 0, rem_, &remN_);
+        return res_ ? res_->asObject(context) : PROTO_NONE;
     }
 
     // CPython __index__ protocol — same fix as list / tuple subscript.
@@ -10560,8 +10575,11 @@ static const proto::ProtoObject* py_str_getitem(
                         envE->raiseIndexError(context, "string index out of range");
                         return PROTO_NONE;
                     }
-                    char c[2] = { s[static_cast<size_t>(idx)], '\0' };
-                    return PythonEnvironment::getInternedString(context, c)->asObject(context);
+                    unsigned char cb_ = static_cast<unsigned char>(s[static_cast<size_t>(idx)]);
+                    uint8_t rem_[4]; uint8_t remN_ = 0;
+                    const proto::ProtoString* res_ = proto::ProtoString::fromUTF8Buffer(
+                        context, &cb_, 1, nullptr, 0, rem_, &remN_);
+                    return res_ ? res_->asObject(context) : PROTO_NONE;
                 }
             }
         }
@@ -12675,7 +12693,13 @@ static const proto::ProtoObject* py_str_join(
         partObj->toUTF8String(context, part);
         out += part;
     }
-    return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
+    // Explicit length: a c_str()-based construction truncates the
+    // joined result at the first embedded NUL.
+    uint8_t rem[4]; uint8_t remCount = 0;
+    const proto::ProtoString* res = proto::ProtoString::fromUTF8Buffer(
+        context, reinterpret_cast<const uint8_t*>(out.data()), out.size(),
+        nullptr, 0, rem, &remCount);
+    return res ? res->asObject(context) : PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_dict_repr(
