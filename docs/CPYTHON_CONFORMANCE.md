@@ -28,6 +28,59 @@
 
 ---
 
+## Current Status (2026-05-14) — post-twelfth-sweep (round 5)
+
+Round 5 moved from cosmetic `__mro__` anchoring to a structural
+fix: native-method introspection.
+
+### Direct unittest counts (`test_descr.py`)
+
+| | run | fail | error | skipped | Δ vs round-4 |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-14 (round-5)        | 165 | **47** | **53** | 10 | **-4 fail** |
+| 2026-05-14 (round-4)        | 165 | 51 | 52 | 10 | — |
+
+### Commits landed in round 5
+
+| Commit | Theme |
+| :--- | :--- |
+| `0541c1ea` planning + R5-81 | Round-5 plan; collections.deque prototype owns `__mro__`. |
+| `cd87bc84` R5-82 | `_deque_iterator` / `_deque_reverse_iterator` prototypes own `__mro__`. |
+| `0b55be56` STRUCT-1 | Native-method introspection via fn-pointer side table — `__name__` / `__qualname__` / `__objclass__` / `__self__` on `POINTER_TAG_METHOD` bound methods, and `type()` of a tagged method reports `method`. |
+
+### STRUCT-1 detail
+
+`POINTER_TAG_METHOD` bound methods (`[].__add__`, `list.append`, …)
+carry no parent chain, so the four introspection dunders had no
+home.  A one-time post-bootstrap walk records every built-in
+prototype's native `ProtoMethod` entries into a side table keyed
+by fn-pointer → (name, owning prototype); `getAttribute`
+synthesises the dunders from it.  The tagged-pointer binding form
+is untouched — none of the ~328 `asMethod()` call sites change.
+
+Fixes `test_method_wrapper`, `test_special_unbound_method_types`,
+`test_builtin_function_or_method`, `test_reduce`.
+
+### Carry-over to round 6
+
+* `test_module_subclasses` — `MM("a")` for a module subclass is
+  routed to `type.__new__(MM, "a")` (the 2-arg reject shape)
+  instead of the inherited `object.__new__`.  `getAttribute(MM,
+  "__new__")` resolves into the metaclass chain rather than the
+  base MRO.  Confirmed independent of STRUCT-1.
+* Same architectural blockers as rounds 2–4 (`super` registered
+  as a method not a class; `__contains__` on modules bypassed by
+  the `in` operator).
+
+### Infra note
+
+The `build-release/` tree was found to be corrupted (basic
+protoCore gtests segfaulting / hanging) from earlier concurrent
+build+ctest contention; STRUCT-1 was verified on a clean
+`build_release/` rebuild — **183/183 ctest green**.
+
+---
+
 ## Current Status (2026-05-14) — post-eleventh-sweep (round 4)
 
 Round 4 focused on broader stdlib / prototype surface area: small
