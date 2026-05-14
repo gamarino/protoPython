@@ -8216,6 +8216,34 @@ const proto::ProtoObject* executeBytecodeRange(
                                 "cannot delete attribute '__dict__' of '" + clsName + "' objects");
                             continue;
                         }
+                        // CPython: `del mod.__dict__` is likewise rejected
+                        // for module objects and ModuleType subclass
+                        // instances — the namespace binding is read-only.
+                        // Detect via type identity / MRO so both plain
+                        // modules and ModuleType subclasses qualify.
+                        if (env->getModulePrototype()) {
+                            const proto::ProtoObject* modProto = env->getModulePrototype();
+                            const proto::ProtoObject* objType = env->getType(ctx, obj);
+                            bool isModuleLike = (objType == modProto);
+                            if (!isModuleLike && objType && objType != PROTO_NONE) {
+                                const proto::ProtoString* mroS = env->getMroString();
+                                const proto::ProtoObject* oMroAttr = mroS ? objType->getAttribute(ctx, mroS) : nullptr;
+                                const proto::ProtoTuple* oMroT = oMroAttr ? oMroAttr->asTuple(ctx) : nullptr;
+                                if (oMroT) {
+                                    for (unsigned long mi = 0; mi < oMroT->getSize(ctx); ++mi) {
+                                        if (oMroT->getAt(ctx, mi) == modProto) {
+                                            isModuleLike = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            if (isModuleLike) {
+                                env->raiseTypeError(ctx,
+                                    "cannot delete attribute '__dict__' of 'module' objects");
+                                continue;
+                            }
+                        }
                         proto::ProtoObject* mobj = const_cast<proto::ProtoObject*>(obj);
                         // initDictStorage rehydrates __data__ from native
                         // attrs every time __dict__ is read, so just

@@ -22451,6 +22451,35 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                 "__dict__");
             return nullptr;
         }
+        // CPython: module objects — and instances of ModuleType
+        // subclasses — likewise reject `mod.__dict__ = {…}`.  A module's
+        // __dict__ is its own namespace, exposed through a read-only
+        // slot; only its contents are mutable, not the binding itself.
+        // verify_dict_readonly's `cant(mod, {})` in test_set_dict
+        // depends on this.  Detect via the instance's type identity /
+        // MRO so both plain modules and ModuleType subclasses qualify.
+        if (modulePrototype) {
+            const proto::ProtoObject* objType = getType(ctx, obj);
+            bool isModuleLike = (objType == modulePrototype);
+            if (!isModuleLike && objType && objType != PROTO_NONE && mroString) {
+                const proto::ProtoObject* oMroAttr = objType->getAttribute(ctx, mroString);
+                const proto::ProtoTuple* oMroT = oMroAttr ? oMroAttr->asTuple(ctx) : nullptr;
+                if (oMroT) {
+                    for (unsigned long mi = 0; mi < oMroT->getSize(ctx); ++mi) {
+                        if (oMroT->getAt(ctx, mi) == modulePrototype) {
+                            isModuleLike = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (isModuleLike) {
+                raiseAttributeErrorWithMessage(ctx, obj,
+                    "attribute '__dict__' of 'module' objects is not writable",
+                    "__dict__");
+                return nullptr;
+            }
+        }
         // Validate type — must be a dict, dict subclass, or mappingproxy.
         // CPython accepts any dict-derived class; test_cycle_through_dict
         // assigns `self.__dict__ = self` where self is a dict-subclass
