@@ -5417,7 +5417,24 @@ static const proto::ProtoObject* py_list_call(
     const proto::ProtoString* dataName = env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__");
     proto::ProtoList* l = const_cast<proto::ProtoList*>(context->newList());
 
-    if (positionalParameters && positionalParameters->getSize(context) >= 2) {
+    // CPython: `list.__new__(cls, *args)` ignores args entirely — the
+    // iterable is consumed by `list.__init__`.  protoPython folds both
+    // into py_list_call, which is fine for the canonical `list(it)`
+    // path (list.__init__ is a no-op), but a list *subclass* with a
+    // user-defined __init__ must get an EMPTY list from __new__ and
+    // let its own __init__ run.  Otherwise `class C(list): __init__
+    // (self, value): ...` + `C(1)` tries to iterate the int `1`.
+    bool customInit = false;
+    if (env && cls != env->getListPrototype()) {
+        const proto::ProtoObject* initM = env->getAttribute(context, cls, env->getInitString(), false);
+        const proto::ProtoString* codeS = env->getCodeString();
+        if (initM && initM != PROTO_NONE && codeS &&
+            initM->hasOwnAttribute(context, codeS) == PROTO_TRUE) {
+            customInit = true;
+        }
+    }
+
+    if (!customInit && positionalParameters && positionalParameters->getSize(context) >= 2) {
         const proto::ProtoObject* iterable = positionalParameters->getAt(context, 1);
         if (get_env_diag()) {
         }
