@@ -7017,6 +7017,20 @@ const proto::ProtoObject* executeBytecodeRange(
                 // The frame stores the code object as f_code (not __code__)
                 const proto::ProtoString* codeKey = env ? env->getFCodeString() : PythonEnvironment::getInternedString(ctx, "f_code");
                 const proto::ProtoObject* outerCodeAttr = frame->getAttribute(ctx, codeKey);
+                // `co_freevars` (stamped by the compiler) is the exact set of
+                // names this new function — and its nested scopes — close
+                // over from enclosing function scopes.  When present, snapshot
+                // ONLY those names: blindly copying every outer local leaks an
+                // enclosing `self` into a nested method's closure frame and
+                // shadows the real binding during the LOAD_DEREF walk.  When
+                // absent (older code-object shapes), fall back to the legacy
+                // copy-everything behaviour.
+                const proto::ProtoTuple* coFreevars = nullptr;
+                {
+                    const proto::ProtoObject* fvObj = codeObj->getAttribute(ctx,
+                        PythonEnvironment::getInternedString(ctx, "co_freevars"));
+                    if (fvObj && fvObj != PROTO_NONE) coFreevars = fvObj->asTuple(ctx);
+                }
                 if (outerCodeAttr && outerCodeAttr != PROTO_NONE) {
                     const proto::ProtoObject* coVarnamesObj = outerCodeAttr->getAttribute(ctx, env ? env->getCoVarnamesString() : PythonEnvironment::getInternedString(ctx, "co_varnames"));
                     if (coVarnamesObj && coVarnamesObj != PROTO_NONE) {
@@ -7028,6 +7042,19 @@ const proto::ProtoObject* executeBytecodeRange(
                                 const proto::ProtoObject* vnameObj = coVarnames->getAt(ctx, j);
                                 if (proto::ProtoObject::isStringTagFast(vnameObj)) {
                                     const proto::ProtoString* vname = vnameObj->asString(ctx);
+                                    // Skip outer locals the new function does not
+                                    // actually close over (when co_freevars is known).
+                                    if (coFreevars) {
+                                        bool needed = false;
+                                        for (unsigned long fi = 0; fi < coFreevars->getSize(ctx); ++fi) {
+                                            const proto::ProtoObject* fvn = coFreevars->getAt(ctx, fi);
+                                            if (fvn && fvn->isString(ctx) &&
+                                                fvn->asString(ctx)->cmp_to_string(ctx, vname) == 0) {
+                                                needed = true; break;
+                                            }
+                                        }
+                                        if (!needed) continue;
+                                    }
                                     // Cell semantics: when the outer stores its locals on
                                     // `frame` as own attributes (forceMapped path), do NOT
                                     // snapshot them into closureFrame.  The parent chain

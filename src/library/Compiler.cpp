@@ -4010,6 +4010,22 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
 
     const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), PythonEnvironment::getInternedString(ctx_, filename_.c_str()), co_varnames_list, nparams, kwonlyargcount, automatic_count, co_flags, bodyCompiler.isGenerator_, PythonEnvironment::getInternedString(ctx_, n->name.c_str()), bodyCompiler.firstLine_, co_lnotab);
     if (!codeObj) return false;
+    // Stamp `co_freevars` — the exact set of names this function (and its
+    // nested scopes) close over from enclosing *function* scopes.
+    // bodyNonlocals already excludes this function's own params/locals
+    // (the `isLocal` filter above), so OP_BUILD_FUNCTION can snapshot
+    // ONLY these names from the outer frame instead of blindly copying
+    // every outer local — the blind copy leaks an enclosing `self` into
+    // a nested method's closure frame and shadows the real binding.
+    {
+        std::vector<const proto::ProtoObject*> freeVec;
+        freeVec.reserve(bodyNonlocals.size());
+        for (const auto& fv : bodyNonlocals)
+            freeVec.push_back(PythonEnvironment::getInternedString(ctx_, fv.c_str())->asObject(ctx_));
+        codeObj = codeObj->setAttribute(ctx_,
+            PythonEnvironment::getInternedString(ctx_, "co_freevars"),
+            ctx_->newTuple(freeVec)->asObject(ctx_));
+    }
     // Stamp `co_doc` on the code object when the body's first statement was
     // a string literal; ExecutionEngine reads it to populate `fn.__doc__`.
     if (!bodyCompiler.capturedDocstring_.empty()) {
@@ -4730,19 +4746,58 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     // BUILD_CLASS finishes, but BUILD_CLASS post-step writes the new
     // class into `ns` under the class's own name, so the closure walk
     // (innerCF.parent → ns) finds it.
+    // classBodyFreevars accumulates every name this class body closes
+    // over from an enclosing function scope; it is stamped onto the
+    // body code object as `co_freevars` so OP_BUILD_FUNCTION snapshots
+    // exactly these — not every enclosing local (which would leak an
+    // enclosing `self` into a nested method's closure frame).
+    std::unordered_set<std::string> classBodyFreevars;
     if (localSlotMap_.count(n->name) || definedLocals_.count(n->name) || nonlocalNames_.count(n->name)) {
         bodyCompiler.nonlocalNames_.insert(n->name);
+        classBodyFreevars.insert(n->name);
     }
 
     // PG: capture free variables from the enclosing function scope.
     // Without this, references to enclosing locals (e.g. `x = D()`
     // where D is a class defined in the same function) fall through to
     // LOAD_NAME and fail because the class namespace dict, globals,
-    // and builtins all lack the binding.  Mirrors compileFunctionDef's
-    // body-self-free-vars pass.
+    // and builtins all lack the binding.
+    //
+    // The class body's free variables are (1) names used directly in
+    // class-level statements plus (2) the free variables of nested
+    // method/comprehension scopes.  collectUsedNames is *deep* — it
+    // descends into nested function bodies and adds their parameters —
+    // so using it raw treats a method parameter like `self` as a
+    // class-body free var and makes the class wrongly capture the
+    // enclosing function's `self`.  Use collectNestedScopeFreeVarsImpl
+    // (which computes each nested scope's free vars against that
+    // scope's own bindings) for (2), and a shallow per-statement scan
+    // for (1) that does NOT descend into nested def/class bodies.
     {
         std::unordered_set<std::string> bodyUsed;
-        collectUsedNames(n->body.get(), bodyUsed);
+        collectNestedScopeFreeVarsImpl(n->body.get(), bodyUsed);
+        if (auto* suite = dynamic_cast<SuiteNode*>(n->body.get())) {
+            for (auto& st : suite->statements) {
+                ASTNode* s = st.get();
+                if (auto* fn = dynamic_cast<FunctionDefNode*>(s)) {
+                    for (auto& d : fn->decorator_list) collectUsedNames(d.get(), bodyUsed);
+                    for (auto& d : fn->defaults) collectUsedNames(d.get(), bodyUsed);
+                    for (auto& d : fn->kw_defaults) if (d) collectUsedNames(d.get(), bodyUsed);
+                } else if (auto* afn = dynamic_cast<AsyncFunctionDefNode*>(s)) {
+                    for (auto& d : afn->decorator_list) collectUsedNames(d.get(), bodyUsed);
+                    for (auto& d : afn->defaults) collectUsedNames(d.get(), bodyUsed);
+                    for (auto& d : afn->kw_defaults) if (d) collectUsedNames(d.get(), bodyUsed);
+                } else if (auto* cd = dynamic_cast<ClassDefNode*>(s)) {
+                    for (auto& d : cd->decorator_list) collectUsedNames(d.get(), bodyUsed);
+                    for (auto& b : cd->bases) collectUsedNames(b.get(), bodyUsed);
+                    for (auto& kw : cd->keywords) if (kw.second) collectUsedNames(kw.second.get(), bodyUsed);
+                } else {
+                    collectUsedNames(s, bodyUsed);
+                }
+            }
+        } else {
+            collectUsedNames(n->body.get(), bodyUsed);
+        }
         std::unordered_set<std::string> bodyDefined;
         collectDefinedNames(n->body.get(), bodyDefined);
         for (const auto& name : bodyUsed) {
@@ -4756,6 +4811,7 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
             // and resolve via LOAD_NAME → globals → builtins as before.
             if (localSlotMap_.count(name) || definedLocals_.count(name) || nonlocalNames_.count(name)) {
                 bodyCompiler.nonlocalNames_.insert(name);
+                classBodyFreevars.insert(name);
             }
         }
     }
@@ -4776,12 +4832,25 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     bodyCompiler.emit(OP_RETURN_VALUE);
     bodyCompiler.applyPatches();
     
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, 
-        bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), 
-        PythonEnvironment::getInternedString(ctx_, filename_.c_str()), 
-        nullptr, 0, 0, 0, 0, bodyCompiler.isGenerator_, 
-        PythonEnvironment::getInternedString(ctx_, n->name.c_str()), 
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_,
+        bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(),
+        PythonEnvironment::getInternedString(ctx_, filename_.c_str()),
+        nullptr, 0, 0, 0, 0, bodyCompiler.isGenerator_,
+        PythonEnvironment::getInternedString(ctx_, n->name.c_str()),
         bodyCompiler.getFirstLine(), bodyCompiler.getLnotab());
+    if (!codeObj) return false;
+    // Stamp `co_freevars` so OP_BUILD_FUNCTION snapshots only the names
+    // this class body actually closes over from enclosing function
+    // scopes — not every enclosing local.
+    {
+        std::vector<const proto::ProtoObject*> freeVec;
+        freeVec.reserve(classBodyFreevars.size());
+        for (const auto& fv : classBodyFreevars)
+            freeVec.push_back(PythonEnvironment::getInternedString(ctx_, fv.c_str())->asObject(ctx_));
+        codeObj = codeObj->setAttribute(ctx_,
+            PythonEnvironment::getInternedString(ctx_, "co_freevars"),
+            ctx_->newTuple(freeVec)->asObject(ctx_));
+    }
     int coIdx = addConstant(codeObj);
     emit(OP_LOAD_CONST, coIdx);
     emit(OP_BUILD_FUNCTION, 0);
