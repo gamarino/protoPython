@@ -10128,6 +10128,45 @@ static const proto::ProtoObject* py_str_iter(
     return it ? it->asObject(context) : PROTO_NONE;
 }
 
+// str.__repr__ — the Python repr of a string: the content wrapped in
+// single quotes with the standard escapes.  str_from_self unwraps both
+// a plain string receiver and a str-subclass wrapper, so `repr()` of a
+// `class S(str)` instance produces `'…'` instead of routing through the
+// builtin `repr()` fast path (which only covers plain strings).
+static const proto::ProtoObject* py_str_repr(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str && positionalParameters && positionalParameters->getSize(context) >= 1) {
+        str = str_from_self(context, positionalParameters->getAt(context, 0));
+    }
+    if (!str) return PROTO_NONE;
+    std::string s;
+    str->toUTF8String(context, s);
+    std::string out = "'";
+    for (unsigned char c : s) {
+        if (c == '\'') out += "\\'";
+        else if (c == '\\') out += "\\\\";
+        else if (c == '\n') out += "\\n";
+        else if (c == '\r') out += "\\r";
+        else if (c == '\t') out += "\\t";
+        else if (c < 32 || c >= 127) {
+            // Mirror the builtin repr() fast path byte-for-byte so
+            // `repr(s)` and `s.__repr__()` agree for str and subclasses.
+            char buf[8];
+            std::snprintf(buf, sizeof(buf), "\\x%02x", c);
+            out += buf;
+        } else {
+            out += static_cast<char>(c);
+        }
+    }
+    out += "'";
+    return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
+}
+
 // Helper: extract str from receiver in bound and unbound forms.  When
 // posOff is non-null, on the unbound match it's set to 1 so the caller
 // can skip the receiver positional in subsequent arg parsing.
@@ -17595,7 +17634,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(rootContext_, py_class, typePrototype);
     strPrototype = strPrototype->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "str")->asObject(rootContext_));
     strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "str")->asObject(rootContext_));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_str_repr));
     strPrototype = strPrototype->setAttribute(rootContext_, py_module, builtinsVal);
     strPrototype = strPrototype->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, py_str_call));
     strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternalString(rootContext_, "__init__"), rootContext_->fromMethod(nullptr, protoPython::builtins::py_python_ignore_init));
