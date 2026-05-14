@@ -9735,6 +9735,13 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     zipProto = zipProto->setAttribute(ctx, pEnv ? pEnv->getInitString() : PythonEnvironment::getInternedString(ctx, "__init__"), ctx->fromMethod(nullptr, py_python_ignore_init));
     zipProto = zipProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(zipProto), py_self_iter));
     zipProto = zipProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(zipProto), py_zip_next));
+    // Q-79: __mro__ for zip prototype.
+    {
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
+        const proto::ProtoList* mroList = ctx->newList()->appendLast(ctx, zipProto);
+        if (objectProto) mroList = mroList->appendLast(ctx, objectProto);
+        zipProto = zipProto->setAttribute(ctx, mroS, ctx->newTupleFromList(mroList)->asObject(ctx));
+    }
     builtins = builtins->setAttribute(ctx, pEnv->getZipProtoString(), zipProto);
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "zip"), zipProto);
     const proto::ProtoObject* filterProto = ctx->newObject(false);
@@ -9745,6 +9752,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     filterProto = filterProto->setAttribute(ctx, pEnv ? pEnv->getInitString() : PythonEnvironment::getInternedString(ctx, "__init__"), ctx->fromMethod(nullptr, py_python_ignore_init));
     filterProto = filterProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(filterProto), py_self_iter));
     filterProto = filterProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(filterProto), py_filter_next));
+    {
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
+        const proto::ProtoList* mroList = ctx->newList()->appendLast(ctx, filterProto);
+        if (objectProto) mroList = mroList->appendLast(ctx, objectProto);
+        filterProto = filterProto->setAttribute(ctx, mroS, ctx->newTupleFromList(mroList)->asObject(ctx));
+    }
     builtins = builtins->setAttribute(ctx, pEnv->getFilterProtoString(), filterProto);
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "filter"), filterProto);
     const proto::ProtoObject* mapProto = ctx->newObject(false);
@@ -9755,6 +9768,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     mapProto = mapProto->setAttribute(ctx, pEnv ? pEnv->getInitString() : PythonEnvironment::getInternedString(ctx, "__init__"), ctx->fromMethod(nullptr, py_python_ignore_init));
     mapProto = mapProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(mapProto), py_self_iter));
     mapProto = mapProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(mapProto), py_map_next));
+    {
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
+        const proto::ProtoList* mroList = ctx->newList()->appendLast(ctx, mapProto);
+        if (objectProto) mroList = mroList->appendLast(ctx, objectProto);
+        mapProto = mapProto->setAttribute(ctx, mroS, ctx->newTupleFromList(mroList)->asObject(ctx));
+    }
     builtins = builtins->setAttribute(ctx, pEnv->getMapProtoString(), mapProto);
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "map"), mapProto);
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "sum"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_sum));
@@ -9769,6 +9788,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     enumProto = enumProto->setAttribute(ctx, pEnv ? pEnv->getInitString() : PythonEnvironment::getInternedString(ctx, "__init__"), ctx->fromMethod(nullptr, py_python_ignore_init));
     enumProto = enumProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(enumProto), py_self_iter));
     enumProto = enumProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(enumProto), py_enumerate_next));
+    {
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
+        const proto::ProtoList* mroList = ctx->newList()->appendLast(ctx, enumProto);
+        if (objectProto) mroList = mroList->appendLast(ctx, objectProto);
+        enumProto = enumProto->setAttribute(ctx, mroS, ctx->newTupleFromList(mroList)->asObject(ctx));
+    }
     builtins = builtins->setAttribute(ctx, pEnv->getEnumProtoString(), enumProto);
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "enumerate"), enumProto);
 
@@ -9783,6 +9808,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     revProto = revProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(revProto), py_self_iter));
     revProto = revProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(revProto), py_reversed_next));
     revProto = revProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(revProto), py_reversed));
+    {
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
+        const proto::ProtoList* mroList = ctx->newList()->appendLast(ctx, revProto);
+        if (objectProto) mroList = mroList->appendLast(ctx, objectProto);
+        revProto = revProto->setAttribute(ctx, mroS, ctx->newTupleFromList(mroList)->asObject(ctx));
+    }
     builtins = builtins->setAttribute(ctx, pEnv->getRevProtoString(), revProto);
     // Also update the builtins dict with the fully initialized revProto
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "reversed"), revProto);
