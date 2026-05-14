@@ -644,6 +644,16 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
         dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__class__"), env->getTypePrototype());
     }
     dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, "deque")->asObject(ctx));
+    // R5-81: __mro__ = (deque, object) so reflection over the deque
+    // type sees the canonical chain instead of `(object,)`.
+    if (env && env->getObjectPrototype()) {
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
+        const proto::ProtoList* mroList = ctx->newList()
+            ->appendLast(ctx, dequePrototype)
+            ->appendLast(ctx, env->getObjectPrototype());
+        dequePrototype = dequePrototype->setAttribute(ctx, mroS,
+            ctx->newTupleFromList(mroList)->asObject(ctx));
+    }
     dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__new__"),
                                                  ctx->fromMethod(nullptr, py_deque_new));
     dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__init__"),
