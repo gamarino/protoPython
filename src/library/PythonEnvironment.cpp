@@ -18618,18 +18618,44 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     tracebackPrototype = tracebackPrototype->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "__traceback_native__")->asObject(rootContext_));
     tracebackPrototype = tracebackPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "__traceback_native__")->asObject(rootContext_));
     tracebackPrototype = tracebackPrototype->setAttribute(rootContext_, py_module, builtinsVal);
+    // Q-73: __mro__ for traceback / cell / code prototypes so
+    // type(tb).__mro__ etc. report the canonical (Self, object) chain.
+    {
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(rootContext_, "__mro__");
+        const proto::ProtoList* mroList = rootContext_->newList()
+            ->appendLast(rootContext_, tracebackPrototype)
+            ->appendLast(rootContext_, objectPrototype);
+        tracebackPrototype = tracebackPrototype->setAttribute(rootContext_, mroS,
+            rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
+    }
 
     cellPrototype = objectPrototype->newChild(rootContext_, true);
     cellPrototype = cellPrototype->setAttribute(rootContext_, py_class, typePrototype);
     cellPrototype = cellPrototype->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "cell")->asObject(rootContext_));
     cellPrototype = cellPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "cell")->asObject(rootContext_));
     cellPrototype = cellPrototype->setAttribute(rootContext_, py_module, builtinsVal);
+    {
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(rootContext_, "__mro__");
+        const proto::ProtoList* mroList = rootContext_->newList()
+            ->appendLast(rootContext_, cellPrototype)
+            ->appendLast(rootContext_, objectPrototype);
+        cellPrototype = cellPrototype->setAttribute(rootContext_, mroS,
+            rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
+    }
 
     codePrototype = objectPrototype->newChild(rootContext_, true);
     codePrototype = codePrototype->setAttribute(rootContext_, py_class, typePrototype);
     codePrototype = codePrototype->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "code")->asObject(rootContext_));
     codePrototype = codePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "code")->asObject(rootContext_));
     codePrototype = codePrototype->setAttribute(rootContext_, py_module, builtinsVal);
+    {
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(rootContext_, "__mro__");
+        const proto::ProtoList* mroList = rootContext_->newList()
+            ->appendLast(rootContext_, codePrototype)
+            ->appendLast(rootContext_, objectPrototype);
+        codePrototype = codePrototype->setAttribute(rootContext_, mroS,
+            rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
+    }
 
     // V75: Provide class-level attributes for types.py
     const proto::ProtoObject* codeDesc = objectPrototype->newChild(rootContext_, true);
