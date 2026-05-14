@@ -9878,6 +9878,15 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     if (objectProto) propertyProto = propertyProto->addParent(ctx, objectProto);
     if (typeProto) propertyProto = propertyProto->setAttribute(ctx, py_class_local, typeProto);
     propertyProto = propertyProto->setAttribute(ctx, py_name_local, PythonEnvironment::getInternedString(ctx, "property")->asObject(ctx));
+    // Q-72: __mro__ = (property, object) so `property.__mro__`
+    // reports the canonical chain instead of `(object,)`.
+    {
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
+        const proto::ProtoList* mroList = ctx->newList()->appendLast(ctx, propertyProto);
+        if (objectProto) mroList = mroList->appendLast(ctx, objectProto);
+        propertyProto = propertyProto->setAttribute(ctx, mroS,
+            ctx->newTupleFromList(mroList)->asObject(ctx));
+    }
     propertyProto = propertyProto->setAttribute(ctx, pEnv->getGetDunderString(), ctx->fromMethod(nullptr, py_property_get));
     propertyProto = propertyProto->setAttribute(ctx, pEnv->getSetDunderString(), ctx->fromMethod(nullptr, py_property_set));
     propertyProto = propertyProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__delete__"), ctx->fromMethod(nullptr, py_property_delete));
