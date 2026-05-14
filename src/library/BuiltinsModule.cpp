@@ -3509,6 +3509,26 @@ static const proto::ProtoObject* py_super_init(
     return env->callObjectEx(bound, argsVec, kwVec);
 }
 
+// Construct a super proxy for (type, obj).  `obj == PROTO_NONE` (or null)
+// yields an unbound super.  Behaviour-identical to the inline construction
+// that previously lived at the tail of py_super; factored out so the
+// (forthcoming) descriptor __get__ can rebind an unbound super by building
+// a fresh bound proxy through the same path.
+static proto::ProtoObject* make_super_proxy(proto::ProtoContext* context,
+    const proto::ProtoObject* type, const proto::ProtoObject* obj) {
+    proto::ProtoObject* proxy = const_cast<proto::ProtoObject*>(context->newObject(true));
+    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "type"), type);
+    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "obj"), obj ? obj : PROTO_NONE);
+    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__getattr__"), context->fromMethod(proxy, py_super_getattr));
+    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__setattr__"), context->fromMethod(proxy, py_super_setattr));
+    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__repr__"), context->fromMethod(proxy, py_super_repr));
+    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__init__"), context->fromMethod(proxy, py_super_init));
+    // Fast-path OBJ-level dispatch: hasOwnAttribute(__py_getattr_handler__) replaces
+    // the old getAttribute(__is_super_proxy__) chain walk in tryFastGetAttribute.
+    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__py_getattr_handler__"), context->fromMethod(proxy, py_super_getattr));
+    return proxy;
+}
+
 static const proto::ProtoObject* py_super(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -3769,18 +3789,7 @@ static const proto::ProtoObject* py_super(
         if (n && n->isString(context)) n->asString(context)->toUTF8String(context, tname);
         fprintf(stderr, "DEBUG: py_super returning PROXY for type=%s(%p) obj=%p\n", tname.c_str(), (void*)type, (void*)obj);
     }
-    proto::ProtoObject* proxy = const_cast<proto::ProtoObject*>(context->newObject(true));
-    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "type"), type);
-    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "obj"), obj);
-    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__getattr__"), context->fromMethod(proxy, py_super_getattr));
-    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__setattr__"), context->fromMethod(proxy, py_super_setattr));
-    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__repr__"), context->fromMethod(proxy, py_super_repr));
-    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__init__"), context->fromMethod(proxy, py_super_init));
-    // Fast-path OBJ-level dispatch: hasOwnAttribute(__py_getattr_handler__) replaces
-    // the old getAttribute(__is_super_proxy__) chain walk in tryFastGetAttribute.
-    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__py_getattr_handler__"), context->fromMethod(proxy, py_super_getattr));
-
-    return proxy;
+    return make_super_proxy(context, type, obj);
 }
 
 /** exec(source, globals=None, locals=None): compile and run source. */
