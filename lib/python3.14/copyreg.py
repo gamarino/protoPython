@@ -165,6 +165,13 @@ def _reduce_ex(self, proto):
             raise TypeError("a class that defines __slots__ without "
                             "defining __getstate__ cannot be pickled")
         state_dict = getstate()
+    # protoPython quirk: for container subclasses (dict / list / set),
+    # `object.__getstate__()` returns the container's CONTENTS (not just
+    # the instance-attribute dict), and `base(self)` already encodes the
+    # same contents into the reconstructor args.  Suppress the duplicate
+    # state to match CPython's reduce shape.
+    if state_dict is not None and state == state_dict:
+        state_dict = None
     if state_dict:
         return _reconstructor, args, state_dict
     else:
