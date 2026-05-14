@@ -460,6 +460,32 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         bindVar(static_cast<int>(i), args->getAt(calleeCtx, static_cast<int>(i)));
     }
 
+    // 1b. Positional / keyword argument conflict.  A parameter already
+    // filled by a positional argument must not also receive a keyword
+    // argument of the same name — CPython raises "got multiple values
+    // for argument".  Without this check the duplicate keyword was
+    // silently dropped: the **kwargs collection loop below skips any
+    // name that matches a bound parameter, so `f(1, foo=2)` for
+    // `def f(foo, *a, **kw)` lost the foo=2 keyword and raised nothing.
+    if (kwargs && kwargs->getSize(calleeCtx) > 0 && co_varnames) {
+        unsigned long boundPositional = (argCount < (unsigned long)nparams_count)
+            ? argCount : (unsigned long)nparams_count;
+        for (unsigned long i = 0; i < boundPositional; ++i) {
+            const proto::ProtoObject* paramName = co_varnames->getAt(calleeCtx, static_cast<int>(i));
+            if (!paramName || !paramName->isString(calleeCtx)) continue;
+            if (kwargs->has(calleeCtx, paramName->getHash(calleeCtx))) {
+                std::string pn, fn = "function";
+                paramName->asString(calleeCtx)->toUTF8String(calleeCtx, pn);
+                const proto::ProtoObject* cnObj = codeObj->getAttribute(calleeCtx,
+                    env ? env->getCoNameString() : PythonEnvironment::getInternedString(calleeCtx, "co_name"));
+                if (cnObj && cnObj->isString(calleeCtx)) cnObj->asString(calleeCtx)->toUTF8String(calleeCtx, fn);
+                if (env) env->raiseTypeError(calleeCtx,
+                    fn + "() got multiple values for argument '" + pn + "'");
+                return nullptr;
+            }
+        }
+    }
+
     // 2. Keyword arguments mapped to positional parameters and defaults if missing
     if (argCount < (unsigned long)nparams_count) {
         const proto::ProtoString* defaults_name = env ? env->getDefaultsString() : PythonEnvironment::getInternedString(calleeCtx, "__defaults__");
