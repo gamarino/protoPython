@@ -1027,8 +1027,24 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
         const proto::ProtoString* modS = PythonEnvironment::getInternedString(ctx, "__module__");
         const proto::ProtoString* docS = PythonEnvironment::getInternedString(ctx, "__doc__");
         
-        const proto::ProtoObject* emptyDict1 = env->getDictPrototype() ? env->getDictPrototype()->newChild(ctx, true) : ctx->newObject(true);
-        const proto::ProtoObject* emptyDict2 = env->getDictPrototype() ? env->getDictPrototype()->newChild(ctx, true) : ctx->newObject(true);
+        // Materialise both `__dict__` and `__annotations__` as proper empty
+        // dicts: dictPrototype->newChild() alone leaves the child without
+        // its own `__data__`/`__keys__` slots, so iteration / membership
+        // queries walk the prototype chain and surface every dict method
+        // (`pop`, `get`, `keys`, …) as a phantom annotation entry.  Bind
+        // empty SparseList/List in both canonical slots so the dict reads
+        // as `{}`.
+        auto makeFreshEmptyDict = [&]() -> const proto::ProtoObject* {
+            if (!env->getDictPrototype()) return ctx->newObject(true);
+            const proto::ProtoObject* d = env->getDictPrototype()->newChild(ctx, true);
+            d = d->setAttribute(ctx, env->getDataString(),
+                                  ctx->newSparseList()->asObject(ctx));
+            d = d->setAttribute(ctx, env->getKeysString(),
+                                  ctx->newList()->asObject(ctx));
+            return d;
+        };
+        const proto::ProtoObject* emptyDict1 = makeFreshEmptyDict();
+        const proto::ProtoObject* emptyDict2 = makeFreshEmptyDict();
 
         fn = fn->setAttribute(ctx, dictS, emptyDict1);
         fn = fn->setAttribute(ctx, annS, emptyDict2);
