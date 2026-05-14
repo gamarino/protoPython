@@ -15837,6 +15837,70 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             }
             if (!obj) return PROTO_NONE;
 
+            // L-48: dict / list / set subclass instances have their
+            // container contents in `__data__`, and the protoCore-level
+            // "instance dict" we'd otherwise expose is the same storage.
+            // CPython's object.__getstate__ for these subclasses returns
+            // None (the unpickler reads items via __reduce_ex__'s
+            // listitems / dictitems channels instead).  Duplicating the
+            // contents into the state slot breaks
+            // `_check_reduce(proto>=2)` which asserts state == None when
+            // no user attribute was explicitly set.
+            const proto::ProtoObject* objCls = env->getType(ctx, obj);
+            const proto::ProtoString* mroDS = env->getMroString();
+            if (objCls && objCls != PROTO_NONE && mroDS) {
+                const proto::ProtoObject* mroObj = objCls->getAttribute(ctx, mroDS);
+                const proto::ProtoTuple* mroT = mroObj ? mroObj->asTuple(ctx) : nullptr;
+                if (mroT) {
+                    bool isContainerSubclass = false;
+                    for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
+                        const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(i));
+                        if (base == env->getDictPrototype()
+                            || base == env->getListPrototype()
+                            || base == env->getSetPrototype()
+                            || base == env->getFrozensetPrototype()) {
+                            isContainerSubclass = true;
+                            break;
+                        }
+                    }
+                    // Only suppress when the instance has no slot or
+                    // explicit instance attributes beyond the container
+                    // storage.  A user that did `c.attr = 1` on a dict
+                    // subclass still needs the state preserved.
+                    if (isContainerSubclass) {
+                        const proto::ProtoString* slotsS = env->getSlotsString();
+                        bool anyInstanceAttr = false;
+                        const proto::ProtoSparseList* ownAttrs = obj->getOwnAttributes(ctx);
+                        if (ownAttrs) {
+                            auto* it = const_cast<proto::ProtoSparseListIterator*>(ownAttrs->getIterator(ctx));
+                            while (it && it->hasNext(ctx)) {
+                                unsigned long key = it->nextKey(ctx);
+                                const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
+                                if (keyObj && keyObj->isString(ctx)) {
+                                    std::string nm;
+                                    keyObj->asString(ctx)->toUTF8String(ctx, nm);
+                                    if (nm != "__data__" && nm != "__keys__"
+                                        && nm != "__pydict_data__"
+                                        && nm != "__pydict_keys__"
+                                        && nm != "__class__"
+                                        && nm != "__is_python_class__") {
+                                        anyInstanceAttr = true;
+                                        break;
+                                    }
+                                }
+                                it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
+                            }
+                        }
+                        // Also exempt from suppression when class declared __slots__.
+                        bool hasSlotsDeclared = slotsS && objCls->hasOwnAttribute(ctx, slotsS) == PROTO_TRUE;
+                        if (!anyInstanceAttr && !hasSlotsDeclared) {
+                            return PROTO_NONE;
+                        }
+                    }
+                }
+            }
+
+
             // CPython object.__getstate__ semantics (PEP 690 / 3.11+):
             //   * No __slots__ → return instance __dict__ when non-empty,
             //     else None.
