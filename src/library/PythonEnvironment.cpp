@@ -966,9 +966,39 @@ static const proto::ProtoObject* py_type_get_annotations(
     if (self->hasOwnAttribute(context, annS) == PROTO_TRUE) {
         return self->getAttribute(context, annS);
     }
-    
+
     env->raiseAttributeError(context, self, "__annotations__");
     return nullptr;
+}
+
+// fset for the type.__annotations__ getset descriptor.  `cls.__annotations__`
+// is writable in CPython; store the value as the class's own attribute via
+// the raw protoCore setter to bypass the data-descriptor dispatch (which
+// would otherwise route back here).
+static const proto::ProtoObject* py_type_set_annotations(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList*) {
+    if (!self || !args || args->getSize(context) < 2) return PROTO_NONE;
+    const proto::ProtoObject* value = args->getAt(context, 1);
+    const proto::ProtoString* annS = PythonEnvironment::getInternedString(context, "__annotations__");
+    const_cast<proto::ProtoObject*>(self)->proto::ProtoObject::setAttribute(context, annS, value);
+    return PROTO_NONE;
+}
+
+// fdel for the type.__annotations__ getset descriptor.
+static const proto::ProtoObject* py_type_del_annotations(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList*) {
+    if (!self) return PROTO_NONE;
+    const proto::ProtoString* annS = PythonEnvironment::getInternedString(context, "__annotations__");
+    const_cast<proto::ProtoObject*>(self)->proto::ProtoObject::removeAttribute(context, annS);
+    return PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_object_hash(
@@ -15608,12 +15638,88 @@ static const proto::ProtoObject* py_getset_get(
     
     const proto::ProtoString* fgetS = PythonEnvironment::getInternedString(context, "fget"); // optimize?
     const proto::ProtoObject* getter = self->getAttribute(context, fgetS);
-    
+
     if (getter && getter->isMethod(context)) {
          const proto::ProtoList* callArgs = context->newList()->appendLast(context, instance);
          return getter->asMethod(context)(context, instance, nullptr, callArgs, nullptr);
     }
     return PROTO_NONE;
+}
+
+// getset_descriptor.__set__(self, instance, value).  A getset descriptor
+// instance optionally carries an `fset` native method; when present it is
+// invoked as `fset(instance, value)` (mirroring py_getset_get's fget
+// dispatch).  When absent the descriptor is read-only and CPython raises
+// AttributeError.  This is what makes a getset descriptor a *data*
+// descriptor, so the setAttribute data-descriptor dispatch routes here.
+static const proto::ProtoObject* py_getset_set(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList*) {
+
+    if (!args || args->getSize(context) < 2) return PROTO_NONE;
+    const proto::ProtoObject* instance = args->getAt(context, 0);
+    const proto::ProtoObject* value = args->getAt(context, 1);
+
+    const proto::ProtoString* fsetS = PythonEnvironment::getInternedString(context, "fset");
+    const proto::ProtoObject* setter = self ? self->getAttribute(context, fsetS) : nullptr;
+    if (setter && setter->isMethod(context)) {
+        const proto::ProtoList* callArgs = context->newList()
+            ->appendLast(context, instance)
+            ->appendLast(context, value);
+        return setter->asMethod(context)(context, instance, nullptr, callArgs, nullptr);
+    }
+
+    // Read-only getset descriptor — CPython raises AttributeError.
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (env) {
+        std::string nm = "?";
+        const proto::ProtoObject* nameAttr = self
+            ? self->getAttribute(context, PythonEnvironment::getInternedString(context, "__name__"))
+            : nullptr;
+        if (nameAttr && nameAttr != PROTO_NONE && nameAttr->isString(context)) {
+            nameAttr->asString(context)->toUTF8String(context, nm);
+        }
+        env->raiseAttributeErrorWithMessage(context, instance,
+            "attribute '" + nm + "' of object is not writable", nm);
+    }
+    return nullptr;
+}
+
+// getset_descriptor.__delete__(self, instance).  Symmetric to py_getset_set:
+// invokes an optional `fdel` native method, else raises AttributeError.
+static const proto::ProtoObject* py_getset_delete(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList*) {
+
+    if (!args || args->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* instance = args->getAt(context, 0);
+
+    const proto::ProtoString* fdelS = PythonEnvironment::getInternedString(context, "fdel");
+    const proto::ProtoObject* deleter = self ? self->getAttribute(context, fdelS) : nullptr;
+    if (deleter && deleter->isMethod(context)) {
+        const proto::ProtoList* callArgs = context->newList()->appendLast(context, instance);
+        return deleter->asMethod(context)(context, instance, nullptr, callArgs, nullptr);
+    }
+
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (env) {
+        std::string nm = "?";
+        const proto::ProtoObject* nameAttr = self
+            ? self->getAttribute(context, PythonEnvironment::getInternedString(context, "__name__"))
+            : nullptr;
+        if (nameAttr && nameAttr != PROTO_NONE && nameAttr->isString(context)) {
+            nameAttr->asString(context)->toUTF8String(context, nm);
+        }
+        env->raiseAttributeErrorWithMessage(context, instance,
+            "attribute '" + nm + "' of object is not writable", nm);
+    }
+    return nullptr;
 }
 
 void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, const std::vector<std::string>& searchPaths) {
@@ -16588,6 +16694,12 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     getSetDescriptorPrototype = getSetDescriptorPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "getset_descriptor")->asObject(rootContext_));
     getSetDescriptorPrototype = getSetDescriptorPrototype->setAttribute(rootContext_, py_repr, PythonEnvironment::getInternedString(rootContext_, "<getset_descriptor>")->asObject(rootContext_)); // Placeholder
     getSetDescriptorPrototype = getSetDescriptorPrototype->setAttribute(rootContext_, getDunderString, rootContext_->fromMethod(nullptr, py_getset_get));
+    // __set__ / __delete__ make a getset descriptor a *data* descriptor:
+    // the setAttribute / OP_DELETE_ATTR data-descriptor dispatch routes
+    // through type(descr).__set__ / __delete__.  A descriptor instance
+    // with no `fset` / `fdel` is read-only and raises AttributeError.
+    getSetDescriptorPrototype = getSetDescriptorPrototype->setAttribute(rootContext_, setDunderString, rootContext_->fromMethod(nullptr, py_getset_set));
+    getSetDescriptorPrototype = getSetDescriptorPrototype->setAttribute(rootContext_, delDunderString, rootContext_->fromMethod(nullptr, py_getset_delete));
     // Q-74: __mro__ for getset_descriptor.
     {
         const proto::ProtoString* mroS = PythonEnvironment::getInternedString(rootContext_, "__mro__");
@@ -16620,6 +16732,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* annString = PythonEnvironment::getInternedString(rootContext_, "__annotations__");
     annDescr->setAttribute(rootContext_, py_class, getSetDescriptorPrototype);
     annDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fget"), rootContext_->fromMethod(nullptr, py_type_get_annotations));
+    annDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fset"), rootContext_->fromMethod(nullptr, py_type_set_annotations));
+    annDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fdel"), rootContext_->fromMethod(nullptr, py_type_del_annotations));
     annDescr->setAttribute(rootContext_, py_name, annString->asObject(rootContext_));
     
     typePrototype = typePrototype->setAttribute(rootContext_, annString, annDescr);
