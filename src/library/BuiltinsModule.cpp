@@ -7176,14 +7176,22 @@ static const proto::ProtoObject* py_property_copy_with(
     const proto::ProtoString* fsetKey = PythonEnvironment::getInternedString(context, "fset");
     const proto::ProtoString* fdelKey = PythonEnvironment::getInternedString(context, "fdel");
     const proto::ProtoString* classKey = PythonEnvironment::getInternedString(context, "__class__");
+    const proto::ProtoString* docKey   = PythonEnvironment::getInternedString(context, "__doc__");
     const proto::ProtoObject* fget = self->getAttribute(context, fgetKey);
     const proto::ProtoObject* fset = self->getAttribute(context, fsetKey);
     const proto::ProtoObject* fdel = self->getAttribute(context, fdelKey);
     const proto::ProtoObject* cls  = self->getAttribute(context, classKey);
+    // Preserve the docstring across .getter / .setter / .deleter cloning.
+    // CPython carries the original property's __doc__ verbatim; without
+    // this copy, `property(doc="hello").getter(f).__doc__` lost the
+    // user-supplied docstring (test_descr.test_properties_plus).
+    const proto::ProtoObject* doc  = self->hasOwnAttribute(context, docKey) == PROTO_TRUE
+                                      ? self->getAttribute(context, docKey) : nullptr;
     if (cls  && cls  != PROTO_NONE) prop = prop->setAttribute(context, classKey, cls);
     if (fget && fget != PROTO_NONE) prop = prop->setAttribute(context, fgetKey, fget);
     if (fset && fset != PROTO_NONE) prop = prop->setAttribute(context, fsetKey, fset);
     if (fdel && fdel != PROTO_NONE) prop = prop->setAttribute(context, fdelKey, fdel);
+    if (doc) prop = prop->setAttribute(context, docKey, doc);
     prop = prop->setAttribute(context,
         PythonEnvironment::getInternedString(context, slotName), newFn);
     return prop;
