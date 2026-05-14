@@ -7421,13 +7421,32 @@ static const proto::ProtoObject* py_classmethod(
                 if (!kl) return false;
                 unsigned long n = kl->getSize(context);
                 if (n == 0) return true;
-                for (unsigned long i = 0; i < n && i < 8; ++i) {
+                // protoPython's broken default for function.__annotations__
+                // points at dict-prototype's __dict__ (30+ entries with
+                // dict-method names like 'pop'/'get'/'keys'/'__iter__').
+                // Real user annotations name parameters, not dict methods.
+                // Scan ALL keys (not just the first 8 — the magic markers
+                // for dict-shape can sit beyond position 8) and reject the
+                // dict shape on any sign of class-shape / dict-method
+                // contamination.
+                for (unsigned long i = 0; i < n; ++i) {
                     const proto::ProtoObject* k = kl->getAt(context, static_cast<int>(i));
                     if (!k || !k->isString(context)) continue;
                     std::string s; k->asString(context)->toUTF8String(context, s);
                     if (s == "__class__" || s == "__mro__" || s == "__bases__"
-                        || s == "__getitem__" || s == "__setitem__") return false;
+                        || s == "__getitem__" || s == "__setitem__"
+                        || s == "__delitem__" || s == "__len__"
+                        || s == "__iter__" || s == "__contains__"
+                        || s == "__new__" || s == "__init__"
+                        || s == "pop" || s == "get" || s == "keys"
+                        || s == "values" || s == "items"
+                        || s == "copy" || s == "update"
+                        || s == "setdefault" || s == "fromkeys") return false;
                 }
+                // Heuristic: real annotation dicts rarely exceed 10 keys
+                // for hand-written functions; the broken prototype default
+                // carries 30+.  Reject anything large to be safe.
+                if (n > 12) return false;
                 return true;
             };
             const proto::ProtoObject* ann = nullptr;
@@ -7560,18 +7579,26 @@ static const proto::ProtoObject* py_staticmethod(
                 if (!kl) return false;
                 unsigned long n = kl->getSize(context);
                 if (n == 0) return true;  // legitimately empty user dict
-                // A real annotations dict's keys are plain identifiers
-                // ('x', 'return', etc.).  The broken default has keys
-                // like '__class__', '__mro__', '__bases__' — magic
-                // names.  If we see any of those, treat the whole dict
-                // as the broken default.
-                for (unsigned long i = 0; i < n && i < 8; ++i) {
+                // Same widened detector as py_classmethod (see comment
+                // above): the broken default points at dict prototype's
+                // __dict__ with dict-method names — scan all keys and
+                // reject on either class-shape markers or dict-method
+                // contamination, then cap on size.
+                for (unsigned long i = 0; i < n; ++i) {
                     const proto::ProtoObject* k = kl->getAt(context, static_cast<int>(i));
                     if (!k || !k->isString(context)) continue;
                     std::string s; k->asString(context)->toUTF8String(context, s);
                     if (s == "__class__" || s == "__mro__" || s == "__bases__"
-                        || s == "__getitem__" || s == "__setitem__") return false;
+                        || s == "__getitem__" || s == "__setitem__"
+                        || s == "__delitem__" || s == "__len__"
+                        || s == "__iter__" || s == "__contains__"
+                        || s == "__new__" || s == "__init__"
+                        || s == "pop" || s == "get" || s == "keys"
+                        || s == "values" || s == "items"
+                        || s == "copy" || s == "update"
+                        || s == "setdefault" || s == "fromkeys") return false;
                 }
+                if (n > 12) return false;
                 return true;
             };
             const proto::ProtoObject* ann = nullptr;
