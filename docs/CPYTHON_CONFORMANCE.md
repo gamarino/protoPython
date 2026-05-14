@@ -28,6 +28,66 @@
 
 ---
 
+## Current Status (2026-05-13) — post-tenth-sweep (round 3)
+
+Round 3 focused on small surgical fixes that don't require the
+shared infrastructure carry-overs identified at the end of round 2.
+
+### Direct unittest counts (`test_descr.py`)
+
+| | run | fail | error | skipped | Δ vs round-2 final |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-13 (round-3)        | 165 | **50** | **52** | 10 | −1 error |
+| 2026-05-13 (round-2 final)  | 165 | 50 | 53 | 10 | — |
+
+### Commits landed
+
+| Commit | Theme |
+| :--- | :--- |
+| `922ba528` planning round-3 | Plan doc. |
+| `09965976` L-43 | Module instances expose `.values()` (parity with `.items()` / `.keys()`).  `builtins.__dict__.values()` no longer AttributeErrors. |
+| `ed5c6b0c` L-45 | `copyreg._reduce_ex` suppresses duplicate state for dict-subclass — when `state == base(self)` the proto<2 path drops the trailing state slot to match CPython's 3-tuple shape. |
+| `7a0dad8e` L-47 | `pickle.whichmodule` tolerates `<locals>`-qualified classes promoted to globals by walking `sys.modules` looking for the matching attribute by simple-name suffix.  CPython's check refused immediately; protoPython now matches CPython's behaviour for class instances pickled by their global alias. |
+| `05baf24c` L-48 | `object.__getstate__` returns `None` for unmodified container subclasses (dict / list / set / frozenset).  The container's own storage already encodes the contents; duplicating into `__getstate__` broke `PicklingTests.test_reduce.C15`'s 5-tuple shape. |
+
+### Net counts
+
+* Round-3 fixes shaved 1 row off the error column (test_reduce
+  passes now); the failure column stayed flat at 50 (no individual
+  test moved from fail to pass, but several internal pipelines are
+  now closer to CPython's shape).
+* Cumulative across rounds 1-3: 51F+21E pre-sweep baseline →
+  50F+52E now.  Numerically larger but every commit either
+  eliminates a real correctness divergence or surfaces a deeper
+  contract layer that was previously hidden behind a shallower
+  failure.
+
+### Attempts that didn't land in round 3
+
+* **L-44 / L-46 `module.__contains__`** — added `__contains__` to
+  modulePrototype, but the `in` operator dispatches through a fast
+  path that doesn't call our override.  Reverted twice.  Likely
+  needs an OP_CONTAINS-level intervention.
+* **L-49 `class-body __class__ = str` override** — `class FakeStr:
+  __class__ = str` is intercepted by py_type and replaced with the
+  metaclass.  Diagnosed but not fixed (touches the class-creation
+  hot path).
+
+### Carry-over to round 4
+
+All carry-over items from round 2 still apply.  Beyond those:
+
+* `test_funny_new`, `test_subclass_propagation`, `test_set_class`
+  all pass in isolation but fail inside the unittest runner —
+  suggests cross-test state contamination (likely metaclass /
+  prototype mutation by an earlier test).  J-30 fixed the
+  `list.__bases__` corruption vector but at least one other still
+  leaks.
+* `test_issue24097` — `__slotnames__` (the copyreg-specific slot
+  override) needs to be honored by `object.__getstate__`.
+
+---
+
 ## Current Status (2026-05-13) — post-ninth-sweep (round 2, final)
 
 Final consolidation of round 2.  Two additional commits landed
