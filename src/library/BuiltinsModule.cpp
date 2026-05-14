@@ -5703,7 +5703,13 @@ const proto::ProtoObject* py_type(
                             std::string tName = "";
                             if (vName && vName->isString(context)) vName->asString(context)->toUTF8String(context, tName);
 
-                            if (k == env->getNewString() && tName != "staticmethod") {
+                            if (k == env->getNewString() && tName != "staticmethod"
+                                && tName != "classmethod") {
+                                // __new__ is implicitly a staticmethod — but
+                                // only auto-wrap a plain function.  If the
+                                // user explicitly wrote `@classmethod def
+                                // __new__` (or @staticmethod), respect that
+                                // decorator instead of wrapping over it.
                                 const proto::ProtoObject* smCls = env->getBuiltins()->getAttribute(context, PythonEnvironment::getInternedString(context, "staticmethod"));
                                 if (smCls && smCls != PROTO_NONE) {
                                     const proto::ProtoList* smArgs = context->newList()->appendLast(context, smCls)->appendLast(context, val);
