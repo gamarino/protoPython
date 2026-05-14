@@ -22683,6 +22683,11 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
         };
         auto slotMatches = [&](const std::string& ss,
                                const proto::ProtoObject* defCls) -> bool {
+            // A `__dict__` entry in __slots__ grants the instance a real
+            // dict — arbitrary attribute names become legal.  Record it
+            // here (slotMatches is invoked once per slot entry) so the
+            // strict-slots rejection below is suppressed.
+            if (ss == "__dict__") hasDict = true;
             if (ss == nameStr) return true;
             std::string mangled = mangleAgainstClass(ss, defCls);
             return !mangled.empty() && mangled == nameStr;
