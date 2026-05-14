@@ -28,6 +28,71 @@
 
 ---
 
+## Current Status (2026-05-13) — post-ninth-sweep (round 2, continued)
+
+Round 2 continuation extended the previous H-class commits with five
+more surgical fixes in Phase I.  Plan:
+[`tasks/planning/2026-05-13-test_descr-sweep-plan-round2.md`](../tasks/planning/2026-05-13-test_descr-sweep-plan-round2.md).
+
+### Direct unittest counts (`test_descr.py`)
+
+| | run | fail | error | skipped | Δ vs initial round-2 partial |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-13 (round-2 continued) | 165 | **50** | **53** | 10 | −2 fail |
+| 2026-05-13 (round-2 partial)   | 165 | 52 | 53 | 10 | — |
+
+### New round-2 commits since the partial entry
+
+| Commit | Theme |
+| :--- | :--- |
+| `53058ba5` I-25 | `property.getter/setter/deleter` preserve the original `__doc__` across the descriptor clone. |
+| `6a7b1e72` I-26 | Widen the "broken `function.__annotations__` default" detector in `py_classmethod` / `py_staticmethod` — scan all keys (not just first 8), reject on dict-method names and `n > 12` keys. |
+| `1d04ae8e` I-27 | Built-in immutable container types (tuple, int, str, bytes, float, bool, frozenset) do NOT contribute a per-instance `__dict__` to subclasses in `py_object_get_dict`'s strict-slots walk. |
+| `a346f69c` I-28 | `mappingproxy` rejects every mutation (`__setitem__` / `__delitem__`) with the canonical CPython TypeError messages. |
+
+### Carry-over to round 3
+
+The remaining 50 fails / 53 errors cluster around topics that need
+architectural changes rather than surgical fixes:
+
+* **J-27..J-30 (native method introspection).**  Heap-wrapper still
+  blocked by the `invokeCallable` regression noted in the partial
+  entry above.  Split-commit approach pending.
+* **Function-level locals materialisation.**  Both `dir()` and
+  `eval()` need `frame.f_locals` to be a populated dict, not the
+  bare module object protoPython currently returns.  Requires
+  walking `co_varnames` and the operand-stack slots — needs a new
+  helper.
+* **Dict-subclass instance dict separation.**  `class D(dict)` shares
+  `__data__` between the dict storage and instance attributes;
+  `__setattr__` writes leak into the dict's iter / keys.  Needs
+  `__pydict_data__` / `__pydict_keys__` routing for dict-subclass
+  instances.
+* **Lazy `__annotations__` materialisation on classmethod /
+  staticmethod wrappers.**  The wrapper currently eager-materialises
+  `__annotations__` as `{}` so `del wrapper.__annotations__` works
+  (CPython raises AttributeError).  Needs a property-style descriptor.
+* **`super()` argument forwarding.**  `self.__super.meth(a)` drops
+  `a`; the descriptor binding round-trip through tagged-pointer
+  bound methods loses positional args after `super(cls)` unbound
+  form gets bound on attribute access.
+* **GC-coupled tests.**  `test_delete_hook`, `test_subtype_resurrection`,
+  `test_remove_subclass`, `test_cycle_through_dict` all depend on
+  `support.gc_collect()` reliably driving `__del__` to completion.
+
+### Sustainability of "fail+error" as a metric
+
+After three full sweeps the rate of new commits to fail-count
+reduction is dropping (round 2's 9 commits net −4 fail vs round 1's
+14 commits net +0 fail vs round 0's 17 commits net +35 fail).
+That's consistent with progressively eliminating the shallow
+contract divergences and uncovering deeper subTest-expanded
+failures.  Recommendation: next sweep should establish a separate
+metric — number of unique test methods that pass — and track
+deltas against THAT rather than the unittest counter.
+
+---
+
 ## Current Status (2026-05-13) — post-ninth-sweep (round 2, partial)
 
 The ninth sweep targets the residual `test_descr.py` failures that
