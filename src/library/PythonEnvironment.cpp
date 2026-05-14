@@ -21711,6 +21711,36 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
 const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, const proto::ProtoObject* value) {
     if (!obj || !name || !value) return obj;
 
+    // CPython: setting `__bases__` / `__base__` on a built-in C-level
+    // type raises TypeError "cannot set '__bases__' attribute of
+    // immutable type '<name>'".  Without this guard, user code that
+    // probes `list.__bases__ = (dict,)` silently mutates the live
+    // listPrototype, breaking every subsequent type / MRO check in
+    // the runtime.
+    if (name == basesString
+        || (name && basesString && name->getHash(ctx) == basesString->getHash(ctx))) {
+        bool isImmutableBuiltin = false;
+        const char* primName = nullptr;
+        if (obj == intPrototype)         { isImmutableBuiltin = true; primName = "int"; }
+        else if (obj == floatPrototype)  { isImmutableBuiltin = true; primName = "float"; }
+        else if (obj == boolPrototype)   { isImmutableBuiltin = true; primName = "bool"; }
+        else if (obj == strPrototype)    { isImmutableBuiltin = true; primName = "str"; }
+        else if (obj == bytesPrototype)  { isImmutableBuiltin = true; primName = "bytes"; }
+        else if (obj == listPrototype)   { isImmutableBuiltin = true; primName = "list"; }
+        else if (obj == dictPrototype)   { isImmutableBuiltin = true; primName = "dict"; }
+        else if (obj == setPrototype)    { isImmutableBuiltin = true; primName = "set"; }
+        else if (obj == frozensetPrototype) { isImmutableBuiltin = true; primName = "frozenset"; }
+        else if (obj == tuplePrototype)  { isImmutableBuiltin = true; primName = "tuple"; }
+        else if (obj == objectPrototype) { isImmutableBuiltin = true; primName = "object"; }
+        else if (obj == typePrototype)   { isImmutableBuiltin = true; primName = "type"; }
+        if (isImmutableBuiltin && primName) {
+            std::string msg = std::string("cannot set '__bases__' attribute of immutable type '")
+                            + primName + "'";
+            raiseTypeError(ctx, msg.c_str());
+            return nullptr;
+        }
+    }
+
     // CPython: instances of `object` itself have no __dict__ and
     // reject attribute assignment entirely.  Detect by checking
     // type(obj) IS objectPrototype (exact, not a subclass).  Skip
