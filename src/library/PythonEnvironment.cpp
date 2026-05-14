@@ -1116,10 +1116,32 @@ static const proto::ProtoObject* py_object_get_dict(
             // conservative; only enforce strict-slots when we can walk
             // the MRO entirely.
             if (bases == 0) allBasesHaveStrictSlots = false;
+            // Built-in container types (tuple / int / str / bytes / float /
+            // bool) carry no per-instance __dict__ in CPython even though
+            // they don't declare an explicit __slots__ Python-side.  Skip
+            // them in the strict-slots walk so e.g.
+            // `class C(tuple): __slots__ = ['a']` reports `assertNotHasAttr
+            // (C(...), "__dict__")` correctly.
+            auto baseAddsDict = [&](const proto::ProtoObject* base) -> bool {
+                if (!base || base == PROTO_NONE) return false;
+                if (base == env->getObjectPrototype()) return false;
+                if (base == env->getTuplePrototype()) return false;
+                if (base == env->getIntPrototype()) return false;
+                if (base == env->getStrPrototype()) return false;
+                if (base == env->getBytesPrototype()) return false;
+                if (base == env->getFloatPrototype()) return false;
+                if (base == env->getBoolPrototype()) return false;
+                if (base == env->getFrozensetPrototype()) return false;
+                // list / dict / set DO add a __dict__ semantically (their
+                // instances carry per-instance attribute storage) — leave
+                // them to the existing __slots__ check.
+                return true;
+            };
             for (unsigned long i = 0; i < bases && allBasesHaveStrictSlots; ++i) {
                 const proto::ProtoObject* base = mroT->getAt(context, static_cast<int>(i));
                 if (!base || base == PROTO_NONE) continue;
                 if (base == env->getObjectPrototype()) continue;  // object adds no slots semantically
+                if (!baseAddsDict(base)) continue;  // built-in container types contribute no dict
                 if (base->hasOwnAttribute(context, slotsS) != PROTO_TRUE) {
                     // A base without own __slots__ contributes a __dict__.
                     allBasesHaveStrictSlots = false;
