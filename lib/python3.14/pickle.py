@@ -322,6 +322,30 @@ def whichmodule(obj, name):
     dotted_path = name.split('.')
     module_name = getattr(obj, '__module__', None)
     if '<locals>' in dotted_path:
+        # protoPython carries the lexical qualname even when the user
+        # promoted the class to module scope via `global Name`, so the
+        # CPython "raise immediately on <locals>" path would refuse to
+        # pickle classes that are actually reachable from sys.modules.
+        # Probe the module table by qualname-suffix first: take the
+        # final segment after the last <locals>.foo and look for an
+        # attribute with that name on each loaded module.  If exactly
+        # one module owns a matching object, use it.  Fall back to the
+        # original PicklingError when no module claims the object.
+        try:
+            idx = len(dotted_path) - 1 - dotted_path[::-1].index('<locals>')
+            simple_path = dotted_path[idx + 1:]
+        except ValueError:
+            simple_path = dotted_path
+        if simple_path:
+            for module_name_, module_ in sys.modules.copy().items():
+                if module_ is None:
+                    continue
+                try:
+                    candidate = _getattribute(module_, simple_path)
+                except AttributeError:
+                    continue
+                if candidate is obj:
+                    return module_name_
         raise PicklingError(f"Can't pickle local object {obj!r}")
     if module_name is None:
         # Protect the iteration by using a list copy of sys.modules against dynamic
