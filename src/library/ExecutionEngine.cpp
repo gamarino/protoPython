@@ -3191,7 +3191,19 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
     const proto::ProtoSparseList* kwargs) {
     if (!ctx || !self) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    
+
+    // `type(x)` with exactly one argument is a pure type query — it
+    // returns x's type and runs NO __init__.  Without this short
+    // circuit, the generic path runs __new__ (which returns type(x))
+    // and then looks __init__ up on type(type(x)) — i.e. the
+    // metaclass of x's class — wrongly invoking a user metaclass's
+    // __init__ on every `type(x)` call (test_metaclass: T.counter).
+    if (env && self == env->getTypePrototype()
+        && args && args->getSize(ctx) == 1
+        && (!kwargs || kwargs->getSize(ctx) == 0)) {
+        return env->getType(ctx, args->getAt(ctx, 0));
+    }
+
     const proto::ProtoString* newS = env ? env->getNewString() : protoPython::PythonEnvironment::getInternalString(ctx, "__new__");
     const proto::ProtoObject* newM = env ? env->getAttribute(ctx, self, newS) : self->getAttribute(ctx, newS);
     
