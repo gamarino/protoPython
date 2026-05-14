@@ -22260,6 +22260,32 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
             raiseTypeError(ctx, msg.c_str());
             return nullptr;
         }
+        // CPython: a __bases__ assignment is also rejected when any new
+        // base is an unsubclassable (final) type — NoneType, bool,
+        // NotImplementedType.  py_type's class-creation path already
+        // rejects these as direct bases; mirror that for reassignment so
+        // `X.__bases__ = (type(None),)` raises instead of silently
+        // corrupting the MRO.
+        if (value && value != PROTO_NONE) {
+            const proto::ProtoTuple* nbT = value->asTuple(ctx);
+            const proto::ProtoList* nbL = nbT ? nullptr : value->asList(ctx);
+            unsigned long nbN = nbT ? nbT->getSize(ctx) : (nbL ? nbL->getSize(ctx) : 0);
+            for (unsigned long i = 0; i < nbN; ++i) {
+                const proto::ProtoObject* nb = nbT ? nbT->getAt(ctx, static_cast<int>(i))
+                                                   : nbL->getAt(ctx, static_cast<int>(i));
+                const char* finalName = nullptr;
+                if (nb == getNoneTypePrototype()) finalName = "NoneType";
+                else if (nb == boolPrototype) finalName = "bool";
+                else if (getNotImplementedPrototype()
+                         && nb == getType(ctx, getNotImplementedPrototype()))
+                    finalName = "NotImplementedType";
+                if (finalName) {
+                    raiseTypeError(ctx, std::string("type '") + finalName
+                        + "' is not an acceptable base type");
+                    return nullptr;
+                }
+            }
+        }
     }
 
     // CPython: instances of `object` itself have no __dict__ and
