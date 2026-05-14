@@ -16421,6 +16421,15 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     getSetDescriptorPrototype = getSetDescriptorPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "getset_descriptor")->asObject(rootContext_));
     getSetDescriptorPrototype = getSetDescriptorPrototype->setAttribute(rootContext_, py_repr, PythonEnvironment::getInternedString(rootContext_, "<getset_descriptor>")->asObject(rootContext_)); // Placeholder
     getSetDescriptorPrototype = getSetDescriptorPrototype->setAttribute(rootContext_, getDunderString, rootContext_->fromMethod(nullptr, py_getset_get));
+    // Q-74: __mro__ for getset_descriptor.
+    {
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(rootContext_, "__mro__");
+        const proto::ProtoList* mroList = rootContext_->newList()
+            ->appendLast(rootContext_, getSetDescriptorPrototype)
+            ->appendLast(rootContext_, objectPrototype);
+        getSetDescriptorPrototype = getSetDescriptorPrototype->setAttribute(rootContext_, mroS,
+            rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
+    }
 
 
     // Register __dict__ on type as a property/descriptor (STEP 15502 FIX)
@@ -16468,15 +16477,33 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     framePrototype = framePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "frame")->asObject(rootContext_));
     framePrototype = framePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_frame_repr));
     framePrototype = framePrototype->setAttribute(rootContext_, py_module, builtinsVal);
+    // Q-75: __mro__ for frame.
+    {
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(rootContext_, "__mro__");
+        const proto::ProtoList* mroList = rootContext_->newList()
+            ->appendLast(rootContext_, framePrototype)
+            ->appendLast(rootContext_, objectPrototype);
+        framePrototype = framePrototype->setAttribute(rootContext_, mroS,
+            rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
+    }
 
     // 5. Create 'generator' prototype
     generatorPrototype = objectPrototype->newChild(rootContext_, true);
     generatorPrototype = generatorPrototype->setAttribute(rootContext_, py_class, typePrototype);
     generatorPrototype = generatorPrototype->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "generator")->asObject(rootContext_));
     generatorPrototype = generatorPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "generator")->asObject(rootContext_));
-    
+
     generatorPrototype = generatorPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_generator_repr));
     generatorPrototype = generatorPrototype->setAttribute(rootContext_, py_module, builtinsVal);
+    // Q-76: __mro__ for generator.
+    {
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(rootContext_, "__mro__");
+        const proto::ProtoList* mroList = rootContext_->newList()
+            ->appendLast(rootContext_, generatorPrototype)
+            ->appendLast(rootContext_, objectPrototype);
+        generatorPrototype = generatorPrototype->setAttribute(rootContext_, mroS,
+            rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
+    }
     generatorPrototype = generatorPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     generatorPrototype = generatorPrototype->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_generator_next));
     generatorPrototype = generatorPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "send"), rootContext_->fromMethod(nullptr, py_generator_send));
