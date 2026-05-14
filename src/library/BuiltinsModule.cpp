@@ -4588,8 +4588,27 @@ static const proto::ProtoList* computeC3MRO(proto::ProtoContext* context, const 
         } else if (baseCls->asList(context)) {
             mros.push_back(baseCls->asList(context));
         } else {
-            // Check for __mro__ in baseCls itself if it's acting as its own MRO (fallback)
-            mros.push_back(context->newList()->appendLast(context, baseCls));
+            // baseCls exposes __mro__ only through a getset descriptor
+            // rather than a stored tuple.  This is the case for
+            // typePrototype, whose `__mro__` slot holds the descriptor
+            // object itself; a raw getAttribute cannot fire the
+            // descriptor, so `mroAttr` is unusable here.  Degrading to a
+            // single-element `[baseCls]` would drop `object` (and any
+            // other ancestors) from the C3 merge and silently mis-order
+            // the result — e.g. `class M(Base, type)` linearised to
+            // `(M, Base, object, type)` instead of `(M, Base, type,
+            // object)`.  Reconstruct the base's own linearisation from
+            // its `__bases__` instead.
+            const proto::ProtoObject* baseBases =
+                baseCls->proto::ProtoObject::getAttribute(
+                    context, PythonEnvironment::getInternedString(context, "__bases__"));
+            const proto::ProtoList* sub =
+                baseBases ? computeC3MRO(context, baseCls, baseBases) : nullptr;
+            if (sub && sub->getSize(context) > 0) {
+                mros.push_back(sub);
+            } else {
+                mros.push_back(context->newList()->appendLast(context, baseCls));
+            }
         }
     }
 
