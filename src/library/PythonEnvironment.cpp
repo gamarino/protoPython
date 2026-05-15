@@ -17148,8 +17148,16 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // We create an instance of getset_descriptor and set its fget to py_type_get_dict
     proto::ProtoObject* dictDescr = const_cast<proto::ProtoObject*>(getSetDescriptorPrototype->newChild(rootContext_, true));
     dictDescr->setAttribute(rootContext_, py_class, getSetDescriptorPrototype);
-    dictDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fget"), rootContext_->fromMethod(nullptr, py_type_get_dict)); 
+    dictDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fget"), rootContext_->fromMethod(nullptr, py_type_get_dict));
     dictDescr->setAttribute(rootContext_, py_name, dictString->asObject(rootContext_));
+    // STRUCT-40: every getset_descriptor in CPython carries __objclass__
+    // pointing at the class that introduces the slot.  test___dict__
+    // and other introspection tests assert
+    // `descr.__objclass__ is object` (or the relevant class) — without
+    // this attribute the test fails AttributeError immediately.
+    dictDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__objclass__"), objectPrototype);
+    dictDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"),
+        PythonEnvironment::getInternedString(rootContext_, "object.__dict__")->asObject(rootContext_));
 
     typePrototype = typePrototype->setAttribute(rootContext_, dictString, dictDescr);
     // type.__doc__ is a getset descriptor (CPython parity): fget returns
@@ -17169,6 +17177,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         docDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fset"), rootContext_->fromMethod(nullptr, py_type_set_doc));
         docDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fdel"), rootContext_->fromMethod(nullptr, py_type_del_doc));
         docDescr->setAttribute(rootContext_, py_name, docString->asObject(rootContext_));
+        // STRUCT-40: expose __objclass__ on every type-level getset descriptor.
+        docDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__objclass__"), typePrototype);
         typePrototype = typePrototype->setAttribute(rootContext_, docString, docDescr);
     }
 
@@ -17180,7 +17190,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     annDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fset"), rootContext_->fromMethod(nullptr, py_type_set_annotations));
     annDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fdel"), rootContext_->fromMethod(nullptr, py_type_del_annotations));
     annDescr->setAttribute(rootContext_, py_name, annString->asObject(rootContext_));
-    
+    annDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__objclass__"), typePrototype);
+
     typePrototype = typePrototype->setAttribute(rootContext_, annString, annDescr);
 
     // Register __mro__ on type
@@ -17189,7 +17200,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     mroDescr->setAttribute(rootContext_, py_class, getSetDescriptorPrototype);
     mroDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fget"), rootContext_->fromMethod(nullptr, py_type_get_mro));
     mroDescr->setAttribute(rootContext_, py_name, mroString->asObject(rootContext_));
-    
+    mroDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__objclass__"), typePrototype);
+
     typePrototype = typePrototype->setAttribute(rootContext_, mroString, mroDescr);
 
     // 3. Circularity: object's class is type
