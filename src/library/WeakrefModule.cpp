@@ -169,6 +169,77 @@ static const proto::ProtoObject* py_weakref_ref(
     const proto::ProtoObject* target = posArgs->getAt(ctx, static_cast<int>(base));
     if (!target || target == PROTO_NONE) return PROTO_NONE;
 
+    // STRUCT-41: reject targets whose type cannot grow a weak reference —
+    // mirrors py_object_get_weakref's classification.  CPython raises
+    // `TypeError: cannot create weak reference to 'X' object` when the
+    // instance type is an immutable-primitive built-in (int, str, …) or
+    // declares `__slots__` without `__weakref__`.
+    if (env) {
+        const proto::ProtoObject* tp = env->getType(ctx, target);
+        auto blocksWeakref = [&](const proto::ProtoObject* c) -> bool {
+            return c == env->getIntPrototype()
+                || c == env->getBoolPrototype()
+                || c == env->getFloatPrototype()
+                || c == env->getComplexPrototype()
+                || c == env->getStrPrototype()
+                || c == env->getBytesPrototype()
+                || c == env->getTuplePrototype()
+                || c == env->getFrozensetPrototype()
+                || c == env->getTypePrototype();
+        };
+        std::string tname = "object";
+        if (tp) {
+            const proto::ProtoObject* nm = tp->getAttribute(ctx,
+                PythonEnvironment::getInternedString(ctx, "__name__"));
+            if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, tname);
+        }
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
+        const proto::ProtoObject* mroAttr = tp ? tp->getAttribute(ctx, mroS) : nullptr;
+        const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+        bool blocked = false;
+        if (mroT) {
+            for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
+                const proto::ProtoObject* anc = mroT->getAt(ctx, static_cast<int>(i));
+                if (anc && blocksWeakref(anc)) { blocked = true; break; }
+            }
+        } else if (tp && blocksWeakref(tp)) {
+            blocked = true;
+        }
+        if (!blocked && tp) {
+            const proto::ProtoString* slotsS = PythonEnvironment::getInternedString(ctx, "__slots__");
+            if (tp->hasOwnAttribute(ctx, slotsS) == PROTO_TRUE) {
+                const proto::ProtoObject* slotsAttr = tp->getOwnAttributeDirect(ctx, slotsS);
+                bool weakrefInSlots = false;
+                if (slotsAttr) {
+                    const proto::ProtoList* slotsL = slotsAttr->asList(ctx);
+                    const proto::ProtoTuple* slotsTp = slotsAttr->asTuple(ctx);
+                    unsigned long nn = slotsL ? slotsL->getSize(ctx)
+                                      : (slotsTp ? slotsTp->getSize(ctx) : 0);
+                    for (unsigned long i = 0; i < nn; ++i) {
+                        const proto::ProtoObject* item = slotsL
+                            ? slotsL->getAt(ctx, static_cast<int>(i))
+                            : slotsTp->getAt(ctx, static_cast<int>(i));
+                        if (!item || !item->isString(ctx)) continue;
+                        std::string nm;
+                        item->asString(ctx)->toUTF8String(ctx, nm);
+                        if (nm == "__weakref__") { weakrefInSlots = true; break; }
+                    }
+                    if (slotsAttr->isString(ctx)) {
+                        std::string nm;
+                        slotsAttr->asString(ctx)->toUTF8String(ctx, nm);
+                        if (nm == "__weakref__") weakrefInSlots = true;
+                    }
+                }
+                if (!weakrefInSlots) blocked = true;
+            }
+        }
+        if (blocked) {
+            env->raiseTypeError(ctx,
+                "cannot create weak reference to '" + tname + "' object");
+            return nullptr;
+        }
+    }
+
     unsigned long key = obj_key(target);
 
     if (mod && mod != PROTO_NONE) {
