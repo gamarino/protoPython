@@ -44,6 +44,18 @@ struct GlobalsScope {
 }
 using protoPython::PythonEnvironment;
 
+// STRUCT-57/58: slot member_descriptor protocol handlers live in
+// PythonEnvironment.cpp (in the protoPython:: namespace, NOT
+// protoPython::builtins).  Forward-declare with the outer-namespace
+// path so the link target matches what PythonEnvironment.cpp emits.
+} // namespace builtins
+namespace slot_member {
+    proto::ProtoMethod get_handler();
+    proto::ProtoMethod set_handler();
+    proto::ProtoMethod delete_handler();
+}
+namespace builtins {
+
 static bool areSameClasses(proto::ProtoContext* context, const proto::ProtoObject* c1, const proto::ProtoObject* c2);
 
 static const proto::ProtoObject* py_import(
@@ -6121,6 +6133,85 @@ const proto::ProtoObject* py_type(
             }
         }
         
+        // STRUCT-57: install a member_descriptor on the class for every
+        // slot in `__slots__`.  After this, `C.x` for `class C:
+        // __slots__ = ['x']` resolves to a member_descriptor whose
+        // `__get__` / `__set__` / `__delete__` (installed from
+        // PythonEnvironment.cpp's `slot_member` handlers) read and
+        // write the slot on the instance via raw protoCore APIs.
+        // Special names `__dict__` and `__weakref__` in `__slots__`
+        // are flag markers — they don't create per-slot descriptors.
+        if (env && env->getMemberDescriptorPrototype()) {
+            const proto::ProtoString* slotsKey =
+                PythonEnvironment::getInternedString(context, "__slots__");
+            const proto::ProtoObject* slotsVal =
+                targetClass->hasOwnAttribute(context, slotsKey) == PROTO_TRUE
+                    ? targetClass->getOwnAttributeDirect(context, slotsKey)
+                    : nullptr;
+            // Slot values may have been stored on `dict` (the class
+            // body namespace) rather than on `targetClass` directly.
+            if (!slotsVal && dict) {
+                if (dict->hasOwnAttribute(context, slotsKey) == PROTO_TRUE) {
+                    slotsVal = dict->getOwnAttributeDirect(context, slotsKey);
+                } else {
+                    const proto::ProtoObject* dictData = dict->getAttribute(context, env->getDataString());
+                    if (dictData && dictData->asSparseList(context)) {
+                        const proto::ProtoSparseList* sl = dictData->asSparseList(context);
+                        if (sl->has(context, slotsKey->getHash(context))) {
+                            slotsVal = sl->getAt(context, slotsKey->getHash(context));
+                        }
+                    }
+                }
+            }
+            const proto::ProtoObject* memberProto = env->getMemberDescriptorPrototype();
+            auto installSlot = [&](const std::string& slotName) {
+                if (slotName == "__dict__" || slotName == "__weakref__") return;
+                proto::ProtoObject* descr = const_cast<proto::ProtoObject*>(memberProto->newChild(context, true));
+                descr->setAttribute(context, env->getClassString(), memberProto);
+                const proto::ProtoString* slotNameS = PythonEnvironment::getInternedString(context, slotName.c_str());
+                descr->setAttribute(context, env->getNameString(), slotNameS->asObject(context));
+                std::string clsName = "?";
+                const proto::ProtoObject* cnObj = targetClass->getAttribute(context, env->getNameString());
+                if (cnObj && cnObj->isString(context)) cnObj->asString(context)->toUTF8String(context, clsName);
+                std::string qn = clsName + "." + slotName;
+                descr->setAttribute(context, PythonEnvironment::getInternedString(context, "__qualname__"),
+                    PythonEnvironment::getInternedString(context, qn.c_str())->asObject(context));
+                descr->setAttribute(context, PythonEnvironment::getInternedString(context, "__objclass__"),
+                    targetClass);
+                std::string doc = "member '" + slotName + "' of '" + clsName + "' objects";
+                descr->setAttribute(context, PythonEnvironment::getInternedString(context, "__doc__"),
+                    PythonEnvironment::getInternedString(context, doc.c_str())->asObject(context));
+                descr->setAttribute(context, env->getGetDunderString(),
+                    context->fromMethod(nullptr, ::protoPython::slot_member::get_handler()));
+                descr->setAttribute(context, env->getSetDunderString(),
+                    context->fromMethod(nullptr, ::protoPython::slot_member::set_handler()));
+                descr->setAttribute(context, PythonEnvironment::getInternedString(context, "__delete__"),
+                    context->fromMethod(nullptr, ::protoPython::slot_member::delete_handler()));
+                targetClass = const_cast<proto::ProtoObject*>(
+                    targetClass->setAttribute(context, slotNameS, descr));
+            };
+            if (slotsVal && slotsVal != PROTO_NONE) {
+                if (slotsVal->isString(context)) {
+                    std::string s; slotsVal->asString(context)->toUTF8String(context, s);
+                    installSlot(s);
+                } else {
+                    const proto::ProtoTuple* slotsT = slotsVal->asTuple(context);
+                    const proto::ProtoList* slotsL = slotsT ? nullptr : slotsVal->asList(context);
+                    unsigned long sN = slotsT ? slotsT->getSize(context)
+                                      : (slotsL ? slotsL->getSize(context) : 0);
+                    for (unsigned long si = 0; si < sN; ++si) {
+                        const proto::ProtoObject* item = slotsT
+                            ? slotsT->getAt(context, static_cast<int>(si))
+                            : slotsL->getAt(context, static_cast<int>(si));
+                        if (item && item->isString(context)) {
+                            std::string s; item->asString(context)->toUTF8String(context, s);
+                            installSlot(s);
+                        }
+                    }
+                }
+            }
+        }
+
         // Final Pass: Call __set_name__ for all attributes that have it.
         const proto::ProtoString* targetKeysName = PythonEnvironment::getInternedString(context, "__keys__");
         const proto::ProtoObject* tKeysObj = targetClass->getAttribute(context, targetKeysName);

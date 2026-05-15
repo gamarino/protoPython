@@ -16143,6 +16143,171 @@ static const proto::ProtoObject* py_getset_delete(
     return nullptr;
 }
 
+// STRUCT-57/58: slot member_descriptor protocol handlers.  Installed
+// directly as `__get__` / `__set__` / `__delete__` on each slot
+// descriptor instance (NOT as fget/fset/fdel under py_getset_*'s
+// indirection — those would lose access to the descriptor `self`).
+// Self is the descriptor; the descriptor's own `__name__` is the
+// slot's storage key and `__objclass__` is the class that owns the
+// slot.  Storage uses the same key as the slot name; protoCore's
+// raw `setAttribute`/`getAttribute`/`removeAttribute` calls bypass
+// the descriptor protocol, so we don't recurse.
+//
+// Type validation: an instance is "compatible" with the slot iff
+// `__objclass__` appears in `type(instance).__mro__` as an OWN entry
+// (real subclass — NOT virtual subclass via ABCMeta.register).
+// Without this distinction `MyABC.a.__set__(unrelated, 3)` from
+// test_slots_descriptor would silently accept the write.
+static bool slot_member_instance_compatible(proto::ProtoContext* ctx,
+                                            const proto::ProtoObject* instance,
+                                            const proto::ProtoObject* objclass) {
+    if (!instance || !objclass) return false;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return false;
+    const proto::ProtoObject* tp = env->getType(ctx, instance);
+    if (tp == objclass) return true;
+    const proto::ProtoString* mroS = env->getMroString();
+    const proto::ProtoObject* mroAttr = tp ? tp->getAttribute(ctx, mroS) : nullptr;
+    const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+    if (!mroT) return false;
+    for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
+        if (mroT->getAt(ctx, static_cast<int>(i)) == objclass) return true;
+    }
+    return false;
+}
+
+static void raise_slot_type_mismatch(proto::ProtoContext* ctx,
+                                     PythonEnvironment* env,
+                                     const proto::ProtoObject* descr,
+                                     const proto::ProtoObject* instance) {
+    if (!env) return;
+    std::string slotName = "?";
+    std::string ocName = "?";
+    std::string instTypeName = "object";
+    if (descr) {
+        const proto::ProtoObject* nm = descr->getAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__name__"));
+        if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, slotName);
+        const proto::ProtoObject* oc = descr->getAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__objclass__"));
+        if (oc) {
+            const proto::ProtoObject* ocn = oc->getAttribute(ctx, env->getNameString());
+            if (ocn && ocn->isString(ctx)) ocn->asString(ctx)->toUTF8String(ctx, ocName);
+        }
+    }
+    const proto::ProtoObject* tp = env->getType(ctx, instance);
+    if (tp) {
+        const proto::ProtoObject* nm = tp->getAttribute(ctx, env->getNameString());
+        if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, instTypeName);
+    }
+    env->raiseTypeError(ctx,
+        "descriptor '" + slotName + "' for '" + ocName + "' objects doesn't apply to a '" + instTypeName + "' object");
+}
+
+static const proto::ProtoObject* py_slot_member_get(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !args || args->getSize(context) < 1 || !self) return PROTO_NONE;
+    const proto::ProtoObject* instance = args->getAt(context, 0);
+    if (!instance || instance == PROTO_NONE) {
+        // Unbound class-level read: descriptor.__get__(None, cls)
+        // returns the descriptor itself per CPython's contract.
+        return self;
+    }
+    const proto::ProtoObject* objclass = self->getAttribute(context,
+        PythonEnvironment::getInternedString(context, "__objclass__"));
+    if (objclass && objclass != PROTO_NONE
+        && !slot_member_instance_compatible(context, instance, objclass)) {
+        raise_slot_type_mismatch(context, env, self, instance);
+        return nullptr;
+    }
+    const proto::ProtoObject* nameAttr = self->getAttribute(context,
+        PythonEnvironment::getInternedString(context, "__name__"));
+    if (!nameAttr || !nameAttr->isString(context)) return PROTO_NONE;
+    const proto::ProtoString* nameS = nameAttr->asString(context);
+    if (instance->hasOwnAttribute(context, nameS) == PROTO_TRUE) {
+        return instance->getOwnAttributeDirect(context, nameS);
+    }
+    // CPython: reading an uninitialised slot raises AttributeError
+    // with the message "attribute '<name>' of '<class>' objects is
+    // not set".  protoPython's raiseAttributeError builds a simpler
+    // shape — close enough for the test suite.
+    std::string nm; nameS->toUTF8String(context, nm);
+    env->raiseAttributeError(context, instance, nm);
+    return nullptr;
+}
+
+static const proto::ProtoObject* py_slot_member_set(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !args || args->getSize(context) < 2 || !self) return PROTO_NONE;
+    const proto::ProtoObject* instance = args->getAt(context, 0);
+    const proto::ProtoObject* value = args->getAt(context, 1);
+    if (!instance || instance == PROTO_NONE) return PROTO_NONE;
+    const proto::ProtoObject* objclass = self->getAttribute(context,
+        PythonEnvironment::getInternedString(context, "__objclass__"));
+    if (objclass && objclass != PROTO_NONE
+        && !slot_member_instance_compatible(context, instance, objclass)) {
+        raise_slot_type_mismatch(context, env, self, instance);
+        return nullptr;
+    }
+    const proto::ProtoObject* nameAttr = self->getAttribute(context,
+        PythonEnvironment::getInternedString(context, "__name__"));
+    if (!nameAttr || !nameAttr->isString(context)) return PROTO_NONE;
+    const proto::ProtoString* nameS = nameAttr->asString(context);
+    const_cast<proto::ProtoObject*>(instance)->proto::ProtoObject::setAttribute(
+        context, nameS, value);
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_slot_member_delete(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !args || args->getSize(context) < 1 || !self) return PROTO_NONE;
+    const proto::ProtoObject* instance = args->getAt(context, 0);
+    if (!instance || instance == PROTO_NONE) return PROTO_NONE;
+    const proto::ProtoObject* objclass = self->getAttribute(context,
+        PythonEnvironment::getInternedString(context, "__objclass__"));
+    if (objclass && objclass != PROTO_NONE
+        && !slot_member_instance_compatible(context, instance, objclass)) {
+        raise_slot_type_mismatch(context, env, self, instance);
+        return nullptr;
+    }
+    const proto::ProtoObject* nameAttr = self->getAttribute(context,
+        PythonEnvironment::getInternedString(context, "__name__"));
+    if (!nameAttr || !nameAttr->isString(context)) return PROTO_NONE;
+    const proto::ProtoString* nameS = nameAttr->asString(context);
+    if (instance->hasOwnAttribute(context, nameS) != PROTO_TRUE) {
+        std::string nm; nameS->toUTF8String(context, nm);
+        env->raiseAttributeError(context, instance, nm);
+        return nullptr;
+    }
+    const_cast<proto::ProtoObject*>(instance)->removeAttribute(context, nameS);
+    return PROTO_NONE;
+}
+
+// Public accessor so BuiltinsModule.cpp (py_type factory) can install
+// these three handlers as `__get__` / `__set__` / `__delete__` on each
+// slot member_descriptor it creates.  Declared in PythonEnvironment.h
+// alongside the existing descriptor-helper exports.
+namespace slot_member {
+    proto::ProtoMethod get_handler() { return py_slot_member_get; }
+    proto::ProtoMethod set_handler() { return py_slot_member_set; }
+    proto::ProtoMethod delete_handler() { return py_slot_member_delete; }
+}
+
 void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, const std::vector<std::string>& searchPaths) {
     s_threadEnv = this;
     // Mutable: every getPyThread() call does
