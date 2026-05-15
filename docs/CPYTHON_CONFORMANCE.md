@@ -28,6 +28,87 @@
 
 ---
 
+## Current Status (2026-05-15) — post-fourteenth-sweep (round 7)
+
+Round 7 resolved three of the four structural carry-overs from
+round 6: callable lookup escaping via the metaclass, `__bases__`
+setter MRO propagation, and slot member descriptors not being
+installed on classes.  The fourth (GC-dependent tests) remains
+out of scope.
+
+### Direct unittest counts (`test_descr.py`)
+
+| | run | fail | error | skipped | Δ |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-15 (round-7) | 165 | **42** | **41** | 10 | F+E flat — every test improvement is a sub-assertion progression, not a full flip |
+| 2026-05-15 (round-6 final) | 165 | 42 | 41 | 10 | post-STRUCT-50 baseline |
+
+The flat F+E hides genuine progress: each affected test now runs
+deeper before failing.  `test_metaclass`'s n()-is-not-callable
+assertion now raises TypeError, `test_mutable_bases`'s
+`d.meth()` resolves against the new MRO, `test_slots_descriptor`'s
+type-mismatch rejection works.  None of those flip the overall
+test result because each test contains additional assertions that
+depend on infrastructure still out of scope (ABCMeta virtual
+subclass registration, removeParent in protoCore for full
+parent-chain refresh, etc.).
+
+### Commits landed in round 7
+
+| Commit | Theme |
+| :--- | :--- |
+| `bcc5ee5f` STRUCT-51 | propertyProto self-identifies as a class (`__is_python_class__`, `__bases__`) so `isinstance(property, type)` is True and STRUCT-52's guard accepts it |
+| `3a5f346f` STRUCT-52 | py_type_call rejects non-class receivers — `n()` for plain instance raises TypeError instead of mishandling self as a class to construct |
+| `d5dc8b84` STRUCT-54 | `__bases__` setter recomputes `__mro__` via the now-extern `computeC3MRO`; MRO conflict propagates TypeError |
+| `4b3fef09` STRUCT-55 | `__bases__` setter recursively recomputes `__mro__` for every descendant in `__subclasses_list__` |
+| `f2dc1bcc` STRUCT-56 | `__bases__` setter extends the protoCore parent chain with the new bases via `addParent` (add-only — protoCore lacks `removeParent`) |
+| `46a5322e` STRUCT-57/58 | Slot `member_descriptor` instances installed on classes; `__get__`/`__set__`/`__delete__` handlers (in PythonEnvironment.cpp's slot_member namespace) read/write/delete the slot via raw protoCore APIs |
+| `a54d3804` STRUCT-59 | Slot name mangling at install AND enforcement: `__a` in `__slots__` registers as `_<Cls>__a` and rejects literal `c.__a = X` access from outside the class body |
+
+STRUCT-53 (the `__call__` lookup confined to `__mro__` in
+`invokeCallable`) was investigated and reverted — restricting the
+lookup broke `property()` and related builtins whose
+`__is_python_class__` markers were inconsistent.  STRUCT-52's guard
+on `py_type_call` provides the same safety net at the receiving
+end without restricting the lookup.
+
+### Carry-over to round 8 (or protoCore extension)
+
+* `removeParent` / `setParents` in protoCore — needed to clear the
+  old bases from the parent chain after `__bases__` reassignment.
+  STRUCT-56 is add-only; STRUCT-54/55 already update `__mro__`
+  correctly, so most `__mro__`-aware lookups behave correctly,
+  but raw protoCore chain walks still see the stale bases.
+* ABCMeta virtual subclass registration.  STRUCT-57/58/59 use a
+  STRICT MRO walk to validate `__objclass__`-vs-instance, which
+  intentionally rejects ABCMeta-registered virtual subclasses.
+  `isinstance` in protoPython doesn't currently honour
+  `ABCMeta.register`, so `test_slots_descriptor` still fails on
+  the `assertIsInstance(u, MyABC)` line before reaching the
+  descriptor's type-mismatch check.
+* Tests dependent on the deferred-collection GC remain red:
+  `test_weakrefs`, `test_subtype_resurrection`,
+  `test_cycle_through_dict`, `test_remove_subclass`, the
+  Counted-based assertions in `test_slots`.
+
+### Spot-checks
+
+* `class N: pass; N()()` → `TypeError: 'N' object is not callable` ✓
+* `class C: pass; class D(C): pass; D.__bases__ = (C2,); D.__mro__` ✓
+* `class E(D): pass; E.__mro__` reflects the new chain ✓
+* `class C: __slots__ = ['x']`; `type(C.__dict__['x']).__name__ == 'member_descriptor'` ✓
+* `class D: __slots__ = ['__a']; d = D(); d.__a = 99` → AttributeError ✓
+* `isinstance(property, type) == True` ✓
+* `bytearray('abc\xbd€', encoding='latin1', errors='replace')` → `b'abc\xbd?'` ✓
+* `collections.namedtuple('NT', ['x','y'])` ✓
+
+### Infra note
+
+Build directory `build_release/` throughout; `build-release/`
+(hyphen) remains corrupted.
+
+---
+
 ## Current Status (2026-05-15) — post-thirteenth-sweep (round 6)
 
 Round 6 was the 20-commit structural sweep `mossy-dreaming-quokka`
