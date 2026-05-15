@@ -5838,8 +5838,18 @@ const proto::ProtoObject* py_type(
         }
 
         const proto::ProtoObject* targetClass = context->newObject(true);
-        
-        // Add metaclass first so that its attributes are searched after the class MRO bases 
+
+        // STRUCT-68: every new class starts with an empty
+        // `__subclasses_list__` as an OWN attribute.  Without this,
+        // `Parent.__subclasses__()` falls back via parent-chain walk
+        // to `object.__subclasses_list__` (or any ancestor's), which
+        // accumulates every class ever created — `test_remove_subclass`
+        // saw a leaked `<class 'Child'>` from an earlier test.
+        targetClass = targetClass->setAttribute(context,
+            PythonEnvironment::getInternedString(context, "__subclasses_list__"),
+            context->newList()->asObject(context));
+
+        // Add metaclass first so that its attributes are searched after the class MRO bases
         if (cls && cls != targetClass) {
             targetClass = targetClass->addParent(context, cls);
             targetClass = targetClass->setAttribute(context, env ? env->getClassString() : PythonEnvironment::getInternedString(context, "__class__"), cls);
