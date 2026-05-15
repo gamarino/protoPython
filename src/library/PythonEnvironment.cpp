@@ -1093,6 +1093,86 @@ static const proto::ProtoObject* py_type_del_doc(
     return nullptr;
 }
 
+// fget for the type.__qualname__ getset descriptor.  Returns the class's
+// own __qualname__ string; falls back to __name__ (so typePrototype
+// itself, whose own __qualname__ slot now holds the descriptor, still
+// reports 'type').
+static const proto::ProtoObject* py_type_get_qualname(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList*,
+    const proto::ProtoSparseList*) {
+    if (!self) return PROTO_NONE;
+    const proto::ProtoString* qnS = PythonEnvironment::getInternedString(context, "__qualname__");
+    if (self->hasOwnAttribute(context, qnS) == PROTO_TRUE) {
+        const proto::ProtoObject* d = self->getOwnAttributeDirect(context, qnS);
+        if (d && d != PROTO_NONE && d->isString(context)) return d;
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (env) {
+        const proto::ProtoObject* n = self->getAttribute(context, env->getNameString());
+        if (n && n != PROTO_NONE && n->isString(context)) return n;
+    }
+    return PROTO_NONE;
+}
+
+// fset for the type.__qualname__ getset descriptor.  Immutable built-in
+// types reject the assignment; heap classes accept a string value.
+static const proto::ProtoObject* py_type_set_qualname(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList*) {
+    if (!self || !args || args->getSize(context) < 2) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return nullptr;
+    const char* immName = immutableBuiltinTypeName(env, self);
+    if (immName) {
+        env->raiseTypeError(context,
+            std::string("cannot set '__qualname__' attribute of immutable type '") + immName + "'");
+        return nullptr;
+    }
+    const proto::ProtoObject* value = args->getAt(context, 1);
+    if (!value || !value->isString(context)) {
+        std::string clsName = "?";
+        const proto::ProtoObject* nm = self->getAttribute(context, env->getNameString());
+        if (nm && nm != PROTO_NONE && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+        env->raiseTypeError(context,
+            "can only assign string to " + clsName + ".__qualname__");
+        return nullptr;
+    }
+    const proto::ProtoString* qnS = PythonEnvironment::getInternedString(context, "__qualname__");
+    const_cast<proto::ProtoObject*>(self)->proto::ProtoObject::setAttribute(context, qnS, value);
+    return PROTO_NONE;
+}
+
+// fdel for the type.__qualname__ getset descriptor.  CPython rejects
+// deletion of __qualname__ on every type.
+static const proto::ProtoObject* py_type_del_qualname(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList*,
+    const proto::ProtoSparseList*) {
+    if (!self) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return nullptr;
+    const char* immName = immutableBuiltinTypeName(env, self);
+    if (immName) {
+        env->raiseTypeError(context,
+            std::string("cannot set '__qualname__' attribute of immutable type '") + immName + "'");
+        return nullptr;
+    }
+    std::string clsName = "?";
+    const proto::ProtoObject* nm = self->getAttribute(context, env->getNameString());
+    if (nm && nm != PROTO_NONE && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+    env->raiseTypeError(context,
+        "cannot delete '__qualname__' attribute of type '" + clsName + "'");
+    return nullptr;
+}
+
 // __repr__ for methodDescriptorPrototype / wrapperDescriptorPrototype.
 // repr() dispatches via type(x).__repr__, so a native method cell whose
 // getType() now resolves to one of those prototypes lands here.  Formats
@@ -19298,7 +19378,26 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     complexPrototype = setNames(complexPrototype, "complex");
     sliceType = setNames(sliceType, "slice");
     noneTypeProto = setNames(noneTypeProto, "NoneType");
-    
+
+    // type.__qualname__ is a getset descriptor (CPython parity): fget
+    // returns the class's own __qualname__ (or __name__ as fallback);
+    // fset stores a string on heap classes and rejects immutable
+    // built-in types; fdel rejects deletion on every type.  Installed
+    // AFTER setNames(typePrototype, "type") — setNames stamps a plain
+    // string __qualname__ on every core prototype and would otherwise
+    // clobber the descriptor.
+    {
+        proto::ProtoObject* qnDescr = const_cast<proto::ProtoObject*>(getSetDescriptorPrototype->newChild(rootContext_, true));
+        const proto::ProtoString* qnString = PythonEnvironment::getInternedString(rootContext_, "__qualname__");
+        qnDescr->setAttribute(rootContext_, py_class, getSetDescriptorPrototype);
+        qnDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fget"), rootContext_->fromMethod(nullptr, py_type_get_qualname));
+        qnDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fset"), rootContext_->fromMethod(nullptr, py_type_set_qualname));
+        qnDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fdel"), rootContext_->fromMethod(nullptr, py_type_del_qualname));
+        qnDescr->setAttribute(rootContext_, py_name, qnString->asObject(rootContext_));
+        typePrototype = typePrototype->setAttribute(rootContext_, qnString, qnDescr);
+    }
+
+
     if (ellipsisPrototype) {
         const proto::ProtoObject* eClass = ellipsisPrototype->getAttribute(rootContext_, py_class);
         if (eClass) {
