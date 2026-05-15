@@ -1093,6 +1093,28 @@ static const proto::ProtoObject* py_type_del_doc(
     return nullptr;
 }
 
+// fget for the object.__weakref__ getset descriptor.  Exposed via
+// `cls.__dict__['__weakref__']` on every non-slot class created in
+// protoPython (the descriptor is installed on objectPrototype and inherited
+// through the MRO walk used by mappingproxy synthesis).  Returns None for
+// instances that may carry a live weak reference; STRUCT-34 tightens this
+// to raise AttributeError for types that do not support weak references
+// (bool, int subclasses, slot classes lacking __weakref__).  For STRUCT-33
+// the behaviour is "return None" universally so the descriptor is wired
+// without changing any test outcome other than test___weakref__'s
+// __objclass__ assertion.
+static const proto::ProtoObject* py_object_get_weakref(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList*) {
+    (void)self;
+    (void)args;
+    (void)context;
+    return PROTO_NONE;
+}
+
 // fget for the type.__qualname__ getset descriptor.  Returns the class's
 // own __qualname__ string; falls back to __name__ (so typePrototype
 // itself, whose own __qualname__ slot now holds the descriptor, still
@@ -13356,10 +13378,11 @@ struct KeyCollector {
 // suite asserts on the exact key set.
 // Returns true when the class should synthesise CPython's
 // meta-attribute slots (__dict__, __doc__, __weakref__ etc.) in its
-// mappingproxy.  CPython attaches these only at the first class in
-// the MRO that introduces instance state — concretely, a class whose
-// bases are only object (or other built-in primitives), not classes
-// that already declared the slots themselves.
+// mappingproxy.  CPython attaches these only to a heap class that does
+// NOT declare `__slots__` of its own; once a class declares `__slots__`,
+// its `__dict__` exposes the slot descriptors instead of the auto-synth
+// names.  Built-in prototypes are excluded — they manage their own
+// attribute table and never need synthesis.
 static bool clsNeedsMetaSlotSynthesis(proto::ProtoContext* ctx,
                                        PythonEnvironment* env,
                                        const proto::ProtoObject* cls) {
@@ -13373,21 +13396,14 @@ static bool clsNeedsMetaSlotSynthesis(proto::ProtoContext* ctx,
         || cls == env->getComplexPrototype()) {
         return false;
     }
-    const proto::ProtoObject* basesAttr = cls->getAttribute(ctx, env->getBasesString());
-    const proto::ProtoTuple* basesT = basesAttr ? basesAttr->asTuple(ctx) : nullptr;
-    if (!basesT) return true;
-    for (unsigned long bi = 0; bi < basesT->getSize(ctx); ++bi) {
-        const proto::ProtoObject* b = basesT->getAt(ctx, static_cast<int>(bi));
-        if (!b || b == PROTO_NONE) continue;
-        if (b == env->getObjectPrototype()) continue;
-        bool bIsBuiltin = (b == env->getStrPrototype() || b == env->getIntPrototype()
-            || b == env->getFloatPrototype() || b == env->getBoolPrototype()
-            || b == env->getBytesPrototype() || b == env->getListPrototype()
-            || b == env->getDictPrototype() || b == env->getSetPrototype()
-            || b == env->getTuplePrototype() || b == env->getFrozensetPrototype()
-            || b == env->getComplexPrototype() || b == env->getTypePrototype()
-            || b == env->getModulePrototype());
-        if (!bIsBuiltin) return false;
+    // STRUCT-33: a heap class that declares its own __slots__ does not
+    // auto-receive __dict__/__weakref__ in its mappingproxy (CPython's
+    // PyType_Ready only adds them when __slots__ is absent).  This makes
+    // SlotSubClass(SlotClass) — a non-slot subclass of a slotted base —
+    // correctly synthesise __weakref__, while SlotClass itself does not.
+    const proto::ProtoString* slotsS = PythonEnvironment::getInternedString(ctx, "__slots__");
+    if (cls->hasOwnAttribute(ctx, slotsS) == PROTO_TRUE) {
+        return false;
     }
     return true;
 }
@@ -16992,6 +17008,29 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         memberDescriptorPrototype = p;
     }
 
+    // STRUCT-33: install `__weakref__` as a getset_descriptor on
+    // objectPrototype.  Required by `test___weakref__`, which asserts
+    // `CustomClass.__dict__['__weakref__'].__objclass__ is object`.  The
+    // descriptor's fget returns None (STRUCT-34 will tighten it to raise
+    // AttributeError on non-weakrefable receivers).  __objclass__ points
+    // at objectPrototype so the inherited descriptor advertises the
+    // class that introduced the slot, matching CPython's getset_descriptor
+    // shape.
+    {
+        proto::ProtoObject* wrDescr = const_cast<proto::ProtoObject*>(getSetDescriptorPrototype->newChild(rootContext_, true));
+        const proto::ProtoString* wrString = PythonEnvironment::getInternedString(rootContext_, "__weakref__");
+        wrDescr->setAttribute(rootContext_, py_class, getSetDescriptorPrototype);
+        wrDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fget"),
+            rootContext_->fromMethod(nullptr, py_object_get_weakref));
+        wrDescr->setAttribute(rootContext_, py_name, wrString->asObject(rootContext_));
+        wrDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"),
+            PythonEnvironment::getInternedString(rootContext_, "object.__weakref__")->asObject(rootContext_));
+        wrDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__objclass__"),
+            objectPrototype);
+        wrDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__doc__"),
+            PythonEnvironment::getInternedString(rootContext_, "list of weak references to the object")->asObject(rootContext_));
+        objectPrototype = objectPrototype->setAttribute(rootContext_, wrString, wrDescr);
+    }
 
     // Register __dict__ on type as a property/descriptor (STEP 15502 FIX)
     // We create an instance of getset_descriptor and set its fget to py_type_get_dict
