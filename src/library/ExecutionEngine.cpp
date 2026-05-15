@@ -6258,7 +6258,15 @@ const proto::ProtoObject* executeBytecodeRange(
                             newObj = mutableObj->setAttribute(ctx, nameS, val);
                         }
                     }
-                    if (newObj != oldObj) {
+                    // STRUCT-36 pre-req: env->setAttribute returns nullptr on
+                    // validation failure (e.g. `X.__bases__ = (NoneType,)`
+                    // raising TypeError).  Treating nullptr as "new identity"
+                    // would erase oldObj from every CO_OPTIMIZED slot,
+                    // turning the local that holds `X` into a dangling
+                    // pointer the exception handler then reads as empty
+                    // bases.  Only propagate identity changes when the call
+                    // actually produced a fresh object.
+                    if (newObj && newObj != oldObj) {
                          syncModuleIdentity(ctx, env, oldObj, newObj);
                          const proto::ProtoObject** slots = ctx->getAutomaticLocals();
                          if (slots) {
