@@ -1093,6 +1093,48 @@ static const proto::ProtoObject* py_type_del_doc(
     return nullptr;
 }
 
+// __repr__ for methodDescriptorPrototype / wrapperDescriptorPrototype.
+// repr() dispatches via type(x).__repr__, so a native method cell whose
+// getType() now resolves to one of those prototypes lands here.  Formats
+// `<method 'NAME' of 'OWNER' objects>` (method_descriptor) or
+// `<slot wrapper 'NAME' of 'OWNER' objects>` (wrapper_descriptor),
+// matching CPython.  The METHOD/WRAPPER distinction is taken from
+// getType() itself (== wrapperDescriptorPrototype) to avoid touching the
+// private NativeMethodInfo::Kind from this free function.
+static const proto::ProtoObject* py_descriptor_repr(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList*) {
+    const proto::ProtoObject* target = self;
+    if ((!target || !target->isMethod(context)) && args && args->getSize(context) > 0) {
+        target = args->getAt(context, 0);
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    std::string name = "?", owner = "?";
+    bool isWrapper = false;
+    if (env && target && target->isMethod(context)) {
+        proto::ProtoMethod fn = target->asMethod(context);
+        std::string nm;
+        const proto::ProtoObject* ownerCls = nullptr;
+        if (fn && env->lookupNativeMethodInfo(reinterpret_cast<const void*>(fn), nm, &ownerCls)) {
+            name = nm;
+            if (ownerCls) {
+                const proto::ProtoObject* on = ownerCls->getAttribute(context, env->getNameString());
+                if (on && on != PROTO_NONE && on->isString(context)) {
+                    on->asString(context)->toUTF8String(context, owner);
+                }
+            }
+        }
+        isWrapper = (env->getType(context, target) == env->getWrapperDescriptorPrototype());
+    }
+    std::string out = isWrapper
+        ? ("<slot wrapper '" + name + "' of '" + owner + "' objects>")
+        : ("<method '" + name + "' of '" + owner + "' objects>");
+    return proto::ProtoString::fromUTF8String(context, out.c_str())->asObject(context);
+}
+
 static const proto::ProtoObject* py_object_hash(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -16813,6 +16855,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         p = p->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, nm)->asObject(rootContext_));
         p = p->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"),
                             PythonEnvironment::getInternedString(rootContext_, nm)->asObject(rootContext_));
+        p = p->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_descriptor_repr));
         const proto::ProtoString* mroS = PythonEnvironment::getInternedString(rootContext_, "__mro__");
         const proto::ProtoList* mroList = rootContext_->newList()
             ->appendLast(rootContext_, p)
