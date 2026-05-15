@@ -6107,13 +6107,54 @@ const proto::ProtoObject* py_type(
             const proto::ProtoObject* mroTupleVal = env ? env->newTuple(mroList) : context->newTupleFromList(mroList)->asObject(context);
             targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, mroName2, mroTupleVal));
 
-            // Synchronize native parents
+            // STRUCT-82: seed the protoCore parent chain DIRECTLY from the
+            // computed C3 MRO (excluding `cls` itself).  protoCore's
+            // `setParents` (round-7 addition) replaces the chain wholesale
+            // — previous `addParent` loops accumulated ancestors with a
+            // prepend-style flatten that did NOT match C3 order for
+            // multi-inheritance.  Result: chain order == MRO[1:] exactly,
+            // making chain-walk attribute lookups follow C3 by construction.
+            //
+            // The metaclass is appended AFTER the MRO so that:
+            //   1. MRO-resolution (cls.attr where attr is on a base) finds
+            //      the closer match first (C3 order).
+            //   2. Metaclass-level methods (cls.meta_method where method
+            //      lives on type or a custom metaclass) are still
+            //      reachable via the chain walk as a fallback.
+            const proto::ProtoList* chainList = context->newList();
             for (unsigned long i = 1; i < mroList->getSize(context); ++i) {
                 const proto::ProtoObject* p = mroList->getAt(context, i);
                 if (p && p != targetClass && p != PROTO_NONE) {
-                    targetClass = const_cast<proto::ProtoObject*>(targetClass->addParent(context, p));
+                    chainList = chainList->appendLast(context, p);
                 }
             }
+            // Append metaclass + its ancestors at the tail.  Use `cls`
+            // (the metaclass argument to py_type, defaulted to typePrototype
+            // upstream when omitted) plus walk its own MRO.
+            const proto::ProtoObject* metacls = (cls && cls != targetClass) ? cls
+                : (env ? env->getTypePrototype() : nullptr);
+            if (metacls && metacls != PROTO_NONE) {
+                // Skip duplicates already in chainList.
+                auto already = [&](const proto::ProtoObject* o) -> bool {
+                    for (unsigned long i = 0; i < chainList->getSize(context); ++i) {
+                        if (chainList->getAt(context, static_cast<int>(i)) == o) return true;
+                    }
+                    return false;
+                };
+                if (!already(metacls)) {
+                    chainList = chainList->appendLast(context, metacls);
+                }
+                const proto::ProtoList* metaParents = metacls->getParents(context);
+                if (metaParents) {
+                    for (unsigned long i = 0; i < metaParents->getSize(context); ++i) {
+                        const proto::ProtoObject* mp = metaParents->getAt(context, static_cast<int>(i));
+                        if (mp && mp != PROTO_NONE && !already(mp)) {
+                            chainList = chainList->appendLast(context, mp);
+                        }
+                    }
+                }
+            }
+            const_cast<proto::ProtoObject*>(targetClass)->setParents(context, chainList);
         }
 
         // Register `targetClass` in each direct base's __subclasses_list__
