@@ -22960,6 +22960,58 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                 }
             }
         }
+        // STRUCT-45: propagate __bases__ reassignment to the affected
+        // bases' `__subclasses_list__` slots.  CPython rewrites
+        // tp_subclasses on every __bases__ change so
+        // `OldBase.__subclasses__()` no longer reports `cls` and
+        // `NewBase.__subclasses__()` does.  protoPython previously
+        // only registered direct bases at class-creation time —
+        // dynamic reassignment left both sides stale.
+        const proto::ProtoString* subListS =
+            getInternedString(ctx, "__subclasses_list__");
+        const proto::ProtoString* basesAttrS =
+            getInternedString(ctx, "__bases__");
+        const proto::ProtoObject* oldBases = obj->getAttribute(ctx, basesAttrS);
+        const proto::ProtoTuple* oldT = oldBases ? oldBases->asTuple(ctx) : nullptr;
+        const proto::ProtoList* oldL = oldT ? nullptr : (oldBases ? oldBases->asList(ctx) : nullptr);
+        unsigned long oldN = oldT ? oldT->getSize(ctx) : (oldL ? oldL->getSize(ctx) : 0);
+        for (unsigned long i = 0; i < oldN; ++i) {
+            const proto::ProtoObject* ob = oldT ? oldT->getAt(ctx, static_cast<int>(i))
+                                                : oldL->getAt(ctx, static_cast<int>(i));
+            if (!ob || ob == PROTO_NONE) continue;
+            const proto::ProtoObject* listObj = ob->hasOwnAttribute(ctx, subListS) == PROTO_TRUE
+                ? ob->getAttribute(ctx, subListS) : nullptr;
+            const proto::ProtoList* curList = listObj ? listObj->asList(ctx) : nullptr;
+            if (!curList) continue;
+            const proto::ProtoList* fresh = ctx->newList();
+            for (unsigned long j = 0; j < curList->getSize(ctx); ++j) {
+                const proto::ProtoObject* entry = curList->getAt(ctx, static_cast<int>(j));
+                if (entry != obj) fresh = fresh->appendLast(ctx, entry);
+            }
+            const_cast<proto::ProtoObject*>(ob)->setAttribute(ctx, subListS, fresh->asObject(ctx));
+        }
+        if (value && value != PROTO_NONE) {
+            const proto::ProtoTuple* nbT = value->asTuple(ctx);
+            const proto::ProtoList* nbL = nbT ? nullptr : value->asList(ctx);
+            unsigned long nbN = nbT ? nbT->getSize(ctx) : (nbL ? nbL->getSize(ctx) : 0);
+            for (unsigned long i = 0; i < nbN; ++i) {
+                const proto::ProtoObject* nb = nbT ? nbT->getAt(ctx, static_cast<int>(i))
+                                                   : nbL->getAt(ctx, static_cast<int>(i));
+                if (!nb || nb == PROTO_NONE) continue;
+                const proto::ProtoObject* listObj = nb->hasOwnAttribute(ctx, subListS) == PROTO_TRUE
+                    ? nb->getAttribute(ctx, subListS) : nullptr;
+                const proto::ProtoList* curList = (listObj && listObj->asList(ctx))
+                    ? listObj->asList(ctx) : ctx->newList();
+                bool already = false;
+                for (unsigned long j = 0; j < curList->getSize(ctx); ++j) {
+                    if (curList->getAt(ctx, static_cast<int>(j)) == obj) { already = true; break; }
+                }
+                if (!already) {
+                    curList = curList->appendLast(ctx, obj);
+                    const_cast<proto::ProtoObject*>(nb)->setAttribute(ctx, subListS, curList->asObject(ctx));
+                }
+            }
+        }
     }
 
     // CPython: instances of `object` itself have no __dict__ and
