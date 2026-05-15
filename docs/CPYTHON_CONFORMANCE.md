@@ -28,6 +28,139 @@
 
 ---
 
+## Current Status (2026-05-15) — post-seventeenth-sweep (round 10)
+
+Round 10 was a focused round of 4 landing commits (not 9 as
+planned) — three planned items proved either too entangled with
+unimplemented infrastructure or too risky for their test impact and
+were deferred to round 11.
+
+Goals achieved:
+
+1. **`__bases__` setter pre-validations** (STRUCT-87, STRUCT-88):
+   duplicate-base and inheritance-cycle checks raise the
+   CPython-shaped TypeError messages before any state mutation, and
+   a `__bases__` reassignment that would invalidate a descendant's
+   MRO is now rejected with full state rollback rather than silently
+   accepted with the descendant left stale.
+2. **Module `__name__` via descriptor** (STRUCT-90): uninitialised
+   modules (`M.__new__(M)`) no longer inherit `"module"` as their
+   `__name__` from the prototype.  The fix uses the same
+   `getset_descriptor` pattern as `__mro__` / `__annotations__`.
+3. **`__annotate__` wrapper forwarder** (STRUCT-91): classmethod
+   and staticmethod now expose a lazy-materialising `__annotate__`
+   descriptor that mirrors the round-7 `__annotations__` trampoline.
+   It cannot help the failing test (PEP 649 lazy annotations on
+   function objects are still unimplemented), but improves the
+   failure mode from an opaque `tuple_iterator` error to a clear
+   AttributeError pointing at the right gap.
+
+Goals deferred:
+
+1. **bare `dir()` filters to frame locals** — frame architecture
+   in protoPython doesn't separate user locals from frame metadata
+   in a way CPython's `f_locals` does.  CO_OPTIMIZED hot-path
+   functions skip frame allocation entirely; `__keys__` is set only
+   in some paths.  Fix requires either always-creating frames
+   (perf regression) or synthesising locals from interpreter state.
+2. **MRO cache decommission** (STRUCT-92/93/94, the round-9
+   carry-over) — 15+ raw `cls->getAttribute("__mro__")` call sites
+   need migration to descriptor-aware lookups before the cached
+   `__mro__` own-attribute writes can be dropped.  Mechanical but
+   high-risk per-site, with no direct test-flip payoff.  Defer to
+   round 11 as a dedicated sweep.
+
+### Direct unittest counts (`test_descr.py`)
+
+| | run | fail | error | skipped | Δ |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-15 (round-10) | 165 | **41** | **42** | 10 | F+E down 1 (84→83) — net 1 PASS flip |
+| 2026-05-15 (round-9 final) | 165 | 43 | 41 | 10 | post-STRUCT-86 baseline |
+
+### Commits landed in round 10
+
+| Commit | Theme |
+| :--- | :--- |
+| `7db45ee9` STRUCT-87 | `__bases__` setter pre-validates duplicate bases and inheritance cycles with CPython-shaped TypeError messages |
+| `e332e4ce` STRUCT-88 | Subclass MRO conflict aborts `__bases__` reassignment via apply-with-rollback (test_mutable_bases_catch_mro_conflict → PASS) |
+| `f2d070f8` STRUCT-90 | Module `__name__` via getset descriptor — bare modules no longer leak `"module"` from the prototype |
+| `93053979` STRUCT-91 | classmethod/staticmethod expose lazy-materialising `__annotate__` forwarder mirroring the `__annotations__` trampoline |
+| _this commit_ STRUCT-95 | Round-10 conformance documentation |
+
+### Test impact summary
+
+- **Flipped to PASS**: `test_mutable_bases_catch_mro_conflict` —
+  silent acceptance of an MRO-corrupting `__bases__` reassignment is
+  now a hard TypeError with full state rollback.
+- **Partial progress** (test still fails but failure mode improves):
+  - `test_mutable_bases`: pre-validation pass for `(C, C)`, `(D,)`,
+    `(E,)` now raises the right messages; remaining failures are
+    slots-layout-compatibility (out of scope until layout tracking
+    lands).
+  - `test_uninitialized_modules`: `assertNotHasAttr(m, "__name__")`
+    and friends now pass; test still fails on `assertFalse(m.__dict__)`
+    which is a separate `__dict__` representation gap.
+  - `test_classmethod_staticmethod_annotations`: now fails at the
+    correct line (function `__annotate__` AttributeError) instead
+    of an opaque tuple_iterator error.
+
+### Spot-check probes (manual)
+
+```python
+# STRUCT-87 — pre-validations
+class D(C): pass
+class E(D): pass
+D.__bases__ = (C, C)   # TypeError: duplicate base class 'C'
+D.__bases__ = (D,)     # TypeError: a __bases__ item causes an inheritance cycle
+D.__bases__ = (E,)     # TypeError: a __bases__ item causes an inheritance cycle
+
+# STRUCT-88 — MRO conflict rollback
+class A: pass; class B: pass
+class C(A, B): pass; class D(A, B): pass; class E(C, D): pass
+try: C.__bases__ = (B, A)  # TypeError: Cannot create a consistent MRO
+except TypeError: pass
+assert C.__bases__ == (A, B)            # unchanged
+assert C.__mro__   == (C, A, B, object) # unchanged
+assert E.__mro__   == (E, C, D, A, B, object)  # unchanged
+
+# STRUCT-90 — module __name__ descriptor
+from types import ModuleType as M
+m = M.__new__(M)
+assert not hasattr(m, "__name__")
+m.__name__ = "foo"; assert m.__name__ == "foo"
+del m.__name__; assert not hasattr(m, "__name__")
+
+# STRUCT-91 — classmethod __annotate__ forwarder (wrapper-side ready;
+# function.__annotate__ still unimplemented)
+```
+
+### Carry-over to round 11
+
+- **bare `dir()`**: needs frame-architecture work (separate user
+  locals from frame metadata, or synthesise locals on demand).
+- **MRO cache decommission**: 15+ raw `__mro__` call sites in
+  BuiltinsModule.cpp and PythonEnvironment.cpp; dedicated sweep
+  commit + drop of the cached writes.  Mechanical, low-risk if
+  done as one disciplined pass.
+- **PEP 649 `__annotate__` on functions**: unblocks
+  test_classmethod_staticmethod_annotations.
+- **Custom metaclass `mro()` override** (test_altmro,
+  test_disappearing_custom_mro) — conflicts with round-9 SSoT;
+  needs rethink.
+- **Weakref-backed `__subclasses__()`** (test_remove_subclass).
+- **Slots layout compatibility** (test_set_class, several slots
+  variants, test_subtype_resurrection).
+- All previously-deferred items from rounds 6–8 still pending
+  (STRUCT-67/69/71/74/75/76/79/80).
+
+### Infra note
+
+Build verification uses `build_release/` (underscore).  ctest 183/183
+clean on each round-10 commit; `test_descr.py` baseline reported via
+`./build_release/src/runtime/protopy test/cpython/test_descr.py`.
+
+---
+
 ## Current Status (2026-05-15) — post-sixteenth-sweep (round 9)
 
 Round 9 was a targeted refactor, not a feature-add round.  The
