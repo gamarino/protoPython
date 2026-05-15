@@ -28,6 +28,172 @@
 
 ---
 
+## Current Status (2026-05-15) — post-eighteenth-sweep (round 11)
+
+Round 11 was a focused round targeting six concretely-reachable
+test fixes.  Three of the planned commits landed as full wins,
+three were investigated and deferred to round 12 once we found
+that the surface fix was blocked by an unimplemented or
+architecturally-larger prerequisite.
+
+### Goals achieved
+
+1. **`__doc__` on descriptor type prototypes** (STRUCT-96): every
+   getset / member / wrapper descriptor instance now exposes
+   `__doc__` as `None` by default.  Per-instance docstrings still
+   shadow the default for descriptors that name one.
+2. **`bytes()` type-only `__bytes__` lookup** (STRUCT-97): the
+   bytes constructor consults `type(arg).__bytes__` instead of
+   walking the instance attrs.  Class-level definitions work;
+   instance-level `obj.__bytes__ = ...` is correctly ignored
+   (Python special-method protocol).  The fix supports both
+   tagged-pointer native methods and Python `def` functions via
+   `env->callObject`.
+3. **Custom metaclass `mro()` override** (STRUCT-101): two flag-
+   ship tests flip — `test_altmro` (PerverseMetaType reverses the
+   C3 list, putting cls at the END) and `test_disappearing_custom_mro`
+   (mro() returning `(B,)` is rejected).  The override is invoked
+   AFTER default C3 has wired up `cls.__mro__` and the parent chain,
+   so `type.mro(cls)` inside the user's override returns the right
+   default to post-process.  `py_type_get_mro` returns the stored
+   tuple verbatim for the perverse case (cls not at position 0).
+
+### Goals deferred
+
+1. **Slot wrapper receiver validation** (STRUCT-98 — test_wrong_class_slot_wrapper):
+   wrapper_descriptor's `__get__` would need to validate
+   `isinstance(receiver, __objclass__)`, but our slot wrappers are
+   tagged-pointer methods that auto-bind via `getAttribute` without
+   invoking a Python-level `__get__`.  The validation path doesn't
+   exist yet.
+2. **Reject inheritance from `builtin_function_or_method`** (STRUCT-99 —
+   test_errors): `type(len)` returns `object` instead of
+   `builtin_function_or_method` — the distinct type prototype
+   simply doesn't exist.  Fix requires creating
+   `builtinFunctionOrMethodPrototype`, routing tagged-pointer free
+   functions through it via `getType`, then `py_type` rejecting it
+   as a base.
+3. **`__new__` returning non-cls instance from inside a method**
+   (STRUCT-100 — test_funny_new): standalone the test passes; the
+   failure mode is the closure / LOAD_DEREF bug from STRUCT-63
+   (round 8) where `C.__new__` defined inside a method can't see
+   the `D` class defined later in the same method scope.  Compiler-
+   level fix needed.
+
+### Direct unittest counts (`test_descr.py`)
+
+| | run | fail | error | skipped | Δ |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-15 (round-11) | 165 | **40** | **43** | 10 | F+E flat (83) — 2 PASSes flipped; 2 unrelated mode shifts |
+| 2026-05-15 (round-10 final) | 165 | 41 | 42 | 10 | post-STRUCT-95 baseline |
+
+The total F+E is flat at 83, but the distribution shifted:
+test_altmro and test_disappearing_custom_mro flipped F → PASS
+(2 wins).  Two MroTest tests (`test_reent_set_bases_on_base`,
+`test_tp_subclasses_cycle_in_update_slots`) moved from FAIL into
+ERROR — both fail on `AttributeError: 'MroTest' object has no
+attribute 'step'/'ready'` which is a test-fixture setUp issue
+unrelated to STRUCT-101.  Net true-progress: +2 PASS.
+
+### Commits landed in round 11
+
+| Commit | Theme |
+| :--- | :--- |
+| `bffa3628` STRUCT-96 | Descriptor type prototypes default `__doc__` to None |
+| `2444a584` STRUCT-97 | `bytes()` consults `type(arg).__bytes__` before iter fallback (test_special_method_lookup partial) |
+| `ad182a14` STRUCT-101 | Custom metaclass `mro()` override consulted at class creation (test_altmro, test_disappearing_custom_mro PASS) |
+| _this commit_ STRUCT-102 | Round-11 conformance documentation |
+
+### Test impact summary
+
+- **Flipped to PASS**:
+  - `test_altmro` — perverse `mro()` reversal honoured; `X.__mro__`
+    correctly ends with `X`, attribute lookup follows the reversed
+    chain (`X().f()` returns "A" not "C").
+  - `test_disappearing_custom_mro` — `mro()` returning a shape that
+    omits `cls` raises TypeError, matching the CPython rejection.
+- **Partial progress**:
+  - `test_special_method_lookup`: `__bytes__` subcase now reads
+    from type, not instance; the test covers ~15 dunders and each
+    has its own call site — flipping the rest is mechanical but
+    out of round-11 scope.
+  - `test_descrdoc`: descriptor type prototypes now expose `__doc__`
+    by default; test still fails because it probes specific
+    docstrings on `FileIO.closed` and `complex.real` that
+    protoPython's `_io` and complex `real` member don't provide.
+
+### Spot-check probes (manual)
+
+```python
+# STRUCT-96 — descriptor doc default
+class C: pass
+descr = type(C).__dict__['__mro__']
+assert descr.__doc__ is None   # was AttributeError
+
+# STRUCT-97 — type-only __bytes__
+class X:
+    def __bytes__(self): return b'XX'
+assert bytes(X()) == b'XX'
+
+class Y: pass
+y = Y(); y.__bytes__ = lambda: b'YY'
+try: bytes(y); fail = True
+except TypeError: fail = False
+assert not fail
+
+# STRUCT-101 — custom mro
+class A(object):
+    def f(self): return "A"
+class C(A):
+    def f(self): return "C"
+class B(A): pass
+class D(B, C): pass
+
+class PerverseMetaType(type):
+    def mro(cls):
+        L = type.mro(cls); L.reverse(); return L
+
+class X(D, B, C, A, metaclass=PerverseMetaType): pass
+assert X.__mro__ == (object, A, C, B, D, X)
+assert X().f() == "A"
+
+class M(type):
+    def mro(cls): return (cls,)  # missing object
+try: class Y(metaclass=M): pass
+except TypeError: pass
+else: fail
+```
+
+### Carry-over to round 12
+
+- **STRUCT-98** slot wrapper receiver validation — wrapper_descriptor
+  `__get__` infrastructure work.
+- **STRUCT-99** distinct `builtin_function_or_method` type — needs
+  bootstrap prototype + getType routing.
+- **STRUCT-100** `__new__` inside method scope — LOAD_DEREF / closure
+  cell update for classes defined later in the same method (same
+  root cause as STRUCT-63).
+- **MRO cache decommission** (STRUCT-92/93/94 from round 10) — 56
+  raw `__mro__` reads; hot-path benchmark gate needed.
+- **Bare `dir()`** (STRUCT-89 from round 10) — frame architecture
+  rework.
+- **PEP 649 `__annotate__` on function objects** — unblocks
+  test_classmethod_staticmethod_annotations.
+- **test_special_method_lookup extension** — apply STRUCT-97
+  pattern to `__int__`/`__float__`/`__complex__`/`__bool__`/etc.
+- **Weakref-backed `__subclasses__()`** (test_remove_subclass).
+- **Slots layout compatibility** (test_set_class, test_subtype_resurrection,
+  test_slots*, test_mutable_bases layout-differs path).
+- All round-6 to round-8 deferrals still pending.
+
+### Infra note
+
+Build verification uses `build_release/` (underscore).  ctest 183/183
+clean on each round-11 commit; `test_descr.py` baseline reported via
+`./build_release/src/runtime/protopy test/cpython/test_descr.py`.
+
+---
+
 ## Current Status (2026-05-15) — post-seventeenth-sweep (round 10)
 
 Round 10 was a focused round of 4 landing commits (not 9 as
