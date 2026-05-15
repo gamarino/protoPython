@@ -23014,6 +23014,45 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
         }
     }
 
+    // STRUCT-47: structural attribute writes on immutable built-in
+    // prototypes are silently corrupting (`int.__name__ = 'X'` made
+    // every isinstance(_, int) report a class named 'X').  CPython
+    // raises `TypeError: cannot set '<attr>' attribute of immutable
+    // type '<name>'`; mirror that here.  Excludes `__bases__`/`__base__`
+    // which already have their own immutable-type guard above, and
+    // `__class__` which has its own dedicated branch below.
+    if (name) {
+        const char* primName = nullptr;
+        if (obj == intPrototype)         primName = "int";
+        else if (obj == floatPrototype)  primName = "float";
+        else if (obj == boolPrototype)   primName = "bool";
+        else if (obj == strPrototype)    primName = "str";
+        else if (obj == bytesPrototype)  primName = "bytes";
+        else if (obj == listPrototype)   primName = "list";
+        else if (obj == dictPrototype)   primName = "dict";
+        else if (obj == setPrototype)    primName = "set";
+        else if (obj == frozensetPrototype) primName = "frozenset";
+        else if (obj == tuplePrototype)  primName = "tuple";
+        else if (obj == complexPrototype) primName = "complex";
+        else if (obj == objectPrototype) primName = "object";
+        else if (obj == typePrototype)   primName = "type";
+        if (primName) {
+            std::string nm; name->toUTF8String(ctx, nm);
+            bool structural = (nm == "__mro__" || nm == "__name__"
+                || nm == "__qualname__" || nm == "__dict__"
+                || nm == "__weakref__"
+                || nm == "__init__" || nm == "__new__" || nm == "__call__"
+                || nm == "__getattribute__" || nm == "__setattr__"
+                || nm == "__delattr__");
+            if (structural) {
+                raiseTypeError(ctx,
+                    "cannot set '" + nm + "' attribute of immutable type '"
+                    + primName + "'");
+                return nullptr;
+            }
+        }
+    }
+
     // CPython: instances of `object` itself have no __dict__ and
     // reject attribute assignment entirely.  Detect by checking
     // type(obj) IS objectPrototype (exact, not a subclass).  Skip
