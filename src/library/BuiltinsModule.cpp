@@ -10380,6 +10380,20 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         propertyProto = propertyProto->setAttribute(ctx, mroS,
             ctx->newTupleFromList(mroList)->asObject(ctx));
     }
+    // STRUCT-51: propertyProto must self-identify as a class so
+    // `isActuallyAClass(property) → True` and `isinstance(property, type)`
+    // returns True.  Without these own attributes the shape probe in
+    // isActuallyAClass fails and downstream invokeCallable / py_type_call
+    // guards (STRUCT-52/53) would misclassify `property(...)` as a non-
+    // class invocation.
+    propertyProto = propertyProto->setAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__is_python_class__"), PROTO_TRUE);
+    if (objectProto) {
+        const proto::ProtoList* basesList = ctx->newList()->appendLast(ctx, objectProto);
+        propertyProto = propertyProto->setAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__bases__"),
+            ctx->newTupleFromList(basesList)->asObject(ctx));
+    }
     propertyProto = propertyProto->setAttribute(ctx, pEnv->getGetDunderString(), ctx->fromMethod(nullptr, py_property_get));
     propertyProto = propertyProto->setAttribute(ctx, pEnv->getSetDunderString(), ctx->fromMethod(nullptr, py_property_set));
     propertyProto = propertyProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__delete__"), ctx->fromMethod(nullptr, py_property_delete));
