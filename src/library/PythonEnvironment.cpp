@@ -22937,9 +22937,25 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                 else if (getNotImplementedPrototype()
                          && nb == getType(ctx, getNotImplementedPrototype()))
                     finalName = "NotImplementedType";
+                // STRUCT-44: keep the __bases__ setter rejection list in
+                // lockstep with the class-creation validator (STRUCT-38)
+                // so that `Cls.__bases__ = (slice,)` raises the same
+                // TypeError class-creation already raises for
+                // `class C(slice): pass`.
+                else if (sliceType && nb == sliceType) finalName = "slice";
+                else if (generatorPrototype && nb == generatorPrototype) finalName = "generator";
+                else if (coroutinePrototype && nb == coroutinePrototype) finalName = "coroutine";
+                else if (asyncGeneratorPrototype && nb == asyncGeneratorPrototype) finalName = "async_generator";
                 if (finalName) {
                     raiseTypeError(ctx, std::string("type '") + finalName
                         + "' is not an acceptable base type");
+                    return nullptr;
+                }
+                // Native method/builtin function cells are not classes
+                // and must be rejected — mirrors STRUCT-38's isMethod
+                // check in py_type's class-creation path.
+                if (nb && nb->isMethod(ctx)) {
+                    raiseTypeError(ctx, "bases must be types");
                     return nullptr;
                 }
             }
