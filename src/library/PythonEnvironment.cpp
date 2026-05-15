@@ -1093,16 +1093,16 @@ static const proto::ProtoObject* py_type_del_doc(
     return nullptr;
 }
 
-// fget for the object.__weakref__ getset descriptor.  Exposed via
-// `cls.__dict__['__weakref__']` on every non-slot class created in
-// protoPython (the descriptor is installed on objectPrototype and inherited
-// through the MRO walk used by mappingproxy synthesis).  Returns None for
-// instances that may carry a live weak reference; STRUCT-34 tightens this
-// to raise AttributeError for types that do not support weak references
-// (bool, int subclasses, slot classes lacking __weakref__).  For STRUCT-33
-// the behaviour is "return None" universally so the descriptor is wired
-// without changing any test outcome other than test___weakref__'s
-// __objclass__ assertion.
+// fget for the object.__weakref__ getset descriptor.  Mirrors CPython's
+// rule for `tp_weaklistoffset`: a class may participate in the weakref
+// protocol if and only if (a) no ancestor in its MRO is one of the
+// immutable primitive types that block weak references (int, bool, float,
+// complex, str, bytes, tuple, slice, range, NoneType, frozenset, type),
+// and (b) the class either does not declare `__slots__` of its own, or
+// its `__slots__` explicitly contains `'__weakref__'`.  When either rule
+// fails, calling the descriptor raises AttributeError; otherwise it
+// returns None (no live weak reference is tracked at this level — that is
+// the job of the `weakref` module).
 static const proto::ProtoObject* py_object_get_weakref(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -1110,8 +1110,76 @@ static const proto::ProtoObject* py_object_get_weakref(
     const proto::ProtoList* args,
     const proto::ProtoSparseList*) {
     (void)self;
-    (void)args;
-    (void)context;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!args || args->getSize(context) < 1 || !env) return PROTO_NONE;
+    const proto::ProtoObject* instance = args->getAt(context, 0);
+    if (!instance || instance == PROTO_NONE) return PROTO_NONE;
+
+    const proto::ProtoObject* tp = env->getType(context, instance);
+    if (!tp) return PROTO_NONE;
+
+    auto blocksWeakref = [&](const proto::ProtoObject* c) -> bool {
+        return c == env->getIntPrototype()
+            || c == env->getBoolPrototype()
+            || c == env->getFloatPrototype()
+            || c == env->getComplexPrototype()
+            || c == env->getStrPrototype()
+            || c == env->getBytesPrototype()
+            || c == env->getTuplePrototype()
+            || c == env->getFrozensetPrototype()
+            || c == env->getTypePrototype();
+    };
+
+    const proto::ProtoString* mroS = PythonEnvironment::getInternedString(context, "__mro__");
+    const proto::ProtoObject* mroAttr = tp->getAttribute(context, mroS);
+    const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
+    if (mroT) {
+        unsigned long sz = mroT->getSize(context);
+        for (unsigned long i = 0; i < sz; ++i) {
+            const proto::ProtoObject* anc = mroT->getAt(context, static_cast<int>(i));
+            if (anc && blocksWeakref(anc)) {
+                env->raiseAttributeErrorWithMessage(context, instance,
+                    "__weakref__", "__weakref__");
+                return nullptr;
+            }
+        }
+    } else if (blocksWeakref(tp)) {
+        env->raiseAttributeErrorWithMessage(context, instance,
+            "__weakref__", "__weakref__");
+        return nullptr;
+    }
+
+    const proto::ProtoString* slotsS = PythonEnvironment::getInternedString(context, "__slots__");
+    if (tp->hasOwnAttribute(context, slotsS) == PROTO_TRUE) {
+        const proto::ProtoObject* slotsAttr = tp->getOwnAttributeDirect(context, slotsS);
+        bool weakrefInSlots = false;
+        if (slotsAttr) {
+            const proto::ProtoList* slotsL = slotsAttr->asList(context);
+            const proto::ProtoTuple* slotsTp = slotsAttr->asTuple(context);
+            unsigned long n = slotsL ? slotsL->getSize(context)
+                              : (slotsTp ? slotsTp->getSize(context) : 0);
+            for (unsigned long i = 0; i < n; ++i) {
+                const proto::ProtoObject* item = slotsL
+                    ? slotsL->getAt(context, static_cast<int>(i))
+                    : slotsTp->getAt(context, static_cast<int>(i));
+                if (!item || !item->isString(context)) continue;
+                std::string nm;
+                item->asString(context)->toUTF8String(context, nm);
+                if (nm == "__weakref__") { weakrefInSlots = true; break; }
+            }
+            if (slotsAttr->isString(context)) {
+                std::string nm;
+                slotsAttr->asString(context)->toUTF8String(context, nm);
+                if (nm == "__weakref__") weakrefInSlots = true;
+            }
+        }
+        if (!weakrefInSlots) {
+            env->raiseAttributeErrorWithMessage(context, instance,
+                "__weakref__", "__weakref__");
+            return nullptr;
+        }
+    }
+
     return PROTO_NONE;
 }
 
