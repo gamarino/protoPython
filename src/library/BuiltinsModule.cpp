@@ -6164,15 +6164,31 @@ const proto::ProtoObject* py_type(
                 }
             }
             const proto::ProtoObject* memberProto = env->getMemberDescriptorPrototype();
-            auto installSlot = [&](const std::string& slotName) {
-                if (slotName == "__dict__" || slotName == "__weakref__") return;
+            std::string clsName = "?";
+            const proto::ProtoObject* cnObj = targetClass->getAttribute(context, env->getNameString());
+            if (cnObj && cnObj->isString(context)) cnObj->asString(context)->toUTF8String(context, clsName);
+            // STRUCT-59: mangle slot names of the form `__x` (starts
+            // with two underscores, doesn't end with two) to
+            // `_<ClassName>__x`, matching CPython's class-creation
+            // mangling.  This aligns the descriptor name with the
+            // access pattern from inside the class (`self.__x` is
+            // mangled to `self._<ClassName>__x` by the compiler).
+            auto mangleSlot = [&](const std::string& raw) -> std::string {
+                if (raw.size() < 2 || raw.substr(0, 2) != "__") return raw;
+                if (raw.size() >= 4 && raw.substr(raw.size() - 2) == "__") return raw;
+                std::string trimmed = clsName;
+                size_t start = 0;
+                while (start < trimmed.size() && trimmed[start] == '_') ++start;
+                if (start == trimmed.size()) return raw;
+                return "_" + trimmed.substr(start) + raw;
+            };
+            auto installSlot = [&](const std::string& slotNameRaw) {
+                if (slotNameRaw == "__dict__" || slotNameRaw == "__weakref__") return;
+                std::string slotName = mangleSlot(slotNameRaw);
                 proto::ProtoObject* descr = const_cast<proto::ProtoObject*>(memberProto->newChild(context, true));
                 descr->setAttribute(context, env->getClassString(), memberProto);
                 const proto::ProtoString* slotNameS = PythonEnvironment::getInternedString(context, slotName.c_str());
                 descr->setAttribute(context, env->getNameString(), slotNameS->asObject(context));
-                std::string clsName = "?";
-                const proto::ProtoObject* cnObj = targetClass->getAttribute(context, env->getNameString());
-                if (cnObj && cnObj->isString(context)) cnObj->asString(context)->toUTF8String(context, clsName);
                 std::string qn = clsName + "." + slotName;
                 descr->setAttribute(context, PythonEnvironment::getInternedString(context, "__qualname__"),
                     PythonEnvironment::getInternedString(context, qn.c_str())->asObject(context));

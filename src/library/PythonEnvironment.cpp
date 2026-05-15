@@ -23857,8 +23857,20 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
             // here (slotMatches is invoked once per slot entry) so the
             // strict-slots rejection below is suppressed.
             if (ss == "__dict__") hasDict = true;
-            if (ss == nameStr) return true;
+            // STRUCT-59: name-mangled slots (`__x` style — starts with
+            // two underscores, doesn't end with two) only match the
+            // mangled access name (`_<Cls>__x`), NEVER the unmangled
+            // literal.  This mirrors CPython: `c.__a = 6` outside a
+            // class body cannot satisfy a `__slots__ = ['__a']`
+            // declaration because the slot was mangled at class
+            // creation time.
+            bool isManglable = ss.size() >= 2 && ss.substr(0, 2) == "__"
+                && !(ss.size() >= 4 && ss.substr(ss.size() - 2) == "__");
             std::string mangled = mangleAgainstClass(ss, defCls);
+            if (isManglable) {
+                return !mangled.empty() && mangled == nameStr;
+            }
+            if (ss == nameStr) return true;
             return !mangled.empty() && mangled == nameStr;
         };
         for (unsigned long mi = 0; mi < mroT->getSize(ctx); ++mi) {
