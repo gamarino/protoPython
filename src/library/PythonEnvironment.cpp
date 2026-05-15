@@ -9394,7 +9394,9 @@ static const proto::ProtoObject* py_str_encode(
         return bytes_make_object(context, out.data(), static_cast<unsigned long>(out.size()));
     } else if (canon == "latin1" || canon == "iso88591" || canon == "8859") {
         // latin-1 maps each Unicode code point ≤ 0xFF to a byte.
-        // protoPython stores str as UTF-8; iterate code points.
+        // protoPython stores str as UTF-8; iterate code points and apply
+        // the `errors` policy: 'strict' raises ValueError (default),
+        // 'ignore' drops the offending code point, 'replace' emits '?'.
         std::string out;
         size_t i = 0;
         while (i < raw.size()) {
@@ -9405,7 +9407,20 @@ static const proto::ProtoObject* py_str_encode(
             else if ((c & 0xE0) == 0xC0 && i + 1 < raw.size()) {
                 cp = ((c & 0x1F) << 6) | (static_cast<unsigned char>(raw[i+1]) & 0x3F);
                 len = 2;
+            } else if ((c & 0xF0) == 0xE0 && i + 2 < raw.size()) {
+                cp = ((c & 0x0F) << 12)
+                   | ((static_cast<unsigned char>(raw[i+1]) & 0x3F) << 6)
+                   | (static_cast<unsigned char>(raw[i+2]) & 0x3F);
+                len = 3;
+            } else if ((c & 0xF8) == 0xF0 && i + 3 < raw.size()) {
+                cp = ((c & 0x07) << 18)
+                   | ((static_cast<unsigned char>(raw[i+1]) & 0x3F) << 12)
+                   | ((static_cast<unsigned char>(raw[i+2]) & 0x3F) << 6)
+                   | (static_cast<unsigned char>(raw[i+3]) & 0x3F);
+                len = 4;
             } else {
+                if (errorsArg == "ignore") { i += 1; continue; }
+                if (errorsArg == "replace") { out += '?'; i += 1; continue; }
                 env->raiseValueError(context,
                     PythonEnvironment::getInternedString(context,
                         "'latin-1' codec can't encode character: "
@@ -9413,6 +9428,8 @@ static const proto::ProtoObject* py_str_encode(
                 return nullptr;
             }
             if (cp > 0xFF) {
+                if (errorsArg == "ignore") { i += len; continue; }
+                if (errorsArg == "replace") { out += '?'; i += len; continue; }
                 env->raiseValueError(context,
                     PythonEnvironment::getInternedString(context,
                         "'latin-1' codec can't encode character: "

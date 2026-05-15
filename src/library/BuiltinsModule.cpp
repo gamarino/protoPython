@@ -9303,12 +9303,63 @@ static const proto::ProtoObject* py_bytearray_extend(
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList*);
 
+// STRUCT-35: encode a str via its own .encode(encoding, errors) method,
+// returning the encoded bytes payload in `out`.  Returns true on success;
+// false (and a pending exception on env) on failure.  Centralises the
+// `bytearray(str, encoding=…, errors=…)` and `bytearray.__init__(self,
+// str, encoding=…, errors=…)` paths so they reuse the str.encode logic
+// (which already honours 'ascii'/'latin-1'/'utf-8' plus
+// strict/ignore/replace error policies).
+static bool encode_str_via_method(proto::ProtoContext* ctx,
+                                  const proto::ProtoObject* strObj,
+                                  const proto::ProtoObject* encodingArg,
+                                  const proto::ProtoObject* errorsArg,
+                                  std::string& out) {
+    if (!strObj || !strObj->isString(ctx)) return false;
+    const proto::ProtoString* encodeS = PythonEnvironment::getInternedString(ctx, "encode");
+    const proto::ProtoObject* encodeMethod = strObj->getAttribute(ctx, encodeS);
+    if (!encodeMethod || !encodeMethod->isMethod(ctx)) return false;
+    const proto::ProtoList* callArgs = ctx->newList();
+    if (encodingArg) callArgs = callArgs->appendLast(ctx, encodingArg);
+    if (errorsArg) callArgs = callArgs->appendLast(ctx, errorsArg);
+    const proto::ProtoObject* encoded = encodeMethod->asMethod(ctx)(ctx, strObj, nullptr, callArgs, nullptr);
+    if (!encoded) return false;
+    const proto::ProtoString* dataS = PythonEnvironment::getInternedString(ctx, "__data__");
+    const proto::ProtoObject* data = encoded->getAttribute(ctx, dataS);
+    if (data && data->isByteBuffer(ctx)) {
+        const proto::ProtoByteBuffer* bb = data->asByteBuffer(ctx);
+        out.assign(bb->getBuffer(ctx), bb->getSize(ctx));
+        return true;
+    }
+    if (data && data->isString(ctx)) {
+        data->asString(ctx)->toUTF8String(ctx, out);
+        return true;
+    }
+    if (encoded->isString(ctx)) {
+        encoded->asString(ctx)->toUTF8String(ctx, out);
+        return true;
+    }
+    return false;
+}
+
 const proto::ProtoObject* py_bytearray_fallback(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* link, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
     if (get_env_diag()) fprintf(stderr, "DEBUG: py_bytearray_fallback called\n");
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoString* dataS = PythonEnvironment::getInternedString(ctx, "__data__");
     const proto::ProtoString* tagS = PythonEnvironment::getInternedString(ctx, "__is_bytearray__");
     const proto::ProtoString* siS = PythonEnvironment::getInternedString(ctx, "__setitem__");
+
+    // Resolve encoding/errors kwargs once — they only apply when the
+    // source is a str, but we need them outside the loop below to drive
+    // the encode-via-method path.
+    const proto::ProtoObject* encodingArg = nullptr;
+    const proto::ProtoObject* errorsArg = nullptr;
+    if (kwargs && kwargs->getSize(ctx) > 0) {
+        const proto::ProtoString* encS = PythonEnvironment::getInternedString(ctx, "encoding");
+        const proto::ProtoString* errS = PythonEnvironment::getInternedString(ctx, "errors");
+        if (kwargs->has(ctx, encS->getHash(ctx))) encodingArg = kwargs->getAt(ctx, encS->getHash(ctx));
+        if (kwargs->has(ctx, errS->getHash(ctx))) errorsArg = kwargs->getAt(ctx, errS->getHash(ctx));
+    }
 
     // Initial buffer content: empty unless an arg was provided.
     // Reads any bytes-like object (ProtoString, ProtoByteBuffer, or a
@@ -9321,8 +9372,12 @@ const proto::ProtoObject* py_bytearray_fallback(proto::ProtoContext* ctx, const 
         if (initArg && initArg != PROTO_NONE) {
             bool gotBytes = false;
             if (initArg->isString(ctx)) {
-                initArg->asString(ctx)->toUTF8String(ctx, initial);
-                gotBytes = true;
+                if (encodingArg && encode_str_via_method(ctx, initArg, encodingArg, errorsArg, initial)) {
+                    gotBytes = true;
+                } else {
+                    initArg->asString(ctx)->toUTF8String(ctx, initial);
+                    gotBytes = true;
+                }
             } else if (initArg->isByteBuffer(ctx)) {
                 const proto::ProtoByteBuffer* bb = initArg->asByteBuffer(ctx);
                 unsigned long n = bb->getSize(ctx);
@@ -9834,6 +9889,64 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         }
         return py_bytearray_fallback(context, cls, parentLink, shiftedArgs, kwargs);
     };
+    // STRUCT-35: bytearray.__init__(self, source=None, encoding=None,
+    // errors=None) rebuilds self.__data__ in place.  Without this method
+    // `bytearray.__init__(ba, 'abc\xbd€', encoding='latin1',
+    // errors='replace')` fell through to object.__init__ — a silent no-op
+    // — leaving `ba` empty and breaking test_keyword_arguments.  The
+    // implementation mirrors py_bytearray_fallback's source decoding but
+    // overwrites the existing buffer instead of returning a new instance.
+    auto py_bytearray_init = [](proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* /*parentLink*/, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+        if (!self || !args) return PROTO_NONE;
+        // `bytearray.__init__(ba, …)` lands here with args = [ba, source?].
+        // The first positional is the receiver; the rest are the user-visible
+        // init arguments.  Slot dispatch from `ba.__init__(…)` shapes args
+        // identically (the bound-method machinery folds self in).
+        const proto::ProtoObject* receiver = args->getAt(context, 0);
+        if (!receiver || receiver == PROTO_NONE) receiver = self;
+        const proto::ProtoString* dataS = PythonEnvironment::getInternedString(context, "__data__");
+
+        const proto::ProtoObject* encodingArg = nullptr;
+        const proto::ProtoObject* errorsArg = nullptr;
+        if (kwargs && kwargs->getSize(context) > 0) {
+            const proto::ProtoString* encS = PythonEnvironment::getInternedString(context, "encoding");
+            const proto::ProtoString* errS = PythonEnvironment::getInternedString(context, "errors");
+            if (kwargs->has(context, encS->getHash(context))) encodingArg = kwargs->getAt(context, encS->getHash(context));
+            if (kwargs->has(context, errS->getHash(context))) errorsArg = kwargs->getAt(context, errS->getHash(context));
+        }
+
+        std::string initial;
+        if (args->getSize(context) >= 2) {
+            const proto::ProtoObject* src = args->getAt(context, 1);
+            if (src && src != PROTO_NONE) {
+                if (src->isString(context)) {
+                    if (encodingArg) {
+                        encode_str_via_method(context, src, encodingArg, errorsArg, initial);
+                    } else {
+                        src->asString(context)->toUTF8String(context, initial);
+                    }
+                } else if (src->isByteBuffer(context)) {
+                    const proto::ProtoByteBuffer* bb = src->asByteBuffer(context);
+                    initial.assign(bb->getBuffer(context), bb->getSize(context));
+                } else if (src->isInteger(context)) {
+                    long long n = src->asLong(context);
+                    if (n < 0) n = 0;
+                    initial.assign(static_cast<size_t>(n), '\0');
+                } else {
+                    const proto::ProtoObject* d = src->getAttribute(context, dataS);
+                    if (d && d->isByteBuffer(context)) {
+                        const proto::ProtoByteBuffer* bb = d->asByteBuffer(context);
+                        initial.assign(bb->getBuffer(context), bb->getSize(context));
+                    } else if (d && d->isString(context)) {
+                        d->asString(context)->toUTF8String(context, initial);
+                    }
+                }
+            }
+        }
+        const proto::ProtoByteBuffer* bb = context->newByteBuffer(initial.data(), static_cast<unsigned long>(initial.size()));
+        const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataS, bb->asObject(context));
+        return PROTO_NONE;
+    };
     const proto::ProtoObject* bytearrayClass = ctx->newObject(false);
     if (objectProto) bytearrayClass = bytearrayClass->addParent(ctx, objectProto);
     const proto::ProtoString* py_class_local = PythonEnvironment::fromContext(ctx) ? PythonEnvironment::fromContext(ctx)->getClassString() : PythonEnvironment::getInternedString(ctx, "__class__");
@@ -9841,6 +9954,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     if (typeProto) bytearrayClass = bytearrayClass->setAttribute(ctx, py_class_local, typeProto);
     bytearrayClass = bytearrayClass->setAttribute(ctx, py_name_local, PythonEnvironment::getInternedString(ctx, "bytearray")->asObject(ctx));
     bytearrayClass = bytearrayClass->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_bytearray_new));
+    bytearrayClass = bytearrayClass->setAttribute(ctx, pEnv->getInitString(), ctx->fromMethod(nullptr, py_bytearray_init));
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "bytearray"), bytearrayClass);
 
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "tuple"), tupleProto);
