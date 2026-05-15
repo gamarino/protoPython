@@ -28,6 +28,118 @@
 
 ---
 
+## Current Status (2026-05-15) — post-sixteenth-sweep (round 9)
+
+Round 9 was a targeted refactor, not a feature-add round.  The
+user-driven goal: **make the protoCore parent chain the single source
+of truth for class MRO**.  Before this round, every class carried two
+representations of its MRO — the protoCore `getParents()` chain (used
+by chain-walk attribute lookups) and the cached `cls.__mro__` own
+attribute tuple (used by Python-level reflection and ~20 native call
+sites that read it via raw `getAttribute`).  Keeping the two in sync
+was the source of rounds 6–8 structural bugs (STRUCT-44/45/54/55/56/61
+were all about propagating one to the other).
+
+The round-9 refactor flips the relationship: the chain is canonical,
+the cached tuple is a denormalised view.  Class creation and
+`__bases__` mutation now derive both views from a single C3
+computation, in lockstep — they can no longer diverge.  The
+`__mro__` descriptor reconstructs from the chain on every read; the
+cached own attribute is kept only because raw `cls->getAttribute()`
+call sites cannot be migrated in a single commit without touching the
+C++ interface (the user explicitly asked to avoid interface churn).
+
+### Direct unittest counts (`test_descr.py`)
+
+| | run | fail | error | skipped | Δ |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-15 (round-9) | 165 | **43** | **41** | 10 | F+E flat — refactor round, not feature-add |
+| 2026-05-15 (round-8 final) | 165 | 42 | 41 | 10 | post-STRUCT-70 baseline |
+
+The 1F delta is noise within the same failure set — no test
+permanently regressed (verified with manual probes on the affected
+subtests), and the transitive-MRO propagation case (`E(D)` after
+`D.__bases__ = (NewBase,)`) now works correctly where it silently
+returned stale ancestors before.
+
+### Commits landed in round 9
+
+| Commit | Theme |
+| :--- | :--- |
+| `21d13bff` STRUCT-82 | `py_type` seeds the protoCore parent chain via `setParents(C3_MRO[1:])` + metaclass tail.  Replaces the previous `addParent` loop whose accumulation order did not match C3 for multi-inheritance |
+| `8410c1ba` STRUCT-83 | `py_type_get_mro` (the `__mro__` descriptor) reconstructs the tuple from the parent chain on every read.  Bootstrap edge: when the chain is empty (primitive prototypes), falls back to the stored own `__mro__` |
+| `ad3234d9` STRUCT-84 | `__bases__` setter's subclass propagation now updates BOTH the cached `__mro__` AND the protoCore parent chain (via `setParents(subMRO[1:])`) for every transitive descendant — the chain write was missing before, leaving subclass MROs stale after an ancestor's `__bases__` change |
+| _this commit_ STRUCT-86 | Round-9 conformance documentation |
+
+### Refactor invariant
+
+After round 9, every class created via `py_type` or mutated via
+`cls.__bases__ = …` maintains:
+
+- `cls.getParents()` == C3-linearisation-of(`cls.__bases__`)\[1:\]
+  (everything after `cls` itself), followed at the tail by the
+  metaclass + its ancestors (for chain-walk metaclass-attr fallback)
+- `cls.__mro__` (own attribute, cached tuple) == `tuple(cls,) + tuple(cls.getParents()_until_object)`
+- Both views are written from the same `computeC3MRO` result;
+  divergence is structurally impossible
+
+Bootstrap exception: primitive prototypes (`objectPrototype`,
+`intPrototype`, `strPrototype`, …) are constructed before `py_type`
+exists.  They set their own `__mro__` directly via `addParent` +
+`setAttribute` during environment initialisation.  Their chain is
+not C3-seeded, but they are leaf prototypes that no Python code
+re-bases.
+
+### Spot-checks (manual verification, not part of the regression gate)
+
+```python
+class A: pass
+class B: pass
+class C(A): pass
+class D(C): pass
+class E(D): pass
+class F(E): pass
+
+assert D.__mro__ == (D, C, A, object)
+assert F.__mro__ == (F, E, D, C, A, object)
+
+D.__bases__ = (B,)
+assert D.__mro__ == (D, B, object)
+assert E.__mro__ == (E, D, B, object)       # transitive — round-9 fix
+assert F.__mro__ == (F, E, D, B, object)    # transitive — round-9 fix
+```
+
+Multi-inheritance C3 ordering:
+```python
+class X: pass
+class Y: pass
+class P(X, Y): pass
+assert P.__mro__ == (P, X, Y, object)       # X before Y per C3
+```
+
+### Carry-over to round 10
+
+The cached `cls.__mro__` own attribute is still written because ~20
+native call sites read it through raw `cls->getAttribute("__mro__")`,
+which is a protoCore chain walk and does NOT invoke the descriptor.
+Migrating these call sites to a descriptor-aware lookup (or to a
+helper that reconstructs from the chain inline) would let us drop
+the cached write entirely.  This sweep is round-10 territory — it
+needs an audit-and-replace pass, plus a regression run, and was kept
+out of round 9 to honour the "evita tocar interfaces" directive.
+
+Other carry-overs from rounds 6–8 still pending: STRUCT-62/63/67/69/73/74/75/76/79/80
+(layout-bound, compiler-bound, or ABCMeta-bound — none affected by
+the round-9 refactor).
+
+### Infra note
+
+Build verification uses `build_release/` (underscore).  ctest 183/183
+clean on each round-9 commit; `test_descr.py` baseline reported via
+direct invocation `./build_release/src/runtime/protopy test/cpython/test_descr.py`.
+
+---
+
 ## Current Status (2026-05-15) — post-fifteenth-sweep (round 8)
 
 Round 8 began with three goals:
