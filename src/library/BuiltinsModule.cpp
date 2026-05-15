@@ -10449,35 +10449,33 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         proto::ProtoObject* descr = const_cast<proto::ProtoObject*>(descrProto->newChild(ctx, true));
         descr->setAttribute(ctx, pEnv->getClassString(), descrProto);
         descr->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"), attrS->asObject(ctx));
-        // fget closure captures attrName via a small native method.
+        // fget reads __annotations__ from __func__ and lazily promotes
+        // the value into the wrapper's own __dict__ so subsequent reads
+        // (and `'__annotations__' in wrapper.__dict__`) observe a stable
+        // cached entry.  CPython does the same lazy copy on first
+        // access.
         auto fget = +[](proto::ProtoContext* c, const proto::ProtoObject* /*self*/,
                        const proto::ParentLink*, const proto::ProtoList* args,
                        const proto::ProtoSparseList*) -> const proto::ProtoObject* {
             if (!args || args->getSize(c) < 1) return PROTO_NONE;
             const proto::ProtoObject* inst = args->getAt(c, 0);
             if (!inst || inst == PROTO_NONE) return PROTO_NONE;
-            const proto::ProtoString* nameAttr = PythonEnvironment::getInternedString(c, "__name__");
-            const proto::ProtoObject* nm = nullptr;
-            // Read the descriptor's __name__ from its own attrs via the
-            // bound-method receiver — but fromMethod with self=nullptr
-            // means we can't peek here.  Instead use __annotations__ as
-            // the only delegate registered; for __wrapped__ the same
-            // helper is registered separately with its own closure-free
-            // method.  This trampoline routes both.
-            (void)nm; (void)nameAttr;
+            const proto::ProtoString* annS = PythonEnvironment::getInternedString(c, "__annotations__");
+            // If the wrapper already cached the value, return it.
+            if (inst->hasOwnAttribute(c, annS) == PROTO_TRUE) {
+                return inst->getOwnAttributeDirect(c, annS);
+            }
             const proto::ProtoString* funcS = PythonEnvironment::getInternedString(c, "__func__");
             const proto::ProtoObject* fn = inst->getAttribute(c, funcS);
             if (!fn || fn == PROTO_NONE) return PROTO_NONE;
-            // The trampoline is shared across attrs — read the descriptor's
-            // own __name__ via the protoCore root: the descriptor instance
-            // is the first positional argument when invoked from
-            // py_getset_get's fget dispatch, but fget callers pass
-            // (instance,) only.  Fallback: probe __annotations__ first
-            // (most common), else __wrapped__.  The native API doesn't
-            // give us a closure, so we use a sentinel attribute on the
-            // instance we just received.
-            const proto::ProtoString* annS = PythonEnvironment::getInternedString(c, "__annotations__");
-            return fn->getAttribute(c, annS);
+            const proto::ProtoObject* ann = fn->getAttribute(c, annS);
+            // Lazy promote: store on the wrapper so future lookups skip
+            // the descriptor.  Use the raw protoCore setAttribute to
+            // bypass user-level setattr hooks.
+            if (ann && ann != PROTO_NONE) {
+                const_cast<proto::ProtoObject*>(inst)->proto::ProtoObject::setAttribute(c, annS, ann);
+            }
+            return ann;
         };
         descr->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "fget"),
             ctx->fromMethod(nullptr, fget));
