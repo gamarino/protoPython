@@ -1640,17 +1640,18 @@ static const proto::ProtoObject* py_object_get_dict(
                         || nm == "__is_python_class__") return;
                     if (s->stripWrapperInternals) {
                         // staticmethod / classmethod: hide the wrapper-
-                        // internal storage names (`func`, `__func__`,
-                        // `__wrapped__`, `__annotations__`, `__class__`)
-                        // — they're needed on the instance for attribute
-                        // access but never appear in CPython's instance
-                        // dict.  KEEP `__name__`, `__module__`,
-                        // `__qualname__`, `__doc__` — those ARE part of
-                        // the user-visible wrapper dict per CPython
-                        // (e.g. classmethod(f).__dict__ contains
-                        // `__name__: 'f'`).
+                        // internal storage names that are never part of
+                        // CPython's user-visible wrapper dict.
+                        // `__annotations__` was previously stripped to
+                        // mask the eager set py_classmethod /
+                        // py_staticmethod performed; STRUCT-43 removes
+                        // that eager set and lets the lazy descriptor
+                        // surface the entry on first read, so the
+                        // wrapper's __dict__ now mirrors CPython
+                        // (`__annotations__` appears only after a
+                        // first read).
                         if (nm == "func" || nm == "__func__"
-                            || nm == "__wrapped__" || nm == "__annotations__"
+                            || nm == "__wrapped__"
                             || nm == "__class__") return;
                     } else {
                         // Built-in subclass snapshot: hide the class-shape
