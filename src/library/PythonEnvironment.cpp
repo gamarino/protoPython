@@ -282,10 +282,44 @@ static const proto::ProtoObject* py_type_call(
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG: py_type_call called self=%p\n", (void*)self);
     }
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    // STRUCT-52: `n()` for a plain instance `n` (whose class has no
+    // own `__call__`) resolved to `type.__call__` via the metaclass
+    // parent link and then mishandled `self=n` as a class to
+    // construct — silently producing a child of n instead of raising
+    // TypeError.  CPython's `tp_call` slot lookup is type-only;
+    // approximate that by rejecting receivers that are clearly NOT
+    // classes — they have a `__class__` of `type` (or any class), but
+    // the object itself isn't a class.  Use a tighter probe than
+    // `isActuallyAClass` to avoid false negatives on built-in class
+    // prototypes that haven't been marked yet (memoryview, enumerate,
+    // zip, …): a class always has `__name__` as an OWN attribute AND
+    // type(self) is `type` (or a metaclass).  An instance has neither.
+    if (env && self) {
+        const proto::ProtoString* nameAttr = env->getNameString();
+        bool ownName = nameAttr && self->hasOwnAttribute(context, nameAttr) == PROTO_TRUE;
+        const proto::ProtoObject* selfType = env->getType(context, self);
+        bool typeIsType = (selfType == env->getTypePrototype());
+        // A regular Python class (built by py_type) sets
+        // __is_python_class__.  Anything missing both that marker AND
+        // own __name__ is clearly an instance — reject.
+        bool looksLikeClass = ownName
+            || (env->getTypePrototype() && selfType == env->getTypePrototype())
+            || env->isActuallyAClass(context, self);
+        (void)typeIsType;
+        if (!looksLikeClass) {
+            std::string clsName = "object";
+            if (selfType) {
+                const proto::ProtoObject* nm = selfType->getAttribute(context, nameAttr);
+                if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+            }
+            env->raiseTypeError(context, "'" + clsName + "' object is not callable");
+            return nullptr;
+        }
+    }
     // PI: refuse to instantiate classes with abstract methods.
     // CPython's type.__call__ checks __abstractmethods__ (a frozenset
     // populated by ABCMeta) and raises TypeError if non-empty.
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (env && self) {
         const proto::ProtoString* amS =
             PythonEnvironment::getInternedString(context, "__abstractmethods__");
