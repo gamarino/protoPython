@@ -28,6 +28,140 @@
 
 ---
 
+## Current Status (2026-05-15) — post-fifteenth-sweep (round 8)
+
+Round 8 began with three goals:
+
+1. Integrate the new protoCore `setParents` API into the
+   `__bases__` setter so chain-walks see the new bases without the
+   add-only artifact (STRUCT-61).
+2. Resolve a handful of test_descr fail surfaces with one-shot
+   fixes (planned 20 commits in `mossy-dreaming-quokka.md`).
+3. Update the conformance status.
+
+Result: the protoCore integration (STRUCT-61), two defensive
+correctness fixes (STRUCT-68/70), and this docs entry land cleanly.
+The other 16 planned commits — each a deeper structural issue —
+were investigated and deferred with documented root causes.  The
+flat F+E baseline reflects that the remaining failures all depend
+on infrastructure that protoPython does not yet provide
+(deferred-collection GC, ABCMeta virtual subclass registration,
+CO_OPTIMIZED frame locals enumeration, builtin_function_or_method
+distinct type, complex-subclass-with-slots layout — each of these
+is its own carry-over).
+
+### Direct unittest counts (`test_descr.py`)
+
+| | run | fail | error | skipped | Δ |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-15 (round-8) | 165 | **42** | **41** | 10 | F+E flat — defensive guards only |
+| 2026-05-15 (round-7 final) | 165 | 42 | 41 | 10 | post-STRUCT-60 baseline |
+
+### Commits landed in round 8
+
+| Commit | Theme |
+| :--- | :--- |
+| `d00d2d88` STRUCT-61 | `__bases__` setter uses protoCore `setParents` to replace the chain wholesale; old bases no longer leak through chain-walk lookups |
+| `e0f6b11c` STRUCT-68 | Every new class starts with an empty own `__subclasses_list__`; closes the ancestor-leak path that exposed unrelated subclasses |
+| `e68775fc` STRUCT-70 | `del Cls.__bases__` (and other structural-attr deletes) raise TypeError on heap classes too, not only on built-in immutables |
+| `30c1fffa` STRUCT-60 docs | Round-7 conformance status (this round 8 doc commit closes round 8) |
+
+### Investigated and deferred (carry-over to a future round)
+
+Each item below was probed end-to-end, the root cause documented,
+and the work deferred because the fix exceeds a single commit's
+scope.
+
+* **STRUCT-62 — `class Number(complex): __slots__ = ['prec']`**:
+  the slot descriptor IS installed (STRUCT-57 path), but writing
+  `instance.prec` on a complex subclass fails because complex
+  instances live in protoCore's immutable-primitive layout
+  (`newChild` from complexPrototype produces a cell with no
+  per-instance attribute slot).  Fix requires complex-subclass
+  instances to carry a wrapping ProtoObjectCell with mutable
+  attribute storage.
+* **STRUCT-63 — `__new__` returning a non-cls instance**: the
+  runUserClassCall `isInstanceOfSelf` check already covers this
+  case, but the failing test triggers a separate compiler-level
+  bug: a method defined in a class body that references a class
+  defined LATER in the enclosing function scope (`class C: def
+  __new__(cls): return object.__new__(D); class D(C): pass`)
+  fails to resolve `D` at runtime — LOAD_NAME / LOAD_DEREF
+  returns None instead of the now-defined `D`.  Fix touches the
+  compiler's name-resolution pass.
+* **STRUCT-64 — `M.__new__(M)` produces module with `__name__`**:
+  `modulePrototype.__name__ = 'module'` (own attribute) leaks via
+  parent-chain walk to instances.  CPython exposes `module.__name__`
+  via a descriptor that distinguishes class access (returns 'module')
+  from instance access (AttributeError unless set in __dict__).
+  Fix requires a getset_descriptor on modulePrototype.
+* **STRUCT-65 — bare `dir()` filters frame internals**:
+  py_locals returns the frame object — but for CO_OPTIMIZED
+  functions where skipFrame fires, the frame is null and py_locals
+  falls through to py_globals.  Result: `dir()` reports globals
+  instead of locals.  Fix requires py_locals to materialise locals
+  from `automatic_locals` + `co_varnames` at the caller's ctx —
+  but py_locals runs in dir()'s own ctx and has no access to the
+  caller's slots without a call-stack walk.
+* **STRUCT-66 — `x.__class__ = cls` slot-layout compatibility**:
+  the immutable-builtin rejection path works; the failing
+  assertions test slot-layout compatibility between heap classes
+  with different `__slots__` shapes (G/H/I/J/K).  Fix requires
+  per-class slot fingerprint comparison.
+* **STRUCT-67 — class body `__class__` override**: `class FakeStr:
+  __class__ = str` should make `isinstance(FakeStr(), str)` true.
+  protoPython's py_type sets `__class__` to the metaclass and
+  ignores the namespace override.  Fix requires honoring the
+  namespace's __class__ entry at class-creation time and reroute
+  isinstance through the user-set value.
+* **STRUCT-69 — `class C(metaclass=M, attr='X')` PEP 487 kwargs**:
+  OP_BUILD_CLASS strips `metaclass` (STRUCT-37) but doesn't
+  forward the remaining kwargs to `__init_subclass__`.
+* **STRUCT-71 — `type('M', (), {1:2})` emits RuntimeWarning**:
+  requires the `warnings.warn` machinery to be reachable from
+  py_type, which depends on the warnings module being
+  initialized before py_type runs.
+* **STRUCT-72 — `class C(type(len))` raises TypeError**: `len`
+  is a BOUND method cell (`fromMethod(builtins, py_len)`) so the
+  unbound-only reclassification branch in `getType` (line ~22043)
+  skips it.  Fix requires either unbinding builtins or extending
+  the reclassification to bound method cells.
+* **STRUCT-73 — classmethod/staticmethod `__annotate__`**: same
+  shape as STRUCT-43's `__annotations__` delegate; needs the
+  parallel descriptor.
+* **STRUCT-74 — `bytes(X())` consults `__bytes__`**: requires the
+  bytes() constructor to look up `__bytes__` in the receiver's
+  type chain before fallback conversion.
+* **STRUCT-75 — `object.__setattr__(cls, ...)` rejects indirect
+  bases**: needs an ownership check inside `py_object_setattr`
+  for class receivers.
+* **STRUCT-76 — `hash(d)` reflects `A.__hash__ = X`**: hash
+  dispatch must always resolve `type(obj).__hash__` (no caching
+  of the dunder method pointer).
+* **STRUCT-77 — `str.__add__(non_str, 'x')` raises TypeError**:
+  per-native-method first-arg type validation — either at each
+  native function or via a dispatch-level check that reads
+  __objclass__ from the NativeMethodInfo side-table.
+* **STRUCT-78 — ABCMeta virtual subclass in isinstance**:
+  `MyABC.register(Unrelated); isinstance(u, MyABC)` should be
+  True.  Requires isinstance to consult `_abc_registry` /
+  `_abc_impl`, which ABCMeta in protoPython doesn't currently
+  populate.
+
+### Carry-over to round 9 (or protoCore extension)
+
+Same as round-7's carry-over, plus the items above.  The single
+highest-leverage missing piece is ABCMeta virtual-subclass
+registration: it would unblock `test_slots_descriptor`,
+`test_descrdoc`, and likely several others that use ABCs.
+
+### Infra note
+
+Build directory `build_release/` throughout; `build-release/`
+(hyphen) remains corrupted.
+
+---
+
 ## Current Status (2026-05-15) — post-fourteenth-sweep (round 7)
 
 Round 7 resolved three of the four structural carry-overs from
