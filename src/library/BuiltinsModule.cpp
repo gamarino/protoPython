@@ -4579,7 +4579,10 @@ static const proto::ProtoObject* py_hasattr(
     if (env) {
         const proto::ProtoObject* cls = env->getType(context, obj);
         const proto::ProtoString* mroS = env->getMroString();
-        const proto::ProtoObject* mroObj = (cls && mroS) ? cls->getAttribute(context, mroS) : nullptr;
+        // STRUCT-103: route through descriptor-aware env->getAttribute
+        // so the chain-reconstructed __mro__ (round-9 SSoT) is honoured
+        // even after the cached own-attr write is dropped in STRUCT-105.
+        const proto::ProtoObject* mroObj = (cls && mroS) ? env->getAttribute(context, cls, mroS, false) : nullptr;
         const proto::ProtoTuple* mroT = (mroObj && mroObj != PROTO_NONE) ? mroObj->asTuple(context) : nullptr;
         if (mroT) {
             for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
@@ -6756,8 +6759,12 @@ static bool py_issubclass_check_single(proto::ProtoContext* context, const proto
         fprintf(stderr, "DEBUG py_issubclass: cls=%p (%s) base=%p (%s)\n", (void*)cls, clsRepr.c_str(), (void*)base, baseRepr.c_str());
     }
 
-    // Fast path: use __mro__
-    const proto::ProtoObject* mro = cls->getAttribute(context, PythonEnvironment::getInternedString(context, "__mro__"));
+    // Fast path: use __mro__ — STRUCT-103 routes through env->getAttribute
+    // so the descriptor-reconstructed tuple is read after STRUCT-105.
+    PythonEnvironment* envMR = PythonEnvironment::fromContext(context);
+    const proto::ProtoString* mroAttrS = PythonEnvironment::getInternedString(context, "__mro__");
+    const proto::ProtoObject* mro = envMR ? envMR->getAttribute(context, cls, mroAttrS, false)
+                                          : cls->getAttribute(context, mroAttrS);
     if (depth == 0 && get_env_diag()) {
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         std::string mroRepr = env ? env->reprObject(context, mro) : "???";

@@ -5297,7 +5297,9 @@ static const proto::ProtoObject* py_type_instancecheck(
     // classes, walking the wrong MRO.
     const proto::ProtoObject* objClass = env->getType(context, instance);
     if (objClass && objClass != instance) {
-        const proto::ProtoObject* mro = objClass->getAttribute(context, PythonEnvironment::getInternedString(context, "__mro__"));
+        // STRUCT-103: descriptor-aware __mro__ read.
+        const proto::ProtoObject* mro = env->getAttribute(context, objClass,
+            PythonEnvironment::getInternedString(context, "__mro__"), false);
         if (mro) {
             const proto::ProtoList* mroList = mro->asList(context);
             const proto::ProtoTuple* mroTuple = mro->asTuple(context);
@@ -5320,7 +5322,11 @@ static const proto::ProtoObject* py_type_subclasscheck(
     const proto::ProtoObject* base = self;
     if (!sub || !base) return PROTO_FALSE;
     if (sub == base) return PROTO_TRUE;
-    const proto::ProtoObject* mro = sub->getAttribute(context, PythonEnvironment::getInternedString(context, "__mro__"));
+    // STRUCT-103: descriptor-aware __mro__ read.
+    PythonEnvironment* envSCmro = PythonEnvironment::fromContext(context);
+    const proto::ProtoString* mroAttrSCK = PythonEnvironment::getInternedString(context, "__mro__");
+    const proto::ProtoObject* mro = envSCmro ? envSCmro->getAttribute(context, sub, mroAttrSCK, false)
+                                              : sub->getAttribute(context, mroAttrSCK);
     if (mro) {
         const proto::ProtoList* mroList = mro->asList(context);
         const proto::ProtoTuple* mroTuple = mro->asTuple(context);
