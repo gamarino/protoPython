@@ -23203,6 +23203,16 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
         // nullptr + raises TypeError on linearisation conflict, which
         // we propagate to the caller so the assignment is rejected
         // before the __subclasses_list__ shuffle below mutates state.
+        //
+        // STRUCT-84: the canonical source of truth is the protoCore
+        // parent chain (kept in lockstep via setParents below).  The
+        // cached `__mro__` own attribute is still written as a
+        // denormalised view because ~20 native call sites read it via
+        // raw `cls->getAttribute("__mro__")` which does NOT invoke the
+        // descriptor.  Both writes flow from the SAME computed C3
+        // result, so they cannot diverge — and a future sweep replacing
+        // raw call sites with descriptor-aware lookups can drop the
+        // cached write without touching MRO computation here.
         if (value && value != PROTO_NONE) {
             const proto::ProtoList* newMro =
                 protoPython::builtins::computeC3MRO(ctx, obj, value);
@@ -23215,11 +23225,13 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
 
             // STRUCT-55: propagate the MRO change recursively to every
             // descendant.  Without this, `E(D)` (where D is the class
-            // whose __bases__ we just rewrote) keeps its stale __mro__
-            // and `e.meth()` resolves against the old chain.  Walk
-            // each subclass's own `__bases__` and recompute its MRO;
-            // recurse via __subclasses_list__.  Use a visited set to
-            // protect against cycles (subclass-of-subclass diamonds).
+            // whose __bases__ we just rewrote) keeps a stale view and
+            // `e.meth()` resolves against the old chain.  Walk each
+            // subclass's own `__bases__`, recompute its C3 MRO, then
+            // (STRUCT-84) update BOTH the protoCore parent chain via
+            // `setParents` AND the cached `__mro__` own attribute.
+            // Recurse via __subclasses_list__ with a visited set to
+            // guard against diamond cycles.
             const proto::ProtoString* subListS2 =
                 getInternedString(ctx, "__subclasses_list__");
             const proto::ProtoString* basesS2 =
@@ -23247,34 +23259,40 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                         if (hasPendingException()) clearPendingException();
                         continue;
                     }
+                    // STRUCT-84: write-through both views — cached tuple
+                    // for raw consumers, parent chain for the descriptor
+                    // and chain-walking attribute lookups.  Same source.
                     const proto::ProtoObject* subMroT = ctx->newTupleFromList(subMro)->asObject(ctx);
                     const_cast<proto::ProtoObject*>(sub)->proto::ProtoObject::setAttribute(
                         ctx, mroS, subMroT);
+                    const proto::ProtoList* subChain = ctx->newList();
+                    for (unsigned long j = 1; j < subMro->getSize(ctx); ++j) {
+                        const proto::ProtoObject* p = subMro->getAt(ctx, static_cast<int>(j));
+                        if (p && p != sub && p != PROTO_NONE) {
+                            subChain = subChain->appendLast(ctx, p);
+                        }
+                    }
+                    const_cast<proto::ProtoObject*>(sub)->proto::ProtoObject::setParents(ctx, subChain);
                     propagate(sub);
                 }
             };
             propagate(obj);
 
-            // STRUCT-56 (revised): replace the protoCore parent chain
-            // wholesale.  protoCore now exposes `setParents` (formerly
-            // a carry-over: addParent could only extend, leaving stale
-            // bases visible to raw chain-walks).  Build a ProtoList
-            // from the new __bases__ tuple/list and hand it to
-            // `setParents`; the protoCore helper rebuilds the
-            // ParentLinkImplementation chain (mutable-vs-immutable
-            // dispatch is internal to the trampoline).  Result: the
-            // post-assignment chain matches `__mro__[1:]`'s direct
-            // bases exactly — no add-only artifact, no stale ancestor
-            // attribute resolution.
-            const proto::ProtoTuple* nbT = value->asTuple(ctx);
-            const proto::ProtoList* nbL = nbT ? nullptr : value->asList(ctx);
-            unsigned long nbN = nbT ? nbT->getSize(ctx) : (nbL ? nbL->getSize(ctx) : 0);
+            // STRUCT-56 (revised) + STRUCT-84: replace the protoCore
+            // parent chain wholesale with the full C3 MRO[1:] (not just
+            // the new direct bases).  Earlier the setter passed only
+            // `new_bases` to `setParents` while py_type passed the full
+            // C3 MRO[1:]; after STRUCT-83 made py_type_get_mro read the
+            // chain directly, this divergence caused transitive
+            // ancestors (grand-bases, diamond shoulders) to disappear
+            // from `cls.__mro__` after `__bases__` reassignment.  Seed
+            // identically to py_type so the chain == MRO[1:] exactly.
             const proto::ProtoList* parentsList = ctx->newList();
-            for (unsigned long i = 0; i < nbN; ++i) {
-                const proto::ProtoObject* nb = nbT ? nbT->getAt(ctx, static_cast<int>(i))
-                                                   : nbL->getAt(ctx, static_cast<int>(i));
-                if (!nb || nb == PROTO_NONE) continue;
-                parentsList = parentsList->appendLast(ctx, nb);
+            for (unsigned long i = 1; i < newMro->getSize(ctx); ++i) {
+                const proto::ProtoObject* p = newMro->getAt(ctx, static_cast<int>(i));
+                if (p && p != obj && p != PROTO_NONE) {
+                    parentsList = parentsList->appendLast(ctx, p);
+                }
             }
             const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setParents(ctx, parentsList);
         }

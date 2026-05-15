@@ -6107,6 +6107,16 @@ const proto::ProtoObject* py_type(
             const proto::ProtoObject* mroTupleVal = env ? env->newTuple(mroList) : context->newTupleFromList(mroList)->asObject(context);
             targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, mroName2, mroTupleVal));
 
+            // STRUCT-84: keep `__mro__` as an own-attribute write-through
+            // cache.  After STRUCT-83 the descriptor (py_type_get_mro)
+            // reconstructs the tuple from the chain on every read, but
+            // ~20 native call sites still go through raw
+            // `cls->getAttribute("__mro__")` (a protoCore chain walk
+            // that does NOT invoke the descriptor) and depend on a
+            // cached own attribute being present.  We treat the chain
+            // as the canonical source of truth; the cached tuple is a
+            // denormalised view kept in lockstep with `setParents`.
+            //
             // STRUCT-82: seed the protoCore parent chain DIRECTLY from the
             // computed C3 MRO (excluding `cls` itself).  protoCore's
             // `setParents` (round-7 addition) replaces the chain wholesale
