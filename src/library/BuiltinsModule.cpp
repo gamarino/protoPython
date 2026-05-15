@@ -10825,6 +10825,141 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     classmethodProto = add_func_delegate(classmethodProto, "__annotations__");
     staticmethodProto = add_func_delegate(staticmethodProto, "__annotations__");
 
+    // STRUCT-91: parallel lazy descriptor for `__annotate__`.  Python
+    // 3.14 introduced `__annotate__` as the lazy provider for
+    // annotation dicts (PEP 649); classmethod/staticmethod wrappers
+    // must forward it through __func__ with the same materialise-
+    // on-first-read / writes-don't-propagate semantics as
+    // __annotations__.  The shared add_func_delegate above is
+    // hard-coded to `__annotations__` for historical reasons (the
+    // lambdas are non-capturing function pointers, so the attribute
+    // name is baked into the closure body); duplicating the trio
+    // here is cheaper than refactoring to capture-by-value.
+    auto add_annotate_delegate = [&](const proto::ProtoObject* proto) -> const proto::ProtoObject* {
+        const proto::ProtoString* attrS = PythonEnvironment::getInternedString(ctx, "__annotate__");
+        const proto::ProtoObject* descrProto = pEnv->getGetSetDescriptorPrototype();
+        if (!descrProto) return proto;
+        proto::ProtoObject* descr = const_cast<proto::ProtoObject*>(descrProto->newChild(ctx, true));
+        descr->setAttribute(ctx, pEnv->getClassString(), descrProto);
+        descr->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"), attrS->asObject(ctx));
+        auto fget = +[](proto::ProtoContext* c, const proto::ProtoObject* /*self*/,
+                       const proto::ParentLink*, const proto::ProtoList* args,
+                       const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            if (!args || args->getSize(c) < 1) return PROTO_NONE;
+            const proto::ProtoObject* inst = args->getAt(c, 0);
+            if (!inst || inst == PROTO_NONE) return PROTO_NONE;
+            const proto::ProtoString* anS = PythonEnvironment::getInternedString(c, "__annotate__");
+            if (inst->hasOwnAttribute(c, anS) == PROTO_TRUE) {
+                return inst->getOwnAttributeDirect(c, anS);
+            }
+            const proto::ProtoString* funcS = PythonEnvironment::getInternedString(c, "__func__");
+            const proto::ProtoObject* fn = inst->getAttribute(c, funcS);
+            if (!fn || fn == PROTO_NONE) return PROTO_NONE;
+            const proto::ProtoObject* an = fn->getAttribute(c, anS);
+            if (an && an != PROTO_NONE) {
+                // Lazy promote: cache on the wrapper so subsequent reads
+                // bypass the descriptor AND so `'__annotate__' in
+                // wrapper.__dict__` reports True after first access.
+                proto::ProtoObject* mInst = const_cast<proto::ProtoObject*>(inst);
+                mInst->proto::ProtoObject::setAttribute(c, anS, an);
+                PythonEnvironment* envLocal = PythonEnvironment::fromContext(c);
+                if (envLocal) {
+                    const proto::ProtoString* keysS = envLocal->getKeysString();
+                    const proto::ProtoObject* keysObj = inst->getAttribute(c, keysS);
+                    const proto::ProtoList* keysList = (keysObj && keysObj != PROTO_NONE)
+                        ? keysObj->asList(c) : nullptr;
+                    if (keysList) {
+                        bool present = false;
+                        unsigned long h = anS->getHash(c);
+                        for (unsigned long i = 0; i < keysList->getSize(c); ++i) {
+                            const proto::ProtoObject* k = keysList->getAt(c, static_cast<int>(i));
+                            if (k && k->isString(c) && k->getHash(c) == h) { present = true; break; }
+                        }
+                        if (!present) {
+                            keysList = keysList->appendLast(c, anS->asObject(c));
+                            mInst->proto::ProtoObject::setAttribute(c, keysS, keysList->asObject(c));
+                        }
+                    }
+                }
+            }
+            return an;
+        };
+        auto fset = +[](proto::ProtoContext* c, const proto::ProtoObject* /*self*/,
+                       const proto::ParentLink*, const proto::ProtoList* args,
+                       const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            if (!args || args->getSize(c) < 2) return PROTO_NONE;
+            const proto::ProtoObject* inst = args->getAt(c, 0);
+            const proto::ProtoObject* value = args->getAt(c, 1);
+            if (!inst || inst == PROTO_NONE) return PROTO_NONE;
+            const proto::ProtoString* anS = PythonEnvironment::getInternedString(c, "__annotate__");
+            proto::ProtoObject* mInst = const_cast<proto::ProtoObject*>(inst);
+            mInst->proto::ProtoObject::setAttribute(c, anS, value);
+            PythonEnvironment* envLocal = PythonEnvironment::fromContext(c);
+            if (envLocal) {
+                const proto::ProtoString* keysS = envLocal->getKeysString();
+                const proto::ProtoObject* keysObj = inst->getAttribute(c, keysS);
+                const proto::ProtoList* keysList = (keysObj && keysObj != PROTO_NONE)
+                    ? keysObj->asList(c) : nullptr;
+                if (keysList) {
+                    bool present = false;
+                    unsigned long h = anS->getHash(c);
+                    for (unsigned long i = 0; i < keysList->getSize(c); ++i) {
+                        const proto::ProtoObject* k = keysList->getAt(c, static_cast<int>(i));
+                        if (k && k->isString(c) && k->getHash(c) == h) { present = true; break; }
+                    }
+                    if (!present) {
+                        keysList = keysList->appendLast(c, anS->asObject(c));
+                        mInst->proto::ProtoObject::setAttribute(c, keysS, keysList->asObject(c));
+                    }
+                }
+            }
+            return PROTO_NONE;
+        };
+        auto fdel = +[](proto::ProtoContext* c, const proto::ProtoObject* /*self*/,
+                       const proto::ParentLink*, const proto::ProtoList* args,
+                       const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            if (!args || args->getSize(c) < 1) return PROTO_NONE;
+            const proto::ProtoObject* inst = args->getAt(c, 0);
+            if (!inst || inst == PROTO_NONE) return PROTO_NONE;
+            const proto::ProtoString* anS = PythonEnvironment::getInternedString(c, "__annotate__");
+            proto::ProtoObject* mInst = const_cast<proto::ProtoObject*>(inst);
+            if (inst->hasOwnAttribute(c, anS) != PROTO_TRUE) {
+                PythonEnvironment* envLocal = PythonEnvironment::fromContext(c);
+                if (envLocal) envLocal->raiseAttributeErrorWithMessage(c, inst,
+                    "__annotate__", "__annotate__");
+                return nullptr;
+            }
+            mInst->proto::ProtoObject::removeAttribute(c, anS);
+            PythonEnvironment* envLocal = PythonEnvironment::fromContext(c);
+            if (envLocal) {
+                const proto::ProtoString* keysS = envLocal->getKeysString();
+                const proto::ProtoObject* keysObj = inst->getAttribute(c, keysS);
+                const proto::ProtoList* keysList = (keysObj && keysObj != PROTO_NONE)
+                    ? keysObj->asList(c) : nullptr;
+                if (keysList) {
+                    const proto::ProtoList* fresh = c->newList();
+                    unsigned long h = anS->getHash(c);
+                    for (unsigned long i = 0; i < keysList->getSize(c); ++i) {
+                        const proto::ProtoObject* k = keysList->getAt(c, static_cast<int>(i));
+                        if (k && k->isString(c) && k->getHash(c) == h) continue;
+                        fresh = fresh->appendLast(c, k);
+                    }
+                    mInst->proto::ProtoObject::setAttribute(c, keysS, fresh->asObject(c));
+                }
+            }
+            return PROTO_NONE;
+        };
+        descr->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "fget"),
+            ctx->fromMethod(nullptr, fget));
+        descr->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "fset"),
+            ctx->fromMethod(nullptr, fset));
+        descr->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "fdel"),
+            ctx->fromMethod(nullptr, fdel));
+        return proto->setAttribute(ctx, attrS, descr);
+    };
+    classmethodProto = add_annotate_delegate(classmethodProto);
+    staticmethodProto = add_annotate_delegate(staticmethodProto);
+
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "staticmethod"), staticmethodProto);
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "classmethod"), classmethodProto);
     
