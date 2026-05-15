@@ -13482,13 +13482,40 @@ static bool clsNeedsMetaSlotSynthesis(proto::ProtoContext* ctx,
         return false;
     }
     // STRUCT-33: a heap class that declares its own __slots__ does not
-    // auto-receive __dict__/__weakref__ in its mappingproxy (CPython's
-    // PyType_Ready only adds them when __slots__ is absent).  This makes
-    // SlotSubClass(SlotClass) — a non-slot subclass of a slotted base —
-    // correctly synthesise __weakref__, while SlotClass itself does not.
+    // auto-receive __dict__/__weakref__ in its mappingproxy.  Otherwise,
+    // CPython adds them only at the FIRST class in the MRO that
+    // introduces them — non-slot subclasses inherit from a non-slot
+    // ancestor without re-adding the entries to their own dict.  Walk
+    // the MRO (skipping cls itself): if any ancestor is a heap class
+    // without its own __slots__, it has already introduced the meta
+    // slots and this class should NOT synth them.
     const proto::ProtoString* slotsS = PythonEnvironment::getInternedString(ctx, "__slots__");
     if (cls->hasOwnAttribute(ctx, slotsS) == PROTO_TRUE) {
         return false;
+    }
+    const proto::ProtoObject* mroAttr = cls->getAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__mro__"));
+    const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+    if (mroT) {
+        unsigned long sz = mroT->getSize(ctx);
+        for (unsigned long i = 0; i < sz; ++i) {
+            const proto::ProtoObject* anc = mroT->getAt(ctx, static_cast<int>(i));
+            if (!anc || anc == cls) continue;
+            if (anc == env->getObjectPrototype()) continue;
+            // Built-in primitives never auto-add __dict__/__weakref__;
+            // skip them as "introducers".
+            if (anc == env->getIntPrototype() || anc == env->getFloatPrototype()
+                || anc == env->getBoolPrototype() || anc == env->getStrPrototype()
+                || anc == env->getBytesPrototype() || anc == env->getListPrototype()
+                || anc == env->getDictPrototype() || anc == env->getSetPrototype()
+                || anc == env->getFrozensetPrototype() || anc == env->getTuplePrototype()
+                || anc == env->getComplexPrototype()) continue;
+            // A heap ancestor without its own __slots__ has already
+            // introduced the meta slots — skip synthesis on cls.
+            if (anc->hasOwnAttribute(ctx, slotsS) != PROTO_TRUE) {
+                return false;
+            }
+        }
     }
     return true;
 }
