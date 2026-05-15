@@ -23277,38 +23277,98 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
         // raw call sites with descriptor-aware lookups can drop the
         // cached write without touching MRO computation here.
         if (value && value != PROTO_NONE) {
-            const proto::ProtoList* newMro =
-                protoPython::builtins::computeC3MRO(ctx, obj, value);
-            if (!newMro) {
-                return nullptr; // TypeError raised inside computeC3MRO
-            }
-            const proto::ProtoObject* mroTuple = ctx->newTupleFromList(newMro)->asObject(ctx);
-            const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setAttribute(
-                ctx, getInternedString(ctx, "__mro__"), mroTuple);
-
-            // STRUCT-55: propagate the MRO change recursively to every
-            // descendant.  Without this, `E(D)` (where D is the class
-            // whose __bases__ we just rewrote) keeps a stale view and
-            // `e.meth()` resolves against the old chain.  Walk each
-            // subclass's own `__bases__`, recompute its C3 MRO, then
-            // (STRUCT-84) update BOTH the protoCore parent chain via
-            // `setParents` AND the cached `__mro__` own attribute.
-            // Recurse via __subclasses_list__ with a visited set to
-            // guard against diamond cycles.
+            // STRUCT-88: apply-with-rollback.  computeC3MRO reads each
+            // base's CURRENT cached `__mro__` to build the candidate
+            // linearisation.  An MRO conflict that arises only because
+            // a parent's bases were just reshuffled would NOT surface
+            // if we computed every descendant's new MRO against the
+            // pre-mutation parent state — we'd silently keep the
+            // descendant's old MRO and let the conflict go undetected
+            // (this is exactly what
+            // test_mutable_bases_catch_mro_conflict exercises:
+            // `C(A,B); D(A,B); E(C,D); C.__bases__ = (B,A)` is invalid
+            // because E's merge of new-C, D, and bases becomes
+            // unsolvable).  To see the conflict we must mutate `obj`
+            // FIRST so descendants see the new shape, then re-walk —
+            // and if any descendant's C3 fails, undo every mutation
+            // applied so far before propagating the exception.
             const proto::ProtoString* subListS2 =
                 getInternedString(ctx, "__subclasses_list__");
             const proto::ProtoString* basesS2 =
                 getInternedString(ctx, "__bases__");
             const proto::ProtoString* mroS =
                 getInternedString(ctx, "__mro__");
+
+            const proto::ProtoList* newMro =
+                protoPython::builtins::computeC3MRO(ctx, obj, value);
+            if (!newMro) {
+                return nullptr; // TypeError raised inside computeC3MRO
+            }
+
+            // Undo log entries: snapshot the cached __mro__ tuple AND
+            // the protoCore parent chain BEFORE each mutation, so a
+            // late-discovered conflict can restore both in reverse
+            // order.  `oldMro` may legitimately be nullptr for an
+            // object that lacked a cached __mro__ — record it as such
+            // and on rollback re-delete the own attribute.
+            struct UndoEntry {
+                const proto::ProtoObject* node;
+                const proto::ProtoObject* oldMro;   // tuple or nullptr
+                const proto::ProtoList* oldChain;
+            };
+            std::vector<UndoEntry> undo;
+
+            auto applyOne = [&](const proto::ProtoObject* node,
+                                const proto::ProtoList* mro) {
+                UndoEntry e;
+                e.node = node;
+                e.oldMro = node->hasOwnAttribute(ctx, mroS) == PROTO_TRUE
+                    ? node->getAttribute(ctx, mroS) : nullptr;
+                e.oldChain = node->getParents(ctx);
+                undo.push_back(e);
+                const proto::ProtoObject* mroT = ctx->newTupleFromList(mro)->asObject(ctx);
+                const_cast<proto::ProtoObject*>(node)->proto::ProtoObject::setAttribute(
+                    ctx, mroS, mroT);
+                const proto::ProtoList* chain = ctx->newList();
+                for (unsigned long j = 1; j < mro->getSize(ctx); ++j) {
+                    const proto::ProtoObject* p = mro->getAt(ctx, static_cast<int>(j));
+                    if (p && p != node && p != PROTO_NONE) {
+                        chain = chain->appendLast(ctx, p);
+                    }
+                }
+                const_cast<proto::ProtoObject*>(node)->proto::ProtoObject::setParents(ctx, chain);
+            };
+            auto rollbackAll = [&]() {
+                for (auto it = undo.rbegin(); it != undo.rend(); ++it) {
+                    if (it->oldMro) {
+                        const_cast<proto::ProtoObject*>(it->node)->proto::ProtoObject::setAttribute(
+                            ctx, mroS, it->oldMro);
+                    }
+                    // setParents accepts an empty list as "no parents";
+                    // a null oldChain would not normally occur (every
+                    // class has at least `object`), but guard it anyway.
+                    const proto::ProtoList* restoreChain =
+                        it->oldChain ? it->oldChain : ctx->newList();
+                    const_cast<proto::ProtoObject*>(it->node)->proto::ProtoObject::setParents(
+                        ctx, restoreChain);
+                }
+            };
+
+            // Mutate `obj` first so descendants see the new parent
+            // MRO during their own C3 computation.
+            applyOne(obj, newMro);
+
+            // Walk descendants (pre-order, deduped) and try to apply
+            // each.  On the first conflict, rollback everything and
+            // surface the exception.
             std::unordered_set<const proto::ProtoObject*> visited;
             visited.insert(obj);
-            std::function<void(const proto::ProtoObject*)> propagate;
-            propagate = [&](const proto::ProtoObject* parent) {
+            std::function<bool(const proto::ProtoObject*)> propagate;
+            propagate = [&](const proto::ProtoObject* parent) -> bool {
                 const proto::ProtoObject* subsObj = parent->hasOwnAttribute(ctx, subListS2) == PROTO_TRUE
                     ? parent->getAttribute(ctx, subListS2) : nullptr;
                 const proto::ProtoList* subs = subsObj ? subsObj->asList(ctx) : nullptr;
-                if (!subs) return;
+                if (!subs) return true;
                 for (unsigned long i = 0; i < subs->getSize(ctx); ++i) {
                     const proto::ProtoObject* sub = subs->getAt(ctx, static_cast<int>(i));
                     if (!sub || sub == PROTO_NONE) continue;
@@ -23319,45 +23379,17 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                     const proto::ProtoList* subMro =
                         protoPython::builtins::computeC3MRO(ctx, sub, subBases);
                     if (!subMro) {
-                        if (hasPendingException()) clearPendingException();
-                        continue;
+                        return false; // exception is pending
                     }
-                    // STRUCT-84: write-through both views — cached tuple
-                    // for raw consumers, parent chain for the descriptor
-                    // and chain-walking attribute lookups.  Same source.
-                    const proto::ProtoObject* subMroT = ctx->newTupleFromList(subMro)->asObject(ctx);
-                    const_cast<proto::ProtoObject*>(sub)->proto::ProtoObject::setAttribute(
-                        ctx, mroS, subMroT);
-                    const proto::ProtoList* subChain = ctx->newList();
-                    for (unsigned long j = 1; j < subMro->getSize(ctx); ++j) {
-                        const proto::ProtoObject* p = subMro->getAt(ctx, static_cast<int>(j));
-                        if (p && p != sub && p != PROTO_NONE) {
-                            subChain = subChain->appendLast(ctx, p);
-                        }
-                    }
-                    const_cast<proto::ProtoObject*>(sub)->proto::ProtoObject::setParents(ctx, subChain);
-                    propagate(sub);
+                    applyOne(sub, subMro);
+                    if (!propagate(sub)) return false;
                 }
+                return true;
             };
-            propagate(obj);
-
-            // STRUCT-56 (revised) + STRUCT-84: replace the protoCore
-            // parent chain wholesale with the full C3 MRO[1:] (not just
-            // the new direct bases).  Earlier the setter passed only
-            // `new_bases` to `setParents` while py_type passed the full
-            // C3 MRO[1:]; after STRUCT-83 made py_type_get_mro read the
-            // chain directly, this divergence caused transitive
-            // ancestors (grand-bases, diamond shoulders) to disappear
-            // from `cls.__mro__` after `__bases__` reassignment.  Seed
-            // identically to py_type so the chain == MRO[1:] exactly.
-            const proto::ProtoList* parentsList = ctx->newList();
-            for (unsigned long i = 1; i < newMro->getSize(ctx); ++i) {
-                const proto::ProtoObject* p = newMro->getAt(ctx, static_cast<int>(i));
-                if (p && p != obj && p != PROTO_NONE) {
-                    parentsList = parentsList->appendLast(ctx, p);
-                }
+            if (!propagate(obj)) {
+                rollbackAll();
+                return nullptr; // TypeError raised in descendant's computeC3MRO
             }
-            const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setParents(ctx, parentsList);
         }
         // STRUCT-45: propagate __bases__ reassignment to the affected
         // bases' `__subclasses_list__` slots.  CPython rewrites
