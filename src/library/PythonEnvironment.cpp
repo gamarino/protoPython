@@ -1135,6 +1135,43 @@ static const proto::ProtoObject* py_descriptor_repr(
     return proto::ProtoString::fromUTF8String(context, out.c_str())->asObject(context);
 }
 
+// fget helpers for the numeric .real / .imag descriptors.  py_getset_get
+// invokes them as `fget(instance)` with the number as `self`.
+// int/float: .real is the number itself, .imag is zero.  complex stores
+// its components as own attributes (BuiltinsModule py_complex), so the
+// member descriptor reads them back.
+static const proto::ProtoObject* py_number_real_get(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return self ? self : PROTO_NONE;
+}
+static const proto::ProtoObject* py_int_imag_get(
+    proto::ProtoContext* context, const proto::ProtoObject*,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return context->fromLong(0);
+}
+static const proto::ProtoObject* py_float_imag_get(
+    proto::ProtoContext* context, const proto::ProtoObject*,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return context->fromDouble(0.0);
+}
+static const proto::ProtoObject* py_complex_real_get(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    if (!self) return PROTO_NONE;
+    const proto::ProtoObject* v = self->getAttribute(context,
+        PythonEnvironment::getInternedString(context, "real"));
+    return v ? v : context->fromDouble(0.0);
+}
+static const proto::ProtoObject* py_complex_imag_get(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    if (!self) return PROTO_NONE;
+    const proto::ProtoObject* v = self->getAttribute(context,
+        PythonEnvironment::getInternedString(context, "imag"));
+    return v ? v : context->fromDouble(0.0);
+}
+
 static const proto::ProtoObject* py_object_hash(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -16865,6 +16902,15 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     };
     methodDescriptorPrototype = initDescriptorTypeProto("method_descriptor");
     wrapperDescriptorPrototype = initDescriptorTypeProto("wrapper_descriptor");
+    // member_descriptor — CPython's type for struct-member slots like
+    // `complex.real`.  Reuses py_getset_get for __get__ (its instances
+    // carry an `fget`); read-only (no __set__) so it stays a non-data
+    // descriptor and an instance's own attribute still wins.
+    {
+        const proto::ProtoObject* p = initDescriptorTypeProto("member_descriptor");
+        p = p->setAttribute(rootContext_, getDunderString, rootContext_->fromMethod(nullptr, py_getset_get));
+        memberDescriptorPrototype = p;
+    }
 
 
     // Register __dict__ on type as a property/descriptor (STEP 15502 FIX)
@@ -19367,6 +19413,53 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         this->methodPrototype = const_cast<proto::ProtoObject*>(methodPrototype);
         this->functionPrototype = const_cast<proto::ProtoObject*>(functionPrototype);
     };
+
+    // Numeric .real / .imag descriptors.  CPython exposes `complex.real`
+    // as a member_descriptor and `float.real` / `int.real` as
+    // getset_descriptors (test_qualname asserts on type() of each).  Each
+    // carries fget + __name__ / __qualname__ / __objclass__ / __doc__.
+    // No fset → read-only non-data descriptors, so a complex instance's
+    // own `real` / `imag` attribute still wins on access.  Built on the
+    // local prototypes before syncCorePrototypes() so the sync picks
+    // them up.
+    {
+        auto makeNumDescr = [&](const proto::ProtoObject* descrProto,
+                                const proto::ProtoObject* owner,
+                                const char* ownerName, const char* attrName,
+                                proto::ProtoMethod fget, const char* doc)
+                                -> const proto::ProtoObject* {
+            proto::ProtoObject* d = const_cast<proto::ProtoObject*>(descrProto->newChild(rootContext_, true));
+            d->setAttribute(rootContext_, py_class, const_cast<proto::ProtoObject*>(descrProto));
+            d->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fget"),
+                            rootContext_->fromMethod(nullptr, fget));
+            d->setAttribute(rootContext_, py_name,
+                            PythonEnvironment::getInternedString(rootContext_, attrName)->asObject(rootContext_));
+            std::string qn = std::string(ownerName) + "." + attrName;
+            d->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"),
+                            PythonEnvironment::getInternedString(rootContext_, qn.c_str())->asObject(rootContext_));
+            d->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__objclass__"),
+                            const_cast<proto::ProtoObject*>(owner));
+            d->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__doc__"),
+                            PythonEnvironment::getInternedString(rootContext_, doc)->asObject(rootContext_));
+            return d;
+        };
+        const proto::ProtoString* realS = PythonEnvironment::getInternedString(rootContext_, "real");
+        const proto::ProtoString* imagS = PythonEnvironment::getInternedString(rootContext_, "imag");
+        const char* realDoc = "the real part of a complex number";
+        const char* imagDoc = "the imaginary part of a complex number";
+        intPrototype = intPrototype->setAttribute(rootContext_, realS,
+            makeNumDescr(getSetDescriptorPrototype, intPrototype, "int", "real", py_number_real_get, realDoc));
+        intPrototype = intPrototype->setAttribute(rootContext_, imagS,
+            makeNumDescr(getSetDescriptorPrototype, intPrototype, "int", "imag", py_int_imag_get, imagDoc));
+        floatPrototype = floatPrototype->setAttribute(rootContext_, realS,
+            makeNumDescr(getSetDescriptorPrototype, floatPrototype, "float", "real", py_number_real_get, realDoc));
+        floatPrototype = floatPrototype->setAttribute(rootContext_, imagS,
+            makeNumDescr(getSetDescriptorPrototype, floatPrototype, "float", "imag", py_float_imag_get, imagDoc));
+        complexPrototype = complexPrototype->setAttribute(rootContext_, realS,
+            makeNumDescr(memberDescriptorPrototype, complexPrototype, "complex", "real", py_complex_real_get, realDoc));
+        complexPrototype = complexPrototype->setAttribute(rootContext_, imagS,
+            makeNumDescr(memberDescriptorPrototype, complexPrototype, "complex", "imag", py_complex_imag_get, imagDoc));
+    }
 
     syncCorePrototypes();
 
