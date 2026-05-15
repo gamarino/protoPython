@@ -16802,6 +16802,27 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
     }
 
+    // method_descriptor / wrapper_descriptor prototypes.  Native methods
+    // on a class prototype are bare tagged-pointer cells with no type
+    // identity; getType() routes them here via the side-table so that
+    // `type(str.lower).__name__` is 'method_descriptor' and
+    // `type(int.__add__).__name__` is 'wrapper_descriptor' (CPython parity).
+    auto initDescriptorTypeProto = [&](const char* nm) -> const proto::ProtoObject* {
+        const proto::ProtoObject* p = objectPrototype->newChild(rootContext_, true);
+        p = p->setAttribute(rootContext_, py_class, typePrototype);
+        p = p->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, nm)->asObject(rootContext_));
+        p = p->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"),
+                            PythonEnvironment::getInternedString(rootContext_, nm)->asObject(rootContext_));
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(rootContext_, "__mro__");
+        const proto::ProtoList* mroList = rootContext_->newList()
+            ->appendLast(rootContext_, p)
+            ->appendLast(rootContext_, objectPrototype);
+        p = p->setAttribute(rootContext_, mroS, rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
+        return p;
+    };
+    methodDescriptorPrototype = initDescriptorTypeProto("method_descriptor");
+    wrapperDescriptorPrototype = initDescriptorTypeProto("wrapper_descriptor");
+
 
     // Register __dict__ on type as a property/descriptor (STEP 15502 FIX)
     // We create an instance of getset_descriptor and set its fget to py_type_get_dict
@@ -21406,6 +21427,26 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
         }
 
         if (!res) {
+            // Unbound native method cell (e.g. `str.lower`, `int.__add__`
+            // resolved off the class): route to its descriptor type so
+            // `type()` matches CPython.  Only KNOWN methods (registered in
+            // the side-table) and only unbound ones (asMethodSelf == null)
+            // are reclassified — bound method cells fall through unchanged,
+            // and an unregistered cell keeps the legacy objectPrototype
+            // result.  protoPython does not model builtin_function_or_method
+            // / method-wrapper, so bound cells stay as-is.
+            if (obj->isMethod(ctx) && obj->asMethodSelf(ctx) == nullptr) {
+                proto::ProtoMethod fn = obj->asMethod(ctx);
+                std::string mnm;
+                const proto::ProtoObject* owner = nullptr;
+                NativeMethodInfo::Kind kind = NativeMethodInfo::Kind::METHOD;
+                if (fn && lookupNativeMethodInfo(reinterpret_cast<const void*>(fn), mnm, &owner, &kind)) {
+                    res = (kind == NativeMethodInfo::Kind::WRAPPER)
+                        ? wrapperDescriptorPrototype : methodDescriptorPrototype;
+                }
+            }
+        }
+        if (!res) {
             if (this->isActuallyAClass(ctx, obj)) res = getTypePrototype();
             else {
                 // Use getFirstParent (mutable-aware, allocation-free) instead
@@ -25087,22 +25128,56 @@ bool PythonEnvironment::handleExhaustion(proto::ProtoContext* ctx) {
 
 // STRUCT-1: native-method introspection side table.
 void PythonEnvironment::recordNativeMethodName(const void* fnPtr,
-        const std::string& name, const proto::ProtoObject* owningClass) {
+        const std::string& name, const proto::ProtoObject* owningClass,
+        NativeMethodInfo::Kind kind) {
     if (!fnPtr) return;
     // First registration wins — a method is canonically known by the
     // name it was first bound under (mirrors CPython's tp_methods table).
     if (nativeMethodNames_.find(fnPtr) != nativeMethodNames_.end()) return;
-    nativeMethodNames_[fnPtr] = NativeMethodInfo{ name, owningClass };
+    nativeMethodNames_[fnPtr] = NativeMethodInfo{ name, owningClass, kind };
 }
 
 bool PythonEnvironment::lookupNativeMethodInfo(const void* fnPtr,
-        std::string& outName, const proto::ProtoObject** outOwningClass) const {
+        std::string& outName, const proto::ProtoObject** outOwningClass,
+        NativeMethodInfo::Kind* outKind) const {
     if (!fnPtr) return false;
     auto it = nativeMethodNames_.find(fnPtr);
     if (it == nativeMethodNames_.end()) return false;
     outName = it->second.name;
     if (outOwningClass) *outOwningClass = it->second.owningClass;
+    if (outKind) *outKind = it->second.kind;
     return true;
+}
+
+// True when a native method's name is a CPython "type slot" dunder — it
+// is then a wrapper_descriptor (e.g. int.__add__, object.__init__); every
+// other native method on a class is a method_descriptor (e.g. str.lower).
+// __new__ is excluded — CPython exposes it as a plain function, not a
+// slot wrapper.
+static bool isSlotDunderName(const std::string& name) {
+    static const std::unordered_set<std::string> slotDunders = {
+        "__init__", "__del__", "__repr__", "__str__", "__bytes__",
+        "__format__", "__lt__", "__le__", "__eq__", "__ne__", "__gt__",
+        "__ge__", "__hash__", "__call__", "__getattr__", "__getattribute__",
+        "__setattr__", "__delattr__", "__dir__", "__get__", "__set__",
+        "__delete__", "__set_name__", "__len__", "__getitem__",
+        "__setitem__", "__delitem__", "__iter__", "__next__",
+        "__reversed__", "__contains__", "__add__", "__sub__", "__mul__",
+        "__matmul__", "__truediv__", "__floordiv__", "__mod__",
+        "__divmod__", "__pow__", "__lshift__", "__rshift__", "__and__",
+        "__xor__", "__or__", "__radd__", "__rsub__", "__rmul__",
+        "__rmatmul__", "__rtruediv__", "__rfloordiv__", "__rmod__",
+        "__rdivmod__", "__rpow__", "__rlshift__", "__rrshift__",
+        "__rand__", "__rxor__", "__ror__", "__iadd__", "__isub__",
+        "__imul__", "__imatmul__", "__itruediv__", "__ifloordiv__",
+        "__imod__", "__ipow__", "__ilshift__", "__irshift__", "__iand__",
+        "__ixor__", "__ior__", "__neg__", "__pos__", "__abs__",
+        "__invert__", "__complex__", "__int__", "__float__", "__index__",
+        "__round__", "__trunc__", "__floor__", "__ceil__", "__enter__",
+        "__exit__", "__await__", "__aiter__", "__anext__", "__aenter__",
+        "__aexit__", "__bool__", "__length_hint__",
+    };
+    return slotDunders.count(name) != 0;
 }
 
 void PythonEnvironment::registerNativeMethodNames(proto::ProtoContext* ctx) {
@@ -25131,7 +25206,10 @@ void PythonEnvironment::registerNativeMethodNames(proto::ProtoContext* ctx) {
                 if (fn) {
                     std::string nm;
                     keyObj->asString(ctx)->toUTF8String(ctx, nm);
-                    recordNativeMethodName(reinterpret_cast<const void*>(fn), nm, proto);
+                    recordNativeMethodName(reinterpret_cast<const void*>(fn), nm, proto,
+                                           isSlotDunderName(nm)
+                                               ? NativeMethodInfo::Kind::WRAPPER
+                                               : NativeMethodInfo::Kind::METHOD);
                 }
             }
             it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));

@@ -1056,8 +1056,12 @@ private:
     const proto::ProtoObject* cellPrototype;
     const proto::ProtoObject* codePrototype;
     const proto::ProtoObject* getSetDescriptorPrototype;
-    
+    const proto::ProtoObject* methodDescriptorPrototype{nullptr};
+    const proto::ProtoObject* wrapperDescriptorPrototype{nullptr};
+
 public:
+    const proto::ProtoObject* getMethodDescriptorPrototype() const { return methodDescriptorPrototype; }
+    const proto::ProtoObject* getWrapperDescriptorPrototype() const { return wrapperDescriptorPrototype; }
     const proto::ProtoObject* getUnionTypePrototype() const { return unionTypePrototype; }
     const proto::ProtoObject* getStopAsyncIterationType() const { return stopAsyncIterationType; }
     /** Process-singleton "unbound local" sentinel.  Compiler stores this
@@ -1345,16 +1349,24 @@ private:
     struct NativeMethodInfo {
         std::string name;
         const proto::ProtoObject* owningClass;
+        // Descriptor taxonomy: a native method bound on a class prototype
+        // is either a method_descriptor (regular method — str.lower) or a
+        // wrapper_descriptor (type-slot dunder — int.__add__).  Drives
+        // getType() / repr() so they match CPython.
+        enum class Kind { METHOD, WRAPPER };
+        Kind kind{Kind::METHOD};
     };
     std::unordered_map<const void*, NativeMethodInfo> nativeMethodNames_;
 public:
-    /** Record a native method fn-pointer -> (name, owning class). */
+    /** Record a native method fn-pointer -> (name, owning class, kind). */
     void recordNativeMethodName(const void* fnPtr, const std::string& name,
-                                 const proto::ProtoObject* owningClass);
+                                 const proto::ProtoObject* owningClass,
+                                 NativeMethodInfo::Kind kind = NativeMethodInfo::Kind::METHOD);
     /** Look up the registered name for a native ProtoMethod fn-pointer.
-     *  Returns nullptr in outName when unknown. */
+     *  Returns false when unknown.  outKind is optional. */
     bool lookupNativeMethodInfo(const void* fnPtr, std::string& outName,
-                                 const proto::ProtoObject** outOwningClass) const;
+                                 const proto::ProtoObject** outOwningClass,
+                                 NativeMethodInfo::Kind* outKind = nullptr) const;
     /** One-time post-bootstrap walk: scan every built-in prototype's
      *  own attributes and register each native-method value. */
     void registerNativeMethodNames(proto::ProtoContext* ctx);
