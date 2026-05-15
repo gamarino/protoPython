@@ -23053,6 +23053,30 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
         }
     }
 
+    // STRUCT-48: `Cls.__name__ = 42` must raise — CPython rejects
+    // non-string assignment with `TypeError: can only assign string
+    // to <class>.__name__, not 'X'`.  Same for `__qualname__`.  The
+    // check fires for any class object (heap or built-in); built-in
+    // immutables were already blocked by STRUCT-47 with the
+    // immutable-type message.
+    if (name && value && value != PROTO_NONE && isActuallyAClass(ctx, obj)) {
+        std::string nm; name->toUTF8String(ctx, nm);
+        if ((nm == "__name__" || nm == "__qualname__") && !value->isString(ctx)) {
+            std::string clsName = "?";
+            const proto::ProtoObject* cn = obj->getAttribute(ctx, getInternedString(ctx, "__name__"));
+            if (cn && cn->isString(ctx)) cn->asString(ctx)->toUTF8String(ctx, clsName);
+            std::string valKind = "object";
+            const proto::ProtoObject* vt = getType(ctx, value);
+            if (vt) {
+                const proto::ProtoObject* vn = vt->getAttribute(ctx, getInternedString(ctx, "__name__"));
+                if (vn && vn->isString(ctx)) vn->asString(ctx)->toUTF8String(ctx, valKind);
+            }
+            raiseTypeError(ctx,
+                "can only assign string to " + clsName + "." + nm + ", not '" + valKind + "'");
+            return nullptr;
+        }
+    }
+
     // CPython: instances of `object` itself have no __dict__ and
     // reject attribute assignment entirely.  Detect by checking
     // type(obj) IS objectPrototype (exact, not a subclass).  Skip
