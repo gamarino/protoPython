@@ -59,6 +59,7 @@
 #include <mutex>
 #include <vector>
 #include <unordered_set>
+#include <functional>
 #include <execinfo.h>
 #include <cstring>
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
@@ -23043,6 +23044,48 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
             const proto::ProtoObject* mroTuple = ctx->newTupleFromList(newMro)->asObject(ctx);
             const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setAttribute(
                 ctx, getInternedString(ctx, "__mro__"), mroTuple);
+
+            // STRUCT-55: propagate the MRO change recursively to every
+            // descendant.  Without this, `E(D)` (where D is the class
+            // whose __bases__ we just rewrote) keeps its stale __mro__
+            // and `e.meth()` resolves against the old chain.  Walk
+            // each subclass's own `__bases__` and recompute its MRO;
+            // recurse via __subclasses_list__.  Use a visited set to
+            // protect against cycles (subclass-of-subclass diamonds).
+            const proto::ProtoString* subListS2 =
+                getInternedString(ctx, "__subclasses_list__");
+            const proto::ProtoString* basesS2 =
+                getInternedString(ctx, "__bases__");
+            const proto::ProtoString* mroS =
+                getInternedString(ctx, "__mro__");
+            std::unordered_set<const proto::ProtoObject*> visited;
+            visited.insert(obj);
+            std::function<void(const proto::ProtoObject*)> propagate;
+            propagate = [&](const proto::ProtoObject* parent) {
+                const proto::ProtoObject* subsObj = parent->hasOwnAttribute(ctx, subListS2) == PROTO_TRUE
+                    ? parent->getAttribute(ctx, subListS2) : nullptr;
+                const proto::ProtoList* subs = subsObj ? subsObj->asList(ctx) : nullptr;
+                if (!subs) return;
+                for (unsigned long i = 0; i < subs->getSize(ctx); ++i) {
+                    const proto::ProtoObject* sub = subs->getAt(ctx, static_cast<int>(i));
+                    if (!sub || sub == PROTO_NONE) continue;
+                    if (visited.count(sub)) continue;
+                    visited.insert(sub);
+                    const proto::ProtoObject* subBases = sub->getAttribute(ctx, basesS2);
+                    if (!subBases || subBases == PROTO_NONE) continue;
+                    const proto::ProtoList* subMro =
+                        protoPython::builtins::computeC3MRO(ctx, sub, subBases);
+                    if (!subMro) {
+                        if (hasPendingException()) clearPendingException();
+                        continue;
+                    }
+                    const proto::ProtoObject* subMroT = ctx->newTupleFromList(subMro)->asObject(ctx);
+                    const_cast<proto::ProtoObject*>(sub)->proto::ProtoObject::setAttribute(
+                        ctx, mroS, subMroT);
+                    propagate(sub);
+                }
+            };
+            propagate(obj);
         }
         // STRUCT-45: propagate __bases__ reassignment to the affected
         // bases' `__subclasses_list__` slots.  CPython rewrites
