@@ -7349,11 +7349,51 @@ const proto::ProtoObject* executeBytecodeRange(
                                 }
                                 if (isSub) {
                                     bestMeta = baseMeta;
+                                } else {
+                                    // STRUCT-37: neither bestMeta is a sub
+                                    // of baseMeta (checked above via the
+                                    // baseMeta->__mro__ walk) nor is
+                                    // baseMeta a sub of bestMeta — verify
+                                    // by walking bestMeta's MRO for baseMeta;
+                                    // if absent in *both* directions we
+                                    // have a metaclass conflict.
+                                    bool bestIsSubOfBase = false;
+                                    const proto::ProtoObject* bmro = bestMeta->getAttribute(ctx,
+                                        PythonEnvironment::getInternedString(ctx, "__mro__"));
+                                    const proto::ProtoTuple* bmroT = bmro ? bmro->asTuple(ctx) : nullptr;
+                                    if (!bmroT && bmro) {
+                                        const proto::ProtoObject* d = env
+                                            ? env->getAttribute(ctx, bmro, env->getDataString(), false)
+                                            : bmro->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__data__"));
+                                        if (d) bmroT = d->asTuple(ctx);
+                                    }
+                                    if (bmroT) {
+                                        for (size_t j = 0; j < bmroT->getSize(ctx); ++j) {
+                                            if (areSameClassesVM(ctx, bmroT->getAt(ctx, j), baseMeta)) {
+                                                bestIsSubOfBase = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if (!bestIsSubOfBase) {
+                                        if (env) env->raiseTypeError(ctx,
+                                            "metaclass conflict: the metaclass of a derived class "
+                                            "must be a (non-strict) subclass of the metaclasses of "
+                                            "all its bases");
+                                        bestMeta = nullptr;
+                                        break;
+                                    }
                                 }
                             } else if (!bestMeta && baseMeta) {
                                 bestMeta = baseMeta;
                             }
                         }
+                    }
+                    if (!bestMeta && env && env->hasPendingException()) {
+                        // Metaclass conflict raised — unwind through the
+                        // dispatch loop's exception handling.
+                        i = next_i;
+                        continue;
                     }
                     metaclass = bestMeta;
                 }
@@ -7535,7 +7575,27 @@ const proto::ProtoObject* executeBytecodeRange(
 
                 // 4. Invoke metaclass to create the class
                 const proto::ProtoList* mcArgs = ctx->newList()->appendLast(ctx, name)->appendLast(ctx, bases)->appendLast(ctx, ns);
-                const proto::ProtoSparseList* kw = (kwds && kwds->asSparseList(ctx)) ? kwds->asSparseList(ctx) : nullptr;
+                // STRUCT-37: strip `metaclass` from kwds before forwarding
+                // to the metaclass call.  CPython's __build_class__
+                // consumes `metaclass` itself (used only to *pick* the
+                // metaclass) and never forwards it.  Passing it through
+                // duplicates it with the metaclass argument resolved
+                // here, yielding `__new__() got multiple values for
+                // argument 'metaclass'` in user metaclasses that don't
+                // accept arbitrary kwargs.  Other kwargs (PEP 487
+                // __init_subclass__ extras like `cls_kw=value`) are
+                // forwarded unchanged.
+                const proto::ProtoSparseList* kw = nullptr;
+                if (kwds && kwds->asSparseList(ctx)) {
+                    const proto::ProtoSparseList* rawKw = kwds->asSparseList(ctx);
+                    const proto::ProtoString* metaKey =
+                        PythonEnvironment::getInternedString(ctx, "metaclass");
+                    if (rawKw->has(ctx, metaKey->getHash(ctx))) {
+                        kw = rawKw->removeAt(ctx, metaKey->getHash(ctx));
+                    } else {
+                        kw = rawKw;
+                    }
+                }
                 if (diag_local) fprintf(stderr, "DEBUG OP_BUILD_CLASS: calling metaclass=%p\n", (void*)metaclass);
                 const proto::ProtoObject* targetClass = invokeCallable(ctx, metaclass, mcArgs, kw);
                 if (diag_local) fprintf(stderr, "DEBUG OP_BUILD_CLASS: targetClass=%p\n", (void*)targetClass);
