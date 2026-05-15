@@ -1045,6 +1045,56 @@ static const proto::ProtoObject* py_type_del_annotations(
     return PROTO_NONE;
 }
 
+// STRUCT-90: getset descriptor trio for module.__name__.  CPython
+// exposes `__name__` as a data descriptor on module objects (not as
+// an own attribute on the prototype) so bare uninitialised modules —
+// `M.__new__(M)` — have no `__name__` attribute and `hasattr(m,
+// "__name__")` is False until the module is actually initialised.
+// Previously protoPython installed `__name__ = "module"` on
+// modulePrototype as an own attribute; the chain walk on a bare
+// instance leaked that "module" value, breaking
+// test_uninitialized_modules.
+static const proto::ProtoObject* py_module_get_name(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!self || !env) return PROTO_NONE;
+    const proto::ProtoString* nmS = env->getNameString();
+    if (self->hasOwnAttribute(context, nmS) == PROTO_TRUE) {
+        return self->getAttribute(context, nmS);
+    }
+    env->raiseAttributeError(context, self, "__name__");
+    return nullptr;
+}
+
+static const proto::ProtoObject* py_module_set_name(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList*) {
+    if (!self || !args || args->getSize(context) < 2) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoString* nmS = env ? env->getNameString()
+        : PythonEnvironment::getInternedString(context, "__name__");
+    const proto::ProtoObject* value = args->getAt(context, 1);
+    const_cast<proto::ProtoObject*>(self)->proto::ProtoObject::setAttribute(context, nmS, value);
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_module_del_name(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    if (!self) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoString* nmS = env ? env->getNameString()
+        : PythonEnvironment::getInternedString(context, "__name__");
+    const_cast<proto::ProtoObject*>(self)->proto::ProtoObject::removeAttribute(context, nmS);
+    return PROTO_NONE;
+}
+
 // Returns the CPython name of an immutable built-in type prototype, or
 // nullptr for heap (user-defined) classes.  Mirrors the inline list in
 // setAttribute's __bases__ guard — used by the type.__doc__ getset
@@ -19569,7 +19619,12 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // 4.5 Initialize modulePrototype
     modulePrototype = objectPrototype->newChild(rootContext_, true);
     modulePrototype = modulePrototype->setAttribute(rootContext_, getClassString(), typePrototype);
-    modulePrototype = modulePrototype->setAttribute(rootContext_, getNameString(), PythonEnvironment::getInternedString(rootContext_, "module")->asObject(rootContext_));
+    // STRUCT-90: `__name__` is a getset descriptor on modulePrototype
+    // rather than an own-attribute "module".  An uninitialised module
+    // instance (`M.__new__(M)`) has no own `__name__`, the descriptor's
+    // fget raises AttributeError → `hasattr(m, "__name__") is False`.
+    // The descriptor is installed below after getSetDescriptorPrototype
+    // is ready in this same init pass.
     modulePrototype = modulePrototype->setAttribute(rootContext_, getModuleString(), builtinsVal);
     // Register items()/keys()/update() so that module.__dict__.items() / .update() works
     // (module.__dict__ = module itself, so these are called on the module directly)
@@ -19582,6 +19637,32 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             ->appendLast(rootContext_, objectPrototype);
         modulePrototype = modulePrototype->setAttribute(rootContext_, mroS,
             rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
+    }
+    // STRUCT-90: install __name__ as a getset descriptor on
+    // modulePrototype.  The fget raises AttributeError when the
+    // module has no own __name__ — matching CPython's behaviour for
+    // uninitialised module instances (`M.__new__(M)`).
+    {
+        const proto::ProtoString* nameS = getNameString();
+        proto::ProtoObject* nameDescr = const_cast<proto::ProtoObject*>(
+            getSetDescriptorPrototype->newChild(rootContext_, true));
+        const proto::ProtoString* pyNameKey =
+            PythonEnvironment::getInternedString(rootContext_, "__name__");
+        nameDescr->setAttribute(rootContext_, getClassString(), getSetDescriptorPrototype);
+        nameDescr->setAttribute(rootContext_,
+            PythonEnvironment::getInternedString(rootContext_, "fget"),
+            rootContext_->fromMethod(nullptr, py_module_get_name));
+        nameDescr->setAttribute(rootContext_,
+            PythonEnvironment::getInternedString(rootContext_, "fset"),
+            rootContext_->fromMethod(nullptr, py_module_set_name));
+        nameDescr->setAttribute(rootContext_,
+            PythonEnvironment::getInternedString(rootContext_, "fdel"),
+            rootContext_->fromMethod(nullptr, py_module_del_name));
+        nameDescr->setAttribute(rootContext_, pyNameKey, nameS->asObject(rootContext_));
+        nameDescr->setAttribute(rootContext_,
+            PythonEnvironment::getInternedString(rootContext_, "__objclass__"),
+            modulePrototype);
+        modulePrototype = modulePrototype->setAttribute(rootContext_, nameS, nameDescr);
     }
     modulePrototype = modulePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "items"),
         rootContext_->fromMethod(nullptr, py_module_items));
