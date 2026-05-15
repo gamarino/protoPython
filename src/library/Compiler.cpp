@@ -3942,7 +3942,9 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     // Build *this* function's qualname from the current prefix, then push
     // "<thisQualname>.<locals>" as the prefix the body sees so any nested
     // defs inside compose correctly.
-    std::string fnQualname = qualnamePrefix_.empty()
+    // A `global`-declared name binds at module scope, so CPython gives
+    // it a bare __qualname__ with no enclosing `<locals>` prefix.
+    std::string fnQualname = (qualnamePrefix_.empty() || globalNames_.count(n->name))
         ? n->name
         : qualnamePrefix_ + "." + n->name;
     bodyCompiler.qualnamePrefix_ = fnQualname + ".<locals>";
@@ -4720,7 +4722,9 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     bodyCompiler.isClassBody_ = true;
     bodyCompiler.currentClassName_ = n->name;
     // PI: compute and propagate __qualname__ prefix for nested classes.
-    std::string thisQualname = qualnamePrefix_.empty()
+    // A `global`-declared class binds at module scope, so CPython gives
+    // it a bare __qualname__ with no enclosing `<locals>` prefix.
+    std::string thisQualname = (qualnamePrefix_.empty() || globalNames_.count(n->name))
         ? n->name
         : qualnamePrefix_ + "." + n->name;
     bodyCompiler.qualnamePrefix_ = thisQualname;
