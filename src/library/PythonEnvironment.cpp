@@ -23150,6 +23150,69 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                     "can only assign non-empty tuple to __bases__");
                 return nullptr;
             }
+
+            // STRUCT-87: pre-validate the new bases tuple for duplicate
+            // entries and inheritance cycles BEFORE handing off to
+            // computeC3MRO.  Without this gate, both cases surfaced as
+            // the generic "Cannot create a consistent method resolution
+            // order" error, breaking test_mutable_bases which expects
+            // the specific CPython messages.
+            const proto::ProtoString* nmS = getNameString();
+            auto classNameOf = [&](const proto::ProtoObject* c) -> std::string {
+                if (!c) return std::string("?");
+                const proto::ProtoObject* nm = c->getAttribute(ctx, nmS);
+                std::string out;
+                if (nm && nm->isString(ctx)) {
+                    nm->asString(ctx)->toUTF8String(ctx, out);
+                    return out;
+                }
+                return std::string("?");
+            };
+            // (a) duplicate-base scan: pointer-identity duplicates in the
+            // new tuple are illegal regardless of MRO.
+            for (unsigned long i = 0; i < vtup->getSize(ctx); ++i) {
+                const proto::ProtoObject* a = vtup->getAt(ctx, static_cast<int>(i));
+                for (unsigned long j = i + 1; j < vtup->getSize(ctx); ++j) {
+                    const proto::ProtoObject* b = vtup->getAt(ctx, static_cast<int>(j));
+                    if (a && a == b) {
+                        raiseTypeError(ctx,
+                            "duplicate base class '" + classNameOf(a) + "'");
+                        return nullptr;
+                    }
+                }
+            }
+            // (b) inheritance-cycle scan: cls itself in the new bases, or
+            // any transitive subclass of cls (walked via the
+            // __subclasses_list__ tree), would introduce a cycle.
+            std::unordered_set<const proto::ProtoObject*> descendants;
+            descendants.insert(obj);
+            {
+                const proto::ProtoString* subLS =
+                    getInternedString(ctx, "__subclasses_list__");
+                std::function<void(const proto::ProtoObject*)> walk;
+                walk = [&](const proto::ProtoObject* node) {
+                    const proto::ProtoObject* lst = node->hasOwnAttribute(ctx, subLS) == PROTO_TRUE
+                        ? node->getAttribute(ctx, subLS) : nullptr;
+                    const proto::ProtoList* lsts = lst ? lst->asList(ctx) : nullptr;
+                    if (!lsts) return;
+                    for (unsigned long i = 0; i < lsts->getSize(ctx); ++i) {
+                        const proto::ProtoObject* sub = lsts->getAt(ctx, static_cast<int>(i));
+                        if (!sub || sub == PROTO_NONE) continue;
+                        if (descendants.count(sub)) continue;
+                        descendants.insert(sub);
+                        walk(sub);
+                    }
+                };
+                walk(obj);
+            }
+            for (unsigned long i = 0; i < vtup->getSize(ctx); ++i) {
+                const proto::ProtoObject* nb = vtup->getAt(ctx, static_cast<int>(i));
+                if (nb && descendants.count(nb)) {
+                    raiseTypeError(ctx,
+                        "a __bases__ item causes an inheritance cycle");
+                    return nullptr;
+                }
+            }
         }
 
         // CPython: a __bases__ assignment is also rejected when any new
