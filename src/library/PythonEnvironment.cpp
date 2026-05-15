@@ -17332,6 +17332,15 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     getSetDescriptorPrototype = getSetDescriptorPrototype->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "getset_descriptor")->asObject(rootContext_));
     getSetDescriptorPrototype = getSetDescriptorPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "getset_descriptor")->asObject(rootContext_));
     getSetDescriptorPrototype = getSetDescriptorPrototype->setAttribute(rootContext_, py_repr, PythonEnvironment::getInternedString(rootContext_, "<getset_descriptor>")->asObject(rootContext_)); // Placeholder
+    // STRUCT-96: descriptor instances default `__doc__` to None when no
+    // explicit docstring was assigned.  CPython's getset_descriptor /
+    // member_descriptor / wrapper_descriptor types all expose this slot
+    // — without it, test_descrdoc raises AttributeError when probing
+    // e.g. `int.__add__.__doc__` for a wrapper_descriptor whose creator
+    // never set the docstring.  Individual descriptor instances that
+    // carry a real docstring still shadow this default.
+    getSetDescriptorPrototype = getSetDescriptorPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__doc__"), PROTO_NONE);
     getSetDescriptorPrototype = getSetDescriptorPrototype->setAttribute(rootContext_, getDunderString, rootContext_->fromMethod(nullptr, py_getset_get));
     // __set__ / __delete__ make a getset descriptor a *data* descriptor:
     // the setAttribute / OP_DELETE_ATTR data-descriptor dispatch routes
@@ -17361,6 +17370,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         p = p->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"),
                             PythonEnvironment::getInternedString(rootContext_, nm)->asObject(rootContext_));
         p = p->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_descriptor_repr));
+        // STRUCT-96: see comment on getSetDescriptorPrototype above.
+        p = p->setAttribute(rootContext_,
+            PythonEnvironment::getInternedString(rootContext_, "__doc__"), PROTO_NONE);
         const proto::ProtoString* mroS = PythonEnvironment::getInternedString(rootContext_, "__mro__");
         const proto::ProtoList* mroList = rootContext_->newList()
             ->appendLast(rootContext_, p)
