@@ -5705,7 +5705,13 @@ const proto::ProtoObject* py_type(
                     !base || base == PROTO_NONE
                     || (base != PROTO_TRUE && base != PROTO_FALSE
                         && (base->isString(context) || base->isInteger(context)
-                            || base->isFloat(context)));
+                            || base->isFloat(context)
+                            // STRUCT-38: native method/builtin function cells
+                            // are not classes — `class C(type(len)): pass`
+                            // must raise.  Without this check the cell's
+                            // `isMethod` tag escaped past the primitive
+                            // filters and was accepted as a heap base.
+                            || base->isMethod(context)));
                 if (isClearlyNotClass) {
                     env->raiseTypeError(context, "bases must be types");
                     return nullptr;
@@ -5723,6 +5729,18 @@ const proto::ProtoObject* py_type(
                 else if (env->getNotImplementedPrototype()
                          && base == env->getType(context, env->getNotImplementedPrototype()))
                     { isFinal = true; baseName = "NotImplementedType"; }
+                // STRUCT-38: slice / generator / coroutine / async_generator
+                // / range carry `Py_TPFLAGS_BASETYPE` cleared in CPython —
+                // their layouts are not subclassable.  Add explicit
+                // rejection so `class C(slice): pass` raises.
+                else if (env->getSliceType() && base == env->getSliceType())
+                    { isFinal = true; baseName = "slice"; }
+                else if (env->getGeneratorPrototype() && base == env->getGeneratorPrototype())
+                    { isFinal = true; baseName = "generator"; }
+                else if (env->getCoroutinePrototype() && base == env->getCoroutinePrototype())
+                    { isFinal = true; baseName = "coroutine"; }
+                else if (env->getAsyncGeneratorPrototype() && base == env->getAsyncGeneratorPrototype())
+                    { isFinal = true; baseName = "async_generator"; }
                 if (isFinal) {
                     env->raiseTypeError(context,
                         "type '" + baseName + "' is not an acceptable base type");
