@@ -3246,6 +3246,29 @@ static const proto::ProtoObject* py_super_getattr(
     // Get stored 'obj' and 'type' from proxy
     const proto::ProtoObject* obj = self->getAttribute(context, PythonEnvironment::getInternedString(context, "obj"));
     const proto::ProtoObject* type = self->getAttribute(context, PythonEnvironment::getInternedString(context, "type"));
+
+    // Unbound super (`super(C)`, obj is None) is not a binding proxy:
+    // CPython's super_getattro does generic getattr when su->obj is
+    // NULL.  Resolve `name` on the proxy's own parent chain
+    // ([proxy, superPrototype, object]) — so `super(C).__get__` returns
+    // the bound super.__get__ descriptor method instead of MRO-walking
+    // C's bases (which would fail).  A method is bound to the proxy.
+    if (!obj || obj == PROTO_NONE) {
+        const proto::ProtoObject* raw = self->getAttribute(context, nameObj->asString(context));
+        if (raw && raw != PROTO_NONE) {
+            if (raw->isMethod(context)) {
+                return context->fromMethod(const_cast<proto::ProtoObject*>(self), raw->asMethod(context));
+            }
+            return raw;
+        }
+        PythonEnvironment* uenv = PythonEnvironment::fromContext(context);
+        if (uenv) {
+            std::string nm; nameObj->asString(context)->toUTF8String(context, nm);
+            uenv->raiseAttributeError(context, self, nm);
+        }
+        return nullptr;
+    }
+
     if (get_env_diag()) {
         std::string name; nameObj->asString(context)->toUTF8String(context, name);
         fprintf(stderr, "DEBUG_SUPER: getattr '%s' self=%p obj=%p type=%p\n",
@@ -3519,6 +3542,54 @@ static proto::ProtoObject* make_super_proxy(proto::ProtoContext* context,
     return proxy;
 }
 
+// CPython's supercheck: a bound super `super(type, obj)` requires obj to
+// be an instance of type OR a subtype of type.  Shared by py_super_new
+// (the 2-arg constructor) and py_super_get (the descriptor rebind).
+//
+// CPython's third fallback consults obj.__class__ through the full
+// attribute protocol — a proxy with a custom __getattribute__ forwards
+// that to its wrapped object (test_proxy_super).  protoPython resolves
+// __class__ structurally, bypassing a user __getattribute__, so that
+// fallback can't be replicated faithfully: when obj's type owns a
+// __getattribute__, accept rather than risk a false positive (the
+// check's purpose is to catch obvious garbage like `super(D, 42)`).
+static bool super_obj_is_valid(proto::ProtoContext* context,
+        PythonEnvironment* venv, const proto::ProtoObject* type,
+        const proto::ProtoObject* obj) {
+    if (!venv || !type || type == PROTO_NONE || !obj || obj == PROTO_NONE) return true;
+    const proto::ProtoString* mroS = venv->getMroString();
+    auto mroHas = [&](const proto::ProtoObject* cls) -> bool {
+        if (!cls || cls == PROTO_NONE) return false;
+        if (cls == type) return true;
+        const proto::ProtoObject* mroA = mroS ? cls->getAttribute(context, mroS) : nullptr;
+        const proto::ProtoTuple* mroT = mroA ? mroA->asTuple(context) : nullptr;
+        if (mroT) {
+            for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+                if (mroT->getAt(context, static_cast<int>(i)) == type) return true;
+            }
+        }
+        return false;
+    };
+    const proto::ProtoObject* objType = venv->getType(context, obj);
+    if (mroHas(objType)) return true;   // isinstance(obj, type)
+    if (mroHas(obj)) return true;       // issubclass(obj, type) — obj is a class
+    // Proxy escape hatch: obj's type owns __getattribute__.
+    if (objType && objType != PROTO_NONE && mroS) {
+        const proto::ProtoString* gaS = PythonEnvironment::getInternedString(context, "__getattribute__");
+        const proto::ProtoObject* mroA = objType->getAttribute(context, mroS);
+        const proto::ProtoTuple* mroT = mroA ? mroA->asTuple(context) : nullptr;
+        if (mroT) {
+            for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+                const proto::ProtoObject* base = mroT->getAt(context, static_cast<int>(i));
+                if (!base || base == PROTO_NONE) continue;
+                if (base == venv->getObjectPrototype()) break;
+                if (base->hasOwnAttribute(context, gaS) == PROTO_TRUE) return true;
+            }
+        }
+    }
+    return false;
+}
+
 // superPrototype.__new__ — the `super(...)` constructor.  Invoked via
 // runUserClassCall, which prepends the class (superPrototype or a
 // `class mysuper(super)` subclass) as positionalParameters[0].  So the
@@ -3777,53 +3848,9 @@ static const proto::ProtoObject* py_super_new(
             // CPython: `super(type, obj)` requires obj to be an instance
             // of type OR a subtype of type.  `super(D, 42)` and
             // `super(D, C())` must raise TypeError.
-            //
-            // CPython's supercheck has a third fallback that consults
-            // obj.__class__ through the full attribute protocol — a
-            // proxy with a custom __getattribute__ forwards that to its
-            // wrapped object (test_proxy_super).  protoPython resolves
-            // __class__ structurally, bypassing a user __getattribute__,
-            // so that fallback can't be replicated faithfully: when
-            // obj's type defines its own __getattribute__, skip the
-            // rejection rather than risk a false positive.
             if (obj && obj != PROTO_NONE && type && type != PROTO_NONE) {
                 PythonEnvironment* venv = PythonEnvironment::fromContext(context);
-                bool ok = false;
-                if (venv) {
-                    const proto::ProtoString* mroS = venv->getMroString();
-                    auto mroHas = [&](const proto::ProtoObject* cls) -> bool {
-                        if (!cls || cls == PROTO_NONE) return false;
-                        if (cls == type) return true;
-                        const proto::ProtoObject* mroA = mroS ? cls->getAttribute(context, mroS) : nullptr;
-                        const proto::ProtoTuple* mroT = mroA ? mroA->asTuple(context) : nullptr;
-                        if (mroT) {
-                            for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
-                                if (mroT->getAt(context, static_cast<int>(i)) == type) return true;
-                            }
-                        }
-                        return false;
-                    };
-                    const proto::ProtoObject* objType = venv->getType(context, obj);
-                    // isinstance(obj, type): walk type(obj).__mro__.
-                    if (mroHas(objType)) ok = true;
-                    // issubclass(obj, type): obj itself is a class.
-                    else if (mroHas(obj)) ok = true;
-                    // Proxy escape hatch: obj's type owns __getattribute__.
-                    if (!ok && objType && objType != PROTO_NONE && mroS) {
-                        const proto::ProtoString* gaS = PythonEnvironment::getInternedString(context, "__getattribute__");
-                        const proto::ProtoObject* mroA = objType->getAttribute(context, mroS);
-                        const proto::ProtoTuple* mroT = mroA ? mroA->asTuple(context) : nullptr;
-                        if (mroT) {
-                            for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
-                                const proto::ProtoObject* base = mroT->getAt(context, static_cast<int>(i));
-                                if (!base || base == PROTO_NONE) continue;
-                                if (base == venv->getObjectPrototype()) break;
-                                if (base->hasOwnAttribute(context, gaS) == PROTO_TRUE) { ok = true; break; }
-                            }
-                        }
-                    }
-                }
-                if (!ok) {
+                if (!super_obj_is_valid(context, venv, type, obj)) {
                     if (venv) venv->raiseTypeError(context,
                         "super(type, obj): obj must be an instance or subtype of type");
                     return nullptr;
@@ -3849,6 +3876,44 @@ static const proto::ProtoObject* py_super_new(
         fprintf(stderr, "DEBUG: py_super returning PROXY for type=%s(%p) obj=%p\n", tname.c_str(), (void*)type, (void*)obj);
     }
     return make_super_proxy(context, superCls, type, obj);
+}
+
+// superPrototype.__get__(self, instance, owner) — an unbound super
+// (`super(C)`, obj is None) is a descriptor: read off an instance it
+// rebinds to `super(self.type, instance)`.  A bound super, or access
+// with instance None, returns self unchanged.  `super(D).__get__(12)` /
+// `super(D).__get__(C())` raise TypeError (same supercheck as the
+// 2-arg constructor).
+static const proto::ProtoObject* py_super_get(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* /*keywordParameters*/) {
+    if (!self) return PROTO_NONE;
+    // Reads use raw getAttribute (the proxy's __py_getattr_handler__
+    // would otherwise re-intercept).
+    const proto::ProtoObject* storedObj = self->getAttribute(context,
+        PythonEnvironment::getInternedString(context, "obj"));
+    const proto::ProtoObject* storedType = self->getAttribute(context,
+        PythonEnvironment::getInternedString(context, "type"));
+    // Already bound — CPython returns the same super object unchanged.
+    if (storedObj && storedObj != PROTO_NONE) return self;
+
+    const proto::ProtoObject* instance = (positionalParameters && positionalParameters->getSize(context) > 0)
+        ? positionalParameters->getAt(context, 0) : PROTO_NONE;
+    // Accessed off the class (instance is None) — return self unbound.
+    if (!instance || instance == PROTO_NONE) return self;
+
+    PythonEnvironment* venv = PythonEnvironment::fromContext(context);
+    if (storedType && storedType != PROTO_NONE
+        && !super_obj_is_valid(context, venv, storedType, instance)) {
+        if (venv) venv->raiseTypeError(context,
+            "super(type, obj): obj must be an instance or subtype of type");
+        return nullptr;
+    }
+    const proto::ProtoObject* superCls = venv ? venv->getType(context, self) : nullptr;
+    return make_super_proxy(context, superCls, storedType, instance);
 }
 
 /** exec(source, globals=None, locals=None): compile and run source. */
@@ -10114,6 +10179,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         superProto = superProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_super_new));
         superProto = superProto->setAttribute(ctx, pEnv->getInitString(), ctx->fromMethod(nullptr, py_super_init_noop));
         superProto = superProto->setAttribute(ctx, pEnv->getReprString(), ctx->fromMethod(nullptr, py_super_repr));
+        // super is a descriptor: an unbound super(C) rebinds to
+        // super(C, instance) when read off an instance.
+        superProto = superProto->setAttribute(ctx, pEnv->getGetDunderString(), ctx->fromMethod(nullptr, py_super_get));
         if (pEnv) pEnv->setSuperPrototype(superProto);
         builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "super"), superProto);
     }
