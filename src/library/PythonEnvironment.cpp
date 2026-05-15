@@ -939,6 +939,25 @@ static const proto::ProtoObject* py_type_get_mro(
     const proto::ProtoList* parents = self->getParents(context);
     bool chainEmpty = (!parents || parents->getSize(context) == 0);
 
+    // STRUCT-101: when the class was created with a custom
+    // metaclass.mro() override (test_altmro's PerverseMetaType is the
+    // canonical example), the stored own __mro__ may put `self` at a
+    // position other than 0 — chain reconstruction can't represent
+    // that.  Detect the perverse case by inspecting the stored tuple:
+    // if it exists AND its first entry is NOT `self`, return it
+    // verbatim.  This shadows the chain reconstruction for the
+    // perverse case while leaving the normal heap-class path (round-9
+    // SSoT) untouched.
+    if (self->hasOwnAttribute(context, mroStr) == PROTO_TRUE) {
+        const proto::ProtoObject* stored = self->getOwnAttributeDirect(context, mroStr);
+        if (stored && stored != PROTO_NONE && stored->isTuple(context)) {
+            const proto::ProtoTuple* st = stored->asTuple(context);
+            if (st->getSize(context) > 0 && st->getAt(context, 0) != self) {
+                return stored;
+            }
+        }
+    }
+
     if (chainEmpty) {
         // Bootstrap / singleton prototype path: trust the stored
         // own __mro__ if it's there.

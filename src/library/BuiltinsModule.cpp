@@ -6047,6 +6047,21 @@ const proto::ProtoObject* py_type(
         else if (listBases && listBases->getSize(context) == 0) basesIsEmpty = true;
         if (basesIsEmpty) { tupleBases = nullptr; listBases = nullptr; }
 
+        // STRUCT-101: a metaclass.mro() override applies AFTER the
+        // default C3 has computed and `cls.__mro__` has been seeded —
+        // because user mro() implementations typically call
+        // `type.mro(cls)` to obtain the C3 result and post-process it
+        // (test_altmro's `PerverseMetaType` reverses the list).  We
+        // capture the detection flag here but call the override later,
+        // once the bases / __mro__ / chain are all wired up.
+        bool metaclassHasCustomMro = false;
+        if (env && cls && cls != typeProto) {
+            if (cls->hasOwnAttribute(context,
+                    PythonEnvironment::getInternedString(context, "mro")) == PROTO_TRUE) {
+                metaclassHasCustomMro = true;
+            }
+        }
+
         if (tupleBases) {
             if (get_env_diag()) {
                 fprintf(stderr, "DEBUG py_type: tupleBases size=%lu\n", tupleBases->getSize(context));
@@ -6165,6 +6180,77 @@ const proto::ProtoObject* py_type(
                 }
             }
             const_cast<proto::ProtoObject*>(targetClass)->setParents(context, chainList);
+        }
+
+        // STRUCT-101: now that targetClass has a valid C3 __mro__ and
+        // parent chain wired up, give the metaclass's `mro()` override
+        // a chance to replace the result.  This ordering is essential:
+        // typical user `mro(cls)` implementations call `type.mro(cls)`
+        // internally to obtain the default C3 list and post-process it
+        // (test_altmro's PerverseMetaType reverses the list).  If we
+        // called the override before C3 was wired in, `type.mro(cls)`
+        // would observe an unfinished class and return junk.
+        if (metaclassHasCustomMro && env && mroList) {
+            const proto::ProtoObject* mroMethodObj = cls->getAttribute(context,
+                PythonEnvironment::getInternedString(context, "mro"));
+            if (mroMethodObj && mroMethodObj != PROTO_NONE) {
+                const proto::ProtoObject* result =
+                    env->callObject(mroMethodObj, { targetClass });
+                if (!result) {
+                    return nullptr; // exception raised inside user mro()
+                }
+                const proto::ProtoList* customMroList = nullptr;
+                if (result->asList(context)) {
+                    customMroList = result->asList(context);
+                } else if (result->isTuple(context)) {
+                    const proto::ProtoTuple* t = result->asTuple(context);
+                    const proto::ProtoList* lst = context->newList();
+                    for (unsigned long i = 0; i < t->getSize(context); ++i) {
+                        lst = lst->appendLast(context, t->getAt(context, static_cast<int>(i)));
+                    }
+                    customMroList = lst;
+                } else {
+                    env->raiseTypeError(context, "mro() must return a list");
+                    return nullptr;
+                }
+                // Validate: must contain targetClass itself and `object`.
+                bool hasSelf = false, hasObject = false;
+                const proto::ProtoObject* objectProto = env->getObjectPrototype();
+                for (unsigned long i = 0; i < customMroList->getSize(context); ++i) {
+                    const proto::ProtoObject* e = customMroList->getAt(context, static_cast<int>(i));
+                    if (e == targetClass) hasSelf = true;
+                    if (e == objectProto) hasObject = true;
+                }
+                if (!hasSelf) {
+                    env->raiseTypeError(context, "mro() returned linearisation missing the class itself");
+                    return nullptr;
+                }
+                if (!hasObject && objectProto) {
+                    env->raiseTypeError(context, "mro() returned linearisation missing object");
+                    return nullptr;
+                }
+                // Override: write the custom result as cls.__mro__ (own
+                // attr) AND re-seed the chain.  For the perverse case
+                // (cls not at position 0), py_type_get_mro returns the
+                // stored tuple verbatim (see PythonEnvironment.cpp).
+                // Chain seeding: include every entry EXCEPT cls so that
+                // chain-walk attribute lookup follows the user's
+                // declared ancestor order.
+                const proto::ProtoString* mroName3 =
+                    PythonEnvironment::getInternedString(context, "__mro__");
+                const proto::ProtoObject* customMroTuple = env->newTuple(customMroList);
+                targetClass = const_cast<proto::ProtoObject*>(
+                    targetClass->setAttribute(context, mroName3, customMroTuple));
+                const proto::ProtoList* customChain = context->newList();
+                for (unsigned long i = 0; i < customMroList->getSize(context); ++i) {
+                    const proto::ProtoObject* e = customMroList->getAt(context, static_cast<int>(i));
+                    if (e && e != targetClass && e != PROTO_NONE) {
+                        customChain = customChain->appendLast(context, e);
+                    }
+                }
+                const_cast<proto::ProtoObject*>(targetClass)->setParents(context, customChain);
+                mroList = customMroList; // for any downstream readers
+            }
         }
 
         // Register `targetClass` in each direct base's __subclasses_list__
