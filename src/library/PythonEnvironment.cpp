@@ -1343,7 +1343,7 @@ static const proto::ProtoObject* py_descriptor_repr(
     std::string out = isWrapper
         ? ("<slot wrapper '" + name + "' of '" + owner + "' objects>")
         : ("<method '" + name + "' of '" + owner + "' objects>");
-    return proto::ProtoString::fromUTF8String(context, out.c_str())->asObject(context);
+    return proto::ProtoString::fromUTF8(context, out.c_str())->asObject(context);
 }
 
 // fget helpers for the numeric .real / .imag descriptors.  py_getset_get
@@ -23252,38 +23252,28 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
             };
             propagate(obj);
 
-            // STRUCT-56: extend the protoCore parent chain of `obj`
-            // with each new base.  protoCore exposes `addParent` but
-            // not `removeParent`, so the old bases stay in the chain
-            // (carry-over to a future protoCore API extension).  The
-            // result is "add-only": chain-walk lookups now find
-            // attributes from BOTH old and new bases.  For most tests
-            // — especially `d.meth()` where C2 introduces a method —
-            // this is correct because the new base lands first
-            // through __mro__-aware paths AND is reachable via the
-            // protoCore parent chain.  Edge case: if the old base
-            // defines a conflicting attribute, the old wins on
-            // chain-walk; the carry-over documents the limitation.
+            // STRUCT-56 (revised): replace the protoCore parent chain
+            // wholesale.  protoCore now exposes `setParents` (formerly
+            // a carry-over: addParent could only extend, leaving stale
+            // bases visible to raw chain-walks).  Build a ProtoList
+            // from the new __bases__ tuple/list and hand it to
+            // `setParents`; the protoCore helper rebuilds the
+            // ParentLinkImplementation chain (mutable-vs-immutable
+            // dispatch is internal to the trampoline).  Result: the
+            // post-assignment chain matches `__mro__[1:]`'s direct
+            // bases exactly — no add-only artifact, no stale ancestor
+            // attribute resolution.
             const proto::ProtoTuple* nbT = value->asTuple(ctx);
             const proto::ProtoList* nbL = nbT ? nullptr : value->asList(ctx);
             unsigned long nbN = nbT ? nbT->getSize(ctx) : (nbL ? nbL->getSize(ctx) : 0);
-            const proto::ProtoList* existingParents = obj->getParents(ctx);
+            const proto::ProtoList* parentsList = ctx->newList();
             for (unsigned long i = 0; i < nbN; ++i) {
                 const proto::ProtoObject* nb = nbT ? nbT->getAt(ctx, static_cast<int>(i))
                                                    : nbL->getAt(ctx, static_cast<int>(i));
                 if (!nb || nb == PROTO_NONE) continue;
-                bool already = false;
-                if (existingParents) {
-                    for (unsigned long j = 0; j < existingParents->getSize(ctx); ++j) {
-                        if (existingParents->getAt(ctx, static_cast<int>(j)) == nb) {
-                            already = true; break;
-                        }
-                    }
-                }
-                if (!already) {
-                    const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::addParent(ctx, nb);
-                }
+                parentsList = parentsList->appendLast(ctx, nb);
             }
+            const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setParents(ctx, parentsList);
         }
         // STRUCT-45: propagate __bases__ reassignment to the affected
         // bases' `__subclasses_list__` slots.  CPython rewrites
