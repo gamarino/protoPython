@@ -8290,6 +8290,24 @@ const proto::ProtoObject* executeBytecodeRange(
                             "can't delete __class__ attribute of '" + clsName + "' object");
                         continue;
                     }
+                    // STRUCT-70: `del Cls.__bases__` (and other structural
+                    // attrs on a class) is always rejected — these
+                    // attributes are part of the type's identity.
+                    // CPython's message for heap classes:
+                    // "cannot delete '<attr>' attribute of type 'X'".
+                    if (env && env->isActuallyAClass(ctx, obj)) {
+                        std::string nm; nameS->toUTF8String(ctx, nm);
+                        bool structural = (nm == "__bases__" || nm == "__base__"
+                            || nm == "__mro__" || nm == "__name__" || nm == "__qualname__");
+                        if (structural) {
+                            std::string clsName = "?";
+                            const proto::ProtoObject* clsNm = obj->getAttribute(ctx, env->getNameString());
+                            if (clsNm && clsNm->isString(ctx)) clsNm->asString(ctx)->toUTF8String(ctx, clsName);
+                            env->raiseTypeError(ctx,
+                                "cannot delete '" + nm + "' attribute of type '" + clsName + "'");
+                            continue;
+                        }
+                    }
                     // CPython: `del obj.__dict__` resets the instance
                     // dict to empty but leaves the descriptor in place,
                     // so subsequent `obj.__dict__` still returns a

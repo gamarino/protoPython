@@ -4693,6 +4693,21 @@ static const proto::ProtoObject* py_delattr(
             || nm == "__init__" || nm == "__new__" || nm == "__call__"
             || nm == "__getattribute__");
         if (structural) {
+            // STRUCT-70: deleting a structural attribute (__bases__,
+            // __mro__, __name__, …) from ANY class — heap or built-in —
+            // is rejected by CPython.  For built-ins the message is
+            // "cannot delete '<attr>' attribute of immutable type 'X'"
+            // (kept below); for heap classes the message is "cannot
+            // delete '<attr>' attribute of type 'X'".  `del D.__bases__`
+            // for a user class D therefore raises.
+            if (env->isActuallyAClass(context, obj)) {
+                std::string clsName = "?";
+                const proto::ProtoObject* nm2 = obj->getAttribute(context, env->getNameString());
+                if (nm2 && nm2->isString(context)) nm2->asString(context)->toUTF8String(context, clsName);
+                env->raiseTypeError(context,
+                    "cannot delete '" + nm + "' attribute of type '" + clsName + "'");
+                return nullptr;
+            }
             const char* primName = nullptr;
             if (obj == env->getIntPrototype())        primName = "int";
             else if (obj == env->getFloatPrototype()) primName = "float";
