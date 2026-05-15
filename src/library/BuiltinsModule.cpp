@@ -4711,7 +4711,7 @@ static bool areSameClasses(proto::ProtoContext* context, const proto::ProtoObjec
     return c1 == c2;
 }
 
-static const proto::ProtoList* computeC3MRO(proto::ProtoContext* context, const proto::ProtoObject* cls, const proto::ProtoObject* basesObj) {
+const proto::ProtoList* computeC3MRO(proto::ProtoContext* context, const proto::ProtoObject* cls, const proto::ProtoObject* basesObj) {
     auto asTupleRaw = [&](const proto::ProtoObject* obj) -> const proto::ProtoTuple* {
         if (!obj) return nullptr;
         const proto::ProtoTuple* t = obj->asTuple(context);

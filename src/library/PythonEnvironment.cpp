@@ -152,6 +152,12 @@ namespace builtins {
         const proto::ParentLink* parentLink,
         const proto::ProtoList* positionalParameters,
         const proto::ProtoSparseList* keywordParameters);
+    // STRUCT-54: defined in BuiltinsModule.cpp; declared here so the
+    // __bases__ setter in PythonEnvironment::setAttribute can recompute
+    // __mro__ after a __bases__ reassignment.
+    const proto::ProtoList* computeC3MRO(proto::ProtoContext* context,
+                                          const proto::ProtoObject* cls,
+                                          const proto::ProtoObject* basesObj);
 }
 
 namespace weakref { const proto::ProtoObject* initialize(proto::ProtoContext* ctx); }
@@ -23018,6 +23024,25 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                     return nullptr;
                 }
             }
+        }
+        // STRUCT-54: recompute __mro__ from the new bases.  Without this
+        // recomputation `Cls.__mro__` stayed pinned at the chain built
+        // at class-creation time, so super(), slot dispatch, and
+        // descriptor protocol consulted the wrong ancestor list after
+        // `__bases__` reassignment.  `computeC3MRO` lives in
+        // BuiltinsModule.cpp and is now extern (was static); it returns
+        // nullptr + raises TypeError on linearisation conflict, which
+        // we propagate to the caller so the assignment is rejected
+        // before the __subclasses_list__ shuffle below mutates state.
+        if (value && value != PROTO_NONE) {
+            const proto::ProtoList* newMro =
+                protoPython::builtins::computeC3MRO(ctx, obj, value);
+            if (!newMro) {
+                return nullptr; // TypeError raised inside computeC3MRO
+            }
+            const proto::ProtoObject* mroTuple = ctx->newTupleFromList(newMro)->asObject(ctx);
+            const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setAttribute(
+                ctx, getInternedString(ctx, "__mro__"), mroTuple);
         }
         // STRUCT-45: propagate __bases__ reassignment to the affected
         // bases' `__subclasses_list__` slots.  CPython rewrites
