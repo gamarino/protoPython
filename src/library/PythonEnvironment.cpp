@@ -5727,6 +5727,46 @@ static const proto::ProtoObject* py_bytes_call(
         arg->asString(context)->toUTF8String(context, s);
         return bytes_make_object(context, s.data(), static_cast<unsigned long>(s.size()));
     }
+    // STRUCT-97: consult `type(arg).__bytes__` BEFORE falling back to
+    // the iterable path.  Python's special-method lookup goes through
+    // the TYPE, never through an instance — so `arg.__bytes__` set as
+    // an instance attribute must be ignored (test_special_method_lookup
+    // covers exactly this).  Read the method off `env->getType(arg)`.
+    // Two callable shapes to handle:
+    //   - native tagged-pointer method (asMethod) → call directly with
+    //     `arg` as the receiver argument.
+    //   - Python def function on the class → dispatch via callObject
+    //     with [arg] as positional args; the runtime threads `self`
+    //     through invokeCallable's bound-method protocol.
+    if (env) {
+        const proto::ProtoObject* argType = env->getType(context, arg);
+        const proto::ProtoString* bytesS =
+            PythonEnvironment::getInternedString(context, "__bytes__");
+        if (argType) {
+            const proto::ProtoObject* bytesM =
+                argType->getAttribute(context, bytesS);
+            if (bytesM && bytesM != PROTO_NONE) {
+                const proto::ProtoObject* result = nullptr;
+                if (bytesM->asMethod(context)) {
+                    const proto::ProtoList* mArgs = context->newList();
+                    result = bytesM->asMethod(context)(context,
+                        const_cast<proto::ProtoObject*>(arg), nullptr, mArgs, nullptr);
+                } else {
+                    // Python-level function: callObject handles bound
+                    // dispatch (treats `bytesM` like a descriptor with
+                    // arg as the implicit self).
+                    result = env->callObject(bytesM, { arg });
+                }
+                if (result && result != PROTO_NONE) {
+                    return result;
+                }
+                // A None return falls through to the iterable path /
+                // TypeError; CPython would itself reject __bytes__
+                // returning non-bytes, but the existing fallback path
+                // produces a reasonable error here.
+            }
+        }
+    }
     const proto::ProtoObject* iterAttr = arg->getAttribute(context, PythonEnvironment::getInternalString(context, "__iter__"));
     if (!iterAttr || !iterAttr->asMethod(context)) {
         // Non-iterable non-int / non-str: CPython raises
