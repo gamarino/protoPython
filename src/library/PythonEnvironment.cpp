@@ -22918,6 +22918,31 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
             raiseTypeError(ctx, msg.c_str());
             return nullptr;
         }
+        // STRUCT-49: `Cls.__bases__ = …` must be a non-empty tuple in
+        // CPython.  protoPython previously accepted lists, single
+        // classes, or empty tuples — each of which silently corrupted
+        // the MRO.  Reject every non-tuple value with the CPython
+        // message; reject the empty tuple with a separate message.
+        if (value && value != PROTO_NONE) {
+            if (!value->isTuple(ctx)) {
+                std::string vKind = "object";
+                const proto::ProtoObject* vt = getType(ctx, value);
+                if (vt) {
+                    const proto::ProtoObject* vn = vt->getAttribute(ctx, nameString);
+                    if (vn && vn->isString(ctx)) vn->asString(ctx)->toUTF8String(ctx, vKind);
+                }
+                raiseTypeError(ctx,
+                    "can only assign tuple to __bases__, not '" + vKind + "'");
+                return nullptr;
+            }
+            const proto::ProtoTuple* vtup = value->asTuple(ctx);
+            if (!vtup || vtup->getSize(ctx) == 0) {
+                raiseTypeError(ctx,
+                    "can only assign non-empty tuple to __bases__");
+                return nullptr;
+            }
+        }
+
         // CPython: a __bases__ assignment is also rejected when any new
         // base is an unsubclassable (final) type — NoneType, bool,
         // NotImplementedType.  py_type's class-creation path already
