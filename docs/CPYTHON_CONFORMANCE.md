@@ -28,6 +28,96 @@
 
 ---
 
+## Current Status (2026-05-15) — post-thirteenth-sweep (round 6)
+
+Round 6 was the 20-commit structural sweep `mossy-dreaming-quokka`
+(STRUCT-33..STRUCT-49 plus the docs commit at STRUCT-50).  The
+focus was three coupled clusters: weakref descriptor exposure,
+classmethod/staticmethod attribute proxies, and `__bases__` setter
+correctness (validation + propagation + structural-attr immutable
+guards).  Every commit individually keeps `ctest` at 183/183.
+
+### Direct unittest counts (`test_descr.py`)
+
+| | run | fail | error | skipped | Δ vs round-5 baseline |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-15 (round-6) | 165 | **42** | **41** | 10 | **F+E 88 → 83 (-5)** |
+| 2026-05-15 (round-6 baseline) | 165 | 44 | 44 | 10 | post-STRUCT-32 starting point |
+
+### Commits landed in round 6
+
+| Commit | Theme |
+| :--- | :--- |
+| `3489b99a` STRUCT-33 | `__weakref__` getset descriptor on object; `clsNeedsMetaSlotSynthesis` switches from "all bases must be builtin" to "the class must not declare its own `__slots__`" |
+| `82a74866` STRUCT-34 | `__weakref__.__get__` rejects bool / int subclass / slot class without `__weakref__` |
+| `db731e5b` STRUCT-35 | bytearray() and `bytearray.__init__` honour `encoding=`/`errors=`; latin-1 codec respects `'replace'`/`'ignore'` policies |
+| `fc5a3203` STRUCT-36 | OP_STORE_ATTR ignores `newObj=nullptr` from a failed `env->setAttribute` (no longer clears the local slot on a TypeError raise) |
+| `7f97db50` STRUCT-37 | OP_BUILD_CLASS strips `metaclass=` from forwarded kwargs and detects most-derived-metaclass conflicts |
+| `229bf9c0` STRUCT-38 | Class creation rejects slice/generator/coroutine/async_generator and native method cells as bases |
+| `caa6e6ce` STRUCT-39 | classmethod/staticmethod expose `__annotations__` via a delegate; `clsNeedsMetaSlotSynthesis` refined to only synth on the first non-slot heap class in the MRO |
+| `8786f427` STRUCT-40 | type-level getset descriptors (`__dict__`, `__doc__`, `__annotations__`, `__mro__`) carry `__objclass__` and `__qualname__` |
+| `4b599eda` STRUCT-41 | `weakref.ref(target)` raises TypeError on non-weakref-able targets (mirrors `__weakref__` rejection list) |
+| `dac9fa2e` STRUCT-42 | classmethod `__annotations__` delegate caches the resolved value on the wrapper |
+| `2ce3b927` STRUCT-43 | classmethod/staticmethod `__annotations__` is a true data descriptor (fget/fset/fdel), eager set removed from constructors, `__dict__` strip relaxed accordingly |
+| `26381d55` STRUCT-44 | `__bases__` setter rejects slice/generator/method cells (parity with STRUCT-38's class-creation validator) |
+| `21d9aeab` STRUCT-45 | `__bases__` setter rewrites `__subclasses_list__` on both old and new bases |
+| `856758b9` STRUCT-46 | `delattr` rejects structural deletes (`__bases__`, `__mro__`, `__name__`, …) on immutable built-in prototypes |
+| `81ee7e3d` STRUCT-47 | `setattr` rejects structural writes on immutable built-in prototypes (companion to STRUCT-46) |
+| `b865c403` STRUCT-48 | Heap class `__name__` / `__qualname__` assignment requires a string |
+| `8efc4e49` STRUCT-49 | `Cls.__bases__ = …` requires a non-empty tuple value |
+
+### Tests flipped to PASS
+
+* `test___weakref__` (STRUCT-33/34)
+* `test_keyword_arguments` (STRUCT-35 — bytearray encoding path)
+* `test_unsubclassable_types` (STRUCT-36 — the OP_STORE_ATTR null-guard
+  let the existing NoneType base rejection surface through unittest's
+  `assertRaises` context inside a CO_OPTIMIZED test frame)
+* `test_subclassing_does_not_duplicate_dict_descriptors` (STRUCT-39 —
+  meta-slot synth heuristic)
+
+### Tests where the failure mode improved without flipping
+
+* `test_metaclass` (ERROR → FAIL — class C(metaclass=type) constructor
+  works; later assertions still fail on the n()-is-not-callable
+  shape uncovered but not fully addressed)
+* `test_classmethod_staticmethod_annotations` (FAIL → ERROR — sub-asserts
+  for `__dict__` lazy promotion and `__annotations__ =` now work; test
+  progresses into the `__annotate__` half which is unimplemented)
+* `test___dict__` (ERROR → FAIL — `__objclass__` is now exposed; further
+  subtests still fail on the `__get__(type, type) → MappingProxy`
+  assertion)
+
+### Carry-over to round 7
+
+* `n()` for an instance of a class with no own `__call__` resolves to
+  `type.__call__` via the metaclass parent link (protoCore walks every
+  parent, not just `__mro__`).  Attempts to restrict the call lookup
+  to `__mro__` broke `property()` and related builtins; the proper
+  fix needs `__is_python_class__` to be set consistently on every
+  callable class.
+* `__bases__` reassignment now propagates `__subclasses_list__` but
+  the affected classes' MRO and protoCore parent chain are NOT
+  refreshed — subclasses still observe the old MRO until the runtime
+  next walks the chain.
+* Slot member descriptors (STRUCT-39 of the original plan) are not
+  installed on classes — `C.__dict__['x']` for `class C: __slots__ = ['x']`
+  still returns no descriptor.  Test `test_slots_descriptor`'s
+  `MyABC.a.__set__(u, 3)` therefore fails because the slot
+  descriptor isn't there to be invoked.
+* GC-dependent tests (`test_weakrefs`, `test_subtype_resurrection`,
+  `test_remove_subclass`, `test_cycle_through_dict`, `test_slots`
+  Counted.counter == 0 assertion) remain red — protoCore's
+  deferred-collection GC is out of scope for this sweep.
+
+### Infra note
+
+Build directory `build_release/` was used throughout (the
+hyphen-named `build-release/` remains corrupted from the earlier
+concurrent build+ctest contention documented in round 5).
+
+---
+
 ## Current Status (2026-05-14) — post-twelfth-sweep (round 5)
 
 Round 5 moved from cosmetic `__mro__` anchoring to a structural
