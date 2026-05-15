@@ -3418,7 +3418,15 @@ static const proto::ProtoObject* py_super_getattr(
             const proto::ProtoObject* descrGet = env ? env->getAttribute(context, val, getStr, false) : val->getAttribute(context, getStr);
             
             if (descrGet && descrGet != PROTO_NONE && descrGet->asMethod(context)) {
-                const proto::ProtoList* args = context->newList()->appendLast(context, obj)->appendLast(context, type);
+                // CPython's super_getattro passes the descriptor __get__
+                // a NULL instance when the super is bound to a class
+                // (`super(type, cls)` from a classmethod) — `su->obj ==
+                // su->obj_type`.  Otherwise a class-bound super would run
+                // a property getter instead of returning the property
+                // object.  Detect via isActuallyAClass(obj).
+                const proto::ProtoObject* descrInstance =
+                    (env && env->isActuallyAClass(context, obj)) ? PROTO_NONE : obj;
+                const proto::ProtoList* args = context->newList()->appendLast(context, descrInstance)->appendLast(context, type);
                 return descrGet->asMethod(context)(context, val, nullptr, args, nullptr);
             }
             if (val->asMethod(context)) {
