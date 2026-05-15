@@ -3228,7 +3228,21 @@ static const proto::ProtoObject* py_super_getattr(
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 0);
     if (!nameObj->isString(context)) return PROTO_NONE;
-    
+
+    // CPython's super_getattro skips the MRO magic for `__class__`:
+    // `super(C,c).__class__` is `super` (or the user subclass), not the
+    // parent's __class__.  Since the proxy intercepts ALL attribute
+    // access via __py_getattr_handler__, return the proxy's real type
+    // here.  Uses raw getType (no handler re-entry).
+    {
+        std::string nm;
+        nameObj->asString(context)->toUTF8String(context, nm);
+        if (nm == "__class__") {
+            PythonEnvironment* cenv = PythonEnvironment::fromContext(context);
+            return cenv ? cenv->getType(context, self) : self->getFirstParent(context);
+        }
+    }
+
     // Get stored 'obj' and 'type' from proxy
     const proto::ProtoObject* obj = self->getAttribute(context, PythonEnvironment::getInternedString(context, "obj"));
     const proto::ProtoObject* type = self->getAttribute(context, PythonEnvironment::getInternedString(context, "type"));
@@ -3453,60 +3467,21 @@ static const proto::ProtoObject* py_super_repr(
     return PythonEnvironment::getInternedString(context, buf)->asObject(context);
 }
 
-static const proto::ProtoObject* py_super_init(
+// superPrototype.__init__ — a no-op.  The proxy is fully constructed in
+// py_super_new (the __new__ slot); runUserClassCall still invokes
+// __init__ on the class afterwards, so this must exist and tolerate the
+// constructor args.  User-code `super().__init__(args)` does NOT reach
+// here — the proxy's __py_getattr_handler__ intercepts attribute access
+// and routes `super().__init__` through py_super_getattr (MRO walk),
+// returning the parent's bound __init__.
+static const proto::ProtoObject* py_super_init_noop(
     proto::ProtoContext* context,
-    const proto::ProtoObject* self,
-    const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
-    // SP-B/B2 fix: previously a no-op stub.  super().__init__(args) was
-    // intercepted by this method and silently dropped, so the parent
-    // class's __init__ never ran.  Now: forward to the parent's __init__
-    // by routing through py_super_getattr (which performs the MRO walk
-    // and binds the result to self.obj), then invoke that bound method
-    // with the original args/kwargs.
-    (void)parentLink;
-    if (!self) return PROTO_NONE;
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    if (!env) return PROTO_NONE;
-
-    // Build a positional list with just the attribute name "__init__" and
-    // call py_super_getattr to obtain the bound parent-method.
-    const proto::ProtoString* initName = PythonEnvironment::getInternedString(context, "__init__");
-    const proto::ProtoObject* initNameObj = initName ? initName->asObject(context) : nullptr;
-    const proto::ProtoList* getattrArgs = context->newList()->appendLast(context, initNameObj);
-    const proto::ProtoObject* bound = py_super_getattr(context, self, nullptr, getattrArgs, nullptr);
-    if (!bound || bound == PROTO_NONE) return PROTO_NONE;
-
-    // Forward original args/kwargs through callObjectEx.
-    std::vector<const proto::ProtoObject*> argsVec;
-    if (positionalParameters) {
-        long n = positionalParameters->getSize(context);
-        for (long i = 0; i < n; ++i) {
-            argsVec.push_back(positionalParameters->getAt(context, static_cast<int>(i)));
-        }
-    }
-    // Reconstruct (name, value) pairs from the hash-keyed kwargs sparse
-    // list using the kwNames tuple pushed by the calling site (see
-    // PythonEnvironment::pushKwNames / getCurrentKwNames).  Names live
-    // out-of-band; the sparse list only stores hash → value.
-    std::vector<std::pair<std::string, const proto::ProtoObject*>> kwVec;
-    if (keywordParameters) {
-        const proto::ProtoTuple* kwNames = env->getCurrentKwNames();
-        if (kwNames) {
-            long n = kwNames->getSize(context);
-            for (long i = 0; i < n; ++i) {
-                const proto::ProtoObject* k = kwNames->getAt(context, static_cast<int>(i));
-                if (!k || !k->isString(context)) continue;
-                const proto::ProtoString* ks = k->asString(context);
-                if (!keywordParameters->has(context, ks->getHash(context))) continue;
-                const proto::ProtoObject* v = keywordParameters->getAt(context, ks->getHash(context));
-                std::string s; ks->toUTF8String(context, s);
-                kwVec.emplace_back(std::move(s), v);
-            }
-        }
-    }
-    return env->callObjectEx(bound, argsVec, kwVec);
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*positionalParameters*/,
+    const proto::ProtoSparseList* /*keywordParameters*/) {
+    (void)context;
+    return PROTO_NONE;
 }
 
 // Construct a super proxy for (type, obj).  `obj == PROTO_NONE` (or null)
@@ -3514,22 +3489,43 @@ static const proto::ProtoObject* py_super_init(
 // that previously lived at the tail of py_super; factored out so the
 // (forthcoming) descriptor __get__ can rebind an unbound super by building
 // a fresh bound proxy through the same path.
+// Construct a super proxy for (cls, type, obj).  `cls` is the actual
+// super class being instantiated — superPrototype or a user subclass
+// (`class mysuper(super)`); the proxy is built as its child so
+// `type(super(C,c))` reports 'super' (or 'mysuper').  `obj == PROTO_NONE`
+// (or null) yields an unbound super.  `__repr__` / `__init__` live on
+// the type (superPrototype); the proxy only carries `type` / `obj` data
+// plus the `__py_getattr_handler__` interception hook.
 static proto::ProtoObject* make_super_proxy(proto::ProtoContext* context,
+    const proto::ProtoObject* cls,
     const proto::ProtoObject* type, const proto::ProtoObject* obj) {
-    proto::ProtoObject* proxy = const_cast<proto::ProtoObject*>(context->newObject(true));
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* superCls = (cls && cls != PROTO_NONE)
+        ? cls : (env ? env->getSuperPrototype() : nullptr);
+    proto::ProtoObject* proxy = (superCls && superCls != PROTO_NONE)
+        ? const_cast<proto::ProtoObject*>(superCls->newChild(context, true))
+        : const_cast<proto::ProtoObject*>(context->newObject(true));
+    if (superCls && superCls != PROTO_NONE) {
+        proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__class__"),
+                            const_cast<proto::ProtoObject*>(superCls));
+    }
     proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "type"), type);
     proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "obj"), obj ? obj : PROTO_NONE);
     proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__getattr__"), context->fromMethod(proxy, py_super_getattr));
     proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__setattr__"), context->fromMethod(proxy, py_super_setattr));
-    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__repr__"), context->fromMethod(proxy, py_super_repr));
-    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__init__"), context->fromMethod(proxy, py_super_init));
-    // Fast-path OBJ-level dispatch: hasOwnAttribute(__py_getattr_handler__) replaces
-    // the old getAttribute(__is_super_proxy__) chain walk in tryFastGetAttribute.
+    // Fast-path OBJ-level dispatch: hasOwnAttribute(__py_getattr_handler__)
+    // makes every getAttribute on the proxy route through py_super_getattr.
     proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__py_getattr_handler__"), context->fromMethod(proxy, py_super_getattr));
     return proxy;
 }
 
-static const proto::ProtoObject* py_super(
+// superPrototype.__new__ — the `super(...)` constructor.  Invoked via
+// runUserClassCall, which prepends the class (superPrototype or a
+// `class mysuper(super)` subclass) as positionalParameters[0].  So the
+// CPython-visible arg N is at index N+1 here: 0-arg `super()` is
+// size<=1 (just [cls]); `super(type)` is [cls,type]; `super(type,obj)`
+// is [cls,type,obj].
+static const proto::ProtoObject* py_super_new(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
@@ -3537,12 +3533,23 @@ static const proto::ProtoObject* py_super(
     const proto::ProtoSparseList* keywordParameters) {
     (void)self;
     (void)parentLink;
-    (void)keywordParameters;
+
+    // super() takes no keyword arguments.
+    if (keywordParameters && keywordParameters->getSize(context) > 0) {
+        PythonEnvironment* kwEnv = PythonEnvironment::fromContext(context);
+        if (kwEnv) kwEnv->raiseTypeError(context, "super() takes no keyword arguments");
+        return nullptr;
+    }
+
+    // positionalParameters[0] is the class being instantiated
+    // (superPrototype or a user subclass).
+    const proto::ProtoObject* superCls = (positionalParameters && positionalParameters->getSize(context) >= 1)
+        ? positionalParameters->getAt(context, 0) : nullptr;
 
     const proto::ProtoObject* type = nullptr;
     const proto::ProtoObject* obj = nullptr;
-    
-    if (positionalParameters->getSize(context) == 0) {
+
+    if (positionalParameters->getSize(context) <= 1) {
        // 0-arg super(): deduce from frame
        PythonEnvironment* env = PythonEnvironment::fromContext(context);
        const proto::ProtoObject* frame = env ? env->getCurrentFrame() : nullptr;
@@ -3759,17 +3766,14 @@ static const proto::ProtoObject* py_super(
             return PROTO_NONE;
         }
     } else {
-        // CPython super() supports three forms:
+        // CPython super() supports three forms (here shifted by the
+        // prepended class at index 0):
         //   super()              — zero-arg, deduced (handled above)
-        //   super(type)          — unbound super; obj is None until bound via __get__
-        //   super(type, obj)     — bound super
-        // Reading positionalParameters[1] when only one arg was passed
-        // walked off the end of the ProtoList, returned a wild pointer,
-        // and crashed in the proxy attribute access — visible as test_descr
-        // SIGSEGV in test_supers (`super(C)` line in the test body).
-        type = positionalParameters->getAt(context, 0);
-        if (positionalParameters->getSize(context) >= 2) {
-            obj = positionalParameters->getAt(context, 1);
+        //   super(type)          — [cls,type]      — unbound super
+        //   super(type, obj)     — [cls,type,obj]  — bound super
+        type = positionalParameters->getAt(context, 1);
+        if (positionalParameters->getSize(context) >= 3) {
+            obj = positionalParameters->getAt(context, 2);
         } else {
             obj = PROTO_NONE;
         }
@@ -3789,7 +3793,7 @@ static const proto::ProtoObject* py_super(
         if (n && n->isString(context)) n->asString(context)->toUTF8String(context, tname);
         fprintf(stderr, "DEBUG: py_super returning PROXY for type=%s(%p) obj=%p\n", tname.c_str(), (void*)type, (void*)obj);
     }
-    return make_super_proxy(context, type, obj);
+    return make_super_proxy(context, superCls, type, obj);
 }
 
 /** exec(source, globals=None, locals=None): compile and run source. */
@@ -10024,7 +10028,40 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         PythonEnvironment::getInternedString(ctx, "__bytes__"),
         ctx->fromMethod(nullptr, py_memoryview_tobytes));
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "memoryview"), memoryviewClass);
-    builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "super"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_super));
+    // `super` is a real, subclassable type (CPython parity): a class
+    // object with __new__ / __init__ on the type.  `super(...)` dispatches
+    // through runUserClassCall -> py_super_new, which builds the proxy;
+    // `class mysuper(super)` inherits __new__/__init__ via the MRO.
+    {
+        // Mutable (newObject(true)) so setAttribute mutates in place: the
+        // __mro__ tuple captures `superProto` itself, and the later
+        // __new__ / __init__ / __repr__ writes accumulate on that same
+        // pointer.  An immutable prototype would freeze a stale,
+        // __new__-less superProto into its own __mro__, so a subclass
+        // (`class mysuper(super)`) walking that MRO would skip super's
+        // __new__ and fall through to object.__new__.
+        const proto::ProtoObject* superProto = ctx->newObject(true);
+        if (objectProto) superProto = superProto->addParent(ctx, objectProto);
+        if (typeProto) superProto = superProto->setAttribute(ctx, py_class_local, typeProto);
+        superProto = superProto->setAttribute(ctx, py_name_local, PythonEnvironment::getInternedString(ctx, "super")->asObject(ctx));
+        superProto = superProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__qualname__"), PythonEnvironment::getInternedString(ctx, "super")->asObject(ctx));
+        {
+            const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
+            const proto::ProtoList* mroList = ctx->newList()->appendLast(ctx, superProto);
+            if (objectProto) mroList = mroList->appendLast(ctx, objectProto);
+            superProto = superProto->setAttribute(ctx, mroS, ctx->newTupleFromList(mroList)->asObject(ctx));
+            const proto::ProtoString* basesS = PythonEnvironment::getInternedString(ctx, "__bases__");
+            const proto::ProtoList* basesList = ctx->newList();
+            if (objectProto) basesList = basesList->appendLast(ctx, objectProto);
+            superProto = superProto->setAttribute(ctx, basesS, ctx->newTupleFromList(basesList)->asObject(ctx));
+        }
+        superProto = superProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__is_python_class__"), PROTO_TRUE);
+        superProto = superProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_super_new));
+        superProto = superProto->setAttribute(ctx, pEnv->getInitString(), ctx->fromMethod(nullptr, py_super_init_noop));
+        superProto = superProto->setAttribute(ctx, pEnv->getReprString(), ctx->fromMethod(nullptr, py_super_repr));
+        if (pEnv) pEnv->setSuperPrototype(superProto);
+        builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "super"), superProto);
+    }
     const proto::ProtoObject* propertyProto = ctx->newObject(false);
     if (objectProto) propertyProto = propertyProto->addParent(ctx, objectProto);
     if (typeProto) propertyProto = propertyProto->setAttribute(ctx, py_class_local, typeProto);

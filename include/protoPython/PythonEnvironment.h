@@ -134,7 +134,10 @@ public:
     const proto::ProtoObject* getMethodPrototype() const { return methodPrototype; }
     /** @brief Gets the getset_descriptor prototype. */
     const proto::ProtoObject* getGetSetDescriptorPrototype() const { return getSetDescriptorPrototype; }
-    
+    /** @brief Gets the `super` type prototype (a real subclassable type). */
+    const proto::ProtoObject* getSuperPrototype() const { return superPrototype; }
+    void setSuperPrototype(const proto::ProtoObject* p) { superPrototype = p; }
+
     void setObjectPrototype(const proto::ProtoObject* p) { objectPrototype = p; }
     void setTypePrototype(const proto::ProtoObject* p) { typePrototype = p; }
     void setDictPrototype(const proto::ProtoObject* p) { dictPrototype = p; }
@@ -1059,6 +1062,7 @@ private:
     const proto::ProtoObject* methodDescriptorPrototype{nullptr};
     const proto::ProtoObject* wrapperDescriptorPrototype{nullptr};
     const proto::ProtoObject* memberDescriptorPrototype{nullptr};
+    const proto::ProtoObject* superPrototype{nullptr};
 
 public:
     const proto::ProtoObject* getMethodDescriptorPrototype() const { return methodDescriptorPrototype; }
