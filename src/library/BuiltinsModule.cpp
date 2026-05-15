@@ -4668,6 +4668,40 @@ static const proto::ProtoObject* py_delattr(
                 "can't delete __class__ attribute of '" + clsName + "' object");
             return nullptr;
         }
+        // STRUCT-46: deleting a structural attribute from an immutable
+        // built-in type silently corrupts the runtime — `delattr(int,
+        // '__bases__')` would leave int with `__bases__ = None`, which
+        // then breaks every MRO walk that visits int.  CPython raises
+        // `TypeError: cannot delete '<attr>' attribute of immutable
+        // type 'int'`.  Reject the same shape.
+        std::string nm; nameStr->toUTF8String(context, nm);
+        bool structural = (nm == "__bases__" || nm == "__base__"
+            || nm == "__mro__" || nm == "__name__" || nm == "__qualname__"
+            || nm == "__dict__" || nm == "__weakref__"
+            || nm == "__init__" || nm == "__new__" || nm == "__call__"
+            || nm == "__getattribute__");
+        if (structural) {
+            const char* primName = nullptr;
+            if (obj == env->getIntPrototype())        primName = "int";
+            else if (obj == env->getFloatPrototype()) primName = "float";
+            else if (obj == env->getBoolPrototype())  primName = "bool";
+            else if (obj == env->getStrPrototype())   primName = "str";
+            else if (obj == env->getBytesPrototype()) primName = "bytes";
+            else if (obj == env->getListPrototype())  primName = "list";
+            else if (obj == env->getDictPrototype())  primName = "dict";
+            else if (obj == env->getSetPrototype())   primName = "set";
+            else if (obj == env->getFrozensetPrototype()) primName = "frozenset";
+            else if (obj == env->getTuplePrototype()) primName = "tuple";
+            else if (obj == env->getComplexPrototype()) primName = "complex";
+            else if (obj == env->getObjectPrototype()) primName = "object";
+            else if (obj == env->getTypePrototype())  primName = "type";
+            if (primName) {
+                env->raiseTypeError(context,
+                    "cannot delete '" + nm + "' attribute of immutable type '"
+                    + primName + "'");
+                return nullptr;
+            }
+        }
     }
     obj->setAttribute(context, nameObj->asString(context), PROTO_NONE);
     return PROTO_NONE;
