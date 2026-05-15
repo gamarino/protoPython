@@ -918,66 +918,69 @@ static const proto::ProtoObject* py_type_get_mro(
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (!self || !env) return PROTO_NONE;
-    
-    const proto::ProtoString* mroStr = PythonEnvironment::getInternedString(context, "__mro__");
-    if (self->hasOwnAttribute(context, mroStr) == PROTO_TRUE) {
-        const proto::ProtoObject* mro = self->getOwnAttributeDirect(context, mroStr);
-        if (mro && mro != PROTO_NONE) {
-            bool isTup = mro->isTuple(context);
-            if (!isTup) {
-                const proto::ProtoObject* dataAttr = mro->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternedString(context, "__data__"));
-                isTup = (dataAttr && dataAttr->isTuple(context));
-            }
-            if (isTup) return mro;
-        }
-    }
-    
-    // Walk the parent chain so the fallback MRO reflects actual inheritance.
-    // protoCore's parent list is appended in insertion order.  For builtins
-    // like bool — which is created via `objectPrototype->newChild(...)` and
-    // then `addParent(intPrototype)` — the parent list reads
-    // [object, int] but the desired Python MRO is (bool, int, object):
-    // the most-recently-added parent (int) is the "real" base in CPython
-    // semantics (`class bool(int): ...`).
+
+    // STRUCT-83: the protoCore parent chain is the SINGLE source of
+    // truth for the MRO.  STRUCT-82 ensures py_type seeds the chain
+    // as [MRO[1], MRO[2], ..., MRO[N], metaclass, *metaclass_ancestors]
+    // — MRO portion is everything BEFORE the metaclass tail.  We
+    // detect the cut at the first `type` instance after `object`
+    // appeared in the chain.
     //
-    // Walk parents in REVERSE order, deduping, then append `object` last
-    // so the universal root sits at the bottom of the MRO regardless of
-    // when it was added.  Recurse into each parent's parents to flatten
-    // the chain.
-    const proto::ProtoList* fallback = context->newList();
-    fallback = fallback->appendLast(context, self);
+    // Built-in prototypes constructed during bootstrap (objectPrototype,
+    // intPrototype, …) still set their own `__mro__` because the
+    // bootstrap path doesn't go through py_type.  When self has an
+    // own __mro__ AND no parent chain (true for primitive prototypes
+    // built via raw `newObject`/`newChild`), trust the stored value.
+    // Otherwise reconstruct from the chain.
+    const proto::ProtoString* mroStr = PythonEnvironment::getInternedString(context, "__mro__");
     const proto::ProtoObject* objectProto = env->getObjectPrototype();
+    const proto::ProtoObject* typeProto = env->getTypePrototype();
 
-    auto contains = [&](const proto::ProtoObject* p) -> bool {
-        for (unsigned long i = 0; i < fallback->getSize(context); ++i) {
-            if (fallback->getAt(context, static_cast<int>(i)) == p) return true;
-        }
-        return false;
-    };
+    const proto::ProtoList* parents = self->getParents(context);
+    bool chainEmpty = (!parents || parents->getSize(context) == 0);
 
-    std::function<void(const proto::ProtoObject*, int)> walk =
-        [&](const proto::ProtoObject* node, int depth) {
-            if (!node || node == PROTO_NONE || depth > 64) return;
-            const proto::ProtoList* parents = node->getParents(context);
-            if (!parents) return;
-            unsigned long n = parents->getSize(context);
-            // Reverse order: last-added (most specific) parent first.
-            for (long i = static_cast<long>(n) - 1; i >= 0; --i) {
-                const proto::ProtoObject* p = parents->getAt(context, static_cast<int>(i));
-                if (!p || p == PROTO_NONE || p == self) continue;
-                if (p == objectProto) continue;  // append object last unconditionally
-                if (!contains(p)) {
-                    fallback = fallback->appendLast(context, p);
-                    walk(p, depth + 1);
+    if (chainEmpty) {
+        // Bootstrap / singleton prototype path: trust the stored
+        // own __mro__ if it's there.
+        if (self->hasOwnAttribute(context, mroStr) == PROTO_TRUE) {
+            const proto::ProtoObject* mro = self->getOwnAttributeDirect(context, mroStr);
+            if (mro && mro != PROTO_NONE) {
+                bool isTup = mro->isTuple(context);
+                if (!isTup) {
+                    const proto::ProtoObject* dataAttr = mro->getAttribute(context, env->getDataString());
+                    isTup = (dataAttr && dataAttr->isTuple(context));
                 }
+                if (isTup) return mro;
             }
-        };
-    walk(self, 0);
-
-    if (objectProto && self != objectProto && !contains(objectProto)) {
-        fallback = fallback->appendLast(context, objectProto);
+        }
+        // No chain, no own __mro__: just (self,) — or (self, object) if
+        // self isn't object itself.
+        const proto::ProtoList* solo = context->newList()->appendLast(context, self);
+        if (objectProto && self != objectProto) solo = solo->appendLast(context, objectProto);
+        return env->newTuple(solo);
     }
-    return env->newTuple(fallback);
+
+    // Reconstruct from the chain.  Walk parents in order; stop at the
+    // metaclass-tail boundary, which we identify as the position
+    // immediately AFTER `object`.  Everything up to and including
+    // `object` is the MRO; everything after is metaclass chain.
+    const proto::ProtoList* mroList = context->newList()->appendLast(context, self);
+    bool sawObject = false;
+    unsigned long n = parents->getSize(context);
+    for (unsigned long i = 0; i < n; ++i) {
+        const proto::ProtoObject* p = parents->getAt(context, static_cast<int>(i));
+        if (!p || p == PROTO_NONE || p == self) continue;
+        if (sawObject) break;  // after object → metaclass tail starts
+        mroList = mroList->appendLast(context, p);
+        if (p == objectProto) sawObject = true;
+    }
+    // If the chain didn't contain `object` (rare — bootstrap edge),
+    // append it as the universal root.  Skip when self IS object.
+    if (!sawObject && objectProto && self != objectProto) {
+        mroList = mroList->appendLast(context, objectProto);
+    }
+    (void)typeProto;  // referenced earlier as comment context
+    return env->newTuple(mroList);
 }
 
 static const proto::ProtoObject* py_type_get_dict(
