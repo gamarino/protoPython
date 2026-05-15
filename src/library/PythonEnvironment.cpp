@@ -23086,6 +23086,39 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                 }
             };
             propagate(obj);
+
+            // STRUCT-56: extend the protoCore parent chain of `obj`
+            // with each new base.  protoCore exposes `addParent` but
+            // not `removeParent`, so the old bases stay in the chain
+            // (carry-over to a future protoCore API extension).  The
+            // result is "add-only": chain-walk lookups now find
+            // attributes from BOTH old and new bases.  For most tests
+            // — especially `d.meth()` where C2 introduces a method —
+            // this is correct because the new base lands first
+            // through __mro__-aware paths AND is reachable via the
+            // protoCore parent chain.  Edge case: if the old base
+            // defines a conflicting attribute, the old wins on
+            // chain-walk; the carry-over documents the limitation.
+            const proto::ProtoTuple* nbT = value->asTuple(ctx);
+            const proto::ProtoList* nbL = nbT ? nullptr : value->asList(ctx);
+            unsigned long nbN = nbT ? nbT->getSize(ctx) : (nbL ? nbL->getSize(ctx) : 0);
+            const proto::ProtoList* existingParents = obj->getParents(ctx);
+            for (unsigned long i = 0; i < nbN; ++i) {
+                const proto::ProtoObject* nb = nbT ? nbT->getAt(ctx, static_cast<int>(i))
+                                                   : nbL->getAt(ctx, static_cast<int>(i));
+                if (!nb || nb == PROTO_NONE) continue;
+                bool already = false;
+                if (existingParents) {
+                    for (unsigned long j = 0; j < existingParents->getSize(ctx); ++j) {
+                        if (existingParents->getAt(ctx, static_cast<int>(j)) == nb) {
+                            already = true; break;
+                        }
+                    }
+                }
+                if (!already) {
+                    const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::addParent(ctx, nb);
+                }
+            }
         }
         // STRUCT-45: propagate __bases__ reassignment to the affected
         // bases' `__subclasses_list__` slots.  CPython rewrites
