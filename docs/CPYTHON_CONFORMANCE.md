@@ -28,6 +28,92 @@
 
 ---
 
+## Current Status (2026-05-15) — post-twentieth-sweep (round 13)
+
+Round 13 was a difficult round: many planned items hit unexpected
+infrastructure issues.  4 commits landed, 2 reverts (an attempted
+cache-drop and an attempted slot-wrapper validation), with most
+remaining items deferred to round 14.
+
+### Achievements
+
+1. **STRUCT-121** Extended MRO descriptor migration across all
+   native modules — BuiltinsModule (9 more sites), PythonEnvironment
+   (4 more sites), ExecutionEngine (6 more sites).  Initial drop of
+   the cached __mro__ write regressed test_foundation; reverted.
+2. **STRUCT-122** Class body `__class__` override preserved — the
+   round-12 attempt (STRUCT-112) broke enum.py because it modified
+   OP_BUILD_CLASS's auto-inject path.  Round-13 redo moves the fix
+   to py_type's namespace-copy loop instead.  test_proxy_call's
+   `isinstance(FakeStr(), str)` flips to True without breaking enum.
+
+### Goals reverted
+
+- **Initial STRUCT-121 cache drop** — too many raw `__mro__`
+  readers remained in ExceptionsModule/CollectionsAbcModule/
+  ExecutionEngine that weren't in the initial inventory.
+- **STRUCT-126 slot wrapper receiver validation** — flipped the
+  `__add__` subcase of test_wrong_class_slot_wrapper but broke
+  unittest's TestLoader by being too aggressive on the validation.
+
+### Goals deferred
+
+- **STRUCT-123-125** `builtin_function_or_method` infrastructure —
+  adding the prototype caused test_foundation segfault (init order
+  / isMethod assumptions).  Also `len`/`print` are not isMethod
+  cells in protoPython (they're ObjectCells with `__call__`), so
+  the routing wouldn't fire even if the segfault was fixed.  Needs
+  a different detection approach.
+- **STRUCT-127** `__dict__` descriptor — round-12 investigation
+  said it was already complete; round-13 probe found
+  `dict_descriptor.__get__(SlotClass(), SlotClass)` does NOT raise
+  AttributeError and `__dict__` returns wrong shape on non-slot
+  classes.  Out of round-13 scope.
+
+### Direct unittest counts (`test_descr.py`)
+
+| | run | fail | error | skipped | Δ |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-15 (round-13) | 165 | 40 | 43 | 10 | F+E flat (83) — MRO sweep work + STRUCT-122 reflection-only |
+| 2026-05-15 (round-12 final) | 165 | 40 | 43 | 10 | post-STRUCT-120 baseline |
+
+F+E flat: STRUCT-122 flips test_proxy_call's `isinstance` subcase
+but the test as a whole still fails on later assertions
+(`str.split(fake_str)` etc.) that need slot-wrapper validation
+(STRUCT-126 reverted).  Round 14 redos STRUCT-126 with a narrower
+match condition.
+
+### Commits landed in round 13
+
+| Commit | Theme |
+| :--- | :--- |
+| `fa201c41` STRUCT-121 | Extend MRO descriptor migration to BuiltinsModule (9 sites), PythonEnvironment (4 sites), ExecutionEngine (6 sites) |
+| `6acfa2a6` STRUCT-122 | Class body `__class__ = T` honoured via py_type namespace-copy (no enum regression) |
+| `d91e24ec` revert | STRUCT-126 slot wrapper validation (broke TestLoader) |
+| _this commit_ STRUCT-131 | Round-13 conformance documentation |
+
+### Carry-over to round 14
+
+- Finish MRO sweep: ~14 raw sites in ExceptionsModule.cpp,
+  CollectionsAbcModule.cpp, ExecutionEngine.cpp, others — then drop
+  the cached writes
+- STRUCT-126 redux: narrower receiver-class match (skip the check
+  when the method is dispatched from a TYPE that legitimately owns
+  it, or rate-limit to specific descriptor kinds)
+- STRUCT-123-125: needs different detection for `len`/`print` —
+  they're ObjectCells, not method cells
+- STRUCT-127: `__dict__` descriptor instance-class check
+- Compare-op slot-wrapper validation (test_wrong_class_slot_wrapper
+  `__eq__` subcase) — separate path from invokeDunder
+- All previous deferred items still pending.
+
+### Infra note
+
+Build verification uses `build_release/` (underscore).  ctest 183/183
+on every landed round-13 commit; test_descr baseline 40F+43E.
+
+---
+
 ## Current Status (2026-05-15) — post-nineteenth-sweep (round 12)
 
 Round 12 was the WIDE round — 20 planned commits, 17 landed, 3
