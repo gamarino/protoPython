@@ -626,7 +626,7 @@ static const proto::ProtoObject* py_print(
                 const proto::ProtoObject* cls = env->getType(context, obj);
                 const proto::ProtoObject* strMethod = nullptr;
                 if (cls) {
-                    const proto::ProtoObject* mroAttr = cls->getAttribute(context, env->getMroString());
+                    const proto::ProtoObject* mroAttr = env->getAttribute(context, cls, env->getMroString(), false);
                     const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
                     if (mroT) {
                         for (unsigned long mi = 0; mi < mroT->getSize(context); ++mi) {
@@ -2171,7 +2171,7 @@ static const proto::ProtoObject* py_object_init(
                         // dunder of its own that this code can detect via
                         // MRO comparison.  Recognise via the MRO tuple.
                         {
-                            const proto::ProtoObject* mroAttr = cls->getAttribute(context, env->getMroString());
+                            const proto::ProtoObject* mroAttr = env->getAttribute(context, cls, env->getMroString(), false);
                             const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
                             if (mroT) {
                                 for (size_t i = 0; i < mroT->getSize(context); ++i) {
@@ -5377,7 +5377,7 @@ static std::string py_typing_repr_arg(proto::ProtoContext* context,
     // _Py_typing_repr_helper has the same special-case.
     if (env && obj == env->getNoneTypePrototype()) return "None";
     if (env) {
-        const proto::ProtoObject* mroAttr = obj->getAttribute(context, env->getMroString());
+        const proto::ProtoObject* mroAttr = env->getAttribute(context, obj, env->getMroString(), false);
         // __mro__ is a tuple in CPython; older protoPython paths may use a list.
         bool isClass = mroAttr && (mroAttr->asList(context) || mroAttr->asTuple(context));
         if (isClass) {
@@ -5914,7 +5914,7 @@ const proto::ProtoObject* py_type(
                     bool match = (base == bp);
                     if (!match) {
                         // Subclass of bp also has its layout.
-                        const proto::ProtoObject* bmro = base ? base->getAttribute(context, env->getMroString()) : nullptr;
+                        const proto::ProtoObject* bmro = base ? env->getAttribute(context, base, env->getMroString(), false) : nullptr;
                         const proto::ProtoTuple* bmroT = bmro ? bmro->asTuple(context) : nullptr;
                         if (bmroT) {
                             for (unsigned long j = 0; j < bmroT->getSize(context); ++j) {
@@ -6245,13 +6245,14 @@ const proto::ProtoObject* py_type(
 
             // STRUCT-84: keep `__mro__` as an own-attribute write-through
             // cache.  After STRUCT-83 the descriptor (py_type_get_mro)
-            // reconstructs the tuple from the chain on every read, but
-            // ~20 native call sites still go through raw
-            // `cls->getAttribute("__mro__")` (a protoCore chain walk
-            // that does NOT invoke the descriptor) and depend on a
-            // cached own attribute being present.  We treat the chain
-            // as the canonical source of truth; the cached tuple is a
-            // denormalised view kept in lockstep with `setParents`.
+            // reconstructs the tuple from the chain on every read.  As
+            // of round 13, ~25 raw call sites in BuiltinsModule.cpp,
+            // PythonEnvironment.cpp, ExecutionEngine.cpp,
+            // ExceptionsModule.cpp, and CollectionsAbcModule.cpp have
+            // migrated to descriptor-aware `env->getAttribute`, but ~14
+            // raw sites still depend on a cached own attribute being
+            // present.  Drop the cached write only after the full sweep
+            // completes (round 14).
             //
             // STRUCT-82: seed the protoCore parent chain DIRECTLY from the
             // computed C3 MRO (excluding `cls` itself).  protoCore's
@@ -6823,7 +6824,7 @@ static const proto::ProtoObject* py_isinstance(
         const proto::ProtoObject* objType = env->getType(context, obj);
         if (objType && objType != PROTO_NONE) {
             const proto::ProtoString* gaS = PythonEnvironment::getInternedString(context, "__getattribute__");
-            const proto::ProtoObject* mroAttr = objType->getAttribute(context, env->getMroString());
+            const proto::ProtoObject* mroAttr = env->getAttribute(context, objType, env->getMroString(), false);
             const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
             const proto::ProtoObject* gaM = nullptr;
             if (mroT) {
@@ -7293,7 +7294,7 @@ static const proto::ProtoObject* py_pow(
         if (baseCls && expCls && baseCls != expCls && expCls != PROTO_NONE
             && baseCls != PROTO_NONE) {
             // Subclass relation: walk expCls's __mro__ looking for baseCls.
-            const proto::ProtoObject* mroAttr = expCls->getAttribute(context, env->getMroString());
+            const proto::ProtoObject* mroAttr = env->getAttribute(context, expCls, env->getMroString(), false);
             const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
             bool expIsSubclass = false;
             if (mroT) {
@@ -7354,7 +7355,7 @@ static const proto::ProtoObject* py_pow(
             && baseCls != env->getIntPrototype()
             && baseCls != env->getFloatPrototype()
             && baseCls != env->getBoolPrototype()) {
-            const proto::ProtoObject* mroAttr = baseCls->getAttribute(context, env->getMroString());
+            const proto::ProtoObject* mroAttr = env->getAttribute(context, baseCls, env->getMroString(), false);
             const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
             if (mroT) {
                 for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
@@ -9592,7 +9593,7 @@ const proto::ProtoObject* py_object_new(
                 ? unwrap(env->getObjectPrototype()->getAttribute(context, newS)) : nullptr;
             const proto::ProtoObject* defInit = env->getObjectPrototype()
                 ? unwrap(env->getObjectPrototype()->getAttribute(context, initS)) : nullptr;
-            const proto::ProtoObject* mroAttr = cls->getAttribute(context, env->getMroString());
+            const proto::ProtoObject* mroAttr = env->getAttribute(context, cls, env->getMroString(), false);
             const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
             bool newOverridden = false;
             bool initOverridden = false;
@@ -9694,7 +9695,7 @@ const proto::ProtoObject* py_object_new(
             for (const proto::ProtoObject* bp : badProtos) {
                 if (bp && cls == bp) return bp;
             }
-            const proto::ProtoObject* mroAttr = cls->getAttribute(context, env->getMroString());
+            const proto::ProtoObject* mroAttr = env->getAttribute(context, cls, env->getMroString(), false);
             const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
             if (mroT) {
                 for (unsigned long i = 0; i < mroT->getSize(context); ++i) {

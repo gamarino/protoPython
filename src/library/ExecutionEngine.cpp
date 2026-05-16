@@ -1542,7 +1542,7 @@ static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
             if (aCls == env->getTuplePrototype()) isTuple = true;
             else if (aCls == env->getListPrototype()) isList = true;
             else {
-                const proto::ProtoObject* mroAttr = aCls->getAttribute(ctx, env->getMroString());
+                const proto::ProtoObject* mroAttr = env->getAttribute(ctx, aCls, env->getMroString(), false);
                 const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
                 if (mroT) {
                     for (unsigned long mi = 0; mi < mroT->getSize(ctx); ++mi) {
@@ -2084,7 +2084,7 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
                     || bt == envContains->getModulePrototype()) {
                     bIsDictLike = true;
                 } else if (bt && bt != PROTO_NONE) {
-                    const proto::ProtoObject* mAttr = bt->getAttribute(ctx, envContains->getMroString());
+                    const proto::ProtoObject* mAttr = envContains->getAttribute(ctx, bt, envContains->getMroString(), false);
                     const proto::ProtoTuple* mroT = mAttr ? mAttr->asTuple(ctx) : nullptr;
                     if (mroT) {
                         for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
@@ -5156,7 +5156,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     const proto::ProtoObject* aType = env->getType(ctx, a);
                     if (aType && aType != PROTO_NONE && aType != env->getIntPrototype()
                         && aType != env->getFloatPrototype() && aType != env->getBoolPrototype()) {
-                        const proto::ProtoObject* mroAttr = aType->getAttribute(ctx, env->getMroString());
+                        const proto::ProtoObject* mroAttr = env->getAttribute(ctx, aType, env->getMroString(), false);
                         const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
                         if (mroT) {
                             for (unsigned long mi = 0; mi < mroT->getSize(ctx); ++mi) {
@@ -7309,7 +7309,7 @@ const proto::ProtoObject* executeBytecodeRange(
                             }
                             // Compute derivation: if baseMeta is a subclass of bestMeta, it becomes the new best
                             if (!areSameClassesVM(ctx, baseMeta, bestMeta) && bestMeta) {
-                                const proto::ProtoObject* mro = baseMeta->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__mro__"));
+                                const proto::ProtoObject* mro = env->getAttribute(ctx, baseMeta, PythonEnvironment::getInternedString(ctx, "__mro__"), false);
                                 bool isSub = false;
                                 if (mro) {
                                     const proto::ProtoTuple* mroTuple = mro->asTuple(ctx);
@@ -8398,7 +8398,7 @@ const proto::ProtoObject* executeBytecodeRange(
                             if (objType && objType != PROTO_NONE) {
                                 const proto::ProtoString* delattrS =
                                     PythonEnvironment::getInternedString(ctx, "__delattr__");
-                                const proto::ProtoObject* mroAttr = objType->getAttribute(ctx, env->getMroString());
+                                const proto::ProtoObject* mroAttr = env->getAttribute(ctx, objType, env->getMroString(), false);
                                 const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
                                 const proto::ProtoObject* override = nullptr;
                                 if (mroT) {
@@ -8445,7 +8445,7 @@ const proto::ProtoObject* executeBytecodeRange(
                             if (type->hasOwnAttribute(ctx, nameS) == PROTO_TRUE) {
                                 descr = type->getOwnAttributeDirect(ctx, nameS);
                             } else {
-                                const proto::ProtoObject* mroObj = type->getAttribute(ctx, env->getMroString());
+                                const proto::ProtoObject* mroObj = env->getAttribute(ctx, type, env->getMroString(), false);
                                 const proto::ProtoTuple* mroT = mroObj ? mroObj->asTuple(ctx) : nullptr;
                                 if (mroT) {
                                     for (unsigned long mi = 0; mi < mroT->getSize(ctx); ++mi) {

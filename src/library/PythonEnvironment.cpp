@@ -2556,7 +2556,7 @@ static const proto::ProtoObject* py_int_call(
             // and would loop on an instance whose isInteger is false.
             if (env) {
                 const proto::ProtoObject* cls0 = env->getType(ctx, val);
-                const proto::ProtoObject* mroAttr0 = cls0 ? cls0->getAttribute(ctx, env->getMroString()) : nullptr;
+                const proto::ProtoObject* mroAttr0 = cls0 ? env->getAttribute(ctx, cls0, env->getMroString(), false) : nullptr;
                 const proto::ProtoTuple* mro0 = mroAttr0 ? mroAttr0->asTuple(ctx) : nullptr;
                 bool subOfInt = false;
                 if (mro0 && env->getIntPrototype()) {
@@ -6214,7 +6214,7 @@ static const proto::ProtoObject* py_dict_call(
             if (mt == env->getDictPrototype()) {
                 mappingIsDictLike = true;
             } else if (mt && mt != PROTO_NONE) {
-                const proto::ProtoObject* mAttr = mt->getAttribute(context, env->getMroString());
+                const proto::ProtoObject* mAttr = env->getAttribute(context, mt, env->getMroString(), false);
                 const proto::ProtoTuple* mroT = mAttr ? mAttr->asTuple(context) : nullptr;
                 if (mroT) {
                     for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
@@ -8429,7 +8429,7 @@ static const proto::ProtoObject* py_str_mul(
         bool unwrapped = false;
         if (env && other) {
             const proto::ProtoObject* otCls = env->getType(ctx, other);
-            const proto::ProtoObject* otMro = otCls ? otCls->getAttribute(ctx, env->getMroString()) : nullptr;
+            const proto::ProtoObject* otMro = otCls ? env->getAttribute(ctx, otCls, env->getMroString(), false) : nullptr;
             const proto::ProtoTuple* otMroT = otMro ? otMro->asTuple(ctx) : nullptr;
             bool subOfInt = false;
             if (otMroT && env->getIntPrototype()) {
@@ -17856,7 +17856,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             // promotion otherwise.
             bool isComplexLike = (otherType == env->getComplexPrototype());
             if (!isComplexLike && otherType && otherType != PROTO_NONE) {
-                const proto::ProtoObject* mroAttr = otherType->getAttribute(ctx, env->getMroString());
+                const proto::ProtoObject* mroAttr = env->getAttribute(ctx, otherType, env->getMroString(), false);
                 const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
                 if (mroT) {
                     for (unsigned long mi = 0; mi < mroT->getSize(ctx); ++mi) {
@@ -24688,7 +24688,7 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
                 if (aType && bType && aType != bType && aType != PROTO_NONE && bType != PROTO_NONE) {
                     // Check b's type subclasses a's type via __mro__.
                     bool bIsSubclassOfA = false;
-                    const proto::ProtoObject* mroAttr = bType->getAttribute(ctx, getMroString());
+                    const proto::ProtoObject* mroAttr = getAttribute(ctx, bType, getMroString(), false);
                     const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
                     if (mroT) {
                         for (unsigned long i = 1; i < mroT->getSize(ctx); ++i) {
