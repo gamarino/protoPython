@@ -6991,6 +6991,54 @@ static const proto::ProtoObject* py_isinstance(
         return env->isActuallyAClass(context, obj) ? PROTO_TRUE : PROTO_FALSE;
     }
 
+    // STRUCT-210: even when cls IS a class, dispatch via the metaclass's
+    // __instancecheck__ if it owns one (e.g. ABCMeta uses this for the
+    // _abc_registry of virtual subclasses).  CPython runs
+    // type(cls).__instancecheck__(cls, obj) unconditionally; we only
+    // skip it for the default object.__instancecheck__ to avoid
+    // infinite recursion (object.__instancecheck__ would itself call
+    // back into isinstance machinery).
+    if (env && cls && cls != PROTO_NONE) {
+        const proto::ProtoObject* metaCls = env->getType(context, cls);
+        if (metaCls && metaCls != PROTO_NONE
+            && metaCls != env->getTypePrototype()
+            && metaCls != env->getObjectPrototype()) {
+            const proto::ProtoString* icheckS =
+                PythonEnvironment::getInternedString(context, "__instancecheck__");
+            // Walk metacls MRO for an OWN __instancecheck__ before
+            // type / object.  If found, dispatch.
+            const proto::ProtoString* mroS = env->getMroString();
+            const proto::ProtoObject* mroAttr = mroS ? env->getAttribute(context, metaCls, mroS, false) : nullptr;
+            const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
+            const proto::ProtoObject* icheckM = nullptr;
+            if (mroT) {
+                for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+                    const proto::ProtoObject* b = mroT->getAt(context, i);
+                    if (!b || b == PROTO_NONE) continue;
+                    if (b == env->getTypePrototype() || b == env->getObjectPrototype()) break;
+                    if (b->hasOwnAttribute(context, icheckS) == PROTO_TRUE) {
+                        icheckM = b->getOwnAttributeDirect(context, icheckS);
+                        break;
+                    }
+                }
+            }
+            if (icheckM && icheckM != PROTO_NONE) {
+                const proto::ProtoList* args =
+                    context->newList()->appendLast(context, obj);
+                const proto::ProtoObject* r = nullptr;
+                if (icheckM->asMethod(context)) {
+                    r = icheckM->asMethod(context)(context,
+                        const_cast<proto::ProtoObject*>(cls), nullptr, args, nullptr);
+                } else {
+                    const proto::ProtoList* fullArgs =
+                        context->newList()->appendLast(context, cls)->appendLast(context, obj);
+                    r = ::protoPython::invokePythonCallable(context, icheckM, fullArgs, nullptr);
+                }
+                if (r) return (r == PROTO_TRUE) ? PROTO_TRUE : PROTO_FALSE;
+            }
+        }
+    }
+
     if (checkInterfaceInstanceOf(context, obj, cls)) {
         return PROTO_TRUE;
     }
