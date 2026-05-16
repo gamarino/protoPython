@@ -28,6 +28,103 @@
 
 ---
 
+## Current Status (2026-05-16) — post-twenty-third-sweep (round 16, root-cause)
+
+Round 16 was a targeted root-cause round.  User directive:
+"resolver la raiz" — fix the LOAD_DEREF closure-cell bug that has
+blocked tests across rounds 8 → 15 (STRUCT-63 / STRUCT-100 / multiple
+deferrals from rounds 13–15).
+
+### The architectural root cause
+
+`collectNestedScopeFreeVarsImpl` in Compiler.cpp had handlers for
+FunctionDefNode, AsyncFunctionDefNode, LambdaNode and the
+comprehension family, plus a generic recursive descent for
+compound statements (If/While/For/Try/With/…) — but **no handler
+for ClassDefNode**.
+
+When a class definition appeared in the enclosing scope's body,
+the recursion stopped at the class statement.  Methods inside the
+class body never had their free vars bubbled up to the enclosing
+function.  Consequence: a method inside the class body that
+referenced an enclosing-function local (sibling class, captured
+variable, etc.) did NOT trigger cellvar promotion in the outer
+function — at runtime `LOAD_DEREF` saw an empty cell (None).
+
+### Fix (STRUCT-171)
+
+Add a `ClassDefNode` branch that:
+- Collects names defined directly in the class body (these bind to
+  the namespace dict — exclude them from outer freevars).
+- Recurses into nested function/class defs in the body, gathering
+  THEIR free vars.
+- Bubbles up only the subset NOT defined by the class itself.
+- Scans decorator / base / keyword expressions (these run in the
+  enclosing scope and can reference enclosing locals directly).
+
+### STRUCT-172 follow-up
+
+While analyzing test_metaclass-adjacent cases, found that
+test_gh55664 expected the RuntimeWarning for non-string namespace
+keys to include the class name (`assertWarnsRegex(RuntimeWarning,
+'MyClass')`).  Round 12 STRUCT-111 emitted the warning but
+omitted the class name.  Fix: format message as `"non-string key in
+'<ClassName>' class dict: <KeyTypeName>"`.
+
+### Direct unittest counts (`test_descr.py`)
+
+| | run | fail | error | skipped | Δ |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-16 (round-16) | 165 | **32** | 47 | 10 | F+E ↓1 (80→79); test_funny_new + test_gh55664 flip |
+| 2026-05-16 (round-15 final) | 165 | 33 | 47 | 10 | post-STRUCT-170 baseline |
+
+The closure fix is foundational: even though F+E only dropped by 1
+in test_descr.py, the fix unblocks an entire class of patterns
+(`def outer(): class C: def m(self): return SiblingDefinedLater`)
+that previously silently returned None.  Round 16+ work that uses
+this pattern — without protoPython users hitting confusing None-
+type errors — now has a path forward.
+
+### Commits landed in round 16
+
+| Commit | Theme |
+| :--- | :--- |
+| `4af5c849` STRUCT-171 | ClassDefNode handler in collectNestedScopeFreeVarsImpl — closure cell forward-reference fix (test_funny_new PASS) |
+| `df509889` STRUCT-172 | RuntimeWarning includes class name for non-string namespace keys (test_gh55664 PASS) |
+| _this commit_ STRUCT-173 | Round-16 documentation |
+
+### Why not more flips from the closure fix?
+
+The closure fix removes a class of silent-None bugs.  But many
+test_descr failures are blocked by orthogonal issues:
+- pickle of nested classes requires `pickle.findattr` to walk the
+  test module's locals; a closure fix doesn't make `<class 'C'>` a
+  pickleable module-level name
+- Slot wrapper validation (test_proxy_call, test_wrong_class_slot_wrapper)
+- Module __dict__ shape (test_uninitialized_modules)
+- GC integration (weakrefs, cycle detection)
+
+### Carry-over to round 17+
+
+The three remaining strategic blockers (after the closure root
+cause is fixed):
+
+1. **Module __dict__ refactor**: bare module's __dict__ needs to be
+   a falsy empty dict + grow on attribute writes.  Affects
+   test_uninitialized_modules.
+2. **Slot wrapper validation**: receiver-class check via MRO.  Round
+   13/14 attempts broke unittest's TestLoader; needs a more careful
+   approach.
+3. **Pickle of nested classes**: integrate with pickle's __qualname__
+   walk so nested classes have findable module paths.
+
+### Infra note
+
+Build verification uses `build_release/` (underscore).  ctest 183/183
+on every landed round-16 commit; test_descr baseline 32F+47E.
+
+---
+
 ## Current Status (2026-05-16) — post-twenty-second-sweep (round 15)
 
 Round 15 planned 20 commits prioritizing test-flip yield.  Actual
