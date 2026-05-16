@@ -6265,16 +6265,13 @@ const proto::ProtoObject* py_type(
             const proto::ProtoObject* mroTupleVal = env ? env->newTuple(mroList) : context->newTupleFromList(mroList)->asObject(context);
             targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, mroName2, mroTupleVal));
 
-            // STRUCT-84: keep `__mro__` as an own-attribute write-through
-            // cache.  After STRUCT-83 the descriptor (py_type_get_mro)
-            // reconstructs the tuple from the chain on every read.  As
-            // of round 13, ~25 raw call sites in BuiltinsModule.cpp,
-            // PythonEnvironment.cpp, ExecutionEngine.cpp,
-            // ExceptionsModule.cpp, and CollectionsAbcModule.cpp have
-            // migrated to descriptor-aware `env->getAttribute`, but ~14
-            // raw sites still depend on a cached own attribute being
-            // present.  Drop the cached write only after the full sweep
-            // completes (round 14).
+            // STRUCT-84: cached `__mro__` write-through.  Round 14 closed
+            // 35+ raw call sites across all modules (STRUCT-103/104/105/
+            // 121/132/133-sweep), but a deeper grep with mroS-style
+            // variable names still surfaces residual readers we haven't
+            // mapped — dropping the cache regresses test_foundation
+            // (`_Environ() takes no arguments`).  Defer the final drop
+            // to a future round once the remaining readers are found.
             //
             // STRUCT-82: seed the protoCore parent chain DIRECTLY from the
             // computed C3 MRO (excluding `cls` itself).  protoCore's

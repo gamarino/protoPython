@@ -194,7 +194,7 @@ static const proto::ProtoObject* py_weakref_ref(
             if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, tname);
         }
         const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
-        const proto::ProtoObject* mroAttr = tp ? tp->getAttribute(ctx, mroS) : nullptr;
+        const proto::ProtoObject* mroAttr = tp ? env->getAttribute(ctx, tp, mroS, false) : nullptr;
         const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
         bool blocked = false;
         if (mroT) {

@@ -1256,7 +1256,7 @@ static bool isStrictSubclassOf(proto::ProtoContext* ctx,
     if (!env || !bCls || !aCls || bCls == aCls) return false;
     const proto::ProtoString* mroS = env->getMroString();
     if (!mroS) return false;
-    const proto::ProtoObject* mroObj = bCls->getAttribute(ctx, mroS);
+    const proto::ProtoObject* mroObj = env->getAttribute(ctx, bCls, mroS, false);
     const proto::ProtoTuple* mroTup = mroObj ? mroObj->asTuple(ctx) : nullptr;
     if (!mroTup) return false;
     unsigned long n = mroTup->getSize(ctx);
@@ -1996,7 +1996,7 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
                     // fast path further down).
                     bool dispatchHere = false;
                     const proto::ProtoString* mroS = env_dunder->getMroString();
-                    const proto::ProtoObject* mroObj = mroS ? bCls->getAttribute(ctx, mroS) : nullptr;
+                    const proto::ProtoObject* mroObj = mroS ? env_dunder->getAttribute(ctx, bCls, mroS, false) : nullptr;
                     const proto::ProtoTuple* mroTup = mroObj ? mroObj->asTuple(ctx) : nullptr;
                     if (mroTup) {
                         unsigned long mn = mroTup->getSize(ctx);
@@ -8341,7 +8341,7 @@ const proto::ProtoObject* executeBytecodeRange(
                             bool isModuleLike = (objType == modProto);
                             if (!isModuleLike && objType && objType != PROTO_NONE) {
                                 const proto::ProtoString* mroS = env->getMroString();
-                                const proto::ProtoObject* oMroAttr = mroS ? objType->getAttribute(ctx, mroS) : nullptr;
+                                const proto::ProtoObject* oMroAttr = mroS ? env->getAttribute(ctx, objType, mroS, false) : nullptr;
                                 const proto::ProtoTuple* oMroT = oMroAttr ? oMroAttr->asTuple(ctx) : nullptr;
                                 if (oMroT) {
                                     for (unsigned long mi = 0; mi < oMroT->getSize(ctx); ++mi) {

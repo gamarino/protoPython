@@ -437,7 +437,7 @@ static bool mp_isClassObject(const proto::ProtoObject* data,
         PythonEnvironment* envIPC = PythonEnvironment::fromContext(context);
         const proto::ProtoObject* mro = envIPC
             ? envIPC->getAttribute(context, data, mroS, false)
-            : data->getAttribute(context, mroS);
+            : env->getAttribute(context, data, mroS, false);
         if (mro && mro->asList(context)) return true;
     }
     return false;
@@ -1248,7 +1248,7 @@ static const proto::ProtoObject* py_object_get_weakref(
     };
 
     const proto::ProtoString* mroS = PythonEnvironment::getInternedString(context, "__mro__");
-    const proto::ProtoObject* mroAttr = tp->getAttribute(context, mroS);
+    const proto::ProtoObject* mroAttr = env->getAttribute(context, tp, mroS, false);
     const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
     if (mroT) {
         unsigned long sz = mroT->getSize(context);
@@ -4279,7 +4279,7 @@ std::string PythonEnvironment::reprObject(proto::ProtoContext* context, const pr
         const proto::ProtoObject* rawAttr = nullptr;
         const proto::ProtoString* mroS = env ? env->getMroString()
                                              : PythonEnvironment::getInternalString(context, "__mro__");
-        const proto::ProtoObject* mroObj = cls->getAttribute(context, mroS);
+        const proto::ProtoObject* mroObj = env->getAttribute(context, cls, mroS, false);
         const proto::ProtoTuple* mroTup = mroObj ? mroObj->asTuple(context) : nullptr;
         if (mroTup) {
             unsigned long mroLen = mroTup->getSize(context);
@@ -16289,7 +16289,7 @@ static bool slot_member_instance_compatible(proto::ProtoContext* ctx,
     const proto::ProtoObject* tp = env->getType(ctx, instance);
     if (tp == objclass) return true;
     const proto::ProtoString* mroS = env->getMroString();
-    const proto::ProtoObject* mroAttr = tp ? tp->getAttribute(ctx, mroS) : nullptr;
+    const proto::ProtoObject* mroAttr = tp ? env->getAttribute(ctx, tp, mroS, false) : nullptr;
     const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
     if (!mroT) return false;
     for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
@@ -16826,7 +16826,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             const proto::ProtoObject* objCls = env->getType(ctx, obj);
             const proto::ProtoString* mroDS = env->getMroString();
             if (objCls && objCls != PROTO_NONE && mroDS) {
-                const proto::ProtoObject* mroObj = objCls->getAttribute(ctx, mroDS);
+                const proto::ProtoObject* mroObj = env->getAttribute(ctx, objCls, mroDS, false);
                 const proto::ProtoTuple* mroT = mroObj ? mroObj->asTuple(ctx) : nullptr;
                 if (mroT) {
                     bool isContainerSubclass = false;
@@ -16890,7 +16890,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             const proto::ProtoString* mroS = env->getMroString();
             const proto::ProtoTuple* mroT = nullptr;
             if (cls && cls != PROTO_NONE && mroS) {
-                const proto::ProtoObject* mroObj = cls->getAttribute(ctx, mroS);
+                const proto::ProtoObject* mroObj = env->getAttribute(ctx, cls, mroS, false);
                 if (mroObj) mroT = mroObj->asTuple(ctx);
             }
             bool hasSlots = false;
@@ -21993,7 +21993,7 @@ uint32_t PythonEnvironment::ensureClassFlags(proto::ProtoContext* ctx,
     // positives only force the slow path; correctness is preserved).
     const proto::ProtoTuple* mroT = nullptr;
     if (mroString) {
-        const proto::ProtoObject* mroAttr = cls->getAttribute(ctx, mroString);
+        const proto::ProtoObject* mroAttr = getAttribute(ctx, cls, mroString, false);
         if (mroAttr) mroT = mroAttr->asTuple(ctx);
     }
     auto probe = [&](const proto::ProtoObject* base) {
@@ -22637,7 +22637,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
             ? getattributeDunderString
             : PythonEnvironment::getInternedString(ctx, "__getattribute__");
         // Walk objClass MRO looking for a non-default __getattribute__.
-        const proto::ProtoObject* mroAttr = objClass->getAttribute(ctx, mroString);
+        const proto::ProtoObject* mroAttr = getAttribute(ctx, objClass, mroString, false);
         const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
         if (mroT) {
             for (unsigned long mi = 0; mi < mroT->getSize(ctx); ++mi) {
@@ -22747,7 +22747,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     // dict.  Mirrors CPython's MRO-then-instance-dict resolution order
     // for data descriptors.
     if (!isClass && objClass && objClass != PROTO_NONE && getAttrDepth <= 1) {
-        const proto::ProtoObject* mroAttr2 = objClass->getAttribute(ctx, mroString);
+        const proto::ProtoObject* mroAttr2 = getAttribute(ctx, objClass, mroString, false);
         const proto::ProtoTuple* mroT2 = mroAttr2 ? mroAttr2->asTuple(ctx) : nullptr;
         if (mroT2) {
             for (unsigned long mi = 0; mi < mroT2->getSize(ctx); ++mi) {
@@ -22868,7 +22868,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         if (searchObj && searchObj != PROTO_NONE && (searchObj != obj || isClass)) {
             // Check __mro__ attribute specifically
             const proto::ProtoString* mroS = mroString ? mroString : PythonEnvironment::getInternedString(ctx, "__mro__");
-            const proto::ProtoObject* mroObj = searchObj->proto::ProtoObject::getAttribute(ctx, mroS);
+            const proto::ProtoObject* mroObj = getAttribute(ctx, searchObj, mroS, false);
 
             // __mro__ is almost always a tuple; iterating it directly avoids
             // allocating a fresh ProtoList copy on every attribute lookup that
@@ -22981,7 +22981,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         const proto::ProtoObject* meta = this->getType(ctx, obj);
         if (meta && meta != PROTO_NONE && meta != obj) {
             const proto::ProtoString* mroS2 = mroString ? mroString : PythonEnvironment::getInternedString(ctx, "__mro__");
-            const proto::ProtoObject* mroObj2 = meta->proto::ProtoObject::getAttribute(ctx, mroS2);
+            const proto::ProtoObject* mroObj2 = getAttribute(ctx, meta, mroS2, false);
             // Same tuple-iteration fix as section 1.1: prefer iterating the
             // tuple directly over allocating a list copy on every call.
             const proto::ProtoTuple* mroTuple2 = nullptr;
@@ -23485,7 +23485,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                 UndoEntry e;
                 e.node = node;
                 e.oldMro = node->hasOwnAttribute(ctx, mroS) == PROTO_TRUE
-                    ? node->getAttribute(ctx, mroS) : nullptr;
+                    ? getAttribute(ctx, node, mroS, false) : nullptr;
                 e.oldChain = node->getParents(ctx);
                 undo.push_back(e);
                 const proto::ProtoObject* mroT = ctx->newTupleFromList(mro)->asObject(ctx);
@@ -23844,7 +23844,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
             const proto::ProtoObject* objType = getType(ctx, obj);
             bool isModuleLike = (objType == modulePrototype);
             if (!isModuleLike && objType && objType != PROTO_NONE && mroString) {
-                const proto::ProtoObject* oMroAttr = objType->getAttribute(ctx, mroString);
+                const proto::ProtoObject* oMroAttr = getAttribute(ctx, objType, mroString, false);
                 const proto::ProtoTuple* oMroT = oMroAttr ? oMroAttr->asTuple(ctx) : nullptr;
                 if (oMroT) {
                     for (unsigned long mi = 0; mi < oMroT->getSize(ctx); ++mi) {
@@ -23870,7 +23870,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
         bool isDictLike = (valType == dictPrototype)
                        || (mappingProxyPrototype && valType == mappingProxyPrototype);
         if (!isDictLike && valType && valType != PROTO_NONE && mroString) {
-            const proto::ProtoObject* vMroAttr = valType->getAttribute(ctx, mroString);
+            const proto::ProtoObject* vMroAttr = getAttribute(ctx, valType, mroString, false);
             const proto::ProtoTuple* vMroT = vMroAttr ? vMroAttr->asTuple(ctx) : nullptr;
             if (vMroT) {
                 for (unsigned long mi = 0; mi < vMroT->getSize(ctx); ++mi) {
@@ -23962,7 +23962,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                 // looking for a class that owns __setattr__, stopping at
                 // objectPrototype (the implicit default).
                 const proto::ProtoString* mroS = mroString;
-                const proto::ProtoObject* mroAttr = mroS ? objType->getAttribute(ctx, mroS) : nullptr;
+                const proto::ProtoObject* mroAttr = mroS ? getAttribute(ctx, objType, mroS, false) : nullptr;
                 const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
                 const proto::ProtoObject* override = nullptr;
                 // Some built-in prototypes (property, slice…) have an
@@ -24030,7 +24030,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
         if (type->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
             typeOwnsName = true;
         } else if (mroString) {
-            const proto::ProtoObject* mroAttr3 = type->getAttribute(ctx, mroString);
+            const proto::ProtoObject* mroAttr3 = getAttribute(ctx, type, mroString, false);
             const proto::ProtoTuple* mroT3 = mroAttr3 ? mroAttr3->asTuple(ctx) : nullptr;
             if (mroT3) {
                 for (unsigned long mi = 0; mi < mroT3->getSize(ctx); ++mi) {
@@ -24080,7 +24080,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
 
     const proto::ProtoTuple* mroT = nullptr;
     if (type && type != PROTO_NONE) {
-        const proto::ProtoObject* mroAttr = type->getAttribute(ctx, mroString);
+        const proto::ProtoObject* mroAttr = getAttribute(ctx, type, mroString, false);
         mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
     }
 
@@ -24225,7 +24225,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
         const proto::ProtoObject* effectiveType = objIsClass ? getType(ctx, obj) : type;
         const proto::ProtoTuple* effectiveMroT = objIsClass ? nullptr : mroT;
         if (objIsClass && effectiveType && effectiveType != PROTO_NONE) {
-            const proto::ProtoObject* m = effectiveType->getAttribute(ctx, mroString);
+            const proto::ProtoObject* m = getAttribute(ctx, effectiveType, mroString, false);
             effectiveMroT = m ? m->asTuple(ctx) : nullptr;
         }
         const proto::ProtoObject* descr = nullptr;
