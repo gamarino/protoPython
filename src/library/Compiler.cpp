@@ -3006,6 +3006,48 @@ static void collectNestedScopeFreeVarsImpl(ASTNode* node, std::unordered_set<std
         scopeFreeVars(afn->body.get(), def, out);
         return;
     }
+    // STRUCT-171 (round 16): ClassDefNode handler — class body's own
+    // locals bind to the namespace dict (not cells), but methods
+    // INSIDE the class body have their own scope and CAN close over
+    // enclosing function locals.  Recurse into the class body looking
+    // for nested function/class defs and their freevars.  Treat any
+    // name DEFINED in the class body OR in a method body as
+    // "internal"; only names referenced from inside methods but NOT
+    // defined locally bubble up.  Without this, a class body method
+    // that references an enclosing-function local doesn't trigger
+    // cellvar promotion in the outer function — LOAD_DEREF reads a
+    // None cell.  Fixes the long-deferred STRUCT-63/100 closure bug.
+    if (auto* cd = dynamic_cast<ClassDefNode*>(node)) {
+        // Names defined directly in the class body are NOT freevars
+        // of the enclosing function (they bind to the namespace dict).
+        std::unordered_set<std::string> classOwnDef;
+        collectDefinedNames(cd->body.get(), classOwnDef);
+        // The class's own name is also defined by the surrounding
+        // class statement; don't bubble it up.
+        classOwnDef.insert(cd->name);
+        // Recurse into nested scopes (methods, nested classes) and
+        // collect their free vars.  Filter the result against the
+        // class's own defs so a method's reference to another
+        // class-level name doesn't escape.
+        std::unordered_set<std::string> nestedFree;
+        if (auto* suite = dynamic_cast<SuiteNode*>(cd->body.get())) {
+            for (auto& st : suite->statements) {
+                collectNestedScopeFreeVarsImpl(st.get(), nestedFree);
+            }
+        } else {
+            collectNestedScopeFreeVarsImpl(cd->body.get(), nestedFree);
+        }
+        for (const auto& nm : nestedFree) {
+            if (!classOwnDef.count(nm)) out.insert(nm);
+        }
+        // Also scan decorator / base / keyword expressions for names
+        // used directly in the class statement (these run in the
+        // enclosing scope).
+        for (auto& d : cd->decorator_list) collectUsedNames(d.get(), out);
+        for (auto& b : cd->bases) collectUsedNames(b.get(), out);
+        for (auto& kw : cd->keywords) if (kw.second) collectUsedNames(kw.second.get(), out);
+        return;
+    }
     if (auto* lam = dynamic_cast<LambdaNode*>(node)) {
         std::unordered_set<std::string> def;
         for (const auto& p : lam->parameters) def.insert(p);
