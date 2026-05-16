@@ -28,6 +28,81 @@
 
 ---
 
+## Current Status (2026-05-16) — post-twenty-fourth-sweep (round 16, extended)
+
+Round 16 extension: tackled the 3 strategic carry-overs.  Two fixed,
+one deferred (module __dict__).
+
+### Round 16 outcome (continuation)
+
+**STRUCT-174 (prep)**: re-exposed `NativeMethodInfo` struct as
+public in PythonEnvironment.h.  Round-13 STRUCT-126 had moved it
+public, the revert reverted that too.  Restored for future
+slot-wrapper validation attempts.  No behaviour change.
+
+**Slot wrapper validation reattempt**: tried WRAPPER-kind narrow
+check in invokeDunder.  Now broke unittest's TestLoader import.
+The validation continues to be too aggressive — some module-init-
+time code path dispatches `dict.__setitem__` on a non-dict that
+must succeed.  Reverted; full investigation deferred.
+
+**STRUCT-175 (root-cause fix #2)**: class `__module__` was being
+sourced from `globals['__module__']` instead of `globals['__name__']`
+during OP_BUILD_CLASS.  The wrong key is almost never set on real
+module globals; classes ended up with `__module__ = 'builtins'`
+(inherited from object), breaking pickle's class lookup with
+`Can't pickle <class 'C'>: it's not found as builtins.C`.  Fix:
+read `globals['__name__']` first (with `__module__` as defensive
+fallback).  Pickle's find-class step now succeeds for nested
+classes declared via `global ClassName; class ClassName: ...`.
+
+**Module __dict__ refactor — DEFERRED**: bare module's __dict__
+needs to be a separate dict object alias-backed to the module
+(write-through both directions).  Architectural; affects
+test_uninitialized_modules.  Carry-over to round 17.
+
+### Direct unittest counts (`test_descr.py`)
+
+| | run | fail | error | skipped | Δ |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-16 (round-16 ext.) | 165 | 32 | 47 | 10 | F+E flat (79); pickle tests' failure mode improved (PicklingError → EOFError) |
+
+F+E count is flat for test_descr but the pickle tests' failure
+MODE improved (find-class step succeeds; subsequent loads-side
+work blocked by pickle-protocol gaps unrelated to this fix).
+
+### Round 16 commits (cumulative)
+
+| Commit | Theme |
+| :--- | :--- |
+| `4af5c849` STRUCT-171 | Closure forward-reference root cause (ClassDefNode in collectNestedScopeFreeVarsImpl) |
+| `df509889` STRUCT-172 | RuntimeWarning includes class name (test_gh55664 PASS) |
+| `a87dd458` STRUCT-173 (docs) | Round-16 initial documentation |
+| `6114f494` STRUCT-174 prep | NativeMethodInfo exposed as public |
+| `d430c404` STRUCT-175 | Class __module__ from globals['__name__'] (pickle find-class fix) |
+| _this commit_ STRUCT-176 (docs) | Extended round-16 documentation |
+
+### Carry-over to round 17
+
+1. **Module __dict__ refactor** — bare `M.__new__(M)`'s __dict__
+   needs to be a falsy empty dict that alias-writes via setattr.
+   Single test blocked: test_uninitialized_modules.
+2. **Slot wrapper validation** — receiver-class check that doesn't
+   break module-init paths.  Possibly move to descriptor `__get__`
+   at native-method-cell resolution time.  Blocked:
+   test_wrong_class_slot_wrapper, test_proxy_call.
+3. **Pickle round-trip** — pickle.dumps now succeeds for nested
+   classes with `global`, but pickle.loads side has separate gaps.
+   Blocked: test_pickle_slots, test_reduce_copying (now EOFError
+   instead of PicklingError).
+
+### Infra note
+
+Build verification uses `build_release/` (underscore).  ctest 183/183
+on every landed round-16 commit; test_descr baseline 32F+47E.
+
+---
+
 ## Current Status (2026-05-16) — post-twenty-third-sweep (round 16, root-cause)
 
 Round 16 was a targeted root-cause round.  User directive:
