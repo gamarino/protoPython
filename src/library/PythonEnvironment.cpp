@@ -25735,8 +25735,39 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
         // or `return None` diverged silently — protoPython returned
         // the placeholder and downstream iteration walked its chars
         // or produced an empty list.  Validate now.
-        const proto::ProtoObject* nextCheck = (result == PROTO_NONE) ? nullptr
-            : getAttribute(ctx, result, getNextString(), /*raiseError=*/false);
+        // STRUCT-205: type-only lookup for __next__ validation when the
+        // result's type has a user-defined __getattribute__ — CPython
+        // checks via tp_iternext slot which skips __getattribute__.
+        // Using getAttribute on the instance triggers user-defined
+        // __getattribute__ hooks (test_special_method_lookup's Checker
+        // pattern asserts __getattribute__ is NOT called for special
+        // methods).  Built-in iterators don't have custom hooks and
+        // benefit from the legacy chain walk, so only opt in when the
+        // type carries PYFLAG_HAS_CUSTOM_GETATTR.
+        const proto::ProtoObject* nextCheck = nullptr;
+        if (result != PROTO_NONE && result) {
+            const proto::ProtoObject* resCls = getType(ctx, result);
+            uint32_t flags = (resCls && resCls != PROTO_NONE) ? ensureClassFlags(ctx, resCls) : 0;
+            if (flags & PythonEnvironment::PYFLAG_HAS_CUSTOM_GETATTR) {
+                // Type-only walk
+                const proto::ProtoObject* mroAttr = getAttribute(ctx, resCls, getMroString(), false);
+                const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+                if (mroT) {
+                    for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
+                        const proto::ProtoObject* base = mroT->getAt(ctx, i);
+                        if (base && base != PROTO_NONE
+                            && base->hasOwnAttribute(ctx, getNextString()) == PROTO_TRUE) {
+                            nextCheck = PROTO_TRUE;
+                            break;
+                        }
+                    }
+                } else if (resCls->hasOwnAttribute(ctx, getNextString()) == PROTO_TRUE) {
+                    nextCheck = PROTO_TRUE;
+                }
+            } else {
+                nextCheck = getAttribute(ctx, result, getNextString(), /*raiseError=*/false);
+            }
+        }
         if (result == PROTO_NONE || !nextCheck || nextCheck == PROTO_NONE) {
             std::string clsName = (result == PROTO_NONE) ? "NoneType" : "object";
             if (result != PROTO_NONE) {
