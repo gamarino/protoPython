@@ -22,7 +22,12 @@ static const proto::ProtoObject* py_check_methods(
 
     if (!posArgs || posArgs->getSize(ctx) < 2) return PROTO_FALSE;
     const proto::ProtoObject* C = posArgs->getAt(ctx, 0);
-    const proto::ProtoObject* mro = C->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__mro__"));
+    // STRUCT-132: descriptor-aware __mro__ read.
+    PythonEnvironment* envABC = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoString* mroABCS = proto::ProtoString::createSymbol(ctx, "__mro__");
+    const proto::ProtoObject* mro = envABC
+        ? envABC->getAttribute(ctx, C, mroABCS, false)
+        : C->getAttribute(ctx, mroABCS);
     if (!mro) return PROTO_FALSE;
     const proto::ProtoList* mroList = mro->asList(ctx);
     if (!mroList) return PROTO_FALSE;

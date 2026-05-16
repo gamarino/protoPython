@@ -3289,8 +3289,10 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
             if (objCls == self) {
                 isInstanceOfSelf = true;
             } else if (objCls && objCls != PROTO_NONE) {
-                const proto::ProtoObject* mroAttr =
-                    objCls->getAttribute(ctx, env->getMroString());
+                // STRUCT-132: descriptor-aware __mro__ read.
+                const proto::ProtoObject* mroAttr = env
+                    ? env->getAttribute(ctx, objCls, env->getMroString(), false)
+                    : objCls->getAttribute(ctx, env->getMroString());
                 const proto::ProtoTuple* mroT =
                     mroAttr ? mroAttr->asTuple(ctx) : nullptr;
                 if (mroT) {

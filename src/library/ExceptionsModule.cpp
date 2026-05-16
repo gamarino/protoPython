@@ -322,7 +322,12 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
     // Set __mro__ for attribute lookup
     const proto::ProtoList* mroList = ctx->newList()->appendLast(ctx, exc);
     if (base) {
-        const proto::ProtoObject* baseMro = base->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__mro__"));
+        // STRUCT-132: descriptor-aware __mro__ read.
+        PythonEnvironment* envEM = PythonEnvironment::fromContext(ctx);
+        const proto::ProtoString* mroEMS = PythonEnvironment::getInternedString(ctx, "__mro__");
+        const proto::ProtoObject* baseMro = envEM
+            ? envEM->getAttribute(ctx, base, mroEMS, false)
+            : base->getAttribute(ctx, mroEMS);
         if (baseMro && baseMro->isTuple(ctx)) {
             const proto::ProtoTuple* bt = baseMro->asTuple(ctx);
             for (size_t i = 0; i < bt->getSize(ctx); ++i) {
