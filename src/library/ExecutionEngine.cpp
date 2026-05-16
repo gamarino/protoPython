@@ -5226,12 +5226,16 @@ const proto::ProtoObject* executeBytecodeRange(
                             const proto::ProtoObject* vType = env->getType(ctx, v);
                             const proto::ProtoObject* getM = vType ? env->getAttribute(ctx, vType, getDS, false) : nullptr;
                             if (getM && getM != PROTO_NONE) {
-                                const proto::ProtoList* args = ctx->newList()
-                                    ->appendLast(ctx, obj)->appendLast(ctx, cls);
                                 if (getM->asMethod(ctx)) {
+                                    const proto::ProtoList* args = ctx->newList()
+                                        ->appendLast(ctx, obj)->appendLast(ctx, cls);
                                     return getM->asMethod(ctx)(ctx,
                                         const_cast<proto::ProtoObject*>(v), nullptr, args, nullptr);
                                 }
+                                // STRUCT-223: handle Python __get__ as well
+                                // (SpecialDescr pattern).  Pass descriptor as
+                                // implicit self plus (obj, cls).
+                                return env->callObject(getM, {v, obj, cls});
                             }
                             return v;
                         }
