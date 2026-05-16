@@ -869,6 +869,25 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     add_stub("BlockingIOError");
     add_stub("UnsupportedOperation");
     add_stub("FileIO");
+    // STRUCT-183: FileIO.closed needs to be a descriptor-shaped object
+    // whose __doc__ matches CPython's getset descriptor.  test_descrdoc
+    // checks `FileIO.closed.__doc__ == "True if the file is closed"`.
+    // The stub created by add_stub doesn't carry that introspection
+    // string; install it post-hoc on a child object stored as `closed`.
+    {
+        const proto::ProtoObject* fileIO = ioMod->getAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "FileIO"));
+        if (fileIO && fileIO != PROTO_NONE) {
+            const proto::ProtoObject* closedDescr = ctx->newObject(false);
+            closedDescr = closedDescr->setAttribute(ctx, py_doc_s,
+                PythonEnvironment::getInternedString(ctx,
+                    "True if the file is closed")->asObject(ctx));
+            const proto::ProtoObject* updated = fileIO->setAttribute(ctx,
+                PythonEnvironment::getInternedString(ctx, "closed"), closedDescr);
+            ioMod = ioMod->setAttribute(ctx,
+                PythonEnvironment::getInternedString(ctx, "FileIO"), updated);
+        }
+    }
     // BytesIO: real implementation (mirrors StringIO). Tests in
     // test_base64 / test_struct / test_pickle rely on read, readline,
     // write, seek, tell, getvalue, iteration, and the context-manager
