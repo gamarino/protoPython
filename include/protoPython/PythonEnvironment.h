@@ -1352,6 +1352,7 @@ private:
     // `[].__add__.__name__ == '__add__'`) without changing the
     // tagged-pointer binding form — keeping all 300+ asMethod() call
     // sites intact.
+public:
     struct NativeMethodInfo {
         std::string name;
         const proto::ProtoObject* owningClass;
@@ -1362,6 +1363,7 @@ private:
         enum class Kind { METHOD, WRAPPER };
         Kind kind{Kind::METHOD};
     };
+private:
     std::unordered_map<const void*, NativeMethodInfo> nativeMethodNames_;
 public:
     /** Record a native method fn-pointer -> (name, owning class, kind). */

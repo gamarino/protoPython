@@ -2481,6 +2481,49 @@ static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const pr
     const proto::ProtoSparseList* kwargs = env ? env->getEmptySparseList() : ctx->newSparseList();
 
     if (method->asMethod(ctx)) {
+        // STRUCT-134: slot-wrapper receiver-class validation (narrowed
+        // from round-13 STRUCT-126 which validated all asMethod calls
+        // and broke TestLoader).  Only check `Kind::WRAPPER` native
+        // methods — method_descriptor invocations (TestLoader's path)
+        // are unaffected.  CPython raises `descriptor 'X' for 'Y'
+        // objects doesn't apply to a 'Z' object` when a wrapper
+        // descriptor bound to one class is dispatched on a
+        // different-class receiver.
+        if (env) {
+            proto::ProtoMethod fn = method->asMethod(ctx);
+            std::string mnm;
+            const proto::ProtoObject* owner = nullptr;
+            protoPython::PythonEnvironment::NativeMethodInfo::Kind kind =
+                protoPython::PythonEnvironment::NativeMethodInfo::Kind::METHOD;
+            if (fn && env->lookupNativeMethodInfo(reinterpret_cast<const void*>(fn), mnm, &owner, &kind)
+                && kind == protoPython::PythonEnvironment::NativeMethodInfo::Kind::WRAPPER
+                && owner && owner != PROTO_NONE) {
+                const proto::ProtoObject* rcvType = env->getType(ctx, container);
+                if (rcvType && rcvType != owner) {
+                    bool ok = false;
+                    const proto::ProtoString* mroS = env->getMroString();
+                    const proto::ProtoObject* mroAttr = env->getAttribute(ctx, rcvType, mroS, false);
+                    const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+                    if (mroT) {
+                        for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
+                            if (mroT->getAt(ctx, static_cast<int>(i)) == owner) { ok = true; break; }
+                        }
+                    }
+                    if (!ok) {
+                        std::string mname, rname, oname;
+                        name->toUTF8String(ctx, mname);
+                        const proto::ProtoObject* rn = rcvType->getAttribute(ctx, env->getNameString());
+                        if (rn && rn->isString(ctx)) rn->asString(ctx)->toUTF8String(ctx, rname);
+                        const proto::ProtoObject* on = owner->getAttribute(ctx, env->getNameString());
+                        if (on && on->isString(ctx)) on->asString(ctx)->toUTF8String(ctx, oname);
+                        env->raiseTypeError(ctx,
+                            "descriptor '" + mname + "' for '" + oname
+                            + "' objects doesn't apply to a '" + rname + "' object");
+                        return nullptr;
+                    }
+                }
+            }
+        }
         return method->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(container), nullptr, args, kwargs);
     }
 
