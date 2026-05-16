@@ -6931,7 +6931,37 @@ static const proto::ProtoObject* py_isinstance(
                 looksLikeClass = true;
             }
         }
+        // STRUCT-197: CPython dispatches via `type(cls).__instancecheck__`
+        // even when cls isn't a real class — so a non-class instance
+        // whose metaclass overrides __instancecheck__ is honoured.
+        // test_special_method_lookup's Checker pattern exercises this
+        // by setattr(X, "__instancecheck__", impl) and calling
+        // isinstance(int, X_instance).
         if (!looksLikeClass) {
+            const proto::ProtoObject* clsType = env->getType(context, cls);
+            if (clsType && clsType != PROTO_NONE) {
+                const proto::ProtoString* icheckS =
+                    PythonEnvironment::getInternedString(context, "__instancecheck__");
+                const proto::ProtoObject* icheckM =
+                    env->getAttribute(context, clsType, icheckS, false);
+                // Skip the default object inherited via the type chain
+                // — only fire when the metaclass owns __instancecheck__.
+                if (icheckM && icheckM != PROTO_NONE
+                    && clsType->hasOwnAttribute(context, icheckS) == PROTO_TRUE) {
+                    const proto::ProtoList* args =
+                        context->newList()->appendLast(context, obj);
+                    const proto::ProtoObject* r = nullptr;
+                    if (icheckM->asMethod(context)) {
+                        r = icheckM->asMethod(context)(context,
+                            const_cast<proto::ProtoObject*>(cls), nullptr, args, nullptr);
+                    } else {
+                        const proto::ProtoList* fullArgs =
+                            context->newList()->appendLast(context, cls)->appendLast(context, obj);
+                        r = ::protoPython::invokePythonCallable(context, icheckM, fullArgs, nullptr);
+                    }
+                    return (r == PROTO_TRUE) ? PROTO_TRUE : PROTO_FALSE;
+                }
+            }
             env->raiseTypeError(context,
                 "isinstance() arg 2 must be a type, a tuple of types, or a union");
             return nullptr;
@@ -7149,6 +7179,32 @@ static const proto::ProtoObject* py_issubclass(
         }
         bool isList = !base->isString(context) && base->asList(context) != nullptr;
         if (!isUnion && !isList) {
+            // STRUCT-198: symmetric to STRUCT-197 — when base isn't a
+            // class but its type owns __subclasscheck__, dispatch via
+            // the metaclass override.  test_special_method_lookup's
+            // Checker pattern uses this for issubclass(int, X_inst).
+            const proto::ProtoObject* baseType = env->getType(context, base);
+            if (baseType && baseType != PROTO_NONE) {
+                const proto::ProtoString* scheckS =
+                    PythonEnvironment::getInternedString(context, "__subclasscheck__");
+                const proto::ProtoObject* scheckM =
+                    env->getAttribute(context, baseType, scheckS, false);
+                if (scheckM && scheckM != PROTO_NONE
+                    && baseType->hasOwnAttribute(context, scheckS) == PROTO_TRUE) {
+                    const proto::ProtoList* args =
+                        context->newList()->appendLast(context, cls);
+                    const proto::ProtoObject* r = nullptr;
+                    if (scheckM->asMethod(context)) {
+                        r = scheckM->asMethod(context)(context,
+                            const_cast<proto::ProtoObject*>(base), nullptr, args, nullptr);
+                    } else {
+                        const proto::ProtoList* fullArgs =
+                            context->newList()->appendLast(context, base)->appendLast(context, cls);
+                        r = ::protoPython::invokePythonCallable(context, scheckM, fullArgs, nullptr);
+                    }
+                    return (r == PROTO_TRUE) ? PROTO_TRUE : PROTO_FALSE;
+                }
+            }
             env->raiseTypeError(context,
                 "issubclass() arg 2 must be a class, a tuple of classes, or a union");
             return nullptr;
