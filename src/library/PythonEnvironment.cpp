@@ -3850,6 +3850,44 @@ static const proto::ProtoObject* py_dict_getitem(
         if (dict->has(context, hash)) {
             return dict->getAt(context, hash);
         }
+        // STRUCT-190: hash miss when two equal-content keys hash
+        // differently in protoCore.  This manifests for tuple keys
+        // whose string elements come from different sources (e.g.
+        // interned literal vs `bytes.decode()` result); the Python-
+        // level `hash(t1) == hash(t2)` but protoCore's tuple hash
+        // depends on element identity for non-symbol strings.  Fall
+        // back to a linear scan of __keys__ comparing content; the
+        // matching key's stored hash is then used for the value
+        // retrieval.  Mirrors CPython's hash-collision resolution
+        // path semantically.
+        {
+            const proto::ProtoString* keysName = env ? env->getKeysString()
+                : PythonEnvironment::getInternedString(context, "__keys__");
+            const proto::ProtoObject* keysObj = realSelf->getAttribute(context, keysName);
+            const proto::ProtoList* keysList = keysObj ? keysObj->asList(context) : nullptr;
+            if (keysList && env) {
+                const proto::ProtoString* eqS = PythonEnvironment::getInternedString(context, "__eq__");
+                for (unsigned long i = 0; i < keysList->getSize(context); ++i) {
+                    const proto::ProtoObject* candKey = keysList->getAt(context, static_cast<int>(i));
+                    if (!candKey) continue;
+                    bool match = (candKey == key);
+                    if (!match) {
+                        const proto::ProtoObject* eqM = env->getAttribute(context, candKey, eqS, false);
+                        if (eqM && eqM != PROTO_NONE && eqM->asMethod(context)) {
+                            const proto::ProtoList* a = context->newList()->appendLast(context, key);
+                            const proto::ProtoObject* r = eqM->asMethod(context)(
+                                context, const_cast<proto::ProtoObject*>(candKey), nullptr, a, nullptr);
+                            match = (r == PROTO_TRUE);
+                        }
+                    }
+                    if (match) {
+                        unsigned long candHash = dictKeyHash(context, candKey);
+                        const proto::ProtoObject* v2 = dict->getAt(context, candHash);
+                        if (v2) return v2;
+                    }
+                }
+            }
+        }
         // CPython: if this is a dict subclass that overrides __missing__,
         // dispatch to it before raising KeyError. Detect via OWN-attribute
         // lookup on the *instance type* — `self.__missing__` walked via
