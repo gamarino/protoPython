@@ -28,6 +28,91 @@
 
 ---
 
+## Current Status (2026-05-16) — round 18 (quality sweep + targeted fixes)
+
+Round 18 chased ten smaller targets and landed six.  No single dramatic
+win — the largest remaining clusters (pickle proto=0 / __dict__
+descriptor / module __dict__ refactor) are each tracked separately
+for round 19.
+
+### Round 18 commits
+
+**STRUCT-182**: dir() routes through Python's `__mro__` instead of
+protoCore's `getParents()` chain.  The chain appends the metaclass
+plus its ancestors to every user class, so `dir(C)` was returning
+type's `mro` method as a phantom entry.  Walking `__mro__` for
+class and `type(inst).__mro__` for instance matches CPython.
+
+**STRUCT-183**: `io.FileIO.closed` descriptor stub.  test_descrdoc
+reads `FileIO.closed.__doc__` for parity; FileIO was just
+add_stub'd without `closed`.  Minimal descriptor object now carries
+the expected docstring without modelling the FileIO contract.
+
+**STRUCT-185**: refine STRUCT-157.  The previous "reject non-empty
+__slots__ on int/bytes/str/tuple subclass" was over-aggressive:
+CPython allows tuple subclasses to carry user slots, and the magic
+`__slots__=["__dict__"]` form is valid on every base.  Dropped tuple
+from the reject list; added a "all entries are magic markers"
+predicate that skips the rejection.
+
+**STRUCT-186**: `del inst.__dict__` preserves container payload.
+OP_DELETE_ATTR for __dict__ reset the instance's `__data__` slot
+unconditionally — fine for plain objects, catastrophic for
+tuple/list/bytes/str subclasses where `__data__` IS the container
+payload.  Detect the container shape (`asTuple` / `asList` /
+`isString`) and skip the reset; the key-by-key removal loop above
+already clears user-set attrs.
+
+**STRUCT-187**: dir() filters protoPython-internal bookkeeping
+names.  The prototype model carries `__data__`, `__keys__`,
+`__is_python_class__`, `__subclasses_list__`, `__pyflags__`,
+`__py_getattr_handler__`, `__fn_meta_cache__`, `__executed__` on
+every object; none of these belong in CPython's dir() output.
+Filter them post-collection.
+
+### Direct unittest counts (`test_descr.py`)
+
+| | run | fail | error | skipped | Δ |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-16 (round-18) | 165 | 38 | 15 | 10 | F+E ↓2 (55→53); composition shifts as errors flip to assertion-fails |
+| 2026-05-16 (round-17) | 165 | 35 | 20 | 10 | post-STRUCT-180 baseline |
+
+### Tests confirmed passing in round 18
+
+- `test_descrdoc` — STRUCT-183
+- `test_slots_after_items` — STRUCT-185
+
+### Carry-over to round 19
+
+1. **Pickle proto=0 KeyError** — int subclass pickled at protocol 0
+   serialises to `c__builtin__\nlong\n` form; find_class returns
+   KeyError on the loader side despite NAME_MAPPING containing the
+   key.  Manual-trace works; bug is somewhere in pickle's stack-tracking.
+2. **`test___dict__` (3 subtests)** — `dict_descriptor.__get__(inst, cls)`
+   returns the descriptor cell verbatim instead of invoking
+   `py_object_get_dict`.  Requires __dict__-descriptor refactor
+   (STRUCT-79).
+3. **`type(len) == object`** — module-level built-in functions like
+   `len` lack a NativeMethodInfo registration; type() falls back to
+   objectPrototype.  Fix needs side-table population for builtins
+   module registration.
+4. **Metaclass `__setattr__` dispatch** — `obj.test = True` on a
+   class instance bypasses the metaclass's user-defined `__setattr__`
+   (test_carloverre_multi_inherit_invalid).  OP_STORE_ATTR fast path
+   skips the metaclass override.
+5. **Module __dict__ refactor** — still deferred (4th round).
+6. **PEP 649 `__annotate__`** — STRUCT-73; method.__annotate__ not
+   implemented; blocks test_classmethod_staticmethod_annotations.
+7. **Complex subclass __slots__** — `class N(complex): __slots__=['p']`
+   slot installation fails; assignment raises AttributeError.
+
+### Build verification
+
+ctest 183/183 on every landed round-18 commit; binary at
+`build_release/src/runtime/protopy`.
+
+---
+
 ## Current Status (2026-05-16) — round 17 (3 carry-over blockers resolved)
 
 Round 17 attacked the 3 carry-over blockers from round-16-extended.
