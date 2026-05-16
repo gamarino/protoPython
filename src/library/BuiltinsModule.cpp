@@ -1549,15 +1549,26 @@ static const proto::ProtoObject* py_format(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoString* formatS = env ? env->getFormatString() : PythonEnvironment::getInternedString(context, "__format__");
 
-    const proto::ProtoObject* formatMethod = obj->getAttribute(context, formatS);
-    if (!formatMethod || !formatMethod->asMethod(context)) return PROTO_NONE;
-    const proto::ProtoList* args = context->newList();
-    if (positionalParameters->getSize(context) >= 2) {
-        args = args->appendLast(context, positionalParameters->getAt(context, 1));
-    } else {
-        args = args->appendLast(context, PythonEnvironment::getInternedString(context, "")->asObject(context));
+    // STRUCT-107: special-method lookup goes through TYPE (not the
+    // instance) — `obj.__format__ = …` set on an instance must be
+    // ignored.  Read from `type(obj)`; fall back to native asMethod
+    // (tagged pointer) or callObject (Python def) for invocation.
+    const proto::ProtoObject* objFormatType = env ? env->getType(context, obj) : nullptr;
+    const proto::ProtoObject* formatMethod = (env && objFormatType)
+        ? env->getAttribute(context, objFormatType, formatS, /*raiseError=*/false)
+        : obj->getAttribute(context, formatS);
+    if (!formatMethod || formatMethod == PROTO_NONE) return PROTO_NONE;
+    const proto::ProtoObject* specArg = positionalParameters->getSize(context) >= 2
+        ? positionalParameters->getAt(context, 1)
+        : PythonEnvironment::getInternedString(context, "")->asObject(context);
+    if (formatMethod->asMethod(context)) {
+        const proto::ProtoList* args = context->newList()->appendLast(context, specArg);
+        return formatMethod->asMethod(context)(context, obj, nullptr, args, nullptr);
     }
-    return formatMethod->asMethod(context)(context, obj, nullptr, args, nullptr);
+    if (env) {
+        return env->callObject(formatMethod, { obj, specArg });
+    }
+    return PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_open(
