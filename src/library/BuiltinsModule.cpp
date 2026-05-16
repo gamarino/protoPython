@@ -4475,8 +4475,13 @@ static const proto::ProtoObject* py_hash(
     // a = A()`) `obj->getAttribute(__hash__)` returned PROTO_NONE even
     // though the inherited `object.__hash__` was reachable.  Going
     // through env->getAttribute gives the full descriptor + MRO walk.
-    const proto::ProtoObject* hashMethod = env
-        ? env->getAttribute(context, obj, hashS, /*raiseError=*/false)
+    // STRUCT-106: special-method lookup goes through TYPE, never via
+    // the instance — `obj.__hash__ = …` set as an instance attribute
+    // must be ignored.  Route the lookup through `type(obj)` so the
+    // descriptor + MRO walk fires against the class hierarchy only.
+    const proto::ProtoObject* objHashType = env ? env->getType(context, obj) : nullptr;
+    const proto::ProtoObject* hashMethod = (env && objHashType)
+        ? env->getAttribute(context, objHashType, hashS, /*raiseError=*/false)
         : obj->getAttribute(context, hashS);
     // CPython convention: __hash__ explicitly set to None means the type is
     // unhashable (dict/list/set/bytearray etc.). Raise TypeError instead of
