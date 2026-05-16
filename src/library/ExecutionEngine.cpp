@@ -5141,26 +5141,67 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.size() < 1) { i = next_i; continue; }
             const proto::ProtoObject* manager = stack.back();
             stack.pop_back();
-            
+
             const proto::ProtoString* enterS = env ? env->getEnterString() : PythonEnvironment::getInternedString(ctx, "__enter__");
             const proto::ProtoString* exitS = env ? env->getExitString() : PythonEnvironment::getInternedString(ctx, "__exit__");
-            
-            const proto::ProtoObject* exitM = env ? env->getAttribute(ctx, manager, exitS) : manager->getAttribute(ctx, exitS);
+
+            // STRUCT-204: CPython looks up `__enter__` / `__exit__` via
+            // type-only lookup (TPSLOT_LOOKUP), bypassing
+            // __getattribute__.  Using env->getAttribute on the instance
+            // triggers the custom __getattribute__ hook which fails the
+            // Checker pattern in test_special_method_lookup.  Walk
+            // type(manager).__mro__ for own attrs of `__exit__` /
+            // `__enter__` instead.
+            auto lookupTypeOnly = [&](const proto::ProtoObject* obj, const proto::ProtoString* name) -> const proto::ProtoObject* {
+                if (!env) return obj ? obj->getAttribute(ctx, name) : nullptr;
+                const proto::ProtoObject* cls = env->getType(ctx, obj);
+                if (!cls || cls == PROTO_NONE) return nullptr;
+                const proto::ProtoObject* mroAttr = env->getAttribute(ctx, cls, env->getMroString(), false);
+                const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+                if (!mroT) return env->getAttribute(ctx, cls, name, false);
+                for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
+                    const proto::ProtoObject* base = mroT->getAt(ctx, i);
+                    if (!base || base == PROTO_NONE) continue;
+                    if (base->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
+                        const proto::ProtoObject* v = base->getOwnAttributeDirect(ctx, name);
+                        if (v && v != PROTO_NONE) {
+                            // If v is a descriptor, invoke __get__(obj, cls).
+                            const proto::ProtoString* getDS = PythonEnvironment::getInternedString(ctx, "__get__");
+                            const proto::ProtoObject* vType = env->getType(ctx, v);
+                            const proto::ProtoObject* getM = vType ? env->getAttribute(ctx, vType, getDS, false) : nullptr;
+                            if (getM && getM != PROTO_NONE) {
+                                const proto::ProtoList* args = ctx->newList()
+                                    ->appendLast(ctx, obj)->appendLast(ctx, cls);
+                                if (getM->asMethod(ctx)) {
+                                    return getM->asMethod(ctx)(ctx,
+                                        const_cast<proto::ProtoObject*>(v), nullptr, args, nullptr);
+                                }
+                            }
+                            return v;
+                        }
+                    }
+                }
+                return nullptr;
+            };
+            const proto::ProtoObject* exitM = lookupTypeOnly(manager, exitS);
             stack.push_back(exitM ? exitM : (const proto::ProtoObject*)PROTO_NONE);
-            
-            const proto::ProtoObject* enterM = env ? env->getAttribute(ctx, manager, enterS) : manager->getAttribute(ctx, enterS);
+
+            const proto::ProtoObject* enterM = lookupTypeOnly(manager, enterS);
             const proto::ProtoObject* enterResult = nullptr;
             if (enterM && enterM != PROTO_NONE) {
+                // Method bound to manager via descriptor __get__ above —
+                // call directly.  If __get__ was missing, fall back to
+                // prepending manager as self.
                 const proto::ProtoList* emptyL = env ? env->getEmptyList() : ctx->newList();
                 enterResult = invokeCallable(ctx, enterM, emptyL);
             } else {
                 enterResult = manager;
             }
             if (!enterResult && env && env->hasPendingException()) continue;
-            
+
             // Push block pointing to handler at arg (absolute PC)
             blockStack.push_back({static_cast<unsigned long>(arg), stack.size(), true});
-            
+
             stack.push_back(enterResult);
         } break;
         case OP_WITH_CLEANUP: {
