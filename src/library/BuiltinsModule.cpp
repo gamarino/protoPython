@@ -7079,10 +7079,14 @@ static const proto::ProtoObject* py_abs(
             }
         }
     }
-    // Generic dunder dispatch: looks up __abs__ on the type and invokes it,
-    // routing Python-defined `def __abs__(self)` through invokePythonCallable
-    // (the previous `asMethod` gate dropped them silently → returned None).
-    const proto::ProtoObject* absM = obj->getAttribute(context, PythonEnvironment::getInternedString(context, "__abs__"));
+    // STRUCT-139: special-method lookup goes through TYPE, never via
+    // the instance.  Read `__abs__` from `type(obj)` so instance-level
+    // `obj.__abs__ = …` is correctly ignored.
+    PythonEnvironment* envAbs = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* absTy = envAbs ? envAbs->getType(context, obj) : nullptr;
+    const proto::ProtoObject* absM = (envAbs && absTy)
+        ? envAbs->getAttribute(context, absTy, PythonEnvironment::getInternedString(context, "__abs__"), false)
+        : obj->getAttribute(context, PythonEnvironment::getInternedString(context, "__abs__"));
     if (!absM || absM == PROTO_NONE) {
         // CPython: abs(non-numeric) raises TypeError naming the class.
         // Previously fell through to `return PROTO_NONE`, masking the
