@@ -2499,11 +2499,20 @@ static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const pr
                             const proto::ProtoObject* vType = env->getType(ctx, v);
                             const proto::ProtoObject* getM = vType
                                 ? env->getAttribute(ctx, vType, getDS, false) : nullptr;
-                            if (getM && getM != PROTO_NONE && getM->asMethod(ctx)) {
+                            if (getM && getM != PROTO_NONE) {
                                 const proto::ProtoList* gargs =
                                     ctx->newList()->appendLast(ctx, container)->appendLast(ctx, cls);
-                                v = getM->asMethod(ctx)(ctx,
-                                    const_cast<proto::ProtoObject*>(v), nullptr, gargs, nullptr);
+                                if (getM->asMethod(ctx)) {
+                                    v = getM->asMethod(ctx)(ctx,
+                                        const_cast<proto::ProtoObject*>(v), nullptr, gargs, nullptr);
+                                } else {
+                                    // Python __get__: prepend descriptor
+                                    // as self when invoking.
+                                    const proto::ProtoList* fullArgs =
+                                        ctx->newList()->appendLast(ctx, v)
+                                            ->appendLast(ctx, container)->appendLast(ctx, cls);
+                                    v = invokeCallable(ctx, getM, fullArgs, nullptr);
+                                }
                             }
                             method = v;
                             break;
