@@ -6455,6 +6455,47 @@ const proto::ProtoObject* py_type(
                 targetClass->hasOwnAttribute(context, slotsKey) == PROTO_TRUE
                     ? targetClass->getOwnAttributeDirect(context, slotsKey)
                     : nullptr;
+            // STRUCT-157: reject non-empty `__slots__` on variable-length
+            // built-in subclasses (int, bytes, str, tuple).  CPython:
+            //   "nonempty __slots__ not supported for subtype of '<base>'"
+            // The variable-length representation of these types leaves
+            // no room for slot descriptors in the instance layout.
+            if (slotsVal && slotsVal != PROTO_NONE) {
+                const proto::ProtoTuple* svT = slotsVal->isString(context)
+                    ? nullptr : slotsVal->asTuple(context);
+                const proto::ProtoList* svL = (svT || slotsVal->isString(context))
+                    ? nullptr : slotsVal->asList(context);
+                bool nonEmptySlots = false;
+                if (slotsVal->isString(context)) nonEmptySlots = slotsVal->asString(context)->getSize(context) > 0;
+                else if (svT) nonEmptySlots = svT->getSize(context) > 0;
+                else if (svL) nonEmptySlots = svL->getSize(context) > 0;
+                if (nonEmptySlots) {
+                    struct { const proto::ProtoObject* proto; const char* name; }
+                        varLenBases[] = {
+                            { env->getIntPrototype(),   "int" },
+                            { env->getBytesPrototype(), "bytes" },
+                            { env->getStrPrototype(),   "str" },
+                            { env->getTuplePrototype(), "tuple" },
+                        };
+                    const proto::ProtoObject* mroAttr2 = env->getAttribute(context,
+                        targetClass, env->getMroString(), false);
+                    const proto::ProtoTuple* mroT2 = mroAttr2 ? mroAttr2->asTuple(context) : nullptr;
+                    if (mroT2) {
+                        for (unsigned long mi = 0; mi < mroT2->getSize(context); ++mi) {
+                            const proto::ProtoObject* b = mroT2->getAt(context, static_cast<int>(mi));
+                            if (!b || b == targetClass) continue;
+                            for (auto& vb : varLenBases) {
+                                if (vb.proto && b == vb.proto) {
+                                    env->raiseTypeError(context,
+                                        std::string("nonempty __slots__ not supported for subtype of '")
+                                        + vb.name + "'");
+                                    return nullptr;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             // Slot values may have been stored on `dict` (the class
             // body namespace) rather than on `targetClass` directly.
             if (!slotsVal && dict) {
