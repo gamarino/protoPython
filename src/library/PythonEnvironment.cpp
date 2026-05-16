@@ -4020,8 +4020,44 @@ static const proto::ProtoObject* py_dict_delitem(
     unsigned long hash = dictKeyHash(context, key);
 
     if (!data->asSparseList(context)->has(context, hash)) {
-        env->raiseKeyError(context, key);
-        return PROTO_NONE;
+        // STRUCT-193: same fallback as STRUCT-190/192.  When the
+        // hash-bucket misses, scan __keys__ for a content-equal key
+        // and use ITS hash for the removal — otherwise `del d[t2]`
+        // where t1 == t2 silently raised KeyError despite t2 being
+        // equivalent to a stored key.
+        const proto::ProtoString* keysName3 = env ? env->getKeysString()
+            : PythonEnvironment::getInternedString(context, "__keys__");
+        const proto::ProtoObject* keysObj3 = realSelf->getAttribute(context, keysName3);
+        const proto::ProtoList* keysList3 = keysObj3 ? keysObj3->asList(context) : nullptr;
+        bool foundEq = false;
+        if (keysList3 && env) {
+            const proto::ProtoString* eqS = PythonEnvironment::getInternedString(context, "__eq__");
+            for (unsigned long i = 0; i < keysList3->getSize(context); ++i) {
+                const proto::ProtoObject* candKey = keysList3->getAt(context, static_cast<int>(i));
+                if (!candKey) continue;
+                bool match = (candKey == key);
+                if (!match) {
+                    const proto::ProtoObject* eqM = env->getAttribute(context, candKey, eqS, false);
+                    if (eqM && eqM != PROTO_NONE && eqM->asMethod(context)) {
+                        const proto::ProtoList* a = context->newList()->appendLast(context, key);
+                        const proto::ProtoObject* r = eqM->asMethod(context)(
+                            context, const_cast<proto::ProtoObject*>(candKey), nullptr, a, nullptr);
+                        match = (r == PROTO_TRUE);
+                    }
+                }
+                if (match) {
+                    hash = dictKeyHash(context, candKey);
+                    if (data->asSparseList(context)->has(context, hash)) {
+                        foundEq = true;
+                    }
+                    break;
+                }
+            }
+        }
+        if (!foundEq) {
+            env->raiseKeyError(context, key);
+            return PROTO_NONE;
+        }
     }
 
     const proto::ProtoSparseList* newSparse = data->asSparseList(context)->removeAt(context, hash);
