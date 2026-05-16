@@ -1107,11 +1107,34 @@ bool Compiler::emitNameOp(const std::string& rawId, TargetCtx ctx, bool pushNull
     // In function scope, unresolved names are globals/builtins — use LOAD_GLOBAL for a faster
     // lookup path (skips frame->getAttribute, goes straight to env->resolve() ptrCache).
     // At module and class scope, LOAD_NAME is correct (local namespace dict must be checked first).
-    if (isFunctionScope_ && !isClassBody_ && !forceMapped_) {
-        int gop = (ctx == TargetCtx::Load) ? OP_LOAD_GLOBAL : (ctx == TargetCtx::Store ? OP_STORE_GLOBAL : OP_DELETE_GLOBAL);
-        int garg = (idx << 1) | ((gop == OP_LOAD_GLOBAL && pushNull) ? 1 : 0);
-        emit(gop, garg);
-        return true;
+    //
+    // STRUCT-203: even when forceMapped_ is set (because an inner scope
+    // captures one of this function's locals — see compileFunctionDef
+    // line 3905), unresolved names that are NOT locals of the function
+    // must still emit LOAD_GLOBAL.  forceMapped's purpose is to route
+    // *locals* through frame storage so inner closures can observe live
+    // updates via the parent chain; it must not redirect every unknown
+    // name through the frame's namespace lookup.  Without this gate, a
+    // method body containing `class D(C):` (which forces mapping because
+    // D's body captures the local C) made `__name__` resolve via the
+    // method's frame chain → enclosing class's namespace → reported
+    // 'TC' instead of the module's '__main__'.  Blocked test_classmethods.
+    if (isFunctionScope_ && !isClassBody_) {
+        bool isLocal = localSlotMap_.count(id) > 0 || definedLocals_.count(id) > 0;
+        if (!isLocal && !forceMapped_) {
+            int gop = (ctx == TargetCtx::Load) ? OP_LOAD_GLOBAL : (ctx == TargetCtx::Store ? OP_STORE_GLOBAL : OP_DELETE_GLOBAL);
+            int garg = (idx << 1) | ((gop == OP_LOAD_GLOBAL && pushNull) ? 1 : 0);
+            emit(gop, garg);
+            return true;
+        }
+        if (!isLocal && forceMapped_) {
+            // forceMapped: keep LOAD_GLOBAL for the truly non-local
+            // name — only locals need frame-mapped routing.
+            int gop = (ctx == TargetCtx::Load) ? OP_LOAD_GLOBAL : (ctx == TargetCtx::Store ? OP_STORE_GLOBAL : OP_DELETE_GLOBAL);
+            int garg = (idx << 1) | ((gop == OP_LOAD_GLOBAL && pushNull) ? 1 : 0);
+            emit(gop, garg);
+            return true;
+        }
     }
     int op = (ctx == TargetCtx::Load) ? OP_LOAD_NAME : (ctx == TargetCtx::Store ? OP_STORE_NAME : OP_DELETE_NAME);
     int arg = (idx << 1) | ((op == OP_LOAD_NAME && pushNull) ? 1 : 0);
