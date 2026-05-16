@@ -1790,7 +1790,11 @@ static const proto::ProtoObject* py_reversed(
     const proto::ProtoString* revIdxS = env ? env->getRevIdxString() : PythonEnvironment::getInternedString(context, "__reversed_idx__");
     const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
 
-    const proto::ProtoObject* revMethod = env ? env->getAttribute(context, obj, reversedS, false) : (obj->hasOwnAttribute(context, reversedS) == PROTO_TRUE ? obj->getAttribute(context, reversedS) : nullptr);
+    // STRUCT-141: type-only special-method lookup.
+    const proto::ProtoObject* revTy = env ? env->getType(context, obj) : nullptr;
+    const proto::ProtoObject* revMethod = (env && revTy)
+        ? env->getAttribute(context, revTy, reversedS, false)
+        : (obj->hasOwnAttribute(context, reversedS) == PROTO_TRUE ? obj->getAttribute(context, reversedS) : nullptr);
     if (revMethod && revMethod != PROTO_NONE) {
         const proto::ProtoObject* r = ::protoPython::invokePythonCallable(context, revMethod, emptyL, nullptr);
         if (r) return r;
