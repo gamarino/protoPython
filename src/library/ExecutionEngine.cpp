@@ -2474,7 +2474,54 @@ static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const pr
     RecursionScope recScope(env, ctx);
     if (recScope.overflowed()) return nullptr;
 
-    const proto::ProtoObject* method = env ? env->getAttribute(ctx, container, name, false) : container->getAttribute(ctx, name);
+    // STRUCT-206: when the container's type has a user-defined
+    // __getattribute__, use type-only MRO lookup for the dunder so
+    // we don't trigger the user hook for implicit special-method
+    // dispatch.  CPython skips __getattribute__ for special methods
+    // (test_special_method_lookup's Checker pattern enforces this).
+    const proto::ProtoObject* method = nullptr;
+    if (env && container) {
+        const proto::ProtoObject* cls = env->getType(ctx, container);
+        uint32_t flags = (cls && cls != PROTO_NONE) ? env->ensureClassFlags(ctx, cls) : 0;
+        if (flags & protoPython::PythonEnvironment::PYFLAG_HAS_CUSTOM_GETATTR) {
+            const proto::ProtoObject* mroAttr = env->getAttribute(ctx, cls, env->getMroString(), false);
+            const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+            if (mroT) {
+                for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
+                    const proto::ProtoObject* base = mroT->getAt(ctx, i);
+                    if (!base || base == PROTO_NONE) continue;
+                    if (base->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
+                        const proto::ProtoObject* v = base->getOwnAttributeDirect(ctx, name);
+                        if (v && v != PROTO_NONE) {
+                            // Apply descriptor protocol if v has __get__.
+                            const proto::ProtoString* getDS =
+                                PythonEnvironment::getInternedString(ctx, "__get__");
+                            const proto::ProtoObject* vType = env->getType(ctx, v);
+                            const proto::ProtoObject* getM = vType
+                                ? env->getAttribute(ctx, vType, getDS, false) : nullptr;
+                            if (getM && getM != PROTO_NONE && getM->asMethod(ctx)) {
+                                const proto::ProtoList* gargs =
+                                    ctx->newList()->appendLast(ctx, container)->appendLast(ctx, cls);
+                                v = getM->asMethod(ctx)(ctx,
+                                    const_cast<proto::ProtoObject*>(v), nullptr, gargs, nullptr);
+                            }
+                            method = v;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!method) {
+                // Fall back to legacy path if MRO walk missed (e.g.
+                // tagged-method registrations not exposed as own).
+                method = env->getAttribute(ctx, container, name, false);
+            }
+        } else {
+            method = env->getAttribute(ctx, container, name, false);
+        }
+    } else {
+        method = container ? container->getAttribute(ctx, name) : nullptr;
+    }
 
     if (!method || method == PROTO_NONE) return nullptr;
 
