@@ -7651,39 +7651,17 @@ const proto::ProtoObject* executeBytecodeRange(
                     // via closure (parent frame reference).
                     // Note: object.__class__ data descriptor prevents this from shadowing the type
                     // on the class object itself, so this is safe.
-                    //
-                    // STRUCT-112: if the class body explicitly assigned to
-                    // `__class__` (a la `class FakeStr: __class__ = str`),
-                    // PRESERVE that assignment.  Overwriting silently breaks
-                    // proxy patterns (test_proxy_call: FakeStr.__class__ = str
-                    // is what makes `isinstance(fake_str, str)` true via
-                    // instance-level __class__ lookup).  Only auto-inject
-                    // when the body didn't already set its own __class__.
                     const proto::ProtoString* clsName = env ? env->getClassString() : protoPython::PythonEnvironment::getInternalString(ctx, "__class__");
-                    bool userSetClass = (ns->hasOwnAttribute(ctx, clsName) == PROTO_TRUE);
                     if (diag_local) {
                         std::string tName = "unknown";
                         const proto::ProtoObject* tNameAttr = targetClass->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"));
                         if (tNameAttr && tNameAttr->isString(ctx)) tNameAttr->asString(ctx)->toUTF8String(ctx, tName);
-                        fprintf(stderr, "DEBUG: OP_BUILD_CLASS injecting __class__ = %p (name=%s) into ns = %p (userSet=%d)\n", (void*)targetClass, tName.c_str(), (void*)ns, (int)userSetClass);
+                        fprintf(stderr, "DEBUG: OP_BUILD_CLASS injecting __class__ = %p (name=%s) into ns = %p\n", (void*)targetClass, tName.c_str(), (void*)ns);
                     }
                     if (diag_local) {
                         fprintf(stderr, "DEBUG: OP_BUILD_CLASS injecting targetClass=%p into ns=%p\n", (void*)targetClass, (void*)ns);
                     }
-                    if (!userSetClass) {
-                        ns->setAttribute(ctx, clsName, targetClass);
-                    } else {
-                        // Preserve the user's override on the targetClass too:
-                        // re-mirror ns's __class__ onto the class object so
-                        // instance lookups (instance->cls->__class__) return
-                        // the user's value, not the auto-injection.
-                        const proto::ProtoObject* userVal = ns->getAttribute(ctx, clsName);
-                        if (userVal && userVal != PROTO_NONE) {
-                            targetClass = const_cast<proto::ProtoObject*>(
-                                targetClass->setAttribute(ctx, clsName, userVal));
-                            stack.back() = targetClass;
-                        }
-                    }
+                    ns->setAttribute(ctx, clsName, targetClass);
 
                     // PI: __abstractmethods__ is populated by
                     // ABCMeta.__new__ in lib/python3.14/abc.py; the
