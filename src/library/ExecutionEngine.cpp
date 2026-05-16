@@ -7856,19 +7856,36 @@ const proto::ProtoObject* executeBytecodeRange(
 
                     // Inject __class__ into the class namespace (frame) so methods can interpret it
                     // via closure (parent frame reference).
-                    // Note: object.__class__ data descriptor prevents this from shadowing the type
-                    // on the class object itself, so this is safe.
+                    // STRUCT-219: a custom metaclass may store `ns` as an
+                    // attribute on the targetClass (e.g. `self.dict = dict`
+                    // in M.__new__).  In that case, setting
+                    // `ns.__class__ = targetClass` would corrupt the
+                    // user's attribute by re-typing the same object as
+                    // the metaclass instance.  Detect by scanning
+                    // targetClass's __keys__ for any attribute whose
+                    // value is `ns`; if found, skip the injection.  The
+                    // pattern is rare enough that super() inside such a
+                    // class body is not a common use case (the user's
+                    // custom __call__ usually replaces the standard
+                    // instance constructor anyway).
                     const proto::ProtoString* clsName = env ? env->getClassString() : protoPython::PythonEnvironment::getInternalString(ctx, "__class__");
-                    if (diag_local) {
-                        std::string tName = "unknown";
-                        const proto::ProtoObject* tNameAttr = targetClass->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"));
-                        if (tNameAttr && tNameAttr->isString(ctx)) tNameAttr->asString(ctx)->toUTF8String(ctx, tName);
-                        fprintf(stderr, "DEBUG: OP_BUILD_CLASS injecting __class__ = %p (name=%s) into ns = %p\n", (void*)targetClass, tName.c_str(), (void*)ns);
+                    bool nsReachableFromTarget = false;
+                    if (env) {
+                        const proto::ProtoObject* tcKeys = targetClass->getAttribute(ctx, env->getKeysString());
+                        const proto::ProtoList* tcKL = tcKeys ? tcKeys->asList(ctx) : nullptr;
+                        if (tcKL) {
+                            for (unsigned long ki = 0; ki < tcKL->getSize(ctx); ++ki) {
+                                const proto::ProtoObject* k = tcKL->getAt(ctx, static_cast<int>(ki));
+                                if (!k || !k->isString(ctx)) continue;
+                                const proto::ProtoObject* v =
+                                    targetClass->getAttribute(ctx, k->asString(ctx));
+                                if (v == ns) { nsReachableFromTarget = true; break; }
+                            }
+                        }
                     }
-                    if (diag_local) {
-                        fprintf(stderr, "DEBUG: OP_BUILD_CLASS injecting targetClass=%p into ns=%p\n", (void*)targetClass, (void*)ns);
+                    if (!nsReachableFromTarget) {
+                        ns->setAttribute(ctx, clsName, targetClass);
                     }
-                    ns->setAttribute(ctx, clsName, targetClass);
 
                     // PI: __abstractmethods__ is populated by
                     // ABCMeta.__new__ in lib/python3.14/abc.py; the
