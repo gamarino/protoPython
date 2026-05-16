@@ -7599,7 +7599,37 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
                 }
                 if (diag_local) fprintf(stderr, "DEBUG OP_BUILD_CLASS: calling metaclass=%p\n", (void*)metaclass);
+                // STRUCT-69: thread the kwds dict's __keys__ tuple via
+                // pushKwNames so the inner **kwargs binding in
+                // runUserFunctionCallRaw can recover the key names from
+                // the SparseList (which only stores hashes).  Without
+                // this, user metaclass __new__/__init__ receive empty
+                // kwargs even when caller passed `class C(metaclass=M,
+                // foo=42)`.
+                const proto::ProtoTuple* kwNamesPushed = nullptr;
+                if (env && kw && kwds && kwds != PROTO_NONE) {
+                    const proto::ProtoObject* keysObj = kwds->getAttribute(ctx, env->getKeysString());
+                    const proto::ProtoList* keysL = keysObj ? keysObj->asList(ctx) : nullptr;
+                    if (keysL && keysL->getSize(ctx) > 0) {
+                        // Skip 'metaclass' key — same filter as for kw above.
+                        const proto::ProtoString* metaKey =
+                            PythonEnvironment::getInternedString(ctx, "metaclass");
+                        unsigned long mcHash = metaKey->getHash(ctx);
+                        const proto::ProtoList* fk = ctx->newList();
+                        for (unsigned long i = 0; i < keysL->getSize(ctx); ++i) {
+                            const proto::ProtoObject* k = keysL->getAt(ctx, static_cast<int>(i));
+                            if (k && k->isString(ctx) && k->getHash(ctx) != mcHash) {
+                                fk = fk->appendLast(ctx, k);
+                            }
+                        }
+                        if (fk->getSize(ctx) > 0) {
+                            kwNamesPushed = ctx->newTupleFromList(fk);
+                            env->pushKwNames(kwNamesPushed);
+                        }
+                    }
+                }
                 const proto::ProtoObject* targetClass = invokeCallable(ctx, metaclass, mcArgs, kw);
+                if (kwNamesPushed && env) env->popKwNames();
                 if (diag_local) fprintf(stderr, "DEBUG OP_BUILD_CLASS: targetClass=%p\n", (void*)targetClass);
                 
                 if (targetClass && targetClass != PROTO_NONE) {
@@ -7810,7 +7840,32 @@ const proto::ProtoObject* executeBytecodeRange(
                                 }
                                 // Pass cls as first positional arg (classmethod-style binding).
                                 const proto::ProtoList* iscArgs = ctx->newList()->appendLast(ctx, targetClass);
+                                // STRUCT-69: thread the kwds dict's __keys__ via pushKwNames so
+                                // the inner **kwargs binding can recover key names from the
+                                // SparseList.  Same approach as the metaclass-invoke site above.
+                                const proto::ProtoTuple* iscNames = nullptr;
+                                if (env && filtered && kwds && kwds != PROTO_NONE) {
+                                    const proto::ProtoObject* keysObj = kwds->getAttribute(ctx, env->getKeysString());
+                                    const proto::ProtoList* keysL = keysObj ? keysObj->asList(ctx) : nullptr;
+                                    if (keysL && keysL->getSize(ctx) > 0) {
+                                        const proto::ProtoString* metaKey =
+                                            PythonEnvironment::getInternedString(ctx, "metaclass");
+                                        unsigned long mcH = metaKey->getHash(ctx);
+                                        const proto::ProtoList* fk = ctx->newList();
+                                        for (unsigned long i = 0; i < keysL->getSize(ctx); ++i) {
+                                            const proto::ProtoObject* k = keysL->getAt(ctx, static_cast<int>(i));
+                                            if (k && k->isString(ctx) && k->getHash(ctx) != mcH) {
+                                                fk = fk->appendLast(ctx, k);
+                                            }
+                                        }
+                                        if (fk->getSize(ctx) > 0) {
+                                            iscNames = ctx->newTupleFromList(fk);
+                                            env->pushKwNames(iscNames);
+                                        }
+                                    }
+                                }
                                 invokeCallable(ctx, hook, iscArgs, filtered);
+                                if (iscNames && env) env->popKwNames();
                                 if (env->hasPendingException()) {
                                     return nullptr;
                                 }
