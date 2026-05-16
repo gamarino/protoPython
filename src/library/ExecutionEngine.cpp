@@ -8510,7 +8510,21 @@ const proto::ProtoObject* executeBytecodeRange(
                                 mobj->removeAttribute(ctx, knm);
                             }
                         }
-                        mobj->setAttribute(ctx, env->getDataString(), ctx->newSparseList()->asObject(ctx));
+                        // STRUCT-186: for built-in-container subclasses
+                        // (tuple, list, bytes, str, frozenset), __data__
+                        // holds the container's payload — resetting it
+                        // destroys the original tuple/list/etc.  Only
+                        // overwrite __data__ when it does NOT carry such
+                        // container payload (i.e. plain instance dict).
+                        const proto::ProtoObject* curData = mobj->hasOwnAttribute(ctx, env->getDataString()) == PROTO_TRUE
+                            ? mobj->getAttribute(ctx, env->getDataString()) : nullptr;
+                        bool dataIsContainer = curData && (
+                               curData->isTuple(ctx)
+                            || curData->asList(ctx) != nullptr
+                            || curData->isString(ctx));
+                        if (!dataIsContainer) {
+                            mobj->setAttribute(ctx, env->getDataString(), ctx->newSparseList()->asObject(ctx));
+                        }
                         mobj->setAttribute(ctx, keysS, ctx->newList()->asObject(ctx));
                         i = next_i;
                         continue;
