@@ -28,6 +28,77 @@
 
 ---
 
+## Current Status (2026-05-16) — round 20 midpoint (40 F+E)
+
+Round 20 attacks the root-cause clusters identified in round 19's
+carry-over: `__name__` scope leak, special-method dispatch through
+__getattribute__, ABCMeta virtual subclasses, __bases__ layout
+compatibility.
+
+### Round 20 commits (so far)
+
+1. **STRUCT-203** — `__name__` scope leak fix.  Method bodies that
+   defined any inner class with a local-variable base (`class D(C):`)
+   forced the method into "mapped" mode, routing every name lookup
+   through LOAD_NAME / frame namespace.  The frame chain resolved
+   `__name__` to the enclosing class's name ('TC') instead of the
+   module's '__main__'.  Fix: in emitNameOp, even when forceMapped_
+   is true, emit LOAD_GLOBAL for names that are NOT locals of the
+   current function.  Unblocks test_classmethods.
+
+2. **STRUCT-204** — `OP_SETUP_WITH` uses type-only MRO walk for
+   `__enter__` / `__exit__`.  Previous env->getAttribute triggered
+   user-defined __getattribute__ — test_special_method_lookup's
+   Checker pattern asserts it's not called for special methods.
+
+3. **STRUCT-205** — `env->iter` __next__ validation uses type-only
+   when receiver has PYFLAG_HAS_CUSTOM_GETATTR.  Built-in iterators
+   keep the legacy chain-walk fast path; only custom-getattr types
+   walk the type's MRO directly.
+
+4. **STRUCT-206** — `invokeDunder` uses type-only MRO walk when
+   container has PYFLAG_HAS_CUSTOM_GETATTR.  Covers __missing__,
+   __getitem__ et al for the Checker pattern.
+
+5. **STRUCT-207** — descriptor protocol applies Python `__get__` in
+   invokeDunder.  STRUCT-206's MRO-walk only handled tagged native
+   __get__; user-Python __get__ on SpecialDescr was skipped.
+
+6. **STRUCT-210** — ABCMeta virtual-subclass registry +
+   `__instancecheck__` dispatch.  abc.py now actually tracks
+   registered subclasses (`_abc_registry`) and overrides
+   `__instancecheck__` / `__subclasscheck__`.  py_isinstance walks
+   metaclass's MRO for own `__instancecheck__` before falling
+   through to the native check.
+
+7. **STRUCT-212** — `__bases__` setter layout-compatibility check.
+   `L(list).__bases__ = (dict,)` now raises TypeError "layout differs"
+   because list and dict have incompatible container payloads.
+   Detection walks current and new bases' MROs for the first known
+   built-in container; mismatch raises.
+
+### Direct unittest counts (`test_descr.py`)
+
+| | run | fail | error | skipped | Δ |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-16 (round-20 midpoint) | 165 | 31 | 9 | 10 | F+E ↓3 (43→40); test_classmethods + test_slots_descriptor flip |
+| 2026-05-16 (round-19 close) | 165 | 34 | 9 | 10 | post-STRUCT-200 baseline |
+
+### Deferred attempts in round 20
+
+- **STRUCT-208** (carloverre metaclass setattr) — too broad, broke
+  unittest import (stdlib classes hit stale `__setattr__` override
+  during construction).  Conservative version STRUCT-211 also
+  regressed.  Tracked for a narrower attempt.
+- **STRUCT-213** (type(len) registration) — module-bound tagged
+  methods don't have a clean way to detect they're "builtin
+  functions"; `len.__self__` isn't the actual module instance.
+- **STRUCT-214** (method_descriptor `__get__`) — fired a ctest
+  regression; the bound-method binding shape is subtler than the
+  immediate-invoke shortcut I attempted.
+
+---
+
 ## Current Status (2026-05-16) — round 19 final (43 F+E)
 
 Round 19 closes at **34F + 9E = 43** in test_descr.py, down from the
