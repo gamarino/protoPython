@@ -6013,7 +6013,17 @@ const proto::ProtoObject* py_type(
                                 const proto::ProtoObject* warnE = wMod->getAttribute(context,
                                     PythonEnvironment::getInternedString(context, "warn_explicit"));
                                 if (warnE && warnE != PROTO_NONE) {
-                                    std::string msg = "non-string key in class namespace: '" + vKind + "'";
+                                    // STRUCT-172: include the class name in the
+                                    // warning message so `assertWarnsRegex(RuntimeWarning,
+                                    // 'MyClass')` (test_gh55664) matches the
+                                    // CPython-shaped output.
+                                    std::string clsNm;
+                                    if (name && name->isString(context)) {
+                                        name->asString(context)->toUTF8String(context, clsNm);
+                                    } else {
+                                        clsNm = "<unknown>";
+                                    }
+                                    std::string msg = "non-string key in '" + clsNm + "' class dict: " + vKind;
                                     const proto::ProtoList* a = context->newList()
                                         ->appendLast(context, PythonEnvironment::getInternedString(context, msg.c_str())->asObject(context))
                                         ->appendLast(context, rwT)
