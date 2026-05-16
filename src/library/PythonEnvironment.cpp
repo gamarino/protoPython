@@ -3897,6 +3897,10 @@ static const proto::ProtoObject* py_dict_getitem(
             const proto::ProtoObject* cls = env->getType(context, realSelf);
             const proto::ProtoString* missS = PythonEnvironment::getInternedString(context, "__missing__");
             const proto::ProtoObject* missM = cls ? env->getAttribute(context, cls, missS, false) : nullptr;
+            // STRUCT-225: if the lookup itself triggered an exception
+            // (e.g. a descriptor's __get__ raised), propagate it instead
+            // of silently falling through to KeyError.
+            if (env->hasPendingException()) return nullptr;
             if (missM && missM != PROTO_NONE) {
                 const proto::ProtoList* a = context->newList()->appendLast(context, key);
                 if (missM->asMethod(context)) {
