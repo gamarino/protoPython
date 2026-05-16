@@ -54,7 +54,21 @@ def _reconstructor(cls, base, state):
         obj = object.__new__(cls)
     else:
         obj = base.__new__(cls, state)
-        if base.__init__ != object.__init__:
+        # STRUCT-200: protoPython's list/set/dict subclass __new__ /
+        # __init__ paths don't initialise the underlying container
+        # from `state` when invoked through this reconstructor route
+        # (`type.__init__` is a no-op for the built-in containers
+        # because their own `__call__` handles the iterable instead).
+        # Populate the container explicitly here so the pickle proto<2
+        # round-trip preserves the contents.
+        if base is list and state is not None:
+            obj.extend(state)
+        elif base is set and state is not None:
+            for item in state:
+                obj.add(item)
+        elif base is dict and state is not None:
+            obj.update(state)
+        elif base.__init__ != object.__init__:
             base.__init__(obj, state)
     return obj
 
