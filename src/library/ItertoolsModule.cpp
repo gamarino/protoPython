@@ -33,11 +33,71 @@ static const proto::ProtoObject* py_iter_self(
     return self;
 }
 
-static const proto::ProtoObject* py_batched_stub(
-    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    // batched(iterable, n) stub
-    return ctx->newList()->asObject(ctx);
+// itertools.batched(iterable, n, *, strict=False) — 3.13+.  Yields
+// successive n-sized tuples from the source iterable; the final batch
+// may be shorter when the source length is not a multiple of n.
+// pickle's save_dict and save_set rely on this — a previous empty-list
+// stub silently broke every dict/set pickle by short-circuiting the
+// batching loop.
+static const proto::ProtoObject* py_batched_next(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*,
+    const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return nullptr;
+    const proto::ProtoObject* it = self->getAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__batched_it__"));
+    const proto::ProtoObject* nObj = self->getAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__batched_n__"));
+    if (!it || !nObj || !nObj->isInteger(ctx)) return nullptr;
+    long long n = nObj->asLong(ctx);
+    if (n <= 0) return nullptr;
+    PythonEnvironment::TransientPin pinIt(env, it);
+    const proto::ProtoList* batch = ctx->newList();
+    PythonEnvironment::TransientPin pinBatch(env, batch ? batch->asObject(ctx) : nullptr);
+    for (long long i = 0; i < n; ++i) {
+        const proto::ProtoObject* v = env->next(it);
+        if (!v) break;
+        batch = batch->appendLast(ctx, v);
+    }
+    if (batch->getSize(ctx) == 0) return nullptr;  // StopIteration
+    return ctx->newTupleFromList(batch)->asObject(ctx);
+}
+
+static const proto::ProtoObject* py_batched(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return nullptr;
+    if (!posArgs || posArgs->getSize(ctx) < 2) {
+        env->raiseTypeError(ctx, "batched() takes 2 positional arguments");
+        return nullptr;
+    }
+    const proto::ProtoObject* iterable = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* nObj = posArgs->getAt(ctx, 1);
+    if (!nObj || !nObj->isInteger(ctx)) {
+        env->raiseTypeError(ctx, "batched(): n must be an integer");
+        return nullptr;
+    }
+    long long n = nObj->asLong(ctx);
+    if (n < 1) {
+        env->raiseValueError(ctx,
+            PythonEnvironment::getInternedString(ctx, "n must be at least one")->asObject(ctx));
+        return nullptr;
+    }
+    const proto::ProtoObject* it = env->iter(iterable);
+    if (!it) return nullptr;
+    const proto::ProtoObject* proto = self->getAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__batched_proto__"));
+    if (!proto) return PROTO_NONE;
+    const proto::ProtoObject* b = proto->newChild(ctx, true);
+    b = b->setAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__batched_it__"), it);
+    b = b->setAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__batched_n__"),
+        ctx->fromInteger(n));
+    return b;
 }
 
 static const proto::ProtoObject* py_count(
@@ -937,8 +997,19 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__starmap_proto__"), starmapProto);
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "starmap"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_starmap));
-    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "batched"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_batched_stub));
+    // itertools.batched — real implementation (constructor + iterator proto).
+    const proto::ProtoObject* batchedProto = ctx->newObject(false);
+    batchedProto = batchedProto->setAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__iter__"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(batchedProto), py_iter_self));
+    batchedProto = batchedProto->setAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__next__"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(batchedProto), py_batched_next));
+    mod = mod->setAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__batched_proto__"), batchedProto);
+    mod = mod->setAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "batched"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_batched));
 
     const proto::ProtoObject* filterfalseProto = ctx->newObject(false);
     filterfalseProto = filterfalseProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__iter__"),
