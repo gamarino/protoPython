@@ -129,11 +129,36 @@ static const proto::ProtoObject* py_radians(
     return ctx->fromDouble(x * (3.14159265358979323846 / 180.0));
 }
 
+// STRUCT-158/159/160: math.floor/ceil/trunc must first consult
+// `type(arg).__floor__`/__ceil__/__trunc__ (Python special-method
+// protocol — type-only lookup, instance overrides ignored).  Helper
+// dispatches the dunder via env->getAttribute on the type; returns
+// the dunder's result when honoured, else nullptr to let the caller
+// fall back to its built-in numeric path.
+static const proto::ProtoObject* mathDunderViaType(
+    proto::ProtoContext* ctx, const proto::ProtoObject* arg, const char* dunderName) {
+    protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
+    if (!env || !arg) return nullptr;
+    const proto::ProtoObject* argT = env->getType(ctx, arg);
+    if (!argT) return nullptr;
+    const proto::ProtoString* dS = protoPython::PythonEnvironment::getInternedString(ctx, dunderName);
+    const proto::ProtoObject* m = env->getAttribute(ctx, argT, dS, /*raiseError=*/false);
+    if (!m || m == PROTO_NONE) return nullptr;
+    if (m->asMethod(ctx)) {
+        return m->asMethod(ctx)(ctx,
+            const_cast<proto::ProtoObject*>(arg), nullptr, ctx->newList(), nullptr);
+    }
+    return env->callObject(m, { arg });
+}
+
 static const proto::ProtoObject* py_floor(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
-    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* r = mathDunderViaType(ctx, arg, "__floor__");
+    if (r) return r;
+    double x = toDouble(ctx, arg);
     return ctx->fromInteger(static_cast<long long>(std::floor(x)));
 }
 
@@ -141,7 +166,10 @@ static const proto::ProtoObject* py_ceil(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
-    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* r = mathDunderViaType(ctx, arg, "__ceil__");
+    if (r) return r;
+    double x = toDouble(ctx, arg);
     return ctx->fromInteger(static_cast<long long>(std::ceil(x)));
 }
 
@@ -157,7 +185,10 @@ static const proto::ProtoObject* py_trunc(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
-    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* r = mathDunderViaType(ctx, arg, "__trunc__");
+    if (r) return r;
+    double x = toDouble(ctx, arg);
     return ctx->fromInteger(static_cast<long long>(std::trunc(x)));
 }
 
