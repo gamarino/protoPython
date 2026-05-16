@@ -24783,6 +24783,46 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
             const proto::ProtoObject* notImpl = getNotImplementedPrototype();
             const proto::ProtoObject* res = nullptr;
             if (method && method->asMethod(ctx)) {
+                // STRUCT-135: extend STRUCT-134 receiver-class validation
+                // to the comparison-op path.  Slot wrappers like
+                // `str.__eq__` bound on a non-str receiver must raise
+                // TypeError matching CPython's
+                // `descriptor 'X' for 'Y' objects doesn't apply to a 'Z'`
+                // message.  WRAPPER kind only — method_descriptor dispatch
+                // is unaffected.
+                {
+                    proto::ProtoMethod fn = method->asMethod(ctx);
+                    std::string mnm;
+                    const proto::ProtoObject* owner = nullptr;
+                    NativeMethodInfo::Kind kind = NativeMethodInfo::Kind::METHOD;
+                    if (fn && lookupNativeMethodInfo(reinterpret_cast<const void*>(fn), mnm, &owner, &kind)
+                        && kind == NativeMethodInfo::Kind::WRAPPER
+                        && owner && owner != PROTO_NONE) {
+                        const proto::ProtoObject* aT = getType(ctx, a);
+                        if (aT && aT != owner) {
+                            bool ok = false;
+                            const proto::ProtoObject* mAttr = getAttribute(ctx, aT, getMroString(), false);
+                            const proto::ProtoTuple* mT = mAttr ? mAttr->asTuple(ctx) : nullptr;
+                            if (mT) {
+                                for (unsigned long i = 0; i < mT->getSize(ctx); ++i) {
+                                    if (mT->getAt(ctx, static_cast<int>(i)) == owner) { ok = true; break; }
+                                }
+                            }
+                            if (!ok) {
+                                std::string mnme, rnme, onme;
+                                dunder->toUTF8String(ctx, mnme);
+                                const proto::ProtoObject* rn = aT->getAttribute(ctx, getNameString());
+                                if (rn && rn->isString(ctx)) rn->asString(ctx)->toUTF8String(ctx, rnme);
+                                const proto::ProtoObject* on = owner->getAttribute(ctx, getNameString());
+                                if (on && on->isString(ctx)) on->asString(ctx)->toUTF8String(ctx, onme);
+                                raiseTypeError(ctx,
+                                    "descriptor '" + mnme + "' for '" + onme
+                                    + "' objects doesn't apply to a '" + rnme + "' object");
+                                return nullptr;
+                            }
+                        }
+                    }
+                }
                 const proto::ProtoList* args = ctx->newList();
                 args = args->appendLast(ctx, b);
                 res = method->asMethod(ctx)(ctx, a, nullptr, args, getEmptySparseList());
