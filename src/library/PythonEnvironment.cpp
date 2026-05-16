@@ -6131,6 +6131,60 @@ static const proto::ProtoObject* py_list_call(
                     l = const_cast<proto::ProtoList*>(l->appendLast(context, otherT->getAt(context, static_cast<int>(i))));
                 }
             } else {
+                // STRUCT-224: probe __length_hint__ via type-only MRO walk
+                // (CPython does this to pre-allocate the result list).  Side
+                // effect: descriptor protocol fires, so SpecialDescr.__get__
+                // is invoked.  Result value is informational and discarded.
+                if (env) {
+                    const proto::ProtoObject* iterType = env->getType(context, iterable);
+                    if (iterType && iterType != PROTO_NONE) {
+                        const proto::ProtoString* lhS =
+                            PythonEnvironment::getInternedString(context, "__length_hint__");
+                        const proto::ProtoString* mroS_lh = env->getMroString();
+                        const proto::ProtoObject* mroAttr_lh = mroS_lh
+                            ? env->getAttribute(context, iterType, mroS_lh, false) : nullptr;
+                        const proto::ProtoTuple* mroT_lh = mroAttr_lh ? mroAttr_lh->asTuple(context) : nullptr;
+                        const proto::ProtoObject* lhM = nullptr;
+                        if (mroT_lh) {
+                            for (unsigned long i = 0; i < mroT_lh->getSize(context); ++i) {
+                                const proto::ProtoObject* b = mroT_lh->getAt(context, i);
+                                if (!b || b == PROTO_NONE) continue;
+                                if (b == env->getObjectPrototype()) break;
+                                if (b->hasOwnAttribute(context, lhS) == PROTO_TRUE) {
+                                    lhM = b->getOwnAttributeDirect(context, lhS);
+                                    break;
+                                }
+                            }
+                        }
+                        if (lhM && lhM != PROTO_NONE) {
+                            const proto::ProtoString* getDS_lh =
+                                PythonEnvironment::getInternedString(context, "__get__");
+                            const proto::ProtoObject* lhType = env->getType(context, lhM);
+                            const proto::ProtoObject* getM_lh = lhType
+                                ? env->getAttribute(context, lhType, getDS_lh, false) : nullptr;
+                            if (getM_lh && getM_lh != PROTO_NONE) {
+                                if (getM_lh->asMethod(context)) {
+                                    const proto::ProtoList* gargs =
+                                        context->newList()->appendLast(context, iterable)->appendLast(context, iterType);
+                                    lhM = getM_lh->asMethod(context)(context,
+                                        const_cast<proto::ProtoObject*>(lhM), nullptr, gargs, nullptr);
+                                } else {
+                                    lhM = env->callObject(getM_lh, {lhM, iterable, iterType});
+                                }
+                            }
+                            if (lhM && lhM != PROTO_NONE) {
+                                if (lhM->asMethod(context)) {
+                                    lhM->asMethod(context)(context,
+                                        const_cast<proto::ProtoObject*>(iterable), nullptr,
+                                        context->newList(), nullptr);
+                                } else {
+                                    env->callObject(lhM, {});
+                                }
+                                if (env->hasPendingException()) env->clearPendingException();
+                            }
+                        }
+                    }
+                }
                 const proto::ProtoObject* iterator = env ? env->iter(iterable) : nullptr;
                 if (iterator) {
                     for (;;) {
