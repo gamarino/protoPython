@@ -6520,26 +6520,54 @@ const proto::ProtoObject* py_type(
                 else if (svT) nonEmptySlots = svT->getSize(context) > 0;
                 else if (svL) nonEmptySlots = svL->getSize(context) > 0;
                 if (nonEmptySlots) {
-                    struct { const proto::ProtoObject* proto; const char* name; }
-                        varLenBases[] = {
-                            { env->getIntPrototype(),   "int" },
-                            { env->getBytesPrototype(), "bytes" },
-                            { env->getStrPrototype(),   "str" },
-                            { env->getTuplePrototype(), "tuple" },
-                        };
-                    const proto::ProtoObject* mroAttr2 = env->getAttribute(context,
-                        targetClass, env->getMroString(), false);
-                    const proto::ProtoTuple* mroT2 = mroAttr2 ? mroAttr2->asTuple(context) : nullptr;
-                    if (mroT2) {
-                        for (unsigned long mi = 0; mi < mroT2->getSize(context); ++mi) {
-                            const proto::ProtoObject* b = mroT2->getAt(context, static_cast<int>(mi));
-                            if (!b || b == targetClass) continue;
-                            for (auto& vb : varLenBases) {
-                                if (vb.proto && b == vb.proto) {
-                                    env->raiseTypeError(context,
-                                        std::string("nonempty __slots__ not supported for subtype of '")
-                                        + vb.name + "'");
-                                    return nullptr;
+                    // STRUCT-185: refine STRUCT-157.  CPython's reject list is
+                    // int / bytes / str (variable-length immutable types
+                    // without room for slot descriptors).  Tuple is NOT in
+                    // the reject list — `class C(tuple): __slots__=['a']`
+                    // works in CPython (test_slots_after_items).  And the
+                    // reject must skip when __slots__ contains ONLY the
+                    // magic-name entries `__dict__` / `__weakref__`, which
+                    // are flag markers (not actual storage slots) and are
+                    // valid on every base type (test_slots_special_after_items).
+                    auto allMagic = [&](const proto::ProtoObject* sv) -> bool {
+                        const proto::ProtoTuple* svT2 = sv->asTuple(context);
+                        const proto::ProtoList* svL2 = svT2 ? nullptr : sv->asList(context);
+                        unsigned long n = svT2 ? svT2->getSize(context)
+                            : (svL2 ? svL2->getSize(context) : 0);
+                        if (n == 0) return true;
+                        for (unsigned long i = 0; i < n; ++i) {
+                            const proto::ProtoObject* item = svT2
+                                ? svT2->getAt(context, static_cast<int>(i))
+                                : svL2->getAt(context, static_cast<int>(i));
+                            if (!item || !item->isString(context)) return false;
+                            std::string s;
+                            item->asString(context)->toUTF8String(context, s);
+                            if (s != "__dict__" && s != "__weakref__") return false;
+                        }
+                        return true;
+                    };
+                    bool onlyMagic = !slotsVal->isString(context) && allMagic(slotsVal);
+                    if (!onlyMagic) {
+                        struct { const proto::ProtoObject* proto; const char* name; }
+                            varLenBases[] = {
+                                { env->getIntPrototype(),   "int" },
+                                { env->getBytesPrototype(), "bytes" },
+                                { env->getStrPrototype(),   "str" },
+                            };
+                        const proto::ProtoObject* mroAttr2 = env->getAttribute(context,
+                            targetClass, env->getMroString(), false);
+                        const proto::ProtoTuple* mroT2 = mroAttr2 ? mroAttr2->asTuple(context) : nullptr;
+                        if (mroT2) {
+                            for (unsigned long mi = 0; mi < mroT2->getSize(context); ++mi) {
+                                const proto::ProtoObject* b = mroT2->getAt(context, static_cast<int>(mi));
+                                if (!b || b == targetClass) continue;
+                                for (auto& vb : varLenBases) {
+                                    if (vb.proto && b == vb.proto) {
+                                        env->raiseTypeError(context,
+                                            std::string("nonempty __slots__ not supported for subtype of '")
+                                            + vb.name + "'");
+                                        return nullptr;
+                                    }
                                 }
                             }
                         }
