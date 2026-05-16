@@ -28,6 +28,55 @@
 
 ---
 
+## Current Status (2026-05-16) — round 19 final (43 F+E)
+
+Round 19 closes at **34F + 9E = 43** in test_descr.py, down from the
+round-18 close at 49 (12% improvement).  Five functional fixes plus
+docs.
+
+### Round 19 commits (chronological)
+
+1. **STRUCT-196** copyreg base-walk through MRO (pickle slot subclass)
+2. **STRUCT-197** isinstance dispatches metaclass __instancecheck__
+3. **STRUCT-198** symmetric for issubclass __subclasscheck__
+4. **STRUCT-199** (docs) midpoint
+5. **STRUCT-200** _reconstructor populates list/set/dict subclass
+6. **STRUCT-201** (docs) close
+
+### Tests confirmed PASSING in round 19
+
+- `test_pickle_slots` (all subclass shapes × all protocols)
+- `test_reduce_copying` for C2/C3 list subclass (proto≥0)
+- `test_special_method_lookup` for __instancecheck__ / __subclasscheck__
+  isolated subtests
+
+### Carry-overs to round 20
+
+Major remaining clusters, each requires its own focused investigation:
+
+- **`__name__` resolution leak** — inside a method body that defines
+  any inner class, `__name__` resolves to the outer class name
+  instead of the module name.  BUILD_FUNCTION captures the wrong
+  globals frame.  Blocks test_classmethods.
+- **Metaclass `__call__` post-build** — `class C(metaclass=M):` with
+  user-set `self.dict = ns` shows `C.dict` as another M instance
+  instead of the namespace.  BUILD_CLASS post-processing rebinds
+  something on the M instance.  Blocks test_metaclass section 4.
+- **Slot-descriptor visibility for object.__setattr__** — the slot
+  member is in `Number.__dict__` but `hasOwnAttribute` reports it
+  False; `object.__setattr__(slot_inst, 'prec', v)` doesn't dispatch
+  the slot setter.  Blocks test_complexes.
+- **__weakref__ / __dict__ slot inheritance for multi-base** — class
+  C(W, D) where W has `__slots__=["__weakref__"]` and D has
+  `__slots__=["__dict__"]` should inherit both flags.  Blocks
+  test_slots_special and friends.
+- **Special-method-lookup-bypasses-__getattribute__** — list(),
+  with, __missing__, etc. consult special methods via __getattribute__
+  in protoPython where CPython skips it.  Wide refactor: every
+  dispatch site needs to use type-only lookup.
+
+---
+
 ## Current Status (2026-05-16) — round 19 (proto<2 pickle + metaclass dispatch)
 
 Round 19 attacked two clusters: copyreg's proto<2 reconstruction base
