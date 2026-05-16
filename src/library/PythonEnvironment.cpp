@@ -23573,6 +23573,54 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
             }
         }
 
+        // STRUCT-212: layout-compatibility check.  CPython rejects
+        // `L(list).__bases__ = (dict,)` because list and dict have
+        // incompatible instance layouts (different __data__ shapes,
+        // different slot offsets).  Walk the current class's MRO and
+        // the proposed bases for built-in container types; if they
+        // disagree, raise TypeError.
+        if (value && value != PROTO_NONE) {
+            auto containerOf = [&](const proto::ProtoObject* cls) -> const proto::ProtoObject* {
+                if (!cls) return nullptr;
+                const proto::ProtoObject* mroA = mroString ? cls->getAttribute(ctx, mroString) : nullptr;
+                const proto::ProtoTuple* mroT_ = mroA ? mroA->asTuple(ctx) : nullptr;
+                if (!mroT_) return nullptr;
+                for (unsigned long i = 0; i < mroT_->getSize(ctx); ++i) {
+                    const proto::ProtoObject* b = mroT_->getAt(ctx, i);
+                    if (b == listPrototype || b == dictPrototype || b == setPrototype
+                        || b == frozensetPrototype || b == tuplePrototype
+                        || b == strPrototype || b == bytesPrototype || b == intPrototype) {
+                        return b;
+                    }
+                }
+                return nullptr;
+            };
+            const proto::ProtoObject* curContainer = containerOf(obj);
+            const proto::ProtoObject* newContainer = nullptr;
+            const proto::ProtoTuple* newT_ = value->asTuple(ctx);
+            if (newT_) {
+                for (unsigned long i = 0; i < newT_->getSize(ctx); ++i) {
+                    const proto::ProtoObject* b = newT_->getAt(ctx, i);
+                    const proto::ProtoObject* bc = containerOf(b);
+                    if (bc) { newContainer = bc; break; }
+                }
+            }
+            if (curContainer != newContainer
+                && (curContainer != nullptr || newContainer != nullptr)) {
+                std::string cn = "?", nn = "?";
+                if (curContainer) {
+                    const proto::ProtoObject* a = curContainer->getAttribute(ctx, nameString);
+                    if (a && a->isString(ctx)) a->asString(ctx)->toUTF8String(ctx, cn);
+                }
+                if (newContainer) {
+                    const proto::ProtoObject* a = newContainer->getAttribute(ctx, nameString);
+                    if (a && a->isString(ctx)) a->asString(ctx)->toUTF8String(ctx, nn);
+                }
+                raiseTypeError(ctx,
+                    "__class__ assignment: '" + cn + "' object layout differs from '" + nn + "'");
+                return nullptr;
+            }
+        }
         // CPython: a __bases__ assignment is also rejected when any new
         // base is an unsubclassable (final) type — NoneType, bool,
         // NotImplementedType.  py_type's class-creation path already
