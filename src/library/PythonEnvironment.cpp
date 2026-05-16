@@ -432,8 +432,12 @@ static bool mp_isClassObject(const proto::ProtoObject* data,
         const proto::ProtoObject* isPyCls = data->getAttribute(context, ipcS);
         if (isPyCls && isPyCls != PROTO_NONE) return true;
     }
-    if (data->hasOwnAttribute(context, mroS) == PROTO_TRUE) {
-        const proto::ProtoObject* mro = data->getAttribute(context, mroS);
+    // STRUCT-105: descriptor-aware __mro__ read.
+    {
+        PythonEnvironment* envIPC = PythonEnvironment::fromContext(context);
+        const proto::ProtoObject* mro = envIPC
+            ? envIPC->getAttribute(context, data, mroS, false)
+            : data->getAttribute(context, mroS);
         if (mro && mro->asList(context)) return true;
     }
     return false;
@@ -1589,7 +1593,7 @@ static const proto::ProtoObject* py_object_get_dict(
     {
         const proto::ProtoObject* cls = env->getType(context, self);
         if (cls && cls != PROTO_NONE && cls != env->getObjectPrototype()) {
-            const proto::ProtoObject* mroAttr = cls->getAttribute(context, env->getMroString());
+            const proto::ProtoObject* mroAttr = env->getAttribute(context, cls, env->getMroString(), false);
             const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
             const proto::ProtoString* slotsS = env->getSlotsString();
             const proto::ProtoString* dictS = PythonEnvironment::getInternedString(context, "__dict__");
@@ -2874,7 +2878,7 @@ static const proto::ProtoObject* py_str_call(
         // comment.  Falls back to raw chain walk if __mro__ is absent.
         const proto::ProtoObject* strMethod = nullptr;
         if (cls) {
-            const proto::ProtoObject* mroAttr = env ? cls->getAttribute(ctx, env->getMroString()) : nullptr;
+            const proto::ProtoObject* mroAttr = env ? env->getAttribute(ctx, cls, env->getMroString(), false) : nullptr;
             const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
             if (mroT) {
                 for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
@@ -2942,7 +2946,7 @@ static const proto::ProtoObject* py_repr_call(
     // repr.  Walk __mro__ explicitly for the dunder lookup.
     const proto::ProtoObject* reprMethod = nullptr;
     if (cls) {
-        const proto::ProtoObject* mroAttr = env ? cls->getAttribute(ctx, env->getMroString()) : nullptr;
+        const proto::ProtoObject* mroAttr = env ? env->getAttribute(ctx, cls, env->getMroString(), false) : nullptr;
         const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
         if (mroT) {
             for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
@@ -5230,7 +5234,7 @@ static std::string py_union_repr_arg(proto::ProtoContext* context,
     // though the union normalises None → type(None) for storage.
     if (env && obj == env->getNoneTypePrototype()) return "None";
     if (env) {
-        const proto::ProtoObject* mroAttr = obj->getAttribute(context, env->getMroString());
+        const proto::ProtoObject* mroAttr = env->getAttribute(context, obj, env->getMroString(), false);
         // CPython stores __mro__ as a tuple; older protoPython paths may
         // surface a list. Accept either.
         bool isClass = mroAttr && (mroAttr->asList(context) || mroAttr->asTuple(context));
@@ -5925,7 +5929,7 @@ static const proto::ProtoObject* py_list_call(
     // listPrototype; identity check covers `list.__new__(list)`.
     if (env && cls != env->getListPrototype()) {
         bool subclassOfList = false;
-        const proto::ProtoObject* mroAttr = cls->getAttribute(context, env->getMroString());
+        const proto::ProtoObject* mroAttr = env->getAttribute(context, cls, env->getMroString(), false);
         const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
         if (mroT) {
             for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
@@ -6032,7 +6036,7 @@ static const proto::ProtoObject* py_tuple_call(
     // CPython: tuple.__new__(cls) requires cls to be a subclass of tuple.
     if (env && cls != env->getTuplePrototype()) {
         bool subclassOf = false;
-        const proto::ProtoObject* mroAttr = cls->getAttribute(context, env->getMroString());
+        const proto::ProtoObject* mroAttr = env->getAttribute(context, cls, env->getMroString(), false);
         const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
         if (mroT) {
             for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
@@ -6137,7 +6141,7 @@ static const proto::ProtoObject* py_dict_call(
     // CPython: dict.__new__(cls) requires cls to be a subclass of dict.
     if (env && cls != env->getDictPrototype()) {
         bool subclassOf = false;
-        const proto::ProtoObject* mroAttr = cls->getAttribute(context, env->getMroString());
+        const proto::ProtoObject* mroAttr = env->getAttribute(context, cls, env->getMroString(), false);
         const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
         if (mroT) {
             for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
@@ -11894,7 +11898,7 @@ static const proto::ProtoObject* py_str_mod(
                         const proto::ProtoString* strS = env->getStrString();
                         const proto::ProtoObject* strMethod = nullptr;
                         if (cls) {
-                            const proto::ProtoObject* mroAttr = cls->getAttribute(context, env->getMroString());
+                            const proto::ProtoObject* mroAttr = env->getAttribute(context, cls, env->getMroString(), false);
                             const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
                             if (mroT) {
                                 for (unsigned long mi = 0; mi < mroT->getSize(context); ++mi) {
