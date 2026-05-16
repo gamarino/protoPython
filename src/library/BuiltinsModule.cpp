@@ -5988,6 +5988,43 @@ const proto::ProtoObject* py_type(
                 for (size_t i = 0; i < keysList->getSize(context); ++i) {
                     const proto::ProtoObject* keyObj = keysList->getAt(context, i);
 
+                    // STRUCT-111: CPython emits a RuntimeWarning when the
+                    // namespace dict contains non-string keys.  test_gh55664
+                    // asserts this — without it the non-string key was
+                    // silently dropped.  Invoke `_py_warnings.warn_explicit`
+                    // directly with the RuntimeWarning category (the
+                    // emitSyntaxWarning helper is wired for SyntaxWarning
+                    // only; pattern lifted from PythonEnvironment.cpp:15700+).
+                    if (keyObj && !keyObj->isString(context) && keyObj != PROTO_NONE) {
+                        if (env) {
+                            std::string vKind = "object";
+                            const proto::ProtoObject* vt = env->getType(context, keyObj);
+                            if (vt) {
+                                const proto::ProtoObject* vn = vt->getAttribute(context, env->getNameString());
+                                if (vn && vn->isString(context)) vn->asString(context)->toUTF8String(context, vKind);
+                            }
+                            const proto::ProtoObject* rwT = env->resolve("RuntimeWarning", context);
+                            const proto::ProtoObject* wMod = env->resolveModule("_py_warnings", context);
+                            if (rwT && rwT != PROTO_NONE && wMod && wMod != PROTO_NONE) {
+                                const proto::ProtoObject* warnE = wMod->getAttribute(context,
+                                    PythonEnvironment::getInternedString(context, "warn_explicit"));
+                                if (warnE && warnE != PROTO_NONE) {
+                                    std::string msg = "non-string key in class namespace: '" + vKind + "'";
+                                    const proto::ProtoList* a = context->newList()
+                                        ->appendLast(context, PythonEnvironment::getInternedString(context, msg.c_str())->asObject(context))
+                                        ->appendLast(context, rwT)
+                                        ->appendLast(context, PythonEnvironment::getInternedString(context, "<class>")->asObject(context))
+                                        ->appendLast(context, context->fromInteger(0));
+                                    env->callObject(warnE, { a->getAt(context, 0), a->getAt(context, 1), a->getAt(context, 2), a->getAt(context, 3) });
+                                    // Clear any exception (warn filter='error' would raise) — we
+                                    // still want the test that probes the warning to see it via
+                                    // catch_warnings, not a real exception interrupting type().
+                                    if (env->hasPendingException()) env->clearPendingException();
+                                }
+                            }
+                        }
+                        continue;
+                    }
                     if (keyObj && keyObj->isString(context)) {
                         const proto::ProtoString* k = keyObj->asString(context);
 
