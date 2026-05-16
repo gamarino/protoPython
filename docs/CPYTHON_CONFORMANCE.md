@@ -70,10 +70,24 @@ names.  The prototype model carries `__data__`, `__keys__`,
 every object; none of these belong in CPython's dir() output.
 Filter them post-collection.
 
+**STRUCT-190**: dict[key] fallback for equal-content non-identical
+keys.  Two tuple keys with the same Python `hash()` but different
+element-string identities (e.g. interned literal vs `bytes.decode()`
+result) produced inconsistent results: `(decoded,) in d` was True
+but `d[(decoded,)]` raised KeyError.  Manifested in
+pickle.find_class: `(module, name)` is built over decoded bytes,
+while `_compat_pickle.NAME_MAPPING` keys are literals — `in` passed
+the precondition but `[]` then raised.  Fix: linear `__keys__` scan
+fallback in py_dict_getitem using __eq__ comparison.  The protoCore
+tuple-hash identity-sensitivity is logged as the underlying bug;
+this paper-over makes dict access work despite it.  Unblocks pickle
+proto < 3 path for int-subclass and copy_reg.
+
 ### Direct unittest counts (`test_descr.py`)
 
 | | run | fail | error | skipped | Δ |
 | :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-16 (round-18 + STRUCT-190) | 165 | 38 | 11 | 10 | F+E ↓6 (55→49); proto<3 pickle path lights up |
 | 2026-05-16 (round-18) | 165 | 38 | 15 | 10 | F+E ↓2 (55→53); composition shifts as errors flip to assertion-fails |
 | 2026-05-16 (round-17) | 165 | 35 | 20 | 10 | post-STRUCT-180 baseline |
 
