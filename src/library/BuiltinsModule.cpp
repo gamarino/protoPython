@@ -2735,6 +2735,24 @@ static const proto::ProtoObject* py_dir(
     std::sort(names.begin(), names.end());
     names.erase(std::unique(names.begin(), names.end()), names.end());
 
+    // STRUCT-187: filter protoPython-internal bookkeeping names that leak
+    // into dir() output but are invisible in CPython.  These are
+    // implementation details of the prototype model (the dict backing
+    // store, the Python-class marker, etc.) — exposing them in dir()
+    // breaks parity tests like test_dir's module-subclass check.
+    static const std::vector<std::string> internalNames = {
+        "__data__", "__keys__", "__is_python_class__",
+        "__subclasses_list__", "__pyflags__", "__py_getattr_handler__",
+        "__fn_meta_cache__", "__executed__",
+    };
+    names.erase(std::remove_if(names.begin(), names.end(),
+        [&](const std::string& n) {
+            for (const auto& iv : internalNames) {
+                if (n == iv) return true;
+            }
+            return false;
+        }), names.end());
+
     const proto::ProtoList* result = context->newList();
     for (const auto& name : names) {
         result = result->appendLast(context, PythonEnvironment::getInternedString(context, name.c_str())->asObject(context));
