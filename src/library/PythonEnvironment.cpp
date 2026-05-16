@@ -3949,6 +3949,35 @@ static const proto::ProtoObject* py_dict_setitem(
     const proto::ProtoObject* value = realPosParams->getAt(context, 1 + offset);
     unsigned long hash = dictKeyHash(context, key);
     bool hadKey = data->asSparseList(context)->has(context, hash);
+    // STRUCT-190 symmetric: if hash-bucket lookup misses, scan __keys__
+    // for a content-equal stored key (same root cause as py_dict_getitem
+    // — equal Python hash, identity-sensitive protoCore bucket).  Reuse
+    // the matching key's stored hash so the write updates the existing
+    // entry instead of creating a duplicate.
+    if (!hadKey) {
+        const proto::ProtoString* keysName2 = env ? env->getKeysString()
+            : PythonEnvironment::getInternedString(context, "__keys__");
+        const proto::ProtoObject* keysObj2 = realSelf->getAttribute(context, keysName2);
+        const proto::ProtoList* keysList2 = keysObj2 ? keysObj2->asList(context) : nullptr;
+        if (keysList2 && env) {
+            const proto::ProtoString* eqS = PythonEnvironment::getInternedString(context, "__eq__");
+            for (unsigned long i = 0; i < keysList2->getSize(context); ++i) {
+                const proto::ProtoObject* candKey = keysList2->getAt(context, static_cast<int>(i));
+                if (!candKey || candKey == key) continue;
+                const proto::ProtoObject* eqM = env->getAttribute(context, candKey, eqS, false);
+                if (eqM && eqM != PROTO_NONE && eqM->asMethod(context)) {
+                    const proto::ProtoList* a = context->newList()->appendLast(context, key);
+                    const proto::ProtoObject* r = eqM->asMethod(context)(
+                        context, const_cast<proto::ProtoObject*>(candKey), nullptr, a, nullptr);
+                    if (r == PROTO_TRUE) {
+                        hash = dictKeyHash(context, candKey);
+                        hadKey = data->asSparseList(context)->has(context, hash);
+                        break;
+                    }
+                }
+            }
+        }
+    }
     const proto::ProtoSparseList* newSparse = data->asSparseList(context)->setAt(context, hash, value);
     realSelf->setAttribute(context, dataName, newSparse->asObject(context));
 
