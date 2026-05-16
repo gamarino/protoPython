@@ -8598,9 +8598,12 @@ static const proto::ProtoObject* py_round(
     // Bool is acceptable (subclass of int).  Allow user types that
     // implement __round__ — fall through to the dunder dispatch below.
     if (!n->isInteger(context) && !n->isDouble(context) && n != PROTO_TRUE && n != PROTO_FALSE) {
+        // STRUCT-140: type-only lookup so instance attrs are ignored.
         const proto::ProtoString* roundS = PythonEnvironment::getInternedString(context, "__round__");
-        const proto::ProtoObject* roundM = env ? env->getAttribute(context, n, roundS, /*raiseError=*/false)
-                                              : n->getAttribute(context, roundS);
+        const proto::ProtoObject* roundTy = env ? env->getType(context, n) : nullptr;
+        const proto::ProtoObject* roundM = (env && roundTy)
+            ? env->getAttribute(context, roundTy, roundS, /*raiseError=*/false)
+            : n->getAttribute(context, roundS);
         if (!roundM || roundM == PROTO_NONE) {
             if (env) {
                 std::string clsName = "object";
