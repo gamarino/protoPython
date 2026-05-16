@@ -19906,6 +19906,33 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         modulePrototype = modulePrototype->setAttribute(rootContext_, mroS,
             rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
     }
+    // STRUCT-216: install __repr__ on modulePrototype.  CPython modules
+    // report `<module 'name' from '/path'>` or `<module 'name' (built-in)>`;
+    // protoPython's default `<object object at 0x...>` breaks
+    // test_uninitialized_modules's `str(m)` smoke test (which only
+    // requires the call not to raise).  Emit the minimal CPython-
+    // compatible form here.
+    {
+        auto py_module_repr = +[](proto::ProtoContext* ctx,
+                                  const proto::ProtoObject* self,
+                                  const proto::ParentLink*,
+                                  const proto::ProtoList*,
+                                  const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            PythonEnvironment* env_r = PythonEnvironment::fromContext(ctx);
+            std::string nm = "?";
+            if (env_r && self) {
+                const proto::ProtoObject* nameAttr =
+                    self->getAttribute(ctx, env_r->getNameString());
+                if (nameAttr && nameAttr->isString(ctx)) {
+                    nameAttr->asString(ctx)->toUTF8String(ctx, nm);
+                }
+            }
+            std::string out = "<module '" + nm + "'>";
+            return PythonEnvironment::getInternedString(ctx, out.c_str())->asObject(ctx);
+        };
+        modulePrototype = modulePrototype->setAttribute(rootContext_, py_repr,
+            rootContext_->fromMethod(nullptr, py_module_repr));
+    }
     // STRUCT-90: install __name__ as a getset descriptor on
     // modulePrototype.  The fget raises AttributeError when the
     // module has no own __name__ — matching CPython's behaviour for
