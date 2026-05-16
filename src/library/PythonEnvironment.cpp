@@ -5875,18 +5875,48 @@ static const proto::ProtoObject* py_bytes_call(
         const proto::ProtoString* bytesS =
             PythonEnvironment::getInternedString(context, "__bytes__");
         if (argType) {
-            const proto::ProtoObject* bytesM =
-                argType->getAttribute(context, bytesS);
+            // STRUCT-222: walk MRO for own __bytes__; apply descriptor
+            // __get__ if present (SpecialDescr pattern in
+            // test_special_method_lookup).  Type-only walk so the
+            // instance's __getattribute__ is not triggered.
+            const proto::ProtoString* mroSb = env->getMroString();
+            const proto::ProtoObject* mroAttrB = mroSb ? env->getAttribute(context, argType, mroSb, false) : nullptr;
+            const proto::ProtoTuple* mroTb = mroAttrB ? mroAttrB->asTuple(context) : nullptr;
+            const proto::ProtoObject* bytesM = nullptr;
+            if (mroTb) {
+                for (unsigned long i = 0; i < mroTb->getSize(context); ++i) {
+                    const proto::ProtoObject* b = mroTb->getAt(context, i);
+                    if (!b || b == PROTO_NONE) continue;
+                    if (b->hasOwnAttribute(context, bytesS) == PROTO_TRUE) {
+                        bytesM = b->getOwnAttributeDirect(context, bytesS);
+                        break;
+                    }
+                }
+            }
+            if (!bytesM) bytesM = argType->getAttribute(context, bytesS);
             if (bytesM && bytesM != PROTO_NONE) {
+                // Apply descriptor __get__ when present.
+                const proto::ProtoString* getDSb =
+                    PythonEnvironment::getInternedString(context, "__get__");
+                const proto::ProtoObject* bmType = env->getType(context, bytesM);
+                const proto::ProtoObject* getMb = bmType
+                    ? env->getAttribute(context, bmType, getDSb, false) : nullptr;
+                if (getMb && getMb != PROTO_NONE) {
+                    if (getMb->asMethod(context)) {
+                        const proto::ProtoList* gargs =
+                            context->newList()->appendLast(context, arg)->appendLast(context, argType);
+                        bytesM = getMb->asMethod(context)(context,
+                            const_cast<proto::ProtoObject*>(bytesM), nullptr, gargs, nullptr);
+                    } else {
+                        bytesM = env->callObject(getMb, {bytesM, arg, argType});
+                    }
+                }
                 const proto::ProtoObject* result = nullptr;
-                if (bytesM->asMethod(context)) {
+                if (bytesM && bytesM->asMethod(context)) {
                     const proto::ProtoList* mArgs = context->newList();
                     result = bytesM->asMethod(context)(context,
                         const_cast<proto::ProtoObject*>(arg), nullptr, mArgs, nullptr);
-                } else {
-                    // Python-level function: callObject handles bound
-                    // dispatch (treats `bytesM` like a descriptor with
-                    // arg as the implicit self).
+                } else if (bytesM) {
                     result = env->callObject(bytesM, { arg });
                 }
                 if (result && result != PROTO_NONE) {
