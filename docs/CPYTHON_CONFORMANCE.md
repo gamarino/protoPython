@@ -28,6 +28,91 @@
 
 ---
 
+## Current Status (2026-05-16) — post-twenty-first-sweep (round 14)
+
+Round 14 was the wide round (20 commits planned).  6 commits landed,
+2 attempted reverts.  test_descr.py F+E ↓1 (83 → 82); 1 net PASS
+flip (test_buffer_inheritance via STRUCT-136).
+
+### Achievements
+
+1. **STRUCT-132** — migrated 3 last raw __mro__ sites
+   (ExceptionsModule:325, CollectionsAbcModule:25, ExecutionEngine:3293).
+2. **STRUCT-133** — long-tail MRO sweep across PythonEnvironment (16
+   sites), ExecutionEngine (3 sites), WeakrefModule (1 site).  35+
+   raw `cls->getAttribute(__mro__)` sites total now migrated to
+   descriptor-aware `env->getAttribute`/`getAttribute`.  The cache
+   drop attempt still regressed test_foundation — yet more raw
+   readers exist somewhere, so cache write kept.  Final SSoT closure
+   deferred again.
+3. **STRUCT-136** — binascii.b2a_hex/hexlify reject int subclasses
+   with CPython-shaped TypeError "argument should be a bytes-like
+   object or ASCII string, not 'int'".  **Flips test_buffer_inheritance.**
+4. **STRUCT-139/140/141** — abs() / round() / reversed() now consult
+   __abs__ / __round__ / __reversed__ via `type(obj)` instead of
+   walking instance attrs.
+
+### Goals reverted
+
+- **STRUCT-134** slot-wrapper receiver validation in invokeDunder
+  with WRAPPER-kind narrowing.  ctest 183/183 passed but standalone
+  test_descr regressed (TestLoader's `dict.__setitem__` dispatch
+  fails when TestLoader isn't a dict subclass).  Some legitimate
+  WRAPPER-kind dispatches on non-matching receivers exist outside
+  test_descr's coverage.
+- **STRUCT-135** same-pattern check in compareObjects — also broke
+  unrelated paths (object.__eq__ on type instances during module
+  load).
+
+### Goals deferred
+
+- **STRUCT-138** test_metaclass __prepare__ wiring — needs more
+  invasive ns-dict threading.  Out of round-14 scope.
+- **STRUCT-137** test_delete_hook — descriptor __delete__
+  invocation; not investigated this round.
+- **STRUCT-142-149** other quick wins (type(len) rejection,
+  __dict__ descriptor, test_subclass_propagation, etc.) — each
+  blocked by prerequisite infrastructure work.
+
+### Direct unittest counts (`test_descr.py`)
+
+| | run | fail | error | skipped | Δ |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-16 (round-14) | 165 | **39** | 43 | 10 | F-1 (test_buffer_inheritance flip) |
+| 2026-05-15 (round-13 final) | 165 | 40 | 43 | 10 | post-STRUCT-131 baseline |
+
+### Commits landed in round 14
+
+| Commit | Theme |
+| :--- | :--- |
+| `e3c5b95f` STRUCT-132 | Migrate 3 last raw __mro__ sites in Exceptions/CollectionsAbc/ExecutionEngine |
+| `b5df6fce` STRUCT-133 | Long-tail MRO sweep — 20 more sites in PythonEnvironment/ExecutionEngine/WeakrefModule |
+| `8adc06fa` revert | STRUCT-135 reverted (broke compareObjects path) |
+| `9a0157d9` revert | STRUCT-134 reverted (broke TestLoader path in test_descr) |
+| `3809ca83` STRUCT-136 | binascii.b2a_hex rejects int subclasses (test_buffer_inheritance PASS) |
+| `0eda7316` STRUCT-139 | abs() looks up __abs__ on the type |
+| `1d2731d2` STRUCT-140 | round() looks up __round__ on the type |
+| `336e9e7a` STRUCT-141 | reversed() looks up __reversed__ on the type |
+| _this commit_ STRUCT-150 | Round-14 conformance documentation |
+
+### Carry-over to round 15
+
+- Final MRO SSoT closure: more raw readers exist beyond the 35+
+  already migrated; needs a full text-search and audit
+- Slot wrapper validation: needs a different approach (perhaps
+  per-receiver-type whitelist instead of WRAPPER-kind broad check)
+- builtin_function_or_method infrastructure (test_errors)
+- test_delete_hook, test_metaclass __prepare__, test___dict__
+  descriptor, test_subclass_propagation
+- All previous round-6-to-round-13 deferrals still pending
+
+### Infra note
+
+Build verification uses `build_release/` (underscore).  ctest 183/183
+on every landed round-14 commit; test_descr baseline 39F+43E.
+
+---
+
 ## Current Status (2026-05-15) — post-twentieth-sweep (round 13)
 
 Round 13 was a difficult round: many planned items hit unexpected
