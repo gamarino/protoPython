@@ -1001,6 +1001,49 @@ const proto::ProtoObject* py_complex(
             if (pos != body.size()) return false;
             dest = re; destImag = im; return true;
         }
+        // STRUCT-110: consult `type(x).__complex__` BEFORE the
+        // .real/.imag fallback.  Python's special-method protocol
+        // routes through the type — `x.__complex__ = …` set on an
+        // instance must be ignored — and CPython's complex() invokes
+        // the user-defined __complex__ if the type provides one,
+        // returning its result without touching .real/.imag.
+        if (env) {
+            const proto::ProtoString* complexS =
+                PythonEnvironment::getInternedString(context, "__complex__");
+            const proto::ProtoObject* xType = env->getType(context, x);
+            if (xType) {
+                const proto::ProtoObject* m =
+                    env->getAttribute(context, xType, complexS, /*raiseError=*/false);
+                if (m && m != PROTO_NONE) {
+                    const proto::ProtoObject* result = nullptr;
+                    if (m->asMethod(context)) {
+                        const proto::ProtoList* a = context->newList();
+                        result = m->asMethod(context)(context,
+                            const_cast<proto::ProtoObject*>(x), nullptr, a, nullptr);
+                    } else {
+                        result = env->callObject(m, { x });
+                    }
+                    if (result && result != PROTO_NONE) {
+                        const proto::ProtoString* realRS =
+                            PythonEnvironment::getInternedString(context, "real");
+                        const proto::ProtoString* imagRS =
+                            PythonEnvironment::getInternedString(context, "imag");
+                        const proto::ProtoObject* rr = result->getAttribute(context, realRS);
+                        const proto::ProtoObject* ii = result->getAttribute(context, imagRS);
+                        bool got = false;
+                        if (rr) {
+                            if (rr->isDouble(context)) { dest = rr->asDouble(context); got = true; }
+                            else if (rr->isInteger(context)) { dest = (double)rr->asLong(context); got = true; }
+                        }
+                        if (ii) {
+                            if (ii->isDouble(context)) { destImag = ii->asDouble(context); got = true; }
+                            else if (ii->isInteger(context)) { destImag = (double)ii->asLong(context); got = true; }
+                        }
+                        if (got) return true;
+                    }
+                }
+            }
+        }
         // Complex / complex subclass: pull .real and .imag.
         const proto::ProtoString* realS = PythonEnvironment::getInternedString(context, "real");
         const proto::ProtoString* imagS = PythonEnvironment::getInternedString(context, "imag");
