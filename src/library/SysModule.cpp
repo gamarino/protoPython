@@ -84,7 +84,62 @@ static const proto::ProtoObject* sys_getsizeof(
     (void)parentLink;
     (void)keywordParameters;
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    (void)positionalParameters;
+    const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    if (!obj) return context->fromInteger(0);
+    // STRUCT-220: dispatch __sizeof__ via type-only MRO walk so user
+    // overrides + descriptor protocol (SpecialDescr in
+    // test_special_method_lookup) fire correctly without invoking
+    // the instance's __getattribute__.
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (env) {
+        const proto::ProtoObject* cls = env->getType(context, obj);
+        if (cls && cls != PROTO_NONE) {
+            const proto::ProtoString* sizeofS =
+                PythonEnvironment::getInternedString(context, "__sizeof__");
+            const proto::ProtoString* mroS = env->getMroString();
+            const proto::ProtoObject* mroAttr = mroS ? env->getAttribute(context, cls, mroS, false) : nullptr;
+            const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
+            const proto::ProtoObject* sizeM = nullptr;
+            if (mroT) {
+                for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+                    const proto::ProtoObject* b = mroT->getAt(context, i);
+                    if (!b || b == PROTO_NONE) continue;
+                    if (b->hasOwnAttribute(context, sizeofS) == PROTO_TRUE) {
+                        sizeM = b->getOwnAttributeDirect(context, sizeofS);
+                        break;
+                    }
+                }
+            }
+            if (sizeM && sizeM != PROTO_NONE) {
+                // Apply descriptor __get__ if present
+                const proto::ProtoString* getDS =
+                    PythonEnvironment::getInternedString(context, "__get__");
+                const proto::ProtoObject* smType = env->getType(context, sizeM);
+                const proto::ProtoObject* getM = smType ? env->getAttribute(context, smType, getDS, false) : nullptr;
+                if (getM && getM != PROTO_NONE) {
+                    if (getM->asMethod(context)) {
+                        const proto::ProtoList* gargs =
+                            context->newList()->appendLast(context, obj)->appendLast(context, cls);
+                        sizeM = getM->asMethod(context)(context,
+                            const_cast<proto::ProtoObject*>(sizeM), nullptr, gargs, nullptr);
+                    } else {
+                        sizeM = env->callObject(getM, {sizeM, obj, cls});
+                    }
+                }
+                if (sizeM && sizeM != PROTO_NONE) {
+                    const proto::ProtoObject* r = nullptr;
+                    if (sizeM->asMethod(context)) {
+                        const proto::ProtoList* emptyL = context->newList();
+                        r = sizeM->asMethod(context)(context,
+                            const_cast<proto::ProtoObject*>(obj), nullptr, emptyL, nullptr);
+                    } else {
+                        r = env->callObject(sizeM, {});
+                    }
+                    if (r && r->isInteger(context)) return r;
+                }
+            }
+        }
+    }
     return context->fromInteger(0);
 }
 
