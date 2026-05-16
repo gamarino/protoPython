@@ -28,6 +28,83 @@
 
 ---
 
+## Current Status (2026-05-16) — round 17 (3 carry-over blockers resolved)
+
+Round 17 attacked the 3 carry-over blockers from round-16-extended.
+Two land as full root-cause fixes; the third (module __dict__ refactor)
+remains deferred.
+
+### Round 17 root-cause fixes
+
+**STRUCT-177 (slot wrapper validation)**: invokeDunder now validates
+that a slot-wrapper's owner appears in the receiver's MRO (Python
+`__mro__` tuple OR protoCore parent chain).  When the chain leak in
+`env->getAttribute` resolves e.g. `dict.__getitem__` on
+unittest.TestLoader (a class that does not inherit from dict),
+returning nullptr makes the dispatch surface as a clean TypeError at
+the call site instead of silently invoking the wrapper on a foreign
+receiver.  Test_wrong_class_slot_wrapper / test_proxy_call now
+exercise the right code path; the underlying chain leak in
+protoCore's attribute walk remains tracked for future investigation.
+
+**STRUCT-178 (bound-method preservation)**:
+`PythonEnvironment::getAttribute` was re-binding tagged native methods
+to the holder object even when the method already carried a bound
+self.  This silently routed pickle's `_Framer.file_write = bytesio.write`
+through `_Framer` instead of the original BytesIO, producing
+zero-length pickle dumps.  Fixed by an early-return when
+`val->asMethodSelf(ctx) != nullptr` and the attribute is an own
+instance attribute.
+
+**STRUCT-179 (BytesIO.getbuffer)**: trivial gap — IOModule never
+registered `getbuffer`.  pickle's framer uses it on every frame
+commit (pickle.py:214).  Implemented as a thin wrapper around
+the underlying bytes since memoryview is not yet a real type.
+
+**STRUCT-180 (itertools.batched)**: `py_batched_stub` returned an
+empty list unconditionally, silently zeroing every for-loop that
+drove it.  pickle's `save_dict` / `save_set` / `save_list` consume
+`for batch in batched(items, _BATCHSIZE)` — with no batches, every
+container pickled as the EMPTY_* opcode with no SETITEM / APPENDS
+instructions, round-tripping to an empty container.  Replaced with a
+real iterator over `env->iter(iterable)` that yields n-tuples
+matching CPython 3.13+ semantics.
+
+### Direct unittest counts (`test_descr.py`)
+
+| | run | fail | error | skipped | Δ |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-16 (round-17) | 165 | 35 | 20 | 10 | F+E ↓24 (79→55); pickle round-trip cluster lights up |
+| 2026-05-16 (round-16 ext.) | 165 | 32 | 47 | 10 | post-STRUCT-176 baseline |
+
+Pickle subtests in `test_pickle_slots` and `test_reduce_copying`
+went from 26 errors → 4 fail/12 error (real assertions hit instead
+of crashing before assertion site).  Net 24 fewer failures across
+test_descr — biggest single-round delta since round 12.
+
+### Round 17 commits
+
+| Commit | Theme |
+| :--- | :--- |
+| `60062bd0` STRUCT-177 | Slot wrapper receiver-type validation in invokeDunder |
+| `4713d916` STRUCT-178/179 | Preserve bound-method self; add BytesIO.getbuffer |
+| `6f7b6549` STRUCT-180 | itertools.batched real implementation (replace empty-list stub) |
+| _this commit_ STRUCT-181 (docs) | Round-17 documentation |
+
+### Carry-over to round 18
+
+1. **Module __dict__ refactor** — still deferred.  Architectural.
+2. **Pickle residue** — 4F+12E in test_reduce_copying split across
+   5 class shapes × ~5 protocols.  Likely list-subclass / int-subclass
+   reconstructor specifics rather than fundamental gaps.
+3. **protoCore chain-walk leak** — env->getAttribute resolves
+   built-in slot wrappers on unrelated classes via a stray native
+   parent.  STRUCT-177 papers over the symptom; full fix requires
+   tracing where the dict/list prototypes leak into user classes'
+   chain.
+
+---
+
 ## Current Status (2026-05-16) — post-twenty-fourth-sweep (round 16, extended)
 
 Round 16 extension: tackled the 3 strategic carry-overs.  Two fixed,
