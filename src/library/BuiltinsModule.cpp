@@ -3294,9 +3294,17 @@ static const proto::ProtoObject* py_super_getattr(
     
     // In super(type, obj), 'type' is where searching starts in the MRO of 'obj'.
     // If 'obj' is a class, we use its __mro__. If 'obj' is an instance, we use type(obj).__mro__.
-    bool isClass = obj->proto::ProtoObject::getAttribute(context, PythonEnvironment::getInternedString(context, "__mro__")) != PROTO_NONE;
+    // STRUCT-104: descriptor-aware __mro__ read so the round-9 SSoT
+    // path (chain reconstruction) is honoured uniformly.
+    const proto::ProtoString* mroAttrSuper = PythonEnvironment::getInternedString(context, "__mro__");
+    bool isClass = env ? (env->getAttribute(context, obj, mroAttrSuper, false) != nullptr
+                          && env->getAttribute(context, obj, mroAttrSuper, false) != PROTO_NONE)
+                       : (obj->proto::ProtoObject::getAttribute(context, mroAttrSuper) != PROTO_NONE);
     const proto::ProtoObject* mroSrc = isClass ? obj : (env ? env->getType(context, obj) : nullptr);
-    const proto::ProtoObject* mroAttr = mroSrc ? mroSrc->proto::ProtoObject::getAttribute(context, PythonEnvironment::getInternedString(context, "__mro__")) : nullptr;
+    const proto::ProtoObject* mroAttr = mroSrc
+        ? (env ? env->getAttribute(context, mroSrc, mroAttrSuper, false)
+               : mroSrc->proto::ProtoObject::getAttribute(context, mroAttrSuper))
+        : nullptr;
     
     std::vector<const proto::ProtoObject*> targets;
     if (mroAttr) {
@@ -3581,7 +3589,8 @@ static bool super_obj_is_valid(proto::ProtoContext* context,
     auto mroHas = [&](const proto::ProtoObject* cls) -> bool {
         if (!cls || cls == PROTO_NONE) return false;
         if (cls == type) return true;
-        const proto::ProtoObject* mroA = mroS ? cls->getAttribute(context, mroS) : nullptr;
+        // STRUCT-104: descriptor-aware __mro__ read.
+        const proto::ProtoObject* mroA = mroS ? venv->getAttribute(context, cls, mroS, false) : nullptr;
         const proto::ProtoTuple* mroT = mroA ? mroA->asTuple(context) : nullptr;
         if (mroT) {
             for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
@@ -3596,7 +3605,8 @@ static bool super_obj_is_valid(proto::ProtoContext* context,
     // Proxy escape hatch: obj's type owns __getattribute__.
     if (objType && objType != PROTO_NONE && mroS) {
         const proto::ProtoString* gaS = PythonEnvironment::getInternedString(context, "__getattribute__");
-        const proto::ProtoObject* mroA = objType->getAttribute(context, mroS);
+        // STRUCT-104: descriptor-aware __mro__ read.
+        const proto::ProtoObject* mroA = venv->getAttribute(context, objType, mroS, false);
         const proto::ProtoTuple* mroT = mroA ? mroA->asTuple(context) : nullptr;
         if (mroT) {
             for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
@@ -3799,7 +3809,10 @@ static const proto::ProtoObject* py_super_new(
                         const proto::ProtoObject* co_name = codeObj->getAttribute(context, PythonEnvironment::getInternedString(context, "co_name"));
                         bool isClass = obj->hasOwnAttribute(context, PythonEnvironment::getInternedString(context, "__mro__")) == PROTO_TRUE;
                         const proto::ProtoObject* mroSrc = isClass ? obj : env->getType(context, obj);
-                        const proto::ProtoObject* mroObj = mroSrc ? mroSrc->getAttribute(context, PythonEnvironment::getInternedString(context, "__mro__")) : nullptr;
+                        // STRUCT-104: descriptor-aware __mro__ read.
+                        const proto::ProtoObject* mroObj = mroSrc
+                            ? env->getAttribute(context, mroSrc, PythonEnvironment::getInternedString(context, "__mro__"), false)
+                            : nullptr;
                         const proto::ProtoTuple* mro = (mroObj && mroObj != PROTO_NONE) ? mroObj->asTuple(context) : nullptr;
                         if (get_env_diag()) fprintf(stderr, "DEBUG_SUPER_MRO_CHECK: obj=%p isClass=%d mroSrc=%p mroObj=%p mro=%p co_name=%p co_nameStr=%d\n", (void*)obj, isClass, (void*)mroSrc, (void*)mroObj, (void*)mro, (void*)co_name, co_name ? co_name->isString(context) : 0);
                         if (mro && co_name && co_name->isString(context)) {
@@ -4771,7 +4784,14 @@ const proto::ProtoList* computeC3MRO(proto::ProtoContext* context, const proto::
     mros.reserve(bases->getSize(context) + 1);
     for (size_t i = 0; i < bases->getSize(context); ++i) {
         const proto::ProtoObject* baseCls = bases->getAt(context, i);
-        const proto::ProtoObject* mroAttr = baseCls->proto::ProtoObject::getAttribute(context, PythonEnvironment::getInternedString(context, "__mro__"));
+        // STRUCT-104: descriptor-aware __mro__ read for base classes.
+        // computeC3MRO is invoked during class construction; the bases
+        // are always fully constructed by this point, so the descriptor
+        // path is safe.
+        PythonEnvironment* envC3 = PythonEnvironment::fromContext(context);
+        const proto::ProtoString* mroAttrC3 = PythonEnvironment::getInternedString(context, "__mro__");
+        const proto::ProtoObject* mroAttr = envC3 ? envC3->getAttribute(context, baseCls, mroAttrC3, false)
+                                                  : baseCls->proto::ProtoObject::getAttribute(context, mroAttrC3);
         const proto::ProtoTuple* tup = nullptr;
         if (mroAttr) {
             tup = mroAttr->asTuple(context);
@@ -5426,9 +5446,11 @@ const proto::ProtoObject* py_type_mro(
     
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoString* mroName = PythonEnvironment::getInternedString(context, "__mro__");
-    
+
     const_cast<proto::ProtoObject*>(cls); // ensure we can use it
-    const proto::ProtoObject* mroAttr = cls->getAttribute(context, mroName);
+    // STRUCT-104: descriptor-aware __mro__ read.
+    const proto::ProtoObject* mroAttr = env ? env->getAttribute(context, cls, mroName, false)
+                                            : cls->getAttribute(context, mroName);
     
     // If it's a descriptor (like the one we found), we need to get its value
     if (mroAttr && mroAttr->hasAttribute(context, env ? env->getGetDunderString() : PythonEnvironment::getInternedString(context, "__get__"))) {
