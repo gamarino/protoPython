@@ -78,10 +78,18 @@ but `d[(decoded,)]` raised KeyError.  Manifested in
 pickle.find_class: `(module, name)` is built over decoded bytes,
 while `_compat_pickle.NAME_MAPPING` keys are literals — `in` passed
 the precondition but `[]` then raised.  Fix: linear `__keys__` scan
-fallback in py_dict_getitem using __eq__ comparison.  The protoCore
-tuple-hash identity-sensitivity is logged as the underlying bug;
-this paper-over makes dict access work despite it.  Unblocks pickle
-proto < 3 path for int-subclass and copy_reg.
+fallback in py_dict_getitem using __eq__ comparison.  Unblocks
+pickle proto < 3 path for int-subclass and copy_reg.
+
+**STRUCT-192/193**: symmetric fallbacks in py_dict_setitem and
+py_dict_delitem.  Same root cause, same shape of fix — guarantees
+that read/write/delete agree on content-equality.
+
+**STRUCT-194 (protoCore)**: root-cause fix in `ProtoTupleImplementation::getHash`.
+The previous identity-based hash (`reinterpret_cast<uintptr_t>(this)`)
+made equal-content tuples hash differently.  Replaced with a
+content-based FNV-1a-ish mix.  STRUCT-190/192/193 remain in
+protoPython as defense in depth.
 
 ### Direct unittest counts (`test_descr.py`)
 
