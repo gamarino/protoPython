@@ -271,7 +271,42 @@ static const proto::ProtoObject* py_hexlify(
     const proto::ProtoSparseList*) {
 
     if (!posArgs || posArgs->getSize(ctx) < 1) return make_bytes(ctx, "");
-    std::string src = obj_to_bytes(ctx, posArgs->getAt(ctx, 0));
+    const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
+    // STRUCT-136: reject buffer-incompatible args.  Int and int
+    // subclasses are NOT bytes-like; CPython's b2a_hex / hexlify
+    // raises TypeError "argument should be a bytes-like object or
+    // ASCII string, not 'int'".  Detection: walk type(arg)'s MRO
+    // looking for intPrototype (catches both raw int and `class
+    // MyInt(int)` instances) while NOT being bytes/str/bytearray.
+    PythonEnvironment* envHex = PythonEnvironment::fromContext(ctx);
+    if (envHex && arg) {
+        const proto::ProtoObject* aT = envHex->getType(ctx, arg);
+        if (aT) {
+            const proto::ProtoObject* intP = envHex->getIntPrototype();
+            const proto::ProtoObject* mAttr = envHex->getAttribute(ctx, aT,
+                envHex->getMroString(), false);
+            const proto::ProtoTuple* mT = mAttr ? mAttr->asTuple(ctx) : nullptr;
+            bool hasInt = false;
+            if (mT && intP) {
+                for (unsigned long i = 0; i < mT->getSize(ctx); ++i) {
+                    if (mT->getAt(ctx, static_cast<int>(i)) == intP) { hasInt = true; break; }
+                }
+            }
+            // Allow raw bytes / str (they should NOT take the int
+            // branch even though their __mro__ might include int via
+            // unrelated chains in pathological cases).
+            if (hasInt && !arg->isString(ctx)
+                && !(envHex->getBytesPrototype() && aT == envHex->getBytesPrototype())) {
+                std::string cname = "int";
+                if (arg->isBoolean(ctx)) cname = "bool";
+                envHex->raiseTypeError(ctx,
+                    "argument should be a bytes-like object or ASCII string, not '"
+                    + cname + "'");
+                return nullptr;
+            }
+        }
+    }
+    std::string src = obj_to_bytes(ctx, arg);
     static const char hex[] = "0123456789abcdef";
     std::string out;
     out.reserve(src.size() * 2);
