@@ -28,6 +28,59 @@
 
 ---
 
+## Current Status (2026-05-16) — round 19 (proto<2 pickle + metaclass dispatch)
+
+Round 19 attacked two clusters: copyreg's proto<2 reconstruction base
+selection (which broke pickle for subclasses with __slots__ but no
+__new__ override) and the metaclass-based dispatch for isinstance /
+issubclass.  Both clusters land cleanly.
+
+### Round 19 commits
+
+**STRUCT-196**: `copyreg._reduce_ex` walks the MRO for the builtin
+base.  Previous code used `cls.__base__` (the immediate parent),
+which for `D(C, __slots__=[a])` set base=C and made
+`_reconstructor(D, C, state)` call `C.__new__(D, state)` — failing
+because C inherits the no-args object.__new__.  Walking the MRO
+against the known list of pickle-relevant built-ins (int, str, etc.)
+lands on `object` for pure-Python hierarchies.
+
+**STRUCT-197**: `py_isinstance` dispatches `type(cls).__instancecheck__`
+when `cls` isn't a real class but its metaclass defines the override.
+Previously we rejected non-class arg2 immediately.
+
+**STRUCT-198**: symmetric to STRUCT-197 for `py_issubclass` /
+`__subclasscheck__`.
+
+### Direct unittest counts (`test_descr.py`)
+
+| | run | fail | error | skipped | Δ |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-16 (round-19) | 165 | 38 | 9 | 10 | F+E ↓2 (49→47); pickle slots all-protos green |
+| 2026-05-16 (round-18 + STRUCT-190) | 165 | 38 | 11 | 10 | post-STRUCT-194 baseline |
+
+### Tests confirmed passing post-STRUCT-196
+
+- `test_pickle_slots` (all protocols, all subclass shapes)
+
+### Carry-overs to round 20
+
+- Metaclass `class C(metaclass=M):` post-processing overwrites the
+  metaclass-instance's user-set attribute named `dict` with another
+  M2 instance (BUILD_CLASS post-processing mishandles
+  `class_obj.__dict__ = namespace`).
+- Slot member descriptor not visible to `object.__setattr__` MRO
+  walk — slot descriptors live on the class but `hasOwnAttribute`
+  doesn't see them.
+- `__name__` resolution in method bodies inside classes with inner
+  classes resolves to the outer class name instead of the module
+  name.
+- `del inst.__dict__` and `inst.__dict__ = {...}` for built-in
+  container subclasses (list/tuple): STRUCT-186 fixed the del path
+  for tuples; the assignment path remains.
+
+---
+
 ## Current Status (2026-05-16) — round 18 (quality sweep + targeted fixes)
 
 Round 18 chased ten smaller targets and landed six.  No single dramatic
