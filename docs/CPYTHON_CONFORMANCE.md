@@ -28,6 +28,69 @@
 
 ---
 
+## Current Status (2026-05-16) — round 20 close (40 F+E)
+
+Round 20 closes at **31F + 9E = 40** in test_descr.py.  Nine commits:
+seven functional fixes plus two docs.  Improvement: 43 → 40 (7%).
+
+### Final round 20 commits
+
+1. **STRUCT-203** `__name__` scope leak fix — forceMapped doesn't
+   override LOAD_GLOBAL for non-locals
+2. **STRUCT-204** OP_SETUP_WITH type-only lookup for __enter__/__exit__
+3. **STRUCT-205** env->iter __next__ type-only when HAS_CUSTOM_GETATTR
+4. **STRUCT-206** invokeDunder type-only for HAS_CUSTOM_GETATTR
+5. **STRUCT-207** descriptor protocol in invokeDunder for Python __get__
+6. **STRUCT-210** ABCMeta virtual subclass + isinstance metaclass dispatch
+7. **STRUCT-212** __bases__ setter layout-compatibility check
+8. **STRUCT-215** (docs) midpoint
+9. **STRUCT-216** module __repr__ via prototype slot
+
+### Tests confirmed flipping to PASS in round 20
+
+- `test_classmethods` (STRUCT-203)
+- `test_slots_descriptor` (STRUCT-210)
+- `test_special_method_lookup` plain cases (STRUCT-204/205/206)
+- `test_builtin_bases` layout subtests (STRUCT-212)
+
+### Carry-overs to round 21
+
+The remaining failures fall into well-defined deep blockers:
+
+1. **GC integration** — test_weakrefs, test_subtype_resurrection,
+   test_remove_subclass, test_cycle_through_dict, test_delete_hook,
+   test_vicious_descriptor_nonsense.  All require real weakref +
+   tracing GC with __del__ finalization.
+2. **Slot descriptor visibility for object.__setattr__** —
+   test_complexes.  Slot member descriptor in Number.__dict__ but
+   `hasOwnAttribute(Number, 'prec')` returns False; env->setAttribute
+   doesn't dispatch the slot setter.
+3. **Special-method runner sites** — test_special_method_lookup
+   descr/err cases.  Each runner (bytes, list, format, ...) has its
+   own dispatch site that needs the same type-only-walk treatment
+   as invokeDunder.
+4. **Metaclass __call__ post-processing** — test_metaclass section
+   4.  `class C(metaclass=M):` overwrites M-instance's user-set
+   `dict` attribute with another M instance.
+5. **method_descriptor.__get__** — test___dict__.  Needs proper
+   getset-style auto-invoke; my attempt fired a ctest regression
+   on a different dispatch site.
+6. **PEP 649 __annotate__** — test_classmethod_staticmethod_annotations.
+   New protocol.
+7. **Metaclass __setattr__ for class objects** — test_carloverre.
+   Two attempts broke unittest import; needs even narrower gating.
+8. **Module __dict__ refactor** — test_uninitialized_modules.
+   Architectural.
+9. **Pickle proto=2 C5 (__getnewargs_ex__)** — single subtest;
+   silent halt during pickle.dumps.
+
+### Build
+
+ctest 183/183 verde en cada commit.  Binary at
+`build_release/src/runtime/protopy`.
+
+---
+
 ## Current Status (2026-05-16) — round 20 midpoint (40 F+E)
 
 Round 20 attacks the root-cause clusters identified in round 19's
