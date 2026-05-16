@@ -138,12 +138,25 @@ def _reduce_ex(self, proto):
     # Legacy proto<2 path.
     # CPython picks `base` by walking the MRO until it hits a non-heap
     # type (the first C-level class) using __flags__ & _HEAPTYPE.
-    # protoPython classes don't expose __flags__, so fall through every
-    # iteration and lock onto `object`.  Use `cls.__base__` directly: it
-    # already names the immediate non-mixin base, which matches CPython's
-    # MRO termination for the typical `class X(BuiltinType):` shape that
-    # PicklingTests / pickle round-trips exercise.
-    base = cls.__base__ if cls is not object else object
+    # protoPython classes don't expose __flags__, so walk the MRO
+    # ourselves and stop at the first known built-in.  For pure-Python
+    # class hierarchies (D → C → object), this lands on `object` which
+    # is what _reconstructor expects so it routes through
+    # `object.__new__(cls)` rather than calling the immediate parent's
+    # constructor with `state` as an argument (which would fail when the
+    # parent didn't override __new__ to accept it).
+    if cls is object:
+        base = object
+    else:
+        _builtin_bases = (int, float, complex, str, bytes, bytearray,
+                          list, tuple, dict, set, frozenset, type)
+        base = object
+        for _c in cls.__mro__:
+            if _c is cls:
+                continue
+            if _c in _builtin_bases:
+                base = _c
+                break
     if base is None:
         base = object
     if base is object:
