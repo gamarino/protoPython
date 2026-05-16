@@ -2667,7 +2667,7 @@ static const proto::ProtoObject* py_dir(
     if (!target || target == PROTO_NONE) return context->newList()->asObject(context);
 
     std::vector<std::string> names;
-    std::function<void(const proto::ProtoObject*)> collect = [&](const proto::ProtoObject* obj) {
+    std::function<void(const proto::ProtoObject*)> collectOwn = [&](const proto::ProtoObject* obj) {
         if (!obj) return;
         const proto::ProtoSparseList* attrs = obj->getAttributes(context);
         if (attrs) {
@@ -2683,6 +2683,10 @@ static const proto::ProtoObject* py_dir(
                 it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
             }
         }
+    };
+    std::function<void(const proto::ProtoObject*)> collect = [&](const proto::ProtoObject* obj) {
+        if (!obj) return;
+        collectOwn(obj);
         const proto::ProtoList* parents = obj->getParents(context);
         if (parents) {
             for (size_t i = 0; i < parents->getSize(context); ++i) {
@@ -2691,7 +2695,43 @@ static const proto::ProtoObject* py_dir(
         }
     };
 
-    collect(target);
+    // STRUCT-182: dir(x) must NOT include attributes of the metaclass
+    // (e.g. type's `mro` method) for either class or instance.  protoCore's
+    // getParents() walk appends the metaclass + its own ancestors to every
+    // user class's parent chain (BuiltinsModule.cpp:6311), so the recursive
+    // collect would pull in `mro`, `__instancecheck__`, etc.  CPython's
+    // authoritative ancestor list is the type's __mro__ tuple — walk that.
+    //
+    //   dir(cls)  := own(cls)  ∪ for B in cls.__mro__[1:]: own(B)
+    //   dir(inst) := own(inst) ∪ for B in type(inst).__mro__: own(B)
+    PythonEnvironment* env_dir = PythonEnvironment::fromContext(context);
+    bool isClass = env_dir ? env_dir->isActuallyAClass(context, target) : false;
+    collectOwn(target);
+    const proto::ProtoObject* clsForWalk = isClass
+        ? target
+        : (env_dir ? env_dir->getType(context, target) : nullptr);
+    if (clsForWalk && clsForWalk != PROTO_NONE) {
+        // Own attrs of the type itself are part of dir(instance).  Skip
+        // for dir(class) — those would be metaclass attrs (already
+        // excluded by walking only the class's own MRO below).
+        if (!isClass) collectOwn(clsForWalk);
+        const proto::ProtoString* mroS_dir = env_dir ? env_dir->getMroString()
+            : PythonEnvironment::getInternedString(context, "__mro__");
+        const proto::ProtoObject* mroAttr =
+            env_dir ? env_dir->getAttribute(context, clsForWalk, mroS_dir, false)
+                    : clsForWalk->getAttribute(context, mroS_dir);
+        const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
+        if (mroT) {
+            for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+                const proto::ProtoObject* base = mroT->getAt(context, i);
+                if (base && base != clsForWalk && base != PROTO_NONE) collectOwn(base);
+            }
+        }
+    } else {
+        // No class info (e.g. None, modules) — fall back to the legacy
+        // recursive walk; metaclass leakage doesn't apply here.
+        collect(target);
+    }
     std::sort(names.begin(), names.end());
     names.erase(std::unique(names.begin(), names.end()), names.end());
 
