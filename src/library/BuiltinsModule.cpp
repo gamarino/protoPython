@@ -2666,6 +2666,65 @@ static const proto::ProtoObject* py_dir(
 
     if (!target || target == PROTO_NONE) return context->newList()->asObject(context);
 
+    // STRUCT-221: dispatch type(target).__dir__ via type-only MRO walk
+    // for non-bare calls.  CPython consults the type's __dir__ slot
+    // (not the instance's __getattribute__), so test_special_method_lookup's
+    // Checker pattern is satisfied.  Skip for bare dir() (locals) — that
+    // call uses a different path.
+    PythonEnvironment* env_dispatch = PythonEnvironment::fromContext(context);
+    if (env_dispatch && positionalParameters && positionalParameters->getSize(context) >= 1) {
+        const proto::ProtoObject* cls_d = env_dispatch->getType(context, target);
+        if (cls_d && cls_d != PROTO_NONE) {
+            const proto::ProtoString* dirS =
+                PythonEnvironment::getInternedString(context, "__dir__");
+            const proto::ProtoString* mroS_d = env_dispatch->getMroString();
+            const proto::ProtoObject* mroAttr_d = mroS_d ? env_dispatch->getAttribute(context, cls_d, mroS_d, false) : nullptr;
+            const proto::ProtoTuple* mroT_d = mroAttr_d ? mroAttr_d->asTuple(context) : nullptr;
+            const proto::ProtoObject* dirM = nullptr;
+            if (mroT_d) {
+                for (unsigned long i = 0; i < mroT_d->getSize(context); ++i) {
+                    const proto::ProtoObject* b = mroT_d->getAt(context, i);
+                    if (!b || b == PROTO_NONE) continue;
+                    // Skip the default object.__dir__ — it's a no-op
+                    // that would just trigger collectOwn below anyway.
+                    if (b == env_dispatch->getObjectPrototype()) break;
+                    if (b->hasOwnAttribute(context, dirS) == PROTO_TRUE) {
+                        dirM = b->getOwnAttributeDirect(context, dirS);
+                        break;
+                    }
+                }
+            }
+            if (dirM && dirM != PROTO_NONE) {
+                // Apply descriptor __get__ if present
+                const proto::ProtoString* getDS =
+                    PythonEnvironment::getInternedString(context, "__get__");
+                const proto::ProtoObject* dmType = env_dispatch->getType(context, dirM);
+                const proto::ProtoObject* getM = dmType ? env_dispatch->getAttribute(context, dmType, getDS, false) : nullptr;
+                if (getM && getM != PROTO_NONE) {
+                    if (getM->asMethod(context)) {
+                        const proto::ProtoList* gargs =
+                            context->newList()->appendLast(context, target)->appendLast(context, cls_d);
+                        dirM = getM->asMethod(context)(context,
+                            const_cast<proto::ProtoObject*>(dirM), nullptr, gargs, nullptr);
+                    } else {
+                        dirM = env_dispatch->callObject(getM, {dirM, target, cls_d});
+                    }
+                }
+                if (dirM && dirM != PROTO_NONE) {
+                    const proto::ProtoObject* r = nullptr;
+                    if (dirM->asMethod(context)) {
+                        const proto::ProtoList* emptyL = context->newList();
+                        r = dirM->asMethod(context)(context,
+                            const_cast<proto::ProtoObject*>(target), nullptr, emptyL, nullptr);
+                    } else {
+                        r = env_dispatch->callObject(dirM, {});
+                    }
+                    if (r) return r;
+                }
+            }
+        }
+    }
+
     std::vector<std::string> names;
     std::function<void(const proto::ProtoObject*)> collectOwn = [&](const proto::ProtoObject* obj) {
         if (!obj) return;
