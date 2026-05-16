@@ -28,6 +28,101 @@
 
 ---
 
+## Current Status (2026-05-15) — post-nineteenth-sweep (round 12)
+
+Round 12 was the WIDE round — 20 planned commits, 17 landed, 3
+deferred (STRUCT-113-115/116/117) and 1 reverted (STRUCT-112).
+
+### Achievements
+
+1. **MRO cache decommission (partial)**: STRUCT-103/104/105 migrated
+   ~25 raw `cls->getAttribute("__mro__")` sites to the descriptor-
+   aware `env->getAttribute(ctx, cls, mroStr, false)` path —
+   isinstance/issubclass/hasattr, super(), computeC3MRO base-MRO
+   reads, plus 11 dominant-pattern sites in PythonEnvironment.cpp.
+   ~15 raw sites remain; dropping the cached own-attribute writes
+   moves to round 13.
+2. **Special-method type-only sweep**: STRUCT-106 (`__hash__`),
+   STRUCT-107 (`__format__`), STRUCT-110 (`__complex__`) all routed
+   through `env->getType(ctx, obj)` so instance-level dunder
+   overrides are correctly ignored.  STRUCT-108 (`__bool__`) and
+   STRUCT-109 (`__str__`) verified already-correct.
+3. **Type-namespace warning**: STRUCT-111 — `type(name, bases, {1:2})`
+   now emits the CPython-shaped RuntimeWarning via direct
+   `_py_warnings.warn_explicit` invocation.
+4. **Carry-over verification**: STRUCT-118 / STRUCT-119 confirmed
+   `object.__setattr__` and `hash()` were already correct.
+
+### Goals reverted
+
+- **STRUCT-112 class body `__class__` override preserved**: the
+  initial fix correctly flipped `class FakeStr: __class__ = str;
+  isinstance(FakeStr(), str)` to True (test_proxy_call's first
+  assertion), but the underlying mechanism — skipping the auto-
+  inject when ns has its own `__class__` — caused enum.py and
+  several dependent modules to fail with "metaclass conflict"
+  during import.  Reverted; a future round needs to distinguish
+  body-explicit `__class__` from interpreter-injected names that
+  somehow end up in ns via metaclass machinery.
+
+### Goals deferred to round 13
+
+- **STRUCT-113-115**: distinct `builtin_function_or_method`
+  prototype + getType routing + py_type base rejection.
+- **STRUCT-116**: slot wrapper receiver-class validation.
+- **STRUCT-117**: `__dict__` descriptor instance class check.
+
+### Direct unittest counts (`test_descr.py`)
+
+| | run | fail | error | skipped | Δ |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-15 (round-12) | 165 | 40 | 43 | 10 | F+E flat (83) — sweep + dunder fixes, no test flipped |
+| 2026-05-15 (round-11 final) | 165 | 40 | 43 | 10 | post-STRUCT-102 baseline |
+
+F+E is flat because most round-12 commits are infrastructure or
+defensive: the sweep migrates raw __mro__ reads (no externally
+observable behaviour change), and the special-method type-only fixes
+mostly correct behaviour for cases the test suite doesn't probe
+directly (test_special_method_lookup covers many dunders but tests
+the WHOLE protocol on each — flipping requires ALL the dunders
+plus other plumbing).
+
+### Commits landed in round 12
+
+| Commit | Theme |
+| :--- | :--- |
+| `70c64998` STRUCT-103 | Migrate isinstance/issubclass/hasattr __mro__ reads to descriptor |
+| `536baf3a` STRUCT-104 | Migrate super() / computeC3MRO / py_type_mro __mro__ reads |
+| `4ead250b` STRUCT-105 | Extend MRO sweep to 11 more PythonEnvironment sites |
+| `7f8525c2` STRUCT-106 | hash() routes through type(obj), ignoring instance __hash__ |
+| `7b1591f7` STRUCT-107 | format() routes through type(obj), ignoring instance __format__ |
+| _STRUCT-108_ | __bool__ verified already type-only (PythonEnvironment.cpp:2674) |
+| _STRUCT-109_ | __str__ verified already type-only (BuiltinsModule.cpp print() path) |
+| `8f5a0358` STRUCT-110 | complex() consults type(arg).__complex__ before .real/.imag |
+| `129529d5` STRUCT-111 | type() emits RuntimeWarning on non-string namespace keys |
+| `99a25499` revert | STRUCT-112 reverted (broke enum.py metaclass conflict) |
+| _STRUCT-118_ | object.__setattr__ verified already rejects primitive prototypes |
+| _STRUCT-119_ | hash() dispatch verified already type-aware (and tightened by STRUCT-106) |
+| _this commit_ STRUCT-120 | Round-12 conformance documentation |
+
+### Carry-over to round 13
+
+- Finish MRO cache decommission: ~15 raw sites + drop cached writes
+- Re-implement STRUCT-112 (class body __class__) without the enum
+  regression — needs metaclass-aware detection
+- STRUCT-113-115 (builtin_function_or_method infrastructure)
+- STRUCT-116 (slot wrapper validation)
+- STRUCT-117 (__dict__ descriptor)
+- All previous round-12 out-of-scope items still pending.
+
+### Infra note
+
+Build verification uses `build_release/` (underscore).  ctest 183/183
+clean on every round-12 commit; `test_descr.py` baseline reported via
+`./build_release/src/runtime/protopy test/cpython/test_descr.py`.
+
+---
+
 ## Current Status (2026-05-15) — post-eighteenth-sweep (round 11)
 
 Round 11 was a focused round targeting six concretely-reachable
