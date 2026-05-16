@@ -97,14 +97,33 @@ flip (test_buffer_inheritance via STRUCT-136).
 
 ### Carry-over to round 15
 
-- Final MRO SSoT closure: more raw readers exist beyond the 35+
-  already migrated; needs a full text-search and audit
-- Slot wrapper validation: needs a different approach (perhaps
-  per-receiver-type whitelist instead of WRAPPER-kind broad check)
-- builtin_function_or_method infrastructure (test_errors)
-- test_delete_hook, test_metaclass __prepare__, test___dict__
-  descriptor, test_subclass_propagation
-- All previous round-6-to-round-13 deferrals still pending
+Cleanup pass between round 14 and 15 verified status of round-6/8
+pending items:
+
+- **Verified completed silently** (no separate commit needed):
+  - STRUCT-67 (class body __class__ override) — done by STRUCT-122
+  - STRUCT-71 (type() warning) — done by STRUCT-111
+  - STRUCT-74 (bytes via __bytes__) — done by STRUCT-97
+  - STRUCT-75 (object.__setattr__ ownership) — done by STRUCT-118
+  - STRUCT-76 (hash dispatch type-aware) — done by STRUCT-106/119
+
+- **Real pending items remaining**:
+  - **STRUCT-69**: kwargs to __init_subclass__ — investigated.
+    BUILD_CLASS receives kwds correctly; gap is in invokeCallable's
+    kwarg-forwarding for metaclass dispatch.  Needs runtime work.
+  - **STRUCT-73**: PEP 649 function.__annotate__ — substantial
+    feature.
+  - **STRUCT-79**: __dict__ descriptor is method_descriptor instead
+    of CPython's getset_descriptor — needs refactor.
+  - **STRUCT-80**: vague, no concrete target; task removed.
+
+- **Round-14 unfinished**:
+  - Final MRO SSoT closure: more raw readers beyond the 35+ already
+    migrated; needs a full text-search and audit
+  - Slot wrapper validation: needs a different approach
+  - builtin_function_or_method infrastructure (test_errors)
+  - test_delete_hook, test_metaclass __prepare__,
+    test_subclass_propagation
 
 ### Infra note
 
