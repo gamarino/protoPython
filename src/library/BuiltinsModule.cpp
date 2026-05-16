@@ -6031,12 +6031,34 @@ const proto::ProtoObject* py_type(
                         // Skip keys that py_type sets explicitly or that are internal storage
                         // primitives — these must never be overwritten from classdict, even if
                         // a polluted __keys__ list (e.g. inherited from dictPrototype) contains them.
+                        //
+                        // STRUCT-122: `__class__` is in the skip list because py_type
+                        // sets the metaclass via `__class__` after construction, but
+                        // CPython lets a class body explicitly assign `__class__ = T`
+                        // (proxy patterns) to control instance-level isinstance().
+                        // Only skip __class__ when it was set by interpreter machinery
+                        // (default value points back to the class being created); land
+                        // user-supplied values that differ.  Detection: take the value
+                        // and check it isn't `targetClass` itself.
                         {
                             std::string ks; k->toUTF8String(context, ks);
                             if (ks == "__name__" || ks == "__mro__" || ks == "__bases__" ||
-                                ks == "__class__" || ks == "__is_python_class__" ||
+                                ks == "__is_python_class__" ||
                                 ks == "__keys__" || ks == "__data__") {
                                 continue;
+                            }
+                            if (ks == "__class__") {
+                                // Peek the value: only honour if it's a TYPE different
+                                // from targetClass (i.e. a user-supplied proxy target).
+                                const proto::ProtoObject* peekV = nullptr;
+                                if (dictOwn && dictOwn->has(context, reinterpret_cast<uintptr_t>(k))) {
+                                    peekV = dictOwn->getAt(context, reinterpret_cast<uintptr_t>(k));
+                                }
+                                if (!peekV || peekV == PROTO_NONE || peekV == targetClass) {
+                                    continue;
+                                }
+                                // Fall through to normal copy: targetClass's __class__
+                                // will be the user's chosen value.
                             }
                         }
 
