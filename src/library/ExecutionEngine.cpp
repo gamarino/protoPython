@@ -7508,9 +7508,24 @@ const proto::ProtoObject* executeBytecodeRange(
                     ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, keysS, keysObj->asList(ctx)->appendLast(ctx, nameS->asObject(ctx))->asObject(ctx)));
                 }
 
+                // STRUCT-175 (round 16): class body's __module__ comes
+                // from the enclosing module's `__name__`, not from a
+                // (non-existent) `__module__` in globals.  CPython sets
+                // a class's __module__ to `__name__` of the namespace
+                // it was created in.  protoPython previously read
+                // `globals['__module__']` which is almost always None
+                // — leaving newly-created classes with no __module__
+                // (or with object.__module__ inherited as 'builtins',
+                // breaking pickle's qualname-based class lookup).
                 const proto::ProtoObject* globals = env ? env->getCurrentGlobals() : nullptr;
-                const proto::ProtoObject* moduleName = globals ? globals->getAttribute(ctx, py_module_s) : nullptr;
-                if (moduleName) {
+                const proto::ProtoObject* moduleName = nullptr;
+                if (globals) {
+                    moduleName = globals->getAttribute(ctx, py_name_s);
+                    if (!moduleName || moduleName == PROTO_NONE) {
+                        moduleName = globals->getAttribute(ctx, py_module_s);
+                    }
+                }
+                if (moduleName && moduleName != PROTO_NONE) {
                     ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, py_module_s, moduleName));
                     // Re-fetch keysObj to avoid stale pointer if setAttribute returns new version or updates state
                     keysObj = ns->getAttribute(ctx, keysS);
