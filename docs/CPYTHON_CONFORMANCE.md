@@ -108,13 +108,23 @@ pending items:
   - STRUCT-76 (hash dispatch type-aware) — done by STRUCT-106/119
 
 - **Real pending items remaining**:
-  - **STRUCT-69**: kwargs to __init_subclass__ — investigated.
-    BUILD_CLASS receives kwds correctly; gap is in invokeCallable's
-    kwarg-forwarding for metaclass dispatch.  Needs runtime work.
-  - **STRUCT-73**: PEP 649 function.__annotate__ — substantial
-    feature.
-  - **STRUCT-79**: __dict__ descriptor is method_descriptor instead
-    of CPython's getset_descriptor — needs refactor.
+  - **STRUCT-69**: ✅ FIXED.  Diagnosed: kwds dict's __keys__ wasn't
+    threaded into the inner **kwargs binding because protopy's
+    SparseList stores hashes only; key names were lost.  Fix:
+    BUILD_CLASS pushes a kwNames tuple (filtered to drop 'metaclass')
+    via `env->pushKwNames()` before both metaclass dispatch and
+    __init_subclass__ hook invocation.  Verified:
+    `class C(P, hello="world")` now reaches
+    `def __init_subclass__(cls, **kwargs)` with the right dict.
+  - **STRUCT-73**: deferred — substantial PEP 649 implementation.
+    function objects in protoPython don't expose __annotate__.
+    Wrapper-side forwarding (STRUCT-91) is ready for when it lands.
+  - **STRUCT-79**: deferred — __dict__ on objectPrototype is a
+    fromMethod tagged-pointer method (py_object_get_dict).  The
+    descriptor protocol path `.__get__(inst, owner)` binds the
+    method instead of invoking fget.  Real fix needs migration to
+    a getset_descriptor wrapper + auto-invocation detection at
+    instance attribute access sites.
   - **STRUCT-80**: vague, no concrete target; task removed.
 
 - **Round-14 unfinished**:
