@@ -28,6 +28,109 @@
 
 ---
 
+## Current Status (2026-05-16) — post-twenty-second-sweep (round 15)
+
+Round 15 planned 20 commits prioritizing test-flip yield.  Actual
+landing: 4 commits + docs.  Several planned items proved blocked by
+deeper architectural issues already deferred in previous rounds
+(LOAD_DEREF closure for nested-class pickling, module.__dict__
+shape refactor, slot wrapper validation generalization,
+object.__setattr__ indirect-metaclass detection).
+
+### Achievements
+
+1. **STRUCT-151** — `object.__getstate__` honours `__slotnames__`
+   for copyreg compatibility.  test_issue24097 was hitting the
+   pickling reduce_ex path where slot names live on `__slotnames__`
+   (not `__slots__`); the slot walk now also iterates the cache
+   list and reads each slot via `env->getAttribute` with a
+   `__getattr__` fallback (essential because the test defines
+   `__getattr__` returning the slot value without ever setting it
+   as an attribute).  **Flips test_issue24097.**
+2. **STRUCT-157** — reject nonempty `__slots__` on variable-length
+   built-in subclasses (int, bytes, str, tuple).  CPython raises
+   `TypeError: nonempty __slots__ not supported for subtype of …`.
+   **Flips test_unsupported_slots** (and its parametrized subTests).
+3. **STRUCT-158/159/160** — math.floor / math.ceil / math.trunc
+   now consult `type(arg).__floor__` / `__ceil__` / `__trunc__`
+   before falling back to the numeric `std::floor`/`std::ceil`/
+   `std::trunc`.  Honours Python's special-method protocol;
+   instance-level dunder overrides correctly ignored.
+
+### Goals deferred
+
+- **STRUCT-152/153** (`__reduce_ex__` / `__setstate__` slot-state
+  consumption): pickle of `test_pickle_slots` / `test_reduce_copying`
+  still fails with `PicklingError: Can't pickle <class 'C'>: it's
+  not found as builtins.C` — pickle's module-lookup uses the class
+  name to find it at module top, but the tests define `C`/`C1`
+  inside test method bodies.  Same closure-scope blocker as
+  STRUCT-100/63.
+- **STRUCT-155** (module `m.__dict__` shape) — bare module's
+  __dict__ returns the module itself (truthy object) instead of
+  CPython's None / empty dict.  Refactor needed.
+- **STRUCT-156** (test_carloverre_multi_inherit_invalid) — CPython
+  detects "metaclass.__setattr__ calling object.__setattr__ on a
+  target whose metaclass overrides __setattr__".  Detection logic
+  is subtle.
+- **STRUCT-161** (`__length_hint__` via type) — not investigated.
+- **STRUCT-162/163/164** (slots cluster) — `__dict__`/`__weakref__`
+  flag propagation, slot receiver-type validation, __class__ layout
+  check.  Requires deeper slot-machinery work.
+- **STRUCT-165** (bare `dir()` frame-internal filter) — round 10's
+  STRUCT-89 history of regressions warned off.
+- **STRUCT-166** (test_metaclass __prepare__ wiring) — actually
+  `__prepare__` IS being honored.  The failing assertion is
+  about `super().__new__` resolution in a static-method context
+  inside a test method.  Same closure-scope blocker.
+- **STRUCT-167-169** — not attempted this round.
+
+### Direct unittest counts (`test_descr.py`)
+
+| | run | fail | error | skipped | Δ |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-16 (round-15) | 165 | **33** | **47** | 10 | F ↓6, E ↑4 (net F+E ↓2 → 82→80) |
+| 2026-05-16 (round-14 final) | 165 | 39 | 43 | 10 | post-STRUCT-69 baseline |
+
+F dropped by 6.  Some of that is tests flipping F → PASS
+(test_issue24097, test_unsupported_slots and its subtests, plus
+possibly test_buffer_inheritance-adjacent paths after the
+__slotnames__ fix); some is tests flipping F → ERROR (different
+failure mode, not a regression — typically a TypeError now thrown
+where an assertion previously failed).
+
+### Commits landed in round 15
+
+| Commit | Theme |
+| :--- | :--- |
+| `e816ce53` STRUCT-151 | `object.__getstate__` honours `__slotnames__` (test_issue24097 PASS) |
+| `962001aa` STRUCT-157 | Reject `__slots__` on int/bytes/str/tuple subclasses (test_unsupported_slots PASS) |
+| `eaf97eaa` STRUCT-158-160 | math.floor/ceil/trunc consult dunders via type |
+| _this commit_ STRUCT-170 | Round-15 conformance documentation |
+
+### Carry-over to round 16
+
+The hard-blocked tests share three root causes that round 16+ should
+tackle in order of dependency:
+
+1. **LOAD_DEREF / closure cell update for forward references** —
+   blocks: test_pickle_slots, test_reduce_copying, test_funny_new,
+   test_metaclass nested-class super() resolution.  Single
+   compiler-level fix unblocks many tests.
+2. **Module __dict__ refactor** — blocks: test_uninitialized_modules
+   (assertFalse), other module-introspection tests.
+3. **Slot wrapper validation generalization** — blocks:
+   test_wrong_class_slot_wrapper, test_proxy_call (`str.split(fake_str)`,
+   `str.__add__(fake_str, ...)`).  Round 13/14's WRAPPER-kind narrow
+   approach broke unrelated paths; needs receiver-class-by-MRO check.
+
+### Infra note
+
+Build verification uses `build_release/` (underscore).  ctest 183/183
+on every landed round-15 commit; test_descr baseline 33F+47E.
+
+---
+
 ## Current Status (2026-05-16) — post-twenty-first-sweep (round 14)
 
 Round 14 was the wide round (20 commits planned).  6 commits landed,
