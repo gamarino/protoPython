@@ -16959,6 +16959,90 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                         }
                     }
                 };
+                // STRUCT-151: also honour `__slotnames__` — a CPython
+                // optimization that copyreg uses to cache enumerated
+                // slot names without re-walking __slots__.  test_issue24097
+                // sets only __slotnames__ (not __slots__) and the
+                // resulting __reduce_ex__ expects the slot state.
+                const proto::ProtoString* slotNamesS =
+                    PythonEnvironment::getInternedString(ctx, "__slotnames__");
+                if (slotNamesS && cls->hasOwnAttribute(ctx, slotNamesS) == PROTO_TRUE) {
+                    const proto::ProtoObject* snVal = cls->getOwnAttributeDirect(ctx, slotNamesS);
+                    const proto::ProtoList* snL = snVal ? snVal->asList(ctx) : nullptr;
+                    const proto::ProtoTuple* snT = (snL || !snVal) ? nullptr : snVal->asTuple(ctx);
+                    unsigned long snN = snL ? snL->getSize(ctx) : (snT ? snT->getSize(ctx) : 0);
+                    if (snN > 0) hasSlots = true;
+                    for (unsigned long si = 0; si < snN; ++si) {
+                        const proto::ProtoObject* s = snL ? snL->getAt(ctx, si) : snT->getAt(ctx, si);
+                        if (!s || !s->isString(ctx)) continue;
+                        std::string sn; s->asString(ctx)->toUTF8String(ctx, sn);
+                        // Use cls itself as defCls for mangling — __slotnames__
+                        // is a class-level cache, no per-base association.
+                        recordSlot(sn, cls);
+                        // Also try without mangling: __slotnames__ may
+                        // contain raw user-defined slot names (no
+                        // _Cls prefix); for the typical test_issue24097
+                        // shape, 'spam' is read via __getattr__.
+                        if (obj->hasOwnAttribute(ctx,
+                                PythonEnvironment::getInternedString(ctx, sn.c_str())) != PROTO_TRUE) {
+                            // Trigger __getattr__ by env->getAttribute first.
+                            // If miss, fall back to invoking __getattr__
+                            // explicitly (the standard get/raise → __getattr__
+                            // pipeline isn't auto-triggered by env->getAttribute).
+                            const proto::ProtoString* attrK =
+                                PythonEnvironment::getInternedString(ctx, sn.c_str());
+                            const proto::ProtoObject* v = env->getAttribute(ctx, obj, attrK, false);
+                            if (env->hasPendingException()) {
+                                env->clearPendingException();
+                                v = nullptr;
+                            }
+                            if (!v || v == PROTO_NONE) {
+                                // Try __getattr__ explicitly.
+                                const proto::ProtoString* gaS =
+                                    PythonEnvironment::getInternedString(ctx, "__getattr__");
+                                const proto::ProtoObject* ga = env->getAttribute(ctx, cls, gaS, false);
+                                if (ga && ga != PROTO_NONE) {
+                                    v = env->callObject(ga, { obj, attrK->asObject(ctx) });
+                                    if (env->hasPendingException()) {
+                                        env->clearPendingException();
+                                        v = nullptr;
+                                    }
+                                }
+                            }
+                            if (v && v != PROTO_NONE) {
+                                if (!slotsDict) {
+                                    const proto::ProtoObject* dp2 = env->getDictPrototype();
+                                    if (dp2) {
+                                        proto::ProtoObject* nd = const_cast<proto::ProtoObject*>(dp2->newChild(ctx, true));
+                                        nd->setAttribute(ctx, env->getDataString(),
+                                                          ctx->newSparseList()->asObject(ctx));
+                                        nd->setAttribute(ctx, env->getKeysString(),
+                                                          ctx->newList()->asObject(ctx));
+                                        slotsDict = nd;
+                                    }
+                                }
+                                if (slotsDict) {
+                                    const proto::ProtoObject* dataS = slotsDict->getAttribute(ctx, env->getDataString());
+                                    const proto::ProtoObject* keysS = slotsDict->getAttribute(ctx, env->getKeysString());
+                                    const proto::ProtoSparseList* dl =
+                                        dataS ? dataS->asSparseList(ctx) : nullptr;
+                                    const proto::ProtoList* kl =
+                                        keysS ? keysS->asList(ctx) : nullptr;
+                                    if (dl && kl) {
+                                        const proto::ProtoSparseList* dl2 =
+                                            dl->setAt(ctx, attrK->getHash(ctx), v);
+                                        const proto::ProtoList* kl2 =
+                                            kl->appendLast(ctx, attrK->asObject(ctx));
+                                        slotsDict = const_cast<proto::ProtoObject*>(
+                                            slotsDict->setAttribute(ctx, env->getDataString(), dl2->asObject(ctx)));
+                                        slotsDict = const_cast<proto::ProtoObject*>(
+                                            slotsDict->setAttribute(ctx, env->getKeysString(), kl2->asObject(ctx)));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
                     const proto::ProtoObject* base = mroT->getAt(ctx, i);
                     if (!base || base == PROTO_NONE) continue;
