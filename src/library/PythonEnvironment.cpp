@@ -23284,6 +23284,15 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                 if (val->hasAttribute(ctx, this->getCodeString() ? this->getCodeString() : PythonEnvironment::getInternedString(ctx, "__code__")) == PROTO_TRUE) {
                     return val;
                 }
+                // STRUCT-178: an already-bound native method stored as an
+                // own instance attribute (the result of `inst.method` being
+                // re-assigned, as pickle's `_Framer.file_write = file.write`
+                // does) must be returned verbatim — re-binding strips the
+                // original self and the call would silently run on the
+                // wrong receiver.
+                if (val->asMethodSelf(ctx) != nullptr) {
+                    return val;
+                }
             }
             if (isClass && !foundOnMeta) {
                 return val;

@@ -429,6 +429,18 @@ static const proto::ProtoObject* py_bio_getvalue(
     return bio_make_bytes(ctx, bio_get_buf(ctx, self));
 }
 
+// CPython's BytesIO.getbuffer() returns a writable memoryview over the
+// internal buffer.  protoPython does not yet implement memoryview, but
+// every observed consumer (pickle framer at lib/python3.14/pickle.py:214)
+// only uses `len(data)` and writes its content out — bytes satisfies that
+// contract via __len__ and the buffer protocol.  Returning bytes here
+// unblocks pickle round-trip without growing a memoryview dependency.
+static const proto::ProtoObject* py_bio_getbuffer(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return bio_make_bytes(ctx, bio_get_buf(ctx, self));
+}
+
 static const proto::ProtoObject* py_bio_read(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* args, const proto::ProtoSparseList*) {
@@ -877,6 +889,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
             ctx->fromMethod(nullptr, py_bio_write));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getvalue"),
             ctx->fromMethod(nullptr, py_bio_getvalue));
+        bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getbuffer"),
+            ctx->fromMethod(nullptr, py_bio_getbuffer));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "read"),
             ctx->fromMethod(nullptr, py_bio_read));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "readline"),
