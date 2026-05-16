@@ -52,10 +52,18 @@ Previously we rejected non-class arg2 immediately.
 **STRUCT-198**: symmetric to STRUCT-197 for `py_issubclass` /
 `__subclasscheck__`.
 
+**STRUCT-200**: `copyreg._reconstructor` populates list/set/dict
+subclass contents directly via `extend` / `add` / `update` instead
+of dispatching through `base.__init__(obj, state)`.  protoPython's
+container `__init__` is a no-op (the container builder is on the
+`__call__` path, not `__init__`), so the previous reconstructor
+flow lost all container contents on pickle proto<2 round-trip.
+
 ### Direct unittest counts (`test_descr.py`)
 
 | | run | fail | error | skipped | Δ |
 | :--- | ---: | ---: | ---: | ---: | :--- |
+| 2026-05-16 (round-19 + STRUCT-200) | 165 | 34 | 9 | 10 | F+E ↓6 (49→43); list/set/dict subclass round-trip preserved |
 | 2026-05-16 (round-19) | 165 | 38 | 9 | 10 | F+E ↓2 (49→47); pickle slots all-protos green |
 | 2026-05-16 (round-18 + STRUCT-190) | 165 | 38 | 11 | 10 | post-STRUCT-194 baseline |
 
