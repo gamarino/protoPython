@@ -1148,7 +1148,14 @@ const proto::ProtoObject* py_complex(
         clsForNew = positionalParameters->getAt(context, 0);
     }
     if (!clsForNew && env) clsForNew = env->getComplexPrototype();
-    const proto::ProtoObject* res = context->newObject(false);
+    // STRUCT-246: allocate mutable for user subclasses so slot-member
+    // setAttribute (`n.prec = 6` for `class Number(complex):
+    // __slots__=['prec']`) writes in place and the corresponding
+    // getter sees the slot.  Immutable plain `complex(...)` keeps the
+    // immutable allocation since its only own attrs are `real`/`imag`
+    // set here once at construction.
+    bool isUserSubclass = clsForNew && env && clsForNew != env->getComplexPrototype();
+    const proto::ProtoObject* res = context->newObject(isUserSubclass);
     if (clsForNew) {
         res = res->addParent(context, clsForNew);
         // __class__ pinning so getType returns the user subclass even
