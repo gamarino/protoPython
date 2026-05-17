@@ -28,7 +28,60 @@
 
 ---
 
-## Current Status (2026-05-17) — round 29 (more blocker resolution, 27 raw F+E)
+## Current Status (2026-05-17) — round 30 (mro + __dict__ getset, 22 raw F+E)
+
+Round 30 closes two long-deferred clusters (J: mro re-entrancy; C:
+`__dict__` as getset_descriptor) and lands three flips.  Test count
+drops from **22F + 5E = 27** to **18F + 4E = 22** (net -5).
+
+### Round 30 commits
+
+1. **STRUCT-276** — `cls.__mro__ is None` during user mro() override.
+   py_type saves the C3 result, sets `cls.__mro__ = None`, invokes
+   the user mro(), restores.  `py_type_mro(cls)` recomputes from
+   the parent chain when it observes __mro__ == None so the user's
+   `type.mro(cls)` call still yields the default C3 result.  Flips
+   test_incomplete_set_bases_on_self and test_reent_set_bases_on_base
+   (one new failure exposed: test_incomplete_extend).
+2. **STRUCT-277** — install `object.__dict__` as a true
+   getset_descriptor.  Initialisation is moved to AFTER
+   getSetDescriptorPrototype is created (the earlier crash was an
+   initialisation-order issue).  OP_LOAD_ATTR gains a coordinated
+   auto-invocation branch that calls the descriptor's fget when val
+   is a getset descriptor instance.  Flips test___dict__ (multiple
+   subtests).
+3. **STRUCT-278** — restrict OP_LOAD_ATTR's getset auto-invocation
+   to instance receivers.  Class-level access (`float.real`,
+   `complex.imag`) must return the descriptor itself, mirroring
+   CPython's non-data-descriptor protocol.  Flips test_qualname.
+
+### Remaining blockers (round 31+)
+
+- **Cluster B (STORE_ATTR class metaclass dispatch)** — narrow
+  `has __code__` gating still breaks `import enum` (EnumMeta's
+  `__setattr__` cascade through super() lands on the Carlo
+  defence).
+- **Cluster F bytes** — `class D(bytes): __slots__ = ['__dict__']`
+  instances revert to `type(a) == bytes`; the slot wiring never
+  applies.  Deep `__new__` rework.
+- **Cluster G (__classcell__)** — no compiler infrastructure.
+- **test_incomplete_extend / test_mutable_bases_with_failing_mro /
+  test_reent_set_bases_tp_base_cycle / test_tp_subclasses_cycle_*** —
+  the rest of the MroTest re-entrancy cluster.  Deeper coordination
+  with `__bases__ = (...)` + transactional MRO rollback.
+- **test_reduce_copying** — pickle parametric; subtests fail in
+  silently-dropped tracebacks.
+- **test_multiple_inheritance** — dict subclass instance attr
+  separation (architectural).
+
+### Build
+
+ctest 183/183 verde en cada commit.  Round 26–30 cumulative:
+27F + 7E = 34 → **18F + 4E = 22** (12 test flips overall).
+
+---
+
+## Previous Status (2026-05-17) — round 29 (more blocker resolution, 27 raw F+E)
 
 Round 29 attacks remaining round-28 blockers.  One commit lands, one
 test flip (`test_file_fault`).  Test count drops from
