@@ -28,7 +28,91 @@
 
 ---
 
-## Current Status (2026-05-17) — round 24 (structural sweep, 34 raw F+E)
+## Current Status (2026-05-17) — round 25 (module infrastructure, 34 raw F+E)
+
+Round 25 attacks the module-protocol structural issues blocking
+several tests: `type(sys)` not resolving to modulePrototype,
+module subclass instances not propagating constructor args,
+dir(instance) walking inherited attrs.  Net test_descr count
+unchanged at **27F + 7E = 34** — the changes don't surface a new
+flip, but every probe that motivated them now behaves correctly
+in isolation, which unblocks future fixes that depend on them.
+
+### Round 25 commits
+
+1. **STRUCT-251** — Two compounding fixes:
+   - `ensureModuleInSysModules` stamps `__class__ = modulePrototype`
+     as an OWN attribute on every registered module.  Cloned
+     modules from `executeModule` lost the original sysModule
+     bootstrap's `setAttribute(__class__, modulePrototype)`
+     because the clone path skipped already-set attributes and
+     modulePrototype-inheritance via parent chain didn't surface
+     in `getType`'s own-attribute check.  Result: `type(sys) is
+     type(os)` is now True, and `class M(type(sys))` is now a
+     true module subclass.
+   - `py_dir`'s `collectOwn` now uses `getOwnAttributes` instead
+     of `getAttributes` (which walks the parent chain).  Without
+     this, `collectOwn(target)` pulled in every inherited attr
+     immediately, defeating the MRO filter and the module-instance
+     short-circuit added in the same commit.
+   - `py_dir` short-circuits for module instances (skip the
+     type-chain walk; CPython's `module.__dir__` returns just
+     `list(self.__dict__.keys())`).
+
+2. **STRUCT-252** — `module.__init__` propagates constructor arg.
+   Install `types.ModuleType.__init__` on modulePrototype so
+   `class M(type(sys)): pass; M("m")` sets `self.__name__ = "m"`
+   (and an optional `__doc__` second arg).  Receiver resolution
+   handles both bound (`self != null`) and unbound
+   (`cls.__init__(obj, name)`) calling conventions.
+
+### Tests confirmed flipping to PASS in round 25
+
+- None — round 25's improvements unblock test_dir and
+  test_uninitialized_modules architecturally but neither flips
+  yet because both need additional changes (test_dir requires
+  module __dict__ contents to surface defaults like __doc__,
+  __package__, __loader__, __spec__; test_uninitialized_modules
+  requires a real "module dict view" object).
+
+### Verifications via standalone probes
+
+- `type(sys) is type(os)`: now True (was False).
+- `class M(type(sys)): pass; M("m").__name__`: now "m" (was "M").
+- `dir(M("m"))` (with m.a, m.b set): now `['__name__', 'a', 'b']`
+  (was the full inherited type chain).
+
+### Deferred / reverted in round 25
+
+- **STRUCT-250** (`py_str_cmp_dispatch` raises TypeError on
+  wrong-class receiver): breaks pickle import.  Some internal
+  protoPython dispatch leaks `str.__eq__` onto a `type` instance
+  receiver during pickle.py module-level execution; raising
+  TypeError there crashes the import.  Needs a narrower
+  receiver-type predicate that distinguishes "user explicitly
+  bound this wrapper" from "internal dispatch chain leak".
+
+### Carry-overs to round 26 (actionable)
+
+1. **test_uninitialized_modules** — real module-dict view object
+   so `bool(m.__dict__)` and `m.__dict__ == {...}` work.
+2. **test_dir** — module instance `__doc__`, `__package__`,
+   `__loader__`, `__spec__` defaults.
+3. **test_wrong_class_slot_wrapper `a == a`** — compareObjects
+   identity shortcut bypass without breaking pickle.
+4. **test_metaclass ERROR** — buried unittest assertion.
+5. **PEP 649 `__annotate__`** — getset descriptor without
+   breaking module imports.
+6. **Carlo-Verre** — narrow gating that doesn't break stdlib.
+
+### Build
+
+ctest 183/183 verde en cada commit.  Binary at
+`build_release/src/runtime/protopy`.
+
+---
+
+## Previous Status (2026-05-17) — round 24 (structural sweep, 34 raw F+E)
 
 Round 24 focused on **structural problems** rather than narrow
 test-flipping.  Six commits land four test flips
