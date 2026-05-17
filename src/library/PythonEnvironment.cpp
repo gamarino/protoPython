@@ -1266,37 +1266,66 @@ static const proto::ProtoObject* py_object_get_weakref(
         return nullptr;
     }
 
-    const proto::ProtoString* slotsS = PythonEnvironment::getInternedString(context, "__slots__");
-    if (tp->hasOwnAttribute(context, slotsS) == PROTO_TRUE) {
-        const proto::ProtoObject* slotsAttr = tp->getOwnAttributeDirect(context, slotsS);
-        bool weakrefInSlots = false;
-        if (slotsAttr) {
-            const proto::ProtoList* slotsL = slotsAttr->asList(context);
-            const proto::ProtoTuple* slotsTp = slotsAttr->asTuple(context);
-            unsigned long n = slotsL ? slotsL->getSize(context)
-                              : (slotsTp ? slotsTp->getSize(context) : 0);
-            for (unsigned long i = 0; i < n; ++i) {
-                const proto::ProtoObject* item = slotsL
-                    ? slotsL->getAt(context, static_cast<int>(i))
-                    : slotsTp->getAt(context, static_cast<int>(i));
-                if (!item || !item->isString(context)) continue;
-                std::string nm;
-                item->asString(context)->toUTF8String(context, nm);
-                if (nm == "__weakref__") { weakrefInSlots = true; break; }
-            }
-            if (slotsAttr->isString(context)) {
-                std::string nm;
-                slotsAttr->asString(context)->toUTF8String(context, nm);
-                if (nm == "__weakref__") weakrefInSlots = true;
+    // STRUCT-262: walk the MRO looking for either a class that
+    // declares `__weakref__` in its own `__slots__` (explicit opt-in)
+    // OR a class with no `__slots__` at all (which provides the
+    // default per-instance weakref slot via CPython's
+    // tp_weaklistoffset).  Either condition makes `__weakref__`
+    // available on instances of `tp`.  The previous implementation
+    // only inspected `tp`'s own __slots__, so a subclass with
+    // `__slots__ = []` whose base declared `__slots__ =
+    // ['__weakref__']` lost weakref support.
+    const proto::ProtoString* slotsS =
+        PythonEnvironment::getInternedString(context, "__slots__");
+    bool weakrefAvailable = false;
+    auto containsWeakref = [&](const proto::ProtoObject* base) -> bool {
+        if (base->hasOwnAttribute(context, slotsS) != PROTO_TRUE) return false;
+        const proto::ProtoObject* slotsAttr =
+            base->getOwnAttributeDirect(context, slotsS);
+        if (!slotsAttr) return false;
+        const proto::ProtoList* slotsL = slotsAttr->asList(context);
+        const proto::ProtoTuple* slotsTp = slotsAttr->asTuple(context);
+        unsigned long n = slotsL ? slotsL->getSize(context)
+                          : (slotsTp ? slotsTp->getSize(context) : 0);
+        for (unsigned long i = 0; i < n; ++i) {
+            const proto::ProtoObject* item = slotsL
+                ? slotsL->getAt(context, static_cast<int>(i))
+                : slotsTp->getAt(context, static_cast<int>(i));
+            if (!item || !item->isString(context)) continue;
+            std::string nm; item->asString(context)->toUTF8String(context, nm);
+            if (nm == "__weakref__") return true;
+        }
+        if (slotsAttr->isString(context)) {
+            std::string nm; slotsAttr->asString(context)->toUTF8String(context, nm);
+            if (nm == "__weakref__") return true;
+        }
+        return false;
+    };
+    if (mroT) {
+        for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+            const proto::ProtoObject* base = mroT->getAt(context, i);
+            if (!base || base == PROTO_NONE) continue;
+            if (base == env->getObjectPrototype()) continue;
+            if (containsWeakref(base)) { weakrefAvailable = true; break; }
+            // A base without any __slots__ provides the default
+            // per-instance weakref (CPython sets tp_weaklistoffset
+            // automatically for slotless types).
+            if (base->hasOwnAttribute(context, slotsS) != PROTO_TRUE) {
+                weakrefAvailable = true; break;
             }
         }
-        if (!weakrefInSlots) {
-            env->raiseAttributeErrorWithMessage(context, instance,
-                "__weakref__", "__weakref__");
-            return nullptr;
+    } else if (tp != env->getObjectPrototype()) {
+        // No MRO available — fall back to inspecting tp directly.
+        if (containsWeakref(tp)
+            || tp->hasOwnAttribute(context, slotsS) != PROTO_TRUE) {
+            weakrefAvailable = true;
         }
     }
-
+    if (!weakrefAvailable) {
+        env->raiseAttributeErrorWithMessage(context, instance,
+            "__weakref__", "__weakref__");
+        return nullptr;
+    }
     return PROTO_NONE;
 }
 

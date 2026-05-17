@@ -206,32 +206,52 @@ static const proto::ProtoObject* py_weakref_ref(
             blocked = true;
         }
         if (!blocked && tp) {
-            const proto::ProtoString* slotsS = PythonEnvironment::getInternedString(ctx, "__slots__");
-            if (tp->hasOwnAttribute(ctx, slotsS) == PROTO_TRUE) {
-                const proto::ProtoObject* slotsAttr = tp->getOwnAttributeDirect(ctx, slotsS);
-                bool weakrefInSlots = false;
-                if (slotsAttr) {
-                    const proto::ProtoList* slotsL = slotsAttr->asList(ctx);
-                    const proto::ProtoTuple* slotsTp = slotsAttr->asTuple(ctx);
-                    unsigned long nn = slotsL ? slotsL->getSize(ctx)
-                                      : (slotsTp ? slotsTp->getSize(ctx) : 0);
-                    for (unsigned long i = 0; i < nn; ++i) {
-                        const proto::ProtoObject* item = slotsL
-                            ? slotsL->getAt(ctx, static_cast<int>(i))
-                            : slotsTp->getAt(ctx, static_cast<int>(i));
-                        if (!item || !item->isString(ctx)) continue;
-                        std::string nm;
-                        item->asString(ctx)->toUTF8String(ctx, nm);
-                        if (nm == "__weakref__") { weakrefInSlots = true; break; }
-                    }
-                    if (slotsAttr->isString(ctx)) {
-                        std::string nm;
-                        slotsAttr->asString(ctx)->toUTF8String(ctx, nm);
-                        if (nm == "__weakref__") weakrefInSlots = true;
+            // STRUCT-262: walk MRO for weakref availability — a base
+            // that declares `__weakref__` in __slots__ or that has no
+            // __slots__ at all enables weakref on instances of `tp`.
+            const proto::ProtoString* slotsS =
+                PythonEnvironment::getInternedString(ctx, "__slots__");
+            auto containsWeakref = [&](const proto::ProtoObject* base) -> bool {
+                if (base->hasOwnAttribute(ctx, slotsS) != PROTO_TRUE) return false;
+                const proto::ProtoObject* slotsAttr =
+                    base->getOwnAttributeDirect(ctx, slotsS);
+                if (!slotsAttr) return false;
+                const proto::ProtoList* slotsL = slotsAttr->asList(ctx);
+                const proto::ProtoTuple* slotsTp = slotsAttr->asTuple(ctx);
+                unsigned long nn = slotsL ? slotsL->getSize(ctx)
+                                  : (slotsTp ? slotsTp->getSize(ctx) : 0);
+                for (unsigned long i = 0; i < nn; ++i) {
+                    const proto::ProtoObject* item = slotsL
+                        ? slotsL->getAt(ctx, static_cast<int>(i))
+                        : slotsTp->getAt(ctx, static_cast<int>(i));
+                    if (!item || !item->isString(ctx)) continue;
+                    std::string nm; item->asString(ctx)->toUTF8String(ctx, nm);
+                    if (nm == "__weakref__") return true;
+                }
+                if (slotsAttr->isString(ctx)) {
+                    std::string nm; slotsAttr->asString(ctx)->toUTF8String(ctx, nm);
+                    if (nm == "__weakref__") return true;
+                }
+                return false;
+            };
+            bool weakrefAvailable = false;
+            if (mroT) {
+                for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
+                    const proto::ProtoObject* base = mroT->getAt(ctx, i);
+                    if (!base || base == PROTO_NONE) continue;
+                    if (base == env->getObjectPrototype()) continue;
+                    if (containsWeakref(base)) { weakrefAvailable = true; break; }
+                    if (base->hasOwnAttribute(ctx, slotsS) != PROTO_TRUE) {
+                        weakrefAvailable = true; break;
                     }
                 }
-                if (!weakrefInSlots) blocked = true;
+            } else if (tp != env->getObjectPrototype()) {
+                if (containsWeakref(tp)
+                    || tp->hasOwnAttribute(ctx, slotsS) != PROTO_TRUE) {
+                    weakrefAvailable = true;
+                }
             }
+            if (!weakrefAvailable) blocked = true;
         }
         if (blocked) {
             env->raiseTypeError(ctx,
