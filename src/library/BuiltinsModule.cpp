@@ -2742,6 +2742,72 @@ static const proto::ProtoObject* py_dir(
                 return result->asObject(context);
             }
         }
+        // STRUCT-265: bare dir() fallback for non-OPTIMIZED functions
+        // (where co_automatic_count == 0 and locals go through
+        // STORE_NAME → frame's OWN attributes).  The legacy fallback
+        // returned `py_locals(...)` which exposes the frame object;
+        // letting dir() walk its inherited type chain pulls in all
+        // object dunders plus frame internals.  Instead, harvest the
+        // frame's OWN attribute names, filter the runtime-internal
+        // bookkeeping, and return that as the result list.
+        const proto::ProtoObject* fr = PythonEnvironment::getCurrentFrame();
+        if (fr && fr != PROTO_NONE && context) {
+            const proto::ProtoSparseList* attrs = fr->getOwnAttributes(context);
+            if (attrs) {
+                static const std::vector<std::string> internalSkip = {
+                    "__data__", "__keys__", "__is_python_class__",
+                    "__subclasses_list__", "__pyflags__",
+                    "__py_getattr_handler__", "__fn_meta_cache__",
+                    "__executed__", "__class__", "__dict__",
+                    "__name__", "__file__", "__doc__", "__builtins__",
+                    // STRUCT-265: frame-object internals — the executing
+                    // frame stores these as OWN attributes when the
+                    // function is non-CO_OPTIMIZED (locals go through
+                    // STORE_NAME → frame's namespace).  Hide them from
+                    // bare dir() output so test_descr.test_dir's
+                    // assertEqual(dir(), ['junk', 'self']) sees only
+                    // user-bound locals.
+                    "__closure__", "__code__", "__defaults__",
+                    "__globals__", "__kwdefaults__", "__module__",
+                    "__qualname__", "__wrapped__", "__annotations__",
+                    "f_back", "f_code", "f_globals", "f_locals",
+                    "f_lineno", "f_lasti", "f_trace", "f_builtins",
+                };
+                std::vector<std::string> names;
+                auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
+                while (it && it->hasNext(context)) {
+                    unsigned long key = it->nextKey(context);
+                    const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
+                    const proto::ProtoObject* val = it->nextValue(context);
+                    if (val == PROTO_NONE || !keyObj || !keyObj->isString(context)) {
+                        it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
+                        continue;
+                    }
+                    std::string nm; keyObj->asString(context)->toUTF8String(context, nm);
+                    bool skip = false;
+                    for (auto& bad : internalSkip) if (nm == bad) { skip = true; break; }
+                    if (!skip && !nm.empty()) names.push_back(nm);
+                    it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
+                }
+                std::sort(names.begin(), names.end());
+                names.erase(std::unique(names.begin(), names.end()), names.end());
+                const proto::ProtoList* result = context->newList();
+                for (auto& s : names) {
+                    result = result->appendLast(context,
+                        PythonEnvironment::getInternedString(context, s.c_str())->asObject(context));
+                }
+                PythonEnvironment* env_wrap = PythonEnvironment::fromContext(context);
+                const proto::ProtoObject* listProto = env_wrap ? env_wrap->getListPrototype() : nullptr;
+                if (listProto && listProto != PROTO_NONE) {
+                    proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(listProto->newChild(context, true));
+                    listObj->setAttribute(context,
+                        env_wrap ? env_wrap->getDataString() : PythonEnvironment::getInternedString(context, "__data__"),
+                        result->asObject(context));
+                    return listObj;
+                }
+                return result->asObject(context);
+            }
+        }
         target = py_locals(context, self, parentLink, positionalParameters, keywordParameters);
     }
 
