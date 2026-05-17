@@ -5986,6 +5986,34 @@ const proto::ProtoObject* py_type_mro(
     const proto::ProtoObject* listProto = env ? env->getListPrototype() : nullptr;
     const proto::ProtoString* dataName = env ? env->getDataString() : PythonEnvironment::getInternedString(context, "__data__");
     
+    // STRUCT-276: when __mro__ is None (py_type set it to None
+    // before invoking the user mro() override; see STRUCT-276 in
+    // BuiltinsModule.cpp py_type), reconstruct the C3 linearisation
+    // from the protoCore parent chain so a custom mro() implementation
+    // can call `type.mro(cls)` to obtain the default result.
+    if (mroAttr == PROTO_NONE) {
+        const proto::ProtoList* parents = cls ? cls->getParents(context) : nullptr;
+        if (parents && parents->getSize(context) > 0) {
+            const proto::ProtoList* recomputed = context->newList()->appendLast(context, cls);
+            const proto::ProtoObject* objectProtoLocal = env ? env->getObjectPrototype() : nullptr;
+            // Chain layout per STRUCT-82: [MRO[1], MRO[2], …, object,
+            // metaclass, metaclass_ancestors].  Stop after appending the
+            // first `object` — everything beyond it is the metaclass
+            // tail and not part of cls's own MRO.
+            for (unsigned long i = 0; i < parents->getSize(context); ++i) {
+                const proto::ProtoObject* p = parents->getAt(context, static_cast<int>(i));
+                if (!p || p == PROTO_NONE) continue;
+                recomputed = recomputed->appendLast(context, p);
+                if (p == objectProtoLocal) break;
+            }
+            if (listProto) {
+                const proto::ProtoObject* res = listProto->newChild(context, true);
+                const_cast<proto::ProtoObject*>(res)->setAttribute(context, dataName, recomputed->asObject(context));
+                return res;
+            }
+            return recomputed->asObject(context);
+        }
+    }
     if (mroAttr) {
         const proto::ProtoTuple* mroTuple = mroAttr->asTuple(context);
         if (mroTuple) {
@@ -6001,7 +6029,7 @@ const proto::ProtoObject* py_type_mro(
             return mroList->asObject(context);
         }
     }
-    
+
     // Fallback: return [cls, object]
     const proto::ProtoList* fallback = context->newList()->appendLast(context, cls);
     const proto::ProtoObject* objectProto = env ? env->getObjectPrototype() : nullptr;
@@ -6819,8 +6847,28 @@ const proto::ProtoObject* py_type(
             const proto::ProtoObject* mroMethodObj = cls->getAttribute(context,
                 PythonEnvironment::getInternedString(context, "mro"));
             if (mroMethodObj && mroMethodObj != PROTO_NONE) {
+                // STRUCT-276: CPython sets `cls.__mro__ = None` while
+                // the user-defined mro() is running, so user code can
+                // detect re-entrant probes (test_incomplete_set_bases
+                // _on_self).  Save the existing own __mro__, overwrite
+                // with None, restore after.
+                const proto::ProtoString* mroOwnS =
+                    PythonEnvironment::getInternedString(context, "__mro__");
+                const proto::ProtoObject* savedMro = nullptr;
+                if (targetClass->hasOwnAttribute(context, mroOwnS) == PROTO_TRUE) {
+                    savedMro = targetClass->getOwnAttributeDirect(context, mroOwnS);
+                }
+                const_cast<proto::ProtoObject*>(targetClass)->setAttribute(
+                    context, mroOwnS, PROTO_NONE);
                 const proto::ProtoObject* result =
                     env->callObject(mroMethodObj, { targetClass });
+                if (savedMro) {
+                    const_cast<proto::ProtoObject*>(targetClass)->setAttribute(
+                        context, mroOwnS, savedMro);
+                } else {
+                    const_cast<proto::ProtoObject*>(targetClass)->removeAttribute(
+                        context, mroOwnS);
+                }
                 if (!result) {
                     return nullptr; // exception raised inside user mro()
                 }
