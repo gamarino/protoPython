@@ -8962,7 +8962,21 @@ const proto::ProtoObject* executeBytecodeRange(
                                     invokePythonCallable(ctx, delM,
                                         ctx->newList()->appendLast(ctx, descr)->appendLast(ctx, obj), nullptr);
                                 }
+                                // STRUCT-267: when the descriptor's
+                                // __delete__ succeeds (no pending
+                                // exception), the bare `continue` would
+                                // re-run OP_DELETE_ATTR on the same
+                                // operand-stack-position, popping the
+                                // enclosing for-loop's iterator on the
+                                // second pass — surfacing as
+                                // "<tuple_iterator object> has no
+                                // attribute '__annotations__'".  Advance
+                                // pc to the next opcode on the
+                                // success path; on failure, leave i
+                                // alone so the top-of-loop exception
+                                // handler can unwind.
                                 if (env->hasPendingException()) continue;
+                                i = next_i;
                                 continue; // descriptor handled the delete
                             }
                         }
