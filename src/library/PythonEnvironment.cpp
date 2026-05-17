@@ -11030,7 +11030,58 @@ static const proto::ProtoObject* py_str_cmp_dispatch(proto::ProtoContext* contex
         StrCmpOp op) {
     int posOff = 0;
     const proto::ProtoString* a = str_from_self_or_arg(context, self, args, &posOff);
-    if (!a || !args || args->getSize(context) < static_cast<unsigned long>(1 + posOff)) {
+    if (!a) {
+        // STRUCT-254: when NEITHER self nor args[0] is a str, the
+        // wrapper descriptor is being applied to a non-str receiver
+        // (e.g. `class A(int): __eq__ = str.__eq__`).  Narrow gating:
+        // only raise TypeError when the receiver is a Python class
+        // instance (heap type) — for built-in type instances reached
+        // via internal dispatch chain leaks (the case that broke
+        // pickle in STRUCT-250) keep the NotImplemented fallback so
+        // pickle's stdlib invariants survive.
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (!env) return PROTO_NONE;
+        const proto::ProtoObject* recv = self;
+        if ((!recv || recv == PROTO_NONE) && args && args->getSize(context) >= 1) recv = args->getAt(context, 0);
+        // Heap-type instance heuristic: receiver's type owns __eq__
+        // and that __eq__ is a method-cell pointing into str.  This
+        // narrows the dispatch to the explicit-misbind case the
+        // test_wrong_class_slot_wrapper bpo-37619 fix targets.
+        bool isExplicitMisbind = false;
+        if (recv) {
+            const proto::ProtoObject* rt = env->getType(context, recv);
+            const proto::ProtoString* eqS = (op == StrCmpOp::Eq) ? PythonEnvironment::getInternedString(context, "__eq__")
+                : (op == StrCmpOp::Ne) ? PythonEnvironment::getInternedString(context, "__ne__")
+                : (op == StrCmpOp::Lt) ? PythonEnvironment::getInternedString(context, "__lt__")
+                : (op == StrCmpOp::Le) ? PythonEnvironment::getInternedString(context, "__le__")
+                : (op == StrCmpOp::Gt) ? PythonEnvironment::getInternedString(context, "__gt__")
+                : PythonEnvironment::getInternedString(context, "__ge__");
+            if (rt && eqS && rt->hasOwnAttribute(context, eqS) == PROTO_TRUE) {
+                isExplicitMisbind = true;
+            }
+        }
+        if (!isExplicitMisbind) {
+            return env->getNotImplementedPrototype();
+        }
+        std::string recvTypeName = "?";
+        if (recv) {
+            const proto::ProtoObject* rt = env->getType(context, recv);
+            if (rt) {
+                const proto::ProtoObject* nm = rt->getAttribute(context, env->getNameString());
+                if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, recvTypeName);
+            }
+        }
+        std::string opName = (op == StrCmpOp::Lt) ? "__lt__"
+                           : (op == StrCmpOp::Le) ? "__le__"
+                           : (op == StrCmpOp::Eq) ? "__eq__"
+                           : (op == StrCmpOp::Ne) ? "__ne__"
+                           : (op == StrCmpOp::Gt) ? "__gt__" : "__ge__";
+        env->raiseTypeError(context,
+            "descriptor '" + opName + "' for 'str' objects doesn't apply to a '"
+            + recvTypeName + "' object");
+        return nullptr;
+    }
+    if (!args || args->getSize(context) < static_cast<unsigned long>(1 + posOff)) {
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         return env ? env->getNotImplementedPrototype() : PROTO_NONE;
     }
@@ -25480,8 +25531,23 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
     // receiver (test_wrong_class_slot_wrapper); the identity shortcut
     // hides the failure behind True.
     if (a == b) {
-        if (op == 0) return PROTO_TRUE;
-        if (op == 1) return PROTO_FALSE;
+        // STRUCT-255: skip the identity shortcut when type(a) OWNS
+        // __eq__/__ne__ explicitly — the user may have rebound it to
+        // a slot wrapper whose receiver check raises TypeError
+        // (test_wrong_class_slot_wrapper bpo-37619).  The shortcut
+        // would hide the explicit-misbind error behind True.
+        bool ownsEq = false;
+        if (op == 0 || op == 1) {
+            const proto::ProtoObject* aType = getType(ctx, a);
+            const proto::ProtoString* eqS = (op == 0) ? py_eq_s : py_ne_s;
+            if (aType && eqS && aType->hasOwnAttribute(ctx, eqS) == PROTO_TRUE) {
+                ownsEq = true;
+            }
+        }
+        if (!ownsEq) {
+            if (op == 0) return PROTO_TRUE;
+            if (op == 1) return PROTO_FALSE;
+        }
     }
 
     // Check for dunder comparison methods
