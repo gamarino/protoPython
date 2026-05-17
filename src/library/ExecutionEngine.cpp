@@ -7524,14 +7524,27 @@ const proto::ProtoObject* executeBytecodeRange(
                     // ...`) bypasses the check entirely — there is no
                     // class hierarchy to reconcile against the bases'
                     // metaclasses.
+                    // STRUCT-264: check class-ness via OWN __mro__ (or
+                    // by walking type(winner)'s MRO for typePrototype).
+                    // A plain function inherits `__mro__` from its type
+                    // chain, so the previous unqualified `getAttribute`
+                    // probe falsely classified `metaclass=func` as a
+                    // class and ran the conflict-detection loop —
+                    // raising a spurious "metaclass conflict" for
+                    // `class X(object, metaclass=func): pass`.
                     bool winnerIsClass = false;
                     if (winner) {
-                        const proto::ProtoObject* wmro = env->getAttribute(ctx, winner,
-                            PythonEnvironment::getInternedString(ctx, "__mro__"), false);
-                        if (wmro) {
+                        const proto::ProtoString* mroDunder =
+                            PythonEnvironment::getInternedString(ctx, "__mro__");
+                        if (winner->hasOwnAttribute(ctx, mroDunder) == PROTO_TRUE) {
                             winnerIsClass = true;
-                        } else if (winner == typeProto2 || isSubclassMeta(winner, typeProto2)) {
+                        } else if (winner == typeProto2) {
                             winnerIsClass = true;
+                        } else if (env) {
+                            const proto::ProtoObject* wType = env->getType(ctx, winner);
+                            if (wType && (wType == typeProto2 || isSubclassMeta(wType, typeProto2))) {
+                                winnerIsClass = true;
+                            }
                         }
                     }
                     if (winnerIsClass && bases) {
