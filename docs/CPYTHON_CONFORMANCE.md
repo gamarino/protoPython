@@ -28,7 +28,75 @@
 
 ---
 
-## Current Status (2026-05-16) — round 22 close (36 raw F+E, ~30 actionable)
+## Current Status (2026-05-17) — round 23 (in progress, 36 raw F+E)
+
+Round 23 made one substantive commit + extensive deferred attempts.
+test_descr count unchanged at **28F + 8E = 36** — the round flipped
+a `dir()`-inside-function subtest internally but the surrounding
+`test_dir` still fails on the module-subclass-instance `dir()` case
+(separate non-bare-dir bug).
+
+### Round 23 commits
+
+1. **STRUCT-239** — bare `dir()` materialises function locals from
+   fast slots.  Thread `setCurrentCodeObject(codeObj)` through
+   both runUserFunctionCall and runUserFunctionCallRaw, then in
+   `py_dir`'s bare-call path walk co_varnames × ctx->automaticLocals,
+   skip PROTO_NONE (the protoCore sentinel for "unbound"), and
+   wrap as a Python list via `listPrototype->newChild`.  Flips the
+   first subtest in test_dir to PASS; later subtests still fail.
+
+### Deferred / reverted in round 23
+
+- **STRUCT-240 (PEP 649 `__annotate__` on functions)**: Installed
+  a getset_descriptor on functionPrototype (with fget routing
+  through py_getset_get).  Worked for `func.__annotate__ → None`
+  but broke `os` module import in test_foundation (FoundationTest.
+  ModuleImport).  The interaction between adding a getset on
+  functionPrototype and module-init descriptor lookup needs
+  isolation.  Reverted.
+- **test_complexes** investigation: `Number(complex).__slots__=['prec']`
+  installs the slot descriptor correctly (verified
+  `type(Number.__dict__['prec']) == member_descriptor`) but
+  `n.prec = 6` raises AttributeError 'no attribute prec'.
+  `slot_member_instance_compatible` should pass — likely the slot
+  member_descriptor's __objclass__ check fires against the
+  complex-tagged instance.  Needs deeper trace.
+- **test_metaclass ERROR investigation**: Step-by-step probes of
+  every documented section pass.  The ERROR is buried in the
+  unittest framework's assertion collection path — not
+  reproducible outside the test runner.
+
+### Carry-overs to round 24 (actionable)
+
+1. **STRUCT-240 redux** — PEP 649 `__annotate__` with isolated
+   descriptor that doesn't interfere with module imports.  Look
+   at why the getset on functionPrototype breaks os import.
+2. **test_complexes** — debug why `n.prec = 6` raises despite
+   slot_member_instance_compatible passing.  May be that
+   instance->setAttribute is being rejected for complex-tagged
+   subclass instances.
+3. **non-bare `dir()` filtering** — dir(module_subclass_instance)
+   over-includes class/metaclass attrs (__mro__, __bases__) that
+   CPython hides.  Needs separation between "instance attrs" and
+   "type-level introspection attrs".
+4. **test_metaclass ERROR** — likely a single deeply-nested
+   assertion inside the unittest runner; instrument to find it.
+5. **test_subclass_propagation** — slot-update propagation.
+6. **test_uninitialized_modules** — module __dict__ refactor.
+7. **test_carloverre** — Carlo-Verre defence (still needs narrow
+   gating that doesn't break stdlib bootstrap).
+8. **test_wrong_class_slot_wrapper** — BINARY_ADD respects user
+   override even when both operands are int subclasses.
+
+### Build
+
+ctest 183/183 verde en cada commit.  Binary at
+`build_release/src/runtime/protopy`.
+
+---
+
+## Previous Status (2026-05-16) — round 22 close (36 raw F+E, ~30 actionable)
 
 Round 22 closes at **28F + 8E = 36** in test_descr.py.  Five
 substantive commits plus this docs commit (six total).  Net
