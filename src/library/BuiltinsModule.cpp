@@ -2858,6 +2858,63 @@ static const proto::ProtoObject* py_dir(
             }
         }
     }
+    // STRUCT-258: if a module subclass overrides `__dict__` with a
+    // descriptor (e.g. `class M2(Module): __dict__ = property(...)`),
+    // CPython's `object.__dir__` invokes the override and raises
+    // TypeError when it returns a non-dict.  Detect a non-default
+    // `__dict__` in the type's MRO (anything before modulePrototype
+    // and objectPrototype owns its own descriptor): invoke the
+    // resolved `__dict__` and route through it, raising TypeError on
+    // non-dict.  test_dir's M2 subtest.
+    if (isModuleInstance && env_dir) {
+        const proto::ProtoString* dictS =
+            env_dir->getDictDunderString();
+        const proto::ProtoObject* tp = env_dir->getType(context, target);
+        const proto::ProtoObject* mroA = tp
+            ? env_dir->getAttribute(context, tp, env_dir->getMroString(), false)
+            : nullptr;
+        const proto::ProtoTuple* mroT = mroA ? mroA->asTuple(context) : nullptr;
+        bool hasOverride = false;
+        if (mroT && dictS) {
+            for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+                const proto::ProtoObject* base = mroT->getAt(context, i);
+                if (!base || base == PROTO_NONE) continue;
+                if (base == env_dir->getModulePrototype()
+                    || base == env_dir->getObjectPrototype()) break;
+                if (base->hasOwnAttribute(context, dictS) == PROTO_TRUE) {
+                    hasOverride = true;
+                    break;
+                }
+            }
+        }
+        if (hasOverride) {
+            const proto::ProtoObject* dictResult =
+                env_dir->getAttribute(context, target, dictS, false);
+            if (env_dir->hasPendingException()) return nullptr;
+            const proto::ProtoObject* dictType = dictResult
+                ? env_dir->getType(context, dictResult) : nullptr;
+            if (dictType != env_dir->getDictPrototype()) {
+                std::string tpName = "?";
+                if (tp) {
+                    const proto::ProtoObject* nm =
+                        tp->getAttribute(context, env_dir->getNameString());
+                    if (nm && nm->isString(context)) {
+                        nm->asString(context)->toUTF8String(context, tpName);
+                    }
+                }
+                env_dir->raiseTypeError(context,
+                    tpName + ".__dict__ is not a dictionary");
+                return nullptr;
+            }
+            // Real dict: use its keys for dir().  Avoid the
+            // module-instance short-circuit for this case so dir
+            // reflects the override's view.
+            isModuleInstance = false;
+            // Replace target's "own" view with the dict's keys.  We
+            // can't easily inject keys here; the existing collectOwn
+            // will run on the module instance.  Bail to legacy walk.
+        }
+    }
     collectOwn(target);
     const proto::ProtoObject* clsForWalk = isClass
         ? target

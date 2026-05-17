@@ -23169,6 +23169,52 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     // synthesises the result on a different code path; getattr() and
     // any other env->getAttribute consumer needs this explicit branch.
     if (!isClass && dictString && name == dictString && objectPrototype) {
+        // STRUCT-258: if the instance's type (or any subclass earlier in
+        // the MRO than objectPrototype) declares its OWN `__dict__`
+        // attribute (e.g. `class M2(Module): __dict__ = property(...)`),
+        // that descriptor wins over the default `py_object_get_dict`.
+        // Invoke its descriptor protocol via `__get__` when present, or
+        // return the raw value otherwise — mirroring CPython's data-
+        // descriptor precedence rule for `__dict__`.
+        if (objClass && objClass != PROTO_NONE && objClass != objectPrototype) {
+            const proto::ProtoObject* mroAttr =
+                getAttribute(ctx, objClass, mroString, false);
+            const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+            unsigned long nBases = mroT ? mroT->getSize(ctx) : 0;
+            for (unsigned long bi = 0; bi < nBases; ++bi) {
+                const proto::ProtoObject* base = mroT->getAt(ctx, bi);
+                if (!base || base == PROTO_NONE) continue;
+                if (base == objectPrototype) break;  // stop before default
+                if (base->hasOwnAttribute(ctx, dictString) != PROTO_TRUE) continue;
+                const proto::ProtoObject* ownDesc =
+                    base->getOwnAttributeDirect(ctx, dictString);
+                if (!ownDesc || ownDesc == PROTO_NONE) continue;
+                // Try descriptor protocol: ownDesc.__get__(obj, objClass).
+                const proto::ProtoString* getDunder =
+                    PythonEnvironment::getInternedString(ctx, "__get__");
+                const proto::ProtoObject* descType = getType(ctx, ownDesc);
+                const proto::ProtoObject* getM = descType
+                    ? getAttribute(ctx, descType, getDunder, false) : nullptr;
+                if (getM && getM != PROTO_NONE) {
+                    if (getM->asMethod(ctx)) {
+                        const proto::ProtoList* gaArgs =
+                            ctx->newList()->appendLast(ctx, obj)
+                                          ->appendLast(ctx, objClass);
+                        return getM->asMethod(ctx)(ctx,
+                            const_cast<proto::ProtoObject*>(ownDesc), nullptr,
+                            gaArgs, nullptr);
+                    }
+                    // Plain Python function descriptor.
+                    const proto::ProtoList* fullArgs =
+                        ctx->newList()->appendLast(ctx, ownDesc)
+                                      ->appendLast(ctx, obj)
+                                      ->appendLast(ctx, objClass);
+                    return invokePythonCallable(ctx, getM, fullArgs, nullptr);
+                }
+                // No __get__ — return the raw value (non-descriptor).
+                return ownDesc;
+            }
+        }
         const proto::ProtoObject* dictDescr = objectPrototype->proto::ProtoObject::getAttribute(ctx, dictString);
         if (dictDescr && dictDescr != PROTO_NONE && dictDescr->isMethod(ctx)) {
             return dictDescr->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(obj), nullptr, ctx->newList(), nullptr);
