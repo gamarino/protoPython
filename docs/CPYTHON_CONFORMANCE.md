@@ -28,7 +28,57 @@
 
 ---
 
-## Current Status (2026-05-17) — round 28 (blocker resolution, 28 raw F+E)
+## Current Status (2026-05-17) — round 29 (more blocker resolution, 27 raw F+E)
+
+Round 29 attacks remaining round-28 blockers.  One commit lands, one
+test flip (`test_file_fault`).  Test count drops from
+**23F + 5E = 28** to **22F + 5E = 27**.
+
+### Round 29 commits
+
+1. **STRUCT-274** — `py_print` routes through `sys.stdout.write` /
+   `sys.stderr.write` when the user has replaced the file (detected
+   via missing `__file_kind__` own attribute).  The lookup now also
+   honours `__getattr__` via an explicit fallback when `write` isn't
+   found on the receiver/type chain — required for
+   `redirect_stdout(StdoutGuard())` patterns whose guard raises
+   from `__getattr__`.  Default-file path keeps the direct
+   `std::cout` / `std::cerr` fast write.  Flips test_file_fault.
+
+### Investigations that didn't land
+
+- **Cluster B (STORE_ATTR class metaclass dispatch)** — attempted
+  again with `has __code__` gating; broke `import enum`.  EnumMeta
+  has a Python `__setattr__` that, when dispatched for an internal
+  py_type bootstrap attribute write, cascades through `super()` to
+  the Carlo defence and crashes with "cannot set '__new__'
+  attribute of immutable type 'object'".  Needs a deeper
+  "user-initiated vs. bootstrap-internal" distinction in
+  env->setAttribute callers.
+- **Cluster C (`__dict__` as getset_descriptor)** — coupling with
+  OP_LOAD_ATTR's special-case made the swap unsafe; deferred.
+- **Cluster J (mro re-entrancy)** — added `__mro_in_progress__`
+  flag + py_type RAII + `__mro__` own-attr save/restore; the flag
+  never fires because `cls.__mro__` reads go through a
+  fast/MRO-walk path that bypasses `py_type_get_mro` (the getset
+  descriptor is registered but `env->getAttribute` shortcuts
+  `__mro__` away from the descriptor protocol).  Untangling needs
+  a coordinated audit of every `cls.__mro__` reader.  Reverted to
+  avoid noise.
+- **Cluster F bytes** — `class D(bytes): __slots__ = ['__dict__']`
+  instances report `type(a) == bytes`, not `D` — the constructor
+  reverts to bytes.  The slot wiring never applies because the
+  instance was never D-typed.  Deep `__new__` rework.
+- **Cluster G (__classcell__)** — no compiler infrastructure for
+  PEP 3115 `__classcell__` insertion into the class namespace.
+
+### Build
+
+ctest 183/183 verde en cada commit.
+
+---
+
+## Previous Status (2026-05-17) — round 28 (blocker resolution, 28 raw F+E)
 
 Round 28 attacks the round-27 deferred blockers.  Five commits land,
 two test_descr flips (`test_classmethod_staticmethod_annotations`,
