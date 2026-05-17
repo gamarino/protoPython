@@ -28,7 +28,90 @@
 
 ---
 
-## Current Status (2026-05-17) — round 27 (targeted flips, 30 raw F+E)
+## Current Status (2026-05-17) — round 28 (blocker resolution, 28 raw F+E)
+
+Round 28 attacks the round-27 deferred blockers.  Five commits land,
+two test_descr flips (`test_classmethod_staticmethod_annotations`,
+`test_errors`).  Test count drops from **24F + 6E = 30** to
+**23F + 5E = 28**.  ctest stays 183/183.
+
+### Root-cause discoveries
+
+1. **OP_DELETE_ATTR `continue` skipped pc-advance** — the bare
+   `continue` after a successful data-descriptor `__delete__` call
+   didn't update `i = next_i;`.  The for-loop body re-ran
+   OP_DELETE_ATTR on the same operand-stack position, popping the
+   enclosing for-loop's tuple_iterator on the second pass.  Symptom:
+   "<tuple_iterator object> has no attribute '__annotations__'"
+   inside any for-loop that uses `del cm.__annotations__`.
+   (cluster A blocker root cause).
+
+2. **`builtin_function_or_method` prototype segfault was a stale
+   build** — declaring the new descriptor-shaped prototype shifted
+   PythonEnvironment's field layout, but test_foundation was linking
+   against a stale libprotoPython with the old offsets.  Full
+   rebuild resolved the segfault.  (cluster E blocker root cause).
+
+### Round 28 commits
+
+1. **STRUCT-267** — OP_DELETE_ATTR descriptor success-path advances
+   pc.  Add `i = next_i;` on the success branch only; failure path
+   continues to defer to the top-of-loop exception handler.
+2. **STRUCT-268** — classmethod/staticmethod `__annotate__` fget
+   caches PROTO_NONE too.  PEP 649's None-default
+   `__wrapped__.__annotate__` no longer blocks the
+   promotion-into-`__dict__` step.  Flips
+   test_classmethod_staticmethod_annotations.
+3. **STRUCT-269** — install `builtinFunctionOrMethodPrototype`,
+   route bound native cells (`len`, `print`, …) through it in
+   `getType`, reject inheritance via the same path as
+   `method_descriptor` / `wrapper_descriptor`.  Add `builtinsModule`
+   to `registerNativeMethodNames`'s prototype list so its bound
+   cells populate the fn-pointer → kind side table.  Flips
+   test_errors.
+4. **STRUCT-271** — `del a.__dict__` on built-in container subclasses
+   clears the right storage.  Walk OWN attributes (not the
+   `__keys__` list, which OP_STORE_ATTR may have bypassed) and drop
+   user names; reset `__pydict_data__` / `__pydict_keys__` when the
+   instance is a container subclass.  Precondition for several
+   `test_slots_special_after_items` subtests.
+
+### Deferred again (cluster B, C, F partial, G, I, J, K)
+
+- **Cluster B (STORE_ATTR class metaclass dispatch)** — attempted
+  with code-bound gating (`override has __code__`); broke `import
+  enum` via "cannot set '__new__' attribute of immutable type
+  'object'" propagating through EnumMeta.__setattr__'s
+  `super().__setattr__()` chain.  Needs deeper distinction between
+  user setattr and bootstrap-internal type construction.
+- **Cluster C (`__dict__` as getset_descriptor)** — attempted;
+  caused 5 ctest segfaults because OP_LOAD_ATTR's `__dict__`
+  special-case at ExecutionEngine.cpp:6306 hard-checks `isMethod`
+  and never invokes the getset path.  Needs the load-attr path
+  extended in tandem.
+- **Cluster F partial** — bytes subclass `__slots__ = ['__dict__']`
+  still reports `hasattr __dict__ == False`, surfaced as
+  "'bytes' object has no attribute '__dict__'".  The strict-slots
+  walk classifies bytes correctly but a separate code path in the
+  __getattribute__ chain returns AttributeError before py_object_get_dict
+  is reached.  int subclass equality fails on the bignum literal
+  (`9876543210**2` exceeds long long).
+- **Cluster G (`__classcell__` in slots)** — no infrastructure yet
+  (`grep classcell` in src/library/ shows zero hits).  Adding the
+  compiler + class-construction wiring is a larger undertaking.
+- **Cluster I (test_file_fault)** — `py_print` writes to
+  std::cout/std::cerr directly; routing through `sys.stdout.write`
+  for the descriptor protocol is a deeper refactor.
+- **Cluster J (MroTest re-entrancy)** — `cls.__mro__` must be None
+  while mro() is mid-flight; needs a per-class flag.
+
+### Build
+
+ctest 183/183 verde en cada commit.
+
+---
+
+## Previous Status (2026-05-17) — round 27 (targeted flips, 30 raw F+E)
 
 Round 27 closed at **24F + 6E = 30** in test_descr.py (from 24F+7E=31).
 Net: 1 test flipped (test_metaclass).  ctest 183/183 on every commit.
