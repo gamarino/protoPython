@@ -6303,6 +6303,12 @@ const proto::ProtoObject* executeBytecodeRange(
                             // on read).  When LOAD_ATTR resolves __dict__
                             // to a bound native method, invoke it with no
                             // args to materialize the dict.
+                            // STRUCT-277: additionally handle the
+                            // getset_descriptor form — env-level lookup
+                            // may return the descriptor object (not
+                            // auto-invoked).  Detect via __class__ being
+                            // getSetDescriptorPrototype and invoke its
+                            // fget with the original receiver.
                             if (env && val && val->isMethod(ctx) && val->asMethodSelf(ctx) != nullptr) {
                                 std::string attrNameStr;
                                 attrName->toUTF8String(ctx, attrNameStr);
@@ -6313,6 +6319,24 @@ const proto::ProtoObject* executeBytecodeRange(
                                             nullptr, ctx->newList(), nullptr);
                                     if (dictResult && !env->hasPendingException()) {
                                         val = dictResult;
+                                    }
+                                }
+                            } else if (env && val && val != PROTO_NONE) {
+                                const proto::ProtoObject* getsetProto = env->getGetSetDescriptorPrototype();
+                                if (getsetProto && env->getType(ctx, val) == getsetProto) {
+                                    const proto::ProtoString* fgetS = PythonEnvironment::getInternedString(ctx, "fget");
+                                    const proto::ProtoObject* fget = val->getAttribute(ctx, fgetS);
+                                    if (fget && fget->asMethod(ctx)) {
+                                        const proto::ProtoList* args = ctx->newList()->appendLast(ctx, obj);
+                                        const proto::ProtoObject* dictResult =
+                                            fget->asMethod(ctx)(ctx,
+                                                const_cast<proto::ProtoObject*>(obj),
+                                                nullptr, args, nullptr);
+                                        if (dictResult && !env->hasPendingException()) {
+                                            val = dictResult;
+                                        } else if (env->hasPendingException()) {
+                                            stack.pop_back(); continue;
+                                        }
                                     }
                                 }
                             }

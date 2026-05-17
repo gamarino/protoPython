@@ -17859,6 +17859,32 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         memberDescriptorPrototype = p;
     }
 
+    // STRUCT-277: replace the early `object.__dict__ = fromMethod`
+    // install with a proper getset_descriptor.  CPython exposes
+    // object.__dict__ as a getset whose fget returns the dict; the
+    // method form makes `cls.__dict__['__dict__'].__get__(instance,
+    // cls)` return a bound method instead of the dict.  OP_LOAD_ATTR
+    // has a coordinated branch that auto-invokes the fget when val
+    // is a getset descriptor with __class__ == getSetDescriptorPrototype.
+    {
+        const proto::ProtoString* dictDunder =
+            PythonEnvironment::getInternedString(rootContext_, "__dict__");
+        proto::ProtoObject* dDescr = const_cast<proto::ProtoObject*>(
+            getSetDescriptorPrototype->newChild(rootContext_, true));
+        dDescr->setAttribute(rootContext_, py_class, getSetDescriptorPrototype);
+        dDescr->setAttribute(rootContext_,
+            PythonEnvironment::getInternedString(rootContext_, "fget"),
+            rootContext_->fromMethod(nullptr, py_object_get_dict));
+        dDescr->setAttribute(rootContext_, py_name, dictDunder->asObject(rootContext_));
+        dDescr->setAttribute(rootContext_,
+            PythonEnvironment::getInternedString(rootContext_, "__qualname__"),
+            PythonEnvironment::getInternedString(rootContext_, "object.__dict__")->asObject(rootContext_));
+        dDescr->setAttribute(rootContext_,
+            PythonEnvironment::getInternedString(rootContext_, "__objclass__"),
+            objectPrototype);
+        objectPrototype = objectPrototype->setAttribute(rootContext_, dictDunder, dDescr);
+    }
+
     // STRUCT-33: install `__weakref__` as a getset_descriptor on
     // objectPrototype.  Required by `test___weakref__`, which asserts
     // `CustomClass.__dict__['__weakref__'].__objclass__ is object`.  The
@@ -24957,18 +24983,10 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
             if (objType && objType != PROTO_NONE) {
                 const proto::ProtoString* setattrS =
                     PythonEnvironment::getInternedString(ctx, "__setattr__");
-                // Only dispatch when the type carries an OWN __setattr__
-                // (or inherits one from a non-object base).  Walk the MRO
-                // looking for a class that owns __setattr__, stopping at
-                // objectPrototype (the implicit default).
                 const proto::ProtoString* mroS = mroString;
                 const proto::ProtoObject* mroAttr = mroS ? getAttribute(ctx, objType, mroS, false) : nullptr;
                 const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
                 const proto::ProtoObject* override = nullptr;
-                // Some built-in prototypes (property, slice…) have an
-                // __mro__ tuple that doesn't include themselves — only
-                // (object,).  Probe objType itself first so own
-                // overrides aren't skipped by the MRO walk.
                 if (objType != objectPrototype && objType->hasOwnAttribute(ctx, setattrS) == PROTO_TRUE) {
                     override = objType->getAttribute(ctx, setattrS);
                 }
