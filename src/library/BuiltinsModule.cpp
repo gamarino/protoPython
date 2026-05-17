@@ -2793,7 +2793,12 @@ static const proto::ProtoObject* py_dir(
     std::vector<std::string> names;
     std::function<void(const proto::ProtoObject*)> collectOwn = [&](const proto::ProtoObject* obj) {
         if (!obj) return;
-        const proto::ProtoSparseList* attrs = obj->getAttributes(context);
+        // STRUCT-251: use getOwnAttributes (NOT getAttributes which
+        // walks the parent chain) so the MRO walk below controls what
+        // ancestors contribute.  Without this, collectOwn(target)
+        // pulled in every inherited attr immediately, defeating the
+        // MRO filter and the module-instance short-circuit.
+        const proto::ProtoSparseList* attrs = obj->getOwnAttributes(context);
         if (attrs) {
             auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
             while (it && it->hasNext(context)) {
@@ -2830,10 +2835,34 @@ static const proto::ProtoObject* py_dir(
     //   dir(inst) := own(inst) ∪ for B in type(inst).__mro__: own(B)
     PythonEnvironment* env_dir = PythonEnvironment::fromContext(context);
     bool isClass = env_dir ? env_dir->isActuallyAClass(context, target) : false;
+    // STRUCT-251: module instances expose CPython's `module.__dir__`,
+    // which returns just `list(self.__dict__.keys())`.  Detect module
+    // instance (type or a subclass of module) and short-circuit the
+    // type-chain walk so dir(module_subclass_instance) doesn't drag
+    // in inherited object/type dunders.
+    bool isModuleInstance = false;
+    if (!isClass && env_dir && env_dir->getModulePrototype()) {
+        const proto::ProtoObject* tp = env_dir->getType(context, target);
+        if (tp == env_dir->getModulePrototype()) isModuleInstance = true;
+        if (!isModuleInstance && tp && tp != PROTO_NONE) {
+            const proto::ProtoObject* mroA = env_dir->getAttribute(context, tp,
+                env_dir->getMroString(), false);
+            const proto::ProtoTuple* mroT = mroA ? mroA->asTuple(context) : nullptr;
+            if (mroT) {
+                for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+                    if (mroT->getAt(context, static_cast<int>(i)) == env_dir->getModulePrototype()) {
+                        isModuleInstance = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
     collectOwn(target);
     const proto::ProtoObject* clsForWalk = isClass
         ? target
-        : (env_dir ? env_dir->getType(context, target) : nullptr);
+        : (isModuleInstance ? nullptr
+                            : (env_dir ? env_dir->getType(context, target) : nullptr));
     if (clsForWalk && clsForWalk != PROTO_NONE) {
         // Own attrs of the type itself are part of dir(instance).  Skip
         // for dir(class) — those would be metaclass attrs (already
@@ -2851,6 +2880,8 @@ static const proto::ProtoObject* py_dir(
                 if (base && base != clsForWalk && base != PROTO_NONE) collectOwn(base);
             }
         }
+    } else if (isModuleInstance) {
+        // collectOwn(target) above already gathered the module's namespace.
     } else {
         // No class info (e.g. None, modules) — fall back to the legacy
         // recursive walk; metaclass leakage doesn't apply here.

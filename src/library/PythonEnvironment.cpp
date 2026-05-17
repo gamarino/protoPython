@@ -25279,6 +25279,19 @@ void PythonEnvironment::ensureModuleInSysModules(proto::ProtoContext* ctx, const
         const_cast<proto::ProtoObject*>(mod)->setAttribute(ctx, nameAttr,
             PythonEnvironment::getInternedString(ctx, name.c_str())->asObject(ctx));
     }
+    // STRUCT-251: ensure every registered module has __class__ =
+    // modulePrototype as an OWN attribute.  Cloned modules from
+    // executeModule end up with __class__ inherited, which trips
+    // getType into returning objectPrototype instead.  Without this,
+    // `type(sys) is type(os)` and `class M(type(sys))` (CPython
+    // module subclass pattern) silently became plain object
+    // subclasses.
+    if (modulePrototype) {
+        const proto::ProtoString* classS = getClassString();
+        if (classS && mod->hasOwnAttribute(ctx, classS) != PROTO_TRUE) {
+            const_cast<proto::ProtoObject*>(mod)->setAttribute(ctx, classS, modulePrototype);
+        }
+    }
 }
 
 const proto::ProtoObject* PythonEnvironment::resolveModule(const std::string& nameStr, proto::ProtoContext* ctx) {
