@@ -28,7 +28,105 @@
 
 ---
 
-## Current Status (2026-05-16) — round 21 close (38 raw F+E, ~32 actionable)
+## Current Status (2026-05-16) — round 22 close (36 raw F+E, ~30 actionable)
+
+Round 22 closes at **28F + 8E = 36** in test_descr.py.  Five
+substantive commits plus this docs commit (six total).  Net
+improvement: 38 → 36 (2 tests flipped).  Cumulative round-20→22
+delta: 40 → 36 (10% reduction).
+
+### Round 22 commits
+
+1. **STRUCT-231** — `__bases__` assignment honours slot layout
+   signature.  Mirrors STRUCT-226 (`__class__` setter) for the
+   `cls.__bases__ = (newbase,)` path: aggregates a (has_dict,
+   has_weakref, real-slot name set, real-slot count) signature
+   along the would-be MRO and rejects swaps that change it.
+   Skipped when either side's MRO touches a built-in primitive
+   (STRUCT-212's container check covers those).  Flips
+   `test_mutable_bases` to PASS.
+2. **STRUCT-232/233** — Metaclass calculation matches CPython.
+   Explicit-metaclass path now walks each base and (a) upgrades
+   to a strictly-more-derived base metaclass, (b) raises
+   metaclass-conflict when the explicit and any base meta are
+   unrelated.  Inferred-metaclass path seeds the winner from
+   `type(bases[0])` (CPython's `Py_TYPE(base0)`) instead of
+   `type`, so `class C(A, B)` with non-type metaclasses no
+   longer raises a spurious conflict.
+3. **STRUCT-234** — Skip object-typed bases in the metaclass
+   winner walk.  When a base is plain `object()` (Py_TYPE is
+   exactly `object`), do not let it contribute `type` to the
+   winner — CPython lets the actual metaclass's `__new__` do
+   the validation later.  Required to make
+   `class F(object(), C):` succeed when C has a user metaclass.
+4. **STRUCT-235** — Unbound `str.__add__` raises TypeError on
+   non-str self.  CPython's slot wrapper performs a
+   descriptor-receiver type check and raises TypeError when
+   the first positional is not a str instance — protoPython's
+   py_str_add returned NotImplemented, which assertRaises
+   correctly observed as "no exception".  Distinguish via the
+   null-self heuristic (unbound calls raise; bound calls keep
+   the NotImplemented return for binary-op fallback).  Flips
+   `test_proxy_call` to PASS.
+
+### Tests confirmed flipping to PASS in round 22
+
+- `test_mutable_bases` (STRUCT-231)
+- `test_proxy_call` (STRUCT-235)
+
+### Deferred — partial / reverted
+
+- **STRUCT-236 (`type(len)` reclassification)**: Attempted to
+  detect "bound to builtins module" via asMethodSelf identity
+  or first-parent walk.  `len.asMethodSelf` does not match the
+  PythonEnvironment::builtinsModule pointer (probably re-bound
+  during module clone), and the receiver's first parent is
+  not modulePrototype either.  Skipped — requires either a
+  dedicated `builtin_function_or_method` prototype or a more
+  invasive native-registration sweep.
+- **STRUCT-236 (bare `dir()`)**: Attempted to materialise
+  function locals from `co_varnames` + `ctx->getAutomaticLocals`.
+  `getCurrentCodeObject()` returns the module code object (not
+  the function's), and code-object scope is only updated in
+  `runCodeObject` — function calls bypass it.  Needs a
+  CodeObjectScope around `runUserFunctionCall` first.
+- **STRUCT-237 (`str.__eq__` TypeError on non-str)**: Same fix
+  as STRUCT-235 but for the comparison family.  Broke `pickle`
+  import (legitimate `str.__eq__` against non-str cases inside
+  the stdlib relied on the NotImplemented fallback).  Reverted.
+
+### Carry-overs to round 23 (actionable)
+
+1. **STRUCT-227 redux** — Carlo-Verre defence with narrow gating.
+2. **STRUCT-236 redux** — `builtin_function_or_method` prototype
+   for `type(len)`; OR thread CodeObjectScope through
+   `runUserFunctionCall` so bare `dir()` and `locals()` can
+   materialise function-frame locals.
+3. **STRUCT-237 redux** — Slot-wrapper receiver-type check that
+   distinguishes wrapper-was-mis-rebound from operand-type
+   mismatch.  Probably needs a "wrapper kind" carry-along in
+   the call dispatch rather than a heuristic on self pointer.
+4. **test_metaclass** — currently ERROR (was FAIL).  Step-by-step
+   probe passes; the failure is buried inside the unittest
+   framework's assertion-collection path.
+5. **test_complexes** — slot member descriptor visibility on
+   tagged-primitive subclasses (e.g. `Number(complex)` with
+   `__slots__ = ['prec']`).
+6. **PEP 649** `__annotate__` on function objects.
+7. **test_uninitialized_modules** — module `__dict__` refactor.
+8. **test_subclass_propagation** — slot-update propagation to
+   existing subclass instances.
+9. **test_file_fault** — `print()` should route to sys.stdout's
+   `write()` method.
+
+### Build
+
+ctest 183/183 verde en cada commit.  Binary at
+`build_release/src/runtime/protopy`.
+
+---
+
+## Previous Status (2026-05-16) — round 21 close (38 raw F+E, ~32 actionable)
 
 Round 21 closes at **31F + 7E = 38** in test_descr.py.  Ten
 substantive commits plus this docs commit (eleven total).  Net
