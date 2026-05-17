@@ -20063,6 +20063,51 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         modulePrototype = modulePrototype->setAttribute(rootContext_, py_repr,
             rootContext_->fromMethod(nullptr, py_module_repr));
     }
+    // STRUCT-252: install `__init__` on modulePrototype so
+    // `class M(type(sys)): pass; M("m")` propagates the name argument
+    // to `self.__name__` (CPython's types.ModuleType.__init__ does
+    // this).  Without it, M("m") leaves __name__ unset, so dir(M("m"))
+    // doesn't surface the expected default attributes.
+    {
+        auto py_module_init = +[](proto::ProtoContext* ctx,
+                                  const proto::ProtoObject* self,
+                                  const proto::ParentLink*,
+                                  const proto::ProtoList* args,
+                                  const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            PythonEnvironment* env_i = PythonEnvironment::fromContext(ctx);
+            if (!env_i) return PROTO_NONE;
+            // Resolve receiver: when called bound (self != null) use
+            // self; when called unbound (e.g. via cls.__init__(obj, ...)),
+            // args[0] is the receiver and args[1+] are the user args.
+            const proto::ProtoObject* recv = self;
+            unsigned long argOffset = 0;
+            if (!recv || recv == PROTO_NONE) {
+                if (args && args->getSize(ctx) >= 1) {
+                    recv = args->getAt(ctx, 0);
+                    argOffset = 1;
+                }
+            }
+            if (!recv || recv == PROTO_NONE) return PROTO_NONE;
+            if (args && args->getSize(ctx) > argOffset) {
+                const proto::ProtoObject* nameArg = args->getAt(ctx, argOffset);
+                if (nameArg && nameArg->isString(ctx)) {
+                    const_cast<proto::ProtoObject*>(recv)->setAttribute(ctx,
+                        env_i->getNameString(), nameArg);
+                }
+            }
+            if (args && args->getSize(ctx) > argOffset + 1) {
+                const proto::ProtoObject* docArg = args->getAt(ctx, argOffset + 1);
+                if (docArg) {
+                    const_cast<proto::ProtoObject*>(recv)->setAttribute(ctx,
+                        PythonEnvironment::getInternedString(ctx, "__doc__"), docArg);
+                }
+            }
+            return PROTO_NONE;
+        };
+        modulePrototype = modulePrototype->setAttribute(rootContext_,
+            PythonEnvironment::getInternedString(rootContext_, "__init__"),
+            rootContext_->fromMethod(nullptr, py_module_init));
+    }
     // STRUCT-90: install __name__ as a getset descriptor on
     // modulePrototype.  The fget raises AttributeError when the
     // module has no own __name__ — matching CPython's behaviour for
