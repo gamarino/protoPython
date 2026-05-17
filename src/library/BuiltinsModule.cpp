@@ -675,10 +675,100 @@ static const proto::ProtoObject* py_print(
         if (i < size - 1) buffered << sep;
     }
     buffered << end;
-    if (toStderr) {
-        std::cerr << buffered.str() << std::flush;
-    } else {
-        std::cout << buffered.str() << std::flush;
+    // STRUCT-274: when `file=` was provided OR sys.stdout/sys.stderr has
+    // been replaced (e.g. contextlib.redirect_stdout(...)), route the
+    // rendered text through `file.write(text)` so the descriptor
+    // protocol fires.  Tests like test_file_fault rely on the
+    // user-installed StdoutGuard's `__getattr__('write')` being
+    // invoked; the old direct std::cout/std::cerr path bypassed it.
+    // Detection: get sys.stdout (or sys.stderr) via env->getSysModule(),
+    // compare against the prototype's expected file kind.  If a user
+    // replaced it (different object), call write through getAttribute
+    // so __getattr__ fires.
+    bool wroteViaWrite = false;
+    if (env) {
+        const proto::ProtoObject* sysMod = env->getSysModule();
+        if (sysMod && sysMod != PROTO_NONE) {
+            const proto::ProtoString* outName = PythonEnvironment::getInternedString(
+                context, toStderr ? "stderr" : "stdout");
+            const proto::ProtoObject* fileObj = sysMod->getAttribute(context, outName);
+            if (fileObj && fileObj != PROTO_NONE) {
+                // Compare against the default __file_kind__-tagged
+                // file: if the current sys.stdout/stderr is NOT the
+                // default protoPython file (e.g. user replaced it),
+                // route through write.
+                const proto::ProtoString* kindS = PythonEnvironment::getInternedString(
+                    context, "__file_kind__");
+                const proto::ProtoObject* kind = fileObj->hasOwnAttribute(context, kindS) == PROTO_TRUE
+                    ? fileObj->getOwnAttributeDirect(context, kindS) : nullptr;
+                bool isDefaultFile = false;
+                if (kind && kind->isString(context)) {
+                    std::string ks; kind->asString(context)->toUTF8String(context, ks);
+                    if ((toStderr && ks == "stderr") || (!toStderr && ks == "stdout")) {
+                        isDefaultFile = true;
+                    }
+                }
+                if (!isDefaultFile) {
+                    const proto::ProtoString* writeS = PythonEnvironment::getInternedString(
+                        context, "write");
+                    const proto::ProtoObject* writeFn =
+                        env->getAttribute(context, fileObj, writeS, false);
+                    if (env->hasPendingException()) {
+                        return nullptr;
+                    }
+                    // If `write` wasn't found on the receiver/type chain,
+                    // invoke `__getattr__('write')` per CPython's attribute
+                    // protocol (test_file_fault's StdoutGuard relies on
+                    // this — its __getattr__ raises).
+                    if (!writeFn || writeFn == PROTO_NONE) {
+                        const proto::ProtoString* getattrS = PythonEnvironment::getInternedString(
+                            context, "__getattr__");
+                        const proto::ProtoObject* getattrFn =
+                            env->getAttribute(context, fileObj, getattrS, false);
+                        if (getattrFn && getattrFn != PROTO_NONE) {
+                            const proto::ProtoList* gargs = context->newList()
+                                ->appendLast(context, writeS->asObject(context));
+                            if (getattrFn->asMethod(context)) {
+                                writeFn = getattrFn->asMethod(context)(context,
+                                    const_cast<proto::ProtoObject*>(fileObj), nullptr,
+                                    gargs, nullptr);
+                            } else {
+                                const proto::ProtoList* fullArgs = context->newList()
+                                    ->appendLast(context, fileObj)
+                                    ->appendLast(context, writeS->asObject(context));
+                                writeFn = invokePythonCallable(context, getattrFn, fullArgs, nullptr);
+                            }
+                            if (env->hasPendingException()) return nullptr;
+                        }
+                    }
+                    if (writeFn && writeFn != PROTO_NONE) {
+                        const proto::ProtoString* renderedS = PythonEnvironment::getInternedString(
+                            context, buffered.str().c_str());
+                        const proto::ProtoList* callArgs = context->newList()
+                            ->appendLast(context, renderedS->asObject(context));
+                        if (writeFn->asMethod(context)) {
+                            writeFn->asMethod(context)(context,
+                                const_cast<proto::ProtoObject*>(fileObj), nullptr,
+                                callArgs, nullptr);
+                        } else {
+                            const proto::ProtoList* fullArgs = context->newList()
+                                ->appendLast(context, fileObj)
+                                ->appendLast(context, renderedS->asObject(context));
+                            invokePythonCallable(context, writeFn, fullArgs, nullptr);
+                        }
+                        wroteViaWrite = true;
+                        if (env->hasPendingException()) return nullptr;
+                    }
+                }
+            }
+        }
+    }
+    if (!wroteViaWrite) {
+        if (toStderr) {
+            std::cerr << buffered.str() << std::flush;
+        } else {
+            std::cout << buffered.str() << std::flush;
+        }
     }
     return env ? env->getNonePrototype() : PROTO_NONE;
 }
