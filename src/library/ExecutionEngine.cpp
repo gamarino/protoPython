@@ -743,6 +743,14 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     {
         GlobalsScope gscope(globalsObj);
 
+        // STRUCT-239: thread the executing code object into
+        // PythonEnvironment's thread-local s_currentCodeObject so
+        // builtins that need to inspect the running function's
+        // metadata (locals(), dir() bare-case, sys._getframe().f_code)
+        // see the function's code object rather than the module's.
+        const proto::ProtoObject* prevCodeObj = PythonEnvironment::getCurrentCodeObject();
+        PythonEnvironment::setCurrentCodeObject(codeObj);
+
         const proto::ProtoObject* bytecodeObj = codeObj->getAttribute(calleeCtx, env->getCoCodeString());
         const proto::ProtoObject* constsObj = codeObj->getAttribute(calleeCtx, env->getCoConstsString());
         const proto::ProtoObject* namesObj = codeObj->getAttribute(calleeCtx, env->getCoNamesString());
@@ -772,6 +780,7 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         } else {
             result = PROTO_NONE;
         }
+        PythonEnvironment::setCurrentCodeObject(prevCodeObj);
     }
     promote(calleeCtx, result);
     } // ContextScope destroyed here
@@ -913,6 +922,13 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
     {
         GlobalsScope gscope(globalsObj);
 
+        // STRUCT-239: thread the executing code object — same as
+        // the slow runUserFunctionCall path above.  Needed so
+        // builtins like dir() / locals() can read co_varnames of
+        // the currently-running function instead of the module's.
+        const proto::ProtoObject* prevCodeObj_raw = PythonEnvironment::getCurrentCodeObject();
+        PythonEnvironment::setCurrentCodeObject(codeObj);
+
         // Use values cached at BUILD_FUNCTION time — avoids 4 cross-DSO getAttribute calls
         // and 3 asTuple conversions on every function invocation.
         const proto::ProtoTuple* bytecode = cached_bytecode;
@@ -929,6 +945,7 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
         } else {
             result = PROTO_NONE;
         }
+        PythonEnvironment::setCurrentCodeObject(prevCodeObj_raw);
     }
     promote(calleeCtx, result);
     } // ContextScope destroyed here

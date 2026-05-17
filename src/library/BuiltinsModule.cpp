@@ -2661,6 +2661,64 @@ static const proto::ProtoObject* py_dir(
     if (positionalParameters->getSize(context) >= 1) {
         target = positionalParameters->getAt(context, 0);
     } else {
+        // STRUCT-239: bare `dir()` inside a function returns the
+        // current function's locals (sorted).  Materialise the
+        // local-variable names from co_varnames on the executing
+        // code object, then look up each value through
+        // ctx->getAutomaticLocals(i).  Only emit names whose
+        // automatic-local slot holds a non-null value (live binding).
+        // Falls back to py_locals when:
+        //   * no current code object (module scope, native context);
+        //   * code object has no co_varnames;
+        //   * code object's co_automatic_count is 0 (module / class
+        //     body uses STORE_NAME, not fast slots).
+        const proto::ProtoObject* code = PythonEnvironment::getCurrentCodeObject();
+        if (code && code != PROTO_NONE && context) {
+            const proto::ProtoString* coVarS = PythonEnvironment::getInternedString(context, "co_varnames");
+            const proto::ProtoString* coAutoS = PythonEnvironment::getInternedString(context, "co_automatic_count");
+            const proto::ProtoObject* vn = code->getAttribute(context, coVarS);
+            const proto::ProtoObject* ac = code->getAttribute(context, coAutoS);
+            const proto::ProtoTuple* vnT = vn ? vn->asTuple(context) : nullptr;
+            long long ncAutomatic = (ac && ac->isInteger(context)) ? ac->asLong(context) : 0;
+            if (vnT && ncAutomatic > 0) {
+                std::vector<std::string> names;
+                const proto::ProtoObject** locals = context->getAutomaticLocals();
+                unsigned long nVars = vnT->getSize(context);
+                unsigned long n = std::min<unsigned long>(nVars, (unsigned long)ncAutomatic);
+                for (unsigned long i = 0; i < n; ++i) {
+                    const proto::ProtoObject* val = locals ? locals[i] : nullptr;
+                    // protoCore initializes fast slots with PROTO_NONE to
+                    // signal "unbound" (there is no separate sentinel as
+                    // in CPython).  Skip PROTO_NONE so `r = dir()` does
+                    // NOT see `r` in its own output.  Imperfect for users
+                    // who explicitly assign `x = None`, but matches
+                    // CPython's dir() for the common case (test_dir).
+                    if (!val || val == PROTO_NONE) continue;
+                    const proto::ProtoObject* nm = vnT->getAt(context, static_cast<int>(i));
+                    if (!nm || !nm->isString(context)) continue;
+                    std::string s; nm->asString(context)->toUTF8String(context, s);
+                    if (!s.empty()) names.push_back(s);
+                }
+                std::sort(names.begin(), names.end());
+                const proto::ProtoList* result = context->newList();
+                for (auto& s : names) {
+                    result = result->appendLast(context,
+                        PythonEnvironment::getInternedString(context, s.c_str())->asObject(context));
+                }
+                // Wrap in a Python list object so Python-level len() /
+                // iteration / repr see the entries.
+                PythonEnvironment* env_wrap = PythonEnvironment::fromContext(context);
+                const proto::ProtoObject* listProto = env_wrap ? env_wrap->getListPrototype() : nullptr;
+                if (listProto && listProto != PROTO_NONE) {
+                    proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(listProto->newChild(context, true));
+                    listObj->setAttribute(context,
+                        env_wrap ? env_wrap->getDataString() : PythonEnvironment::getInternedString(context, "__data__"),
+                        result->asObject(context));
+                    return listObj;
+                }
+                return result->asObject(context);
+            }
+        }
         target = py_locals(context, self, parentLink, positionalParameters, keywordParameters);
     }
 
