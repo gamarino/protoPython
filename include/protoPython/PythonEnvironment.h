@@ -1062,12 +1062,14 @@ private:
     const proto::ProtoObject* methodDescriptorPrototype{nullptr};
     const proto::ProtoObject* wrapperDescriptorPrototype{nullptr};
     const proto::ProtoObject* memberDescriptorPrototype{nullptr};
+    const proto::ProtoObject* builtinFunctionOrMethodPrototype{nullptr};
     const proto::ProtoObject* superPrototype{nullptr};
 
 public:
     const proto::ProtoObject* getMethodDescriptorPrototype() const { return methodDescriptorPrototype; }
     const proto::ProtoObject* getWrapperDescriptorPrototype() const { return wrapperDescriptorPrototype; }
     const proto::ProtoObject* getMemberDescriptorPrototype() const { return memberDescriptorPrototype; }
+    const proto::ProtoObject* getBuiltinFunctionOrMethodPrototype() const { return builtinFunctionOrMethodPrototype; }
     const proto::ProtoObject* getUnionTypePrototype() const { return unionTypePrototype; }
     const proto::ProtoObject* getStopAsyncIterationType() const { return stopAsyncIterationType; }
     /** Process-singleton "unbound local" sentinel.  Compiler stores this

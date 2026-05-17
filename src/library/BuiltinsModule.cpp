@@ -6267,6 +6267,9 @@ const proto::ProtoObject* py_type(
                     { isFinal = true; baseName = "method_descriptor"; }
                 else if (env->getWrapperDescriptorPrototype() && base == env->getWrapperDescriptorPrototype())
                     { isFinal = true; baseName = "wrapper_descriptor"; }
+                else if (env->getBuiltinFunctionOrMethodPrototype()
+                         && base == env->getBuiltinFunctionOrMethodPrototype())
+                    { isFinal = true; baseName = "builtin_function_or_method"; }
                 if (isFinal) {
                     env->raiseTypeError(context,
                         "type '" + baseName + "' is not an acceptable base type");

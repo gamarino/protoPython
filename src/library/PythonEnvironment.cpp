@@ -17848,6 +17848,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     };
     methodDescriptorPrototype = initDescriptorTypeProto("method_descriptor");
     wrapperDescriptorPrototype = initDescriptorTypeProto("wrapper_descriptor");
+    builtinFunctionOrMethodPrototype = initDescriptorTypeProto("builtin_function_or_method");
     // member_descriptor — CPython's type for struct-member slots like
     // `complex.real`.  Reuses py_getset_get for __get__ (its instances
     // carry an `fget`); read-only (no __set__) so it stays a non-data
@@ -22784,22 +22785,22 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
         }
 
         if (!res) {
-            // Unbound native method cell (e.g. `str.lower`, `int.__add__`
-            // resolved off the class): route to its descriptor type so
-            // `type()` matches CPython.  Only KNOWN methods (registered in
-            // the side-table) and only unbound ones (asMethodSelf == null)
-            // are reclassified — bound method cells fall through unchanged,
-            // and an unregistered cell keeps the legacy objectPrototype
-            // result.  protoPython does not model builtin_function_or_method
-            // / method-wrapper, so bound cells stay as-is.
-            if (obj->isMethod(ctx) && obj->asMethodSelf(ctx) == nullptr) {
+            // Native method cells.  Routing per CPython parity:
+            //  - UNBOUND known method:   wrapper_descriptor or method_descriptor
+            //  - BOUND known method:     builtin_function_or_method  (STRUCT-269)
+            //  - Unregistered cells:     fall through to objectPrototype
+            if (obj->isMethod(ctx)) {
                 proto::ProtoMethod fn = obj->asMethod(ctx);
                 std::string mnm;
                 const proto::ProtoObject* owner = nullptr;
                 NativeMethodInfo::Kind kind = NativeMethodInfo::Kind::METHOD;
                 if (fn && lookupNativeMethodInfo(reinterpret_cast<const void*>(fn), mnm, &owner, &kind)) {
-                    res = (kind == NativeMethodInfo::Kind::WRAPPER)
-                        ? wrapperDescriptorPrototype : methodDescriptorPrototype;
+                    if (obj->asMethodSelf(ctx) == nullptr) {
+                        res = (kind == NativeMethodInfo::Kind::WRAPPER)
+                            ? wrapperDescriptorPrototype : methodDescriptorPrototype;
+                    } else if (builtinFunctionOrMethodPrototype) {
+                        res = builtinFunctionOrMethodPrototype;
+                    }
                 }
             }
         }
@@ -27434,6 +27435,11 @@ void PythonEnvironment::registerNativeMethodNames(proto::ProtoContext* ctx) {
         methodPrototype, functionPrototype, modulePrototype,
         mappingProxyPrototype, getSetDescriptorPrototype, framePrototype,
         generatorPrototype, sliceType, nonePrototype, complexPrototype,
+        // STRUCT-269: include the builtins module so its bound native
+        // method cells (`len`, `print`, `iter`, …) get registered in
+        // the side table.  Without this, `type(len)` falls through to
+        // objectPrototype instead of builtinFunctionOrMethodPrototype.
+        builtinsModule,
     };
     for (const proto::ProtoObject* proto : prototypes) {
         if (!proto || proto == PROTO_NONE) continue;
