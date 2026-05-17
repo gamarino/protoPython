@@ -1562,8 +1562,23 @@ static const proto::ProtoObject* py_object_get_dict(
     // Return the module itself, mirroring what executeModule's
     // setAttribute(__dict__, self) was trying to alias but losing to
     // this prototype-method dispatch.
-    if (env->getModulePrototype() && env->getType(context, self) == env->getModulePrototype()) {
-        return self;
+    // STRUCT-245: also recognise modules whose __class__ inheritance
+    // chain reaches modulePrototype.  sys gets re-cloned during init
+    // and its __class__ ends up inherited rather than OWN, so the
+    // exact-type check above fails — but the parent chain still
+    // points at modulePrototype.  Walk parents (one level deep is
+    // enough for cloned modules).
+    if (env->getModulePrototype()) {
+        const proto::ProtoObject* tp = env->getType(context, self);
+        if (tp == env->getModulePrototype()) return self;
+        const proto::ProtoList* parents = self->getParents(context);
+        if (parents) {
+            for (unsigned long i = 0; i < parents->getSize(context); ++i) {
+                if (parents->getAt(context, static_cast<int>(i)) == env->getModulePrototype()) {
+                    return self;
+                }
+            }
+        }
     }
 
     if (env->isActuallyAClass(context, self)) {
@@ -8577,33 +8592,32 @@ static const proto::ProtoObject* py_str_add(
     int otherIdx;
     const proto::ProtoObject* a = str_method_self(ctx, self, args, &otherIdx);
     if (!a) {
-        // STRUCT-235: when called UNBOUND as `str.__add__(x, y)` with
-        // a non-str x, CPython's slot wrapper raises TypeError because
-        // the descriptor's receiver-type check fails.  protoPython used
-        // to return NotImplemented instead, which broke
-        // test_proxy_call's `with assertRaises(TypeError):
-        // str.__add__(fake_str, "abc")` (no exception raised, no
-        // descriptor fallback applies because we are not in a binary
-        // `+` operator).  Returning NotImplemented is still correct for
-        // the BOUND path (`"a".__add__(non_str)`), where Python's
-        // binary-op machinery tries `other.__radd__`; that path is
-        // taken when `self` is non-null.
-        if (self == nullptr) {
-            std::string otherTypeName = "?";
-            if (env && args && args->getSize(ctx) >= 1) {
-                const proto::ProtoObject* x0 = args->getAt(ctx, 0);
-                const proto::ProtoObject* xt = env->getType(ctx, x0);
-                if (xt) {
-                    const proto::ProtoObject* nm = xt->getAttribute(ctx, env->getNameString());
-                    if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, otherTypeName);
-                }
+        // STRUCT-235: when the receiver-type check fails (neither
+        // `self` nor args[0] is a str), CPython's slot wrapper for
+        // `str.__add__` raises TypeError ("descriptor … doesn't apply
+        // to a 'X' object").  This covers two protoPython cases:
+        //   * unbound `str.__add__(fake_str, "abc")`  (self is null,
+        //     args[0] is not str) — needed by test_proxy_call;
+        //   * bound `a.__add__(b)` where `A.__add__ = str.__add__`
+        //     and `a` is not a str (e.g. `class A(int)` mis-binding) —
+        //     needed by test_wrong_class_slot_wrapper.
+        // Both BOUND and UNBOUND `'a'.__add__(non_str)` calls keep
+        // working: `self = 'a'` IS a str, so str_method_self returns
+        // it and the NotImplemented path runs for non-str `other`.
+        const proto::ProtoObject* recv = self;
+        if (!recv && args && args->getSize(ctx) >= 1) recv = args->getAt(ctx, 0);
+        std::string recvTypeName = "?";
+        if (env && recv) {
+            const proto::ProtoObject* rt = env->getType(ctx, recv);
+            if (rt) {
+                const proto::ProtoObject* nm = rt->getAttribute(ctx, env->getNameString());
+                if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, recvTypeName);
             }
-            env->raiseTypeError(ctx,
-                "descriptor '__add__' for 'str' objects doesn't apply to a '"
-                + otherTypeName + "' object");
-            return nullptr;
         }
-        return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+        env->raiseTypeError(ctx,
+            "descriptor '__add__' for 'str' objects doesn't apply to a '"
+            + recvTypeName + "' object");
+        return nullptr;
     }
     if (!args || args->getSize(ctx) <= (unsigned long)otherIdx) return PROTO_NONE;
     const proto::ProtoObject* other = args->getAt(ctx, otherIdx);
@@ -20147,6 +20161,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     docDesc = docDesc->setAttribute(rootContext_, getGetDunderString(), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(docDesc), protoPython::exported_py_function_doc_get));
     functionPrototype = functionPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__doc__"), docDesc);
 
+
     functionPrototype = functionPrototype->setAttribute(rootContext_, classString, typePrototype); // Ensure class is set
     modulePrototype = modulePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__doc__"), PROTO_NONE);
     
@@ -25353,9 +25368,13 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
     }
 
     // Identity short-circuit for == / !=: per Python semantics, an object
-    // is always equal to itself.  This guarantees `cls == cls` returns True
-    // even when the type-instance __eq__ slot inherited from listPrototype/
-    // dictPrototype mishandles the class-as-self case.
+    // is normally equal to itself — and this preserves `cls == cls` even
+    // when type-instance __eq__ inherited from list/dict mishandles it.
+    // STRUCT-243: skip the shortcut when type(a) OWNS __eq__ as an
+    // explicit override (e.g. `class A(int): __eq__ = str.__eq__`).  The
+    // override may need to raise TypeError when applied to a non-str
+    // receiver (test_wrong_class_slot_wrapper); the identity shortcut
+    // hides the failure behind True.
     if (a == b) {
         if (op == 0) return PROTO_TRUE;
         if (op == 1) return PROTO_FALSE;
