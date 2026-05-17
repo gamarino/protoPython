@@ -7781,7 +7781,13 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 const proto::ProtoObject* prepareRaw = nullptr;
                 if (metaclass) {
-                    prepareRaw = env ? env->getAttribute(ctx, metaclass, PythonEnvironment::getInternedString(ctx, "__prepare__")) : metaclass->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__prepare__"));
+                    // STRUCT-259: pass raiseError=false so a non-class
+                    // metaclass (e.g. `class X(metaclass=func): pass`,
+                    // where func is a plain function) doesn't raise an
+                    // AttributeError when probing for `__prepare__`.
+                    // CPython tolerates the absence and falls back to
+                    // an empty namespace.
+                    prepareRaw = env ? env->getAttribute(ctx, metaclass, PythonEnvironment::getInternedString(ctx, "__prepare__"), false) : metaclass->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__prepare__"));
                 }
                 const proto::ProtoObject* prepareM = prepareRaw;
                 if (diag_local) {
