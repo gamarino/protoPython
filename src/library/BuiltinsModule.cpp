@@ -2862,10 +2862,27 @@ static const proto::ProtoObject* py_dir(
         "__subclasses_list__", "__pyflags__", "__py_getattr_handler__",
         "__fn_meta_cache__", "__executed__",
     };
+    // STRUCT-244: class-only attributes (CPython exposes these as
+    // type-level getset descriptors that only return a sensible value
+    // when accessed off the class itself; dir(instance) hides them).
+    // protoPython stores them as plain own attributes on each class so
+    // they leak into the collectOwn walk when dir(instance) collects
+    // from type(instance)'s MRO.  Filter them out for instance dir()
+    // calls; keep them for class dir() calls so dir(int) etc. still
+    // surface __mro__ / __bases__ etc.
+    static const std::vector<std::string> classOnlyNames = {
+        "__mro__", "__bases__", "__base__", "__subclasses__",
+        "__abstractmethods__",
+    };
     names.erase(std::remove_if(names.begin(), names.end(),
         [&](const std::string& n) {
             for (const auto& iv : internalNames) {
                 if (n == iv) return true;
+            }
+            if (!isClass) {
+                for (const auto& cv : classOnlyNames) {
+                    if (n == cv) return true;
+                }
             }
             return false;
         }), names.end());
