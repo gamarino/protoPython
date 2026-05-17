@@ -7437,12 +7437,137 @@ const proto::ProtoObject* executeBytecodeRange(
                         }
                     }
                 }
+                // STRUCT-232: when an explicit metaclass is passed,
+                // CPython still verifies it against every base's
+                // metaclass.  Algorithm: among (explicit_meta, *base_metas),
+                // the "winning" metaclass is the unique most-derived one.
+                // It is the resulting class's metaclass — possibly the
+                // explicit one, possibly upgraded to a more-derived base
+                // metaclass, or a TypeError if none is a (non-strict)
+                // subclass of all the others.
+                if (metaclass && metaclass != PROTO_NONE) {
+                    const proto::ProtoObject* typeProto2 = env ? env->getTypePrototype() : nullptr;
+                    const proto::ProtoObject* objectProto2 = env ? env->getObjectPrototype() : nullptr;
+                    auto isSubclassMeta = [&](const proto::ProtoObject* a, const proto::ProtoObject* b) -> bool {
+                        if (areSameClassesVM(ctx, a, b)) return true;
+                        if (!a || !b) return false;
+                        const proto::ProtoObject* mro = env->getAttribute(ctx, a,
+                            PythonEnvironment::getInternedString(ctx, "__mro__"), false);
+                        const proto::ProtoTuple* mroT = mro ? mro->asTuple(ctx) : nullptr;
+                        if (!mroT && mro) {
+                            const proto::ProtoObject* d = env->getAttribute(ctx, mro, env->getDataString(), false);
+                            if (d) mroT = d->asTuple(ctx);
+                        }
+                        if (mroT) {
+                            for (unsigned long j = 0; j < mroT->getSize(ctx); ++j) {
+                                if (areSameClassesVM(ctx, mroT->getAt(ctx, static_cast<int>(j)), b)) return true;
+                            }
+                        }
+                        return false;
+                    };
+                    const proto::ProtoObject* winner = metaclass;
+                    // Run the meta-derivation check whenever the
+                    // explicit metaclass IS a class (has a __mro__).
+                    // A plain non-class callable (e.g. `metaclass=lambda
+                    // ...`) bypasses the check entirely — there is no
+                    // class hierarchy to reconcile against the bases'
+                    // metaclasses.
+                    bool winnerIsClass = false;
+                    if (winner) {
+                        const proto::ProtoObject* wmro = env->getAttribute(ctx, winner,
+                            PythonEnvironment::getInternedString(ctx, "__mro__"), false);
+                        if (wmro) {
+                            winnerIsClass = true;
+                        } else if (winner == typeProto2 || isSubclassMeta(winner, typeProto2)) {
+                            winnerIsClass = true;
+                        }
+                    }
+                    if (winnerIsClass && bases) {
+                        const proto::ProtoTuple* tb = bases->asTuple(ctx);
+                        const proto::ProtoList* lb = tb ? nullptr : bases->asList(ctx);
+                        size_t bn = tb ? tb->getSize(ctx) : (lb ? lb->getSize(ctx) : 0);
+                        for (size_t i = 0; i < bn; ++i) {
+                            const proto::ProtoObject* b = tb ? tb->getAt(ctx, i) : lb->getAt(ctx, i);
+                            if (!b || b == PROTO_NONE) continue;
+                            const proto::ProtoObject* bm = env->getAttribute(ctx, b,
+                                env->getClassString(), false);
+                            if (!bm || bm == PROTO_NONE) bm = env->getType(ctx, b);
+                            if (!bm || areSameClassesVM(ctx, bm, objectProto2)) bm = typeProto2;
+                            if (!bm) continue;
+                            // CPython rule: explicit metaclass W must be a
+                            // subclass of every base's metaclass.  If
+                            // bm IS a subclass of W, that means W is more
+                            // general than bm — and W cannot accommodate
+                            // bm-specific behaviour, so conflict.  The
+                            // exception is when W == bm exactly (same
+                            // class), which is fine.
+                            if (isSubclassMeta(winner, bm)) {
+                                // winner already covers this base's meta
+                                continue;
+                            }
+                            if (isSubclassMeta(bm, winner)) {
+                                // base's meta is more derived than the
+                                // explicit one — CPython upgrades.
+                                winner = bm;
+                                continue;
+                            }
+                            // Neither is a subclass of the other → conflict
+                            env->raiseTypeError(ctx,
+                                "metaclass conflict: the metaclass of a derived class "
+                                "must be a (non-strict) subclass of the metaclasses of "
+                                "all its bases");
+                            winner = nullptr;
+                            break;
+                        }
+                    }
+                    if (!winner) {
+                        // Conflict raised; unwind through the same path
+                        // the inferred-metaclass branch uses.
+                        if (stack.size() >= 5) {
+                            for (int k = 0; k < 5; ++k) stack.pop_back();
+                        }
+                        continue;
+                    }
+                    metaclass = winner;
+                }
                 if (!metaclass || metaclass == PROTO_NONE) {
                     // CPython semantics: iterate all bases and find the most derived metaclass.
                     // If multiple independent metaclasses exist, Python throws TypeError, but here we just take the first strictly derived one.
                     const proto::ProtoObject* typeProto = env ? env->getTypePrototype() : nullptr;
                     const proto::ProtoObject* objectProto = env ? env->getObjectPrototype() : nullptr;
+                    // STRUCT-233: when no explicit metaclass is given,
+                    // CPython initializes the winner from type(base0)
+                    // rather than `type`.  Starting from `type` made
+                    // `class C(A, B)` raise a spurious metaclass conflict
+                    // when A's metaclass is ANotMeta (not a subclass of
+                    // type) — neither side is a subtype of the other, so
+                    // STRUCT-37's conflict branch fired even though
+                    // CPython would correctly resolve to ANotMeta (and
+                    // then upgrade to BNotMeta after walking B).
                     const proto::ProtoObject* bestMeta = typeProto;
+                    {
+                        const proto::ProtoTuple* tbInit = bases ? bases->asTuple(ctx) : nullptr;
+                        const proto::ProtoList* lbInit = (tbInit || !bases) ? nullptr : bases->asList(ctx);
+                        if (!tbInit && !lbInit && bases) {
+                            const proto::ProtoObject* dataA = bases->getAttribute(ctx, env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__"));
+                            if (dataA) {
+                                tbInit = dataA->asTuple(ctx);
+                                lbInit = tbInit ? nullptr : dataA->asList(ctx);
+                            }
+                        }
+                        size_t bnInit = tbInit ? tbInit->getSize(ctx) : (lbInit ? lbInit->getSize(ctx) : 0);
+                        if (bnInit > 0) {
+                            const proto::ProtoObject* base0 = tbInit ? tbInit->getAt(ctx, 0) : lbInit->getAt(ctx, 0);
+                            if (base0 && base0 != PROTO_NONE && env) {
+                                const proto::ProtoObject* m0 = env->getAttribute(ctx, base0, env->getClassString(), false);
+                                if (!m0 || m0 == PROTO_NONE) m0 = env->getType(ctx, base0);
+                                if (m0 && m0 != PROTO_NONE
+                                    && !areSameClassesVM(ctx, m0, objectProto)) {
+                                    bestMeta = m0;
+                                }
+                            }
+                        }
+                    }
                     
                     if (bases) {
                         const proto::ProtoTuple* tupleBases = bases->asTuple(ctx);
