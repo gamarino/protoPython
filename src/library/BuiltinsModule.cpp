@@ -2415,16 +2415,32 @@ static const proto::ProtoObject* py_object_setattr(
         // object.__setattr__.  When the metaclass has its own
         // __setattr__ that calls object.__setattr__ directly, the call
         // bypasses the metaclass's intended validation and must be
-        // rejected.  Detect by comparing the metaclass's __setattr__
-        // slot pointer to object's.
+        // rejected.  Detect by walking the metaclass's MRO for a base
+        // (other than object/type) that owns its own __setattr__.
         const proto::ProtoObject* metaCls = env->getType(context, target);
         if (metaCls && metaCls != env->getTypePrototype()
             && metaCls != env->getObjectPrototype()) {
             const proto::ProtoString* setattrS = PythonEnvironment::getInternedString(context, "__setattr__");
-            const proto::ProtoObject* objSetattr = env->getObjectPrototype()
-                ? env->getObjectPrototype()->getAttribute(context, setattrS) : nullptr;
-            const proto::ProtoObject* metaSetattr = metaCls->getAttribute(context, setattrS);
-            if (metaSetattr && objSetattr && metaSetattr != objSetattr) {
+            // STRUCT-260: walk metaCls's MRO; if any base before object
+            // and type declares its own __setattr__, the metaclass
+            // overrides the default — reject the call.
+            bool nonDefaultSetattr = false;
+            const proto::ProtoObject* mroAttr =
+                env->getAttribute(context, metaCls, env->getMroString(), false);
+            const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
+            if (mroT) {
+                for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+                    const proto::ProtoObject* base = mroT->getAt(context, i);
+                    if (!base || base == PROTO_NONE) continue;
+                    if (base == env->getObjectPrototype()
+                        || base == env->getTypePrototype()) continue;
+                    if (base->hasOwnAttribute(context, setattrS) == PROTO_TRUE) {
+                        nonDefaultSetattr = true;
+                        break;
+                    }
+                }
+            }
+            if (nonDefaultSetattr) {
                 std::string clsName = "?";
                 const proto::ProtoObject* nm = target->getAttribute(context, env->getNameString());
                 if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
