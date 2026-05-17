@@ -20259,6 +20259,16 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
 
     functionPrototype = functionPrototype->setAttribute(rootContext_, classString, typePrototype); // Ensure class is set
+    // STRUCT-256: install __annotate__ = None on functionPrototype as
+    // a plain attribute (PEP 649 fallback for functions without a
+    // compiled deferred-annotation evaluator).  Plain attribute (not
+    // a getset descriptor) avoids the descriptor-protocol re-entry
+    // that broke os module import in the earlier STRUCT-240 attempt.
+    // User code that sets `func.__annotate__ = X` overrides the
+    // default via the normal own-attribute mechanism.
+    functionPrototype = functionPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__annotate__"),
+        PROTO_NONE);
     modulePrototype = modulePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__doc__"), PROTO_NONE);
     
     tracebackPrototype = tracebackPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "tb_frame"), PROTO_NONE);
