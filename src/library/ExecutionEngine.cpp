@@ -8830,40 +8830,62 @@ const proto::ProtoObject* executeBytecodeRange(
                             }
                         }
                         proto::ProtoObject* mobj = const_cast<proto::ProtoObject*>(obj);
-                        // initDictStorage rehydrates __data__ from native
-                        // attrs every time __dict__ is read, so just
-                        // clearing __data__/__keys__ won't stick — we must
-                        // also remove every native instance attribute that
-                        // belongs to the dict (everything except runtime
-                        // bookkeeping slots).
-                        const proto::ProtoString* keysS = env->getKeysString();
-                        const proto::ProtoObject* keysObj = (mobj->hasOwnAttribute(ctx, keysS) == PROTO_TRUE)
-                            ? mobj->getAttribute(ctx, keysS) : nullptr;
-                        const proto::ProtoList* keysList = keysObj ? keysObj->asList(ctx) : nullptr;
-                        if (keysList) {
-                            for (unsigned long ki = 0; ki < keysList->getSize(ctx); ++ki) {
-                                const proto::ProtoObject* k = keysList->getAt(ctx, static_cast<int>(ki));
-                                if (!k || !k->isString(ctx)) continue;
-                                const proto::ProtoString* knm = k->asString(ctx);
-                                mobj->removeAttribute(ctx, knm);
+                        // STRUCT-271: clear ALL user-set native attributes
+                        // (not just those listed in __keys__/__pydict_keys__),
+                        // then reset the dict-storage slots.  The keysList
+                        // path missed entries that OP_STORE_ATTR wrote as
+                        // native-only mirrors when the container subclass
+                        // hadn't yet initialized __pydict_keys__.
+                        const proto::ProtoString* dataS = env->getDataString();
+                        const proto::ProtoString* canonicalKeysS = env->getKeysString();
+                        bool isBuiltinContainerSubclass = false;
+                        {
+                            const proto::ProtoObject* probe = mobj->hasOwnAttribute(ctx, dataS) == PROTO_TRUE
+                                ? mobj->getAttribute(ctx, dataS) : nullptr;
+                            if (probe && probe != PROTO_NONE && !probe->asSparseList(ctx)) {
+                                isBuiltinContainerSubclass = true;
                             }
                         }
-                        // STRUCT-186: for built-in-container subclasses
-                        // (tuple, list, bytes, str, frozenset), __data__
-                        // holds the container's payload — resetting it
-                        // destroys the original tuple/list/etc.  Only
-                        // overwrite __data__ when it does NOT carry such
-                        // container payload (i.e. plain instance dict).
-                        const proto::ProtoObject* curData = mobj->hasOwnAttribute(ctx, env->getDataString()) == PROTO_TRUE
-                            ? mobj->getAttribute(ctx, env->getDataString()) : nullptr;
-                        bool dataIsContainer = curData && (
-                               curData->isTuple(ctx)
-                            || curData->asList(ctx) != nullptr
-                            || curData->isString(ctx));
-                        if (!dataIsContainer) {
-                            mobj->setAttribute(ctx, env->getDataString(), ctx->newSparseList()->asObject(ctx));
+                        // Walk all OWN attributes and drop user ones.
+                        // Skip the runtime-internal bookkeeping slots
+                        // and the container payload for built-in subclasses.
+                        static const std::vector<std::string> internalSkip = {
+                            "__data__", "__keys__", "__pydict_data__",
+                            "__pydict_keys__", "__is_python_class__",
+                            "__subclasses_list__", "__pyflags__",
+                            "__py_getattr_handler__", "__fn_meta_cache__",
+                            "__executed__", "__class__",
+                        };
+                        std::vector<const proto::ProtoString*> toRemove;
+                        const proto::ProtoSparseList* ownAttrs = mobj->getOwnAttributes(ctx);
+                        if (ownAttrs) {
+                            auto* it = const_cast<proto::ProtoSparseListIterator*>(ownAttrs->getIterator(ctx));
+                            while (it && it->hasNext(ctx)) {
+                                unsigned long key = it->nextKey(ctx);
+                                const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
+                                it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
+                                if (!keyObj || !keyObj->isString(ctx)) continue;
+                                std::string nm; keyObj->asString(ctx)->toUTF8String(ctx, nm);
+                                bool skip = false;
+                                for (auto& bad : internalSkip) if (nm == bad) { skip = true; break; }
+                                if (!skip) toRemove.push_back(keyObj->asString(ctx));
+                            }
                         }
-                        mobj->setAttribute(ctx, keysS, ctx->newList()->asObject(ctx));
+                        for (const proto::ProtoString* knm : toRemove) {
+                            mobj->removeAttribute(ctx, knm);
+                        }
+                        // Reset the dict-storage slots.
+                        if (isBuiltinContainerSubclass) {
+                            mobj->setAttribute(ctx,
+                                PythonEnvironment::getInternedString(ctx, "__pydict_data__"),
+                                ctx->newSparseList()->asObject(ctx));
+                            mobj->setAttribute(ctx,
+                                PythonEnvironment::getInternedString(ctx, "__pydict_keys__"),
+                                ctx->newList()->asObject(ctx));
+                        } else {
+                            mobj->setAttribute(ctx, dataS, ctx->newSparseList()->asObject(ctx));
+                        }
+                        mobj->setAttribute(ctx, canonicalKeysS, ctx->newList()->asObject(ctx));
                         i = next_i;
                         continue;
                     }
