@@ -24166,6 +24166,187 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                     return nullptr;
                 }
             }
+            // STRUCT-226: CPython's compatible_for_assignment check
+            // for user classes.  Mirror its solid_base approach:
+            //
+            //   compatible_with_tp_base(T): True iff T adds no real
+            //     ivars over its base — i.e. T has no own __slots__
+            //     (implicit __dict__/__weakref__ only) or its __slots__
+            //     contains only __dict__/__weakref__.
+            //
+            //   solid_base(T): the first class in T's MRO whose
+            //     compatible_with_tp_base is False; object if none.
+            //
+            //   Two types are layout-compatible iff
+            //     solid_base(src) == solid_base(dst), OR
+            //     parent_solid_base(solid_base(src)) == parent_solid_base(solid_base(dst))
+            //       AND they add the same number of real slots.
+            //
+            // This correctly accepts G↔H (same parent object, same
+            // slot count) and Q↔R (both solid_base = J), while
+            // rejecting L↔M (their solid_bases share neither identity
+            // nor parent).
+            if (!srcIsBuiltin && !dstIsBuiltin && srcType != dstType
+                && srcType && dstType
+                && srcType != PROTO_NONE && dstType != PROTO_NONE) {
+                const proto::ProtoString* slotsS = getSlotsString();
+                const proto::ProtoString* mroS_layout = getMroString();
+                if (slotsS && mroS_layout) {
+                    auto getSlotsOf = [&](const proto::ProtoObject* cls,
+                                          bool& hasDict, bool& hasWeakref,
+                                          size_t& realCount) {
+                        hasDict = false; hasWeakref = false; realCount = 0;
+                        if (!cls || cls->hasOwnAttribute(ctx, slotsS) != PROTO_TRUE) return;
+                        const proto::ProtoObject* sv = cls->getOwnAttributeDirect(ctx, slotsS);
+                        if (!sv || sv == PROTO_NONE) return;
+                        auto inspect = [&](const proto::ProtoObject* nm) {
+                            if (nm && nm->isString(ctx)) {
+                                std::string sn; nm->asString(ctx)->toUTF8String(ctx, sn);
+                                if (sn == "__dict__") hasDict = true;
+                                else if (sn == "__weakref__") hasWeakref = true;
+                                else if (!sn.empty()) realCount++;
+                            }
+                        };
+                        if (sv->isString(ctx)) inspect(sv);
+                        else if (const proto::ProtoList* sl = sv->asList(ctx)) {
+                            for (unsigned long j = 0; j < sl->getSize(ctx); ++j) inspect(sl->getAt(ctx, static_cast<int>(j)));
+                        } else if (const proto::ProtoTuple* st = sv->asTuple(ctx)) {
+                            for (unsigned long j = 0; j < st->getSize(ctx); ++j) inspect(st->getAt(ctx, static_cast<int>(j)));
+                        }
+                    };
+                    auto countRealSlots = [&](const proto::ProtoObject* cls) -> size_t {
+                        bool hd=false, hw=false; size_t rc=0;
+                        getSlotsOf(cls, hd, hw, rc);
+                        return rc;
+                    };
+                    // A class is "transparent" iff it adds no real
+                    // slots over its base — own __slots__ is missing
+                    // or contains only __dict__/__weakref__.
+                    auto isTransparent = [&](const proto::ProtoObject* cls) -> bool {
+                        if (!cls || cls == PROTO_NONE) return true;
+                        if (cls == objectPrototype) return true;
+                        return countRealSlots(cls) == 0;
+                    };
+                    auto solidBase = [&](const proto::ProtoObject* cls) -> const proto::ProtoObject* {
+                        const proto::ProtoObject* mroAttr = getAttribute(ctx, cls, mroS_layout, false);
+                        const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+                        unsigned long n = mroT ? mroT->getSize(ctx) : 0;
+                        for (unsigned long i = 0; i < n; ++i) {
+                            const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(i));
+                            if (!base || base == PROTO_NONE) continue;
+                            if (!isTransparent(base)) return base;
+                        }
+                        return objectPrototype;
+                    };
+                    auto parentSolidBase = [&](const proto::ProtoObject* cls) -> const proto::ProtoObject* {
+                        if (cls == objectPrototype || !cls) return objectPrototype;
+                        const proto::ProtoObject* mroAttr = getAttribute(ctx, cls, mroS_layout, false);
+                        const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+                        unsigned long n = mroT ? mroT->getSize(ctx) : 0;
+                        for (unsigned long i = 0; i + 1 < n; ++i) {
+                            if (mroT->getAt(ctx, static_cast<int>(i)) == cls) {
+                                for (unsigned long j = i + 1; j < n; ++j) {
+                                    const proto::ProtoObject* nb = mroT->getAt(ctx, static_cast<int>(j));
+                                    if (nb && nb != PROTO_NONE && !isTransparent(nb)) return nb;
+                                }
+                                return objectPrototype;
+                            }
+                        }
+                        return objectPrototype;
+                    };
+                    // CPython tracks per-instance dict / weakref via
+                    // tp_dictoffset / tp_weaklistoffset.  Aggregate
+                    // along MRO: any class without an own __slots__
+                    // contributes implicit dict + weakref; any explicit
+                    // __slots__ containing "__dict__" / "__weakref__"
+                    // also enables the corresponding offset.
+                    auto layoutOf = [&](const proto::ProtoObject* cls,
+                                        bool& outHasDict, bool& outHasWeakref) {
+                        outHasDict = false; outHasWeakref = false;
+                        const proto::ProtoObject* mroAttr = getAttribute(ctx, cls, mroS_layout, false);
+                        const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+                        unsigned long n = mroT ? mroT->getSize(ctx) : 0;
+                        for (unsigned long i = 0; i < n; ++i) {
+                            const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(i));
+                            if (!base || base == PROTO_NONE) continue;
+                            if (base == objectPrototype) continue;
+                            if (base->hasOwnAttribute(ctx, slotsS) != PROTO_TRUE) {
+                                // No own __slots__ → implicit dict + weakref
+                                outHasDict = true;
+                                outHasWeakref = true;
+                            } else {
+                                bool hd=false, hw=false; size_t rc=0;
+                                getSlotsOf(base, hd, hw, rc);
+                                if (hd) outHasDict = true;
+                                if (hw) outHasWeakref = true;
+                            }
+                        }
+                    };
+                    bool srcHasDict=false, srcHasWeakref=false;
+                    bool dstHasDict=false, dstHasWeakref=false;
+                    layoutOf(srcType, srcHasDict, srcHasWeakref);
+                    layoutOf(dstType, dstHasDict, dstHasWeakref);
+                    const proto::ProtoObject* sbSrc = solidBase(srcType);
+                    const proto::ProtoObject* sbDst = solidBase(dstType);
+                    bool compatible = (sbSrc == sbDst);
+                    if (!compatible) {
+                        compatible = (parentSolidBase(sbSrc) == parentSolidBase(sbDst))
+                                  && (countRealSlots(sbSrc) == countRealSlots(sbDst));
+                    }
+                    // Layout offsets must match too.
+                    if (compatible) {
+                        if (srcHasDict != dstHasDict || srcHasWeakref != dstHasWeakref) {
+                            compatible = false;
+                        }
+                    }
+                    // Real slot NAMES (excluding __dict__/__weakref__)
+                    // must match across MRO, so e.g. G(slots=["a","b"])
+                    // is compatible with H(slots=["b","a"]) but NOT
+                    // with J(slots=["c","b"]).
+                    if (compatible) {
+                        auto aggregateNames = [&](const proto::ProtoObject* cls) -> std::unordered_set<std::string> {
+                            std::unordered_set<std::string> out;
+                            const proto::ProtoObject* mroAttr = getAttribute(ctx, cls, mroS_layout, false);
+                            const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+                            unsigned long n = mroT ? mroT->getSize(ctx) : 0;
+                            for (unsigned long i = 0; i < n; ++i) {
+                                const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(i));
+                                if (!base || base == PROTO_NONE) continue;
+                                if (base == objectPrototype) continue;
+                                if (base->hasOwnAttribute(ctx, slotsS) != PROTO_TRUE) continue;
+                                const proto::ProtoObject* sv = base->getOwnAttributeDirect(ctx, slotsS);
+                                if (!sv || sv == PROTO_NONE) continue;
+                                auto addOne = [&](const proto::ProtoObject* nm) {
+                                    if (nm && nm->isString(ctx)) {
+                                        std::string sn; nm->asString(ctx)->toUTF8String(ctx, sn);
+                                        if (!sn.empty() && sn != "__dict__" && sn != "__weakref__") out.insert(sn);
+                                    }
+                                };
+                                if (sv->isString(ctx)) addOne(sv);
+                                else if (const proto::ProtoList* sl = sv->asList(ctx)) {
+                                    for (unsigned long j = 0; j < sl->getSize(ctx); ++j) addOne(sl->getAt(ctx, static_cast<int>(j)));
+                                } else if (const proto::ProtoTuple* st = sv->asTuple(ctx)) {
+                                    for (unsigned long j = 0; j < st->getSize(ctx); ++j) addOne(st->getAt(ctx, static_cast<int>(j)));
+                                }
+                            }
+                            return out;
+                        };
+                        if (aggregateNames(srcType) != aggregateNames(dstType)) {
+                            compatible = false;
+                        }
+                    }
+                    if (!compatible) {
+                        std::string sName = "?", dName = "?";
+                        const proto::ProtoObject* snm = srcType->getAttribute(ctx, getNameString());
+                        if (snm && snm->isString(ctx)) snm->asString(ctx)->toUTF8String(ctx, sName);
+                        const proto::ProtoObject* dnm = dstType->getAttribute(ctx, getNameString());
+                        if (dnm && dnm->isString(ctx)) dnm->asString(ctx)->toUTF8String(ctx, dName);
+                        raiseTypeError(ctx,
+                            "__class__ assignment: '" + sName + "' object layout differs from '" + dName + "'");
+                        return nullptr;
+                    }
+                }
+            }
         }
     }
 
