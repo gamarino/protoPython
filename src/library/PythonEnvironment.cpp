@@ -23736,6 +23736,134 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                 return nullptr;
             }
         }
+        // STRUCT-231: layout-compatibility check for __bases__
+        // assignment between user classes.  Same rule as STRUCT-226's
+        // __class__ setter, but adapted to the bases tuple.  Skipped
+        // when either side's MRO touches a built-in container/primitive
+        // (those are already handled by the STRUCT-212 container check
+        // above which has builtin-aware semantics).
+        if (value && value != PROTO_NONE) {
+            const proto::ProtoString* slotsS_b = getSlotsString();
+            const proto::ProtoString* mroS_b = mroString;
+            const proto::ProtoTuple* newT_b = value->asTuple(ctx);
+            auto isBuiltinLayoutCls_b = [&](const proto::ProtoObject* cls) -> bool {
+                if (!cls) return false;
+                return cls == strPrototype || cls == intPrototype
+                    || cls == floatPrototype || cls == boolPrototype
+                    || cls == bytesPrototype || cls == listPrototype
+                    || cls == dictPrototype || cls == setPrototype
+                    || cls == tuplePrototype || cls == frozensetPrototype
+                    || cls == complexPrototype || cls == modulePrototype
+                    || cls == typePrototype || cls == methodPrototype
+                    || cls == getNonePrototype();
+            };
+            auto mroTouchesBuiltin_b = [&](const proto::ProtoObject* cls) -> bool {
+                if (!cls) return false;
+                if (isBuiltinLayoutCls_b(cls)) return true;
+                const proto::ProtoObject* mroA = mroS_b ? getAttribute(ctx, cls, mroS_b, false) : nullptr;
+                const proto::ProtoTuple* mroT = mroA ? mroA->asTuple(ctx) : nullptr;
+                unsigned long nn = mroT ? mroT->getSize(ctx) : 0;
+                for (unsigned long i = 0; i < nn; ++i) {
+                    if (isBuiltinLayoutCls_b(mroT->getAt(ctx, static_cast<int>(i)))) return true;
+                }
+                return false;
+            };
+            bool touchesBuiltin_b = mroTouchesBuiltin_b(obj);
+            if (newT_b) {
+                for (unsigned long i = 0; !touchesBuiltin_b && i < newT_b->getSize(ctx); ++i) {
+                    if (mroTouchesBuiltin_b(newT_b->getAt(ctx, static_cast<int>(i)))) touchesBuiltin_b = true;
+                }
+            }
+            if (!touchesBuiltin_b && slotsS_b && mroS_b && newT_b) {
+                struct Layout {
+                    bool hasDict = false;
+                    bool hasWeakref = false;
+                    // Total count of real-slot contributions across the
+                    // MRO (counts each declaring class's __slots__ entries
+                    // with multiplicity 1 per slot per class).  Tracks
+                    // total instance-layout size — distinct from the
+                    // de-duplicated slot NAME set — and detects the case
+                    // where a new base re-introduces a slot that already
+                    // exists in the class (which CPython rejects because
+                    // the actual byte offsets would conflict).
+                    size_t realSlotCount = 0;
+                    std::unordered_set<std::string> realSlots;
+                    bool operator==(const Layout& o) const {
+                        return hasDict == o.hasDict
+                            && hasWeakref == o.hasWeakref
+                            && realSlotCount == o.realSlotCount
+                            && realSlots == o.realSlots;
+                    }
+                };
+                auto inspectOne_b = [&](const proto::ProtoObject* cls, Layout& out) {
+                    if (!cls || cls == PROTO_NONE) return;
+                    if (cls == objectPrototype) return;
+                    if (cls->hasOwnAttribute(ctx, slotsS_b) != PROTO_TRUE) {
+                        out.hasDict = true;
+                        out.hasWeakref = true;
+                        return;
+                    }
+                    const proto::ProtoObject* sv = cls->getOwnAttributeDirect(ctx, slotsS_b);
+                    if (!sv || sv == PROTO_NONE) return;
+                    auto inspect1 = [&](const proto::ProtoObject* nm) {
+                        if (nm && nm->isString(ctx)) {
+                            std::string sn; nm->asString(ctx)->toUTF8String(ctx, sn);
+                            if (sn == "__dict__") out.hasDict = true;
+                            else if (sn == "__weakref__") out.hasWeakref = true;
+                            else if (!sn.empty()) {
+                                out.realSlots.insert(sn);
+                                out.realSlotCount++;
+                            }
+                        }
+                    };
+                    if (sv->isString(ctx)) inspect1(sv);
+                    else if (const proto::ProtoList* sl = sv->asList(ctx)) {
+                        for (unsigned long j = 0; j < sl->getSize(ctx); ++j) inspect1(sl->getAt(ctx, static_cast<int>(j)));
+                    } else if (const proto::ProtoTuple* st = sv->asTuple(ctx)) {
+                        for (unsigned long j = 0; j < st->getSize(ctx); ++j) inspect1(st->getAt(ctx, static_cast<int>(j)));
+                    }
+                };
+                auto layoutFromBases_b = [&](const proto::ProtoObject* self,
+                                              const std::vector<const proto::ProtoObject*>& bases) -> Layout {
+                    Layout L;
+                    // Include the class itself — its own __slots__ is
+                    // fixed across the bases swap and must contribute
+                    // on both sides for the diff to reflect ONLY the
+                    // base-side change.
+                    if (self) inspectOne_b(self, L);
+                    for (auto* b : bases) {
+                        if (!b || b == PROTO_NONE) continue;
+                        const proto::ProtoObject* mroAttr = getAttribute(ctx, b, mroS_b, false);
+                        const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+                        unsigned long nn = mroT ? mroT->getSize(ctx) : 0;
+                        if (nn == 0) inspectOne_b(b, L);
+                        else for (unsigned long i = 0; i < nn; ++i) inspectOne_b(mroT->getAt(ctx, static_cast<int>(i)), L);
+                    }
+                    return L;
+                };
+                const proto::ProtoString* basesS_b = PythonEnvironment::getInternedString(ctx, "__bases__");
+                const proto::ProtoObject* curBasesAttr = getAttribute(ctx, obj, basesS_b, false);
+                const proto::ProtoTuple* curBasesT = curBasesAttr ? curBasesAttr->asTuple(ctx) : nullptr;
+                std::vector<const proto::ProtoObject*> curBases;
+                if (curBasesT) for (unsigned long i = 0; i < curBasesT->getSize(ctx); ++i) curBases.push_back(curBasesT->getAt(ctx, static_cast<int>(i)));
+                std::vector<const proto::ProtoObject*> newBases;
+                for (unsigned long i = 0; i < newT_b->getSize(ctx); ++i) newBases.push_back(newT_b->getAt(ctx, static_cast<int>(i)));
+                Layout curL = layoutFromBases_b(obj, curBases);
+                Layout newL = layoutFromBases_b(obj, newBases);
+                if (!(curL == newL)) {
+                    std::string cn = "?", nn = "?";
+                    const proto::ProtoObject* a = obj ? obj->getAttribute(ctx, nameString) : nullptr;
+                    if (a && a->isString(ctx)) a->asString(ctx)->toUTF8String(ctx, cn);
+                    if (!newBases.empty() && newBases[0]) {
+                        const proto::ProtoObject* a2 = newBases[0]->getAttribute(ctx, nameString);
+                        if (a2 && a2->isString(ctx)) a2->asString(ctx)->toUTF8String(ctx, nn);
+                    }
+                    raiseTypeError(ctx,
+                        "__class__ assignment: '" + cn + "' object layout differs from '" + nn + "'");
+                    return nullptr;
+                }
+            }
+        }
         // CPython: a __bases__ assignment is also rejected when any new
         // base is an unsubclassable (final) type — NoneType, bool,
         // NotImplementedType.  py_type's class-creation path already
