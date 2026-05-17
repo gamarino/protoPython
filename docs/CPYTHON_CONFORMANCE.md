@@ -28,7 +28,97 @@
 
 ---
 
-## Current Status (2026-05-16) — round 20 close (40 raw F+E, ~34 actionable)
+## Current Status (2026-05-16) — round 21 close (38 raw F+E, ~32 actionable)
+
+Round 21 closes at **31F + 7E = 38** in test_descr.py.  Ten
+substantive commits plus this docs commit (eleven total).  Net
+improvement: 40 → 38 (2 tests flipped).  The narrow improvement
+reflects the round's focus on **structural** fixes for the
+special-method-lookup runner and slot-layout machinery rather than
+flip-rich pickling / dunder additions.
+
+### Round 21 commits
+
+1. **STRUCT-218** (docs) — classify six GC-contract tests as WONTFIX
+2. **STRUCT-219** — `OP_BUILD_CLASS` skips `ns['__class__'] = cls`
+   when the user metaclass already stored `ns` as an attribute on
+   `targetClass` (M2 metaclass with `self.dict = ns`).  Without
+   this the post-build write corrupted the metaclass-controlled
+   attribute back to the class itself.
+3. **STRUCT-220** — `sys.getsizeof` dispatches `__sizeof__` via
+   type-only MRO walk + descriptor protocol.
+4. **STRUCT-221** — `dir(obj)` dispatches `type(obj).__dir__` via
+   type-only MRO walk (Checker pattern compliance).
+5. **STRUCT-222** — `bytes(X())` applies descriptor `__get__` to
+   `__bytes__` resolved via MRO.
+6. **STRUCT-223** — `OP_SETUP_WITH` applies Python-level
+   `__get__` for descriptor `__enter__` / `__exit__`.
+7. **STRUCT-224** — `list(iterable)` probes `__length_hint__` via
+   type-only MRO walk.
+8. **STRUCT-225** — `py_dict_getitem` propagates descriptor
+   `__get__` exceptions so user dunders can raise into
+   `dict[key]`.
+9. **STRUCT-226** — `x.__class__ = cls2` between user classes
+   honours the slot layout signature.  Mirrors CPython's
+   solid-base + same-slot-added rule.  Aggregates (has_dict,
+   has_weakref, real-slot-name set) along each MRO, plus
+   solid-base parent identity.  Test_set_class now PASSES.
+10. **STRUCT-228** — `method_descriptor` and `wrapper_descriptor`
+    types added to py_type's final-base rejection list.
+
+### Tests confirmed flipping to PASS in round 21
+
+- `test_set_class` (STRUCT-226) — slot-layout swap rules
+- `test_special_method_lookup` had already flipped late in round
+  20 (STRUCT-219..225 hardened the runner sites further).
+
+### Deferred — landed in code but reverted
+
+- **STRUCT-227** Metaclass `__setattr__` dispatch for class
+  targets.  Carlo-Verre exploit defence requires
+  `cls.attr = val` to route through the metaclass's inherited
+  `__setattr__`.  Both attempts broke unittest module bootstrap
+  (some stdlib class' attribute write fires a dispatch that
+  shouldn't).  Needs a much narrower gating heuristic; carry to
+  round 22.
+- **STRUCT-229** Layout check on `__bases__` setter.  Identical
+  conceptual logic to STRUCT-226 but applied to bases tuple.
+  Probe verified intent (B(slots=()).__bases__=(A_with_dict,)
+  rejected; B.__bases__=(A,) accepted).  Net effect on
+  test_descr was 1 FAIL→ERROR with no compensating PASS, so
+  reverted.  Needs builtin-mixed-MRO carve-outs that mirror
+  STRUCT-212's container check.
+
+### Carry-overs to round 22 (actionable)
+
+1. **STRUCT-227 redux** — Carlo-Verre defence dispatch with
+   narrow gating that doesn't break the stdlib bootstrap path.
+2. **STRUCT-229 redux** — `__bases__` layout check; combine
+   with existing STRUCT-212 builtin-container check so the
+   union covers user-class and builtin-mixed cases.
+3. **test_complexes** — slot member descriptor visibility on
+   `Number(complex)` instances.  Tagged-primitive subclasses
+   don't accept attribute writes through env->setAttribute.
+4. **test_metaclass** — sections 5+ (`object()` in bases,
+   metaclass calculation with `not-a-type`).
+5. **test_dir** — bare `dir()` should return only function
+   locals, not module globals (current implementation falls
+   through to the global parent chain).
+6. **PEP 649** `__annotate__` for classmethod/staticmethod.
+7. **test_uninitialized_modules** — module `__dict__` refactor.
+8. **test_proxy_call** assertRaises exception escape — bare
+   try/except catches but `with self.assertRaises:` doesn't.
+9. **test_file_fault** — `print()` should route to sys.stdout's
+   `write()`, not directly to std::cout.
+
+### Build
+
+ctest 183/183 verde en cada commit.  Binary at
+`build_release/src/runtime/protopy`.
+
+---
+
+## Previous Status (2026-05-16) — round 20 close (40 raw F+E, ~34 actionable)
 
 Round 20 closes at **31F + 9E = 40** in test_descr.py.  Nine commits:
 seven functional fixes plus two docs.  Improvement: 43 → 40 (7%).
