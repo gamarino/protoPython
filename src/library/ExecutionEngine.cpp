@@ -6321,7 +6321,14 @@ const proto::ProtoObject* executeBytecodeRange(
                                         val = dictResult;
                                     }
                                 }
-                            } else if (env && val && val != PROTO_NONE) {
+                            } else if (env && val && val != PROTO_NONE
+                                       && !env->isActuallyAClass(ctx, obj)) {
+                                // STRUCT-277: only auto-invoke getset
+                                // fget when the receiver is an instance
+                                // (NOT a class).  CPython: `float.real`
+                                // (class access) returns the descriptor
+                                // itself; `(0.5).real` (instance access)
+                                // returns the value.
                                 const proto::ProtoObject* getsetProto = env->getGetSetDescriptorPrototype();
                                 if (getsetProto && env->getType(ctx, val) == getsetProto) {
                                     const proto::ProtoString* fgetS = PythonEnvironment::getInternedString(ctx, "fget");
