@@ -7492,7 +7492,11 @@ const proto::ProtoObject* executeBytecodeRange(
                             const proto::ProtoObject* bm = env->getAttribute(ctx, b,
                                 env->getClassString(), false);
                             if (!bm || bm == PROTO_NONE) bm = env->getType(ctx, b);
-                            if (!bm || areSameClassesVM(ctx, bm, objectProto2)) bm = typeProto2;
+                            // STRUCT-234: skip bases whose metaclass
+                            // resolves to bare `object` (e.g. plain
+                            // `object()` instance passed as a base).
+                            if (bm && areSameClassesVM(ctx, bm, objectProto2)) continue;
+                            if (!bm) bm = typeProto2;
                             if (!bm) continue;
                             // CPython rule: explicit metaclass W must be a
                             // subclass of every base's metaclass.  If
@@ -7556,15 +7560,21 @@ const proto::ProtoObject* executeBytecodeRange(
                             }
                         }
                         size_t bnInit = tbInit ? tbInit->getSize(ctx) : (lbInit ? lbInit->getSize(ctx) : 0);
-                        if (bnInit > 0) {
-                            const proto::ProtoObject* base0 = tbInit ? tbInit->getAt(ctx, 0) : lbInit->getAt(ctx, 0);
-                            if (base0 && base0 != PROTO_NONE && env) {
-                                const proto::ProtoObject* m0 = env->getAttribute(ctx, base0, env->getClassString(), false);
-                                if (!m0 || m0 == PROTO_NONE) m0 = env->getType(ctx, base0);
-                                if (m0 && m0 != PROTO_NONE
-                                    && !areSameClassesVM(ctx, m0, objectProto)) {
-                                    bestMeta = m0;
-                                }
+                        // Walk to find the first base whose Py_TYPE
+                        // (i.e. its metaclass) is non-trivial.  Bases
+                        // whose type is exactly `object` (e.g. `object()`
+                        // instance) or primitive contribute nothing to
+                        // the metaclass winner — CPython lets the
+                        // metaclass's own __new__ validate them later.
+                        for (size_t i = 0; i < bnInit; ++i) {
+                            const proto::ProtoObject* basei = tbInit ? tbInit->getAt(ctx, i) : lbInit->getAt(ctx, i);
+                            if (!basei || basei == PROTO_NONE || !env) continue;
+                            const proto::ProtoObject* m0 = env->getAttribute(ctx, basei, env->getClassString(), false);
+                            if (!m0 || m0 == PROTO_NONE) m0 = env->getType(ctx, basei);
+                            if (m0 && m0 != PROTO_NONE
+                                && !areSameClassesVM(ctx, m0, objectProto)) {
+                                bestMeta = m0;
+                                break;
                             }
                         }
                     }
@@ -7594,8 +7604,22 @@ const proto::ProtoObject* executeBytecodeRange(
                             } else {
                                 baseMeta = base->getAttribute(ctx, protoPython::PythonEnvironment::getInternalString(ctx, "__class__"));
                             }
-                            if (!baseMeta || baseMeta == PROTO_NONE || areSameClassesVM(ctx, baseMeta, objectProto)) {
-                                // If a native base accidentally lacks a metaclass (evaluating to object), default it to type
+                            // STRUCT-234: skip bases whose metaclass
+                            // resolves to bare `object` — these are
+                            // typically `object()` instances passed
+                            // as bases.  CPython does not let such
+                            // instances contribute `type` to the meta
+                            // winner, which would otherwise raise a
+                            // spurious conflict against the other
+                            // user-metaclass bases.  Skipping leaves
+                            // the validation to the metaclass's
+                            // __new__ when the class is finally
+                            // constructed.
+                            if (baseMeta && areSameClassesVM(ctx, baseMeta, objectProto)) {
+                                continue;
+                            }
+                            if (!baseMeta || baseMeta == PROTO_NONE) {
+                                // If a native base accidentally lacks a metaclass, default it to type
                                 baseMeta = typeProto;
                             }
                             // Compute derivation: if baseMeta is a subclass of bestMeta, it becomes the new best
