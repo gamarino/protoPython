@@ -24973,8 +24973,15 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
             // work uniformly.
             const proto::ProtoObject* setM = descr->getAttribute(ctx, setDunderString);
             const proto::ProtoObject* descrType = getType(ctx, descr);
+            if (getenv("PROTOPY_SET_DBG")) {
+                fprintf(stderr, "[setAttribute] descr=%p setM=%p descrType=%p\n",
+                    (void*)descr, (void*)setM, (void*)descrType);
+            }
             if ((!setM || setM == PROTO_NONE) && descrType && descrType != PROTO_NONE) {
                 setM = getAttribute(ctx, descrType, setDunderString, false);
+                if (getenv("PROTOPY_SET_DBG")) {
+                    fprintf(stderr, "[setAttribute] after type lookup setM=%p\n", (void*)setM);
+                }
             }
             if (setM && setM != PROTO_NONE) {
                 if (setM->asMethod(ctx)) {
@@ -24995,6 +25002,45 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
     }
 
     const proto::ProtoObject* res = obj->setAttribute(ctx, name, value);
+
+    // STRUCT-247: when a CLASS gets a new dunder that affects slot
+    // dispatch (currently __getattribute__ / __setattr__ /
+    // __getattr__), invalidate the cached __pyflags__ on the class and
+    // all its (transitive) subclasses so the next ensureClassFlags
+    // call recomputes them.  Without this, `A.__getattribute__ = ...`
+    // doesn't propagate to existing instances of subclasses (B, C, D)
+    // whose flags were frozen at class-creation time.
+    if (pyFlagsString_ && (name == getattributeDunderString
+                           || name == setDunderString // __set__ on descr classes
+                           || name == getDunderString // __get__ on descr classes
+                           || (name && name->getSize(ctx) >= 4
+                               && (name == PythonEnvironment::getInternedString(ctx, "__getattr__")
+                                   || name == PythonEnvironment::getInternedString(ctx, "__setattr__"))))
+            && isActuallyAClass(ctx, obj)) {
+        std::function<void(const proto::ProtoObject*)> invalidate = [&](const proto::ProtoObject* cls) {
+            if (!cls || cls == PROTO_NONE) return;
+            // Clear our own cached flags.
+            if (cls->hasOwnAttribute(ctx, pyFlagsString_) == PROTO_TRUE) {
+                const_cast<proto::ProtoObject*>(cls)->removeAttribute(ctx, pyFlagsString_);
+            }
+            // Recurse into subclasses.
+            const proto::ProtoString* subL = PythonEnvironment::getInternedString(ctx, "__subclasses_list__");
+            if (cls->hasOwnAttribute(ctx, subL) == PROTO_TRUE) {
+                const proto::ProtoObject* listObj = cls->getOwnAttributeDirect(ctx, subL);
+                const proto::ProtoList* subs = listObj ? listObj->asList(ctx) : nullptr;
+                if (subs) {
+                    for (unsigned long i = 0; i < subs->getSize(ctx); ++i) {
+                        invalidate(subs->getAt(ctx, static_cast<int>(i)));
+                    }
+                }
+            }
+        };
+        invalidate(res);
+        // Mirror invalidation on the unmodified original (in case res
+        // is a new immutable cell and subclasses still reference the
+        // pre-set version through their __subclasses_list__).
+        if (res != obj) invalidate(obj);
+    }
 
     // Sync to __dict__ if it exists (for built-in types and Python classes).
     // Short-circuit: check __data__ first; only look up __keys__ when __data__
