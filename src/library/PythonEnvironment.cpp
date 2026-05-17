@@ -20114,6 +20114,113 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         modulePrototype = modulePrototype->setAttribute(rootContext_, py_repr,
             rootContext_->fromMethod(nullptr, py_module_repr));
     }
+    // STRUCT-257: install `__bool__` on modulePrototype so that
+    // `bool(uninitialized_module.__dict__)` returns False — required
+    // by test_uninitialized_modules.  Returns True iff the module
+    // carries any OWN attribute that isn't a runtime-internal
+    // bookkeeping name (matches the dir-filter list).
+    {
+        auto py_module_bool = +[](proto::ProtoContext* ctx,
+                                  const proto::ProtoObject* self,
+                                  const proto::ParentLink*,
+                                  const proto::ProtoList*,
+                                  const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            if (!self || self == PROTO_NONE) return PROTO_FALSE;
+            const proto::ProtoSparseList* attrs = self->getOwnAttributes(ctx);
+            if (!attrs) return PROTO_FALSE;
+            static const char* const internalNames[] = {
+                "__data__", "__keys__", "__is_python_class__",
+                "__subclasses_list__", "__pyflags__", "__py_getattr_handler__",
+                "__fn_meta_cache__", "__executed__",
+                "__class__", "__dict__", nullptr,
+            };
+            auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(ctx));
+            while (it && it->hasNext(ctx)) {
+                unsigned long key = it->nextKey(ctx);
+                const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
+                if (keyObj && keyObj->isString(ctx)) {
+                    std::string nm; keyObj->asString(ctx)->toUTF8String(ctx, nm);
+                    bool internal = false;
+                    for (int i = 0; internalNames[i]; ++i) {
+                        if (nm == internalNames[i]) { internal = true; break; }
+                    }
+                    if (!internal) return PROTO_TRUE;
+                }
+                it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
+            }
+            return PROTO_FALSE;
+        };
+        modulePrototype = modulePrototype->setAttribute(rootContext_,
+            PythonEnvironment::getInternedString(rootContext_, "__bool__"),
+            rootContext_->fromMethod(nullptr, py_module_bool));
+    }
+    // STRUCT-257b: install `__eq__` on modulePrototype that compares
+    // module attrs to a dict's contents when the other operand is a
+    // dict.  Otherwise fall back to identity (CPython default for
+    // modules).  Required so `m.__dict__ == {"foo": 1}` after
+    // `m.foo = 1` works (test_uninitialized_modules).
+    {
+        auto py_module_eq = +[](proto::ProtoContext* ctx,
+                                const proto::ProtoObject* self,
+                                const proto::ParentLink*,
+                                const proto::ProtoList* args,
+                                const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            PythonEnvironment* env_e = PythonEnvironment::fromContext(ctx);
+            if (!self || !args || args->getSize(ctx) < 1 || !env_e) {
+                return env_e ? env_e->getNotImplementedPrototype() : PROTO_NONE;
+            }
+            const proto::ProtoObject* other = args->getAt(ctx, 0);
+            if (!other) return env_e->getNotImplementedPrototype();
+            // Identity short-circuit.
+            if (self == other) return PROTO_TRUE;
+            // Only compare contents when other is a dict.
+            const proto::ProtoObject* otherType = env_e->getType(ctx, other);
+            if (otherType != env_e->getDictPrototype()) {
+                return env_e->getNotImplementedPrototype();
+            }
+            // Build a set of (key, value) pairs from self's user attrs
+            // (skip internals), then compare with other's dict.
+            static const char* const internalNames[] = {
+                "__data__", "__keys__", "__is_python_class__",
+                "__subclasses_list__", "__pyflags__", "__py_getattr_handler__",
+                "__fn_meta_cache__", "__executed__",
+                "__class__", "__dict__", nullptr,
+            };
+            auto isInternal = [&](const std::string& nm) -> bool {
+                for (int i = 0; internalNames[i]; ++i) if (nm == internalNames[i]) return true;
+                return false;
+            };
+            // Count user attrs and check each against the dict.
+            const proto::ProtoSparseList* selfAttrs = self->getOwnAttributes(ctx);
+            const proto::ProtoObject* otherData = other->getAttribute(ctx, env_e->getDataString());
+            const proto::ProtoSparseList* otherDict = otherData ? otherData->asSparseList(ctx) : nullptr;
+            unsigned long selfUserCount = 0;
+            if (selfAttrs) {
+                auto* it = const_cast<proto::ProtoSparseListIterator*>(selfAttrs->getIterator(ctx));
+                while (it && it->hasNext(ctx)) {
+                    unsigned long key = it->nextKey(ctx);
+                    const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
+                    const proto::ProtoObject* val = it->nextValue(ctx);
+                    if (keyObj && keyObj->isString(ctx)) {
+                        std::string nm; keyObj->asString(ctx)->toUTF8String(ctx, nm);
+                        if (!isInternal(nm)) {
+                            ++selfUserCount;
+                            unsigned long hashKey = keyObj->asString(ctx)->getHash(ctx);
+                            if (!otherDict || !otherDict->has(ctx, hashKey)) return PROTO_FALSE;
+                            const proto::ProtoObject* otherVal = otherDict->getAt(ctx, hashKey);
+                            if (env_e->compareObjects(ctx, val, otherVal, 0) != PROTO_TRUE) return PROTO_FALSE;
+                        }
+                    }
+                    it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
+                }
+            }
+            unsigned long otherCount = otherDict ? otherDict->getSize(ctx) : 0;
+            return (selfUserCount == otherCount) ? PROTO_TRUE : PROTO_FALSE;
+        };
+        modulePrototype = modulePrototype->setAttribute(rootContext_,
+            PythonEnvironment::getInternedString(rootContext_, "__eq__"),
+            rootContext_->fromMethod(nullptr, py_module_eq));
+    }
     // STRUCT-252: install `__init__` on modulePrototype so
     // `class M(type(sys)): pass; M("m")` propagates the name argument
     // to `self.__name__` (CPython's types.ModuleType.__init__ does
