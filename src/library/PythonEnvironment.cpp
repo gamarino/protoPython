@@ -8576,7 +8576,35 @@ static const proto::ProtoObject* py_str_add(
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     int otherIdx;
     const proto::ProtoObject* a = str_method_self(ctx, self, args, &otherIdx);
-    if (!a) return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    if (!a) {
+        // STRUCT-235: when called UNBOUND as `str.__add__(x, y)` with
+        // a non-str x, CPython's slot wrapper raises TypeError because
+        // the descriptor's receiver-type check fails.  protoPython used
+        // to return NotImplemented instead, which broke
+        // test_proxy_call's `with assertRaises(TypeError):
+        // str.__add__(fake_str, "abc")` (no exception raised, no
+        // descriptor fallback applies because we are not in a binary
+        // `+` operator).  Returning NotImplemented is still correct for
+        // the BOUND path (`"a".__add__(non_str)`), where Python's
+        // binary-op machinery tries `other.__radd__`; that path is
+        // taken when `self` is non-null.
+        if (self == nullptr) {
+            std::string otherTypeName = "?";
+            if (env && args && args->getSize(ctx) >= 1) {
+                const proto::ProtoObject* x0 = args->getAt(ctx, 0);
+                const proto::ProtoObject* xt = env->getType(ctx, x0);
+                if (xt) {
+                    const proto::ProtoObject* nm = xt->getAttribute(ctx, env->getNameString());
+                    if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, otherTypeName);
+                }
+            }
+            env->raiseTypeError(ctx,
+                "descriptor '__add__' for 'str' objects doesn't apply to a '"
+                + otherTypeName + "' object");
+            return nullptr;
+        }
+        return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    }
     if (!args || args->getSize(ctx) <= (unsigned long)otherIdx) return PROTO_NONE;
     const proto::ProtoObject* other = args->getAt(ctx, otherIdx);
     if (!other || !other->isString(ctx)) {
