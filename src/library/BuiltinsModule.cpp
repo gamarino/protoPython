@@ -11593,23 +11593,6 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                 return nullptr;
             }
             mInst->proto::ProtoObject::removeAttribute(c, annS);
-            PythonEnvironment* envLocal = PythonEnvironment::fromContext(c);
-            if (envLocal) {
-                const proto::ProtoString* keysS = envLocal->getKeysString();
-                const proto::ProtoObject* keysObj = inst->getAttribute(c, keysS);
-                const proto::ProtoList* keysList = (keysObj && keysObj != PROTO_NONE)
-                    ? keysObj->asList(c) : nullptr;
-                if (keysList) {
-                    const proto::ProtoList* fresh = c->newList();
-                    unsigned long h = annS->getHash(c);
-                    for (unsigned long i = 0; i < keysList->getSize(c); ++i) {
-                        const proto::ProtoObject* k = keysList->getAt(c, static_cast<int>(i));
-                        if (k && k->isString(c) && k->getHash(c) == h) continue;
-                        fresh = fresh->appendLast(c, k);
-                    }
-                    mInst->proto::ProtoObject::setAttribute(c, keysS, fresh->asObject(c));
-                }
-            }
             return PROTO_NONE;
         };
         descr->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "fset"),
@@ -11658,10 +11641,13 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
             const proto::ProtoObject* fn = inst->getAttribute(c, funcS);
             if (!fn || fn == PROTO_NONE) return PROTO_NONE;
             const proto::ProtoObject* an = fn->getAttribute(c, anS);
-            if (an && an != PROTO_NONE) {
-                // Lazy promote: cache on the wrapper so subsequent reads
-                // bypass the descriptor AND so `'__annotate__' in
-                // wrapper.__dict__` reports True after first access.
+            // STRUCT-268: promote None too — PEP 649 lets a function
+            // declare no annotation provider (__annotate__ = None), and
+            // CPython's classmethod / staticmethod still caches that
+            // value into the wrapper's __dict__ on first read.  Without
+            // the promotion, `'__annotate__' in method.__dict__` stays
+            // False (test_classmethod_staticmethod_annotations).
+            if (an) {
                 proto::ProtoObject* mInst = const_cast<proto::ProtoObject*>(inst);
                 mInst->proto::ProtoObject::setAttribute(c, anS, an);
                 PythonEnvironment* envLocal = PythonEnvironment::fromContext(c);
