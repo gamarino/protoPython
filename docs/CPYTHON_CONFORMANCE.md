@@ -28,7 +28,81 @@
 
 ---
 
-## Current Status (2026-05-17) — round 26 (structural follow-ups, 31 raw F+E)
+## Current Status (2026-05-17) — round 27 (targeted flips, 30 raw F+E)
+
+Round 27 closed at **24F + 6E = 30** in test_descr.py (from 24F+7E=31).
+Net: 1 test flipped (test_metaclass).  ctest 183/183 on every commit.
+
+### Round 27 commits
+
+1. **STRUCT-264** — `OP_BUILD_CLASS` checks metaclass class-ness via
+   OWN `__mro__`.  A plain Python function inherits `__mro__` from
+   its type chain (function → object), so the previous
+   `env->getAttribute(winner, "__mro__")` probe spuriously returned
+   a tuple and made the conflict-detection loop fire for
+   `class X(object, metaclass=func): pass`.  Replace with
+   `hasOwnAttribute(__mro__) == PROTO_TRUE` plus a fallback that
+   checks `type(winner)`'s MRO for typePrototype.  **Flips
+   test_metaclass.**
+
+2. **STRUCT-265** — bare `dir()` fallback filters frame internals.
+   When `co_automatic_count == 0` on the current code object (some
+   methods with multiple nested classes don't get CO_OPTIMIZED), bare
+   dir() falls back to `py_locals(...)` which returns the executing
+   frame; walking the frame's OWN attributes pulled in `__closure__`,
+   `__code__`, `f_code`, `f_globals`, `f_locals`, etc.  Now iterate
+   the frame's OWN attributes through an explicit skip list.  Fixes
+   the FIRST assertion of test_descr.test_dir (later subtests still
+   fail on different shapes).
+
+### Investigations that didn't land (deferred to round 28)
+
+- **Cluster E (type(len) → builtin_function_or_method)** — declaring
+  a new prototype via `initDescriptorTypeProto("builtin_function_or_method")`
+  triggers a segfault in FoundationTest.ExecuteModule even without
+  any routing change.  Likely a static-initialisation order issue
+  (the prototype tries to reach typePrototype before that is
+  finalised in this particular allocation slot).  Needs deeper
+  ProtoSpace bootstrap investigation.
+- **Cluster A (PEP 649 cm/sm `__annotate__` caching)** — the existing
+  getset descriptor's fdel triggers a VM bug: after
+  `del method.__annotations__` inside a `for` loop, the OUTER loop's
+  tuple_iterator gets misidentified as the new `method` operand
+  ("'<tuple_iterator object> is not callable" / "has no attribute
+  '__annotations__'").  Reproducible with the minimal probe
+  `@classmethod def m(cls): pass; for i in (1, 2): m.__annotations__
+  = {"k": i}; del m.__annotations__`.  Operand-stack corruption in
+  OP_DELETE_ATTR's interaction with the getset descriptor's
+  side-effects.
+- **Cluster B (STORE_ATTR class metaclass dispatch)** — already known
+  to break unittest import; carried over.
+- **Cluster C (`__dict__` as getset_descriptor)** — refactor still
+  pending; OP_LOAD_ATTR's `__dict__` special-case needs extension.
+- **Cluster F (test_slots_special_after_items)** — three independent
+  fixes needed (del __dict__ clear; int subclass equality; bytes
+  subclass __dict__ enabling).  Bytes subclass declaring `__slots__
+  = ["__dict__"]` still reports `hasattr(a, '__dict__') == False`
+  despite the slot expansion (root cause inside py_object_get_dict's
+  strict-slots check skipping bytes via `baseAddsDict(bytes) ==
+  false`).
+- **Cluster G (test_slots_special2)** — __classcell__/__qualname__
+  in __slots__ needs member_descriptor wiring.
+- **Cluster I (test_file_fault)** — py_print writes directly to
+  std::cout/std::cerr; routing through `sys.stdout.write` for the
+  descriptor protocol is a deeper refactor.
+- **Cluster J (MroTest re-entrancy)** — needs `cls.__mro__ → None`
+  during in-progress mro() calls; complex state machine.
+- **Cluster K (test_reduce_copying)** — parametrised mega-pickle
+  test; tracebacks are silently dropped through the unittest path,
+  making bisect difficult.
+
+### Build
+
+ctest 183/183 verde en cada commit.
+
+---
+
+## Previous Status (2026-05-17) — round 26 (structural follow-ups, 31 raw F+E)
 
 Round 26 lands three test_descr flips and several preconditions for
 the remaining structural problems.  Net test_descr count drops from
