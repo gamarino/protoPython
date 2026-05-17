@@ -1334,6 +1334,15 @@ static const proto::ProtoObject* binaryOpDispatch(proto::ProtoContext* ctx, cons
     const proto::ProtoObject* res = invokeDunder(ctx, a, dunderS, argsB);
     if (env && res == env->getNotImplementedPrototype()) sawNotImplemented = true;
     if (!res || (env && res == env->getNotImplementedPrototype())) {
+        if (env && env->hasPendingException()) {
+            // STRUCT-242: invokeDunder raised TypeError due to wrapper-
+            // receiver mismatch on an explicit misbinding (e.g.
+            // `class A(int): __add__ = str.__add__`).  Propagate the
+            // exception instead of attempting the reflected __radd__
+            // fallback (which would dispatch to int's inherited adder
+            // and silently produce a wrong result).
+            return nullptr;
+        }
         const proto::ProtoList* argsA = ctx->newList()->appendLast(ctx, a);
         res = invokeDunder(ctx, b, rdunderS, argsA);
         if (env && res == env->getNotImplementedPrototype()) sawNotImplemented = true;
@@ -2605,13 +2614,39 @@ static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const pr
                         }
                     }
                     if (!ok) {
-                        // The receiver's class does not inherit (Python __mro__
-                        // nor protoCore chain) from the wrapper's owner — the
-                        // wrapper was resolved via a stray chain leak (e.g.
-                        // `dict.__getitem__` landing on a plain user class).
-                        // Returning nullptr surfaces the dispatch as a clean
-                        // miss at the call site instead of silently invoking
-                        // a wrapper on a foreign receiver.
+                        // STRUCT-242: when the wrapper-receiver check
+                        // fails, raise TypeError when the wrapper's
+                        // owner is found explicitly in the receiver
+                        // type's OWN attribute dict (i.e. the user
+                        // did `class A(int): __op__ = str.__op__`).
+                        // For inherited / chain-leak misses (e.g.
+                        // `dict.__getitem__` resolved via a parent
+                        // chain), keep the silent null-return so the
+                        // implicit-dispatch path (`x in y`, etc.) can
+                        // fall back without raising.
+                        bool explicitMisbind = false;
+                        if (rcvType) {
+                            const proto::ProtoString* attrKey =
+                                PythonEnvironment::getInternedString(ctx, mnm.c_str());
+                            if (attrKey && rcvType->hasOwnAttribute(ctx, attrKey) == PROTO_TRUE) {
+                                const proto::ProtoObject* ownVal =
+                                    rcvType->getOwnAttributeDirect(ctx, attrKey);
+                                if (ownVal && ownVal->asMethod(ctx) == method->asMethod(ctx)) {
+                                    explicitMisbind = true;
+                                }
+                            }
+                        }
+                        if (explicitMisbind) {
+                            std::string ownerName = "?";
+                            std::string rcvName = "?";
+                            const proto::ProtoObject* nm = owner->getAttribute(ctx, env->getNameString());
+                            if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, ownerName);
+                            const proto::ProtoObject* rnm = rcvType->getAttribute(ctx, env->getNameString());
+                            if (rnm && rnm->isString(ctx)) rnm->asString(ctx)->toUTF8String(ctx, rcvName);
+                            env->raiseTypeError(ctx,
+                                "descriptor '" + mnm + "' for '" + ownerName +
+                                "' objects doesn't apply to a '" + rcvName + "' object");
+                        }
                         return nullptr;
                     }
                 }
@@ -9259,6 +9294,7 @@ const proto::ProtoObject* exported_py_function_doc_get(proto::ProtoContext* ctx,
     const proto::ProtoObject* res = instance->getAttribute(ctx, docStr);
     return res ? res : PROTO_NONE;
 }
+
 
 const proto::ProtoObject* exported_runUserFunctionCall(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
     return runUserFunctionCall(ctx, self, parentLink, args, kwargs);
