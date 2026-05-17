@@ -6007,6 +6007,14 @@ const proto::ProtoObject* py_type(
                     { isFinal = true; baseName = "coroutine"; }
                 else if (env->getAsyncGeneratorPrototype() && base == env->getAsyncGeneratorPrototype())
                     { isFinal = true; baseName = "async_generator"; }
+                // STRUCT-228: method/wrapper descriptor types are
+                // non-subclassable in CPython.  `class C(type(len)):`
+                // and `class C(type(str.__add__)):` both raise
+                // TypeError.
+                else if (env->getMethodDescriptorPrototype() && base == env->getMethodDescriptorPrototype())
+                    { isFinal = true; baseName = "method_descriptor"; }
+                else if (env->getWrapperDescriptorPrototype() && base == env->getWrapperDescriptorPrototype())
+                    { isFinal = true; baseName = "wrapper_descriptor"; }
                 if (isFinal) {
                     env->raiseTypeError(context,
                         "type '" + baseName + "' is not an acceptable base type");
