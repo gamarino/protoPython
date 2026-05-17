@@ -28,7 +28,100 @@
 
 ---
 
-## Current Status (2026-05-17) — round 23 (in progress, 36 raw F+E)
+## Current Status (2026-05-17) — round 24 (structural sweep, 34 raw F+E)
+
+Round 24 focused on **structural problems** rather than narrow
+test-flipping.  Six commits land four test flips
+(test_complexes, test_subclass_propagation plus partial flip on
+test_wrong_class_slot_wrapper's `a + a` subtest and structural
+hardening of dir / module dispatch).  Cumulative round-20→24
+delta: **40 → 34 raw F+E** (15% reduction).
+
+### Round 24 commits
+
+1. **STRUCT-242** — Wrapper-receiver mismatch raises TypeError on
+   explicit misbinding.  When `invokeDunder` dispatches a wrapper
+   descriptor (e.g. `str.__add__`) on a receiver whose type doesn't
+   inherit from the wrapper's owner AND the receiver type's own
+   attribute dict explicitly binds the same method cell (user
+   misbind), raise TypeError instead of returning null silently.
+   `binaryOpDispatch` propagates the TypeError directly without
+   attempting the reflected `__radd__` fallback (which would
+   dispatch to an inherited primitive dunder and silently produce
+   the wrong result).  Flips `a + a` (with
+   `A(int).__add__ = str.__add__`) from returning 0 to raising
+   TypeError.
+
+2. **STRUCT-244** — `dir(instance)` filters class-only attributes
+   (`__mro__`, `__bases__`, `__base__`, `__subclasses__`,
+   `__abstractmethods__`).  protoPython stores these as plain own
+   attrs on each class; CPython exposes them as type-level getset
+   descriptors that `object.__dir__` hides on instances.
+
+3. **STRUCT-245** — `py_object_get_dict` recognises modules via
+   parent chain.  Cloned modules end up with `__class__` inherited
+   rather than OWN, so the exact-type check
+   `getType(self) == modulePrototype` failed for them.  Walk the
+   parent list as a fallback.
+
+4. **STRUCT-246** — Complex subclass instances are mutable for
+   slot storage.  `py_complex_new` allocated immutable, so a slot
+   descriptor's `__set__` returned a new cell that was immediately
+   discarded.  For `cls != complexPrototype`, allocate mutable.
+   Flips `test_complexes` to PASS.
+
+5. **STRUCT-247** — Invalidate cached `__pyflags__` on subclass
+   tree on dunder change.  setAttribute on a class for
+   `__getattribute__`, `__getattr__`, `__setattr__`, `__get__`,
+   `__set__` walks the transitive `__subclasses_list__` and clears
+   each cached `__pyflags__` value.  Next `ensureClassFlags` re-
+   probes the MRO and picks up the new override.  Flips
+   `test_subclass_propagation` to PASS.
+
+### Tests confirmed flipping to PASS in round 24
+
+- `test_complexes` (STRUCT-246)
+- `test_subclass_propagation` (STRUCT-247)
+
+### Deferred / reverted in round 24
+
+- **STRUCT-243** (compareObjects identity-shortcut skip when type
+  owns `__eq__`): too narrow.  After bypassing the shortcut, the
+  unwrapNumeric path still bypasses the user override.  Reverted.
+- **STRUCT-248** (Carlo-Verre metaclass __setattr__ dispatch for
+  class targets): broke unittest import.  Reverted.  Needs a
+  recursion sentinel that distinguishes "user-initiated set" from
+  "internal class-creation set".
+
+### Carry-overs to round 25 (actionable)
+
+1. **test_wrong_class_slot_wrapper `a == a`** — Even with
+   STRUCT-242, `a == a` still returns True via the identity
+   shortcut in compareObjects.  Needs a deeper fix that either
+   (a) skips identity shortcut when type owns `__eq__`, or
+   (b) routes through invokeDunder consistently for compareObjects.
+2. **PEP 649 `__annotate__`** — getset descriptor that doesn't
+   break os module import.
+3. **test_uninitialized_modules** — module __dict__ view object.
+4. **non-bare `dir()` of module-subclass instance** — depends on
+   `sys.__class__` resolving to modulePrototype.  Currently
+   inherited but not own.  Fix would require either (a) setting
+   `__class__` as own on sys + all cloned modules, or (b)
+   recognising "module" via parent chain in more places (like in
+   `py_dir` and `isActuallyAClass`).
+5. **test_metaclass ERROR** — step-by-step probes pass.  Buried
+   in unittest runner; instrument needed.
+6. **test_carloverre Carlo-Verre defence** — narrow gating that
+   doesn't break stdlib bootstrap.
+
+### Build
+
+ctest 183/183 verde en cada commit.  Binary at
+`build_release/src/runtime/protopy`.
+
+---
+
+## Previous Status (2026-05-17) — round 23 (in progress, 36 raw F+E)
 
 Round 23 made one substantive commit + extensive deferred attempts.
 test_descr count unchanged at **28F + 8E = 36** — the round flipped
