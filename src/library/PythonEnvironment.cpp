@@ -24024,6 +24024,15 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
             // (b) inheritance-cycle scan: cls itself in the new bases, or
             // any transitive subclass of cls (walked via the
             // __subclasses_list__ tree), would introduce a cycle.
+            //
+            // STRUCT-286: ALSO walk each new base's CURRENT MRO and
+            // protoCore parent chain looking for `obj`.  CPython's
+            // type_set_bases checks both the tp_subclasses tree
+            // (descendants) AND the tp_base chain (ancestors of the
+            // new bases) — a __bases__ swap inside a user
+            // metaclass.mro() that creates an `obj ⊂ new_base ⊂ obj`
+            // cycle must be rejected even when __subclasses_list__
+            // hasn't been updated yet (test_reent_set_bases_tp_base_cycle).
             std::unordered_set<const proto::ProtoObject*> descendants;
             descendants.insert(obj);
             {
@@ -24045,9 +24054,30 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                 };
                 walk(obj);
             }
+            auto isAncestorOfObj = [&](const proto::ProtoObject* nb) -> bool {
+                // STRUCT-286: walk nb's MRO + chain looking for obj.
+                if (nb == obj) return true;
+                const proto::ProtoString* mroStr2 =
+                    getInternedString(ctx, "__mro__");
+                const proto::ProtoObject* nbMro = nb->hasOwnAttribute(ctx, mroStr2) == PROTO_TRUE
+                    ? nb->getAttribute(ctx, mroStr2) : nullptr;
+                const proto::ProtoTuple* nbMroT = nbMro ? nbMro->asTuple(ctx) : nullptr;
+                if (nbMroT) {
+                    for (unsigned long i = 0; i < nbMroT->getSize(ctx); ++i) {
+                        if (nbMroT->getAt(ctx, static_cast<int>(i)) == obj) return true;
+                    }
+                }
+                const proto::ProtoList* nbParents = nb->getParents(ctx);
+                if (nbParents) {
+                    for (unsigned long i = 0; i < nbParents->getSize(ctx); ++i) {
+                        if (nbParents->getAt(ctx, static_cast<int>(i)) == obj) return true;
+                    }
+                }
+                return false;
+            };
             for (unsigned long i = 0; i < vtup->getSize(ctx); ++i) {
                 const proto::ProtoObject* nb = vtup->getAt(ctx, static_cast<int>(i));
-                if (nb && descendants.count(nb)) {
+                if (nb && (descendants.count(nb) || isAncestorOfObj(nb))) {
                     raiseTypeError(ctx,
                         "a __bases__ item causes an inheritance cycle");
                     return nullptr;
@@ -24373,6 +24403,52 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
             // Mutate `obj` first so descendants see the new parent
             // MRO during their own C3 computation.
             applyOne(obj, newMro);
+            // STRUCT-286: invoke user metaclass.mro() for `obj` too,
+            // not just its subclasses (STRUCT-285 covered subclasses).
+            // test_reent_set_bases_tp_base_cycle exercises this via
+            // `B1.__bases__ += ()` triggering B1's metaclass mro
+            // override.  Wrap the invocation with the same
+            // __mro__ = None save/restore that STRUCT-276 uses inside
+            // py_type, so user code sees `cls.__mro__ is None` while
+            // mro() runs — preventing recursive `if cls.__mro__ is
+            // not None and X: cls.__bases__ += ()` patterns from
+            // looping infinitely.
+            {
+                const proto::ProtoObject* objMeta = getType(ctx, obj);
+                if (objMeta && objMeta != PROTO_NONE && objMeta != typePrototype) {
+                    const proto::ProtoString* mroAttrName =
+                        PythonEnvironment::getInternedString(ctx, "mro");
+                    if (objMeta->hasOwnAttribute(ctx, mroAttrName) == PROTO_TRUE) {
+                        const proto::ProtoObject* userMro =
+                            objMeta->getAttribute(ctx, mroAttrName);
+                        if (userMro && userMro != PROTO_NONE) {
+                            const proto::ProtoObject* savedMro = nullptr;
+                            if (obj->hasOwnAttribute(ctx, mroS) == PROTO_TRUE) {
+                                savedMro = getAttribute(ctx, obj, mroS, false);
+                            }
+                            const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setAttribute(
+                                ctx, mroS, PROTO_NONE);
+                            const proto::ProtoList* args = ctx->newList()
+                                ->appendLast(ctx, obj);
+                            if (userMro->asMethod(ctx)) {
+                                userMro->asMethod(ctx)(ctx,
+                                    const_cast<proto::ProtoObject*>(objMeta),
+                                    nullptr, args, nullptr);
+                            } else {
+                                invokePythonCallable(ctx, userMro, args, nullptr);
+                            }
+                            if (savedMro) {
+                                const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setAttribute(
+                                    ctx, mroS, savedMro);
+                            }
+                            if (hasPendingException()) {
+                                rollbackAll();
+                                return nullptr;
+                            }
+                        }
+                    }
+                }
+            }
 
             // Walk descendants (pre-order, deduped) and try to apply
             // each.  On the first conflict, rollback everything and
@@ -24408,10 +24484,9 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                     }
                     applyOne(sub, subMro);
                     // STRUCT-285: invoke user metaclass.mro() if the
-                    // metaclass owns one.  We resolve `metaclass.mro`
-                    // by checking `type(sub)` for its OWN `mro` (we
-                    // skip if it's inherited from type — that's the
-                    // default and would loop).
+                    // metaclass owns one.  Wrap with __mro__ = None
+                    // save/restore (STRUCT-276) so user code observes
+                    // `cls.__mro__ is None` while mro() runs.
                     const proto::ProtoObject* subMeta = getType(ctx, sub);
                     if (subMeta && subMeta != PROTO_NONE
                         && subMeta != typePrototype) {
@@ -24421,6 +24496,12 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                             const proto::ProtoObject* userMro =
                                 subMeta->getAttribute(ctx, mroAttrName);
                             if (userMro && userMro != PROTO_NONE) {
+                                const proto::ProtoObject* savedMro = nullptr;
+                                if (sub->hasOwnAttribute(ctx, mroS) == PROTO_TRUE) {
+                                    savedMro = getAttribute(ctx, sub, mroS, false);
+                                }
+                                const_cast<proto::ProtoObject*>(sub)->proto::ProtoObject::setAttribute(
+                                    ctx, mroS, PROTO_NONE);
                                 const proto::ProtoList* args = ctx->newList()
                                     ->appendLast(ctx, sub);
                                 if (userMro->asMethod(ctx)) {
@@ -24429,6 +24510,10 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                                         nullptr, args, nullptr);
                                 } else {
                                     invokePythonCallable(ctx, userMro, args, nullptr);
+                                }
+                                if (savedMro) {
+                                    const_cast<proto::ProtoObject*>(sub)->proto::ProtoObject::setAttribute(
+                                        ctx, mroS, savedMro);
                                 }
                                 if (hasPendingException()) {
                                     return false;
