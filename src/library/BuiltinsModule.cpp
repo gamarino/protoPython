@@ -17,6 +17,12 @@
 #include <functional>
 
 namespace protoPython {
+// Forward declaration: env-aware hash used by py_dict_setitem and
+// BUILD_MAP.  STRUCT-305 reads the value of a non-string namespace
+// key from the namespace dict's __data__ SparseList; that data is
+// keyed by pyDictKeyHash, not by the bare pointer.
+unsigned long pyDictKeyHash(proto::ProtoContext* context, const proto::ProtoObject* key);
+
 namespace builtins {
 
 // NOTE: a previous revision of this file declared a local
@@ -6584,6 +6590,57 @@ const proto::ProtoObject* py_type(
                                     if (env->hasPendingException()) env->clearPendingException();
                                 }
                             }
+                        }
+                        // STRUCT-305: store the (key, value) pair in
+                        // __nonstring_entries__ so the attribute-lookup
+                        // hook in OP_LOAD_ATTR can fire __eq__ on hash
+                        // collisions.  test_type_lookup_mro_reference
+                        // builds X = type('X', (Base,), {MyKey(): 5})
+                        // where MyKey() collides with the hash of the
+                        // string 'mykey', and expects MyKey.__eq__('mykey')
+                        // to mutate X.__bases__ during the subsequent
+                        // X.mykey lookup.
+                        if (dictOwn && env) {
+                            const proto::ProtoObject* val = nullptr;
+                            // Read the value via the env-aware hash —
+                            // BUILD_MAP indexes the SparseList with
+                            // pyDictKeyHash, which calls the key's
+                            // __hash__ (so MyKey() returns hash('mykey')).
+                            // The bare-pointer encoding used elsewhere in
+                            // this function is for string keys where the
+                            // pointer-identity hash happens to coincide.
+                            unsigned long h = ::protoPython::pyDictKeyHash(context, keyObj);
+                            if (dictOwn->has(context, h)) {
+                                val = dictOwn->getAt(context, h);
+                            }
+                            const proto::ProtoString* nseS =
+                                PythonEnvironment::getInternedString(context, "__nonstring_entries__");
+                            // Read the underlying raw list out of any
+                            // existing wrapper (wrapList stores it under
+                            // __data__) so we accumulate across multiple
+                            // non-string keys instead of overwriting.
+                            const proto::ProtoObject* existing = targetClass->getAttribute(context, nseS);
+                            const proto::ProtoList* nseList = nullptr;
+                            if (existing) {
+                                if (existing->asList(context)) {
+                                    nseList = existing->asList(context);
+                                } else {
+                                    const proto::ProtoObject* d = existing->getAttribute(context,
+                                        env->getDataString());
+                                    if (d) nseList = d->asList(context);
+                                }
+                            }
+                            if (!nseList) nseList = context->newList();
+                            const proto::ProtoList* pair = context->newList()
+                                ->appendLast(context, keyObj)
+                                ->appendLast(context, val ? val : PROTO_NONE);
+                            const proto::ProtoTuple* pairT = context->newTupleFromList(pair);
+                            nseList = nseList->appendLast(context,
+                                pairT ? pairT->asObject(context) : pair->asObject(context));
+                            // Wrap as a real Python list so Python-level
+                            // len()/iteration work for the attribute hook.
+                            targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(
+                                context, nseS, PythonEnvironment::wrapList(context, nseList)));
                         }
                         continue;
                     }

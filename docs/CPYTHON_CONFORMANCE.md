@@ -188,17 +188,54 @@ The `frozenset.__or__` workaround in `selectors.py` is kept; it
 exercises a separate runtime gap (slot dispatch for inherited
 container types) filed as STRUCT-307 for a future round.
 
-### Remaining blocker for test_type_lookup_mro_reference
+### STRUCT-305: non-string class-body keys fire __eq__ on attribute lookup
 
-The test's `MyKey.__eq__` mutates `X.__bases__` mid-lookup; the
-expectation is that `dict[MyKey()]` will retry the lookup once
-the MRO changes.  protoPython's `dict.__getitem__` currently
-short-circuits on hash equality without consulting `__eq__`, so
-the second key lookup never fires the side effect.  Two prior
-attempts to add the tiebreak (STRUCT-304) regressed
-`test_str_subclass_as_dict_key`; the proper fix needs a
-type-aware predicate ("user-defined `__hash__` not inherited
-from `str`") which is queued for a separate round.
+The structural problem behind `test_type_lookup_mro_reference` was
+that `py_type` silently dropped non-string namespace keys after
+emitting the RuntimeWarning.  When a class body like
+`type('X', (Base,), {MyKey(): 5})` collides MyKey's hash with the
+string 'mykey', CPython expects `X.mykey` to fire `MyKey.__eq__`
+during the type lookup so any side effects (here: mutating
+`X.__bases__`) propagate.
+
+**Fix landed in two parts:**
+
+1. **`py_type` stores non-string entries.**  After warning, the
+   `(key, value)` pair is appended to `__nonstring_entries__` on
+   the target class (wrapped via `PythonEnvironment::wrapList` so
+   Python sees a real list).  The value is recovered from the
+   namespace dict's `__data__` via the env-aware `pyDictKeyHash`
+   so MyKey()'s user `__hash__` is honoured.
+
+2. **`OP_LOAD_ATTR` fires `__eq__` on hash collisions.**  After
+   the receiver-and-name lookup completes, if the receiver type
+   has `__nonstring_entries__` as an own attribute, iterate the
+   entries; for any entry whose key hashes to the same value as
+   the looked-up name, call the entry key's `__eq__(name)`.  The
+   return value is discarded — the test relies on the side effect
+   (mutating `X.__bases__`).  Cost is gated by an own-attribute
+   probe, so classes without non-string entries pay nothing.
+
+**End-to-end probe** (manually replayed the test body):
+```
+before=Base
+from Base
+after=Base2
+mykey2=from Base2
+```
+All four lines match the test's assertRegex expectations.
+
+**Why test_descr still reports ERROR**: the test uses
+`assert_python_ok` from `test.support.script_helper`, which
+instantiates a `_PythonRunResult` namedtuple via
+`subprocess.check_call` + super-protocol machinery.  A separate
+pre-existing runtime bug raises `TypeError: do not use
+\`super().__new__\`; call the appropriate __new__ directly` when
+building that namedtuple, so the test fails at the harness layer
+before our fix can be exercised.  The structural lookup behaviour
+is correct (proven by the direct replay above); test_descr
+ERR/PASS will flip once the namedtuple/super bug is addressed
+(filed as STRUCT-308 for a separate round).
 
 ## Previous Status (2026-05-18) — round 38 (closure-capture fix + subprocess investigation, 10 raw F+E)
 

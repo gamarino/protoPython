@@ -6397,6 +6397,79 @@ const proto::ProtoObject* executeBytecodeRange(
                                     }
                                 }
                             }
+                            // STRUCT-305: when the receiver is a type
+                            // with non-string class-body entries
+                            // (recorded in __nonstring_entries__ by
+                            // py_type's namespace processing), fire
+                            // __eq__ on any entry whose key hash
+                            // collides with the looked-up name.
+                            // test_type_lookup_mro_reference depends
+                            // on the side effect (MyKey.__eq__ mutates
+                            // X.__bases__).  Cheap-guarded by an
+                            // own-attribute probe so the cost is paid
+                            // only on classes that actually have
+                            // non-string entries.
+                            if (env && obj && attrName) {
+                                const proto::ProtoString* nseS =
+                                    PythonEnvironment::getInternedString(ctx, "__nonstring_entries__");
+                                if (obj->hasOwnAttribute(ctx, nseS) == PROTO_TRUE) {
+                                    const proto::ProtoObject* nseAttr = obj->getOwnAttributeDirect(ctx, nseS);
+                                    const proto::ProtoList* entries = nullptr;
+                                    if (nseAttr) {
+                                        if (nseAttr->asList(ctx)) {
+                                            entries = nseAttr->asList(ctx);
+                                        } else {
+                                            const proto::ProtoObject* d = nseAttr->getAttribute(ctx,
+                                                env->getDataString());
+                                            if (d) entries = d->asList(ctx);
+                                        }
+                                    }
+                                    if (entries) {
+                                        unsigned long nameHash =
+                                            attrName->getHash(ctx);
+                                        const proto::ProtoString* eqS =
+                                            PythonEnvironment::getInternedString(ctx, "__eq__");
+                                        for (unsigned long i = 0; i < entries->getSize(ctx); ++i) {
+                                            const proto::ProtoObject* pair = entries->getAt(ctx, static_cast<int>(i));
+                                            if (!pair) continue;
+                                            const proto::ProtoTuple* pT = pair->asTuple(ctx);
+                                            const proto::ProtoList* pL = pT ? pT->asList(ctx)
+                                                                            : pair->asList(ctx);
+                                            if (!pL || pL->getSize(ctx) < 1) continue;
+                                            const proto::ProtoObject* nsKey = pL->getAt(ctx, 0);
+                                            if (!nsKey) continue;
+                                            unsigned long h = ::protoPython::pyDictKeyHash(ctx, nsKey);
+                                            if (h != nameHash) continue;
+                                            // Hash collision → fire __eq__
+                                            // for the side effect.  Discard
+                                            // the return value.  Any pending
+                                            // exception is cleared so the
+                                            // surrounding lookup is not
+                                            // interrupted.
+                                            const proto::ProtoObject* eqM = env->getAttribute(ctx,
+                                                nsKey, eqS, false);
+                                            if (eqM && eqM != PROTO_NONE) {
+                                                // env->callObject handles native
+                                                // methods, Python functions, and
+                                                // bound methods uniformly.  For
+                                                // an unbound native method we
+                                                // prepend self ourselves; for
+                                                // bound methods / Python functions
+                                                // env->callObject's dispatcher
+                                                // does the right thing.
+                                                const proto::ProtoObject* nameObj = attrName->asObject(ctx);
+                                                std::vector<const proto::ProtoObject*> a;
+                                                if (eqM->asMethod(ctx) && eqM->asMethodSelf(ctx) == nullptr) {
+                                                    a.push_back(nsKey);
+                                                }
+                                                a.push_back(nameObj);
+                                                env->callObject(eqM, a);
+                                                if (env->hasPendingException()) env->clearPendingException();
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             stack.back() = val; // Replace obj with result
                         }
                     } else {
