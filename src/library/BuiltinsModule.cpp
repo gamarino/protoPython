@@ -6702,6 +6702,39 @@ const proto::ProtoObject* py_type(
         else if (listBases && listBases->getSize(context) == 0) basesIsEmpty = true;
         if (basesIsEmpty) { tupleBases = nullptr; listBases = nullptr; }
 
+        // STRUCT-280: when any base has __mro__ == None (the base
+        // class is currently mid-mro computation via a custom mro()
+        // override — see STRUCT-276), extending it must raise
+        // TypeError instead of silently producing a broken subclass.
+        // test_incomplete_extend (test_descr line 6159).
+        if (env && (tupleBases || listBases)) {
+            const proto::ProtoString* mroStr =
+                PythonEnvironment::getInternedString(context, "__mro__");
+            size_t bn = tupleBases ? tupleBases->getSize(context)
+                                   : (listBases ? listBases->getSize(context) : 0);
+            for (size_t i = 0; i < bn; ++i) {
+                const proto::ProtoObject* base = tupleBases
+                    ? tupleBases->getAt(context, static_cast<int>(i))
+                    : listBases->getAt(context, static_cast<int>(i));
+                if (!base || base == PROTO_NONE) continue;
+                if (base->hasOwnAttribute(context, mroStr) == PROTO_TRUE) {
+                    const proto::ProtoObject* mroOwn =
+                        base->getOwnAttributeDirect(context, mroStr);
+                    if (mroOwn == PROTO_NONE) {
+                        std::string bName = "?";
+                        const proto::ProtoObject* nm =
+                            base->getAttribute(context, env->getNameString());
+                        if (nm && nm->isString(context))
+                            nm->asString(context)->toUTF8String(context, bName);
+                        env->raiseTypeError(context,
+                            "type '" + bName + "' is not an acceptable base type "
+                            "(class is uninitialised: __mro__ is None)");
+                        return nullptr;
+                    }
+                }
+            }
+        }
+
         // STRUCT-101: a metaclass.mro() override applies AFTER the
         // default C3 has computed and `cls.__mro__` has been seeded —
         // because user mro() implementations typically call
