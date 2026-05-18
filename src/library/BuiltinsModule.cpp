@@ -6239,6 +6239,19 @@ const proto::ProtoObject* py_type(
                     // raised in our runtime, blocking lib/_typing.py
                     // (which uses this pattern in _SpecialForm).
                     if (nm == "__doc__") return false;
+                    // STRUCT-298: CPython also exempts `__qualname__`,
+                    // `__classcell__`, and `__module__` — these names
+                    // are written into the class namespace by the
+                    // compiler/exec machinery (qualname injection,
+                    // super() cell-binding, module-level __name__) and
+                    // a `__slots__ = ['__qualname__']` declaration
+                    // promotes them to MemberDescriptors that read/write
+                    // the slot rather than the class attribute.
+                    // test_slots_special2 exercises this for
+                    // __qualname__ and __classcell__.
+                    if (nm == "__qualname__"
+                        || nm == "__classcell__"
+                        || nm == "__module__") return false;
                     const proto::ProtoString* nmS = PythonEnvironment::getInternedString(context, nm.c_str());
                     if (dictSL && dictSL->has(context, nmS->getHash(context))) {
                         env->raiseValueError(context,
