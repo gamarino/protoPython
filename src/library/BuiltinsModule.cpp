@@ -11981,6 +11981,34 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                 const proto::ProtoObject* val = it->nextValue(ctx);
                 const proto::ProtoString* keyS = reinterpret_cast<const proto::ProtoString*>(keyHash);
                 if (keyS) {
+                    // STRUCT-295: skip module-identity dunders.  The
+                    // wholesale copy was overwriting builtins'
+                    // __name__ = "builtins" (set above at line 11236)
+                    // with exceptionsModule's __name__ = "exceptions",
+                    // so every native method whose owner is
+                    // builtinsModule (len/print/getattr/…) ended up
+                    // with `__qualname__ = "exceptions.<name>"` —
+                    // synthesised via lookupNativeMethodInfo →
+                    // owningClass.__name__ at PythonEnvironment.cpp
+                    // around line 23180.  pickle proto 2/3 needs to
+                    // serialise these globals by qualname, and a
+                    // wrong prefix made `save_global` produce
+                    // unreadable pickles for `partial(cls.__new__,
+                    // cls, *args, **kwargs)` (PicklingTests
+                    // .test_reduce_copying C5 subtest).  Module-level
+                    // identity attributes (__name__, __package__,
+                    // __module__, __qualname__, __doc__, __file__,
+                    // __loader__, __spec__) belong to the receiving
+                    // module, not the donor.
+                    std::string keyStr;
+                    keyS->toUTF8String(ctx, keyStr);
+                    if (keyStr == "__name__" || keyStr == "__package__"
+                        || keyStr == "__module__" || keyStr == "__qualname__"
+                        || keyStr == "__doc__"   || keyStr == "__file__"
+                        || keyStr == "__loader__" || keyStr == "__spec__") {
+                        it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(ctx);
+                        continue;
+                    }
                     builtins = builtins->setAttribute(ctx, keyS, val);
                 }
                 it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(ctx);

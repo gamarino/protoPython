@@ -2033,6 +2033,94 @@ static const proto::ProtoObject* py_object_reduce_ex(
         return nullptr;
     }
 
+    // STRUCT-297: CPython's `object.__reduce_ex__(proto)` first
+    // checks whether `type(self).__reduce__` is overridden (i.e.
+    // not object.__reduce__).  If so it defers to the override
+    // (`self.__reduce__()`) rather than going through the generic
+    // copyreg.__newobj__/__newobj_ex__ machinery.  `functools.partial`
+    // ships its own __reduce__ returning `(type(self), (self.func,),
+    // state)` — a 3-tuple where args[1] = (func,) — which pickle's
+    // save_reduce dispatches to `cls(*args)` via REDUCE.  Without
+    // this delegation, copyreg.__newobj__ produced `(cls,)` (no
+    // func), so unpickling called `partial.__new__(partial)` with
+    // no func and our pure-Python `_partial_new` raised
+    // "first argument must be callable".
+    if (obj && env) {
+        const proto::ProtoObject* objCls = env->getType(context, obj);
+        if (objCls && objCls != PROTO_NONE && objCls != env->getObjectPrototype()) {
+            const proto::ProtoString* reduceS =
+                PythonEnvironment::getInternedString(context, "__reduce__");
+            const proto::ProtoObject* classReduce =
+                env->getAttribute(context, objCls, reduceS, false);
+            const proto::ProtoObject* objectReduce =
+                env->getAttribute(context, env->getObjectPrototype(), reduceS, false);
+            // Override iff class-level __reduce__ resolves to a
+            // function distinct from object.__reduce__.  Walk asMethod
+            // identity for native cells, otherwise pointer compare.
+            bool hasOverride = false;
+            if (classReduce && classReduce != PROTO_NONE
+                && classReduce != objectReduce) {
+                hasOverride = true;
+                // Native method comparison: if both unwrap to the same
+                // fn pointer, treat as same.
+                if (classReduce->asMethod(context) && objectReduce
+                    && objectReduce->asMethod(context)
+                    && classReduce->asMethod(context)
+                        == objectReduce->asMethod(context)) {
+                    hasOverride = false;
+                }
+            }
+            if (hasOverride) {
+                // Defer to bound `obj.__reduce__()` — the descriptor
+                // protocol binds it to obj automatically.
+                const proto::ProtoObject* boundReduce =
+                    env->getAttribute(context, obj, reduceS, false);
+                if (boundReduce && boundReduce != PROTO_NONE) {
+                    return env->callObject(boundReduce, {});
+                }
+            }
+        }
+    }
+
+    // STRUCT-296: builtin methods/functions reduce to their qualified
+    // name as a string, mirroring CPython's `object.__reduce_ex__` C
+    // path.  Pickle's `Pickler.save` treats a string return as a
+    // global-by-name save, emitting GLOBAL/STACK_GLOBAL with the
+    // function's __module__ + __qualname__.  Without this, the
+    // pure-Python `copyreg._reduce_ex` path tries to build a newobj
+    // tuple containing the `builtin_function_or_method` class itself,
+    // which is unpicklable (it's not exposed under
+    // `builtins.builtin_function_or_method`).  Probe-verified on
+    // `pickle.dumps(partial(C5.__new__, C5, 1, 2, value=3), 2)`
+    // (PicklingTests.test_reduce_copying C5 subtest); the partial's
+    // pure-Python __reduce__ recurses into `save(C5.__new__)` whose
+    // save_global walks the dotted qualname which calls
+    // `save(getattr)` — now returns the string "getattr" via this
+    // path, allowing pickle to encode it as
+    // `(builtins, getattr) STACK_GLOBAL`.
+    if (obj && obj->isMethod(context) && env) {
+        const proto::ProtoString* qnameS =
+            PythonEnvironment::getInternedString(context, "__qualname__");
+        const proto::ProtoObject* qnObj = env->getAttribute(context, obj, qnameS, false);
+        if (qnObj && qnObj->isString(context)) {
+            std::string qns;
+            qnObj->asString(context)->toUTF8String(context, qns);
+            if (!qns.empty()) {
+                return qnObj;
+            }
+        }
+        // Fall back to __name__ when qualname is missing.
+        const proto::ProtoString* nameS = env->getNameString();
+        const proto::ProtoObject* nmObj = env->getAttribute(context, obj, nameS, false);
+        if (nmObj && nmObj->isString(context)) {
+            std::string nms;
+            nmObj->asString(context)->toUTF8String(context, nms);
+            if (!nms.empty()) {
+                return nmObj;
+            }
+        }
+    }
+
     const proto::ProtoObject* copyregMod = env ? env->importModule("copyreg") : nullptr;
     if (copyregMod && copyregMod != PROTO_NONE) {
         const proto::ProtoString* reduceExName = PythonEnvironment::getInternedString(context, "_reduce_ex");
@@ -23175,7 +23263,18 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                     if (owningClass && owningClass != PROTO_NONE) return owningClass;
                 } else if (wantQualname) {
                     std::string ql;
-                    if (owningClass && owningClass != PROTO_NONE) {
+                    // STRUCT-295: only prefix with owner name when the
+                    // owner is a CLASS — for module-level builtins
+                    // (`len`, `getattr`, `print` registered on the
+                    // builtins module), CPython's __qualname__ is the
+                    // bare name; `__module__` carries the module info.
+                    // Prefixing with "builtins" produced `__qualname__
+                    // = "builtins.getattr"`, which pickle.save_global
+                    // interprets as a dotted path and tries to encode
+                    // as `getattr(builtins, "getattr")`, recursing
+                    // infinitely on the `save(getattr)` step.
+                    if (owningClass && owningClass != PROTO_NONE
+                        && isActuallyAClass(ctx, owningClass)) {
                         const proto::ProtoObject* ownNm =
                             owningClass->getAttribute(ctx, nameDunder);
                         if (ownNm && ownNm->isString(ctx)) {
