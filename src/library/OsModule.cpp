@@ -1929,6 +1929,91 @@ static const proto::ProtoObject* py_os_get_exec_path(
     return PythonEnvironment::wrapList(ctx, result);
 }
 
+// W* status decoding helpers — subprocess + stdlib rely on these.
+// CPython exposes them as plain functions over the integer status
+// returned by waitpid().  No errors raised.
+static const proto::ProtoObject* py_os_WIFEXITED(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_FALSE;
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    int status = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+    return WIFEXITED(status) ? PROTO_TRUE : PROTO_FALSE;
+#else
+    return PROTO_FALSE;
+#endif
+}
+
+static const proto::ProtoObject* py_os_WIFSIGNALED(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_FALSE;
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    int status = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+    return WIFSIGNALED(status) ? PROTO_TRUE : PROTO_FALSE;
+#else
+    return PROTO_FALSE;
+#endif
+}
+
+static const proto::ProtoObject* py_os_WEXITSTATUS(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return ctx->fromInteger(0);
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    int status = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+    return ctx->fromInteger(WEXITSTATUS(status));
+#else
+    return ctx->fromInteger(0);
+#endif
+}
+
+static const proto::ProtoObject* py_os_WTERMSIG(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return ctx->fromInteger(0);
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    int status = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+    return ctx->fromInteger(WTERMSIG(status));
+#else
+    return ctx->fromInteger(0);
+#endif
+}
+
+// os.fstat(fd) -> stat_result.  Returns a tuple-like with the same
+// 10 fields CPython exposes: st_mode, st_ino, st_dev, st_nlink,
+// st_uid, st_gid, st_size, st_atime, st_mtime, st_ctime.  We
+// piggyback on the existing stat_result type set up in initialize().
+static const proto::ProtoObject* py_os_fstat(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    int fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    struct stat st;
+    if (::fstat(fd, &st) != 0) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseOSError(ctx, errno, std::strerror(errno), "");
+        return nullptr;
+    }
+    const proto::ProtoList* fields = ctx->newList();
+    fields = fields->appendLast(ctx, ctx->fromInteger(static_cast<long long>(st.st_mode)));
+    fields = fields->appendLast(ctx, ctx->fromInteger(static_cast<long long>(st.st_ino)));
+    fields = fields->appendLast(ctx, ctx->fromInteger(static_cast<long long>(st.st_dev)));
+    fields = fields->appendLast(ctx, ctx->fromInteger(static_cast<long long>(st.st_nlink)));
+    fields = fields->appendLast(ctx, ctx->fromInteger(static_cast<long long>(st.st_uid)));
+    fields = fields->appendLast(ctx, ctx->fromInteger(static_cast<long long>(st.st_gid)));
+    fields = fields->appendLast(ctx, ctx->fromInteger(static_cast<long long>(st.st_size)));
+    fields = fields->appendLast(ctx, ctx->fromInteger(static_cast<long long>(st.st_atime)));
+    fields = fields->appendLast(ctx, ctx->fromInteger(static_cast<long long>(st.st_mtime)));
+    fields = fields->appendLast(ctx, ctx->fromInteger(static_cast<long long>(st.st_ctime)));
+    return ctx->newTupleFromList(fields)->asObject(ctx);
+#else
+    return PROTO_NONE;
+#endif
+}
+
 // os.register_at_fork(before=..., after_in_parent=..., after_in_child=...) -> None.
 // Stub: protoPython's fork support is "fork+exec only" — bare fork()
 // from a multithreaded host is not safe, so the fork-handler chain
@@ -2175,6 +2260,16 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_confstr));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "register_at_fork"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_register_at_fork));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "WIFEXITED"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_WIFEXITED));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "WIFSIGNALED"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_WIFSIGNALED));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "WEXITSTATUS"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_WEXITSTATUS));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "WTERMSIG"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_WTERMSIG));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "fstat"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_fstat));
     // Path-like constant.  subprocess reads os.devnull when stdin/
     // stdout/stderr is DEVNULL.
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "devnull"),
@@ -2430,6 +2525,11 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "get_exec_path")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "confstr")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "register_at_fork")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "WIFEXITED")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "WIFSIGNALED")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "WEXITSTATUS")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "WTERMSIG")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "fstat")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "devnull")->asObject(ctx));
 #ifdef _CS_PATH
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "CS_PATH")->asObject(ctx));
