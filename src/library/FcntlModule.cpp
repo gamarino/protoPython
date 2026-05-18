@@ -144,6 +144,50 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "F_SETLKW"),
         ctx->fromInteger(F_SETLKW));
 #endif
+#ifdef F_GETOWN
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "F_GETOWN"),
+        ctx->fromInteger(F_GETOWN));
+#endif
+#ifdef F_SETOWN
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "F_SETOWN"),
+        ctx->fromInteger(F_SETOWN));
+#endif
+#ifdef F_GETSIG
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "F_GETSIG"),
+        ctx->fromInteger(F_GETSIG));
+#endif
+#ifdef F_SETSIG
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "F_SETSIG"),
+        ctx->fromInteger(F_SETSIG));
+#endif
+#ifdef F_NOTIFY
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "F_NOTIFY"),
+        ctx->fromInteger(F_NOTIFY));
+#endif
+#ifdef FASYNC
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "FASYNC"),
+        ctx->fromInteger(FASYNC));
+#endif
+#ifdef O_NONBLOCK
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_NONBLOCK"),
+        ctx->fromInteger(O_NONBLOCK));
+#endif
+#ifdef O_NDELAY
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_NDELAY"),
+        ctx->fromInteger(O_NDELAY));
+#endif
+#ifdef O_APPEND
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_APPEND"),
+        ctx->fromInteger(O_APPEND));
+#endif
+#ifdef O_SYNC
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_SYNC"),
+        ctx->fromInteger(O_SYNC));
+#endif
+#ifdef O_ASYNC
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_ASYNC"),
+        ctx->fromInteger(O_ASYNC));
+#endif
     // flock operations
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "LOCK_SH"),
         ctx->fromInteger(LOCK_SH));
