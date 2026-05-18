@@ -28,7 +28,92 @@
 
 ---
 
-## Current Status (2026-05-18) — round 35 (re-entrancy detection + partial shim drop, 13 raw F+E)
+## Current Status (2026-05-18) — round 36 (pickle reduce_ex fix-up cluster, 11 raw F+E)
+
+Round 36 lands three coordinated commits (STRUCT-295/296/297 +
+STRUCT-298 follow-up) that close `test_reduce_copying` by fixing
+the pickle protocol on native builtins.  Test count drops from
+**9F + 4E = 13** to **9F + 2E = 11** (one flip:
+`test_reduce_copying`).  ctest 183/183 verde.
+
+### Round 36 commits
+
+1. **STRUCT-295** (BuiltinsModule.cpp) — `builtins` no longer
+   inherits `__name__` / `__package__` / `__module__` /
+   `__qualname__` / `__doc__` / `__file__` / `__loader__` /
+   `__spec__` from the `exceptionsModule` wholesale-copy at
+   line ~11975.  Those identity attributes belong to the
+   receiving module, not the donor.  Without this, every native
+   method registered on the builtins module (`getattr`, `len`,
+   `print`, …) inherited `__qualname__ = "exceptions.<name>"`
+   via PythonEnvironment's side-table qualname synthesis.
+
+2. **STRUCT-296** (PythonEnvironment.cpp ~line 23180) — qualname
+   synthesis only prefixes with the owner name when the owner is
+   a CLASS (`isActuallyAClass`).  Module-level builtins now
+   carry the bare name; `__module__` separately exposes the
+   module info.  Prefixing with "builtins" produced
+   `__qualname__ = "builtins.getattr"`, which pickle.save_global
+   interprets as a dotted path and tries to encode as
+   `getattr(builtins, "getattr")`, recursing infinitely on the
+   `save(getattr)` step.
+
+3. **STRUCT-297** (py_object_reduce_ex) — defer to the class-level
+   `__reduce__` override before going through copyreg.  CPython's
+   `object.__reduce_ex__` checks whether `type(self).__reduce__`
+   is overridden vs. `object.__reduce__`; if so it calls
+   `self.__reduce__()` and uses its result.  Our version always
+   went through `copyreg._reduce_ex`, so `partial`'s custom
+   `__reduce__` returning `(type(self), (self.func,), state)`
+   was bypassed in favour of `__newobj__` with `(cls,)` only —
+   pickle then called `partial.__new__(partial)` with no func,
+   raising "first argument must be callable" inside `_partial_new`.
+
+   Same routine: builtin methods/functions now reduce to their
+   qualname string at this layer, mirroring CPython's C-level
+   `object.__reduce_ex__`.  Pickle treats string returns as
+   save-global-by-name (line 622-624 of pickle.py), emitting
+   `GLOBAL + module_name + name`.
+
+4. **STRUCT-298** (BuiltinsModule.cpp ~6240) — exempt
+   `__qualname__`, `__classcell__`, `__module__` from the
+   slot-vs-classvar conflict check.  CPython allows these in
+   `__slots__` because they're class-body machinery rather than
+   user-set class variables; a `__slots__` entry promotes them
+   to MemberDescriptors.  This is structural cleanup; on its
+   own it doesn't flip test_slots_special2, which additionally
+   needs Compiler.cpp emission of `__classcell__` (round 37+).
+
+### Remaining tractable (3 tests, 1F + 2E excluding 7 WONTFIX + 2
+co-architectural)
+
+- **test_tp_subclasses_cycle_error_return_path** (E) — infinite
+  recursion in user mro because we write __bases__ AFTER mro,
+  not before.  Restructuring the __bases__ setter to write
+  pre-mro with rollback that preserves inner-committed re-entrant
+  effects breaks STRUCT-45's `oldBases` semantics for the
+  cycle_in_update_slots test (round 35 fix).  Needs unified
+  redesign.
+- **test_type_lookup_mro_reference** (E) — two unrelated
+  blockers: (i) `assert_python_ok("-c", code)` subprocess
+  plumbing, (ii) dict `__eq__` is bypassed when hash matches —
+  py_dict_* short-circuits on `dict->has(hash)` without
+  consulting `__eq__` on the stored key.
+- **test_multiple_inheritance** (F) — dict subclass instance
+  attrs leak into dict keys (architectural).
+- **test_slots_special2** (F) — `__classcell__` Compiler.cpp
+  emission + MemberDescriptor install for slot-shadowed
+  __qualname__ / __classcell__.
+
+### Build
+
+ctest 183/183 verde en cada commit.  Round 26–36 cumulative:
+27F + 7E = 34 → **9F + 2E = 11** (23 test flips overall, no
+regressions).
+
+---
+
+## Previous Status (2026-05-18) — round 35 (re-entrancy detection + partial shim drop, 13 raw F+E)
 
 Round 35 lands one re-entrancy fix in the `__bases__` setter and
 removes a long-standing broken `_functools.partial` native shim.
