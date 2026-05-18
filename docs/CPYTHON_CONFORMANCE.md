@@ -137,6 +137,50 @@ subprocess.run(['/bin/sh', '-c',
   → stdout=b'o\n', stderr=b'e\n', rc=7
 ```
 
+### STRUCT-306a: SelectModule now accepts set inputs
+
+`select.select()` previously rejected `set` arguments because
+`SelectModule.cpp::fillFdSet` only iterated `ProtoList` / `ProtoTuple`.
+selectors.SelectSelector keeps registered fds in a `set`, so the
+selectors.py workaround had to coerce them to `list()` before
+calling through.  The new branch (see commit) iterates `ProtoSet`
+via its iterator, so both lists and sets work natively.  The
+`list(...)` workaround in `selectors.py` is kept for safety while
+the deeper runtime bug below is investigated; it is now redundant.
+
+### STRUCT-306 deferred: ProtoList return values not seen as Python lists
+
+A general pre-existing runtime bug affects every native handler
+that returns `protoList->asObject(ctx)`:
+
+```python
+import os
+lst = os.listdir('.')
+type(lst).__name__   # → 'list'
+len(lst)             # → 0   (WRONG: should be N>0)
+bool(lst)            # → False
+for x in lst: ...    # iterates fine
+```
+
+The iterator path works, but `__len__` / `__bool__` resolve via
+`getListPrototype()`'s slot dispatch, which is bypassed when the
+return value lacks the `__class__=list` parent.  The fix is to
+wrap every list-returning handler in a real `list` instance:
+
+```cpp
+const proto::ProtoObject* listObj = ctx->newObject(false);
+listObj = listObj->addParent(ctx, env->getListPrototype());
+listObj = listObj->setAttribute(ctx, env->getDataString(),
+    rawList->asObject(ctx));
+return listObj;
+```
+
+(Already done by `py_globals` at BuiltinsModule.cpp:351.)  This
+would be a codebase-wide sweep across `os.listdir`, `os.scandir`,
+`os.environ_keys/values/items`, `select.select`, the new POSIX
+helpers, and several other modules.  Filed as STRUCT-306b for
+a dedicated round.
+
 ### Remaining blocker for test_type_lookup_mro_reference
 
 The test's `MyKey.__eq__` mutates `X.__bases__` mid-lookup; the

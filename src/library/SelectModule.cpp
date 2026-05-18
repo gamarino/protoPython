@@ -10,11 +10,15 @@
 namespace protoPython {
 namespace select_module {
 
-// Helper to fill a fd_set from a ProtoObject (List or Tuple)
+// Helper to fill a fd_set from a ProtoObject (List, Tuple, or Set).
+// selectors.SelectSelector keeps the registered fds in a `set`, and
+// CPython's select.select() accepts any iterable — we walk via the
+// concrete collection API instead of building a Python-level
+// iterator to avoid recursive interpreter dispatch on the hot path.
 static int fillFdSet(proto::ProtoContext* ctx, const proto::ProtoObject* obj, fd_set* set) {
     int maxfd = -1;
     if (!obj) return maxfd;
-    
+
     auto process = [&](const proto::ProtoObject* fd) {
         if (fd && fd->isInteger(ctx)) {
             int f = (int)fd->asLong(ctx);
@@ -25,14 +29,23 @@ static int fillFdSet(proto::ProtoContext* ctx, const proto::ProtoObject* obj, fd
         }
     };
 
-    const proto::ProtoList* list = obj->asList(ctx);
-    if (!list) {
-        const proto::ProtoTuple* tup = obj->asTuple(ctx);
-        if (tup) {
-            for (size_t i = 0; i < tup->getSize(ctx); ++i) process(tup->getAt(ctx, i));
-        }
-    } else {
+    if (const proto::ProtoList* list = obj->asList(ctx)) {
         for (size_t i = 0; i < list->getSize(ctx); ++i) process(list->getAt(ctx, i));
+        return maxfd;
+    }
+    if (const proto::ProtoTuple* tup = obj->asTuple(ctx)) {
+        for (size_t i = 0; i < tup->getSize(ctx); ++i) process(tup->getAt(ctx, i));
+        return maxfd;
+    }
+    if (obj->isSet(ctx)) {
+        const proto::ProtoSet* s = obj->asSet(ctx);
+        if (s) {
+            auto* it = const_cast<proto::ProtoSetIterator*>(s->getIterator(ctx));
+            while (it && it->hasNext(ctx)) {
+                process(it->next(ctx));
+                it = const_cast<proto::ProtoSetIterator*>(it->advance(ctx));
+            }
+        }
     }
     return maxfd;
 }
@@ -89,22 +102,22 @@ static const proto::ProtoObject* py_select(
     auto makeResultList = [&](const proto::ProtoObject* original, fd_set& set) {
         const proto::ProtoList* result = ctx->newList();
         if (!original) return result->asObject(ctx);
-        const proto::ProtoList* list = original->asList(ctx);
-        if (!list) {
-            const proto::ProtoTuple* tup = original->asTuple(ctx);
-            if (tup) {
-                for (size_t i = 0; i < tup->getSize(ctx); ++i) {
-                    const proto::ProtoObject* fd = tup->getAt(ctx, i);
-                    if (fd && fd->isInteger(ctx) && FD_ISSET((int)fd->asLong(ctx), &set)) {
-                        result = result->appendLast(ctx, fd);
-                    }
-                }
+        auto check = [&](const proto::ProtoObject* fd) {
+            if (fd && fd->isInteger(ctx) && FD_ISSET((int)fd->asLong(ctx), &set)) {
+                result = result->appendLast(ctx, fd);
             }
-        } else {
-            for (size_t i = 0; i < list->getSize(ctx); ++i) {
-                const proto::ProtoObject* fd = list->getAt(ctx, i);
-                if (fd && fd->isInteger(ctx) && FD_ISSET((int)fd->asLong(ctx), &set)) {
-                    result = result->appendLast(ctx, fd);
+        };
+        if (const proto::ProtoList* list = original->asList(ctx)) {
+            for (size_t i = 0; i < list->getSize(ctx); ++i) check(list->getAt(ctx, i));
+        } else if (const proto::ProtoTuple* tup = original->asTuple(ctx)) {
+            for (size_t i = 0; i < tup->getSize(ctx); ++i) check(tup->getAt(ctx, i));
+        } else if (original->isSet(ctx)) {
+            const proto::ProtoSet* s = original->asSet(ctx);
+            if (s) {
+                auto* it = const_cast<proto::ProtoSetIterator*>(s->getIterator(ctx));
+                while (it && it->hasNext(ctx)) {
+                    check(it->next(ctx));
+                    it = const_cast<proto::ProtoSetIterator*>(it->advance(ctx));
                 }
             }
         }
