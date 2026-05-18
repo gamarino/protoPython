@@ -288,10 +288,11 @@ static const proto::ProtoObject* py_listdir(
         if (pathObj->isString(ctx))
             pathObj->asString(ctx)->toUTF8String(ctx, path);
     }
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     const proto::ProtoList* result = ctx->newList();
     DIR* d = opendir(path.c_str());
-    if (!d) return result->asObject(ctx);
+    if (!d) return env ? env->wrapList(ctx, result) : result->asObject(ctx);
     for (;;) {
         struct dirent* e = readdir(d);
         if (!e) break;
@@ -301,10 +302,10 @@ static const proto::ProtoObject* py_listdir(
         result = result->appendLast(ctx, PythonEnvironment::getInternedString(ctx, n)->asObject(ctx));
     }
     closedir(d);
-    return result->asObject(ctx);
+    return PythonEnvironment::wrapList(ctx, result);
 #else
     (void)path;
-    return ctx->newList()->asObject(ctx);
+    return PythonEnvironment::wrapList(ctx, ctx->newList());
 #endif
 }
 
@@ -684,23 +685,19 @@ static const proto::ProtoObject* py_environ_keys(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
-    // log removed
     const proto::ProtoList* result = ctx->newList();
     for (char** p = environ; p && *p; ++p) {
         const char* eq = strchr(*p, '=');
         if (eq && eq > *p) {
             std::string key(*p, static_cast<size_t>(eq - *p));
-            if (get_env_diag()) {
-                // log removed
-            }
             result = result->appendLast(ctx, PythonEnvironment::getInternedString(ctx, key.c_str())->asObject(ctx));
         }
     }
-    // log removed
-    return result->asObject(ctx);
+    return PythonEnvironment::wrapList(ctx, result);
 #else
-    return ctx->newList()->asObject(ctx);
+    return PythonEnvironment::wrapList(ctx, ctx->newList());
 #endif
 }
 
@@ -710,6 +707,7 @@ static const proto::ProtoObject* py_environ_values(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     const proto::ProtoList* result = ctx->newList();
     for (char** p = environ; p && *p; ++p) {
@@ -719,9 +717,9 @@ static const proto::ProtoObject* py_environ_values(
             result = result->appendLast(ctx, PythonEnvironment::getInternedString(ctx, value.c_str())->asObject(ctx));
         }
     }
-    return result->asObject(ctx);
+    return PythonEnvironment::wrapList(ctx, result);
 #else
-    return ctx->newList()->asObject(ctx);
+    return PythonEnvironment::wrapList(ctx, ctx->newList());
 #endif
 }
 
@@ -731,6 +729,7 @@ static const proto::ProtoObject* py_environ_items(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     const proto::ProtoList* result = ctx->newList();
     for (char** p = environ; p && *p; ++p) {
@@ -744,9 +743,9 @@ static const proto::ProtoObject* py_environ_items(
             result = result->appendLast(ctx, ctx->newTupleFromList(pair)->asObject(ctx));
         }
     }
-    return result->asObject(ctx);
+    return PythonEnvironment::wrapList(ctx, result);
 #else
-    return ctx->newList()->asObject(ctx);
+    return PythonEnvironment::wrapList(ctx, ctx->newList());
 #endif
 }
 
@@ -1926,7 +1925,8 @@ static const proto::ProtoObject* py_os_get_exec_path(
         if (end == std::string::npos) break;
         start = end + 1;
     }
-    return result->asObject(ctx);
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    return PythonEnvironment::wrapList(ctx, result);
 }
 
 // os.register_at_fork(before=..., after_in_parent=..., after_in_child=...) -> None.

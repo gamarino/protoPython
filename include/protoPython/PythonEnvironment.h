@@ -76,6 +76,27 @@ public:
     const proto::ProtoObject* getListPrototype() const { return listPrototype; }
 
     /**
+     * @brief Wraps a raw ProtoList* into a Python `list` instance.
+     *
+     * Native handlers that build a ProtoList with appendLast and
+     * return `protoList->asObject(ctx)` directly produce a value
+     * for which Python's `type()` reports "list" but `__len__` /
+     * `__bool__` resolve to 0/False — the slot dispatchers walk
+     * `self.__data__`, and a bare ProtoList has no `__data__`
+     * attribute.  This helper produces a real list instance
+     * (parent = listPrototype, `__data__` = the raw list).
+     *
+     * Always prefer this over `rawList->asObject(ctx)` at every
+     * return-to-Python boundary.  Static so handlers that don't
+     * already hold a `PythonEnvironment*` can call it directly via
+     * `PythonEnvironment::wrapList(ctx, list)`; falls back to
+     * `rawList->asObject(ctx)` if the environment is not yet
+     * initialised (e.g. bootstrap).
+     */
+    static const proto::ProtoObject* wrapList(proto::ProtoContext* ctx,
+                                              const proto::ProtoList* rawList);
+
+    /**
      * @brief Gets the Python 'dict' prototype.
      */
 

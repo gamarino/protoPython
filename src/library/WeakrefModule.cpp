@@ -353,7 +353,7 @@ static const proto::ProtoObject* py_weakref_getweakrefcount(
 static const proto::ProtoObject* py_weakref_getweakrefs(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList*, const proto::ProtoSparseList*) {
-    return ctx->newList()->asObject(ctx);
+    return PythonEnvironment::wrapList(ctx, ctx->newList());
 }
 
 static const proto::ProtoObject* py_weakref_remove_dead_weakref(

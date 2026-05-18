@@ -396,22 +396,22 @@ const proto::ProtoObject* py_pack(proto::ProtoContext* ctx,
 const proto::ProtoObject* py_unpack(proto::ProtoContext* ctx,
     const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* args, const proto::ProtoSparseList*) {
-    if (!args || args->getSize(ctx) < 2) return ctx->newList()->asObject(ctx);
+    if (!args || args->getSize(ctx) < 2) return PythonEnvironment::wrapList(ctx, ctx->newList());
     std::string fmt;
-    if (!extract_bytes(ctx, args->getAt(ctx, 0), fmt)) return ctx->newList()->asObject(ctx);
+    if (!extract_bytes(ctx, args->getAt(ctx, 0), fmt)) return PythonEnvironment::wrapList(ctx, ctx->newList());
     std::string buf;
-    if (!extract_bytes(ctx, args->getAt(ctx, 1), buf)) return ctx->newList()->asObject(ctx);
+    if (!extract_bytes(ctx, args->getAt(ctx, 1), buf)) return PythonEnvironment::wrapList(ctx, ctx->newList());
     return unpack_impl(ctx, fmt, buf, 0);
 }
 
 const proto::ProtoObject* py_unpack_from(proto::ProtoContext* ctx,
     const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* args, const proto::ProtoSparseList*) {
-    if (!args || args->getSize(ctx) < 2) return ctx->newList()->asObject(ctx);
+    if (!args || args->getSize(ctx) < 2) return PythonEnvironment::wrapList(ctx, ctx->newList());
     std::string fmt;
-    if (!extract_bytes(ctx, args->getAt(ctx, 0), fmt)) return ctx->newList()->asObject(ctx);
+    if (!extract_bytes(ctx, args->getAt(ctx, 0), fmt)) return PythonEnvironment::wrapList(ctx, ctx->newList());
     std::string buf;
-    if (!extract_bytes(ctx, args->getAt(ctx, 1), buf)) return ctx->newList()->asObject(ctx);
+    if (!extract_bytes(ctx, args->getAt(ctx, 1), buf)) return PythonEnvironment::wrapList(ctx, ctx->newList());
     long long offset = 0;
     if (args->getSize(ctx) >= 3) {
         const proto::ProtoObject* o = args->getAt(ctx, 2);
@@ -423,23 +423,23 @@ const proto::ProtoObject* py_unpack_from(proto::ProtoContext* ctx,
 const proto::ProtoObject* py_iter_unpack(proto::ProtoContext* ctx,
     const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* args, const proto::ProtoSparseList*) {
-    if (!args || args->getSize(ctx) < 2) return ctx->newList()->asObject(ctx);
+    if (!args || args->getSize(ctx) < 2) return PythonEnvironment::wrapList(ctx, ctx->newList());
     std::string fmt;
-    if (!extract_bytes(ctx, args->getAt(ctx, 0), fmt)) return ctx->newList()->asObject(ctx);
+    if (!extract_bytes(ctx, args->getAt(ctx, 0), fmt)) return PythonEnvironment::wrapList(ctx, ctx->newList());
     std::string buf;
-    if (!extract_bytes(ctx, args->getAt(ctx, 1), buf)) return ctx->newList()->asObject(ctx);
+    if (!extract_bytes(ctx, args->getAt(ctx, 1), buf)) return PythonEnvironment::wrapList(ctx, ctx->newList());
     char order;
     std::vector<FmtItem> items;
     if (!parse_format(ctx, fmt, order, items)) return nullptr;
     int chunk = format_total_size(items);
-    if (chunk <= 0) return ctx->newList()->asObject(ctx);
+    if (chunk <= 0) return PythonEnvironment::wrapList(ctx, ctx->newList());
     const proto::ProtoList* result = ctx->newList();
     for (size_t off = 0; off + chunk <= buf.size(); off += chunk) {
         const proto::ProtoObject* tup = unpack_impl(ctx, fmt, buf, static_cast<unsigned long>(off));
         if (!tup) return nullptr;
         result = result->appendLast(ctx, tup);
     }
-    return result->asObject(ctx);
+    return PythonEnvironment::wrapList(ctx, result);
 }
 
 const proto::ProtoObject* py_clearcache(proto::ProtoContext*,
@@ -489,13 +489,13 @@ const proto::ProtoObject* py_struct_pack(proto::ProtoContext* ctx,
 const proto::ProtoObject* py_struct_unpack(proto::ProtoContext* ctx,
     const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* args, const proto::ProtoSparseList*) {
-    if (!args || args->getSize(ctx) < 1) return ctx->newList()->asObject(ctx);
+    if (!args || args->getSize(ctx) < 1) return PythonEnvironment::wrapList(ctx, ctx->newList());
     const proto::ProtoObject* fmtObj = self->getAttribute(ctx,
         PythonEnvironment::getInternedString(ctx, "format"));
     std::string fmt;
     if (fmtObj && fmtObj->isString(ctx)) fmtObj->asString(ctx)->toUTF8String(ctx, fmt);
     std::string buf;
-    if (!extract_bytes(ctx, args->getAt(ctx, 0), buf)) return ctx->newList()->asObject(ctx);
+    if (!extract_bytes(ctx, args->getAt(ctx, 0), buf)) return PythonEnvironment::wrapList(ctx, ctx->newList());
     return unpack_impl(ctx, fmt, buf, 0);
 }
 

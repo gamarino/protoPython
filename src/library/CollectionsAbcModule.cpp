@@ -139,7 +139,7 @@ static const proto::ProtoObject* py_mapping_keys(
     if (!mapping || mapping == PROTO_NONE) {
         if (posArgs && posArgs->getSize(ctx) > 0) mapping = posArgs->getAt(ctx, 0);
     }
-    if (!mapping || mapping == PROTO_NONE) return ctx->newList()->asObject(ctx);
+    if (!mapping || mapping == PROTO_NONE) return PythonEnvironment::wrapList(ctx, ctx->newList());
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoList* emptyL = ctx->newList();
 
@@ -153,14 +153,14 @@ static const proto::ProtoObject* py_mapping_keys(
     const proto::ProtoString* iterS = PythonEnvironment::getInternalString(ctx, "__iter__");
     const proto::ProtoObject* iterM = mapping->getAttribute(ctx, iterS);
     const proto::ProtoObject* itObj = iterM ? callM(iterM, mapping) : nullptr;
-    if (!itObj || itObj == PROTO_NONE) return ctx->newList()->asObject(ctx);
+    if (!itObj || itObj == PROTO_NONE) return PythonEnvironment::wrapList(ctx, ctx->newList());
 
     // Pin the derived iterator across user __next__ callbacks.
     PythonEnvironment::TransientPin pinIt(env, itObj);
 
     const proto::ProtoString* nextS = PythonEnvironment::getInternalString(ctx, "__next__");
     const proto::ProtoObject* nextM = itObj->getAttribute(ctx, nextS);
-    if (!nextM || nextM == PROTO_NONE) return ctx->newList()->asObject(ctx);
+    if (!nextM || nextM == PROTO_NONE) return PythonEnvironment::wrapList(ctx, ctx->newList());
 
     const proto::ProtoList* result = ctx->newList();
     for (;;) {
@@ -172,7 +172,7 @@ static const proto::ProtoObject* py_mapping_keys(
         if (!key || key == PROTO_NONE) break;
         result = result->appendLast(ctx, key);
     }
-    return result->asObject(ctx);
+    return PythonEnvironment::wrapList(ctx, result);
 }
 
 /** Mapping.values(): returns a list of values */
@@ -187,14 +187,14 @@ static const proto::ProtoObject* py_mapping_values(
         if (posArgs && posArgs->getSize(ctx) > 0) mapping = posArgs->getAt(ctx, 0);
     }
     const proto::ProtoList* items = collectMappingItems(ctx, mapping);
-    if (!items) return ctx->newList()->asObject(ctx);
+    if (!items) return PythonEnvironment::wrapList(ctx, ctx->newList());
     const proto::ProtoList* result = ctx->newList();
     for (unsigned long i = 0; i < items->getSize(ctx); ++i) {
         const proto::ProtoObject* pair = items->getAt(ctx, i);
         if (pair && pair->isTuple(ctx) && pair->asTuple(ctx)->getSize(ctx) >= 2)
             result = result->appendLast(ctx, pair->asTuple(ctx)->getAt(ctx, 1));
     }
-    return result->asObject(ctx);
+    return PythonEnvironment::wrapList(ctx, result);
 }
 
 /** Mapping.__contains__(self, key): key in self by attempting self[key]

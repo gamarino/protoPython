@@ -105,9 +105,9 @@ static const proto::ProtoObject* py_formatter_parser(
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList*) {
 
-    if (!posArgs || posArgs->getSize(ctx) < 1) return ctx->newList()->asObject(ctx);
+    if (!posArgs || posArgs->getSize(ctx) < 1) return PythonEnvironment::wrapList(ctx, ctx->newList());
     const proto::ProtoObject* fmtObj = posArgs->getAt(ctx, 0);
-    if (!fmtObj || !fmtObj->isString(ctx)) return ctx->newList()->asObject(ctx);
+    if (!fmtObj || !fmtObj->isString(ctx)) return PythonEnvironment::wrapList(ctx, ctx->newList());
 
     std::string fmt;
     fmtObj->asString(ctx)->toUTF8String(ctx, fmt);

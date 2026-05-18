@@ -99,9 +99,10 @@ static const proto::ProtoObject* py_select(
         return nullptr;
     }
 
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     auto makeResultList = [&](const proto::ProtoObject* original, fd_set& set) {
         const proto::ProtoList* result = ctx->newList();
-        if (!original) return result->asObject(ctx);
+        if (!original) return PythonEnvironment::wrapList(ctx, result);
         auto check = [&](const proto::ProtoObject* fd) {
             if (fd && fd->isInteger(ctx) && FD_ISSET((int)fd->asLong(ctx), &set)) {
                 result = result->appendLast(ctx, fd);
@@ -121,7 +122,7 @@ static const proto::ProtoObject* py_select(
                 }
             }
         }
-        return result->asObject(ctx);
+        return PythonEnvironment::wrapList(ctx, result);
     };
 
     const proto::ProtoList* tuple = ctx->newList();

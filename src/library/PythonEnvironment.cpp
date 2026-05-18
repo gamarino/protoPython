@@ -15486,6 +15486,29 @@ PythonEnvironment* PythonEnvironment::fromContext(proto::ProtoContext* ctx) {
     return s_threadEnv;
 }
 
+const proto::ProtoObject* PythonEnvironment::wrapList(proto::ProtoContext* ctx,
+                                                      const proto::ProtoList* rawList) {
+    // Match the pattern py_globals (BuiltinsModule.cpp) uses to
+    // produce a list that Python sees as having a real
+    // __len__/__bool__/__iter__.  Static — looks up the
+    // environment via fromContext; falls back to the bare
+    // rawList->asObject() if the env isn't ready (during
+    // bootstrap a few sites still build native lists before
+    // PythonEnvironment is fully wired).
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoList* underlying = rawList ? rawList : ctx->newList();
+    if (!env || !env->listPrototype) {
+        return underlying->asObject(ctx);
+    }
+    const proto::ProtoObject* listObj = ctx->newObject(false);
+    listObj = listObj->addParent(ctx, env->listPrototype);
+    const proto::ProtoString* dataName = env->dataString
+        ? env->dataString
+        : PythonEnvironment::getInternedString(ctx, "__data__");
+    listObj = listObj->setAttribute(ctx, dataName, underlying->asObject(ctx));
+    return listObj;
+}
+
 void PythonEnvironment::setTraceFunction(const proto::ProtoObject* func) {
     if (!s_threadContext) return;
     const proto::ProtoString* key = proto::ProtoString::fromUTF8(s_threadContext, "_trace_func");
@@ -17634,7 +17657,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                 && args && args->getSize(ctx) >= 1) {
                 cls = args->getAt(ctx, 0);
             }
-            if (!cls) return ctx->newList()->asObject(ctx);
+            if (!cls) return env ? env->wrapList(ctx, ctx->newList()) : ctx->newList()->asObject(ctx);
             const proto::ProtoString* subListS =
                 PythonEnvironment::getInternedString(ctx, "__subclasses_list__");
             const proto::ProtoObject* listObj = cls->hasOwnAttribute(ctx, subListS) == PROTO_TRUE
@@ -17647,14 +17670,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             for (unsigned long i = 0; i < src->getSize(ctx); ++i) {
                 copy = copy->appendLast(ctx, src->getAt(ctx, static_cast<int>(i)));
             }
-            if (env && env->getListPrototype()) {
-                proto::ProtoObject* w = const_cast<proto::ProtoObject*>(ctx->newObject(true));
-                w = const_cast<proto::ProtoObject*>(w->setAttribute(ctx, env->getDataString(), copy->asObject(ctx)));
-                w = const_cast<proto::ProtoObject*>(w->addParent(ctx, env->getListPrototype()));
-                w = const_cast<proto::ProtoObject*>(w->setAttribute(ctx, env->getClassString(), env->getListPrototype()));
-                return w;
-            }
-            return copy->asObject(ctx);
+            return env ? env->wrapList(ctx, copy) : copy->asObject(ctx);
         }));
     typePrototype = typePrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__or__"), rootContext_->fromMethod(nullptr, py_type_or));
     typePrototype = typePrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__instancecheck__"), rootContext_->fromMethod(nullptr, py_type_instancecheck));

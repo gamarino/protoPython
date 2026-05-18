@@ -713,10 +713,10 @@ static const proto::ProtoObject* py_pattern_findall(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
 {
-    if (posArgs->getSize(ctx) < 1) return ctx->newList()->asObject(ctx);
+    if (posArgs->getSize(ctx) < 1) return PythonEnvironment::wrapList(ctx, ctx->newList());
     std::string pat, s;
-    if (!getPattern(ctx, self, pat)) return ctx->newList()->asObject(ctx);
-    if (!posArgs->getAt(ctx, 0)->isString(ctx)) return ctx->newList()->asObject(ctx);
+    if (!getPattern(ctx, self, pat)) return PythonEnvironment::wrapList(ctx, ctx->newList());
+    if (!posArgs->getAt(ctx, 0)->isString(ctx)) return PythonEnvironment::wrapList(ctx, ctx->newList());
     posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, s);
     long long flags = extractFlags(ctx, self, nullptr, -1);
     std::regex re = makeRegex(ctx, pat, flags);
@@ -753,7 +753,7 @@ static const proto::ProtoObject* py_pattern_findall(
             results->asObject(ctx));
         return listObj;
     }
-    return results->asObject(ctx);
+    return PythonEnvironment::wrapList(ctx, results);
 }
 
 // pattern.finditer(string[, pos[, endpos]]) → list of match objects.
@@ -764,10 +764,10 @@ static const proto::ProtoObject* py_pattern_finditer(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
 {
-    if (posArgs->getSize(ctx) < 1) return ctx->newList()->asObject(ctx);
+    if (posArgs->getSize(ctx) < 1) return PythonEnvironment::wrapList(ctx, ctx->newList());
     std::string pat, s;
-    if (!getPattern(ctx, self, pat)) return ctx->newList()->asObject(ctx);
-    if (!posArgs->getAt(ctx, 0)->isString(ctx)) return ctx->newList()->asObject(ctx);
+    if (!getPattern(ctx, self, pat)) return PythonEnvironment::wrapList(ctx, ctx->newList());
+    if (!posArgs->getAt(ctx, 0)->isString(ctx)) return PythonEnvironment::wrapList(ctx, ctx->newList());
     posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, s);
     long long flags = extractFlags(ctx, self, nullptr, -1);
     std::regex re = makeRegex(ctx, pat, flags);
@@ -787,17 +787,17 @@ static const proto::ProtoObject* py_pattern_finditer(
             PythonEnvironment::getInternedString(ctx, "__data__"), results->asObject(ctx)));
         return listObj;
     }
-    return results->asObject(ctx);
+    return PythonEnvironment::wrapList(ctx, results);
 }
 
 static const proto::ProtoObject* py_pattern_split(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
 {
-    if (posArgs->getSize(ctx) < 1) return ctx->newList()->asObject(ctx);
+    if (posArgs->getSize(ctx) < 1) return PythonEnvironment::wrapList(ctx, ctx->newList());
     std::string pat, s;
-    if (!getPattern(ctx, self, pat)) return ctx->newList()->asObject(ctx);
-    if (!posArgs->getAt(ctx, 0)->isString(ctx)) return ctx->newList()->asObject(ctx);
+    if (!getPattern(ctx, self, pat)) return PythonEnvironment::wrapList(ctx, ctx->newList());
+    if (!posArgs->getAt(ctx, 0)->isString(ctx)) return PythonEnvironment::wrapList(ctx, ctx->newList());
     posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, s);
     long long flags = extractFlags(ctx, self, nullptr, -1);
     std::regex re = makeRegex(ctx, pat, flags);
@@ -816,7 +816,7 @@ static const proto::ProtoObject* py_pattern_split(
             results->asObject(ctx));
         return listObj;
     }
-    return results->asObject(ctx);
+    return PythonEnvironment::wrapList(ctx, results);
 }
 
 // Module-level findall / fullmatch / split / sub
@@ -842,7 +842,7 @@ static const proto::ProtoObject* py_findall(
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwargs)
 {
     // Delegate to py_pattern_findall by treating posArgs[0] as pattern and posArgs[1] as string.
-    if (posArgs->getSize(ctx) < 2) return ctx->newList()->asObject(ctx);
+    if (posArgs->getSize(ctx) < 2) return PythonEnvironment::wrapList(ctx, ctx->newList());
     const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* strObj = posArgs->getAt(ctx, 1);
     // Build a temporary 1-element arg list (string only) and call pattern findall with self=patObj
@@ -908,12 +908,12 @@ static const proto::ProtoObject* py_finditer(
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwargs)
 {
     // re.finditer(pattern, string) → iterator of match objects (returned as list)
-    if (posArgs->getSize(ctx) < 2) return ctx->newList()->asObject(ctx);
+    if (posArgs->getSize(ctx) < 2) return PythonEnvironment::wrapList(ctx, ctx->newList());
     const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* strObj = posArgs->getAt(ctx, 1);
     std::string pat, s;
-    if (!getPattern(ctx, patObj, pat)) return ctx->newList()->asObject(ctx);
-    if (!strObj->isString(ctx)) return ctx->newList()->asObject(ctx);
+    if (!getPattern(ctx, patObj, pat)) return PythonEnvironment::wrapList(ctx, ctx->newList());
+    if (!strObj->isString(ctx)) return PythonEnvironment::wrapList(ctx, ctx->newList());
     strObj->asString(ctx)->toUTF8String(ctx, s);
     long long flags = extractFlags(ctx, patObj, posArgs, 2);
     std::regex re = makeRegex(ctx, pat, flags);
@@ -932,7 +932,7 @@ static const proto::ProtoObject* py_finditer(
             PythonEnvironment::getInternedString(ctx, "__data__"), results->asObject(ctx)));
         return listObj;
     }
-    return results->asObject(ctx);
+    return PythonEnvironment::wrapList(ctx, results);
 }
 
 static const proto::ProtoObject* py_split_module(
@@ -940,7 +940,7 @@ static const proto::ProtoObject* py_split_module(
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwargs)
 {
     // re.split(pattern, string, ...)
-    if (posArgs->getSize(ctx) < 2) return ctx->newList()->asObject(ctx);
+    if (posArgs->getSize(ctx) < 2) return PythonEnvironment::wrapList(ctx, ctx->newList());
     const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* strObj = posArgs->getAt(ctx, 1);
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, strObj);

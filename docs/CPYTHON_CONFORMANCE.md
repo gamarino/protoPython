@@ -148,10 +148,10 @@ via its iterator, so both lists and sets work natively.  The
 `list(...)` workaround in `selectors.py` is kept for safety while
 the deeper runtime bug below is investigated; it is now redundant.
 
-### STRUCT-306 deferred: ProtoList return values not seen as Python lists
+### STRUCT-306b: ProtoList return values now wrapped as real Python lists
 
-A general pre-existing runtime bug affects every native handler
-that returns `protoList->asObject(ctx)`:
+A general runtime bug affected every native handler that returned
+`protoList->asObject(ctx)` directly:
 
 ```python
 import os
@@ -162,24 +162,31 @@ bool(lst)            # → False
 for x in lst: ...    # iterates fine
 ```
 
-The iterator path works, but `__len__` / `__bool__` resolve via
-`getListPrototype()`'s slot dispatch, which is bypassed when the
-return value lacks the `__class__=list` parent.  The fix is to
-wrap every list-returning handler in a real `list` instance:
+The iterator path worked, but `__len__` / `__bool__` resolve via
+`getListPrototype()`'s slot dispatch which is bypassed when the
+return value lacks the `__class__=list` parent.
 
-```cpp
-const proto::ProtoObject* listObj = ctx->newObject(false);
-listObj = listObj->addParent(ctx, env->getListPrototype());
-listObj = listObj->setAttribute(ctx, env->getDataString(),
-    rawList->asObject(ctx));
-return listObj;
-```
+**Fix**: new static helper `PythonEnvironment::wrapList(ctx, list)`
+that produces a real list instance (parent = listPrototype,
+`__data__` = the raw list), and applied uniformly across the
+sweep targets:
 
-(Already done by `py_globals` at BuiltinsModule.cpp:351.)  This
-would be a codebase-wide sweep across `os.listdir`, `os.scandir`,
-`os.environ_keys/values/items`, `select.select`, the new POSIX
-helpers, and several other modules.  Filed as STRUCT-306b for
-a dedicated round.
+- OsModule: `listdir`, `environ_keys/values/items`, `get_exec_path`
+- SelectModule: `select` result tuple's three lists
+- ReModule: `findall`, `finditer`, `split`, `scanner`, `match.groups`/`spans`
+- CollectionsAbcModule: `mapping.keys/values/items`
+- StructModule: `iter_unpack`, fallback returns
+- StringModule, WeakrefModule, OpcodeModule: fallback returns
+- PythonEnvironment: `type.__subclasses__`
+
+After the sweep, `os.listdir('.')` reports the correct length,
+`re.findall(...)` returns a real list, and selectors.SelectSelector
+works natively without the `list(self._readers)` workaround.  The
+revert of that workaround is included in this commit.
+
+The `frozenset.__or__` workaround in `selectors.py` is kept; it
+exercises a separate runtime gap (slot dispatch for inherited
+container types) filed as STRUCT-307 for a future round.
 
 ### Remaining blocker for test_type_lookup_mro_reference
 
