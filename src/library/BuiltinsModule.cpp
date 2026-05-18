@@ -3791,6 +3791,15 @@ static const proto::ProtoObject* py_memoryview(
     return instance;
 }
 
+// Forward declaration — definition lives further down (~line 7810).
+// Needed here so the super getattr can apply CPython's "is obj a subclass
+// of the type argument?" rule when choosing the MRO starting type.
+static bool py_issubclass_check_single(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* cls,
+    const proto::ProtoObject* base,
+    int depth = 0);
+
 static const proto::ProtoObject* py_super_getattr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -3853,14 +3862,34 @@ static const proto::ProtoObject* py_super_getattr(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     
     // In super(type, obj), 'type' is where searching starts in the MRO of 'obj'.
-    // If 'obj' is a class, we use its __mro__. If 'obj' is an instance, we use type(obj).__mro__.
-    // STRUCT-104: descriptor-aware __mro__ read so the round-9 SSoT
-    // path (chain reconstruction) is honoured uniformly.
-    const proto::ProtoString* mroAttrSuper = PythonEnvironment::getInternedString(context, "__mro__");
-    bool isClass = env ? (env->getAttribute(context, obj, mroAttrSuper, false) != nullptr
-                          && env->getAttribute(context, obj, mroAttrSuper, false) != PROTO_NONE)
-                       : (obj->proto::ProtoObject::getAttribute(context, mroAttrSuper) != PROTO_NONE);
+    // CPython's rule (super_init_without_args / super_check):
+    //   - If obj is an instance of `type`         -> starting_type = type(obj)
+    //   - If obj is a class AND issubclass(obj, type) -> starting_type = obj
+    //   - Else (obj is a class but NOT a subclass of type, e.g. obj is an
+    //     INSTANCE of type when type is a metaclass) -> starting_type = type(obj)
+    // STRUCT-323: the previous heuristic used `obj has __mro__` as the only
+    // gate, which collapsed the metaclass case (super(Meta, C) where C is a
+    // class but is an INSTANCE of Meta, not a subclass) into the class-bound
+    // branch.  That made starting_type=C, mroSrc=C.__mro__=[C, object]; Meta
+    // is absent so the MRO walk fell back to type->getParents() and then,
+    // critically, set descrInstance=PROTO_NONE (because isActuallyAClass(obj)
+    // is true), producing an UNBOUND method.  The caller then invoked it
+    // with (name, value) — missing self=C — and the call evaporated without
+    // ever reaching py_type_setattr.  Routing through env->setAttribute via
+    // py_super_setattr did not fix it either because py_super_setattr was
+    // never reached (the proxy returns the unbound method directly).
+    // STRUCT-323: use `isActuallyAClass(obj)` — not "obj has __mro__ via
+    // getAttribute" — to decide whether obj is a type.  Instances inherit
+    // `__mro__` from their class through the parent chain, so the
+    // getAttribute probe was returning true for instance receivers as
+    // well (e.g. `super(Child, child_instance)`), causing mroSrc=obj
+    // and the (obj == mroSrc) branch below to mistakenly fire with
+    // descrInstance=None — `Parent.__init__` then ran unbound and lost
+    // its implicit `self`.
+    bool objIsClass = env && env->isActuallyAClass(context, obj);
+    bool isClass = objIsClass && (!type || py_issubclass_check_single(context, obj, type));
     const proto::ProtoObject* mroSrc = isClass ? obj : (env ? env->getType(context, obj) : nullptr);
+    const proto::ProtoString* mroAttrSuper = PythonEnvironment::getInternedString(context, "__mro__");
     const proto::ProtoObject* mroAttr = mroSrc
         ? (env ? env->getAttribute(context, mroSrc, mroAttrSuper, false)
                : mroSrc->proto::ProtoObject::getAttribute(context, mroAttrSuper))
@@ -3999,13 +4028,20 @@ static const proto::ProtoObject* py_super_getattr(
             
             if (descrGet && descrGet != PROTO_NONE && descrGet->asMethod(context)) {
                 // CPython's super_getattro passes the descriptor __get__
-                // a NULL instance when the super is bound to a class
-                // (`super(type, cls)` from a classmethod) — `su->obj ==
-                // su->obj_type`.  Otherwise a class-bound super would run
-                // a property getter instead of returning the property
-                // object.  Detect via isActuallyAClass(obj).
+                // a NULL instance ONLY when `su->obj == su->obj_type`,
+                // i.e. when the receiver IS the starting type itself
+                // (`super(C, C).x` — class-bound super).  In every other
+                // case (including the metaclass case `super(Meta, C)`
+                // where obj=C is an INSTANCE of Meta), the receiver is
+                // passed through so that `__get__` returns a bound
+                // descriptor.  STRUCT-323: passing PROTO_NONE for any
+                // class receiver broke super().__setattr__ from inside
+                // a metaclass __setattr__ override (used by Enum's
+                // _convert_), because the resulting unbound method was
+                // invoked with only (name, value) and dropped the
+                // implicit cls.
                 const proto::ProtoObject* descrInstance =
-                    (env && env->isActuallyAClass(context, obj)) ? PROTO_NONE : obj;
+                    (obj == mroSrc) ? PROTO_NONE : obj;
                 const proto::ProtoList* args = context->newList()->appendLast(context, descrInstance)->appendLast(context, type);
                 return descrGet->asMethod(context)(context, val, nullptr, args, nullptr);
             }
@@ -4046,14 +4082,32 @@ static const proto::ProtoObject* py_super_setattr(
     if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* valueObj = positionalParameters->getAt(context, 1);
-    
+
     if (!nameObj->isString(context)) return PROTO_NONE;
-    
+
     // Get stored 'obj' and 'type' from proxy
     const proto::ProtoObject* obj = self->getAttribute(context, PythonEnvironment::getInternedString(context, "obj"));
     if (!obj || obj == PROTO_NONE) return PROTO_NONE;
 
-    // Call setAttribute directly on the bound object
+    // STRUCT-323: route through env->setAttribute so type-level
+    // setattr semantics (class-dict insertion + __keys__ tracking +
+    // descriptor protocol + cache invalidation) all fire.  The
+    // previous direct `obj->setAttribute` only wrote to protoCore's
+    // own-attr SparseList; on a TYPE receiver (the metaclass
+    // `super().__setattr__` call site), CoW + cache invariants
+    // meant a subsequent getattr re-fetched a stale chain and saw
+    // no entry.  enum.py's _convert_ relies on this path
+    // (`super().__setattr__(name, member)` for each enum member);
+    // without it, _SSLMethod / Signals / Handlers / Sigmasks all
+    // appeared as empty enums to downstream consumers.
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (env) {
+        const proto::ProtoObject* result = env->setAttribute(context, obj,
+            nameObj->asString(context), valueObj);
+        if (env->hasPendingException()) return nullptr;
+        (void)result;
+        return PROTO_NONE;
+    }
     return obj->setAttribute(context, nameObj->asString(context), valueObj);
 }
 
@@ -7495,7 +7549,7 @@ static bool checkInterfaceInstanceOf(proto::ProtoContext* context, const proto::
 }
 
 
-static bool py_issubclass_check_single(proto::ProtoContext* context, const proto::ProtoObject* cls, const proto::ProtoObject* base, int depth = 0);
+// (Forward declaration moved up — see py_super_getattr region.)
 
 static const proto::ProtoObject* py_isinstance(
     proto::ProtoContext* context,
