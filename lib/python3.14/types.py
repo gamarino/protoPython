@@ -143,29 +143,35 @@ except ImportError:
         TracebackType = type(exc.__traceback__)
         FrameType = type(exc.__traceback__.tb_frame)
 
-    # On CPython, accessing a slot/getset descriptor through the class
-    # (e.g. FunctionType.__code__) returns the descriptor object itself,
-    # whose type is `getset_descriptor` / `member_descriptor`.  protopython
-    # does not yet expose those as distinct types; the class-level access
-    # falls through to a plain `object`, which would make
-    # `isinstance(x, MemberDescriptorType)` true for *every* value and
-    # silently break code such as dataclasses._get_field that uses these
-    # types to detect slot members.  Use private sentinel classes that no
-    # ordinary value will be an instance of.  CPython-only code that wants
-    # to detect actual descriptors must check for the real types via the
-    # C extension layer; pure-Python code only needs the symbols to exist
-    # and to *not* match common values.
-    if getattr(getattr(sys, 'implementation', None), 'name', '') == 'protopython':
-        class _GetSetDescriptorPlaceholder:
-            """protopython placeholder for `getset_descriptor`."""
+    # STRUCT-322: probe the descriptor types directly from a
+    # __slots__-using class.  CPython's `FunctionType.__code__`
+    # returns the getset_descriptor / member_descriptor object, but
+    # protoPython's class-level access auto-resolves the getter, so
+    # we can't use the same probe.  Building a tiny throwaway class
+    # whose __slots__ entry produces a real member_descriptor lets
+    # us read the canonical type via `type(cls.__dict__['x'])`.
+    class _ProbeSlots:
+        __slots__ = ('_probe',)
+    _md = _ProbeSlots.__dict__.get('_probe')
+    if _md is not None and type(_md).__name__ == 'member_descriptor':
+        MemberDescriptorType = type(_md)
+    else:
         class _MemberDescriptorPlaceholder:
             """protopython placeholder for `member_descriptor`."""
-        GetSetDescriptorType = _GetSetDescriptorPlaceholder
         MemberDescriptorType = _MemberDescriptorPlaceholder
-        del _GetSetDescriptorPlaceholder, _MemberDescriptorPlaceholder
+        del _MemberDescriptorPlaceholder
+    # getset_descriptor is rarer to obtain; protoPython doesn't yet
+    # build them from pure-Python code paths, so the sentinel is
+    # still the conservative answer here.
+    _GetSetSrc = type(FunctionType.__code__)
+    if _GetSetSrc is object:
+        class _GetSetDescriptorPlaceholder:
+            """protopython placeholder for `getset_descriptor`."""
+        GetSetDescriptorType = _GetSetDescriptorPlaceholder
+        del _GetSetDescriptorPlaceholder
     else:
-        GetSetDescriptorType = type(FunctionType.__code__)
-        MemberDescriptorType = type(FunctionType.__globals__)
+        GetSetDescriptorType = _GetSetSrc
+    del _ProbeSlots, _md, _GetSetSrc
 
     GenericAlias = type(list[int])
     UnionType = type(int | str)

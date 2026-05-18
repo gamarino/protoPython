@@ -6245,19 +6245,41 @@ const proto::ProtoObject* py_type(
                     // raised in our runtime, blocking lib/_typing.py
                     // (which uses this pattern in _SpecialForm).
                     if (nm == "__doc__") return false;
-                    // STRUCT-298: CPython also exempts `__qualname__`,
-                    // `__classcell__`, and `__module__` — these names
-                    // are written into the class namespace by the
-                    // compiler/exec machinery (qualname injection,
-                    // super() cell-binding, module-level __name__) and
-                    // a `__slots__ = ['__qualname__']` declaration
-                    // promotes them to MemberDescriptors that read/write
-                    // the slot rather than the class attribute.
-                    // test_slots_special2 exercises this for
-                    // __qualname__ and __classcell__.
+                    // STRUCT-298 + STRUCT-322: CPython exempts
+                    // `__qualname__`, `__classcell__`, and `__module__`
+                    // ONLY when the compiler/exec machinery placed them
+                    // (qualname injection, super() cell-binding,
+                    // module-level __name__).  An explicit user-level
+                    // assignment with a non-default value
+                    // (e.g. `__classcell__ = 42`) still raises
+                    // TypeError — test_slots_special2 verifies that
+                    // `class C3: __classcell__ = 42; __slots__ = [...]`
+                    // is rejected.  We approximate the distinction by
+                    // looking at the value: our OP_BUILD_CLASS
+                    // injection writes PROTO_NONE; anything else is
+                    // a real user-set value that conflicts.
                     if (nm == "__qualname__"
                         || nm == "__classcell__"
-                        || nm == "__module__") return false;
+                        || nm == "__module__") {
+                        const proto::ProtoString* nmExempt = PythonEnvironment::getInternedString(context, nm.c_str());
+                        if (dictSL && dictSL->has(context, nmExempt->getHash(context))) {
+                            const proto::ProtoObject* v = dictSL->getAt(context, nmExempt->getHash(context));
+                            // PROTO_NONE / missing → compiler injection,
+                            // exempt.  A string for __qualname__ /
+                            // __module__ is also a compiler injection
+                            // (the qualname/module name).  Anything
+                            // else → conflict.
+                            if (!v || v == PROTO_NONE) return false;
+                            if ((nm == "__qualname__" || nm == "__module__")
+                                && v->isString(context)) return false;
+                            // For __classcell__: even a string value
+                            // is a user assignment that conflicts.
+                            env->raiseTypeError(context,
+                                "'" + nm + "' in __slots__ conflicts with class variable");
+                            return true;
+                        }
+                        return false;
+                    }
                     const proto::ProtoString* nmS = PythonEnvironment::getInternedString(context, nm.c_str());
                     if (dictSL && dictSL->has(context, nmS->getHash(context))) {
                         env->raiseValueError(context,
