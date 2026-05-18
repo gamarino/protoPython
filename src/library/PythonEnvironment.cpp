@@ -24114,6 +24114,15 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
     // the runtime.
     if (name == basesString
         || (name && basesString && name->getHash(ctx) == basesString->getHash(ctx))) {
+        // STRUCT-300: capture obj.__bases__ NOW so STRUCT-45 below
+        // (outside the `if (value)` block) can recover it after the
+        // pre-write inside that block replaces obj.__bases__ with
+        // the new value before user mro() runs.  Without this
+        // snapshot the "remove from old bases" walk would read the
+        // already-replaced value and no-op, leaving the previous
+        // bases' __subclasses_list__ entries stale.
+        const proto::ProtoObject* outerOriginalBases_outerScope =
+            obj->getAttribute(ctx, basesString);
         bool isImmutableBuiltin = false;
         const char* primName = nullptr;
         if (obj == intPrototype)         { isImmutableBuiltin = true; primName = "int"; }
@@ -24581,6 +24590,20 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
             // Mutate `obj` first so descendants see the new parent
             // MRO during their own C3 computation.
             applyOne(obj, newMro);
+            // STRUCT-300: pre-write `obj.__bases__ = value` BEFORE
+            // invoking user `mro()`.  This mirrors CPython's
+            // type_set_bases protocol, which assigns the new bases
+            // tuple, then re-runs mro on the type — user code that
+            // reads `cls.__bases__` inside mro() sees the new value.
+            // Without this, the
+            // test_tp_subclasses_cycle_error_return_path pattern
+            //   def mro(cls):
+            //     if C.__bases__ == (B2,): self.ready = False
+            //     else: C.__bases__ = (B2,); raise E
+            // loops forever because each level reads the unchanged
+            // (A,) and re-enters with (B2,).
+            const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setAttribute(
+                ctx, basesS2, value);
             // STRUCT-286: invoke user metaclass.mro() for `obj` too,
             // not just its subclasses (STRUCT-285 covered subclasses).
             // test_reent_set_bases_tp_base_cycle exercises this via
@@ -24615,20 +24638,38 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                             } else {
                                 invokePythonCallable(ctx, userMro, args, nullptr);
                             }
-                            // STRUCT-293: only restore savedMro when the
-                            // user mro() did NOT recursively rewrite
-                            // __bases__.  An inner `obj.__bases__ = X`
-                            // ran to completion and installed its own
-                            // __mro__; blindly restoring our savedMro
-                            // would stomp the inner's result.
+                            // STRUCT-300: only restore savedMro when
+                            // the user mro() did NOT recursively
+                            // rewrite __bases__ (postBases still ==
+                            // our pre-write value).  An inner
+                            // `obj.__bases__ = X` ran to completion
+                            // and installed its own __mro__; blindly
+                            // restoring our savedMro would stomp it.
                             const proto::ProtoObject* postMroBases =
                                 obj->getAttribute(ctx, basesS2);
-                            if (savedMro && postMroBases == outerOriginalBases) {
+                            if (savedMro && postMroBases == value) {
                                 const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setAttribute(
                                     ctx, mroS, savedMro);
                             }
                             if (hasPendingException()) {
-                                rollbackAll();
+                                // STRUCT-300: rollback semantics
+                                // depend on whether re-entry committed.
+                                // * postBases == value → no re-entry;
+                                //   our pre-write + applyOne are still
+                                //   the live state.  Restore __bases__
+                                //   to outerOriginalBases and undo
+                                //   applyOne.
+                                // * postBases != value → re-entry
+                                //   overwrote __bases__ and replaced
+                                //   __mro__/parents via its own
+                                //   applyOne; preserve that state and
+                                //   propagate the exception without
+                                //   touching anything.
+                                if (postMroBases == value) {
+                                    const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setAttribute(
+                                        ctx, basesS2, outerOriginalBases);
+                                    rollbackAll();
+                                }
                                 return nullptr;
                             }
                         }
@@ -24716,19 +24757,19 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                 return nullptr; // TypeError raised in descendant's computeC3MRO
             }
 
-            // STRUCT-293: re-entrancy detection.  If user mro() re-entered
-            // and wrote `obj.__bases__ = X` to completion, the inner call
-            // already produced final state (subclasses list rewired, __mro__
-            // / parents installed, __bases__ written).  The outer must
-            // short-circuit before STRUCT-45 (which would remove obj from
-            // the inner-installed base's subs list and add it to the
-            // outer's requested base) and before the final __bases__ write
-            // below (which would clobber inner's value).  Returning obj
-            // here leaves the inner's effects intact, matching CPython's
-            // semantics in test_tp_subclasses_cycle_in_update_slots.
+            // STRUCT-300: re-entrancy detection.  With pre-write,
+            // `obj.__bases__ == value` if no inner re-entry happened,
+            // and `obj.__bases__ != value` if an inner setAttribute
+            // call overwrote our pre-write.  The latter means the
+            // inner completed its own STRUCT-45 + __bases__ write,
+            // and the outer must short-circuit to preserve those
+            // effects (matches CPython's semantics in
+            // test_tp_subclasses_cycle_in_update_slots and the
+            // success-then-raise tail of
+            // test_tp_subclasses_cycle_error_return_path).
             const proto::ProtoObject* postBases =
                 obj->getAttribute(ctx, basesS2);
-            if (postBases != outerOriginalBases && postBases != value) {
+            if (postBases != value) {
                 return obj;
             }
         }
@@ -24739,11 +24780,16 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
         // `NewBase.__subclasses__()` does.  protoPython previously
         // only registered direct bases at class-creation time —
         // dynamic reassignment left both sides stale.
+        //
+        // STRUCT-300: use the outer-scope snapshot captured before
+        // the pre-write replaced obj.__bases__ with `value`.  Reading
+        // obj.__bases__ now would yield `value` itself (no-op walk).
         const proto::ProtoString* subListS =
             getInternedString(ctx, "__subclasses_list__");
         const proto::ProtoString* basesAttrS =
             getInternedString(ctx, "__bases__");
-        const proto::ProtoObject* oldBases = obj->getAttribute(ctx, basesAttrS);
+        const proto::ProtoObject* oldBases = outerOriginalBases_outerScope;
+        (void)basesAttrS;
         const proto::ProtoTuple* oldT = oldBases ? oldBases->asTuple(ctx) : nullptr;
         const proto::ProtoList* oldL = oldT ? nullptr : (oldBases ? oldBases->asList(ctx) : nullptr);
         unsigned long oldN = oldT ? oldT->getSize(ctx) : (oldL ? oldL->getSize(ctx) : 0);
@@ -24784,6 +24830,13 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                 }
             }
         }
+        // STRUCT-300: __bases__ was pre-written inside the value-set
+        // block above (before invoking user mro()); the final
+        // generic `obj->setAttribute(name, value)` further down would
+        // re-write it (idempotent in the no-reentry case, but a
+        // silent clobber of any inner re-entrant write).  Return
+        // obj now to skip the rest of the function for __bases__.
+        return obj;
     }
 
     // STRUCT-47: structural attribute writes on immutable built-in
