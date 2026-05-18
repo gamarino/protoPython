@@ -314,13 +314,8 @@ class SelectSelector(_BaseSelectorImpl):
             r, w, _ = self._select(self._readers, self._writers, [], timeout)
         except InterruptedError:
             return ready
-        # protoPython note: STRUCT-306a/b made SelectModule iterate
-        # set inputs natively; the remaining `set(...)` coercion
-        # works around a separate `frozenset.__or__` runtime gap
-        # where the slot resolves to set.__or__ and rejects the
-        # frozenset receiver.  Drop once that lands.
-        r = set(r)
-        w = set(w)
+        r = frozenset(r)
+        w = frozenset(w)
         rw = r | w
         fd_to_key_get = self._fd_to_key.get
         for fd in rw:

@@ -2609,17 +2609,16 @@ static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const pr
                         }
                     }
                     if (!ok) {
-                        // STRUCT-242: when the wrapper-receiver check
-                        // fails, raise TypeError when the wrapper's
-                        // owner is found explicitly in the receiver
-                        // type's OWN attribute dict (i.e. the user
-                        // did `class A(int): __op__ = str.__op__`).
-                        // For inherited / chain-leak misses (e.g.
-                        // `dict.__getitem__` resolved via a parent
-                        // chain), keep the silent null-return so the
-                        // implicit-dispatch path (`x in y`, etc.) can
-                        // fall back without raising.
-                        bool explicitMisbind = false;
+                        // STRUCT-307: when the receiver type has the
+                        // SAME native fn as its OWN attribute, that
+                        // is shared-implementation (set/frozenset
+                        // pattern: both prototypes bind the same
+                        // py_set_or fn), not mis-binding.  The
+                        // recorded owner is whichever prototype was
+                        // visited first by registerNativeMethodNames;
+                        // the receiver type accepted it as its own,
+                        // so the wrapper is valid here.
+                        bool sharedImpl = false;
                         if (rcvType) {
                             const proto::ProtoString* attrKey =
                                 PythonEnvironment::getInternedString(ctx, mnm.c_str());
@@ -2627,6 +2626,35 @@ static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const pr
                                 const proto::ProtoObject* ownVal =
                                     rcvType->getOwnAttributeDirect(ctx, attrKey);
                                 if (ownVal && ownVal->asMethod(ctx) == method->asMethod(ctx)) {
+                                    sharedImpl = true;
+                                }
+                            }
+                        }
+                        if (sharedImpl) {
+                            ok = true;
+                        }
+                    }
+                    // STRUCT-242: when the wrapper-receiver check
+                    // fails AND the receiver explicitly bound a
+                    // DIFFERENT same-named method (the legacy
+                    // `class A(int): __op__ = str.__op__` pattern),
+                    // raise TypeError.  For inherited / chain-leak
+                    // misses without an explicit own-attr binding,
+                    // keep the silent null-return so the implicit-
+                    // dispatch path (`x in y`, etc.) can fall back
+                    // without raising.
+                    if (!ok) {
+                        bool explicitMisbind = false;
+                        if (rcvType) {
+                            const proto::ProtoString* attrKey =
+                                PythonEnvironment::getInternedString(ctx, mnm.c_str());
+                            if (attrKey && rcvType->hasOwnAttribute(ctx, attrKey) == PROTO_TRUE) {
+                                const proto::ProtoObject* ownVal =
+                                    rcvType->getOwnAttributeDirect(ctx, attrKey);
+                                // Distinct fn → genuine misbind.
+                                // (Same fn already handled above.)
+                                if (ownVal && ownVal->asMethod(ctx)
+                                    && ownVal->asMethod(ctx) != method->asMethod(ctx)) {
                                     explicitMisbind = true;
                                 }
                             }
