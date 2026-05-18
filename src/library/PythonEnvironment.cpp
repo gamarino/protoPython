@@ -25423,7 +25423,26 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                 // User base class without __slots__ → instances have a __dict__.
                 // Skip `object` and `type` by pointer (avoids two getAttribute +
                 // toUTF8String + string-compare per MRO entry when no slots exist).
-                if (base != objectPrototype && base != typePrototype) {
+                // STRUCT-292: also skip the immutable-primitive built-ins
+                // (tuple, int, str, bytes, float, bool, frozenset, complex,
+                // NoneType).  Their instances carry NO per-instance __dict__
+                // — treating them as "user class without slots" wrongly
+                // declared `hasDict = true` for `class W(tuple): __slots__=
+                // ['__weakref__']`, defeating the strict-slots rejection
+                // and letting `w.foo = 42` silently succeed.  CPython's
+                // tp_dictoffset is 0 for these built-ins regardless of
+                // __slots__ presence.
+                bool isImmutablePrimitive =
+                       base == tuplePrototype
+                    || base == intPrototype
+                    || base == strPrototype
+                    || base == bytesPrototype
+                    || base == floatPrototype
+                    || base == boolPrototype
+                    || base == frozensetPrototype
+                    || base == complexPrototype
+                    || base == nonePrototype;
+                if (base != objectPrototype && base != typePrototype && !isImmutablePrimitive) {
                     hasDict = true;
                 }
             }
