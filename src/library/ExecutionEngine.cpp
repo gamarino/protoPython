@@ -1117,11 +1117,6 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
     if (closureFrame && env) {
         // Wrap as a proper Python list (with __data__ + __class__) so
         // Python-side `len(f.__closure__)`, indexing, and repr work.
-        // Previously we set the raw ProtoList here; len()/repr() on the
-        // result then went through listPrototype.__len__ which reads
-        // __data__ — absent — and reported size 0 even though the
-        // underlying list had cells.  asList() still unwraps it for the
-        // LOAD_DEREF closure walk (CLAUDE.md raw/wrapped invariant).
         const proto::ProtoList* closureTuple = ctx->newList()->appendLast(ctx, closureFrame);
         const proto::ProtoObject* closureWrapped = closureTuple->asObject(ctx);
         if (env->getListPrototype()) {
@@ -5862,7 +5857,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     if (diag_local) {
                     }
                     const proto::ProtoObject* val = PROTO_NONE;
-                    
+
                     const proto::ProtoList* worklist = ctx->newList();
                     worklist = worklist->appendLast(ctx, frame);
                     // We must track the worklist itself! Put it on stack temporarily.
@@ -5888,7 +5883,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         // parents, so an inherited cell is reached on
                         // a later iteration.
                         if (curr->hasOwnAttribute(ctx, nameS) == PROTO_TRUE) {
-                            val = curr->getAttribute(ctx, nameS);
+                            val = curr->getOwnAttributeDirect(ctx, nameS);
                             if (val) { found = true; break; }
                         }
 
@@ -5914,8 +5909,21 @@ const proto::ProtoObject* executeBytecodeRange(
                         }
                     }
 
+                    // STRUCT-303: read __data__ as an OWN attribute only,
+                    // not via getAttribute which walks the parent chain.
+                    // Walking the chain here lets a class-body's
+                    // namespace dict (whose storage uses __data__) shadow
+                    // any closer cell with the same name — exactly what
+                    // happens to a method whose parameter name matches a
+                    // class-scope local that has a __data__-backed dict.
+                    // The worklist already adds parents in a later step,
+                    // so each frame in the chain still gets its own own-
+                    // __data__ inspection in turn.
                     const proto::ProtoString* dName = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
-                    const proto::ProtoObject* dataObj = curr->getAttribute(ctx, dName);
+                    const proto::ProtoObject* dataObj =
+                        (curr->hasOwnAttribute(ctx, dName) == PROTO_TRUE)
+                            ? curr->getOwnAttributeDirect(ctx, dName)
+                            : nullptr;
                     if (dataObj && dataObj->asSparseList(ctx)) {
                         // PG: ProtoSparseList::getAt returns PROTO_NONE for
                         // missing keys, not nullptr.  Without the explicit
@@ -5929,10 +5937,24 @@ const proto::ProtoObject* executeBytecodeRange(
                         }
                     }
 
+                    // STRUCT-303: walk parents in REVERSE order so the
+                    // FIRST parent (closest scope, e.g. closureFrame
+                    // captured at BUILD_FUNCTION time) is popped FIRST
+                    // from the LIFO worklist and inspected before
+                    // class-namespace ancestors that protoCore's
+                    // getParents() returns as transitively-flattened
+                    // descendants.  Without this reversal, a method's
+                    // free variable could resolve to a class-namespace
+                    // entry with the same name BEFORE the closure cell
+                    // that legitimately holds the parameter binding —
+                    // exactly what broke `class A: def callback(self,
+                    // callback, ...): self.make(callback, ...)` style
+                    // patterns inside contextlib.ExitStack.callback +
+                    // subprocess._close_pipe_fds.
                     const proto::ProtoList* parents = curr->getParents(ctx);
                     if (parents) {
-                        for (unsigned long j = 0; j < parents->getSize(ctx); ++j) {
-                            worklist = worklist->appendLast(ctx, parents->getAt(ctx, j));
+                        for (long j = static_cast<long>(parents->getSize(ctx)) - 1; j >= 0; --j) {
+                            worklist = worklist->appendLast(ctx, parents->getAt(ctx, static_cast<int>(j)));
                             stack[stack.top - 1] = worklist->asObject(ctx);
                         }
                     }
@@ -7357,28 +7379,37 @@ const proto::ProtoObject* executeBytecodeRange(
                                         }
                                         if (!needed) continue;
                                     }
-                                    // Cell semantics: when the outer stores its locals on
-                                    // `frame` as own attributes (forceMapped path), do NOT
-                                    // snapshot them into closureFrame.  The parent chain
-                                    // closureFrame -> frame already exposes the live value,
-                                    // and a snapshot here would shadow later mutations the
-                                    // outer makes via STORE_NAME.  We detect this by
-                                    // checking whether frame already has the name as an
-                                    // OWN attribute — that's the marker for "lives on the
-                                    // frame, do not snapshot".
-                                    if (frame->hasOwnAttribute(ctx, vname) == PROTO_TRUE) {
-                                        continue;
-                                    }
+                                    // STRUCT-303: snapshot the OWN-attribute value into
+                                    // closureFrame for forceMapped (frame-mapped) outer
+                                    // locals.  Previously we skipped snapshot when frame
+                                    // had the name as an own attribute, relying on the
+                                    // parent-chain walk (closureFrame → frame) to expose
+                                    // the live value.  That walk continues PAST `frame`
+                                    // into its parent (e.g. the class body namespace), so
+                                    // a free var whose name matches a class-body local
+                                    // (e.g. a method's `callback` parameter inside `class
+                                    // A: def callback(self, callback, ...): self.make(
+                                    // callback, ...)`) resolved to the class-namespace
+                                    // value (the method function) instead of the parameter
+                                    // binding.  Snapshotting via getOwnAttributeDirect
+                                    // captures the correct OWN value without ever touching
+                                    // the chain.  Trade-off: outer-frame mutations to the
+                                    // captured local become invisible to the inner closure
+                                    // (it sees the snapshot, not a live cell), but
+                                    // parameters and the vast majority of locals are not
+                                    // mutated after the inner is created.  Real cell-style
+                                    // mutability would require a separate cell object on
+                                    // each cellvar — a larger restructuring left as a
+                                    // follow-up.
                                     const proto::ProtoObject* val = (j < outerNSlots) ? outerSlots[j] : nullptr;
-                                    // For CO_OPTIMIZED slots, PROTO_NONE is a legitimate bound
-                                    // value (e.g. a parameter `boundary=None` left at its default
-                                    // and captured by an inner closure).  Accept it.
-                                    // Only when the slot is truly unset (nullptr) do we fall
-                                    // through to the frame-attribute fallback, where PROTO_NONE
-                                    // means "attribute missing" and must be filtered out.
-                                    if (!val) {
-                                        val = frame->getAttribute(ctx, vname);
-                                        if (val == PROTO_NONE) val = nullptr;
+                                    // For CO_OPTIMIZED slots, PROTO_NONE is a legitimate
+                                    // bound value (e.g. `boundary=None` parameter).  Accept.
+                                    if (!val && frame->hasOwnAttribute(ctx, vname) == PROTO_TRUE) {
+                                        val = frame->getOwnAttributeDirect(ctx, vname);
+                                        if (val == PROTO_NONE) {
+                                            // PROTO_NONE on an OWN slot is a legitimate
+                                            // bound None — keep it.
+                                        }
                                     }
 
                                     if (val) {

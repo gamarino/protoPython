@@ -476,32 +476,10 @@ class _BaseExitStack:
     def _create_exit_wrapper(cm, cm_exit):
         return MethodType(cm_exit, cm)
 
-    # STRUCT-302: parameter `callback` renamed to `cb` here to dodge a
-    # protoPython closure-capture bug.  The original CPython code uses
-    # `callback` as the parameter name — matching the class method
-    # name `_BaseExitStack.callback` below — and our compiler captures
-    # the class-namespace `callback` (the function object) into the
-    # inner closure instead of binding the parameter value.  The
-    # `_exit_wrapper` then dispatches to the wrong target and trips
-    # on `args[0].method`.  Reproduced by:
-    #     class A:
-    #         @staticmethod
-    #         def make(cb_or_callback, *args):
-    #             def inner(): return cb_or_callback(*args)
-    #             return inner
-    #         def callback(self, cb_or_callback, *args):
-    #             return self.make(cb_or_callback, *args)
-    # When the parameter name matches the method name, `inner`'s
-    # closure for `cb_or_callback` resolves to the method, not the
-    # argument.  Compiler-level fix tracked as a follow-up; this
-    # rename is the minimal blast-radius workaround that unblocks
-    # subprocess.Popen (which routes through
-    # subprocess._close_pipe_fds → contextlib.ExitStack.callback →
-    # this wrapper) and any other contextlib.ExitStack user.
     @staticmethod
-    def _create_cb_wrapper(cb, /, *args, **kwds):
+    def _create_cb_wrapper(callback, /, *args, **kwds):
         def _exit_wrapper(exc_type, exc, tb):
-            cb(*args, **kwds)
+            callback(*args, **kwds)
         return _exit_wrapper
 
     def __init__(self):
