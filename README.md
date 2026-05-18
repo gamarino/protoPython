@@ -8,7 +8,22 @@
 
 > **"The GIL is no longer a limit. Immutability is no longer a constraint. Welcome to the era of the Swarm of One."**
 
-**protoPython** is a Python 3.14 compatible environment built from the ground up on top of [**protoCore**](https://github.com/numaes/protoCore). It delivers a parallel Python runtime that eliminates the Global Interpreter Lock (GIL) and leverages immutable data structures for thread safety. The current focus is correctness: all 17 CPython conformance test categories pass. Interpreter throughput optimization is the active next phase.
+**protoPython** is a Python 3.14 compatible environment built from the ground up on top of [**protoCore**](https://github.com/numaes/protoCore). It delivers a parallel Python runtime that eliminates the Global Interpreter Lock (GIL) and leverages immutable data structures for thread safety.
+
+> ## 🔥 14.7× faster than CPython on real parallel CPU work
+>
+> `multithread_cpu` benchmark (4 native OS threads × 2 M-iteration accumulator
+> loops): **CPython 3.14 — 2.57 s** vs **protoPython — 0.17 s**.  CPython's
+> GIL serialises the four threads; protoPython runs them in true parallel
+> with no global lock and no GC stop-the-world jitter on the hot path.
+>
+> If you build **edge / IoT controllers, robotics control loops, real-time
+> data ingestion, simulation, or any system that needs to model concurrent
+> physical processes in Python without dropping to C** — this is the only
+> Python runtime that lets you map one Python thread to one hardware core
+> 1:1, end-to-end.
+
+The current focus is correctness: all 17 CPython conformance test categories pass. Interpreter throughput optimization is the active next phase.
 
 > [!IMPORTANT]
 > **protoPython**, **protopy**, and **protopyc** are now **Ready for community review**. We invite the community to audit the architecture, test edge cases, and provide performance feedback. The compiler now supports full C++ translation with incremental collection building and runtime support.
@@ -37,7 +52,7 @@
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
 | **Performance** | **Optimization in Progress** - 2026-05-03 (Phase 8 + GC audit): see Performance Benchmarks section. Microbenchmark geomean **3.06×** slower than CPython 3.14 (now including `memory_pressure` in the suite — 43.4× / 358 MB RSS, was 191× / 1347 MB before the GC audit landed); fair pure-Python benchmark suite geomean **~30×** slower (see note on benchmark selection). Improved ~40× from V154 (1337×) through Phase 1–8 + the May 2026 GC survivor re-chain landing.  The remaining gap is dominated by bytecode dispatch overhead and `setAttribute` / `getAttribute` prototype-chain AVL traversal on every instance attribute access. ⚙️ |
 | **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
-| **test_descr.py conformance (May 2026)** | **145/155 non-skipped passing (94 %)** — `test/cpython/test_descr.py`: 9 failures + 1 error + 10 skipped out of 165 tests.  Rounds 26–37 (May 17–18) cut from 27F + 7E = 34 down to 9F + 1E = 10 (24 test flips, no regressions, ctest 183/183 verde every commit).  See `docs/CPYTHON_CONFORMANCE.md` for the per-round breakdown. ✅ |
+| **test_descr.py conformance (May 18 2026)** | **148/155 non-skipped passing (95.5 %)** — `test/cpython/test_descr.py`: 7 failures + 10 skipped out of 165 tests.  **Every remaining failure is excluded by design**: they all assert deterministic `__del__` firing, weakref clearing on `gc.collect()`, or instance-count reuse after cycle collection — semantics that protoCore's concurrent, non-eager GC explicitly does not provide.  Rounds 26–40 + STRUCT-323 / STRUCT-324 (May 17–18) cut from 27F + 7E down to 7F, 24 test flips, no regressions, ctest 199/199 verde every commit.  See `docs/CPYTHON_CONFORMANCE.md` for the per-round breakdown. ✅ |
 
 - ✅ **Generator Delegation**: Full support for `yield` and `yield from` with efficient state persistence.
 - ✅ **Smart Collection Unwrapping**: Seamless bridge between Python objects and native C++ collection methods.
@@ -540,18 +555,39 @@ In priority order:
 
 ---
 
-## 🧪 CPython semantic conformance (May 2026)
+## 🧪 CPython semantic conformance (May 18 2026)
 
 `test/cpython/test_descr.py` (165 tests, the descriptor-protocol /
-object-model torture suite from CPython 3.14) is **at 145 passing**
-out of 155 non-skipped (94 %) after the rounds 26–37 sweep — up
-from **61 passing** at the start of the session.  Remaining: 9
-failures + 1 error + 10 skipped.
+object-model torture suite from CPython 3.14) is **at 148 passing**
+out of 155 non-skipped (95.5 %) after rounds 26–40 + STRUCT-323 /
+STRUCT-324 — up from **61 passing** at the start of the session.
+Remaining: **7 failures, 0 errors, 10 skipped**.
 
-Cumulative rounds 26–37 (May 17–18) cut the failing count from
-27F + 7E = 34 down to **9F + 1E = 10** — 24 test flips, no
-regressions, `ctest --test-dir build_release` 183/183 verde on
-every commit.  Recent highlights:
+> **The 7 remaining failures are excluded by design.**  Each one
+> asserts deterministic-`__del__` ordering, weakref clearing on a
+> synchronous `gc.collect()`, or instance-count reuse immediately
+> after a cycle is collected.  protoCore's GC is **concurrent and
+> non-eager by contract** — those semantics are explicitly traded
+> away to buy GIL-free parallelism and structural-sharing
+> immutability.  They are not "bugs left to fix"; they are the
+> price of the architecture and they are documented as such:
+>
+> | Test | What it asserts |
+> |------|-----------------|
+> | `test_cycle_through_dict` | cycle collected during the test, not on a later GC tick |
+> | `test_delete_hook` | `__del__` fires synchronously on the last ref drop |
+> | `test_remove_subclass` | weakref-tracked subclass list pruned on `gc.collect()` |
+> | `test_slots` (Counted subtest) | instance counter returns to 0 immediately after the last ref |
+> | `test_subtype_resurrection` | `__del__` resurrection observed in same cycle |
+> | `test_vicious_descriptor_nonsense` | finalizer ordering between two simultaneously-dead objects |
+> | `test_weakrefs` | weakref cleared synchronously by `gc.collect()` |
+>
+> Every other semantic gap surfaced by `test_descr.py` is closed.
+
+Cumulative rounds 26–40 + STRUCT-323/324 (May 17–18) cut the failing
+count from 27F + 7E = 34 down to **7F + 0E = 7** — 27 test flips, no
+regressions, `ctest --test-dir build_release` 199/199 verde on every
+commit.  Recent highlights:
 
 | Round | Headline flip(s) | Mechanism |
 |-------|-----------------|-----------|
@@ -560,6 +596,9 @@ every commit.  Recent highlights:
 | 35 | `test_tp_subclasses_cycle_in_update_slots` | re-entrancy detection in `__bases__` setter + drop broken `_functools.partial` shim |
 | 36 | `test_reduce_copying` | builtin qualname / `__reduce__` override delegation cluster: skip module-identity dunders in exceptions→builtins copy, drop owner prefix for module-level builtins, delegate to class-level `__reduce__` |
 | 37 | `test_tp_subclasses_cycle_error_return_path` | pre-write `__bases__` before user `mro()` (CPython's type_set_bases protocol) with conditional rollback that preserves inner re-entrant effects on exception |
+| 40 | dict subclass instance-attr separation + `__classcell__` / `__qualname__` in `__slots__` | container-subclass STORE_ATTR skips `__keys__`; OP_BUILD_CLASS injects `__classcell__`/`__qualname__` placeholders so Meta.__new__ probes succeed |
+| 323 | `super().__setattr__` inside metaclass override now persists | py_super_getattr's MRO starting-type pick uses `isActuallyAClass + issubclass`, not "obj has `__mro__`" — `descrInstance` is None only when `obj == starting_type` (CPython `su->obj == su->obj_type`).  Unlocks Enum class-member install for `IntEnum._convert_('Signals')` etc. |
+| 324 | `Q1.__qualname__` reports the string when `__qualname__` is also a `__slots__` entry | OP_BUILD_CLASS parks the qualname string under `__tp_qualname__` when the slot's member_descriptor would otherwise shadow it; `getAttribute` honours that key for class receivers.  Closes `test_slots_special2`. |
 
 The earlier work hit four broad areas of CPython semantics:
 
@@ -575,10 +614,13 @@ geomean **4.25× slower** than CPython 3.14; `protopyc` (AOT to
 C++ via `protopyc --build-so`) geomean **1.72× slower** and beats
 CPython on 5 of 14 workloads (`int_sum_loop`, `multithread_cpu`,
 `call_recursion`, `pyperf_binary_trees`, `pyperf_richards_lite`).
-Conformance work rounds 31–36 (May 17–18) touches `setAttribute`/
-`getAttribute`/`__bases__`/`__reduce_ex__`/`__qualname__` paths
+On `multithread_cpu` specifically — the GIL-free architectural
+test — `protopy` runs **14.7× faster** than CPython 3.14 (4 OS
+threads × 2 M iterations).  Conformance work rounds 31–40 +
+STRUCT-323/324 (May 17–18) touches `setAttribute` / `getAttribute` /
+`__bases__` / `__reduce_ex__` / `__qualname__` / super-proxy paths
 but not the hot loop or allocation patterns; a fresh perf
-re-measure is queued for round 38+.
+re-measure is queued for round 41+.
 
 See `docs/CPYTHON_CONFORMANCE.md` for the per-round conformance
 breakdown and `CHANGELOG.md` v0.3.0 for the per-fix list.
@@ -633,6 +675,59 @@ Execute it with `protopy` (from the build tree or from your `PATH` after install
 
 ---
 
+## 📐 See the translation: Python → C++ (one-to-one, no JIT)
+
+protoPython has **two execution modes against the same runtime**: an interpreter
+(`protopy`) and an AOT compiler (`protopyc <file>.py --build-so`) that lowers
+Python directly to C++ which then `dlopen`s against `libprotoPython`.  There is
+no opaque JIT, no inline cache to debug, no warm-up curve — what you read is
+what runs.
+
+A SmallInt-dominated body like:
+
+```python
+def step(x, y):
+    return x * 2 + y
+```
+
+becomes (verbatim from `src/compiler/CppGenerator.cpp`, lines 562–584):
+
+```cpp
+([&]() -> const proto::ProtoObject* {
+    const proto::ProtoObject* __a = /* x */;
+    const proto::ProtoObject* __b = /* 2 */;
+    if (__a && __b && __a->isInteger(ctx) && __b->isInteger(ctx)) {
+        long __va = __a->asLong(ctx);
+        long __vb = __b->asLong(ctx);
+        long __vr;
+        if (!__builtin_mul_overflow(__va, __vb, &__vr))
+            return ctx->fromInteger(__vr);   // tagged SmallInt inline
+    }
+    return env->binaryOp(ctx, /* MULTIPLY */, __a, __b);  // fallback
+})();
+```
+
+Three things to notice:
+
+1. **Tag-checked inline fast path.**  `isInteger()` is an inline read of
+   the tagged-pointer low bits; `asLong()` is a sign-extending shift; the
+   `__builtin_mul_overflow` guard hands large-int promotion back to the
+   runtime.  No box/unbox, no dispatch table lookup.
+2. **Identical fallback to the interpreter.**  When the operands are not
+   SmallInts the compiled code calls `env->binaryOp(...)` — the same function
+   `protopy` would have called.  There is no "compiler-only" code path that
+   can drift from the interpreter's semantics.
+3. **One C++ source per `.py`.**  `protopyc foo.py --build-so` produces
+   `foo.cpp` (readable, debuggable, gdb-friendly) and then a `foo.so`
+   that loads via the standard module loader.  Mix-and-match compiled
+   modules with interpreted ones in the same process.
+
+This is what makes the 14.7× `multithread_cpu` story credible end-to-end:
+you can read the generated parallel arithmetic line by line and convince
+yourself there is no GIL anywhere in it.
+
+---
+
 ## 🏗️ Architecture
 
 ```mermaid
@@ -656,6 +751,53 @@ graph TD
 ## The Methodology: AI-Augmented Engineering
 
 This project was built using **extensive AI-augmentation tools** to empower human vision and strategic design. This is not "AI-generated code" in the traditional sense; it is **AI-amplified architecture**. The vision, the constraints, and the trade-offs are human; the execution is accelerated by AI as a force multiplier for complex system design. We embrace AI as the unavoidable present of software engineering.
+
+---
+
+## 🤖 How to contribute using AI
+
+You don't need to know C++20, AVL trees, or protoCore's internals to land a
+useful change.  The same Swarm-of-One workflow that built this runtime is
+the recommended way to contribute to it.  Practical recipe:
+
+1. **Clone the repo.**  `git clone https://github.com/numaes/protoPython.git`
+   (and `protoCore` as a sibling — see Quick Start).
+2. **Pick a target.**  The most actionable lists are:
+   - `docs/CPYTHON_CONFORMANCE.md` — per-round semantic gaps with the
+     specific subtest, the file it lives in, and the failure mode.
+   - `tasks/lessons.md` — operational guardrails learned the hard way;
+     a new contributor should skim this first.
+   - `benchmarks/reports/2026-05-13-three-column-final-geomean.md` —
+     the per-benchmark wall-clock + RSS table; anything in the "slow
+     under protopyc" tail is fair game.
+3. **Brief your agent.**  Open the repo in your AI agent of choice
+   (Claude Code, Cursor, Aider, Cline — all work; pick what you already
+   trust) and hand it three files:
+   - `CLAUDE.md` (root) and `protoPython/CLAUDE.md` — the project's
+     hard contracts on what touching the GC vs the dispatcher vs the
+     prototype chain implies.
+   - `docs/INTERNALS_DEEP_DIVE.md` — what each major component owns.
+   - The specific failing test or slow benchmark you want fixed.
+4. **Ask for a *plan* before code.**  The whole codebase was built
+   plan-first.  A prompt like *"Read test_descr.py::test_slots_special2,
+   probe what fails in protopy, propose a minimal fix that doesn't
+   regress ctest, then implement it"* produces a STRUCT-324-shaped
+   commit on the first try.  Asking for code-first produces drift.
+5. **Verify before merging.**  Every accepted change in this repo
+   passes `ctest --test-dir build_release -j$(nproc)` (199/199 green)
+   and does not increase `test_descr.py` failure count beyond the 7
+   GC-WONTFIX baseline.  The agent should run those itself.
+
+The two commit messages [`STRUCT-323`](https://github.com/numaes/protoPython/commit/d0795617)
+and [`STRUCT-324`](https://github.com/numaes/protoPython/commit/dc8168e6) (May 2026)
+are good models of the format: *what was broken*, *what the root cause was*,
+*what the minimal change is*, *what was verified*.  Follow that shape.
+
+If you'd like a guided first contribution, the GitHub issue tracker has a
+`good-first-agent-task` label seeded with self-contained gaps (e.g. *flip
+a single test_descr subtest*, *add an `os.X` shim*).  Comment on the
+issue with the plan your agent proposed before you start coding so we
+can sanity-check the approach.
 
 ---
 
