@@ -2,10 +2,15 @@
 #include <protoPython/IOModule.h>
 #include <protoPython/DiagUtils.h>
 #include <cstdio>
+#include <cerrno>
+#include <cstring>
 #include <sstream>
 #include <string>
 #include <iostream>
 #include <fstream>
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#include <unistd.h>
+#endif
 
 namespace protoPython {
 namespace io {
@@ -14,19 +19,103 @@ static void file_buffer_finalizer(void* ptr) {
     delete static_cast<std::string*>(ptr);
 }
 
+// Build a real `bytes` instance whose __data__ is a ProtoByteBuffer.
+// Forward-declared so the fd-based read path can return real bytes
+// instead of strings (subprocess feeds the result back into byte ops).
+static const proto::ProtoObject* bio_make_bytes(proto::ProtoContext* ctx,
+                                                const std::string& data);
+
+// Pull __file_fd__ attribute if present; -1 means "not an fd-backed
+// file" and the buffer-based code paths apply.
+static int io_get_fd(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
+    if (!self) return -1;
+    const proto::ProtoObject* fdObj = self->getAttribute(ctx,
+        proto::ProtoString::createSymbol(ctx, "__file_fd__"));
+    if (!fdObj || fdObj == PROTO_NONE) return -1;
+    if (!fdObj->isInteger(ctx)) return -1;
+    return static_cast<int>(fdObj->asLong(ctx));
+}
+
+// Extract raw octets from a bytes/bytearray/str payload — same helper
+// as OsModule's extractRawBytes, kept local so this file stays
+// self-contained.
+static bool io_extract_bytes(proto::ProtoContext* ctx,
+                             const proto::ProtoObject* obj,
+                             std::string& out) {
+    if (!obj) return false;
+    if (obj->isString(ctx)) {
+        obj->asString(ctx)->toUTF8String(ctx, out);
+        return true;
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoString* dataKey = env ? env->getDataString()
+        : PythonEnvironment::getInternedString(ctx, "__data__");
+    const proto::ProtoObject* d = obj->getAttribute(ctx, dataKey);
+    if (!d) return false;
+    if (d->isByteBuffer(ctx)) {
+        const proto::ProtoByteBuffer* bb = d->asByteBuffer(ctx);
+        if (bb) { out.assign(bb->getBuffer(ctx), bb->getSize(ctx)); return true; }
+    } else if (d->isString(ctx)) {
+        d->asString(ctx)->toUTF8String(ctx, out);
+        return true;
+    }
+    return false;
+}
+
 static const proto::ProtoObject* py_io_read(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList*) {
+    long long n = -1;
+    if (posArgs->getSize(context) > 0 && posArgs->getAt(context, 0)->isInteger(context))
+        n = posArgs->getAt(context, 0)->asLong(context);
+
+    // fd-backed file (io.open(fd, ...)): defer to ::read.  Return real
+    // bytes so subprocess._communicate can treat the result as
+    // byte-like instead of decoding-then-re-encoding strings.
+    int fd = io_get_fd(context, self);
+    if (fd >= 0) {
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+        std::string out;
+        if (n < 0) {
+            // read everything until EOF
+            char chunk[4096];
+            for (;;) {
+                ssize_t got = ::read(fd, chunk, sizeof(chunk));
+                if (got < 0) {
+                    if (errno == EINTR) continue;
+                    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+                    if (env) env->raiseOSError(context, errno, std::strerror(errno), "");
+                    return nullptr;
+                }
+                if (got == 0) break;
+                out.append(chunk, static_cast<size_t>(got));
+            }
+        } else if (n > 0) {
+            out.resize(static_cast<size_t>(n));
+            ssize_t got;
+            for (;;) {
+                got = ::read(fd, &out[0], static_cast<size_t>(n));
+                if (got >= 0) break;
+                if (errno == EINTR) continue;
+                PythonEnvironment* env = PythonEnvironment::fromContext(context);
+                if (env) env->raiseOSError(context, errno, std::strerror(errno), "");
+                return nullptr;
+            }
+            out.resize(static_cast<size_t>(got));
+        }
+        return bio_make_bytes(context, out);
+#else
+        return PythonEnvironment::getInternedString(context, "")->asObject(context);
+#endif
+    }
+
     const proto::ProtoObject* bufObj = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__file_buffer__"));
     if (!bufObj || !bufObj->asExternalPointer(context)) return PythonEnvironment::getInternedString(context, "")->asObject(context);
     std::string* buffer = static_cast<std::string*>(bufObj->asExternalPointer(context)->getPointer(context));
     if (!buffer) return PythonEnvironment::getInternedString(context, "")->asObject(context);
-    long long n = -1;
-    if (posArgs->getSize(context) > 0 && posArgs->getAt(context, 0)->isInteger(context))
-        n = posArgs->getAt(context, 0)->asLong(context);
     std::string result;
     if (n < 0) {
         result = *buffer;
@@ -46,6 +135,21 @@ static const proto::ProtoObject* py_io_close(
     const proto::ParentLink*,
     const proto::ProtoList*,
     const proto::ProtoSparseList*) {
+    // fd-backed: close the underlying fd via ::close and null out
+    // the attribute so subsequent reads/writes report a closed fd.
+    int fd = io_get_fd(context, self);
+    if (fd >= 0) {
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+        ::close(fd);
+#endif
+        const_cast<proto::ProtoObject*>(self)->setAttribute(context,
+            proto::ProtoString::createSymbol(context, "__file_fd__"),
+            context->fromInteger(-1));
+        const_cast<proto::ProtoObject*>(self)->setAttribute(context,
+            proto::ProtoString::createSymbol(context, "closed"),
+            PROTO_TRUE);
+        return PROTO_NONE;
+    }
     // Clear the buffer to simulate close
     const proto::ProtoObject* bufObj = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__file_buffer__"));
     if (bufObj && bufObj->asExternalPointer(context)) {
@@ -146,6 +250,64 @@ static const proto::ProtoObject* py_io_flush(
     return PROTO_NONE;
 }
 
+// fileno() returns the wrapped fd for fd-backed files; -1 for
+// closed files; raises for buffer-backed string files where the
+// concept doesn't apply.
+static const proto::ProtoObject* py_io_fileno(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList*,
+    const proto::ProtoSparseList*) {
+    int fd = io_get_fd(ctx, self);
+    if (fd < 0) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseOSError(ctx, 9, "Bad file descriptor", "");
+        return nullptr;
+    }
+    return ctx->fromInteger(fd);
+}
+
+// readable/writable/seekable predicates — subprocess and asyncio
+// poke these to decide whether to read/write or use TextIOWrapper.
+static const proto::ProtoObject* py_io_readable(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    int fd = io_get_fd(ctx, self);
+    if (fd < 0) return PROTO_FALSE;
+    // For fd-backed files the mode determines readability — but
+    // CPython's BufferedReader.readable() is True so long as the fd
+    // wasn't opened write-only.  We don't track mode precisely, so
+    // return True (consistent with buffered-reader-style wrappers).
+    return PROTO_TRUE;
+}
+
+static const proto::ProtoObject* py_io_writable(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    int fd = io_get_fd(ctx, self);
+    if (fd < 0) return PROTO_FALSE;
+    return PROTO_TRUE;
+}
+
+static const proto::ProtoObject* py_io_seekable(
+    proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    // Pipes / sockets / ttys are not seekable.  Conservative answer
+    // is False for fd-backed wrappers — subprocess never seeks.
+    return PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_io_isatty(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    int fd = io_get_fd(ctx, self);
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    if (fd >= 0) return ::isatty(fd) ? PROTO_TRUE : PROTO_FALSE;
+#endif
+    return PROTO_FALSE;
+}
+
 static const proto::ProtoObject* py_io_readlines(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -182,11 +344,37 @@ static const proto::ProtoObject* py_io_write(
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList*) {
     if (posArgs->getSize(context) < 1) return context->fromInteger(0);
+    const proto::ProtoObject* data = posArgs->getAt(context, 0);
+
+    // fd-backed write: emit raw octets via ::write.
+    int fd = io_get_fd(context, self);
+    if (fd >= 0) {
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+        std::string s;
+        if (!io_extract_bytes(context, data, s)) {
+            PythonEnvironment* env = PythonEnvironment::fromContext(context);
+            if (env) env->raiseTypeError(context, "a bytes-like object is required");
+            return nullptr;
+        }
+        ssize_t written;
+        for (;;) {
+            written = ::write(fd, s.data(), s.size());
+            if (written >= 0) break;
+            if (errno == EINTR) continue;
+            PythonEnvironment* env = PythonEnvironment::fromContext(context);
+            if (env) env->raiseOSError(context, errno, std::strerror(errno), "");
+            return nullptr;
+        }
+        return context->fromInteger(static_cast<long long>(written));
+#else
+        return context->fromInteger(0);
+#endif
+    }
+
     const proto::ProtoObject* bufObj = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__file_buffer__"));
     if (!bufObj || !bufObj->asExternalPointer(context)) return context->fromInteger(0);
     std::string* buffer = static_cast<std::string*>(bufObj->asExternalPointer(context)->getPointer(context));
     if (!buffer) return context->fromInteger(0);
-    const proto::ProtoObject* data = posArgs->getAt(context, 0);
     std::string s;
     if (data->isString(context)) data->asString(context)->toUTF8String(context, s);
     buffer->append(s);
@@ -200,10 +388,66 @@ static const proto::ProtoObject* py_io_open(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    
+
     const proto::ProtoObject* fileArg = positionalParameters->getAt(context, 0);
+
+    // PEP 446 / CPython compat: io.open(fd: int, mode, ...) wraps an
+    // existing OS fd into a file-like that delegates read/write/close
+    // to ::read / ::write / ::close.  subprocess.Popen routes
+    // captured stdout/stderr through this path.
+    if (fileArg && fileArg->isInteger(context)) {
+        int fd = static_cast<int>(fileArg->asLong(context));
+        std::string mode = "r";
+        if (positionalParameters->getSize(context) >= 2 && positionalParameters->getAt(context, 1)->isString(context)) {
+            positionalParameters->getAt(context, 1)->asString(context)->toUTF8String(context, mode);
+        }
+        const proto::ProtoObject* fileObj = context->newObject(false);
+        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "__file_fd__"),
+            context->fromInteger(fd));
+        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "mode"),
+            PythonEnvironment::getInternedString(context, mode.c_str())->asObject(context));
+        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "name"),
+            context->fromInteger(fd));
+        // buffering: -1 (default).
+        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "buffering"),
+            context->fromInteger(-1));
+        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "read"),
+            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_read));
+        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "readline"),
+            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_readline));
+        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "readlines"),
+            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_readlines));
+        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "write"),
+            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_write));
+        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "close"),
+            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_close));
+        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "__enter__"),
+            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_enter));
+        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "__exit__"),
+            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_exit));
+        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "__iter__"),
+            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_iter));
+        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "__next__"),
+            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_next));
+        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "flush"),
+            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_flush));
+        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "fileno"),
+            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_fileno));
+        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "readable"),
+            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_readable));
+        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "writable"),
+            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_writable));
+        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "seekable"),
+            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_seekable));
+        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "isatty"),
+            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_isatty));
+        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "closed"),
+            PROTO_FALSE);
+        return fileObj;
+    }
+
     if (!fileArg->isString(context)) return PROTO_NONE;
-    
+
     std::string filename;
     fileArg->asString(context)->toUTF8String(context, filename);
 

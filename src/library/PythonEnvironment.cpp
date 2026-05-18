@@ -38,6 +38,7 @@
 #include <protoPython/WarningsModule.h>
 #include <protoPython/AtexitModule.h>
 #include <protoPython/PosixSubprocessModule.h>
+#include <protoPython/FcntlModule.h>
 #include <protoPython/SelectModule.h>
 #include <protoPython/BisectModule.h>
 #include <protoPython/HeapqModule.h>
@@ -20958,6 +20959,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     registerNativeModule(nativeProviderPtr, "binascii", [](proto::ProtoContext* c) { return binascii::initialize(c); });
     registerNativeModule(nativeProviderPtr, "_datetime", [](proto::ProtoContext* c) { return datetime::initialize(c); });
     registerNativeModule(nativeProviderPtr, "_posixsubprocess", [this](proto::ProtoContext* c) { return posixsubprocess_module::initialize(c, this); });
+    registerNativeModule(nativeProviderPtr, "fcntl", [this](proto::ProtoContext* c) { return fcntl_module::initialize(c, this); });
     registerNativeModule(nativeProviderPtr, "select", [this](proto::ProtoContext* c) { return select_module::initialize(c, this); });
     // _bisect native module disabled: only bisect/bisect_left/bisect_right
     // are exposed natively, missing insort variants and the `key=` kwarg.

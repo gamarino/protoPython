@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 #include <iostream>
 #include <fstream>
 #include <thread>
@@ -1325,6 +1326,647 @@ static const proto::ProtoObject* py_os_readlink(proto::ProtoContext* ctx, const 
     return PythonEnvironment::getInternedString(ctx, buf)->asObject(ctx);
 }
 
+// ===== POSIX subset for subprocess support =====
+
+// Wrap a raw octet buffer into a `bytes` instance.  The standard
+// recipe is also used by py_urandom and BinasciiModule — kept as a
+// file-local helper so future os.* readers can rely on the same
+// layout (bytes prototype + __data__ ProtoByteBuffer).
+static const proto::ProtoObject* makeBytesObject(
+    proto::ProtoContext* ctx, PythonEnvironment* env, const char* data, size_t n) {
+    proto::ProtoObject* b = const_cast<proto::ProtoObject*>(ctx->newObject(false));
+    if (env && env->getBytesPrototype()) {
+        b = const_cast<proto::ProtoObject*>(b->addParent(ctx, env->getBytesPrototype()));
+        b = const_cast<proto::ProtoObject*>(b->setAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__class__"), env->getBytesPrototype()));
+    }
+    const proto::ProtoByteBuffer* bb = ctx->newByteBuffer(data, static_cast<unsigned long>(n));
+    b = const_cast<proto::ProtoObject*>(b->setAttribute(ctx,
+        env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "__data__"),
+        bb->asObject(ctx)));
+    return b;
+}
+
+// Recover the raw octets behind a str / bytes / bytearray.  Returns
+// true on success; on failure `out` is left untouched.  bytes
+// instances expose their data via the `__data__` slot — either a
+// ProtoByteBuffer (NUL-safe) or a ProtoString (legacy, UTF-8).
+static bool extractRawBytes(
+    proto::ProtoContext* ctx, const proto::ProtoObject* obj, std::string& out) {
+    if (!obj) return false;
+    if (obj->isString(ctx)) {
+        obj->asString(ctx)->toUTF8String(ctx, out);
+        return true;
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoString* dataKey = env ? env->getDataString()
+                                            : PythonEnvironment::getInternedString(ctx, "__data__");
+    const proto::ProtoObject* d = obj->getAttribute(ctx, dataKey);
+    if (!d) return false;
+    if (d->isByteBuffer(ctx)) {
+        const proto::ProtoByteBuffer* bb = d->asByteBuffer(ctx);
+        if (bb) { out.assign(bb->getBuffer(ctx), bb->getSize(ctx)); return true; }
+    } else if (d->isString(ctx)) {
+        d->asString(ctx)->toUTF8String(ctx, out);
+        return true;
+    }
+    return false;
+}
+
+// os.read(fd, n) -> bytes.  EINTR is retried; any other error
+// raises OSError.  Short read at EOF returns a possibly-empty
+// bytes object — matches POSIX semantics.
+static const proto::ProtoObject* py_os_read(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    int fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+    long long n = posArgs->getAt(ctx, 1)->asLong(ctx);
+    if (n < 0) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseValueError(ctx,
+            PythonEnvironment::getInternedString(ctx, "read length must be non-negative")->asObject(ctx));
+        return nullptr;
+    }
+    std::string buf;
+    buf.resize(static_cast<size_t>(n));
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    ssize_t got;
+    for (;;) {
+        got = ::read(fd, n > 0 ? &buf[0] : nullptr, static_cast<size_t>(n));
+        if (got >= 0) break;
+        if (errno == EINTR) continue;
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseOSError(ctx, errno, std::strerror(errno), "");
+        return nullptr;
+    }
+    buf.resize(static_cast<size_t>(got));
+#endif
+    PythonEnvironment* env = PythonEnvironment::get(ctx);
+    return makeBytesObject(ctx, env, buf.data(), buf.size());
+}
+
+// os.write(fd, bytes_or_str) -> int.  Accepts bytes, bytearray, or
+// str (str is utf-8 encoded for convenience).  EINTR is retried.
+static const proto::ProtoObject* py_os_write(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    int fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+    std::string data;
+    if (!extractRawBytes(ctx, posArgs->getAt(ctx, 1), data)) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseTypeError(ctx, "a bytes-like object is required");
+        return nullptr;
+    }
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    ssize_t written;
+    for (;;) {
+        written = ::write(fd, data.data(), data.size());
+        if (written >= 0) break;
+        if (errno == EINTR) continue;
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseOSError(ctx, errno, std::strerror(errno), "");
+        return nullptr;
+    }
+    return ctx->fromInteger(static_cast<long long>(written));
+#else
+    return ctx->fromInteger(0);
+#endif
+}
+
+// os.dup(fd) -> fd.  Result inherits CLOEXEC from CPython's POSIX
+// semantics — but native dup() does NOT set CLOEXEC by default.
+// CPython then turns it on (PEP 446 inheritable=False default for
+// the returned fd).  We mirror that: clear inheritance after dup.
+static const proto::ProtoObject* py_os_dup(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    int fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    int newfd = ::dup(fd);
+    if (newfd < 0) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseOSError(ctx, errno, std::strerror(errno), "");
+        return nullptr;
+    }
+    // PEP 446: dup() returns a non-inheritable fd on Linux/macOS.
+    int flags = fcntl(newfd, F_GETFD);
+    if (flags != -1) fcntl(newfd, F_SETFD, flags | FD_CLOEXEC);
+    return ctx->fromInteger(newfd);
+#else
+    return PROTO_NONE;
+#endif
+}
+
+// os.dup2(fd, fd2, inheritable=True) -> fd2.  By default the new fd
+// IS inheritable (subprocess relies on this when wiring child
+// stdin/stdout/stderr); pass inheritable=False to set CLOEXEC.
+static const proto::ProtoObject* py_os_dup2(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* kwargs) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    int fd  = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+    int fd2 = static_cast<int>(posArgs->getAt(ctx, 1)->asLong(ctx));
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    bool inheritable = true;
+    if (posArgs->getSize(ctx) >= 3) {
+        const proto::ProtoObject* arg = posArgs->getAt(ctx, 2);
+        inheritable = (arg && env) ? env->isTrue(arg) : true;
+    }
+    if (kwargs) {
+        unsigned long inhH = PythonEnvironment::getInternedString(ctx, "inheritable")->getHash(ctx);
+        if (kwargs->has(ctx, inhH)) {
+            const proto::ProtoObject* v = kwargs->getAt(ctx, inhH);
+            if (v && v != PROTO_NONE && env) inheritable = env->isTrue(v);
+        }
+    }
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    int res = ::dup2(fd, fd2);
+    if (res < 0) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseOSError(ctx, errno, std::strerror(errno), "");
+        return nullptr;
+    }
+    int flags = fcntl(res, F_GETFD);
+    if (flags != -1) {
+        int newFlags = inheritable ? (flags & ~FD_CLOEXEC) : (flags | FD_CLOEXEC);
+        fcntl(res, F_SETFD, newFlags);
+    }
+    return ctx->fromInteger(res);
+#else
+    return PROTO_NONE;
+#endif
+}
+
+// os.set_inheritable(fd, inheritable) -- toggles FD_CLOEXEC.
+static const proto::ProtoObject* py_os_set_inheritable(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    int fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    bool inheritable = env ? env->isTrue(posArgs->getAt(ctx, 1)) : true;
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    int flags = fcntl(fd, F_GETFD);
+    if (flags == -1) {
+        if (env) env->raiseOSError(ctx, errno, std::strerror(errno), "");
+        return nullptr;
+    }
+    int newFlags = inheritable ? (flags & ~FD_CLOEXEC) : (flags | FD_CLOEXEC);
+    if (fcntl(fd, F_SETFD, newFlags) == -1) {
+        if (env) env->raiseOSError(ctx, errno, std::strerror(errno), "");
+        return nullptr;
+    }
+#endif
+    return PROTO_NONE;
+}
+
+// os.get_inheritable(fd) -> bool.
+static const proto::ProtoObject* py_os_get_inheritable(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    int fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    int flags = fcntl(fd, F_GETFD);
+    if (flags == -1) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseOSError(ctx, errno, std::strerror(errno), "");
+        return nullptr;
+    }
+    return (flags & FD_CLOEXEC) ? PROTO_FALSE : PROTO_TRUE;
+#else
+    return PROTO_FALSE;
+#endif
+}
+
+// os.fork() -> 0 in child, child-pid in parent.  Subject to the
+// usual fork-in-multithreaded-runtime caveats (protoCore's
+// concurrent GC thread does NOT survive fork) — callers that do
+// not immediately exec must be aware that the child is in a
+// degraded state.  subprocess.Popen exec's immediately, so it is
+// safe; bare os.fork() for application threads is unsupported.
+static const proto::ProtoObject* py_os_fork(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    pid_t pid = ::fork();
+    if (pid < 0) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseOSError(ctx, errno, std::strerror(errno), "");
+        return nullptr;
+    }
+    return ctx->fromInteger(static_cast<long long>(pid));
+#else
+    return PROTO_NONE;
+#endif
+}
+
+// Helper: turn a Python list/tuple of strings into a malloc'd
+// char* argv suitable for exec*().  Caller must free both each
+// element AND the outer array.
+static char** buildArgv(proto::ProtoContext* ctx, const proto::ProtoObject* seq, size_t& outLen) {
+    outLen = 0;
+    if (!seq) return nullptr;
+    // Both list and tuple can be unwrapped to a ProtoList: ProtoTuple
+    // exposes asList(), ProtoObject::asList() returns nullptr for
+    // non-lists.  Tuples go through asTuple()->asList(); lists go
+    // through obj->asList() directly.
+    const proto::ProtoList* lst = nullptr;
+    if (seq->isTuple(ctx)) {
+        const proto::ProtoTuple* tup = seq->asTuple(ctx);
+        if (tup) lst = tup->asList(ctx);
+    } else {
+        lst = seq->asList(ctx);
+    }
+    if (!lst) return nullptr;
+    long n = static_cast<long>(lst->getSize(ctx));
+    char** argv = static_cast<char**>(std::calloc(static_cast<size_t>(n) + 1, sizeof(char*)));
+    if (!argv) return nullptr;
+    for (long i = 0; i < n; ++i) {
+        const proto::ProtoObject* item = lst->getAt(ctx, static_cast<int>(i));
+        std::string s;
+        if (item && item->isString(ctx)) {
+            item->asString(ctx)->toUTF8String(ctx, s);
+        } else if (!extractRawBytes(ctx, item, s)) {
+            // unsupported element type — abort
+            for (long j = 0; j < i; ++j) std::free(argv[j]);
+            std::free(argv);
+            return nullptr;
+        }
+        argv[i] = strdup(s.c_str());
+    }
+    argv[n] = nullptr;
+    outLen = static_cast<size_t>(n);
+    return argv;
+}
+
+static void freeArgv(char** argv, size_t n) {
+    if (!argv) return;
+    for (size_t i = 0; i < n; ++i) std::free(argv[i]);
+    std::free(argv);
+}
+
+// Helper: turn a Python dict (env mapping) into a NULL-terminated
+// char* envp.  Each entry is "KEY=VALUE".
+static char** buildEnvp(proto::ProtoContext* ctx, const proto::ProtoObject* envObj, size_t& outLen) {
+    outLen = 0;
+    if (!envObj) return nullptr;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return nullptr;
+    // env mapping is expected to be a dict-like.  Walk via .items()
+    // if present, else just enumerate keys via __iter__.
+    std::vector<std::string> entries;
+    const proto::ProtoObject* items = env->getAttribute(ctx, envObj,
+        PythonEnvironment::getInternedString(ctx, "items"), /*raiseError=*/false);
+    const proto::ProtoObject* iter = nullptr;
+    if (items) {
+        const proto::ProtoObject* call = env->callObject(items, {});
+        if (call) iter = env->iter(call);
+    } else {
+        iter = env->iter(envObj);
+    }
+    if (!iter) return nullptr;
+    PythonEnvironment::TransientPin pinIt(env, iter);
+    for (;;) {
+        const proto::ProtoObject* item = env->next(iter);
+        if (!item) break;
+        std::string k, v;
+        if (item->isTuple(ctx)) {
+            const proto::ProtoList* tup = item->asTuple(ctx)->asList(ctx);
+            if (tup && tup->getSize(ctx) >= 2) {
+                const proto::ProtoObject* kObj = tup->getAt(ctx, 0);
+                const proto::ProtoObject* vObj = tup->getAt(ctx, 1);
+                if (kObj && kObj->isString(ctx)) kObj->asString(ctx)->toUTF8String(ctx, k);
+                if (vObj && vObj->isString(ctx)) vObj->asString(ctx)->toUTF8String(ctx, v);
+            }
+        } else if (items == nullptr) {
+            // iterating directly gave us a key; look up the value
+            if (item->isString(ctx)) {
+                item->asString(ctx)->toUTF8String(ctx, k);
+                const proto::ProtoObject* val = env->getAttribute(ctx, envObj,
+                    PythonEnvironment::getInternedString(ctx, k.c_str()), /*raiseError=*/false);
+                if (val && val->isString(ctx)) val->asString(ctx)->toUTF8String(ctx, v);
+            }
+        }
+        if (!k.empty()) entries.push_back(k + "=" + v);
+    }
+    char** envp = static_cast<char**>(std::calloc(entries.size() + 1, sizeof(char*)));
+    for (size_t i = 0; i < entries.size(); ++i) envp[i] = strdup(entries[i].c_str());
+    envp[entries.size()] = nullptr;
+    outLen = entries.size();
+    return envp;
+}
+
+// os.execv(path, args)
+static const proto::ProtoObject* py_os_execv(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    std::string path;
+    posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, path);
+    size_t argc = 0;
+    char** argv = buildArgv(ctx, posArgs->getAt(ctx, 1), argc);
+    if (!argv) return PROTO_NONE;
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    ::execv(path.c_str(), argv);
+    // only returns on error
+    int e = errno;
+    freeArgv(argv, argc);
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env) env->raiseOSError(ctx, e, std::strerror(e), path);
+    return nullptr;
+#else
+    freeArgv(argv, argc);
+    return PROTO_NONE;
+#endif
+}
+
+// os.execve(path, args, env)
+static const proto::ProtoObject* py_os_execve(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 3) return PROTO_NONE;
+    std::string path;
+    posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, path);
+    size_t argc = 0, envc = 0;
+    char** argv = buildArgv(ctx, posArgs->getAt(ctx, 1), argc);
+    char** envp = buildEnvp(ctx, posArgs->getAt(ctx, 2), envc);
+    if (!argv || !envp) {
+        freeArgv(argv, argc);
+        freeArgv(envp, envc);
+        return PROTO_NONE;
+    }
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    ::execve(path.c_str(), argv, envp);
+    int e = errno;
+    freeArgv(argv, argc);
+    freeArgv(envp, envc);
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env) env->raiseOSError(ctx, e, std::strerror(e), path);
+    return nullptr;
+#else
+    freeArgv(argv, argc);
+    freeArgv(envp, envc);
+    return PROTO_NONE;
+#endif
+}
+
+// os.execvp(file, args) -- searches $PATH if file has no slash.
+static const proto::ProtoObject* py_os_execvp(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    std::string file;
+    posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, file);
+    size_t argc = 0;
+    char** argv = buildArgv(ctx, posArgs->getAt(ctx, 1), argc);
+    if (!argv) return PROTO_NONE;
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    ::execvp(file.c_str(), argv);
+    int e = errno;
+    freeArgv(argv, argc);
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env) env->raiseOSError(ctx, e, std::strerror(e), file);
+    return nullptr;
+#else
+    freeArgv(argv, argc);
+    return PROTO_NONE;
+#endif
+}
+
+// os.execvpe(file, args, env) -- PATH search + explicit env.
+// CPython's _execvpe walks PATH in Python; we use ::execvpe on
+// glibc and fall back to manual PATH search + execve elsewhere.
+static const proto::ProtoObject* py_os_execvpe(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 3) return PROTO_NONE;
+    std::string file;
+    posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, file);
+    size_t argc = 0, envc = 0;
+    char** argv = buildArgv(ctx, posArgs->getAt(ctx, 1), argc);
+    char** envp = buildEnvp(ctx, posArgs->getAt(ctx, 2), envc);
+    if (!argv || !envp) {
+        freeArgv(argv, argc);
+        freeArgv(envp, envc);
+        return PROTO_NONE;
+    }
+#if defined(__linux__)
+    ::execvpe(file.c_str(), argv, envp);
+    int e = errno;
+#elif defined(__unix__) || defined(__APPLE__)
+    // Manual PATH search: if file contains '/', use directly;
+    // otherwise iterate PATH entries from envp.
+    int e = ENOENT;
+    if (file.find('/') != std::string::npos) {
+        ::execve(file.c_str(), argv, envp);
+        e = errno;
+    } else {
+        const char* path = nullptr;
+        for (size_t i = 0; envp[i]; ++i) {
+            if (std::strncmp(envp[i], "PATH=", 5) == 0) { path = envp[i] + 5; break; }
+        }
+        if (!path) path = "/bin:/usr/bin";
+        std::string p(path);
+        size_t start = 0;
+        while (start < p.size()) {
+            size_t end = p.find(':', start);
+            std::string dir = p.substr(start, end == std::string::npos ? std::string::npos : end - start);
+            if (dir.empty()) dir = ".";
+            std::string full = dir + "/" + file;
+            ::execve(full.c_str(), argv, envp);
+            e = errno;
+            if (e != ENOENT && e != EACCES) break;
+            if (end == std::string::npos) break;
+            start = end + 1;
+        }
+    }
+#else
+    int e = ENOSYS;
+#endif
+    freeArgv(argv, argc);
+    freeArgv(envp, envc);
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env) env->raiseOSError(ctx, e, std::strerror(e), file);
+    return nullptr;
+}
+
+// os.fsdecode(value) -> str.  bytes -> utf-8 str; str passes
+// through.  No surrogateescape (rare in practice, expensive to
+// implement); raise UnicodeDecodeError on invalid utf-8 via the
+// underlying ProtoString machinery.
+static const proto::ProtoObject* py_os_fsdecode(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
+    if (arg->isString(ctx)) return arg;
+    std::string raw;
+    if (!extractRawBytes(ctx, arg, raw)) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseTypeError(ctx, "expected str, bytes or os.PathLike object");
+        return nullptr;
+    }
+    return PythonEnvironment::getInternedString(ctx, raw.c_str())->asObject(ctx);
+}
+
+// os.fsencode(value) -> bytes.  str -> utf-8 bytes; bytes passes
+// through (returns same value to mirror CPython's behavior).
+static const proto::ProtoObject* py_os_fsencode(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
+    PythonEnvironment* env = PythonEnvironment::get(ctx);
+    if (arg->isString(ctx)) {
+        std::string s;
+        arg->asString(ctx)->toUTF8String(ctx, s);
+        return makeBytesObject(ctx, env, s.data(), s.size());
+    }
+    std::string raw;
+    if (!extractRawBytes(ctx, arg, raw)) {
+        if (env) env->raiseTypeError(ctx, "expected str, bytes or os.PathLike object");
+        return nullptr;
+    }
+    return arg; // already bytes-like; CPython returns same object
+}
+
+// os.strerror(errno) -> str
+static const proto::ProtoObject* py_os_strerror(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    int code = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+    const char* msg = std::strerror(code);
+    return PythonEnvironment::getInternedString(ctx, msg ? msg : "")->asObject(ctx);
+}
+
+// os.get_exec_path(env=None) -> list[str].  Python-side normally
+// reads $PATH from environ; we read directly from libc env when
+// env is None/missing.
+static const proto::ProtoObject* py_os_get_exec_path(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    const char* path = nullptr;
+    if (posArgs && posArgs->getSize(ctx) >= 1) {
+        const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
+        if (arg && arg != PROTO_NONE) {
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (env) {
+                const proto::ProtoObject* v = env->getAttribute(ctx, arg,
+                    PythonEnvironment::getInternedString(ctx, "PATH"), /*raiseError=*/false);
+                if (v && v->isString(ctx)) {
+                    std::string s;
+                    v->asString(ctx)->toUTF8String(ctx, s);
+                    static thread_local std::string cached;
+                    cached = s;
+                    path = cached.c_str();
+                }
+            }
+        }
+    }
+    if (!path) path = std::getenv("PATH");
+    if (!path) path = "/bin:/usr/bin";
+    const proto::ProtoList* result = ctx->newList();
+    std::string p(path);
+    size_t start = 0;
+    while (start <= p.size()) {
+        size_t end = p.find(':', start);
+        std::string dir = p.substr(start, end == std::string::npos ? std::string::npos : end - start);
+        result = result->appendLast(ctx,
+            PythonEnvironment::getInternedString(ctx, dir.c_str())->asObject(ctx));
+        if (end == std::string::npos) break;
+        start = end + 1;
+    }
+    return result->asObject(ctx);
+}
+
+// os.register_at_fork(before=..., after_in_parent=..., after_in_child=...) -> None.
+// Stub: protoPython's fork support is "fork+exec only" — bare fork()
+// from a multithreaded host is not safe, so the fork-handler chain
+// CPython uses never runs.  Accept and ignore the callables.
+static const proto::ProtoObject* py_os_register_at_fork(
+    proto::ProtoContext* /*ctx*/,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    return PROTO_NONE;
+}
+
+// os.confstr(name) -> str.  Best-effort stub: returns "/bin:/usr/bin"
+// for _CS_PATH, empty string otherwise.  CPython's subprocess only
+// uses this for _CS_PATH.
+static const proto::ProtoObject* py_os_confstr(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    int name = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+    size_t len = ::confstr(name, nullptr, 0);
+    if (len == 0) return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
+    std::string buf;
+    buf.resize(len);
+    ::confstr(name, &buf[0], len);
+    // strip trailing NUL
+    if (!buf.empty() && buf.back() == '\0') buf.pop_back();
+    return PythonEnvironment::getInternedString(ctx, buf.c_str())->asObject(ctx);
+#else
+    return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
+#endif
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* pathModule) {
     const proto::ProtoObject* direntry_proto = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, false) : ctx->newObject(false);
     // Ensure direntry_proto is a fresh object and not polluting global Object prototype
@@ -1455,6 +2097,68 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_path_normpath_method));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_create_environ"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_create_environ_method));
+
+    // POSIX subset for subprocess (PEP 446 + fork/exec family).
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "read"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_read));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "write"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_write));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "dup"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_dup));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "dup2"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_dup2));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "set_inheritable"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_set_inheritable));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "get_inheritable"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_get_inheritable));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "fork"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_fork));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "execv"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_execv));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "execve"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_execve));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "execvp"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_execvp));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "execvpe"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_execvpe));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "fsdecode"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_fsdecode));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "fsencode"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_fsencode));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "strerror"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_strerror));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "get_exec_path"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_get_exec_path));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "confstr"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_confstr));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "register_at_fork"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_register_at_fork));
+    // Path-like constant.  subprocess reads os.devnull when stdin/
+    // stdout/stderr is DEVNULL.
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "devnull"),
+        PythonEnvironment::getInternedString(ctx, "/dev/null")->asObject(ctx));
+    // _CS_PATH for os.confstr (subprocess calls confstr("CS_PATH")).
+#ifdef _CS_PATH
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "CS_PATH"),
+        ctx->fromInteger(_CS_PATH));
+#endif
+    // WCONTINUED/WUNTRACED constants for wait().
+#ifdef WCONTINUED
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "WCONTINUED"),
+        ctx->fromInteger(WCONTINUED));
+#endif
+#ifdef WUNTRACED
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "WUNTRACED"),
+        ctx->fromInteger(WUNTRACED));
+#endif
+    // EX_OK for subprocess return codes.
+#ifdef EX_OK
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "EX_OK"),
+        ctx->fromInteger(EX_OK));
+#else
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "EX_OK"),
+        ctx->fromInteger(0));
+#endif
 
     const proto::ProtoObject* statResultType = ctx->newObject(true); // make mutable just in case
     statResultType = statResultType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, "stat_result")->asObject(ctx));
@@ -1640,7 +2344,36 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "_path_normpath")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "_create_environ")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "stat_result")->asObject(ctx));
-    
+    // POSIX subset (read/write/dup/fork/exec family + helpers).
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "read")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "write")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "dup")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "dup2")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "set_inheritable")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "get_inheritable")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "fork")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "execv")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "execve")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "execvp")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "execvpe")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "fsdecode")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "fsencode")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "strerror")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "get_exec_path")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "confstr")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "register_at_fork")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "devnull")->asObject(ctx));
+#ifdef _CS_PATH
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "CS_PATH")->asObject(ctx));
+#endif
+#ifdef WCONTINUED
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "WCONTINUED")->asObject(ctx));
+#endif
+#ifdef WUNTRACED
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "WUNTRACED")->asObject(ctx));
+#endif
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "EX_OK")->asObject(ctx));
+
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__keys__"), keys->asObject(ctx));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__all__"), keys->asObject(ctx));
 

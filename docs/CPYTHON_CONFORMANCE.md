@@ -57,7 +57,99 @@ is queued for round 38+ once the dispatcher-tier rework lands.
 
 ---
 
-## Current Status (2026-05-18) — round 38 (closure-capture fix + subprocess investigation, 10 raw F+E)
+## Current Status (2026-05-18) — round 39 (POSIX subset + subprocess plumbing complete, 10 raw F+E)
+
+Round 39 implements the POSIX subset of `os` and a new `fcntl`
+module so `subprocess.Popen` and `subprocess.run(..., capture_output=True)`
+now work end-to-end on protoPython.  The `test_descr.py` count is
+unchanged at **9F + 1E = 10**, but the remaining blocker for
+`test_type_lookup_mro_reference` is no longer infrastructural — the
+subprocess invocation now runs through, and what's left is a
+runtime correctness gap (dict `__eq__` tiebreak on hash collision
+when the user provides a custom `__hash__` returning a primitive-key
+collision).  ctest 199/199 verde.
+
+### Landed changes
+
+- **POSIX-1/2/3/4** (`src/library/OsModule.cpp`): added
+  `os.read`, `os.write`, `os.dup`, `os.dup2` (with PEP 446
+  inheritable kwarg), `os.set_inheritable`, `os.get_inheritable`,
+  `os.fork`, `os.execv`, `os.execve`, `os.execvp`, `os.execvpe`,
+  `os.fsdecode`, `os.fsencode`, `os.strerror`, `os.get_exec_path`,
+  `os.confstr`, `os.devnull` constant, `os.register_at_fork`
+  no-op stub, plus `WCONTINUED`/`WUNTRACED`/`CS_PATH`/`EX_OK`
+  constants.  Every new entry is wired into the module's
+  `__keys__`/`__all__` so `from posix import *` picks them up
+  in `os.py`.
+- **POSIX-5** (`src/library/FcntlModule.cpp` +
+  `include/protoPython/FcntlModule.h`): new `fcntl` native
+  module exposing `fcntl()`, `ioctl()`, `flock()`, `lockf()`
+  (aliased to `flock` — subprocess only uses `LOCK_EX`/`LOCK_UN`),
+  plus the constant set `F_DUPFD`, `F_GETFD`, `F_SETFD`,
+  `F_GETFL`, `F_SETFL`, `FD_CLOEXEC`, `F_DUPFD_CLOEXEC`,
+  `F_GETLK`, `F_SETLK`, `F_SETLKW`, `LOCK_SH/EX/UN/NB`.
+  Registered via `PythonEnvironment::registerNativeModule`.
+- **POSIX-6** (`src/library/IOModule.cpp`): `io.open(fd, mode)`
+  now wraps an integer fd into a file-like that delegates
+  `read`/`write`/`close` to `::read`/`::write`/`::close` via a
+  new `__file_fd__` attribute path.  `read()` returns real
+  bytes (built via `bio_make_bytes`).  Added `fileno()`,
+  `readable()`, `writable()`, `seekable()`, `isatty()`,
+  and a mutable `closed` attribute so selectors/`subprocess`
+  can introspect the wrapper.
+- **POSIX-7** (`src/library/PosixSubprocessModule.cpp`):
+  `_posixsubprocess.fork_exec`'s child argv/envp/exec-list now
+  accept both `str` and `bytes` payloads (via a new
+  `extractStringOrBytes` helper that mirrors OsModule's
+  `extractRawBytes`).  subprocess.py runs every arg through
+  `os.fsencode` before passing it down, so the previous
+  string-only handler was the reason `_exit(255)` fired on
+  every exec attempt.  Also added an `execvp` fallback when
+  `executable_list` is empty.
+- **POSIX-8** (`src/library/SignalModule.cpp`): registered
+  `SIGKILL`, `SIGPIPE`, `SIGCHLD`, `SIGABRT`, `SIGSEGV`,
+  `SIGFPE`, `SIGILL`, `SIGQUIT`, `SIGSTOP`, `SIGCONT`,
+  `SIGTSTP`, `SIGTTIN`, `SIGTTOU`, `SIGBUS`, `SIGSYS`,
+  `SIGIO`, `NSIG`.  subprocess.py references `SIGKILL`
+  on `Popen.kill()` and the stdlib expects the full set
+  unconditionally.
+- **Stdlib workarounds**: `lib/python3.14/selectors.py`
+  bypasses two pre-existing runtime gaps that only surface
+  now that `subprocess._communicate()` reaches them:
+  `frozenset.__or__` resolves to `set.__or__` and rejects
+  the receiver (coerce to `set()` before unioning), and
+  `select.select()` does not accept set inputs (coerce
+  readers/writers to `list()` before the call).  Both gaps
+  are documented in the comments inline; a proper runtime
+  fix is filed as STRUCT-305 for a future round.
+
+### Probe results
+
+```
+subprocess.run(['/bin/echo', 'hi'])                       → rc=0
+subprocess.run(['/bin/echo', 'hi'], capture_output=True)
+  → stdout=b'hi\n', stderr=b'', rc=0
+subprocess.run(['./build_release/src/runtime/protopy',
+                '-c', 'print(2+2)'], capture_output=True)
+  → stdout=b'4\n', rc=0
+subprocess.run(['/bin/sh', '-c',
+                'echo o; echo e>&2; exit 7'], capture_output=True)
+  → stdout=b'o\n', stderr=b'e\n', rc=7
+```
+
+### Remaining blocker for test_type_lookup_mro_reference
+
+The test's `MyKey.__eq__` mutates `X.__bases__` mid-lookup; the
+expectation is that `dict[MyKey()]` will retry the lookup once
+the MRO changes.  protoPython's `dict.__getitem__` currently
+short-circuits on hash equality without consulting `__eq__`, so
+the second key lookup never fires the side effect.  Two prior
+attempts to add the tiebreak (STRUCT-304) regressed
+`test_str_subclass_as_dict_key`; the proper fix needs a
+type-aware predicate ("user-defined `__hash__` not inherited
+from `str`") which is queued for a separate round.
+
+## Previous Status (2026-05-18) — round 38 (closure-capture fix + subprocess investigation, 10 raw F+E)
 
 Round 38 lands one root-cause compiler/runtime fix (STRUCT-303)
 that closes a long-standing closure-capture bug, and reverts the

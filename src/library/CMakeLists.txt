@@ -46,6 +46,7 @@ add_library(protoPython SHARED
     BinasciiModule.cpp
     DatetimeModule.cpp
     PosixSubprocessModule.cpp
+    FcntlModule.cpp
     SelectModule.cpp
     BisectModule.cpp
     HeapqModule.cpp

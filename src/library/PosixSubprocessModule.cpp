@@ -11,6 +11,31 @@
 namespace protoPython {
 namespace posixsubprocess_module {
 
+// subprocess.py passes args/executable_list/env_list as `bytes`
+// after fsencode, so the child has to accept both str and bytes
+// payloads.  This mirrors OsModule's extractRawBytes helper.
+static bool extractStringOrBytes(
+    proto::ProtoContext* ctx, const proto::ProtoObject* obj, std::string& out) {
+    if (!obj) return false;
+    if (obj->isString(ctx)) {
+        obj->asString(ctx)->toUTF8String(ctx, out);
+        return true;
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoString* dataKey = env ? env->getDataString()
+        : PythonEnvironment::getInternedString(ctx, "__data__");
+    const proto::ProtoObject* d = obj->getAttribute(ctx, dataKey);
+    if (!d) return false;
+    if (d->isByteBuffer(ctx)) {
+        const proto::ProtoByteBuffer* bb = d->asByteBuffer(ctx);
+        if (bb) { out.assign(bb->getBuffer(ctx), bb->getSize(ctx)); return true; }
+    } else if (d->isString(ctx)) {
+        d->asString(ctx)->toUTF8String(ctx, out);
+        return true;
+    }
+    return false;
+}
+
 static const proto::ProtoObject* py_fork_exec(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
@@ -87,43 +112,60 @@ static const proto::ProtoObject* py_fork_exec(
             }
         }
 
-        // Build args array
+        // Build args array.  After fsencode each entry is bytes; we
+        // accept both str and bytes via extractStringOrBytes.
         char** c_args = new char*[argsCount + 1];
         for (size_t i = 0; i < argsCount; ++i) {
-            const proto::ProtoObject* elem = argsObj->isTuple(ctx) ? argsObj->asTuple(ctx)->getAt(ctx, i) : argsObj->asList(ctx)->getAt(ctx, i);
+            const proto::ProtoObject* elem = argsObj->isTuple(ctx)
+                ? argsObj->asTuple(ctx)->getAt(ctx, i)
+                : argsObj->asList(ctx)->getAt(ctx, i);
             std::string s;
-            if (elem && elem->isString(ctx)) elem->asString(ctx)->toUTF8String(ctx, s);
-            // We need to keep the string alive. 
-            // In a child process after fork, we don't care much about memory leaks before exec.
+            extractStringOrBytes(ctx, elem, s);
+            // We need to keep the string alive.  In a child process
+            // after fork, we don't care about memory leaks before exec.
             c_args[i] = strdup(s.c_str());
         }
         c_args[argsCount] = nullptr;
 
-        // Build env array
+        // Build env array — same bytes-or-str fallback.
         char** c_env = nullptr;
         if (hasEnv) {
             c_env = new char*[envCount + 1];
             for (size_t i = 0; i < envCount; ++i) {
                 const proto::ProtoObject* elem = envListObj->asList(ctx)->getAt(ctx, i);
                 std::string s;
-                if (elem && elem->isString(ctx)) elem->asString(ctx)->toUTF8String(ctx, s);
+                extractStringOrBytes(ctx, elem, s);
                 c_env[i] = strdup(s.c_str());
             }
             c_env[envCount] = nullptr;
         }
 
+        // Walk executable_list (tuple of bytes paths produced by
+        // os.fsencode + os.path.join) and try each one.
         for (size_t i = 0; i < execCount; ++i) {
             const proto::ProtoObject* execPathObj = execListObj->asTuple(ctx)->getAt(ctx, i);
             std::string exec_path;
-            if (execPathObj && execPathObj->isString(ctx)) execPathObj->asString(ctx)->toUTF8String(ctx, exec_path);
-            
+            extractStringOrBytes(ctx, execPathObj, exec_path);
+            if (exec_path.empty()) continue;
             if (hasEnv) {
                 execve(exec_path.c_str(), c_args, c_env);
             } else {
                 execv(exec_path.c_str(), c_args);
             }
         }
-        
+
+        // Last-resort attempt: if executable_list was empty (rare path),
+        // execvp on argv[0] mirrors what subprocess does for shell=False
+        // with simple commands.
+        if (execCount == 0 && argsCount > 0 && c_args[0]) {
+            if (hasEnv) {
+                // No execvpe portably; fall back to execvp + ignore env.
+                execvp(c_args[0], c_args);
+            } else {
+                execvp(c_args[0], c_args);
+            }
+        }
+
         _exit(255);
     }
 

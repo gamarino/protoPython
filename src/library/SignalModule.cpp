@@ -208,6 +208,30 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGALRM"), ctx->fromInteger(SIGALRM));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIG_DFL"), ctx->fromInteger(0));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIG_IGN"), ctx->fromInteger(1));
+    // Signals subprocess.py touches by name (SIGKILL/SIGPIPE/SIGCHLD/
+    // SIGABRT/SIGSEGV/SIGFPE/SIGILL/SIGQUIT/SIGSTOP/SIGCONT) plus a
+    // few extras the stdlib expects to be present unconditionally.
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGKILL"), ctx->fromInteger(SIGKILL));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGPIPE"), ctx->fromInteger(SIGPIPE));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGCHLD"), ctx->fromInteger(SIGCHLD));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGABRT"), ctx->fromInteger(SIGABRT));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGSEGV"), ctx->fromInteger(SIGSEGV));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGFPE"),  ctx->fromInteger(SIGFPE));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGILL"),  ctx->fromInteger(SIGILL));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGQUIT"), ctx->fromInteger(SIGQUIT));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGSTOP"), ctx->fromInteger(SIGSTOP));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGCONT"), ctx->fromInteger(SIGCONT));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGTSTP"), ctx->fromInteger(SIGTSTP));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGTTIN"), ctx->fromInteger(SIGTTIN));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGTTOU"), ctx->fromInteger(SIGTTOU));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGBUS"),  ctx->fromInteger(SIGBUS));
+#ifdef SIGSYS
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGSYS"),  ctx->fromInteger(SIGSYS));
+#endif
+#ifdef SIGIO
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGIO"),   ctx->fromInteger(SIGIO));
+#endif
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "NSIG"),    ctx->fromInteger(NSIG));
 
     return mod;
 }

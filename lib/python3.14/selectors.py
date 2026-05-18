@@ -311,11 +311,18 @@ class SelectSelector(_BaseSelectorImpl):
         timeout = None if timeout is None else max(timeout, 0)
         ready = []
         try:
-            r, w, _ = self._select(self._readers, self._writers, [], timeout)
+            # protoPython workaround: SelectModule expects list/tuple
+            # of fds, not a set.  Coerce the reader/writer sets to
+            # lists before passing through.
+            r, w, _ = self._select(list(self._readers), list(self._writers), [], timeout)
         except InterruptedError:
             return ready
-        r = frozenset(r)
-        w = frozenset(w)
+        # protoPython workaround: frozenset.__or__ is currently
+        # broken in the runtime (resolves to set.__or__ which
+        # rejects frozenset receivers).  Coerce to mutable sets so
+        # the union takes the well-defined set.__or__ path.
+        r = set(r)
+        w = set(w)
         rw = r | w
         fd_to_key_get = self._fd_to_key.get
         for fd in rw:
