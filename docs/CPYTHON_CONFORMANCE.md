@@ -28,7 +28,59 @@
 
 ---
 
-## Current Status (2026-05-17) — round 31 (Cluster B + Ellipsis + incomplete_extend, 19 raw F+E)
+## Current Status (2026-05-17) — round 32 (MroTest re-entrancy cluster, 17 raw F+E)
+
+Round 32 attacks the remaining structural faults, landing two
+re-entrancy fixes from the MroTest cluster.  Test count drops from
+**15F + 4E = 19** to **12F + 5E = 17** (net -2; one F→E shift on a
+co-test that now surfaces a different inner failure).
+
+### Round 32 commits
+
+1. **STRUCT-285** — `__bases__` setter invokes user metaclass.mro()
+   for each subclass after computing the default C3.  CPython does
+   this so user mro() overrides (e.g. WorkOnce raising RuntimeError
+   on the second call) can reject the change; the existing
+   rollback path then restores every applied subclass MRO + the
+   original __bases__.  Flips
+   test_mutable_bases_with_failing_mro.
+
+2. **STRUCT-286** — invoke user metaclass.mro() for the receiver
+   `obj` itself (not only its subclasses), wrap both invocations
+   with `cls.__mro__ = None` save/restore (mirrors STRUCT-276),
+   and extend the inheritance-cycle pre-check (STRUCT-87) to walk
+   each new base's MRO + protoCore parent chain looking for `obj`.
+   Together these unblock the deep tp_base + tp_subclasses cycle
+   detection.  Flips test_reent_set_bases_tp_base_cycle.
+
+### Remaining tractable (5F+5E = 10, excluding 7 GC-WONTFIX)
+
+- **test_multiple_inheritance** — dict subclass instance attrs leak
+  into dict keys (`_C__state` shows up in `d.keys()`).  Needs
+  per-instance attribute storage separate from dict payload.
+- **test_slots_special2** — `__classcell__` not in class namespace.
+  Needs Compiler.cpp emission for PEP 3115.
+- **test_slots_special_after_items** — bytes subclass typing reverts
+  to bytes (constructor revert); int subclass bignum
+  `9876543210**2` exceeds long long.
+- **test_tp_subclasses_cycle_error_return_path** (E) — error path
+  inside re-entrant __bases__ surfaces "'object' object is not
+  iterable" instead of propagating the user's `raise E`.  Deep
+  rollback ordering issue.
+- **test_tp_subclasses_cycle_in_update_slots** (E) — similar
+  re-entrancy edge.
+- **test_reduce_copying** (E) — pickle parametric; tracebacks
+  silently dropped through unittest path.
+- **test_type_lookup_mro_reference** (E) — subprocess support broken.
+
+### Build
+
+ctest 183/183 verde en cada commit.  Round 26–32 cumulative:
+27F + 7E = 34 → **12F + 5E = 17** (17 test flips overall).
+
+---
+
+## Previous Status (2026-05-17) — round 31 (Cluster B + Ellipsis + incomplete_extend, 19 raw F+E)
 
 Round 31 lands three flips, including the long-deferred Cluster B
 (STORE_ATTR class metaclass dispatch).  Test count drops from
