@@ -796,6 +796,19 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     int_info = int_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "str_digits_check_threshold"), ctx->fromInteger(640));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "int_info"), int_info);
 
+    // sys.thread_info — CPython exposes (name, lock, version).
+    // protoPython uses native pthreads (NPTL on Linux); report that.
+    const proto::ProtoObject* thread_info = env && env->getObjectPrototype()
+        ? env->getObjectPrototype()->newChild(ctx, true)
+        : ctx->newObject(false);
+    thread_info = thread_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "name"),
+        PythonEnvironment::getInternedString(ctx, "pthread")->asObject(ctx));
+    thread_info = thread_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "lock"),
+        PythonEnvironment::getInternedString(ctx, "mutex+cond")->asObject(ctx));
+    thread_info = thread_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "version"),
+        PythonEnvironment::getInternedString(ctx, "NPTL")->asObject(ctx));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "thread_info"), thread_info);
+
     // sys.float_info — IEEE 754 double info
     const proto::ProtoObject* float_info = env && env->getObjectPrototype()
         ? env->getObjectPrototype()->newChild(ctx, true)
