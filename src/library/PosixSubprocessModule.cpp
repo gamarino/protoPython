@@ -18,9 +18,16 @@ static const proto::ProtoObject* py_fork_exec(
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* /*kwargs*/) {
     
-    // We expect at least 26 arguments based on CPython 3.14 signature
-    if (!posArgs || posArgs->getSize(ctx) < 26) {
-        PythonEnvironment::fromContext(ctx)->raiseRuntimeError(ctx, "_posixsubprocess.fork_exec expected at least 26 arguments");
+    // STRUCT-288: CPython 3.14 subprocess.py passes 22 positional
+    // arguments to _fork_exec (args, executable_list, close_fds,
+    // fds_to_keep, cwd, env_list, p2cread, p2cwrite, c2pread,
+    // c2pwrite, errread, errwrite, errpipe_read, errpipe_write,
+    // restore_signals, start_new_session, process_group, gid, gids,
+    // uid, umask, preexec_fn).  The previous "expected 26" check
+    // rejected every legitimate call, breaking subprocess.Popen
+    // entirely.
+    if (!posArgs || posArgs->getSize(ctx) < 22) {
+        PythonEnvironment::fromContext(ctx)->raiseRuntimeError(ctx, "_posixsubprocess.fork_exec expected at least 22 arguments");
         return nullptr;
     }
 
