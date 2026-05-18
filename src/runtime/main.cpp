@@ -181,6 +181,29 @@ static bool parseArgs(int argc, char* argv[], CliOptions& opts, std::string& err
                 return false;
             }
             opts.searchPaths.push_back(argv[++i]);
+        } else if (arg == "-I" || arg == "-E" || arg == "-S" || arg == "-s"
+                || arg == "-O" || arg == "-OO" || arg == "-B" || arg == "-q"
+                || arg == "-u" || arg == "-b" || arg == "-bb" || arg == "-d"
+                || arg == "-v" || arg == "-vv" || arg == "-vvv") {
+            // STRUCT-309: accept CPython interpreter flags as no-ops.
+            // assert_python_ok / test.support.script_helper passes
+            // `-I -X faulthandler` to every subprocess it spawns; if
+            // we error on these, every stdlib test that uses
+            // assert_python_* fails before its script even runs.
+            // The flags are accepted but have no effect on the
+            // protoPython interpreter (it has no PYTHONHOME hook to
+            // ignore, no .pth files to suppress, no -O bytecode
+            // optimisation level, etc.).
+            (void)arg;
+        } else if (arg == "-X" || arg == "-W") {
+            // -X opt and -W warning_filter both take one value argument.
+            // Accept and discard (warnings filter is applied at the
+            // warnings module level, not via CLI on protopy yet).
+            if (i + 1 < argc) ++i;
+        } else if (arg.size() > 2 && arg[0] == '-'
+                && (arg[1] == 'X' || arg[1] == 'W')) {
+            // -Xfoo / -Wfoo (no space) — also no-ops here.
+            (void)arg;
         } else if (!arg.empty() && arg[0] == '-') {
             error = "Unknown option: " + arg;
             return false;

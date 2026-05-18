@@ -1,6 +1,9 @@
 #include <protoPython/SysModule.h>
 #include <protoPython/PythonEnvironment.h>
 #include <iostream>
+#if defined(__linux__)
+#include <unistd.h>
+#endif
 
 namespace protoPython {
 namespace sys {
@@ -651,9 +654,31 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     const proto::ProtoObject* bt = env ? env->newTuple(builtinsList) : ctx->newTupleFromList(builtinsList)->asObject(ctx);
     sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "builtin_module_names"), bt);
 
-    // sys.executable
-    const char* exe_path = (argv && !argv->empty()) ? (*argv)[0].c_str() : "/usr/bin/protopy";
-    sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "executable"), PythonEnvironment::getInternedString(ctx, exe_path)->asObject(ctx));
+    // sys.executable — STRUCT-309: CPython parity expects the path
+    // to the running interpreter binary, NOT sys.argv[0] (which for
+    // `protopy -c "..."` is the string "-c" because that becomes the
+    // first element of the Python-level argv list).  Probe
+    // /proc/self/exe on Linux; fall back to the argv[0] heuristic
+    // only when that read fails (Windows / very old kernels).
+    std::string exe_path;
+#if defined(__linux__)
+    char self_buf[4096];
+    ssize_t self_len = ::readlink("/proc/self/exe", self_buf, sizeof(self_buf) - 1);
+    if (self_len > 0) {
+        self_buf[self_len] = '\0';
+        exe_path = self_buf;
+    }
+#endif
+    if (exe_path.empty()) {
+        exe_path = (argv && !argv->empty()) ? (*argv)[0] : std::string("/usr/bin/protopy");
+        // argv[0] for `protopy -c "..."` is "-c"; that is not a path.
+        // Fall back to a sentinel rather than emit something subprocess
+        // would refuse to exec.
+        if (!exe_path.empty() && exe_path[0] == '-') {
+            exe_path = "/usr/bin/protopy";
+        }
+    }
+    sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "executable"), PythonEnvironment::getInternedString(ctx, exe_path.c_str())->asObject(ctx));
 
     // PEP 578 audit hook stubs: required by stdlib paths (pickle, glob,
     // tempfile, ...) that emit audit events. We don't run a hook subsystem,

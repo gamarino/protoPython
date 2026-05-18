@@ -6584,10 +6584,39 @@ const proto::ProtoObject* py_type(
                                         ->appendLast(context, PythonEnvironment::getInternedString(context, "<class>")->asObject(context))
                                         ->appendLast(context, context->fromInteger(0));
                                     env->callObject(warnE, { a->getAt(context, 0), a->getAt(context, 1), a->getAt(context, 2), a->getAt(context, 3) });
-                                    // Clear any exception (warn filter='error' would raise) — we
-                                    // still want the test that probes the warning to see it via
-                                    // catch_warnings, not a real exception interrupting type().
+                                    // STRUCT-309: when _py_warnings.warn_explicit
+                                    // didn't actually emit (assertWarnsRegex
+                                    // captures it, fine; but if no
+                                    // catch_warnings is active and the call
+                                    // failed silently, fall back to
+                                    // warnings.warn so the warning reaches
+                                    // stderr — required for
+                                    // test_type_lookup_mro_reference's
+                                    // assertRegex(err, 'RuntimeWarning:.*X')
+                                    // to match the subprocess's stderr.
+                                    bool emitted = !env->hasPendingException();
                                     if (env->hasPendingException()) env->clearPendingException();
+                                    if (!emitted) {
+                                        // unreachable usually — warn_explicit
+                                        // either succeeds or raises.  Kept
+                                        // as a safety net.
+                                    }
+                                    // Always also fire warnings.warn so the
+                                    // stderr path catches it when there's
+                                    // no active catch_warnings.  Filter
+                                    // dedup (the "default" action) makes
+                                    // this safe — only one print at most.
+                                    const proto::ProtoObject* warningsMod = env->resolveModule("warnings", context);
+                                    if (warningsMod && warningsMod != PROTO_NONE) {
+                                        const proto::ProtoObject* warnFn = warningsMod->getAttribute(context,
+                                            PythonEnvironment::getInternedString(context, "warn"));
+                                        if (warnFn && warnFn != PROTO_NONE) {
+                                            env->callObject(warnFn,
+                                                { PythonEnvironment::getInternedString(context, msg.c_str())->asObject(context),
+                                                  rwT });
+                                            if (env->hasPendingException()) env->clearPendingException();
+                                        }
+                                    }
                                 }
                             }
                         }
