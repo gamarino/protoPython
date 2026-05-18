@@ -4259,11 +4259,26 @@ const proto::ProtoObject* executeBytecodeRange(
                     stack.pop_back(); // Pop val now that it's stored
 
                     // Only add to __keys__ when the key is genuinely new (first store), O(1) total.
+                    // STRUCT-308: hasOwnAttribute first — getAttribute walks the parent chain, and
+                    // every module's first STORE_NAME would otherwise wrap and mutate
+                    // modulePrototype's inherited __keys__ list (which seeds itself from the
+                    // object prototype's dunder list).  The mutation corrupts every subsequent
+                    // module's view of its own keys via inheritance — signal.items() ends up
+                    // walking __new__/__init__/__str__ instead of SIGTERM/SIGKILL/..., which
+                    // makes signal.py's `_IntEnum._convert_` produce an empty Signals enum and
+                    // surface the cryptic "do not use super().__new__" TypeError from
+                    // enum.__new__'s "no members" branch.
                     if (isNewKey) {
-                        const proto::ProtoObject* keysObj = frame->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__keys__"));
-                        const proto::ProtoList* keysList = (keysObj && keysObj->asList(ctx)) ? keysObj->asList(ctx) : ctx->newList();
+                        const proto::ProtoString* keysName =
+                            PythonEnvironment::getInternedString(ctx, "__keys__");
+                        const proto::ProtoObject* keysObj =
+                            (frame->hasOwnAttribute(ctx, keysName) == PROTO_TRUE)
+                                ? frame->getOwnAttributeDirect(ctx, keysName)
+                                : nullptr;
+                        const proto::ProtoList* keysList = (keysObj && keysObj->asList(ctx))
+                            ? keysObj->asList(ctx) : ctx->newList();
                         keysList = keysList->appendLast(ctx, nameObj);
-                        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__keys__"), keysList->asObject(ctx)));
+                        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, keysName, keysList->asObject(ctx)));
                     }
                     if (env) {
                         PythonEnvironment::setCurrentFrame(frame);
@@ -5134,6 +5149,28 @@ const proto::ProtoObject* executeBytecodeRange(
         case OP_IMPORT_STAR: {
             if (stack.size() < 1) { i = next_i; continue; }
             const proto::ProtoObject* mod = stack.back();
+            // STRUCT-308: every name brought in by `from X import *` must
+            // also land in the importing frame's __keys__ so that
+            // module.items() / module.keys() — and Python-level
+            // introspection that relies on the dict layout (e.g.
+            // `_IntEnum._convert_('Signals', __name__, ...)` reading
+            // sys.modules['signal'].__dict__.items()) — sees the new
+            // names.  This helper mirrors the STORE_NAME body.
+            const proto::ProtoString* keysNameS =
+                PythonEnvironment::getInternedString(ctx, "__keys__");
+            auto recordKeyInFrame = [&](const proto::ProtoString* nameS) {
+                const proto::ProtoObject* keysObj =
+                    (frame->hasOwnAttribute(ctx, keysNameS) == PROTO_TRUE)
+                        ? frame->getOwnAttributeDirect(ctx, keysNameS) : nullptr;
+                const proto::ProtoList* keysList = (keysObj && keysObj->asList(ctx))
+                    ? keysObj->asList(ctx) : ctx->newList();
+                // Only append on first store (avoid duplicates).
+                if (!keysList->has(ctx, nameS->asObject(ctx))) {
+                    keysList = keysList->appendLast(ctx, nameS->asObject(ctx));
+                    frame = const_cast<proto::ProtoObject*>(
+                        frame->setAttribute(ctx, keysNameS, keysList->asObject(ctx)));
+                }
+            };
             // mod remains on stack during attribute iteration
             if (mod && mod != PROTO_NONE) {
                 if (std::getenv("PROTO_RESOLVE_DIAG")) {
@@ -5157,6 +5194,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                 const proto::ProtoObject* val = mod->getAttribute(ctx, nameS);
                                 if (val) {
                                     frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nameS, val));
+                                    recordKeyInFrame(nameS);
                                 }
                             }
                         }
@@ -5179,7 +5217,9 @@ const proto::ProtoObject* executeBytecodeRange(
                                 }
                                 const proto::ProtoObject* val = mod->getAttribute(ctx, nameObj->asString(ctx));
                                 if (val) {
-                                    frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nameObj->asString(ctx), val));
+                                    const proto::ProtoString* nm = nameObj->asString(ctx);
+                                    frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nm, val));
+                                    recordKeyInFrame(nm);
                                 }
                             }
                             it = it->advance(ctx);
@@ -5201,6 +5241,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                             const proto::ProtoObject* val = mod->getAttribute(ctx, s);
                                             if (val) {
                                                 frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, s, val));
+                                                recordKeyInFrame(s);
                                             }
                                         }
                                     }

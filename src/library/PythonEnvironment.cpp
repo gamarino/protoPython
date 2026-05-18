@@ -16327,19 +16327,17 @@ static const proto::ProtoObject* py_module_items(
 
     // Module globals are stored in __data__ (sparse list keyed by hash) and
     // __keys__ (list of key objects), mirroring the Python dict layout.
-    // Use that structure first; fall back to protoCore own attributes.
+    // STRUCT-308: probe via hasOwnAttribute, not getAttribute, so a native
+    // module that doesn't carry its own __keys__/__data__ doesn't inherit
+    // a parent prototype's value and iterate foreign content.
     const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
+    const proto::ProtoObject* keysObj = (self->hasOwnAttribute(context, keysName) == PROTO_TRUE)
+        ? self->getOwnAttributeDirect(context, keysName) : nullptr;
     const proto::ProtoList* keysList = keysObj && keysObj->asList(context) ? keysObj->asList(context) : nullptr;
-    const proto::ProtoObject* dataObj = self->getAttribute(context, dataName);
+    const proto::ProtoObject* dataObj = (self->hasOwnAttribute(context, dataName) == PROTO_TRUE)
+        ? self->getOwnAttributeDirect(context, dataName) : nullptr;
     const proto::ProtoSparseList* dict = dataObj && dataObj->asSparseList(context) ? dataObj->asSparseList(context) : nullptr;
-    if (std::getenv("PROTO_MOD_ITEMS_DIAG")) {
-        fprintf(stderr, "DEBUG py_module_items: self=%p keysObj=%p keysList=%p dataObj=%p dict=%p\n",
-                (void*)self, (void*)keysObj, (void*)keysList, (void*)dataObj, (void*)dict);
-        if (keysList) fprintf(stderr, "  keysList->getSize=%lu\n", keysList->getSize(context));
-        fflush(stderr);
-    }
 
     if (keysList) {
         // Primary path: use the __keys__ list that STORE_NAME maintains, which tracks
@@ -16413,8 +16411,10 @@ static const proto::ProtoObject* py_module_keys(
     if (!self || self == PROTO_NONE) return result->asObject(context);
 
     // Use __keys__ list if available (Python dict layout for module globals)
+    // STRUCT-308: hasOwnAttribute first — see py_module_items for context.
     const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
-    const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
+    const proto::ProtoObject* keysObj = (self->hasOwnAttribute(context, keysName) == PROTO_TRUE)
+        ? self->getOwnAttributeDirect(context, keysName) : nullptr;
     const proto::ProtoList* keysList = keysObj && keysObj->asList(context) ? keysObj->asList(context) : nullptr;
     if (keysList) {
         // Filter out internal attributes before returning
