@@ -32,7 +32,7 @@
 
 | Suite | Result |
 |-------|--------|
-| **`test/cpython/test_descr.py`** | **144 / 155 non-skipped pass (93 %)** — 9 F + 2 E + 10 skipped, ctest 183/183 verde.  Round 36 closed `test_reduce_copying`; cumulative rounds 26–36: 27F + 7E = 34 → 9F + 2E = 11 (23 flips, no regressions). |
+| **`test/cpython/test_descr.py`** | **145 / 155 non-skipped pass (94 %)** — 9 F + 1 E + 10 skipped, ctest 183/183 verde.  Round 37 closed `test_tp_subclasses_cycle_error_return_path`; cumulative rounds 26–37: 27F + 7E = 34 → 9F + 1E = 10 (24 flips, no regressions). |
 | **CPython conformance categories** | 17 / 17 (100 %) — Essential, Important, Necessary all pass. |
 
 ### Performance summary (2026-05-13, three modes, n=14 workloads)
@@ -57,7 +57,82 @@ is queued for round 38+ once the dispatcher-tier rework lands.
 
 ---
 
-## Current Status (2026-05-18) — round 36 (pickle reduce_ex fix-up cluster, 11 raw F+E)
+## Current Status (2026-05-18) — round 37 (pre-write __bases__ with conditional rollback, 10 raw F+E)
+
+Round 37 lands a single commit (STRUCT-300) that restructures the
+`__bases__` setter to write the new bases tuple BEFORE invoking
+user `mro()`, mirroring CPython's type_set_bases protocol.  Test
+count drops from **9F + 2E = 11** to **9F + 1E = 10** (one flip:
+`test_tp_subclasses_cycle_error_return_path`).  ctest 183/183
+verde.
+
+### Round 37 commit
+
+1. **STRUCT-300** (PythonEnvironment.cpp setAttribute `__bases__`
+   branch) — pre-write + conditional rollback:
+
+   * Capture `outerOriginalBases_outerScope` at the top of the
+     __bases__ branch (before any mutation).  Used by STRUCT-45
+     below as the "remove from old bases" source, since the
+     pre-write replaces `obj.__bases__` with `value`.
+   * Pre-write `obj.__bases__ = value` right after the initial
+     `applyOne(obj, newMro)` so user `mro()` reads the new value
+     via `cls.__bases__`.  Breaks the unbounded recursion in
+     `test_tp_subclasses_cycle_error_return_path` where each
+     level used to read the unchanged `(A,)` and re-enter.
+   * The savedMro restore inside the user-mro block now checks
+     `postMroBases == value` (the pre-write value) — restore
+     only when no re-entrant write replaced it.
+   * User-mro exception handler conditionally rolls back:
+     - `postMroBases == value` (no re-entry) → restore `__bases__`
+       to outerOriginalBases and undo applyOne.
+     - `postMroBases != value` (re-entry committed) → preserve
+       the inner's state and propagate the exception untouched.
+     This is what makes the test's `with assertRaises(E):
+     C.__bases__ = (B1,)` post-condition `C.__bases__ == (B2,)`
+     hold even though the outer raised.
+   * Post-propagate re-entry detection collapses to
+     `postBases != value`; the `__bases__` branch ends with an
+     explicit `return obj;` so the generic
+     `obj->setAttribute(name, value)` at line ~25550 doesn't
+     re-write `__bases__` a second time and clobber any inner
+     re-entrant assignment.
+
+### Remaining tractable (2 tests, 1F + 1E excluding 7 WONTFIX + 1
+co-architectural)
+
+- **test_type_lookup_mro_reference** (E) — two unrelated
+  blockers: (i) `assert_python_ok("-c", code)` requires
+  `subprocess.Popen.communicate()` plumbing that currently fails
+  with `'object' object has no attribute 'read'`; (ii) dict
+  `__eq__` is bypassed when hash matches —
+  `py_dict_*` short-circuits on `dict->has(hash)` without
+  consulting `__eq__` on the stored key, so user `__eq__` side
+  effects never run.
+- **test_multiple_inheritance** (F) — `class D(dict, C)` where
+  `C.__init__` stores instance attrs: those leak into dict
+  keys.  CPython routes Python attribute writes to a separate
+  instance __dict__ for dict subclasses; our setAttribute uses
+  the same `__data__`/`__keys__` storage for both dict payload
+  and instance attrs.  Architectural; `__pydict_data__` /
+  `__pydict_keys__` machinery already exists for the dict-proxy
+  read path but is not used at write time.
+- **test_slots_special2** (F) — needs Compiler.cpp emission of
+  `__classcell__` into the class namespace when a class body
+  uses `super()` (so Meta's `assert "__classcell__" in namespace`
+  succeeds), plus MemberDescriptor install for slot-shadowed
+  `__qualname__` / `__classcell__` (STRUCT-298 only addresses
+  the conflict gate).
+
+### Build
+
+ctest 183/183 verde en cada commit.  Round 26–37 cumulative:
+27F + 7E = 34 → **9F + 1E = 10** (24 test flips overall, no
+regressions).
+
+---
+
+## Previous Status (2026-05-18) — round 36 (pickle reduce_ex fix-up cluster, 11 raw F+E)
 
 Round 36 lands three coordinated commits (STRUCT-295/296/297 +
 STRUCT-298 follow-up) that close `test_reduce_copying` by fixing

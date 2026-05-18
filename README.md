@@ -37,7 +37,7 @@
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
 | **Performance** | **Optimization in Progress** - 2026-05-03 (Phase 8 + GC audit): see Performance Benchmarks section. Microbenchmark geomean **3.06×** slower than CPython 3.14 (now including `memory_pressure` in the suite — 43.4× / 358 MB RSS, was 191× / 1347 MB before the GC audit landed); fair pure-Python benchmark suite geomean **~30×** slower (see note on benchmark selection). Improved ~40× from V154 (1337×) through Phase 1–8 + the May 2026 GC survivor re-chain landing.  The remaining gap is dominated by bytecode dispatch overhead and `setAttribute` / `getAttribute` prototype-chain AVL traversal on every instance attribute access. ⚙️ |
 | **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
-| **test_descr.py conformance (May 2026)** | **144/155 non-skipped passing (93 %)** — `test/cpython/test_descr.py`: 9 failures + 2 errors + 10 skipped out of 165 tests.  Rounds 26–36 (May 17–18) cut from 27F + 7E = 34 down to 9F + 2E = 11 (23 test flips, no regressions, ctest 183/183 verde every commit).  See `docs/CPYTHON_CONFORMANCE.md` for the per-round breakdown. ✅ |
+| **test_descr.py conformance (May 2026)** | **145/155 non-skipped passing (94 %)** — `test/cpython/test_descr.py`: 9 failures + 1 error + 10 skipped out of 165 tests.  Rounds 26–37 (May 17–18) cut from 27F + 7E = 34 down to 9F + 1E = 10 (24 test flips, no regressions, ctest 183/183 verde every commit).  See `docs/CPYTHON_CONFORMANCE.md` for the per-round breakdown. ✅ |
 
 - ✅ **Generator Delegation**: Full support for `yield` and `yield from` with efficient state persistence.
 - ✅ **Smart Collection Unwrapping**: Seamless bridge between Python objects and native C++ collection methods.
@@ -543,13 +543,13 @@ In priority order:
 ## 🧪 CPython semantic conformance (May 2026)
 
 `test/cpython/test_descr.py` (165 tests, the descriptor-protocol /
-object-model torture suite from CPython 3.14) is **at 144 passing**
-out of 155 non-skipped (93 %) after the rounds 26–36 sweep — up
+object-model torture suite from CPython 3.14) is **at 145 passing**
+out of 155 non-skipped (94 %) after the rounds 26–37 sweep — up
 from **61 passing** at the start of the session.  Remaining: 9
-failures + 2 errors + 10 skipped.
+failures + 1 error + 10 skipped.
 
-Cumulative rounds 26–36 (May 17–18) cut the failing count from
-27F + 7E = 34 down to **9F + 2E = 11** — 23 test flips, no
+Cumulative rounds 26–37 (May 17–18) cut the failing count from
+27F + 7E = 34 down to **9F + 1E = 10** — 24 test flips, no
 regressions, `ctest --test-dir build_release` 183/183 verde on
 every commit.  Recent highlights:
 
@@ -559,6 +559,7 @@ every commit.  Recent highlights:
 | 34 | `test_slots_special_after_items` (3 subtests) | strict-slot STORE_ATTR check now skips immutable-primitive bases (tuple/int/str/…) |
 | 35 | `test_tp_subclasses_cycle_in_update_slots` | re-entrancy detection in `__bases__` setter + drop broken `_functools.partial` shim |
 | 36 | `test_reduce_copying` | builtin qualname / `__reduce__` override delegation cluster: skip module-identity dunders in exceptions→builtins copy, drop owner prefix for module-level builtins, delegate to class-level `__reduce__` |
+| 37 | `test_tp_subclasses_cycle_error_return_path` | pre-write `__bases__` before user `mro()` (CPython's type_set_bases protocol) with conditional rollback that preserves inner re-entrant effects on exception |
 
 The earlier work hit four broad areas of CPython semantics:
 
