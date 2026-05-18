@@ -28,7 +28,98 @@
 
 ---
 
-## Current Status (2026-05-17) — round 33 (slot-subclass preconditions, 17 raw F+E)
+## Current Status (2026-05-18) — round 35 (re-entrancy detection + partial shim drop, 13 raw F+E)
+
+Round 35 lands one re-entrancy fix in the `__bases__` setter and
+removes a long-standing broken `_functools.partial` native shim.
+Test count drops from **9F + 5E = 14** to **9F + 4E = 13** (one
+flip).  ctest 183/183 verde.
+
+### Round 35 commit
+
+1. **STRUCT-293** (one squashed commit) — two coordinated changes:
+   a. `PythonEnvironment::setAttribute(__bases__)` captures the
+      original `__bases__` tuple before invoking user
+      `metaclass.mro()`.  When the user mro performs a re-entrant
+      `obj.__bases__ = X` that completes successfully, the outer
+      detects the change (post-mro `obj.__bases__ != value`) and
+      bails before STRUCT-45 / the final attribute write, leaving
+      the inner's effects intact.  The savedMro restore is also
+      gated on the same comparison so it doesn't stomp inner's
+      __mro__.  Flips
+      `test_tp_subclasses_cycle_in_update_slots` (MroTest, was an
+      ERROR with the inner's effects stomped by the outer restore).
+
+   b. `FunctoolsModule.cpp` stops exporting `partial`,
+      `Placeholder`, and `_PlaceholderType` from the native
+      `_functools` module.  The previous native `py_partial` shim
+      returned a plain `<object>` cell so `type(partial(f, x))`
+      evaluated to a non-class, and any downstream
+      `issubclass(type(p), …)` (pickle proto 2/3 expands
+      `__newobj_ex__` to `partial(cls.__new__, cls, *args,
+      **kwargs)`) raised `TypeError: issubclass() arg 1 must be a
+      class`.  Withholding the symbols makes the
+      `from _functools import partial, …` line in `functools.py`
+      fail with `ImportError`; the surrounding `try/except`
+      swallows it and the pure-Python `partial` class above the
+      import becomes authoritative.  Probe-verified that
+      `type(partial(int, '5')) is partial`, and pickle protos
+      0/1/2/3/4/5 round-trip correctly for `C2`, `C3`, `C4`.  On
+      its own this is structural: `test_reduce_copying` still
+      fails because pickle's `save_global` for builtins like
+      `getattr` hits a separate bug (our `getattr.__qualname__`
+      reads `exceptions.getattr` instead of `getattr`).
+
+### Remaining tractable (3 tests, 2F + 4E excluding 7 WONTFIX)
+
+- **test_tp_subclasses_cycle_error_return_path** (E) — infinite
+  recursion in user mro that does `if X.__bases__ == new: ... else:
+  X.__bases__ = new; raise`.  Requires writing __bases__ BEFORE
+  invoking user mro (CPython's protocol) and rollback-on-failure
+  ordering that preserves inner-committed re-entrant effects.  The
+  pre-write approach breaks STRUCT-45's `oldBases` semantics for
+  the SLOTS test — a unified restructuring of the __bases__ setter
+  is needed.  Defer to round 36+.
+- **test_type_lookup_mro_reference** (E) — two unrelated blockers:
+  (i) `assert_python_ok("-c", code)` subprocess plumbing,
+  (ii) dict `__eq__` is bypassed when hash matches (py_dict_*
+  short-circuits on `dict->has(hash)` without consulting `__eq__`
+  on the stored key, so user `__eq__` side effects never run).
+- **test_reduce_copying** (E) — `partial` now works; remaining
+  failure is pickle's `save_global` on builtin functions whose
+  `__qualname__` is incorrectly prefixed (e.g. `exceptions.getattr`)
+  and whose `__reduce_ex__(2)` delegation hits a TypeError.
+
+### Build
+
+ctest 183/183 verde en cada commit.  Round 26–35 cumulative:
+27F + 7E = 34 → **9F + 4E = 13** (21 test flips overall, no
+regressions).
+
+---
+
+## Previous Status (2026-05-17) — round 34 (strict-slot STORE_ATTR, 14 raw F+E)
+
+Round 34 lands one commit (STRUCT-292) that fixes the strict-slot
+STORE_ATTR check to skip immutable-primitive bases.  Test count
+drops from **12F + 5E = 17** to **9F + 5E = 14** (three flips:
+all three parametric subtests of `test_slots_special_after_items`
+— tuple, int, bytes — now consistent).
+
+### Round 34 commit
+
+1. **STRUCT-292** — `env->setAttribute`'s strict-slots rejection
+   (`hasSlots && !hasDict && !nameInSlots → AttributeError`)
+   wrongly declared `hasDict = true` for any non-object,
+   non-type base.  Subclassing `tuple` (or any immutable
+   primitive: int, str, bytes, float, bool, frozenset, complex,
+   NoneType) with `__slots__=['__weakref__']` silently accepted
+   `w.foo = 42`.  Fix: skip immutable primitives in the
+   "has dict?" walk — CPython's tp_dictoffset is 0 for these.
+
+---
+
+## Previous Status (2026-05-17) — round 33 (slot-subclass preconditions, 17 raw F+E)
 
 Round 33 lands four preconditions (subprocess fork_exec arity, bytes
 subclass constructor, bignum int formatting, weakref MRO walk
