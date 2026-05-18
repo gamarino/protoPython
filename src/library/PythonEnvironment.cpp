@@ -24377,6 +24377,15 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
             // Walk descendants (pre-order, deduped) and try to apply
             // each.  On the first conflict, rollback everything and
             // surface the exception.
+            //
+            // STRUCT-285: when the descendant's metaclass declares a
+            // user-defined `mro()` override, invoke it AFTER computing
+            // the default C3.  CPython does this so that custom mros
+            // (test_mutable_bases_with_failing_mro's WorkOnce raises
+            // RuntimeError on the second call) get a chance to reject
+            // the __bases__ change.  If the override raises, the
+            // outer propagate returns false → rollbackAll restores
+            // every applied subclass + the original __bases__.
             std::unordered_set<const proto::ProtoObject*> visited;
             visited.insert(obj);
             std::function<bool(const proto::ProtoObject*)> propagate;
@@ -24398,6 +24407,35 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                         return false; // exception is pending
                     }
                     applyOne(sub, subMro);
+                    // STRUCT-285: invoke user metaclass.mro() if the
+                    // metaclass owns one.  We resolve `metaclass.mro`
+                    // by checking `type(sub)` for its OWN `mro` (we
+                    // skip if it's inherited from type — that's the
+                    // default and would loop).
+                    const proto::ProtoObject* subMeta = getType(ctx, sub);
+                    if (subMeta && subMeta != PROTO_NONE
+                        && subMeta != typePrototype) {
+                        const proto::ProtoString* mroAttrName =
+                            PythonEnvironment::getInternedString(ctx, "mro");
+                        if (subMeta->hasOwnAttribute(ctx, mroAttrName) == PROTO_TRUE) {
+                            const proto::ProtoObject* userMro =
+                                subMeta->getAttribute(ctx, mroAttrName);
+                            if (userMro && userMro != PROTO_NONE) {
+                                const proto::ProtoList* args = ctx->newList()
+                                    ->appendLast(ctx, sub);
+                                if (userMro->asMethod(ctx)) {
+                                    userMro->asMethod(ctx)(ctx,
+                                        const_cast<proto::ProtoObject*>(subMeta),
+                                        nullptr, args, nullptr);
+                                } else {
+                                    invokePythonCallable(ctx, userMro, args, nullptr);
+                                }
+                                if (hasPendingException()) {
+                                    return false;
+                                }
+                            }
+                        }
+                    }
                     if (!propagate(sub)) return false;
                 }
                 return true;
