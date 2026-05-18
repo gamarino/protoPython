@@ -15,6 +15,7 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <sys/times.h>
 extern char** environ;
 #endif
 
@@ -1980,6 +1981,73 @@ static const proto::ProtoObject* py_os_WTERMSIG(
 #endif
 }
 
+// os.umask(mask) -> old_mask.
+static const proto::ProtoObject* py_os_umask(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    int newmask = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+    int oldmask = ::umask(newmask);
+    return ctx->fromInteger(oldmask);
+#else
+    return ctx->fromInteger(0);
+#endif
+}
+
+// os.getlogin() -> str.  Falls back to $USER or $LOGNAME when
+// getlogin() itself fails (no controlling terminal in detached
+// processes — the stdlib expects a string back).
+static const proto::ProtoObject* py_os_getlogin(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    char* nm = ::getlogin();
+    if (nm) return PythonEnvironment::getInternedString(ctx, nm)->asObject(ctx);
+    const char* user = std::getenv("USER");
+    if (!user) user = std::getenv("LOGNAME");
+    if (!user) user = "unknown";
+    return PythonEnvironment::getInternedString(ctx, user)->asObject(ctx);
+#else
+    return PythonEnvironment::getInternedString(ctx, "unknown")->asObject(ctx);
+#endif
+}
+
+// os.WIFCONTINUED(status) -> bool.
+static const proto::ProtoObject* py_os_WIFCONTINUED(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_FALSE;
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#ifdef WIFCONTINUED
+    int status = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+    return WIFCONTINUED(status) ? PROTO_TRUE : PROTO_FALSE;
+#endif
+#endif
+    return PROTO_FALSE;
+}
+
+// os.times() -> 5-tuple (user, system, children_user, children_system, elapsed).
+static const proto::ProtoObject* py_os_times(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    struct tms t;
+    clock_t real = times(&t);
+    double ticks = static_cast<double>(sysconf(_SC_CLK_TCK));
+    if (ticks <= 0) ticks = 100.0;
+    const proto::ProtoList* fields = ctx->newList();
+    fields = fields->appendLast(ctx, ctx->fromDouble(t.tms_utime / ticks));
+    fields = fields->appendLast(ctx, ctx->fromDouble(t.tms_stime / ticks));
+    fields = fields->appendLast(ctx, ctx->fromDouble(t.tms_cutime / ticks));
+    fields = fields->appendLast(ctx, ctx->fromDouble(t.tms_cstime / ticks));
+    fields = fields->appendLast(ctx, ctx->fromDouble(real / ticks));
+    return ctx->newTupleFromList(fields)->asObject(ctx);
+#else
+    return PROTO_NONE;
+#endif
+}
+
 // os.fstat(fd) -> stat_result.  Returns a tuple-like with the same
 // 10 fields CPython exposes: st_mode, st_ino, st_dev, st_nlink,
 // st_uid, st_gid, st_size, st_atime, st_mtime, st_ctime.  We
@@ -2270,6 +2338,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_WTERMSIG));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "fstat"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_fstat));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "umask"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_umask));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getlogin"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_getlogin));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "WIFCONTINUED"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_WIFCONTINUED));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "times"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_times));
     // Path-like constant.  subprocess reads os.devnull when stdin/
     // stdout/stderr is DEVNULL.
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "devnull"),
@@ -2530,6 +2606,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "WEXITSTATUS")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "WTERMSIG")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "fstat")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "umask")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "getlogin")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "WIFCONTINUED")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "times")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "devnull")->asObject(ctx));
 #ifdef _CS_PATH
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "CS_PATH")->asObject(ctx));
