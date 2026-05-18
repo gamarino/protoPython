@@ -28,7 +28,77 @@
 
 ---
 
-## Current Status (2026-05-17) — round 30 (mro + __dict__ getset, 22 raw F+E)
+## Current Status (2026-05-17) — round 31 (Cluster B + Ellipsis + incomplete_extend, 19 raw F+E)
+
+Round 31 lands three flips, including the long-deferred Cluster B
+(STORE_ATTR class metaclass dispatch).  Test count drops from
+**18F + 4E = 22** to **15F + 4E = 19**.
+
+### Round 31 commits
+
+1. **STRUCT-280** — py_type rejects bases whose own `__mro__ ==
+   None`.  When a base is mid-mro-computation (own __mro__ set to
+   None by py_type before invoking the user mro() override, per
+   STRUCT-276), creating a subclass must raise TypeError mirroring
+   CPython's type_new check.  Flips test_incomplete_extend.
+
+2. **STRUCT-281** — `ellipsisType` installs `__new__` instead of
+   `__call__`.  CPython's `ellipsis` type is callable as a
+   constructor (`ellipsis()` returns Ellipsis) but the singleton
+   instance Ellipsis itself is NOT callable; the previous
+   `__call__` install leaked the entry into dir(Ellipsis) and
+   broke `assertEqual(dir(object()), dir(Ellipsis))`.  Flips
+   test_dir (the last remaining subtest).
+
+3. **STRUCT-282/283** — install `type.__setattr__` as a dedicated
+   native method that routes directly to protoCore setAttribute
+   (bypassing py_object_setattr's Carlo defence), then enable
+   `env->setAttribute`'s metaclass-__setattr__ dispatch for CLASS
+   targets when the override is a user Python function (has
+   __code__).  Two coordinated edits unblock the long-deferred
+   Cluster B: previous attempts crashed because
+   `super().__setattr__(...)` from a user metaclass override fell
+   through to object.__setattr__'s Carlo check and rejected
+   `setattr(<built-in class>, ...)` even from internal cascades.
+   Now super() resolves to the dedicated type.__setattr__, and
+   user metaclass __setattr__ overrides fire only for true user
+   classes.  Flips test_carloverre_multi_inherit_invalid.  Did NOT
+   break `import enum` (confirmed via `protopy -c 'import enum'`
+   and full ctest suite).
+
+### Remaining (15F+4E=19 → ~7 WONTFIX-GC + ~12 tractable)
+
+- **WONTFIX GC** (7): test_subtype_resurrection,
+  test_cycle_through_dict, test_remove_subclass, test_weakrefs,
+  test_delete_hook, test_vicious_descriptor_nonsense, test_slots
+  (Counted subtest).
+- **Re-entrancy MroTest cluster** (4): test_mutable_bases_with_failing_mro,
+  test_reent_set_bases_tp_base_cycle,
+  test_tp_subclasses_cycle_error_return_path,
+  test_tp_subclasses_cycle_in_update_slots (E).  All require
+  transactional re-mro rollback during __bases__ change with
+  user-metaclass mro() invocations per subclass.
+- **test_multiple_inheritance** — dict subclass instance attrs leak
+  into dict keys (`_C__state` shows up in `d.keys()`).  Needs
+  `__pydict_data__` storage routing for dict subclasses
+  end-to-end.
+- **test_slots_special2** — needs `__classcell__` in class
+  namespace (Compiler.cpp emission).
+- **test_slots_special_after_items** — bytes subclass typing
+  reverts to bytes; int subclass bignum (`9876543210**2`) overflow.
+- **test_reduce_copying** (E) — pickle parametric; tracebacks
+  silently dropped through unittest path.
+- **test_type_lookup_mro_reference** (E) — subprocess support
+  broken (`_posixsubprocess.fork_exec` arity mismatch).
+
+### Build
+
+ctest 183/183 verde en cada commit.  Round 26–31 cumulative:
+27F + 7E = 34 → **15F + 4E = 19** (15 test flips overall).
+
+---
+
+## Previous Status (2026-05-17) — round 30 (mro + __dict__ getset, 22 raw F+E)
 
 Round 30 closes two long-deferred clusters (J: mro re-entrancy; C:
 `__dict__` as getset_descriptor) and lands three flips.  Test count
