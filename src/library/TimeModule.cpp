@@ -4,6 +4,7 @@
 #include <chrono>
 #include <thread>
 #include <ctime>
+#include <cstring>
 
 namespace protoPython {
 namespace time_module {
@@ -226,6 +227,106 @@ static const proto::ProtoObject* py_gmtime(
     return make_struct_time(ctx, tm_ptr);
 }
 
+// time.ctime(secs=None) -> str.  Convert a time expressed in seconds
+// since the epoch to a 26-char string.  When secs is None, the
+// current time is used.
+static const proto::ProtoObject* py_ctime(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    time_t t;
+    if (posArgs->getSize(ctx) > 0 && posArgs->getAt(ctx, 0) != PROTO_NONE) {
+        t = static_cast<time_t>(toDouble(ctx, posArgs->getAt(ctx, 0)));
+    } else {
+        t = std::time(nullptr);
+    }
+    char buf[64];
+    if (ctime_r(&t, buf)) {
+        // strip trailing newline
+        size_t n = std::strlen(buf);
+        while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r')) buf[--n] = 0;
+        return PythonEnvironment::getInternedString(ctx, buf)->asObject(ctx);
+    }
+    return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
+}
+
+// time.asctime(t=None) -> str — same shape as ctime but accepts a
+// struct_time tuple instead of seconds.
+static const proto::ProtoObject* py_asctime(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    struct tm tmv;
+    std::memset(&tmv, 0, sizeof(tmv));
+    if (posArgs->getSize(ctx) > 0 && posArgs->getAt(ctx, 0) != PROTO_NONE) {
+        // Accept the 9-element struct_time tuple.  Walk via asList
+        // so wrappers that store the data under __data__ work too.
+        const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
+        const proto::ProtoList* list = nullptr;
+        if (arg->isTuple(ctx)) list = arg->asTuple(ctx)->asList(ctx);
+        else list = arg->asList(ctx);
+        if (!list) {
+            // try __data__ unwrap
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            const proto::ProtoObject* d = env ? arg->getAttribute(ctx, env->getDataString()) : nullptr;
+            if (d) {
+                if (d->isTuple(ctx)) list = d->asTuple(ctx)->asList(ctx);
+                else list = d->asList(ctx);
+            }
+        }
+        if (list && list->getSize(ctx) >= 9) {
+            tmv.tm_year = static_cast<int>(list->getAt(ctx, 0)->asLong(ctx)) - 1900;
+            tmv.tm_mon  = static_cast<int>(list->getAt(ctx, 1)->asLong(ctx)) - 1;
+            tmv.tm_mday = static_cast<int>(list->getAt(ctx, 2)->asLong(ctx));
+            tmv.tm_hour = static_cast<int>(list->getAt(ctx, 3)->asLong(ctx));
+            tmv.tm_min  = static_cast<int>(list->getAt(ctx, 4)->asLong(ctx));
+            tmv.tm_sec  = static_cast<int>(list->getAt(ctx, 5)->asLong(ctx));
+            tmv.tm_wday = static_cast<int>(list->getAt(ctx, 6)->asLong(ctx));
+            tmv.tm_yday = static_cast<int>(list->getAt(ctx, 7)->asLong(ctx));
+            tmv.tm_isdst= static_cast<int>(list->getAt(ctx, 8)->asLong(ctx));
+        }
+    } else {
+        time_t now = std::time(nullptr);
+        tmv = *std::localtime(&now);
+    }
+    char buf[64];
+    if (asctime_r(&tmv, buf)) {
+        size_t n = std::strlen(buf);
+        while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r')) buf[--n] = 0;
+        return PythonEnvironment::getInternedString(ctx, buf)->asObject(ctx);
+    }
+    return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
+}
+
+// time.mktime(t) -> float — inverse of localtime.
+static const proto::ProtoObject* py_mktime(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return ctx->fromDouble(0.0);
+    const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
+    const proto::ProtoList* list = nullptr;
+    if (arg->isTuple(ctx)) list = arg->asTuple(ctx)->asList(ctx);
+    else list = arg->asList(ctx);
+    if (!list) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        const proto::ProtoObject* d = env ? arg->getAttribute(ctx, env->getDataString()) : nullptr;
+        if (d) {
+            if (d->isTuple(ctx)) list = d->asTuple(ctx)->asList(ctx);
+            else list = d->asList(ctx);
+        }
+    }
+    if (!list || list->getSize(ctx) < 9) return ctx->fromDouble(0.0);
+    struct tm tmv;
+    std::memset(&tmv, 0, sizeof(tmv));
+    tmv.tm_year = static_cast<int>(list->getAt(ctx, 0)->asLong(ctx)) - 1900;
+    tmv.tm_mon  = static_cast<int>(list->getAt(ctx, 1)->asLong(ctx)) - 1;
+    tmv.tm_mday = static_cast<int>(list->getAt(ctx, 2)->asLong(ctx));
+    tmv.tm_hour = static_cast<int>(list->getAt(ctx, 3)->asLong(ctx));
+    tmv.tm_min  = static_cast<int>(list->getAt(ctx, 4)->asLong(ctx));
+    tmv.tm_sec  = static_cast<int>(list->getAt(ctx, 5)->asLong(ctx));
+    tmv.tm_isdst= static_cast<int>(list->getAt(ctx, 8)->asLong(ctx));
+    time_t t = std::mktime(&tmv);
+    return ctx->fromDouble(static_cast<double>(t));
+}
+
 static const proto::ProtoObject* py_strftime(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
@@ -338,6 +439,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_thread_time));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "perf_counter"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_monotonic));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ctime"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_ctime));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "asctime"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_asctime));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "mktime"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_mktime));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "localtime"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_localtime));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "gmtime"),
