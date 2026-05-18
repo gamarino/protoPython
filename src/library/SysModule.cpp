@@ -350,6 +350,28 @@ static const proto::ProtoObject* sys_addaudithook(
     return PROTO_NONE;
 }
 
+// STRUCT-316: PEP 524 unraisablehook + breakpointhook stubs.
+//
+// CPython's sys.unraisablehook(unraisable) is the default handler
+// invoked when an exception is raised but cannot be propagated —
+// typically during garbage collection or __del__.  Stdlib paths
+// (asyncio, threading) introspect its existence on import.
+// protoPython has no callback chain wired through GC yet, so this
+// is a no-op accepting any positional args.
+static const proto::ProtoObject* sys_unraisablehook(
+    proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return PROTO_NONE;
+}
+
+// sys.breakpointhook(*args, **kwargs) — invoked by builtin
+// breakpoint().  Default is pdb.set_trace.  Stub.
+static const proto::ProtoObject* sys_breakpointhook(
+    proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* sys_exc_info(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -808,6 +830,30 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     thread_info = thread_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "version"),
         PythonEnvironment::getInternedString(ctx, "NPTL")->asObject(ctx));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "thread_info"), thread_info);
+
+    // STRUCT-316: unraisablehook and breakpointhook stubs.
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "unraisablehook"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_unraisablehook));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__unraisablehook__"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_unraisablehook));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "breakpointhook"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_breakpointhook));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__breakpointhook__"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_breakpointhook));
+
+    // sys.orig_argv — the original command-line as protopy was invoked.
+    // Same list as sys.argv for now (protoPython doesn't preserve the
+    // pre-processed form).  Wrapped via env->newList so Python sees a
+    // proper list instance.
+    const proto::ProtoList* origArgvRaw = ctx->newList();
+    if (argv) {
+        for (const auto& a : *argv) {
+            origArgvRaw = origArgvRaw->appendLast(ctx,
+                PythonEnvironment::getInternedString(ctx, a.c_str())->asObject(ctx));
+        }
+    }
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "orig_argv"),
+        PythonEnvironment::wrapList(ctx, origArgvRaw));
 
     // sys.float_info — IEEE 754 double info
     const proto::ProtoObject* float_info = env && env->getObjectPrototype()
