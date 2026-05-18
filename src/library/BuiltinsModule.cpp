@@ -2466,6 +2466,41 @@ static const proto::ProtoObject* py_object_getattribute(
     return val ? val : PROTO_NONE;
 }
 
+/** type.__setattr__(cls, name, value) — bypass Carlo defence.
+ *
+ * STRUCT-282: distinct from object.__setattr__ because user-defined
+ * metaclass `__setattr__` overrides typically call `super().__setattr__
+ * (name, value)` to perform the actual write.  In CPython that resolves
+ * to type_setattro which does the bare class-attribute write without
+ * the immutable-primitive Carlo defence; protoPython previously fell
+ * back to object.__setattr__'s Carlo check, which raised
+ * "cannot set 'X' attribute of immutable type 'object'" when the
+ * cascade hit any class target.  Install a dedicated type.__setattr__
+ * that just routes to protoCore setAttribute.
+ */
+static const proto::ProtoObject* py_type_setattr(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList*) {
+    const proto::ProtoObject* target = self;
+    const proto::ProtoObject* nameObj = nullptr;
+    const proto::ProtoObject* value = nullptr;
+    if (args && args->getSize(context) >= 3) {
+        target = args->getAt(context, 0);
+        nameObj = args->getAt(context, 1);
+        value = args->getAt(context, 2);
+    } else if (args && args->getSize(context) == 2) {
+        nameObj = args->getAt(context, 0);
+        value = args->getAt(context, 1);
+    }
+    if (!target || !nameObj || !nameObj->isString(context)) return PROTO_NONE;
+    const proto::ProtoString* nameS = nameObj->asString(context);
+    const_cast<proto::ProtoObject*>(target)->setAttribute(context, nameS, value);
+    return PROTO_NONE;
+}
+
 /** object.__setattr__(self, name, value) **/
 static const proto::ProtoObject* py_object_setattr(
     proto::ProtoContext* context,
@@ -11064,6 +11099,13 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     if (typeProto) {
         // Register mro and __new__ on typePrototype natively
         typeProto = typeProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "mro"), ctx->fromMethod(const_cast<proto::ProtoObject*>(typeProto), py_type_mro));
+        // STRUCT-282: install type.__setattr__ so that user metaclass
+        // overrides calling `super().__setattr__(name, value)` reach
+        // a class-aware setter instead of cascading into
+        // py_object_setattr's Carlo defence.
+        typeProto = typeProto->setAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__setattr__"),
+            ctx->fromMethod(nullptr, py_type_setattr));
         pEnv = PythonEnvironment::fromContext(ctx);
         if (pEnv) {
             typeProto = typeProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_type));

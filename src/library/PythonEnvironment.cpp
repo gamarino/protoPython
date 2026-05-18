@@ -24986,7 +24986,13 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
         struct DispatchGuard {
             int& d; DispatchGuard(int& d) : d(d) { d++; } ~DispatchGuard() { d--; }
         };
-        if (setAttrDispatchDepth == 0 && !isActuallyAClass(ctx, obj)) {
+        // STRUCT-283: extend dispatch to CLASS targets too.  Previous
+        // attempts broke `import enum` via EnumMeta.__setattr__'s
+        // super() cascade landing on object.__setattr__'s Carlo
+        // defence; STRUCT-282 installs `type.__setattr__` directly
+        // so the super() resolves correctly without that detour.
+        bool classTarget = isActuallyAClass(ctx, obj);
+        if (setAttrDispatchDepth == 0) {
             DispatchGuard g(setAttrDispatchDepth);
             const proto::ProtoObject* objType = getType(ctx, obj);
             if (objType && objType != PROTO_NONE) {
@@ -25004,11 +25010,25 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                         const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(i));
                         if (!base || base == PROTO_NONE) continue;
                         if (base == objectPrototype) break;
+                        // For class targets, also stop at typePrototype
+                        // — type.__setattr__ is the default class
+                        // setter, never a user override.
+                        if (classTarget && base == typePrototype) break;
                         if (base->hasOwnAttribute(ctx, setattrS) == PROTO_TRUE) {
                             override = base->getAttribute(ctx, setattrS);
                             break;
                         }
                     }
+                }
+                // For CLASS targets, only dispatch if the override is
+                // a user-defined Python function (has __code__).
+                // Built-in `__setattr__` on a metaclass (eg
+                // type.__setattr__) is bootstrap machinery.
+                if (override && override != PROTO_NONE && classTarget) {
+                    const proto::ProtoString* codeS = getCodeString();
+                    bool isPython = codeS &&
+                        override->hasAttribute(ctx, codeS) == PROTO_TRUE;
+                    if (!isPython) override = nullptr;
                 }
                 if (override && override != PROTO_NONE) {
                     // Invoke override(obj, name, value).
