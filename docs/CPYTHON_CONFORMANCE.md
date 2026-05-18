@@ -57,7 +57,68 @@ is queued for round 38+ once the dispatcher-tier rework lands.
 
 ---
 
-## Current Status (2026-05-18) — round 39 (POSIX subset + subprocess plumbing complete, 10 raw F+E)
+## Current Status (2026-05-18) — round 40 (stdlib surface widening, 9F+0E=9)
+
+Round 40 is a 10-commit batch of small stdlib-completeness fixes
+across several native modules.  No structural test_descr.py blocker
+was tackled; the focus was clearing the path for stdlib paths that
+previously failed at import time on a missing attribute.
+
+### Landed (commits c863ccb5..cc1c0efa, ordered chronologically)
+
+- **STRUCT-309** (cross-runtime, separate commit before round 40):
+  CPython CLI flag parity (`-I -X faulthandler -E -S …`) + read
+  `sys.executable` from `/proc/self/exe` so subprocess invocations
+  from `assert_python_ok` actually exec the protopy binary +
+  dual-emit RuntimeWarning via both `_py_warnings.warn_explicit`
+  (captured by `catch_warnings` for `assertWarnsRegex` tests) AND
+  `warnings.warn` (visible at stderr for `assertRegex(err, ...)`
+  tests).  First net positive flip from STRUCT-308 baseline: 10 →
+  9 failures.
+- **STRUCT-310**: `os.confstr` accepts string names + populates
+  `os.confstr_names` dict.  Unblocks `platform.libc_ver()` which
+  the stdlib `from test.support` chain imports transitively.
+- **STRUCT-311**: `os.WIFEXITED / WIFSIGNALED / WEXITSTATUS /
+  WTERMSIG / fstat`.
+- **STRUCT-312**: `os.umask / getlogin / WIFCONTINUED / times`.
+- **STRUCT-313**: `signal.strsignal / alarm / pause / siginterrupt
+  / set_wakeup_fd / valid_signals`.
+- **STRUCT-314**: `time.perf_counter / perf_counter_ns /
+  process_time / process_time_ns / thread_time`.
+- **STRUCT-315**: `sys.thread_info` namespace (name=pthread,
+  lock=mutex+cond, version=NPTL).
+- **STRUCT-316**: `sys.unraisablehook / __unraisablehook__ /
+  breakpointhook / __breakpointhook__ / orig_argv`.
+- **STRUCT-317**: fcntl extended constants (F_GETOWN, F_SETOWN,
+  F_GETSIG, F_SETSIG, F_NOTIFY, FASYNC, O_NONBLOCK, O_NDELAY,
+  O_APPEND, O_SYNC, O_ASYNC).
+- **STRUCT-318**: `os.makedev / major / minor / sysconf /
+  getloadavg`.
+- **STRUCT-319**: `time.ctime / asctime / mktime`.
+
+### Test counts
+
+- `test_descr.py`: 9F + 0E (was 9F + 1E = 10 at end of round 39
+  — STRUCT-309 was the deciding flip; round 40 itself did not
+  shift the count, but no regressions).
+- `test_match.py`: 22/22 ✓
+- `test_json.py`: 9/9 ✓
+- `test_hex.py`: ✓ (runs without unittest framework)
+- `ctest`: 199/199 verde.
+
+### Why no further test_descr.py flips
+
+The remaining 9 fails split into two buckets:
+- **GC-WONTFIX (~6)**: tests that rely on deterministic cycle /
+  weakref / __del__ collection via `gc.collect()` — protoPython's
+  concurrent GC doesn't guarantee the same semantics on demand.
+- **Architectural (~3)**: dict-subclass instance-attr separation
+  (`class D(dict, C)` storing C's attrs alongside the dict
+  payload), `__slots__` MemberDescriptor install for `__classcell__`
+  and `__qualname__`, custom metaclass + super-protocol corners.
+  Each is multi-day work and was deferred.
+
+## Previous Status (2026-05-18) — round 39 (POSIX subset + subprocess plumbing complete, 10 raw F+E)
 
 Round 39 implements the POSIX subset of `os` and a new `fcntl`
 module so `subprocess.Popen` and `subprocess.run(..., capture_output=True)`
