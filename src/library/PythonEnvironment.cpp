@@ -7888,7 +7888,20 @@ static const proto::ProtoObject* py_int_format(
                  : PythonEnvironment::getInternalString(context, "__data__"));
         if (data && data->isInteger(context)) intObj = data;
     }
-    long long v = intObj->asLong(context);
+    // STRUCT-290: bignum-safe asLong.  protoCore's Integer::asLong
+    // throws std::runtime_error for values outside long long range
+    // (the default `int` payload type).  For format() spec='' we
+    // can render the bignum via Integer::toString without converting
+    // to long long.  For spec='d' / no spec, the toString path is
+    // sufficient; complex specs (base / fill / width) still go
+    // through the long-long path and will fail loudly on bignums.
+    long long v = 0;
+    bool isBignum = false;
+    try {
+        v = intObj->asLong(context);
+    } catch (const std::exception&) {
+        isBignum = true;
+    }
     // Parse the format spec: [[fill]align][sign][#][0][width][type]
     // CPython format minilanguage subset for int: d (default), b, o, x, X,
     // n (locale, treated as d), c (char).  Previously the spec was
@@ -7902,6 +7915,10 @@ static const proto::ProtoObject* py_int_format(
         }
     }
     if (spec.empty()) {
+        if (isBignum) {
+            const proto::ProtoString* s = intObj->asIntegerString(context, 10);
+            if (s) return s->asObject(context);
+        }
         char buf[32];
         snprintf(buf, sizeof(buf), "%lld", v);
         return PythonEnvironment::getInternedString(context, buf)->asObject(context);
@@ -26409,7 +26426,24 @@ const proto::ProtoObject* PythonEnvironment::buildString(const proto::ProtoObjec
             std::string s; obj->asString(ctx)->toUTF8String(ctx, s);
             result += s;
         } else if (obj->isInteger(ctx)) {
-            result += std::to_string(obj->asLong(ctx));
+            // STRUCT-290: bignum-safe int → string conversion.
+            // asLong throws std::runtime_error for values outside
+            // long long range; fall back to Integer::asIntegerString
+            // which renders the bignum without converting through
+            // long long.  Affects f-string concatenation of bignum
+            // values like `f"{9876543210**2}"`.
+            try {
+                result += std::to_string(obj->asLong(ctx));
+            } catch (const std::exception&) {
+                const proto::ProtoString* s = obj->asIntegerString(ctx, 10);
+                if (s) {
+                    std::string str;
+                    s->toUTF8String(ctx, str);
+                    result += str;
+                } else {
+                    result += "<int>";
+                }
+            }
         } else if (obj->isDouble(ctx)) {
             result += std::to_string(obj->asDouble(ctx));
         } else if (obj == PROTO_TRUE) {

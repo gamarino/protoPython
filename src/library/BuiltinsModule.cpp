@@ -558,10 +558,12 @@ static const proto::ProtoObject* py_print(
         } else if (obj->isInteger(context)) {
             // asLong overflows for bignums; route through reprObject which
             // falls back to Integer::toString when the value doesn't fit
-            // into long long.
+            // into long long.  STRUCT-290: the protoCore exception is
+            // a `std::runtime_error` (not std::overflow_error), so
+            // widen the catch to std::exception to cover both.
             try {
                 buffered << std::to_string(obj->asLong(context));
-            } catch (const std::overflow_error&) {
+            } catch (const std::exception&) {
                 buffered << (env ? env->reprObject(context, obj) : std::string("<int>"));
             }
         } else if (obj->isDouble(context)) {
