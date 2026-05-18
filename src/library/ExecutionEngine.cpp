@@ -8345,19 +8345,36 @@ const proto::ProtoObject* executeBytecodeRange(
                     // object/type prototypes must not block per-class assignment).
                     const proto::ProtoString* qualnameS = PythonEnvironment::getInternedString(ctx, "__qualname__");
                     const bool hasOwnQN = targetClass->hasOwnAttribute(ctx, qualnameS) == PROTO_TRUE;
-                    if (!hasOwnQN) {
-                        // Try to get __qualname__ from the class namespace (set by the class body).
-                        // Only use ns's value if it's an OWN attribute; otherwise it's inherited
-                        // from the dict/object prototype and would incorrectly yield "dict"/"object".
+                    // STRUCT-324: compute the qualname string we want
+                    // `Q1.__qualname__` to report, regardless of whether
+                    // `__qualname__` is also a slot (member_descriptor).
+                    // The compiler injects the class body's qualname into
+                    // ns as a string; fall back to __name__ for top-level
+                    // classes when ns has no qualname.
+                    const proto::ProtoObject* qnString = nullptr;
+                    {
                         const bool nsHasOwnQN = ns ? (ns->hasOwnAttribute(ctx, qualnameS) == PROTO_TRUE) : false;
                         const proto::ProtoObject* nsQN = nsHasOwnQN ? ns->getAttribute(ctx, qualnameS) : nullptr;
-                        if (nsQN && nsQN != PROTO_NONE && nsQN->isString(ctx)) {
-                            targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, qualnameS, nsQN));
-                        } else {
-                            // Default: qualname equals __name__ for top-level classes.
-                            targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, qualnameS, name));
+                        if (nsQN && nsQN != PROTO_NONE && nsQN->isString(ctx)) qnString = nsQN;
+                        else qnString = name;
+                    }
+                    if (!hasOwnQN) {
+                        targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, qualnameS, qnString));
+                        stack.back() = targetClass;
+                    } else {
+                        // `__qualname__` already exists as an own attribute.
+                        // If it's NOT a string (typically a member_descriptor
+                        // from `__slots__ = ['__qualname__']`), park the
+                        // qualname string under a private key so the
+                        // class-level lookup in env->getAttribute can still
+                        // report it.  See STRUCT-324 in
+                        // PythonEnvironment::getAttribute.
+                        const proto::ProtoObject* curQN = targetClass->getOwnAttributeDirect(ctx, qualnameS);
+                        if (curQN && !curQN->isString(ctx)) {
+                            const proto::ProtoString* tpQS = PythonEnvironment::getInternedString(ctx, "__tp_qualname__");
+                            targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, tpQS, qnString));
+                            stack.back() = targetClass;
                         }
-                        stack.back() = targetClass; // update rooted reference
                     }
 
                     // Guarantee `cls.__annotations__` always exists (CPython invariant).

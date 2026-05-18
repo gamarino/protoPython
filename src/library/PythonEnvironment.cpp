@@ -23390,6 +23390,33 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         fflush(stderr);
     }
 
+    // STRUCT-324: `Cls.__qualname__` must return the qualname *string*
+    // even when the class has `__qualname__` in `__slots__` (in which
+    // case the own attribute under `__qualname__` is a
+    // member_descriptor for instance-level slot access).  When
+    // OP_BUILD_CLASS sees that conflict it parks the qualname string
+    // under the private key `__tp_qualname__`; honour that here so
+    // class-level reads observe the string while
+    // `Q1.__dict__["__qualname__"]` still reports the member_descriptor.
+    if (isClass && name) {
+        // Match by hash (interned string identity is preferred but the
+        // caller may pass a non-interned ProtoString for the attribute
+        // name — getHash() is cheap and reliable).
+        static thread_local const proto::ProtoString* qualnameSym = nullptr;
+        if (!qualnameSym) qualnameSym = PythonEnvironment::getInternedString(ctx, "__qualname__");
+        if (name == qualnameSym
+            || name->getHash(ctx) == qualnameSym->getHash(ctx)) {
+            static thread_local const proto::ProtoString* tpQualSym = nullptr;
+            if (!tpQualSym) tpQualSym = PythonEnvironment::getInternedString(ctx, "__tp_qualname__");
+            if (obj->hasOwnAttribute(ctx, tpQualSym) == PROTO_TRUE) {
+                const proto::ProtoObject* v = obj->getOwnAttributeDirect(ctx, tpQualSym);
+                if (v && v != PROTO_NONE) return v;
+            }
+            // Fall through to the normal lookup path — plain classes
+            // store the qualname string directly under `__qualname__`.
+        }
+    }
+
     // Special case: cls.__dict__ is always a data descriptor defined on the metaclass (type).
     // It must be invoked with instance = cls, not instance = None.  The MRO search below
     // incorrectly finds dictDescr via native parent chain of MRO members (section 1.1) and
