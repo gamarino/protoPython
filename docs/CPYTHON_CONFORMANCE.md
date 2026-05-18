@@ -28,7 +28,65 @@
 
 ---
 
-## Current Status (2026-05-17) — round 32 (MroTest re-entrancy cluster, 17 raw F+E)
+## Current Status (2026-05-17) — round 33 (slot-subclass preconditions, 17 raw F+E)
+
+Round 33 lands four preconditions (subprocess fork_exec arity, bytes
+subclass constructor, bignum int formatting, weakref MRO walk
+balanced).  None flip a new test on their own — the parametric
+`test_slots_special_after_items` still fails on its W tuple
+subclass branch which needs strict-slot STORE_ATTR enforcement (no
+__dict__ → AttributeError) — but each commit unblocks a probe-
+verified subtest.
+
+### Round 33 commits
+
+1. **STRUCT-288** — `_posixsubprocess.fork_exec` arity check matches
+   CPython 3.14 (22, not 26).  Subprocess.Popen now passes the
+   arity gate; downstream TextIOWrapper issues block full
+   functionality.
+2. **STRUCT-289** — bytes subclass constructor preserves subclass
+   type.  `class D(bytes): __slots__=['__dict__']; a = D(b'ab')`
+   now yields `type(a) == D` (was bytes).  Slot wiring applies
+   correctly.
+3. **STRUCT-290** — bignum-safe int formatting in py_int_format and
+   buildString.  f-string `f"{9876543210**2}"` no longer crashes
+   with "LargeInteger value exceeds long long range".
+4. **STRUCT-291** — weakref availability via MRO walk balancing
+   blocker + explicit __weakref__ opt-in.  `class W(tuple):
+   __slots__=['__weakref__']` accepts weakref; `IntSubclass()`
+   still rejects.
+
+### Remaining tractable (5 tests, ~5 F+E excluding 7 WONTFIX)
+
+To get below 10 total F+E:
+- **test_slots_special_after_items** — W subtest needs STORE_ATTR
+  strict-slot enforcement (a.foo = 42 should raise AttributeError
+  when type has __slots__ without __dict__).
+- **test_tp_subclasses_cycle_error_return_path** (E) — raise-path
+  rollback ordering issue in __bases__ setter.
+- **test_tp_subclasses_cycle_in_update_slots** (E) — re-entrancy
+  edge.
+- **test_slots_special2** — __classcell__ compiler emission.
+- **test_multiple_inheritance** — dict subclass instance attr
+  storage separation.
+- **test_reduce_copying** (E) — pickle parametric tracebacks
+  swallowed.
+- **test_type_lookup_mro_reference** (E) — subprocess
+  TextIOWrapper.__init__ arity.
+
+Realistic 2-round path to <10 F+E: focus on strict-slot STORE_ATTR
+(flips test_slots_special_after_items, ~3 commits), and one
+re-entrancy cluster (flips 1-2 ERRORs).
+
+### Build
+
+ctest 183/183 verde en cada commit.  Round 26–33 cumulative:
+27F + 7E = 34 → **12F + 5E = 17** (17 test flips overall,
+no regressions).
+
+---
+
+## Previous Status (2026-05-17) — round 32 (MroTest re-entrancy cluster, 17 raw F+E)
 
 Round 32 attacks the remaining structural faults, landing two
 re-entrancy fixes from the MroTest cluster.  Test count drops from
