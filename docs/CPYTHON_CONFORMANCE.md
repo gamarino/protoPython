@@ -28,6 +28,35 @@
 
 ---
 
+## Conformance + Performance Snapshot (2026-05-18)
+
+| Suite | Result |
+|-------|--------|
+| **`test/cpython/test_descr.py`** | **144 / 155 non-skipped pass (93 %)** — 9 F + 2 E + 10 skipped, ctest 183/183 verde.  Round 36 closed `test_reduce_copying`; cumulative rounds 26–36: 27F + 7E = 34 → 9F + 2E = 11 (23 flips, no regressions). |
+| **CPython conformance categories** | 17 / 17 (100 %) — Essential, Important, Necessary all pass. |
+
+### Performance summary (2026-05-13, three modes, n=14 workloads)
+
+Latest end-to-end audit: median of 5 runs per workload, Release build
+(`-O3 -DNDEBUG`), `PROTOCORE_GC_REINCLUDE_SURVIVORS=ON`.  Full table
+lives at
+[`benchmarks/reports/2026-05-13-three-column-final-geomean.md`](../benchmarks/reports/2026-05-13-three-column-final-geomean.md);
+README section `## 📊 Performance Benchmarks (2026-05-13, three modes)`
+has the per-benchmark breakdown.
+
+| Mode | Geomean vs CPython 3.14 | Beats CPython on |
+|------|-------------------------|------------------|
+| **protopy** (bytecode interpreter) | **4.25× slower** | `startup_empty` (0.65×), `int_sum_loop` (0.65×), `multithread_cpu` (0.07×, GIL-free wins) |
+| **protopyc** (AOT-compiled to C++ via `protopyc --build-so`) | **1.72× slower** | `int_sum_loop` (0.48×), `multithread_cpu` (0.50×), `call_recursion` (0.56×), `pyperf_binary_trees` (0.89×), `pyperf_richards_lite` (0.81×) — **5 of 14 workloads** |
+
+Conformance work since this audit (rounds 31–36, test_descr) is
+runtime-internal: it touches `setAttribute` / `getAttribute` /
+`__bases__` / `__reduce_ex__` / `__qualname__` paths but doesn't
+change the hot loop or allocation patterns.  A targeted re-measure
+is queued for round 38+ once the dispatcher-tier rework lands.
+
+---
+
 ## Current Status (2026-05-18) — round 36 (pickle reduce_ex fix-up cluster, 11 raw F+E)
 
 Round 36 lands three coordinated commits (STRUCT-295/296/297 +

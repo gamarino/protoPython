@@ -37,7 +37,7 @@
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
 | **Performance** | **Optimization in Progress** - 2026-05-03 (Phase 8 + GC audit): see Performance Benchmarks section. Microbenchmark geomean **3.06×** slower than CPython 3.14 (now including `memory_pressure` in the suite — 43.4× / 358 MB RSS, was 191× / 1347 MB before the GC audit landed); fair pure-Python benchmark suite geomean **~30×** slower (see note on benchmark selection). Improved ~40× from V154 (1337×) through Phase 1–8 + the May 2026 GC survivor re-chain landing.  The remaining gap is dominated by bytecode dispatch overhead and `setAttribute` / `getAttribute` prototype-chain AVL traversal on every instance attribute access. ⚙️ |
 | **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
-| **test_descr.py conformance (May 2026)** | **90/165 passing** - Detailed semantic sweep brought `test/cpython/test_descr.py` from 104 → 75 issues (55 failures + 20 errors).  See `CHANGELOG.md` v0.3.0 for the per-area breakdown. ✅ |
+| **test_descr.py conformance (May 2026)** | **144/155 non-skipped passing (93 %)** — `test/cpython/test_descr.py`: 9 failures + 2 errors + 10 skipped out of 165 tests.  Rounds 26–36 (May 17–18) cut from 27F + 7E = 34 down to 9F + 2E = 11 (23 test flips, no regressions, ctest 183/183 verde every commit).  See `docs/CPYTHON_CONFORMANCE.md` for the per-round breakdown. ✅ |
 
 - ✅ **Generator Delegation**: Full support for `yield` and `yield from` with efficient state persistence.
 - ✅ **Smart Collection Unwrapping**: Seamless bridge between Python objects and native C++ collection methods.
@@ -543,9 +543,24 @@ In priority order:
 ## 🧪 CPython semantic conformance (May 2026)
 
 `test/cpython/test_descr.py` (165 tests, the descriptor-protocol /
-object-model torture suite from CPython 3.14) is **at 90 passing**
-after the May 2026 sweep — up from **61 passing** at the start of
-the session.  The work hit four broad areas of CPython semantics:
+object-model torture suite from CPython 3.14) is **at 144 passing**
+out of 155 non-skipped (93 %) after the rounds 26–36 sweep — up
+from **61 passing** at the start of the session.  Remaining: 9
+failures + 2 errors + 10 skipped.
+
+Cumulative rounds 26–36 (May 17–18) cut the failing count from
+27F + 7E = 34 down to **9F + 2E = 11** — 23 test flips, no
+regressions, `ctest --test-dir build_release` 183/183 verde on
+every commit.  Recent highlights:
+
+| Round | Headline flip(s) | Mechanism |
+|-------|-----------------|-----------|
+| 33 | `test_slots_special_after_items` preconditions | subprocess fork_exec arity, bytes-subclass ctor, bignum int format, weakref MRO walk balancing |
+| 34 | `test_slots_special_after_items` (3 subtests) | strict-slot STORE_ATTR check now skips immutable-primitive bases (tuple/int/str/…) |
+| 35 | `test_tp_subclasses_cycle_in_update_slots` | re-entrancy detection in `__bases__` setter + drop broken `_functools.partial` shim |
+| 36 | `test_reduce_copying` | builtin qualname / `__reduce__` override delegation cluster: skip module-identity dunders in exceptions→builtins copy, drop owner prefix for module-level builtins, delegate to class-level `__reduce__` |
+
+The earlier work hit four broad areas of CPython semantics:
 
 | Area | Examples |
 |------|----------|
@@ -554,10 +569,18 @@ the session.  The work hit four broad areas of CPython semantics:
 | **Unbound `Cls.__op__(receiver, …)` form** | Uniform fix across `list / tuple / dict / set / str` for `__add__, __mul__, __eq__, __contains__, __iadd__, __imul__, sort, split, strip, upper`. |
 | **Error semantics** | `**=` TypeError mentions `**=`, not `**`; `'%(key)s' % None` raises `TypeError`; `del d[0]` on non-containers raises; `dict()` validates arg shape; recursive `__str__/__repr__` raises `RecursionError` properly. |
 
-All commits run under `ctest --test-dir build-release` (199/199
-green) — no regressions in protoCore or protoPython unit tests.
+Performance summary (2026-05-13, three modes, n=14): `protopy`
+geomean **4.25× slower** than CPython 3.14; `protopyc` (AOT to
+C++ via `protopyc --build-so`) geomean **1.72× slower** and beats
+CPython on 5 of 14 workloads (`int_sum_loop`, `multithread_cpu`,
+`call_recursion`, `pyperf_binary_trees`, `pyperf_richards_lite`).
+Conformance work rounds 31–36 (May 17–18) touches `setAttribute`/
+`getAttribute`/`__bases__`/`__reduce_ex__`/`__qualname__` paths
+but not the hot loop or allocation patterns; a fresh perf
+re-measure is queued for round 38+.
 
-See `CHANGELOG.md` v0.3.0 for the per-fix list.
+See `docs/CPYTHON_CONFORMANCE.md` for the per-round conformance
+breakdown and `CHANGELOG.md` v0.3.0 for the per-fix list.
 
 ---
 
