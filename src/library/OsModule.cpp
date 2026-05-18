@@ -1942,9 +1942,25 @@ static const proto::ProtoObject* py_os_register_at_fork(
     return PROTO_NONE;
 }
 
-// os.confstr(name) -> str.  Best-effort stub: returns "/bin:/usr/bin"
-// for _CS_PATH, empty string otherwise.  CPython's subprocess only
-// uses this for _CS_PATH.
+// os.confstr(name) -> str.  CPython accepts either a string name
+// (looked up in os.confstr_names) or the raw int value.
+// platform.libc_ver() invokes `os.confstr('CS_GNU_LIBC_VERSION')`
+// — the string form, not the int — so we resolve the name here.
+static int resolveConfstrName(const std::string& name) {
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#ifdef _CS_PATH
+    if (name == "CS_PATH") return _CS_PATH;
+#endif
+#ifdef _CS_GNU_LIBC_VERSION
+    if (name == "CS_GNU_LIBC_VERSION") return _CS_GNU_LIBC_VERSION;
+#endif
+#ifdef _CS_GNU_LIBPTHREAD_VERSION
+    if (name == "CS_GNU_LIBPTHREAD_VERSION") return _CS_GNU_LIBPTHREAD_VERSION;
+#endif
+#endif
+    return -1;
+}
+
 static const proto::ProtoObject* py_os_confstr(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
@@ -1952,17 +1968,43 @@ static const proto::ProtoObject* py_os_confstr(
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
-    int name = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+    const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
+    int name = -1;
+    if (arg->isInteger(ctx)) {
+        name = static_cast<int>(arg->asLong(ctx));
+    } else if (arg->isString(ctx)) {
+        std::string s;
+        arg->asString(ctx)->toUTF8String(ctx, s);
+        name = resolveConfstrName(s);
+        if (name < 0) {
+            // Unknown name → CPython raises ValueError.
+            if (env) env->raiseValueError(ctx,
+                PythonEnvironment::getInternedString(ctx,
+                    ("unrecognized configuration name: " + s).c_str())->asObject(ctx));
+            return nullptr;
+        }
+    } else {
+        if (env) env->raiseTypeError(ctx, "configstr() argument must be int or str");
+        return nullptr;
+    }
+    errno = 0;
     size_t len = ::confstr(name, nullptr, 0);
-    if (len == 0) return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
+    if (len == 0) {
+        if (errno != 0) {
+            if (env) env->raiseOSError(ctx, errno, std::strerror(errno), "");
+            return nullptr;
+        }
+        return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
+    }
     std::string buf;
     buf.resize(len);
     ::confstr(name, &buf[0], len);
-    // strip trailing NUL
     if (!buf.empty() && buf.back() == '\0') buf.pop_back();
     return PythonEnvironment::getInternedString(ctx, buf.c_str())->asObject(ctx);
 #else
+    (void)env;
     return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
 #endif
 }
@@ -2142,6 +2184,32 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "CS_PATH"),
         ctx->fromInteger(_CS_PATH));
 #endif
+    // os.confstr_names: name → int mapping that CPython exposes.
+    // Stored as a real dict so platform.libc_ver() and other consumers
+    // can read it directly.  Only the names we actually resolve are
+    // populated.
+    {
+        proto::ProtoObject* cn = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+        if (env && env->getDictPrototype()) {
+            cn = const_cast<proto::ProtoObject*>(cn->addParent(ctx, env->getDictPrototype()));
+            cn = const_cast<proto::ProtoObject*>(cn->setAttribute(ctx,
+                PythonEnvironment::getInternedString(ctx, "__class__"), env->getDictPrototype()));
+        }
+        auto addEntry = [&](const char* name, int value) {
+            const proto::ProtoString* keyS = PythonEnvironment::getInternedString(ctx, name);
+            cn = const_cast<proto::ProtoObject*>(cn->setAttribute(ctx, keyS, ctx->fromInteger(value)));
+        };
+#ifdef _CS_PATH
+        addEntry("CS_PATH", _CS_PATH);
+#endif
+#ifdef _CS_GNU_LIBC_VERSION
+        addEntry("CS_GNU_LIBC_VERSION", _CS_GNU_LIBC_VERSION);
+#endif
+#ifdef _CS_GNU_LIBPTHREAD_VERSION
+        addEntry("CS_GNU_LIBPTHREAD_VERSION", _CS_GNU_LIBPTHREAD_VERSION);
+#endif
+        mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "confstr_names"), cn);
+    }
     // WCONTINUED/WUNTRACED constants for wait().
 #ifdef WCONTINUED
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "WCONTINUED"),
