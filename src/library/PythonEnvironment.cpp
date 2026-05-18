@@ -1247,20 +1247,56 @@ static const proto::ProtoObject* py_object_get_weakref(
             || c == env->getTypePrototype();
     };
 
+    // STRUCT-291: walk MRO for both blockers and explicit __weakref__
+    // opt-ins.  A subclass of a blocked primitive can still enable
+    // weakref via `__slots__ = ['__weakref__']`; conversely, a
+    // subclass that inherits a blocking primitive WITHOUT declaring
+    // an explicit __slots__=['__weakref__'] stays blocked.  Both
+    // conditions must be checked together so test___weakref__ rejects
+    // `IntSubclass()` (no explicit opt-in) while
+    // test_slots_special_after_items accepts `class W(tuple):
+    // __slots__=['__weakref__']`.
     const proto::ProtoString* mroS = PythonEnvironment::getInternedString(context, "__mro__");
     const proto::ProtoObject* mroAttr = env->getAttribute(context, tp, mroS, false);
     const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
-    if (mroT) {
-        unsigned long sz = mroT->getSize(context);
-        for (unsigned long i = 0; i < sz; ++i) {
-            const proto::ProtoObject* anc = mroT->getAt(context, static_cast<int>(i));
-            if (anc && blocksWeakref(anc)) {
-                env->raiseAttributeErrorWithMessage(context, instance,
-                    "__weakref__", "__weakref__");
-                return nullptr;
-            }
+    bool hasBlocker = false;
+    bool hasExplicitWeakrefSlot = false;
+    const proto::ProtoString* slotsCheckS =
+        PythonEnvironment::getInternedString(context, "__slots__");
+    auto baseDeclaresWeakref = [&](const proto::ProtoObject* base) -> bool {
+        if (!base || base->hasOwnAttribute(context, slotsCheckS) != PROTO_TRUE) return false;
+        const proto::ProtoObject* sv = base->getOwnAttributeDirect(context, slotsCheckS);
+        if (!sv) return false;
+        const proto::ProtoList* sL = sv->asList(context);
+        const proto::ProtoTuple* sT = sv->asTuple(context);
+        unsigned long n = sL ? sL->getSize(context)
+                          : (sT ? sT->getSize(context) : 0);
+        for (unsigned long i = 0; i < n; ++i) {
+            const proto::ProtoObject* item = sL
+                ? sL->getAt(context, static_cast<int>(i))
+                : sT->getAt(context, static_cast<int>(i));
+            if (!item || !item->isString(context)) continue;
+            std::string nm; item->asString(context)->toUTF8String(context, nm);
+            if (nm == "__weakref__") return true;
         }
-    } else if (blocksWeakref(tp)) {
+        if (sv->isString(context)) {
+            std::string nm; sv->asString(context)->toUTF8String(context, nm);
+            if (nm == "__weakref__") return true;
+        }
+        return false;
+    };
+    if (mroT) {
+        for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+            const proto::ProtoObject* anc = mroT->getAt(context, static_cast<int>(i));
+            if (!anc || anc == PROTO_NONE) continue;
+            if (blocksWeakref(anc)) hasBlocker = true;
+            if (baseDeclaresWeakref(anc)) hasExplicitWeakrefSlot = true;
+        }
+    } else {
+        if (blocksWeakref(tp)) hasBlocker = true;
+        if (baseDeclaresWeakref(tp)) hasExplicitWeakrefSlot = true;
+    }
+    if (hasBlocker && !hasExplicitWeakrefSlot) {
         env->raiseAttributeErrorWithMessage(context, instance,
             "__weakref__", "__weakref__");
         return nullptr;

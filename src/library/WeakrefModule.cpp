@@ -193,18 +193,51 @@ static const proto::ProtoObject* py_weakref_ref(
                 PythonEnvironment::getInternedString(ctx, "__name__"));
             if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, tname);
         }
+        // STRUCT-291: walk MRO for both blockers and explicit
+        // __weakref__ opt-ins.  A subclass of a blocked primitive
+        // can still enable weakref via `__slots__=['__weakref__']`;
+        // mirror py_object_get_weakref's logic.
         const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
         const proto::ProtoObject* mroAttr = tp ? env->getAttribute(ctx, tp, mroS, false) : nullptr;
         const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
-        bool blocked = false;
+        bool hasBlocker = false;
+        bool hasExplicitWeakrefSlot = false;
+        const proto::ProtoString* slotsChkS =
+            PythonEnvironment::getInternedString(ctx, "__slots__");
+        auto baseDeclaresWeakrefBlk = [&](const proto::ProtoObject* base) -> bool {
+            if (!base || base->hasOwnAttribute(ctx, slotsChkS) != PROTO_TRUE) return false;
+            const proto::ProtoObject* sv = base->getOwnAttributeDirect(ctx, slotsChkS);
+            if (!sv) return false;
+            const proto::ProtoList* sL = sv->asList(ctx);
+            const proto::ProtoTuple* sT = sv->asTuple(ctx);
+            unsigned long n = sL ? sL->getSize(ctx)
+                              : (sT ? sT->getSize(ctx) : 0);
+            for (unsigned long i = 0; i < n; ++i) {
+                const proto::ProtoObject* item = sL
+                    ? sL->getAt(ctx, static_cast<int>(i))
+                    : sT->getAt(ctx, static_cast<int>(i));
+                if (!item || !item->isString(ctx)) continue;
+                std::string nm; item->asString(ctx)->toUTF8String(ctx, nm);
+                if (nm == "__weakref__") return true;
+            }
+            if (sv->isString(ctx)) {
+                std::string nm; sv->asString(ctx)->toUTF8String(ctx, nm);
+                if (nm == "__weakref__") return true;
+            }
+            return false;
+        };
         if (mroT) {
             for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
                 const proto::ProtoObject* anc = mroT->getAt(ctx, static_cast<int>(i));
-                if (anc && blocksWeakref(anc)) { blocked = true; break; }
+                if (!anc || anc == PROTO_NONE) continue;
+                if (blocksWeakref(anc)) hasBlocker = true;
+                if (baseDeclaresWeakrefBlk(anc)) hasExplicitWeakrefSlot = true;
             }
-        } else if (tp && blocksWeakref(tp)) {
-            blocked = true;
+        } else if (tp) {
+            if (blocksWeakref(tp)) hasBlocker = true;
+            if (baseDeclaresWeakrefBlk(tp)) hasExplicitWeakrefSlot = true;
         }
+        bool blocked = (hasBlocker && !hasExplicitWeakrefSlot);
         if (!blocked && tp) {
             // STRUCT-262: walk MRO for weakref availability — a base
             // that declares `__weakref__` in __slots__ or that has no
