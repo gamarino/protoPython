@@ -109,14 +109,24 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(partialProto), py_partial_call));
     
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__partial_proto__"), partialProto);
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "partial"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_partial));
+    // STRUCT-293: do NOT export `partial`, `Placeholder`, or
+    // `_PlaceholderType` from _functools.  The native `py_partial`
+    // shim above returns a plain `<object>` cell (not a class
+    // instance), so `type(partial(int, '5'))` evaluates to a non-class
+    // and any `issubclass(type(p), ...)` call downstream (pickle proto
+    // 2/3 in particular) raises `TypeError: issubclass() arg 1 must
+    // be a class`.  Withholding the symbols makes the
+    // `from _functools import partial, Placeholder, _PlaceholderType`
+    // line in functools.py fail with ImportError, which the surrounding
+    // try/except swallows, and the pure-Python `partial` class
+    // definition above the import wins.  The Python class is a real
+    // user class so `type(p)` is the class itself.
+    (void)placeholder;
+    (void)placeholderType;
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "cmp_to_key"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_cmp_to_key));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "reduce"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_reduce));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "Placeholder"), placeholder);
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_PlaceholderType"), placeholderType);
     
     return mod;
 }

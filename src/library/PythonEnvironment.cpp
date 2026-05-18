@@ -24419,6 +24419,17 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                 return nullptr; // TypeError raised inside computeC3MRO
             }
 
+            // STRUCT-293: capture `obj.__bases__` at outer entry so we can
+            // detect a re-entrant `obj.__bases__ = ...` performed from
+            // inside user `mro()` (test_tp_subclasses_cycle_in_update_slots).
+            // When the inner assignment runs to completion it writes
+            // __bases__, updates __subclasses_list__, and replaces __mro__
+            // / parents.  The outer must then NOT clobber those by
+            // re-restoring savedMro, NOT re-run STRUCT-45, and NOT write
+            // the outer-requested value — the inner's effects win.
+            const proto::ProtoObject* outerOriginalBases =
+                obj->getAttribute(ctx, basesS2);
+
             // Undo log entries: snapshot the cached __mro__ tuple AND
             // the protoCore parent chain BEFORE each mutation, so a
             // late-discovered conflict can restore both in reverse
@@ -24505,7 +24516,15 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                             } else {
                                 invokePythonCallable(ctx, userMro, args, nullptr);
                             }
-                            if (savedMro) {
+                            // STRUCT-293: only restore savedMro when the
+                            // user mro() did NOT recursively rewrite
+                            // __bases__.  An inner `obj.__bases__ = X`
+                            // ran to completion and installed its own
+                            // __mro__; blindly restoring our savedMro
+                            // would stomp the inner's result.
+                            const proto::ProtoObject* postMroBases =
+                                obj->getAttribute(ctx, basesS2);
+                            if (savedMro && postMroBases == outerOriginalBases) {
                                 const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setAttribute(
                                     ctx, mroS, savedMro);
                             }
@@ -24596,6 +24615,22 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
             if (!propagate(obj)) {
                 rollbackAll();
                 return nullptr; // TypeError raised in descendant's computeC3MRO
+            }
+
+            // STRUCT-293: re-entrancy detection.  If user mro() re-entered
+            // and wrote `obj.__bases__ = X` to completion, the inner call
+            // already produced final state (subclasses list rewired, __mro__
+            // / parents installed, __bases__ written).  The outer must
+            // short-circuit before STRUCT-45 (which would remove obj from
+            // the inner-installed base's subs list and add it to the
+            // outer's requested base) and before the final __bases__ write
+            // below (which would clobber inner's value).  Returning obj
+            // here leaves the inner's effects intact, matching CPython's
+            // semantics in test_tp_subclasses_cycle_in_update_slots.
+            const proto::ProtoObject* postBases =
+                obj->getAttribute(ctx, basesS2);
+            if (postBases != outerOriginalBases && postBases != value) {
+                return obj;
             }
         }
         // STRUCT-45: propagate __bases__ reassignment to the affected
