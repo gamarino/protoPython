@@ -5863,9 +5863,24 @@ static const proto::ProtoObject* py_bytes_call(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* cls = positionalParameters && positionalParameters->getSize(context) > 0 ? positionalParameters->getAt(context, 0) : self;
     if (!cls) return PROTO_NONE;
+    // STRUCT-289: when called via a subclass `D(bytes)(b'ab')`, the
+    // payload must be wrapped as a D instance, not a bare bytes.
+    // bytes_make_object always allocates as bytesPrototype's child;
+    // capture the desired final class and reparent after.
+    auto wrapForSubclass = [&](const proto::ProtoObject* o) -> const proto::ProtoObject* {
+        if (!env || !o || o == PROTO_NONE) return o;
+        if (cls && cls != env->getBytesPrototype()
+            && env->isActuallyAClass(context, cls)) {
+            const_cast<proto::ProtoObject*>(o)->setAttribute(context,
+                env->getClassString(), cls);
+            const proto::ProtoList* parents = context->newList()->appendLast(context, cls);
+            const_cast<proto::ProtoObject*>(o)->setParents(context, parents);
+        }
+        return o;
+    };
     // bytes() with no args (or just cls) → empty bytes.
     if (positionalParameters->getSize(context) <= 1) {
-        return bytes_make_object(context, nullptr, 0);
+        return wrapForSubclass(bytes_make_object(context, nullptr, 0));
     }
     // bytes(int)            → zero-filled buffer of that length
     // bytes(iterable_of_int) → each int 0..255 becomes one byte
@@ -5879,7 +5894,7 @@ static const proto::ProtoObject* py_bytes_call(
             return nullptr;
         }
         std::string zeros(static_cast<size_t>(n), '\0');
-        return bytes_make_object(context, zeros.data(), static_cast<unsigned long>(zeros.size()));
+        return wrapForSubclass(bytes_make_object(context, zeros.data(), static_cast<unsigned long>(zeros.size())));
     }
     // bytes(str) without an encoding kwarg is a TypeError in CPython:
     //   "string argument without an encoding"
@@ -5905,7 +5920,7 @@ static const proto::ProtoObject* py_bytes_call(
     if (arg->isString(context) && positionalParameters->getSize(context) >= 3) {
         std::string s;
         arg->asString(context)->toUTF8String(context, s);
-        return bytes_make_object(context, s.data(), static_cast<unsigned long>(s.size()));
+        return wrapForSubclass(bytes_make_object(context, s.data(), static_cast<unsigned long>(s.size())));
     }
     // STRUCT-97: consult `type(arg).__bytes__` BEFORE falling back to
     // the iterable path.  Python's special-method lookup goes through
@@ -6030,7 +6045,7 @@ static const proto::ProtoObject* py_bytes_call(
         }
         out += static_cast<char>(static_cast<unsigned char>(v));
     }
-    return bytes_make_object(context, out.data(), static_cast<unsigned long>(out.size()));
+    return wrapForSubclass(bytes_make_object(context, out.data(), static_cast<unsigned long>(out.size())));
 }
 
 
