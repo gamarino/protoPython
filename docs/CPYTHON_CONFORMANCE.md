@@ -57,7 +57,96 @@ is queued for round 38+ once the dispatcher-tier rework lands.
 
 ---
 
-## Current Status (2026-05-18) — round 37 (pre-write __bases__ with conditional rollback, 10 raw F+E)
+## Current Status (2026-05-18) — round 38 (closure-capture fix + subprocess investigation, 10 raw F+E)
+
+Round 38 lands one root-cause compiler/runtime fix (STRUCT-303)
+that closes a long-standing closure-capture bug, and reverts the
+round-35 contextlib workaround (STRUCT-302) that masked it.  Test
+count is unchanged at **9F + 1E = 10**: the next-blocker test
+`test_type_lookup_mro_reference` requires additional unimplemented
+machinery (subprocess `os.write`/`os.read` + dict `__eq__`
+tiebreak) that is beyond a single round's scope.  ctest 183/183
+verde.
+
+### Root-cause fixed this round
+
+**STRUCT-303** (PythonEnvironment.cpp setAttribute + ExecutionEngine
+.cpp BUILD_FUNCTION / LOAD_DEREF) — when a method's parameter name
+matched a class-namespace local of the same name AND that parameter
+was captured by an inner closure, the inner closure resolved the
+free variable to the class-namespace value rather than the
+parameter binding.  Minimal repro:
+
+    class A:
+        @staticmethod
+        def make(callback, *args):
+            def inner(): return callback(*args)
+            return inner
+        def callback(self, callback, *args):    # name clash
+            return self.make(callback, *args)
+
+    A().callback(print, 'X')()
+    # Was: AttributeError: 'str' object has no attribute 'make'
+    # Now: prints 'X' as expected.
+
+Root cause: protoCore's `getParents()` returns the transitively-
+flattened ancestor list — a method's exec frame ended up with all
+of `[closureFrame, make_frame, class_namespace, …]` as "parents".
+`OP_LOAD_DEREF` added every parent to its LIFO worklist, and the
+last-pushed (class_namespace) was popped FIRST and its OWN
+`callback` short-circuited resolution before the closure cell was
+inspected.
+
+Two coordinated fixes:
+
+1. `OP_LOAD_DEREF` parent-walk REVERSED: append parents in
+   reverse order so the FIRST parent (closest scope — the
+   `closureFrame` captured at `BUILD_FUNCTION` time) is popped
+   FIRST, before any class-scope ancestors.
+
+2. `OP_BUILD_FUNCTION` snapshot loop: when a free var lives on
+   the outer frame as an OWN attribute (forceMapped path), read
+   via `getOwnAttributeDirect` and snapshot the value into
+   `closureFrame` instead of skipping the snapshot in favour of
+   a chain walk.  The chain walk crosses the same flattened-
+   ancestor surface and could pick up a class-namespace entry.
+
+Probe-verified end-to-end on `subprocess.Popen(..., stdout=PIPE)`,
+which now passes the `contextlib.ExitStack.__exit__` step that
+used to crash with `'int' object has no attribute
+'_create_cb_wrapper'`.  Proceeds to the next blocker: Popen's
+file-object plumbing (`io.open(fd, 'rb', ...)` for the pipe ends
+needs `os.write`/`os.read` registered on the OsModule, which our
+implementation does not currently expose).
+
+### Bugs that need follow-up work to flip test_type_lookup_mro_reference
+
+- **subprocess file-object plumbing**: `os.write`, `os.read`,
+  `os.close`, and friends must be registered on the OsModule;
+  `io.open(fd, mode, bufsize)` must wrap them into a real
+  file-like object with `.read()`/`.write()`/`.close()`.  Easily
+  several days of work.
+- **dict `__eq__` tiebreak on hash hit**: `py_dict_getitem`
+  short-circuits on `dict.has(hash)` without consulting `__eq__`
+  on the stored key.  CPython's `lookdict` does the tiebreak.
+  Attempted in this round (gated on non-primitive key types) but
+  reverted because it regressed `test_str_subclass_as_dict_key`
+  (str subclasses with custom `__hash__` follow the same
+  primitive fast path but need the tiebreak too).  A proper fix
+  needs a more nuanced "needs eq tiebreak" predicate (probably:
+  "type has a user `__hash__` override").
+
+### Build
+
+ctest 183/183 verde en cada commit.  Round 26–38 cumulative:
+27F + 7E = 34 → **9F + 1E = 10** (24 test flips overall, no
+regressions).  No new test_descr flip this round, but the
+closure-capture fix is a fundamental compiler correctness
+improvement that benefits ANY code with this pattern.
+
+---
+
+## Previous Status (2026-05-18) — round 37 (pre-write __bases__ with conditional rollback, 10 raw F+E)
 
 Round 37 lands a single commit (STRUCT-300) that restructures the
 `__bases__` setter to write the new bases tuple BEFORE invoking
