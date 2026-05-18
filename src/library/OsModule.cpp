@@ -16,6 +16,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <sys/times.h>
+#include <sys/sysmacros.h>
 extern char** environ;
 #endif
 
@@ -1981,6 +1982,81 @@ static const proto::ProtoObject* py_os_WTERMSIG(
 #endif
 }
 
+// os.makedev(major, minor) / os.major(dev) / os.minor(dev) — device
+// number arithmetic.  Used by stat, tarfile, shutil.
+static const proto::ProtoObject* py_os_makedev(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return ctx->fromInteger(0);
+    unsigned int maj = static_cast<unsigned int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+    unsigned int min_ = static_cast<unsigned int>(posArgs->getAt(ctx, 1)->asLong(ctx));
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    return ctx->fromInteger(static_cast<long long>(makedev(maj, min_)));
+#else
+    return ctx->fromInteger(0);
+#endif
+}
+
+static const proto::ProtoObject* py_os_major(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return ctx->fromInteger(0);
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    dev_t d = static_cast<dev_t>(posArgs->getAt(ctx, 0)->asLong(ctx));
+    return ctx->fromInteger(static_cast<long long>(major(d)));
+#else
+    return ctx->fromInteger(0);
+#endif
+}
+
+static const proto::ProtoObject* py_os_minor(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return ctx->fromInteger(0);
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    dev_t d = static_cast<dev_t>(posArgs->getAt(ctx, 0)->asLong(ctx));
+    return ctx->fromInteger(static_cast<long long>(minor(d)));
+#else
+    return ctx->fromInteger(0);
+#endif
+}
+
+// os.sysconf(name) -> int.  Like confstr but for integer-valued
+// configuration items.
+static const proto::ProtoObject* py_os_sysconf(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return ctx->fromInteger(0);
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    int name = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+    long v = sysconf(name);
+    return ctx->fromInteger(v);
+#else
+    return ctx->fromInteger(0);
+#endif
+}
+
+// os.getloadavg() -> (1min, 5min, 15min).
+static const proto::ProtoObject* py_os_getloadavg(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    double a[3];
+    if (::getloadavg(a, 3) == 3) {
+        const proto::ProtoList* fields = ctx->newList();
+        fields = fields->appendLast(ctx, ctx->fromDouble(a[0]));
+        fields = fields->appendLast(ctx, ctx->fromDouble(a[1]));
+        fields = fields->appendLast(ctx, ctx->fromDouble(a[2]));
+        return ctx->newTupleFromList(fields)->asObject(ctx);
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env) env->raiseOSError(ctx, errno ? errno : 1, "getloadavg failed", "");
+    return nullptr;
+#else
+    return PROTO_NONE;
+#endif
+}
+
 // os.umask(mask) -> old_mask.
 static const proto::ProtoObject* py_os_umask(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
@@ -2346,6 +2422,16 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_WIFCONTINUED));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "times"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_times));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "makedev"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_makedev));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "major"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_major));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "minor"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_minor));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "sysconf"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_sysconf));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getloadavg"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_getloadavg));
     // Path-like constant.  subprocess reads os.devnull when stdin/
     // stdout/stderr is DEVNULL.
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "devnull"),
@@ -2610,6 +2696,11 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "getlogin")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "WIFCONTINUED")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "times")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "makedev")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "major")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "minor")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "sysconf")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "getloadavg")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "devnull")->asObject(ctx));
 #ifdef _CS_PATH
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "CS_PATH")->asObject(ctx));
