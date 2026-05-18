@@ -20040,7 +20040,16 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     ellipsisType = ellipsisType->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "ellipsis")->asObject(rootContext_));
     ellipsisType = ellipsisType->setAttribute(rootContext_, py_module, builtinsVal);
     ellipsisType = ellipsisType->setAttribute(rootContext_, py_repr, PythonEnvironment::getInternedString(rootContext_, "Ellipsis")->asObject(rootContext_));
-    ellipsisType = ellipsisType->setAttribute(rootContext_, py_call, rootContext_->fromMethod(nullptr, py_ellipsis_type_call));
+    // STRUCT-281: do NOT install __call__ on ellipsisType.  CPython's
+    // ellipsis instance (Ellipsis) is not callable — `Ellipsis()`
+    // raises TypeError.  The previous install leaked `__call__` into
+    // dir(Ellipsis), making `dir(object()) == dir(Ellipsis)` (test_dir
+    // line 2706) fail with a spurious extra entry.  py_ellipsis_type_call
+    // is kept as a fallback for `ellipsis()` constructor-style use,
+    // routed below via __new__.
+    ellipsisType = ellipsisType->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__new__"),
+        rootContext_->fromMethod(nullptr, py_ellipsis_type_call));
     // Q-70: __mro__ for ellipsis (matches Q-69 for NoneType).
     {
         const proto::ProtoString* mroS = PythonEnvironment::getInternedString(rootContext_, "__mro__");
