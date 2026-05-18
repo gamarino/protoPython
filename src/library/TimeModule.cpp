@@ -44,6 +44,68 @@ static const proto::ProtoObject* py_monotonic(
     return ctx->fromDouble(sec);
 }
 
+// time.perf_counter() — high-resolution counter, same source as
+// monotonic on POSIX.  Required by timeit, profiling, asyncio.
+static const proto::ProtoObject* py_perf_counter(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    auto now = std::chrono::steady_clock::now();
+    auto epoch = now.time_since_epoch();
+    double sec = std::chrono::duration<double>(epoch).count();
+    return ctx->fromDouble(sec);
+}
+
+static const proto::ProtoObject* py_perf_counter_ns(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    auto now = std::chrono::steady_clock::now();
+    auto epoch = now.time_since_epoch();
+    long long ns = std::chrono::duration_cast<std::chrono::nanoseconds>(epoch).count();
+    return ctx->fromInteger(ns);
+}
+
+// time.process_time() — CPU time consumed by the current process,
+// in seconds.  POSIX exposes this via clock_gettime(CLOCK_PROCESS_
+// CPUTIME_ID) or via the user+system fields of ::times().
+static const proto::ProtoObject* py_process_time(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    struct timespec ts;
+    if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts) == 0) {
+        double sec = ts.tv_sec + ts.tv_nsec / 1e9;
+        return ctx->fromDouble(sec);
+    }
+#endif
+    return ctx->fromDouble(0.0);
+}
+
+static const proto::ProtoObject* py_process_time_ns(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    struct timespec ts;
+    if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts) == 0) {
+        long long ns = static_cast<long long>(ts.tv_sec) * 1000000000LL + ts.tv_nsec;
+        return ctx->fromInteger(ns);
+    }
+#endif
+    return ctx->fromInteger(0);
+}
+
+static const proto::ProtoObject* py_thread_time(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    struct timespec ts;
+    if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts) == 0) {
+        double sec = ts.tv_sec + ts.tv_nsec / 1e9;
+        return ctx->fromDouble(sec);
+    }
+#endif
+    return ctx->fromDouble(0.0);
+}
+
 // Build a struct_time-shaped object that supports BOTH indexing
 // (st[0] == st.tm_year) and attribute access (st.tm_year).  CPython's
 // `time.struct_time` is a namedtuple-derived sequence; consumers in the
@@ -264,6 +326,16 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_monotonic));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "monotonic_ns"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_monotonic_ns));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "perf_counter"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_perf_counter));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "perf_counter_ns"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_perf_counter_ns));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "process_time"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_process_time));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "process_time_ns"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_process_time_ns));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "thread_time"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_thread_time));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "perf_counter"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_monotonic));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "localtime"),
