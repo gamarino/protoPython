@@ -173,6 +173,78 @@ static const proto::ProtoObject* py_getsig(
     return h ? h : sigDflMarker(ctx);
 }
 
+// signal.strsignal(sig) -> str.  Wraps ::strsignal() (glibc) with a
+// fallback for portability.
+static const proto::ProtoObject* py_strsignal(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    int sig = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+    const char* s = ::strsignal(sig);
+    return PythonEnvironment::getInternedString(ctx, s ? s : "Unknown signal")->asObject(ctx);
+}
+
+// signal.alarm(seconds) -> previous remaining alarm in seconds.
+static const proto::ProtoObject* py_alarm(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    unsigned int sec = 0;
+    if (posArgs && posArgs->getSize(ctx) >= 1) {
+        sec = static_cast<unsigned int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+    }
+    return ctx->fromInteger(::alarm(sec));
+}
+
+// signal.pause() -> None.  Blocks until a signal arrives.
+static const proto::ProtoObject* py_pause(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    ::pause();
+    return PROTO_NONE;
+}
+
+// signal.siginterrupt(sig, flag) -> None.  ::siginterrupt was deprecated
+// in POSIX 2008 in favour of sigaction's SA_RESTART bit, but stdlib
+// code still pokes at it.
+static const proto::ProtoObject* py_siginterrupt(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (!posArgs || posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    int sig = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    int flag = (env && env->isTrue(posArgs->getAt(ctx, 1))) ? 1 : 0;
+    ::siginterrupt(sig, flag);
+    return PROTO_NONE;
+}
+
+// signal.set_wakeup_fd(fd) -> previous fd (or -1).  Stub: protoPython
+// doesn't wire a wakeup-fd channel into the signal handler, but
+// asyncio and select-loop initialisation call this unconditionally
+// and crash if it raises.  Track the last value and report it back.
+static int s_wakeup_fd = -1;
+static const proto::ProtoObject* py_set_wakeup_fd(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    int old = s_wakeup_fd;
+    if (posArgs && posArgs->getSize(ctx) >= 1) {
+        s_wakeup_fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+    }
+    return ctx->fromInteger(old);
+}
+
+// signal.valid_signals() -> set of valid signal numbers.
+static const proto::ProtoObject* py_valid_signals(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoSet* s = ctx->newSet();
+    for (int i = 1; i < NSIG; ++i) {
+        s = s->add(ctx, ctx->fromInteger(i));
+    }
+    (void)env;
+    return s->asObject(ctx);
+}
+
 // Synchronous helper exposed as `signal.raise_signal(sig)`: triggers a
 // signal in the current process. Useful for tests and for code that
 // wants to invoke its own handler.
@@ -199,6 +271,18 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getsig));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "raise_signal"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_raise_signal));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "strsignal"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_strsignal));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "alarm"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_alarm));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "pause"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_pause));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "siginterrupt"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_siginterrupt));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "set_wakeup_fd"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_set_wakeup_fd));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "valid_signals"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_valid_signals));
 
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGINT"), ctx->fromInteger(SIGINT));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGTERM"), ctx->fromInteger(SIGTERM));
