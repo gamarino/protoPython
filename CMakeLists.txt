@@ -124,7 +124,7 @@ set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "protoPython - GIL-less Python 3.14 compat
 set(CPACK_PACKAGE_VENDOR "protoPython")
 set(CPACK_PACKAGE_CONTACT "gamarino@gmail.com")
 set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
-# set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE") # Ensure this file exists
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
 set(CPACK_COMPONENTS_ALL protoPython)
 
 # Platform-specific configurations
@@ -135,8 +135,13 @@ if(UNIX)
         set(CPACK_GENERATOR "DEB;RPM;TGZ")
         set(CPACK_DEBIAN_PACKAGE_MAINTAINER "gamarino@gmail.com")
         set(CPACK_DEBIAN_PACKAGE_SECTION "interpreters")
+        # protopy / libprotoPython link libprotoCore — declare the dependency
+        # on protoCore's package (which provides libprotoCore), the same
+        # strategy protoJS and protoST use. protoCore is no longer bundled.
+        set(CPACK_DEBIAN_PACKAGE_DEPENDS "protocore")
         set(CPACK_RPM_PACKAGE_LICENSE "MIT")
         set(CPACK_RPM_PACKAGE_GROUP "Development/Languages")
+        set(CPACK_RPM_PACKAGE_REQUIRES "protoCore")
     endif()
 elseif(WIN32)
     set(CPACK_GENERATOR "NSIS;ZIP")
