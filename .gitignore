@@ -14,8 +14,24 @@ __pycache__/
 *.pyo
 *.pyd
 
-# Build artifacts
+# Build artifacts — all out-of-tree build directory variants
 build/
-cmake-build-debug/
+build*/
+cmake-build-*/
 .idea/
 .gitnexus
+Testing/
+benchmarks/compiled/
+
+# Developer scratch / profiling output
+scratch/
+tmp_test/
+*.out
+*.gdb
+log_*.txt
+repro_output.txt
+
+# Packaging output
+*.deb
+*.rpm
+*.tar.gz

@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/test_minimal.dir/TestMinimal.cpp.o -o test_minimal  -Wl,-rpath,/home/gamarino/Documentos/proyectos/protoPython/build-release/src/library:/home/gamarino/Documentos/proyectos/protoPython/build-release/protoCore ../../src/library/libprotoPython.so.0.2.0 ../../protoCore/libprotoCore.so.1.1.0 
