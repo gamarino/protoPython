@@ -376,9 +376,18 @@ def main():
                 if guess.is_file():
                     protopyc_bin = str(guess)
             if not run_module_bin:
-                rm_guess = PROJECT_ROOT / "test" / "compiler" / "run_module"
-                if rm_guess.is_file():
-                    run_module_bin = str(rm_guess)
+                # Prefer the CMake-built copy under the chosen build dir —
+                # it is rebuilt against the same libprotoPython / libprotoCore
+                # the user just compiled.  Fall back to the in-source path
+                # for setups that still build it manually.
+                rm_candidates = [
+                    build_dir / "test" / "compiler" / "run_module",
+                    PROJECT_ROOT / "test" / "compiler" / "run_module",
+                ]
+                for rm_guess in rm_candidates:
+                    if rm_guess.is_file():
+                        run_module_bin = str(rm_guess)
+                        break
             if not extra_ld:
                 ld_parts = [
                     str(build_dir / "src" / "library"),

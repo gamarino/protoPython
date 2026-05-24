@@ -3680,10 +3680,6 @@ const proto::ProtoObject* executeBytecodeRange(
     RecursionScope recScope(env, ctx);
     if (recScope.overflowed()) return nullptr;
     
-    if (!env && std::getenv("PROTO_THREAD_DIAG")) {
-        // log removed
-    }
-
     // Hoist the diagnostic-tracing flag once per dispatcher invocation.
     // get_env_diag() is `inline bool ... { return g_diag_enabled; }` over a
     // namespace-scope const bool, but every call still emitted a PLT-trampolined
@@ -5173,8 +5169,6 @@ const proto::ProtoObject* executeBytecodeRange(
             };
             // mod remains on stack during attribute iteration
             if (mod && mod != PROTO_NONE) {
-                if (std::getenv("PROTO_RESOLVE_DIAG")) {
-                }
                 // 1. Check for __all__ — iterate via Python iterator protocol to handle list, tuple, or custom types
                 const proto::ProtoObject* allObj = mod->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__all__"));
                 bool importedFromAll = false;
@@ -6940,15 +6934,6 @@ const proto::ProtoObject* executeBytecodeRange(
                         }
  else if (data->asSparseList(ctx)) {
                         unsigned long h = key->getHash(ctx);
-                        if (std::getenv("PROTO_SUBSCR_DIAG")) {
-                            std::string ks2 = "?";
-                            if (key && key->isString(ctx)) key->asString(ctx)->toUTF8String(ctx, ks2);
-                            fprintf(stderr, "DEBUG_SUBSCR_FALLBACK: key='%s' hash=%lu dict=%p size=%lu has=%d\n",
-                                    ks2.c_str(), h, (void*)data->asSparseList(ctx),
-                                    data->asSparseList(ctx)->getSize(ctx),
-                                    (int)data->asSparseList(ctx)->has(ctx, h));
-                            fflush(stderr);
-                        }
                         const proto::ProtoObject* val = data->asSparseList(ctx)->getAt(ctx, h);
                         stack.pop_back();
                         stack.back() = (val ? val : PROTO_NONE);

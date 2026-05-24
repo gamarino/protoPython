@@ -382,14 +382,8 @@ public:
     const proto::ProtoString* getFilterBoolString() const { return filterBoolS; }
     const proto::ProtoObject* getImportErrorType() const { return importErrorType; }
     const proto::ProtoObject* getAttributeErrorType() const { return attributeErrorType; }
-    const proto::ProtoObject* getTuplePrototype() const { 
-        if (std::getenv("PROTO_RESOLVE_DIAG")) fprintf(stderr, "DEBUG getTuplePrototype: %p\n", (void*)tuplePrototype);
-        return tuplePrototype; 
-    }
-    const proto::ProtoObject* getDictPrototype() const { 
-        if (std::getenv("PROTO_RESOLVE_DIAG")) fprintf(stderr, "DEBUG getDictPrototype: %p\n", (void*)dictPrototype);
-        return dictPrototype; 
-    }
+    const proto::ProtoObject* getTuplePrototype() const { return tuplePrototype; }
+    const proto::ProtoObject* getDictPrototype()  const { return dictPrototype; }
     const proto::ProtoObject* getNameErrorType() const { return nameErrorType; }
     const proto::ProtoObject* getZeroInteger() const { return zeroInteger; }
     const proto::ProtoObject* getOneInteger() const { return oneInteger; }
