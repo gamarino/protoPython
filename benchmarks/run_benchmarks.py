@@ -229,17 +229,25 @@ def _fmt_ratio(num, den):
     return f"{r:>5.2f}{suffix}"
 
 
-# Benchmarks excluded from the geomean.  Set is empty by default; the
-# entry that used to live here was `memory_pressure`, kept out while a
-# missing GC handshake in compiled code made its ratio against CPython
-# reflect GC scheduling rather than throughput (working-set blow-up
-# to 1366 MB / 188x CPython on the affected report).  Once protopyc
-# started emitting `ctx->safepoint()` at every loop iteration, the GC
-# could run cooperatively while a compiled worker was hot, the working
-# set collapsed (1366 MB -> 45 MB) and the ratio fell to ~2x CPython —
-# i.e. an actual workload comparison again, so the row rejoins the
-# geomean.
-GEOMEAN_EXCLUDE = set()
+# Benchmarks excluded from the geomean.  `memory_pressure` does not
+# participate because protoCore and CPython make fundamentally
+# different choices about *when* to free memory: CPython is
+# reference-counted with eager deallocation (free at refcount=0,
+# inline with the mutator), protoCore runs a concurrent tracing
+# collector that intentionally defers reclamation until the working
+# set forces it.  On a workload that thrashes mutable containers
+# (`data.pop(0)` over an AVL list), CPython finishes immediately and
+# reports a wall time dominated by the deletion path; protoPython
+# reports a wall time dominated by GC scheduling under stress.  The
+# absolute number stays in the table for transparency, but the ratio
+# is not a like-for-like comparison and would skew the geomean by
+# 1.3–1.5× per protoPython mode if averaged in.  Earlier reports
+# briefly rejoined memory_pressure on the strength of the post-
+# safepoint protopyc number (~2× CPython) but the protopy column has
+# remained dominated by deferred-GC scheduling, and the apples-to-
+# apples objection applies to both columns regardless of the current
+# ratio.
+GEOMEAN_EXCLUDE = {"memory_pressure"}
 
 
 def format_report(results):

@@ -2,6 +2,7 @@
 #define PROTOPYTHON_PYTHONENVIRONMENT_H
 
 #include <protoCore.h>
+#include <protoPython/DiagUtils.h>
 #include <atomic>
 #include <functional>
 #include <iostream>
@@ -1417,7 +1418,7 @@ public:
             PythonEnvironment::registerContext(ctx, env);
         }
         ~ContextScope() {
-            if (std::getenv("PROTO_THREAD_DIAG")) std::cerr << "[proto-thread] ContextScope destruction ctx=" << ctx_ << " tid=" << std::this_thread::get_id() << "\n" << std::flush;
+            if (protoPython::diagThreadEnabled()) std::cerr << "[proto-thread] ContextScope destruction ctx=" << ctx_ << " tid=" << std::this_thread::get_id() << "\n" << std::flush;
             PythonEnvironment::s_threadEnv = prevEnv_;
             PythonEnvironment::s_threadContext = prevCtx_;
         }

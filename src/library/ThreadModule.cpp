@@ -370,7 +370,7 @@ static const proto::ProtoObject* py_log_thread_ident(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
-    if (std::getenv("PROTO_THREAD_DIAG")) {
+    if (protoPython::diagThreadEnabled()) {
         fprintf(stderr, "[thread] ident=%lld\n",
             static_cast<long long>(current_thread_id()));
         fflush(stderr);

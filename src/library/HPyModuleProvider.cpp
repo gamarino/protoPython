@@ -51,7 +51,7 @@ const proto::ProtoObject* HPyModuleProvider::tryLoad(const std::string& logicalP
     }
 
     // Step 1220: CLI Flags for HPy (Debug)
-    bool debug = std::getenv("PROTO_HPY_DEBUG") != nullptr;
+    bool debug = protoPython::diagHpyEnabled();
     if (debug) {
         // log removed
     }

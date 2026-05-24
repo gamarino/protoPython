@@ -64,7 +64,7 @@ static const proto::ProtoObject* py_warnings_warn(
     // honours PYTHONDONTWRITEWARNINGS to match the canonical env
     // var, plus PROTOPY_QUIET_WARNINGS for tests that want noise-
     // free output.
-    if (!std::getenv("PYTHONDONTWRITEWARNINGS") && !std::getenv("PROTOPY_QUIET_WARNINGS")) {
+    if (!protoPython::quietWarnings()) {
         std::cerr << catStr << ": " << msgStr << std::endl;
     }
 

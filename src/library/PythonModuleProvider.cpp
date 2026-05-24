@@ -42,12 +42,12 @@ const proto::ProtoObject* PythonModuleProvider::tryLoad(const std::string& logic
     for (const auto& basePath : basePaths_) {
         // 2. Try <base>/<path>.py
         std::string pyPath = joinPath(basePath, relPath + ".py");
-        if (std::getenv("PROTO_RESOLVE_DIAG")) {
+        if (protoPython::diagResolveEnabled()) {
             fprintf(stderr, "DEBUG: tryLoad(base=%s, rel=%s) checking: %s\n", 
                     basePath.c_str(), relPath.c_str(), pyPath.c_str());
         }
         if (fileExists(pyPath)) {
-            if (std::getenv("PROTO_RESOLVE_DIAG")) fprintf(stderr, "DEBUG: tryLoad FOUND file: %s\n", pyPath.c_str());
+            if (protoPython::diagResolveEnabled()) fprintf(stderr, "DEBUG: tryLoad FOUND file: %s\n", pyPath.c_str());
             /* Mutable so exec() STORE_NAME updates the same module object (proto setAttribute on mutable returns this). */
             const proto::ProtoObject* module = ctx->newObject(false);
             if (ctx->space->objectPrototype) {
@@ -61,7 +61,7 @@ const proto::ProtoObject* PythonModuleProvider::tryLoad(const std::string& logic
         // 3. Try <base>/<path>/__init__.py (package)
         std::string initPath = joinPath(basePath, relPath + "/__init__.py");
         if (fileExists(initPath)) {
-            if (std::getenv("PROTO_RESOLVE_DIAG")) fprintf(stderr, "DEBUG: tryLoad FOUND package: %s\n", initPath.c_str());
+            if (protoPython::diagResolveEnabled()) fprintf(stderr, "DEBUG: tryLoad FOUND package: %s\n", initPath.c_str());
             const proto::ProtoObject* module = ctx->newObject(false);
             if (ctx->space->objectPrototype) {
                 module = module->addParent(ctx, ctx->space->objectPrototype);

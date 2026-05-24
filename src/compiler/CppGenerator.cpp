@@ -14,7 +14,7 @@ bool CppGenerator::generate(ModuleNode* module, const std::string& filename) {
     *out_ << "extern \"C\" void* proto_module_init() {\n";
     *out_ << "    auto* ctx = protoPython::PythonEnvironment::getCurrentContext();\n";
     *out_ << "    auto* env = protoPython::PythonEnvironment::get(ctx);\n";
-    *out_ << "    if (std::getenv(\"PROTO_ENV_DIAG\")) {\n";
+    *out_ << "    if (protoPython::diagEnabled()) {\n";
     *out_ << "        fprintf(stderr, \"[mod] proto_module_init ctx=%p\\n\", (void*)ctx);\n";
     *out_ << "        const proto::ProtoObject* p = env->lookupName(\"print\");\n";
     *out_ << "        fprintf(stderr, \"[mod] lookupName('print')=%p\\n\", (void*)p);\n";
@@ -759,7 +759,7 @@ bool CppGenerator::generateFunctionInternal(const std::string& name,
         }
         
         *out_ << "    int pc = env->getAttribute(ctx, gen, env->getGiPCString())->asLong(ctx);\n";
-        *out_ << "    if (std::getenv(\"PROTO_ENV_DIAG\")) { fprintf(stderr, \"[cont] gen=%p pc=%d\\n\", (void*)gen, pc); fflush(stderr); }\n";
+        *out_ << "    if (protoPython::diagEnabled()) { fprintf(stderr, \"[cont] gen=%p pc=%d\\n\", (void*)gen, pc); fflush(stderr); }\n";
         *out_ << "    try {\n";
         *out_ << "        switch (pc) {\n";
         *out_ << "            case 0: \n";
@@ -1564,7 +1564,7 @@ bool CppGenerator::generateYield(YieldNode* n) {
     // 4. Case label for continuation
     *out_ << "        case " << nextPC << ":\n";
     *out_ << "            /* resumed from yield */\n";
-    *out_ << "            if (std::getenv(\"PROTO_ENV_DIAG\")) { fprintf(stderr, \"[cont] resumed yield pc=" << nextPC << "\\n\"); fflush(stderr); }\n";
+    *out_ << "            if (protoPython::diagEnabled()) { fprintf(stderr, \"[cont] resumed yield pc=" << nextPC << "\\n\"); fflush(stderr); }\n";
     *out_ << "            ([&]() -> const proto::ProtoObject* {\n";
     *out_ << "                return (args && args->getSize(ctx) > 1) ? args->getAt(ctx, 1) : PROTO_NONE;\n";
     *out_ << "            })()";
@@ -1603,7 +1603,7 @@ bool CppGenerator::generateAwait(AwaitNode* n) {
     // 4. Case label for continuation
     *out_ << "        case " << nextPC << ":\n";
     *out_ << "            /* resumed from await, args[0] is the sent value */\n";
-    *out_ << "            if (std::getenv(\"PROTO_ENV_DIAG\")) { fprintf(stderr, \"[cont] resumed await pc=" << nextPC << "\\n\"); fflush(stderr); }\n";
+    *out_ << "            if (protoPython::diagEnabled()) { fprintf(stderr, \"[cont] resumed await pc=" << nextPC << "\\n\"); fflush(stderr); }\n";
     *out_ << "            ([&]() -> const proto::ProtoObject* {\n";
     *out_ << "                return (args && args->getSize(ctx) > 1) ? args->getAt(ctx, 1) : PROTO_NONE;\n";
     *out_ << "            })()";

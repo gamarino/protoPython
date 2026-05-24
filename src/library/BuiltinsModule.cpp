@@ -206,7 +206,7 @@ static const proto::ProtoObject* py_import(
                 // Only try to resolve as a submodule if the parent module is a package (has __path__)
                 // and the attribute is not already present.
                 if (leaf->hasAttribute(context, itemObj->asString(context)) == PROTO_FALSE) {
-                    if (std::getenv("PROTO_IMPORT_DIAG")) {
+                    if (protoPython::diagImportEnabled()) {
                         fprintf(stderr, "DEBUG IMPORT: attr '%s' NOT FOUND in module '%s'\n", itemName.c_str(), moduleName.c_str());
                         const proto::ProtoSparseList* attrs = leaf->getAttributes(context);
                         if (attrs) {
@@ -2695,14 +2695,14 @@ static const proto::ProtoObject* py_getattr(
     const proto::ProtoString* key = PythonEnvironment::getInternedString(context, nameStr.c_str());
 
     size_t argCount = positionalParameters->getSize(context);
-    if (std::getenv("PROTO_RESOLVE_DIAG")) {
+    if (protoPython::diagResolveEnabled()) {
         std::string s;
         key->toUTF8String(context, s);
         fprintf(stderr, "DEBUG: getattr(obj=%p, key='%s')\n", (void*)obj, s.c_str());
     } 
 
     const proto::ProtoObject* val = env ? env->getAttribute(context, obj, key, false) : obj->getAttribute(context, key);
-    if (std::getenv("PROTO_RESOLVE_DIAG")) {
+    if (protoPython::diagResolveEnabled()) {
         fprintf(stderr, "DEBUG: py_getattr val=%p PROTO_NONE=%p\n", (void*)val, (void*)PROTO_NONE);
     }
     bool attrFound = val && (val != PROTO_NONE || obj->hasAttribute(context, key) == PROTO_TRUE);

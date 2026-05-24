@@ -68,8 +68,7 @@
 #endif
 
 static bool get_thread_diag() {
-    static bool diag = std::getenv("PROTO_THREAD_DIAG") != nullptr;
-    return diag;
+    return protoPython::diagThreadEnabled();
 }
 
 
@@ -4006,7 +4005,7 @@ static const proto::ProtoObject* py_dict_getitem(
         const proto::ProtoObject* key = positionalParameters->getAt(context, offset);
         unsigned long hash = dictKeyHash(context, key);
         const proto::ProtoSparseList* dict = data->asSparseList(context);
-        if (std::getenv("PROTO_MOD_DIAG") && key && key->isString(context)) {
+        if (protoPython::diagModEnabled() && key && key->isString(context)) {
             std::string ks;
             key->asString(context)->toUTF8String(context, ks);
             if (ks == "signal" || ks == "__dict__") {
@@ -15438,14 +15437,14 @@ static const proto::ProtoObject* getPyThread(proto::ProtoContext* ctx) {
 }
 
 void PythonEnvironment::registerContext(proto::ProtoContext* ctx, PythonEnvironment* env) {
-    if (std::getenv("PROTO_THREAD_DIAG")) {
+    if (protoPython::diagThreadEnabled()) {
     }
     s_threadEnv = env;
     s_threadContext = ctx;
 }
 
 void PythonEnvironment::unregisterContext(proto::ProtoContext* ctx) {
-    if (std::getenv("PROTO_THREAD_DIAG")) {
+    if (protoPython::diagThreadEnabled()) {
     }
     s_threadEnv = nullptr;
     s_threadContext = nullptr;
@@ -15480,7 +15479,7 @@ const proto::ProtoObject* PythonEnvironment::getCurrentCodeObject() {
 }
 
 PythonEnvironment* PythonEnvironment::fromContext(proto::ProtoContext* ctx) {
-    if (!s_threadEnv && std::getenv("PROTO_THREAD_DIAG")) {
+    if (!s_threadEnv && protoPython::diagThreadEnabled()) {
         std::cerr << "[proto-thread] fromContext: s_threadEnv is NULL for context " << ctx << "\n" << std::flush;
     }
     return s_threadEnv;
@@ -16623,7 +16622,7 @@ static const proto::ProtoObject* py_module_update(
             if (isDunder || isModuleInternalAttr(keyName)) continue;
             const proto::ProtoObject* value = dict->getAt(context, key->getHash(context));
             if (!value) continue;
-            if (std::getenv("PROTO_MOD_UPDATE_DIAG")) {
+            if (protoPython::diagModUpdateEnabled()) {
                 fprintf(stderr, "py_module_update: setting self=%p key='%s'\n", (void*)self, keyName.c_str());
                 fflush(stderr);
             }
@@ -17700,7 +17699,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     typePrototype = typePrototype->setAttribute(rootContext_, py_class, typePrototype);
     this->typePrototype = const_cast<proto::ProtoObject*>(typePrototype);
 
-    if (std::getenv("PROTO_ENV_DEBUG")) fprintf(stderr, "DEBUG_ROOT: typePrototype=%p objectPrototype=%p\n", (void*)typePrototype, (void*)objectPrototype);
+    if (protoPython::diagEnvDebugEnabled()) fprintf(stderr, "DEBUG_ROOT: typePrototype=%p objectPrototype=%p\n", (void*)typePrototype, (void*)objectPrototype);
 
     // V75: Initialize specific prototypes for better type identity
     // IMPORTANT: methodPrototype MUST be initialized extremely early so that ALL subsequent methods get it natively!
@@ -21881,7 +21880,7 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
 
                                     // 2. Set as dict item (Python-side lookup)
                                     const proto::ProtoObject* dataAttr = mods->getAttribute(ctx, getDataString());
-                                    if (std::getenv("PROTO_MOD_DIAG")) {
+                                    if (protoPython::diagModEnabled()) {
                                         fprintf(stderr, "DEBUG_MODDATA: module=%s mods=%p dataAttr=%p hasSparse=%d modNameS_hash=%lu\n",
                                                 moduleName.c_str(), (void*)mods, (void*)dataAttr,
                                                 (dataAttr && dataAttr->asSparseList(ctx)) ? 1 : 0,
@@ -21898,7 +21897,7 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                                                     dict = dict->setAt(ctx, mainS->getHash(ctx), mutableMod);
                                                 }
                                                 mods->setAttribute(ctx, getDataString(), dict->asObject(ctx));
-                                                if (std::getenv("PROTO_MOD_DIAG")) {
+                                                if (protoPython::diagModEnabled()) {
                                                     const proto::ProtoObject* checkData = mods->getAttribute(ctx, getDataString());
                                                     const proto::ProtoSparseList* checkDict = checkData ? checkData->asSparseList(ctx) : nullptr;
                                                     fprintf(stderr, "DEBUG_MODDATA_AFTER: module=%s stored=%d\n",
@@ -22291,8 +22290,7 @@ std::string PythonEnvironment::formatException(const proto::ProtoObject* exc, co
     std::string blue = "\033[94m";
     std::string yellow = "\033[93m";
 
-    const char* noColorEnv = std::getenv("NO_COLOR");
-    if (noColorEnv || !isatty(fileno(stderr))) {
+    if (protoPython::noColor() || !isatty(fileno(stderr))) {
         reset = bold = red = blue = yellow = "";
     }
 
@@ -22430,9 +22428,13 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
     out << "protoPython 0.1.0 (" << __DATE__ << ") [HPy Integrated]\n"
         << "Type \"help\", \"copyright\", \"credits\" or \"license\" for more information.\n";
         
-    // Step 1429: History persistence
-    std::string historyDir = std::getenv("HOME") ? std::getenv("HOME") : ".";
-    std::string historyPath = historyDir + "/.protopy_history";
+    // Step 1429: History persistence. HOME cached as function-local static so
+    // the REPL doesn't pay another getenv on subsequent replLoop entries.
+    static const std::string s_historyDir = []() {
+        const char* h = std::getenv("HOME");
+        return std::string(h && h[0] ? h : ".");
+    }();
+    std::string historyPath = s_historyDir + "/.protopy_history";
     {
         std::ifstream hf(historyPath);
         if (hf) {
@@ -22453,8 +22455,10 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
     std::string line;
     std::string currentIndent = "";
 
-    // Step 1348: PROTOPYSTARTUP support (Move after execFn is ready)
-    const char* startup = std::getenv("PROTOPYSTARTUP");
+    // Step 1348: PROTOPYSTARTUP support (Move after execFn is ready).
+    // Cached at first replLoop entry; PROTOPYSTARTUP is process-global by
+    // intent so re-reading per entry would just burn libc cycles.
+    static const char* startup = std::getenv("PROTOPYSTARTUP");
     if (startup && startup[0] != '\0') {
         std::ifstream f(startup);
         if (f) {
@@ -22576,7 +22580,7 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
         const proto::ProtoList* args = context->newList()->appendLast(context, source)->appendLast(context, frame)->appendLast(context, frame);
         const proto::ProtoObject* result = PROTO_NONE;
 
-        if (std::getenv("PROTO_REPL_DIAG")) {
+        if (protoPython::diagReplEnabled()) {
             // log removed
         }
         
@@ -22625,12 +22629,12 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
             raiseRecursionError(context);
             if (const proto::ProtoObject* pending = takePendingException()) handleException(pending, frame, out);
         } catch (const std::exception& e) {
-            const char* RED = std::getenv("NO_COLOR") ? "" : "\x1b[31;1m";
-            const char* RESET = std::getenv("NO_COLOR") ? "" : "\x1b[0m";
+            const char* RED   = protoPython::noColor() ? "" : "\x1b[31;1m";
+            const char* RESET = protoPython::noColor() ? "" : "\x1b[0m";
             out << RED << "Runtime Error: " << e.what() << RESET << "\n";
         } catch (...) {
-            const char* RED = std::getenv("NO_COLOR") ? "" : "\x1b[31;1m";
-            const char* RESET = std::getenv("NO_COLOR") ? "" : "\x1b[0m";
+            const char* RED   = protoPython::noColor() ? "" : "\x1b[31;1m";
+            const char* RESET = protoPython::noColor() ? "" : "\x1b[0m";
             out << RED << "Internal Runtime Error" << RESET << "\n";
         }
         
@@ -23381,7 +23385,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
 
     bool isClass = this->isActuallyAClass(ctx, obj);
 
-    if (getenv("PROTO_CLASS_TRACE") && dictString && name == dictString) {
+    if (protoPython::diagClassTraceEnabled() && dictString && name == dictString) {
         bool isModInst = (modulePrototype && obj->isInstanceOf(ctx, modulePrototype) == PROTO_TRUE);
         bool ownName = obj->hasOwnAttribute(ctx, getNameString()) == PROTO_TRUE;
         bool ownBases = obj->hasOwnAttribute(ctx, basesString) == PROTO_TRUE;
@@ -25751,13 +25755,13 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
             // work uniformly.
             const proto::ProtoObject* setM = descr->getAttribute(ctx, setDunderString);
             const proto::ProtoObject* descrType = getType(ctx, descr);
-            if (getenv("PROTOPY_SET_DBG")) {
+            if (protoPython::diagSetEnabled()) {
                 fprintf(stderr, "[setAttribute] descr=%p setM=%p descrType=%p\n",
                     (void*)descr, (void*)setM, (void*)descrType);
             }
             if ((!setM || setM == PROTO_NONE) && descrType && descrType != PROTO_NONE) {
                 setM = getAttribute(ctx, descrType, setDunderString, false);
-                if (getenv("PROTOPY_SET_DBG")) {
+                if (protoPython::diagSetEnabled()) {
                     fprintf(stderr, "[setAttribute] after type lookup setM=%p\n", (void*)setM);
                 }
             }
@@ -25889,7 +25893,7 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
     std::string nameStr;
     nameObj->toUTF8String(ctx, nameStr);
 
-    if (std::getenv("PROTO_RESOLVE_DIAG")) {
+    if (protoPython::diagResolveEnabled()) {
     }
 
     static thread_local int resolveDepth = 0;
