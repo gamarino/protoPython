@@ -30,8 +30,15 @@ static const proto::ProtoObject* py_sleep(
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double sec = toDouble(ctx, posArgs->getAt(ctx, 0));
-    if (sec > 0)
+    if (sec > 0) {
+        // 2026-05-25: bracket the sleep in a protoCore unmanaged
+        // region. While the thread is suspended in the kernel timer it
+        // cannot reach a GC safepoint; without this bracket the GC
+        // quorum stalls behind any `time.sleep` for its full
+        // duration. See protoCore DESIGN.md §"Unmanaged regions".
+        proto::ProtoContext::UnmanagedScope u(ctx);
         std::this_thread::sleep_for(std::chrono::duration<double>(sec));
+    }
     return PROTO_NONE;
 }
 

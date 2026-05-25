@@ -199,7 +199,13 @@ static const proto::ProtoObject* py_alarm(
 static const proto::ProtoObject* py_pause(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList*, const proto::ProtoSparseList*) {
-    ::pause();
+    // 2026-05-25: `::pause` blocks the thread in the kernel until ANY
+    // signal arrives. The textbook "permanently parked" case — the
+    // unmanaged-region bracket lets the GC run without it.
+    {
+        proto::ProtoContext::UnmanagedScope u(ctx);
+        ::pause();
+    }
     return PROTO_NONE;
 }
 

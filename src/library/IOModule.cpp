@@ -78,16 +78,28 @@ static const proto::ProtoObject* py_io_read(
     int fd = io_get_fd(context, self);
     if (fd >= 0) {
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+        // 2026-05-25: ::read may block arbitrarily (pipes, sockets,
+        // slow filesystems, NFS). Bracket the syscall(s) in a
+        // protoCore unmanaged region so the GC quorum is not pinned
+        // waiting for I/O to complete. The errno + raiseOSError
+        // handling runs AFTER returnFromUnmanaged because that path
+        // touches ProtoObject* state (forbidden while unmanaged).
         std::string out;
+        int err = 0;
         if (n < 0) {
             // read everything until EOF
             char chunk[4096];
             for (;;) {
-                ssize_t got = ::read(fd, chunk, sizeof(chunk));
+                ssize_t got;
+                {
+                    proto::ProtoContext::UnmanagedScope u(context);
+                    got = ::read(fd, chunk, sizeof(chunk));
+                    err = (got < 0) ? errno : 0;
+                }
                 if (got < 0) {
-                    if (errno == EINTR) continue;
+                    if (err == EINTR) continue;
                     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-                    if (env) env->raiseOSError(context, errno, std::strerror(errno), "");
+                    if (env) env->raiseOSError(context, err, std::strerror(err), "");
                     return nullptr;
                 }
                 if (got == 0) break;
@@ -97,11 +109,15 @@ static const proto::ProtoObject* py_io_read(
             out.resize(static_cast<size_t>(n));
             ssize_t got;
             for (;;) {
-                got = ::read(fd, &out[0], static_cast<size_t>(n));
+                {
+                    proto::ProtoContext::UnmanagedScope u(context);
+                    got = ::read(fd, &out[0], static_cast<size_t>(n));
+                    err = (got < 0) ? errno : 0;
+                }
                 if (got >= 0) break;
-                if (errno == EINTR) continue;
+                if (err == EINTR) continue;
                 PythonEnvironment* env = PythonEnvironment::fromContext(context);
-                if (env) env->raiseOSError(context, errno, std::strerror(errno), "");
+                if (env) env->raiseOSError(context, err, std::strerror(err), "");
                 return nullptr;
             }
             out.resize(static_cast<size_t>(got));
@@ -356,13 +372,20 @@ static const proto::ProtoObject* py_io_write(
             if (env) env->raiseTypeError(context, "a bytes-like object is required");
             return nullptr;
         }
+        // 2026-05-25: ::write can block on full pipes / sockets / slow
+        // disks. Bracket each syscall iteration in an unmanaged region.
         ssize_t written;
+        int err = 0;
         for (;;) {
-            written = ::write(fd, s.data(), s.size());
+            {
+                proto::ProtoContext::UnmanagedScope u(context);
+                written = ::write(fd, s.data(), s.size());
+                err = (written < 0) ? errno : 0;
+            }
             if (written >= 0) break;
-            if (errno == EINTR) continue;
+            if (err == EINTR) continue;
             PythonEnvironment* env = PythonEnvironment::fromContext(context);
-            if (env) env->raiseOSError(context, errno, std::strerror(errno), "");
+            if (env) env->raiseOSError(context, err, std::strerror(err), "");
             return nullptr;
         }
         return context->fromInteger(static_cast<long long>(written));

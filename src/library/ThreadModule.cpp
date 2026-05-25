@@ -91,12 +91,26 @@ static const proto::ProtoObject* py_lock_acquire(
         ld->held = true;
         return PROTO_TRUE;
     }
+    // 2026-05-25: a `threading.Lock.acquire()` blocks the calling
+    // thread on a foreign condition variable that the protoCore GC
+    // cannot inspect. Without bracketing the wait in an unmanaged
+    // region, a concurrent GC cycle would stall behind every locked
+    // thread for the duration of the wait. The `lk` mutex is foreign
+    // (a plain std::mutex on LockData) so it does NOT need to be
+    // released — the contract says NO protoCore heap access while
+    // unmanaged, but waiting on a std::condition_variable is fine.
     if (timeout < 0) {
+        proto::ProtoContext::UnmanagedScope u(ctx);
         ld->cv.wait(lk, [&]{ return !ld->taken; });
     } else {
         auto dur = std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::duration<double>(timeout));
-        if (!ld->cv.wait_for(lk, dur, [&]{ return !ld->taken; })) {
+        bool acquired;
+        {
+            proto::ProtoContext::UnmanagedScope u(ctx);
+            acquired = ld->cv.wait_for(lk, dur, [&]{ return !ld->taken; });
+        }
+        if (!acquired) {
             return PROTO_FALSE;
         }
     }
@@ -448,7 +462,16 @@ static const proto::ProtoObject* py_join_thread(
     const proto::ProtoExternalPointer* ext = handle->asExternalPointer(ctx);
     if (!ext) return PROTO_NONE;
     proto::ProtoThread* thread = static_cast<proto::ProtoThread*>(ext->getPointer(ctx));
-    if (thread) thread->join(ctx);
+    if (thread) {
+        // 2026-05-25: `Thread.join()` blocks until the target thread
+        // exits. Bracket in an unmanaged region so the GC can collect
+        // while we wait. The joined thread itself may run protoCore
+        // ops up until exit; once it finishes, our park-aware
+        // returnFromUnmanaged ensures we don't resume touching
+        // ProtoObject* while a STW is in progress.
+        proto::ProtoContext::UnmanagedScope u(ctx);
+        thread->join(ctx);
+    }
     return PROTO_NONE;
 }
 
@@ -512,7 +535,11 @@ static const proto::ProtoObject* py_handle_join(
     if (!ext) return PROTO_NONE;
     proto::ProtoThread* thread =
         static_cast<proto::ProtoThread*>(ext->getPointer(ctx));
-    if (thread) thread->join(ctx);
+    if (thread) {
+        // 2026-05-25: bracket the join() as in py_join_thread above.
+        proto::ProtoContext::UnmanagedScope u(ctx);
+        thread->join(ctx);
+    }
     return PROTO_NONE;
 }
 
@@ -650,7 +677,13 @@ static const proto::ProtoObject* py_shutdown(
         if (ext) {
             t = static_cast<proto::ProtoThread*>(ext->getPointer(ctx));
         }
-        if (t) t->join(ctx);
+        if (t) {
+            // 2026-05-25: each shutdown-join can take arbitrarily
+            // long (a worker still doing work has to drain it).
+            // Bracket so the GC keeps working while we wait.
+            proto::ProtoContext::UnmanagedScope u(ctx);
+            t->join(ctx);
+        }
     }
     return PROTO_NONE;
 }

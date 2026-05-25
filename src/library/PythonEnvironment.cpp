@@ -22490,8 +22490,18 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
         }
 
         out << (buffer.empty() ? primaryPrompt_ : secondaryPrompt_) << std::flush;
-        
-        if (!std::getline(in, line)) {
+
+        // 2026-05-25: the REPL prompt is the textbook unmanaged-region
+        // case — wait time is dominated by the user, not the runtime.
+        // Without this bracket, a GC cycle on a worker thread (e.g. a
+        // background asyncio task) would stall behind the prompt for
+        // as long as the user thinks.
+        bool gotLine;
+        {
+            proto::ProtoContext::UnmanagedScope u(context);
+            gotLine = static_cast<bool>(std::getline(in, line));
+        }
+        if (!gotLine) {
             if (in.eof()) break;
             in.clear();
             continue;

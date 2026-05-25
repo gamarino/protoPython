@@ -3244,10 +3244,20 @@ static const proto::ProtoObject* py_input(
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     std::istream* in = env ? env->getStdin() : &std::cin;
+    // 2026-05-25: `input()` blocks indefinitely on a tty waiting for
+    // the user to type — the textbook case for the unmanaged-region
+    // bracket. Without it, a GC cycle on another thread would stall
+    // for as long as the user thinks. The `getline` ends up calling
+    // ::read on stdin; that syscall is what runs while we are unmanaged.
     std::string line;
-    if (in && std::getline(*in, line))
+    bool ok;
+    {
+        proto::ProtoContext::UnmanagedScope u(context);
+        ok = in && static_cast<bool>(std::getline(*in, line));
+    }
+    if (ok)
         return PythonEnvironment::getInternedString(context, line.c_str())->asObject(context);
-    
+
     if (in && in->eof()) {
         if (env) env->raiseEOFError(context);
         return PROTO_NONE;

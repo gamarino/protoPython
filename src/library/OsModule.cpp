@@ -566,8 +566,20 @@ static const proto::ProtoObject* py_waitpid(
     int options = static_cast<int>(posArgs->getAt(ctx, 1)->asLong(ctx));
     int status = 0;
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    // 2026-05-25: `waitpid` may block for the child to change state
+    // unless WNOHANG is set. Bracket in an unmanaged region so the GC
+    // is not pinned by a long-running child. WNOHANG-only callers
+    // (poll-style) pay only the bracket overhead, which is one atomic
+    // increment + one atomic decrement per call.
     errno = 0;
-    int res = waitpid(pid, &status, options);
+    int res;
+    int waitErr = 0;
+    {
+        proto::ProtoContext::UnmanagedScope u(ctx);
+        res = waitpid(pid, &status, options);
+        waitErr = errno;
+    }
+    errno = waitErr;
     if (res < 0) {
         // CPython convention: raise OSError on system error.  Without
         // this, callers that loop on `waitpid(-1, WNOHANG)` (e.g.
@@ -1395,13 +1407,20 @@ static const proto::ProtoObject* py_os_read(
     std::string buf;
     buf.resize(static_cast<size_t>(n));
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    // 2026-05-25: bracket the syscall in a protoCore unmanaged region
+    // so the GC quorum does not stall behind an I/O wait.
     ssize_t got;
+    int err = 0;
     for (;;) {
-        got = ::read(fd, n > 0 ? &buf[0] : nullptr, static_cast<size_t>(n));
+        {
+            proto::ProtoContext::UnmanagedScope u(ctx);
+            got = ::read(fd, n > 0 ? &buf[0] : nullptr, static_cast<size_t>(n));
+            err = (got < 0) ? errno : 0;
+        }
         if (got >= 0) break;
-        if (errno == EINTR) continue;
+        if (err == EINTR) continue;
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-        if (env) env->raiseOSError(ctx, errno, std::strerror(errno), "");
+        if (env) env->raiseOSError(ctx, err, std::strerror(err), "");
         return nullptr;
     }
     buf.resize(static_cast<size_t>(got));
@@ -1427,13 +1446,19 @@ static const proto::ProtoObject* py_os_write(
         return nullptr;
     }
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    // 2026-05-25: bracket the syscall as in py_os_read.
     ssize_t written;
+    int err = 0;
     for (;;) {
-        written = ::write(fd, data.data(), data.size());
+        {
+            proto::ProtoContext::UnmanagedScope u(ctx);
+            written = ::write(fd, data.data(), data.size());
+            err = (written < 0) ? errno : 0;
+        }
         if (written >= 0) break;
-        if (errno == EINTR) continue;
+        if (err == EINTR) continue;
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-        if (env) env->raiseOSError(ctx, errno, std::strerror(errno), "");
+        if (env) env->raiseOSError(ctx, err, std::strerror(err), "");
         return nullptr;
     }
     return ctx->fromInteger(static_cast<long long>(written));

@@ -93,9 +93,22 @@ static const proto::ProtoObject* py_select(
         tvp = &tv;
     }
 
-    int ret = ::select(maxfd + 1, &rfds, &wfds, &efds, tvp);
+    // 2026-05-25: `select` is THE prototypical blocking syscall — its
+    // whole purpose is to suspend until a file descriptor is ready or
+    // the timeout fires. Bracket it in a protoCore unmanaged region
+    // so a concurrent GC cycle is not pinned for the wait duration.
+    // Save errno before returnFromUnmanaged because the protoCore
+    // path may run atomic ops between the syscall return and the
+    // moment we examine errno.
+    int ret;
+    int err = 0;
+    {
+        proto::ProtoContext::UnmanagedScope u(ctx);
+        ret = ::select(maxfd + 1, &rfds, &wfds, &efds, tvp);
+        err = (ret < 0) ? errno : 0;
+    }
     if (ret < 0) {
-        PythonEnvironment::fromContext(ctx)->raiseOSError(ctx, errno, strerror(errno), "");
+        PythonEnvironment::fromContext(ctx)->raiseOSError(ctx, err, strerror(err), "");
         return nullptr;
     }
 
