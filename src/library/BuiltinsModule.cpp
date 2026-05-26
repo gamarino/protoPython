@@ -1113,6 +1113,7 @@ const proto::ProtoObject* py_complex(
                 const proto::ProtoObject* m =
                     env->getAttribute(context, xType, complexS, /*raiseError=*/false);
                 if (m && m != PROTO_NONE) {
+                    PythonEnvironment::TransientPin pinM(env, m);
                     const proto::ProtoObject* result = nullptr;
                     if (m->asMethod(context)) {
                         const proto::ProtoList* a = context->newList();

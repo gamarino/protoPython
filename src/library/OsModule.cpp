@@ -1671,7 +1671,10 @@ static char** buildEnvp(proto::ProtoContext* ctx, const proto::ProtoObject* envO
     const proto::ProtoObject* iter = nullptr;
     if (items) {
         const proto::ProtoObject* call = env->callObject(items, {});
-        if (call) iter = env->iter(call);
+        if (call) {
+            PythonEnvironment::TransientPin pinCall(env, call);
+            iter = env->iter(call);
+        }
     } else {
         iter = env->iter(envObj);
     }

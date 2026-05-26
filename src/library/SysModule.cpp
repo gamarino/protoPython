@@ -1,6 +1,7 @@
 #include <protoPython/SysModule.h>
 #include <protoPython/PythonEnvironment.h>
 #include <iostream>
+#include <memory>
 #if defined(__linux__)
 #include <unistd.h>
 #endif
@@ -114,12 +115,15 @@ static const proto::ProtoObject* sys_getsizeof(
                 }
             }
             if (sizeM && sizeM != PROTO_NONE) {
+                PythonEnvironment::TransientPin pinSizeM0(env, sizeM);
                 // Apply descriptor __get__ if present
                 const proto::ProtoString* getDS =
                     PythonEnvironment::getInternedString(context, "__get__");
                 const proto::ProtoObject* smType = env->getType(context, sizeM);
                 const proto::ProtoObject* getM = smType ? env->getAttribute(context, smType, getDS, false) : nullptr;
+                std::unique_ptr<PythonEnvironment::TransientPin> pinSizeM1;
                 if (getM && getM != PROTO_NONE) {
+                    PythonEnvironment::TransientPin pinGetM(env, getM);
                     if (getM->asMethod(context)) {
                         const proto::ProtoList* gargs =
                             context->newList()->appendLast(context, obj)->appendLast(context, cls);
@@ -128,6 +132,7 @@ static const proto::ProtoObject* sys_getsizeof(
                     } else {
                         sizeM = env->callObject(getM, {sizeM, obj, cls});
                     }
+                    pinSizeM1 = std::make_unique<PythonEnvironment::TransientPin>(env, sizeM);
                 }
                 if (sizeM && sizeM != PROTO_NONE) {
                     const proto::ProtoObject* r = nullptr;

@@ -88,12 +88,15 @@ static const proto::ProtoObject* py_batched(
     }
     const proto::ProtoObject* it = env->iter(iterable);
     if (!it) return nullptr;
+    PythonEnvironment::TransientPin pinIt(env, it);
     const proto::ProtoObject* proto = self->getAttribute(ctx,
         PythonEnvironment::getInternedString(ctx, "__batched_proto__"));
     if (!proto) return PROTO_NONE;
     const proto::ProtoObject* b = proto->newChild(ctx, true);
+    PythonEnvironment::TransientPin pinB0(env, b);
     b = b->setAttribute(ctx,
         PythonEnvironment::getInternedString(ctx, "__batched_it__"), it);
+    PythonEnvironment::TransientPin pinB1(env, b);
     b = b->setAttribute(ctx,
         PythonEnvironment::getInternedString(ctx, "__batched_n__"),
         ctx->fromInteger(n));
@@ -458,10 +461,13 @@ static const proto::ProtoObject* py_tee(
     const proto::ProtoObject* iterable = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* iterM = iterable->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__iter__"));
     if (!iterM || !iterM->asMethod(ctx)) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoObject* it1 = iterM->asMethod(ctx)(ctx, iterable, nullptr, ctx->newList(), nullptr);
     if (!it1) return PROTO_NONE;
+    PythonEnvironment::TransientPin pinIt1(env, it1);
     const proto::ProtoObject* it2 = iterM->asMethod(ctx)(ctx, iterable, nullptr, ctx->newList(), nullptr);
     if (!it2) return PROTO_NONE;
+    PythonEnvironment::TransientPin pinIt2(env, it2);
     const proto::ProtoList* pair = ctx->newList()->appendLast(ctx, it1)->appendLast(ctx, it2);
     const proto::ProtoTuple* tup = ctx->newTupleFromList(pair);
     return tup ? tup->asObject(ctx) : PROTO_NONE;
@@ -1061,10 +1067,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         PythonEnvironment* env = PythonEnvironment::fromContext(c);
         const proto::ProtoObject* it = env ? env->iter(iterable) : nullptr;
         if (!it) return PROTO_NONE;
+        PythonEnvironment::TransientPin pinIt(env, it);
         const proto::ProtoObject* proto = self->getAttribute(c,
             PythonEnvironment::getInternedString(c, "__pairwise_proto__"));
         if (!proto) return PROTO_NONE;
         const proto::ProtoObject* pw = proto->newChild(c, true);
+        PythonEnvironment::TransientPin pinPw(env, pw);
         pw = pw->setAttribute(c, PythonEnvironment::getInternedString(c, "__pairwise_it__"), it);
         return pw;
     };

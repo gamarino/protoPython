@@ -205,3 +205,92 @@ The native function layer of protoPython has **systematic GC root discipline gap
 6. Document the discipline in `protoPython/CLAUDE.md` so future native code follows it — 30 minutes.
 
 Total: 6-8 hours of focused work, mostly mechanical once F3.2's helper exists.
+
+---
+
+## 2026-05-26 Audit Update — Sweep informed by protoCore STW research
+
+A re-sweep was performed in the context of the protoCore research note
+`STW_ELIMINATION_RESEARCH.md` Section 11 ("Static root-discipline
+contract"). That section formalizes the invariant this audit was
+already chasing:
+
+> Before any call into protoCore code that may allocate, every
+> transient `ProtoObject*` must be reachable from a root the GC sees
+> (a `ProtoContext` local, a `ProtoRootSet` pin, or an attribute of an
+> already-rooted object).
+
+The new sweep found 6 additional sites violating the strict reading of
+the invariant. All 6 fixed in this update. Each fix uses
+`PythonEnvironment::TransientPin` per the established pattern.
+
+### Sites fixed in this sweep
+
+| Function | File:line | Transient | Risk | Fix |
+|---|---|---|---|---|
+| `sys_getsizeof` | `SysModule.cpp:116` | `sizeM`, `getM` across `newList()`/`callObject` | Low (types usually rooted via module) | `TransientPin pinSizeM0/pinGetM`, plus `unique_ptr<TransientPin> pinSizeM1` for the re-pin after the call |
+| `py_batched` | `ItertoolsModule.cpp:89` | `it` from `env->iter` across `newChild`/`setAttribute` | Medium (iterators not transitively rooted) | `TransientPin pinIt`, `pinB0`, `pinB1` |
+| `py_pairwise` | `ItertoolsModule.cpp:1062` | `it` from `env->iter` across `newChild`/`setAttribute` | Medium | `TransientPin pinIt`, `pinPw` |
+| `py_tee` | `ItertoolsModule.cpp:461` | `it1` held while computing `it2` | Medium | `TransientPin pinIt1`, `pinIt2` |
+| `py_complex extractReal` | `BuiltinsModule.cpp:1113` | `m` from `getAttribute` across `newList()`/`callObject` | Low (m reachable via xType) | `TransientPin pinM` |
+| `os_environ` items iter | `OsModule.cpp:1673` | `call` from `callObject` across `env->iter(call)` | Medium (the iter setup allocates before pinning self) | `TransientPin pinCall` |
+
+### Sites verified clean (false positives in initial sweep)
+
+| Function | File:line | Verdict |
+|---|---|---|
+| `ctx_run` | `ContextvarsModule.cpp:185` | All `ProtoObject*` reachable via `pos` (args list pinned by `invokeCallable`). Safe. |
+
+### Verification
+
+- Build: `cmake --build build_release -j$(nproc)` — clean.
+- ctest: 210/210 passing (2026-05-26).
+- No behavioral regression on standard module tests.
+
+### Pattern notes for future audits
+
+The recurring pattern across the 6 sites:
+
+```cpp
+const proto::ProtoObject* x = env->iter(someArg);    // or callObject, or getAttribute
+// ... NO pin ...
+const proto::ProtoObject* y = someOtherAlloc(ctx);   // GC may fire — x is in C++ local, no root
+useBoth(x, y);                                       // UAF risk on x
+```
+
+The fix is invariant: insert `PythonEnvironment::TransientPin pinX(env, x);`
+immediately after the line that produces `x`. The RAII destructor releases
+the pin at scope exit, including on exception unwind.
+
+When `x` is reassigned (e.g., descriptor `__get__` returning a new
+value), declare a fresh pin for the new value. The C++ compiler does
+not allow renaming, but two pins with distinct names (`pinX0`, `pinX1`)
+in the same scope work correctly — both release at scope exit, LIFO
+order, no conflict.
+
+For conditional re-pinning (e.g., re-pin only if a branch was taken),
+use `std::unique_ptr<TransientPin>` and `make_unique` inside the
+branch. See `sys_getsizeof` as a worked example.
+
+### Open follow-ups (not addressed in this sweep)
+
+The original P3 inventory above still applies. The 6 sites fixed here
+are *in addition to* the 6+ HIGH-severity iteration trampolines and
+the 8+ callback sites listed in the original audit. The full sweep
+remains as documented work.
+
+A broader audit using a static analyzer or pattern-grep
+(`grep -rn 'env->\(iter\|callObject\)' src/library/ | grep -B1 'TransientPin'`)
+could automate finding more candidates. Not done in this sweep — out of
+scope.
+
+### Cross-reference
+
+This audit and its findings are referenced from:
+- protoCore `docs/STW_ELIMINATION_RESEARCH.md` § 11 — explains why the
+  invariant exists structurally.
+- protoCore `docs/GarbageCollector.md` — link to the research note.
+
+The same invariant audit is being established in protoJS and protoST
+under their own `tasks/audit/gc-roots.md`. The three runtimes share the
+same protoCore GC, so the discipline is shared.
