@@ -22973,20 +22973,32 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
     }
     else {
         // 2. Python-level __class__ (Explicit Identity)
+        // SP-B/B1: Only honor `__class__` when it is an OWN attribute of obj.
+        // Inheriting `__class__` through the parent chain reaches the parent
+        // class's own `__class__` (i.e., the parent's metaclass), not the
+        // object's own class — so a `_GeneratorContextManager` instance
+        // whose class has metaclass=ABCMeta would otherwise resolve its
+        // type to ABCMeta instead of `_GeneratorContextManager`.  Supersedes
+        // V88 (which skipped only inherited `__class__=type`): the same
+        // problem applies to any metaclass, not just `type` itself.  The
+        // fall-through path below uses getFirstParent — which is exactly
+        // the instance's class for objects created via py_object_new.
+        //
+        // Ownership-first ordering: pre-fix this branch issued a full
+        // getAttribute(classS) — a chain walk — BEFORE checking own-ness,
+        // then discarded the chain result when the own-check failed.  For
+        // every `py_object_new`-created instance (the overwhelming common
+        // case in attr_lookup / binary_trees / richards_lite — every user-
+        // class instance without an explicit `__class__` setter)
+        // `__class__` is inherited via the parent link, so the chain walk
+        // was pure waste.  Probe own-ness first; only fetch through
+        // getAttribute (descriptor-aware, preserves pre-fix semantics for
+        // the case where `__class__` is a property on the instance) when
+        // the own probe says we WILL use the value.
         const proto::ProtoString* classS = getClassString() ? getClassString() : PythonEnvironment::getInternedString(ctx, "__class__");
-        const proto::ProtoObject* cls = obj->proto::ProtoObject::getAttribute(ctx, classS);
-        if (cls && cls != PROTO_NONE && cls != obj && !cls->isString(ctx)) {
-            // SP-B/B1: Only honor `__class__` when it is an OWN attribute of obj.
-            // Inheriting `__class__` through the parent chain reaches the parent
-            // class's own `__class__` (i.e., the parent's metaclass), not the
-            // object's own class — so a `_GeneratorContextManager` instance whose
-            // class has metaclass=ABCMeta would otherwise resolve its type to
-            // ABCMeta instead of `_GeneratorContextManager`.
-            // Supersedes V88 (which skipped only inherited `__class__=type`):
-            // the same problem applies to any metaclass, not just `type` itself.
-            // The fall-through path below uses getFirstParent — which is exactly
-            // the instance's class for objects created via py_object_new.
-            if (obj->hasOwnAttribute(ctx, classS) == PROTO_TRUE) {
+        if (obj->hasOwnAttribute(ctx, classS) == PROTO_TRUE) {
+            const proto::ProtoObject* cls = obj->proto::ProtoObject::getAttribute(ctx, classS);
+            if (cls && cls != PROTO_NONE && cls != obj && !cls->isString(ctx)) {
                 res = cls;
             }
         }
