@@ -6228,9 +6228,17 @@ const proto::ProtoObject* executeBytecodeRange(
                         const char* v = std::getenv("PROTOPY_DISABLE_LOADATTR_FASTPATH");
                         return v != nullptr && v[0] != '\0' && v[0] != '0';
                     }();
+                    // Sprint-4 (2026-06-15): skip 4 isXxx tag checks per access
+                    // when the getType cache has already classified this obj as
+                    // non-primitive. The (obj -> is-primitive) mapping is
+                    // invariant for the obj's lifetime; on cache miss we fall
+                    // back to the explicit isXxx chain.
+                    int primCache = env ? env->primitiveCacheHit(obj) : 0;
+                    bool skipTagChecks = (primCache == 2);  // 2 = cached non-primitive
                     if (!disableLoadattrFastpath && env && obj && obj != PROTO_NONE
-                            && !obj->isString(ctx) && !obj->isInteger(ctx)
-                            && !obj->isBoolean(ctx) && !obj->isFloat(ctx)) {
+                            && (skipTagChecks
+                                || (!obj->isString(ctx) && !obj->isInteger(ctx)
+                                    && !obj->isBoolean(ctx) && !obj->isFloat(ctx)))) {
                         // Synthesised dunders — computed on demand, not stored in protoCore.
                         // Pointer comparisons are free (co_names are interned symbols).
                         bool isSynthDunder =

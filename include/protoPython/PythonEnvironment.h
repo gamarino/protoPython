@@ -1406,6 +1406,17 @@ public:
     void incrementResolveCacheGeneration() { resolveCacheGeneration_.fetch_add(1, std::memory_order_release); }
     uint64_t resolveCacheGeneration() const { return resolveCacheGeneration_.load(std::memory_order_acquire); }
 
+    // Sprint-4 hook for OP_LOAD_ATTR fast path: query the per-thread
+    // getType cache for this obj's primitive classification.
+    //   0 -> not cached (caller must fall back to isString/isInteger/...)
+    //   1 -> cached AND obj is a primitive (str/int/bool/float or subclass)
+    //   2 -> cached AND obj is NOT a primitive
+    // The bottom-path of getType() only ever populates with state 2, so
+    // attribute-heavy workloads on instances see "is this a primitive"
+    // resolved as 2 after the first access — 4 isXxx tag checks (~20 ns)
+    // collapse to one cache lookup + a single branch.
+    int primitiveCacheHit(const proto::ProtoObject* obj) const;
+
     /** Signal handling flag (Step 1310). */
     static std::atomic<bool> s_sigintReceived;
     static std::thread::id s_mainThreadId;

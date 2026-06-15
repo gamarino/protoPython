@@ -22906,6 +22906,22 @@ bool PythonEnvironment::isActuallyAClass(proto::ProtoContext* ctx, const proto::
     return false;
 }
 
+// Sprint-3 (2026-06-15): per-thread cache of (obj -> type) lookups.
+// Hoisted to file scope in sprint-4 so isPrimitiveTypeCached() can share
+// the storage. Direct-mapped 1024 entries; key by obj-pointer hash.
+// Invalidation by `resolveCacheGeneration_` bumps (rare).
+namespace {
+struct GetTypePicEntry {
+    const proto::ProtoObject* obj = nullptr;
+    const proto::ProtoObject* type = nullptr;
+    uint64_t generation = 0;
+    bool isPrimitive = false;          // str/int/bool/float (incl. subclasses)
+    bool isPrimitiveValid = false;     // false until populated
+};
+constexpr size_t kGetTypePicSize = 1024;
+thread_local GetTypePicEntry s_getTypePic[kGetTypePicSize];
+}  // namespace
+
 const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     if (!obj || obj == PROTO_NONE) return getNoneTypePrototype();
 
@@ -22919,13 +22935,10 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
     // resolveCacheGeneration. Direct-mapped 1024-entry thread-local cache;
     // miss falls through to the full chain walk below and populates on
     // return.
-    struct GetTypePicEntry {
-        const proto::ProtoObject* obj = nullptr;
-        const proto::ProtoObject* type = nullptr;
-        uint64_t generation = 0;
-    };
-    constexpr size_t kGetTypePicSize = 1024;
-    static thread_local GetTypePicEntry s_getTypePic[kGetTypePicSize];
+    // The cache structure + storage are at file scope (just above this
+    // function) so they can be shared with `isPrimitiveTypeCached` —
+    // sprint-4's hook for the LOAD_ATTR fast path to skip 4 isXxx tag
+    // checks per access on cache hit.
     const uint64_t gen = resolveCacheGeneration_.load(std::memory_order_acquire);
     const size_t idx = (reinterpret_cast<uintptr_t>(obj) >> 4) & (kGetTypePicSize - 1);
     GetTypePicEntry* slot = &s_getTypePic[idx];
@@ -23087,9 +23100,37 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
         slot->obj = obj;
         slot->generation = gen;
         slot->type = res;
+        // Sprint-4: cache the primitive classification too. By construction
+        // of this bottom path, the obj already failed isString/isInteger/
+        // isFloat/isBoolean checks at the top of the function body, so we
+        // know it is NOT a primitive. (str subclasses are handled by the
+        // early-return cases above and are not cached.)
+        slot->isPrimitive = false;
+        slot->isPrimitiveValid = true;
     }
     return res;
 }
+
+// Sprint-4 (2026-06-15): "is this obj a primitive (str/int/bool/float
+// or one of their subclasses)?" — answered from the per-thread getType
+// cache. Returns 0 = not cached, 1 = cached & primitive, 2 = cached &
+// non-primitive. Callers MUST treat 0 as "I don't know, do the
+// fallback isXxx checks". The cache is populated lazily by getType's
+// bottom path; primitives never enter the bottom path so the cache
+// answer is always either 0 (unknown) or 2 (non-primitive) — sprint-4
+// only optimises the latter, which is the dominant case in OOP
+// workloads and the attr_lookup benchmark.
+int PythonEnvironment::primitiveCacheHit(const proto::ProtoObject* obj) const {
+    if (!obj) return 0;
+    const uint64_t gen = resolveCacheGeneration_.load(std::memory_order_acquire);
+    const size_t idx = (reinterpret_cast<uintptr_t>(obj) >> 4) & (kGetTypePicSize - 1);
+    const GetTypePicEntry* slot = &s_getTypePic[idx];
+    if (slot->obj != obj || slot->generation != gen || !slot->isPrimitiveValid) {
+        return 0;
+    }
+    return slot->isPrimitive ? 1 : 2;
+}
+
 
 // Phase-1 fast path for PythonEnvironment::getAttribute.
 //
