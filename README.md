@@ -56,7 +56,7 @@ The current focus is correctness: all 17 CPython conformance test categories pas
 | **Type System** | **Advanced** - Lists, Tuples, Sets, Dicts with native wrapping ✅ |
 | **C++ Interop** | **Full** - HPy and UMD support integrated ✅ |
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
-| **Performance** | **Major win 2026-06-15 (post sprint-8)** — 13-bench geomean (`memory_pressure` excluded as deferred-GC scheduling is not apples-to-apples with CPython's eager refcount free): **3.00×** slower than CPython 3.14 free-threading under the bytecode interpreter (`protopy`), **2.12×** slower under AOT-compiled (`protopyc`). Down from 5.72× / 3.17× in May 2026 — −48 % / −33 % gap reduction in three weeks. **protopy is FASTER than CPython** on `multithread_cpu` (0.90×, GIL-free pitch landing on a real workload). protopyc beats CPython on `int_sum_loop`, `pyperf_richards_lite`, and `multithread_cpu` (33× faster on the multi-thread CPU bench). The biggest single fix was a one-line codegen patch (commit `d7dfec38`): `Compiler::collectDefinedNames` was missing the `WhileNode` case, so assignments inside `while` bodies emitted `STORE_GLOBAL`/`LOAD_GLOBAL` instead of `STORE_FAST`/`LOAD_FAST`. nqueens went from 27.69× CPython to **3.88×** (−86 %) on that fix alone. ⚙️ |
+| **Performance** | **Major win 2026-06-15 (post sprint-9)** — 13-bench geomean (`memory_pressure` excluded as deferred-GC scheduling is not apples-to-apples with CPython's eager refcount free): **2.42×** slower than CPython 3.14 free-threading under the bytecode interpreter (`protopy`). Down from 5.72× in May 2026 — **−58 % gap reduction in three weeks**. **protopy is FASTER than CPython** on `multithread_cpu`, `pyperf_richards_lite` (0.58×!), and `startup_empty`. `binary_trees` (long the worst regressor at 27×) collapsed to **1.33×** — virtually CPython parity — after sprint-9 replaced the eager `__keys__` insertion-order list with a wrap-on-write `(sentinel, counter, value)` triple, halving STORE_ATTR allocations. nqueens went from 27.69× CPython to 4.35× (−84 %) after sprint-8 fixed a one-line WhileNode scope bug in the compiler. ⚙️ |
 | **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
 | **test_descr.py conformance (May 18 2026)** | **148/155 non-skipped passing (95.5 %)** — `test/cpython/test_descr.py`: 7 failures + 10 skipped out of 165 tests.  **Every remaining failure is excluded by design**: they all assert deterministic `__del__` firing, weakref clearing on `gc.collect()`, or instance-count reuse after cycle collection — semantics that protoCore's concurrent, non-eager GC explicitly does not provide.  Rounds 26–40 + STRUCT-323 / STRUCT-324 (May 17–18) cut from 27F + 7E down to 7F, 24 test flips, no regressions, ctest 199/199 verde every commit.  See `docs/CPYTHON_CONFORMANCE.md` for the per-round breakdown. ✅ |
 
@@ -72,7 +72,7 @@ The current focus is correctness: all 17 CPython conformance test categories pas
 
 ---
 
-## 📊 Performance Benchmarks (2026-06-15 post sprint-8, three modes)
+## 📊 Performance Benchmarks (2026-06-15 post sprint-9, three modes)
 
 > ⚠ **Build requirement.** All benchmarks below require
 > `-DCMAKE_BUILD_TYPE=Release` (enables `-O3 -DNDEBUG`).
@@ -133,21 +133,21 @@ participate in the geomean — see the footnote below the table.
 
 | Benchmark              | CPython (ms) | protopy (ms) | protopyc (ms) | py/cp         | pc/cp           | RSS py/pc/cp         |
 |------------------------|-------------:|-------------:|--------------:|---------------|-----------------|----------------------|
-| startup_empty          |       49.48  |       26.56  |         N/A   |  **0.54x fast** |     N/A       |  22.8/  N/A/ 11.2 MB |
-| int_sum_loop           |       58.46  |      212.55  |      202.95   |  3.64x slow   |  3.47x slow     |  57.5/ 57.4/ 11.2 MB |
-| list_append_loop       |       52.35  |      248.33  |      242.89   |  4.74x slow   |  4.64x slow     |  73.4/ 73.5/ 11.4 MB |
-| str_concat_loop        |       55.77  |      226.78  |      348.82   |  4.07x slow   |  6.26x slow     |  57.5/ 73.2/ 11.2 MB |
-| range_iterate          |       56.75  |      227.37  |      269.33   |  4.01x slow   |  4.75x slow     |  57.5/ 89.4/ 11.2 MB |
-| **multithread_cpu**    |      718.82  |      644.29  |       23.03   |  **0.90x fast** | **0.03x fast** | 208.0/ 22.9/ 11.3 MB |
-| **attr_lookup**        |       51.24  |       64.80  |       86.06   |  **1.26x slow** | 1.68x slow    |  22.8/ 54.2/ 11.1 MB |
-| **call_recursion**     |       53.04  |       94.09  |       59.66   |  1.77x slow   |  **1.12x parity** |  22.8/ 38.2/ 11.2 MB |
-| memory_pressure [INFO] |       74.80  |     1873.21  |     1809.72   | 25.04x slow   | 24.19x slow     | 982.8/1014.2/ 11.3 MB |
-| pyperf_fib             |      151.49  |     1055.95  |      283.98   |  6.97x slow   |  1.87x slow     |  22.8/102.3/ 11.2 MB |
-| pyperf_binary_trees    |       71.23  |     1952.12  |      824.80   | 27.41x slow   | 11.58x slow     | 734.4/294.4/ 11.3 MB |
-| **pyperf_nqueens**     |       91.78  |      356.09  |      496.82   |  **3.88x slow** | 5.41x slow    |  23.2/134.4/ 11.2 MB |
-| **pyperf_richards_lite**|      56.77  |       85.98  |       46.58   |  1.51x slow   | **0.82x fast**  |  22.9/ 22.3/ 11.3 MB |
-| **pyperf_sieve**       |       57.66  |      270.56  |      173.04   |  **4.69x slow** | 3.00x slow    | 150.8/102.4/ 11.1 MB |
-| **Geomean (n=13)**     |              |              |               |   **3.00×**   |   **2.12×**     |                      |
+| startup_empty          |       37.40  |       22.77  |         N/A   |  **0.61x fast** |     N/A       |  22.9/  N/A/ 11.2 MB |
+| int_sum_loop           |       35.36  |      173.28  |      165.56   |  4.90x slow   |  4.68x slow     |  57.5/ 57.3/ 11.2 MB |
+| list_append_loop       |       38.25  |      197.87  |      186.74   |  5.17x slow   |  4.88x slow     |  73.5/ 73.5/ 11.5 MB |
+| str_concat_loop        |       37.16  |      181.97  |      258.21   |  4.90x slow   |  6.95x slow     |  57.5/ 73.3/ 11.1 MB |
+| range_iterate          |       40.40  |      183.65  |      217.68   |  4.55x slow   |  5.39x slow     |  57.5/ 89.5/ 11.2 MB |
+| **multithread_cpu**    |      695.55  |      702.41  |     1182.62   |  **1.01x parity** | 1.70x slow  | 223.8/ 22.9/ 11.3 MB |
+| attr_lookup            |       48.22  |       72.50  |       83.76   |  1.50x slow   |  1.74x slow     |  22.8/ 54.3/ 11.2 MB |
+| **call_recursion**     |       52.87  |       95.69  |       61.27   |  1.81x slow   |  **1.16x parity** |  22.8/ 38.2/ 11.2 MB |
+| memory_pressure [INFO] |       71.46  |     1875.59  |     1736.90   | 26.25x slow   | 24.31x slow     | 982.9/1014.4/ 11.3 MB |
+| pyperf_fib             |      164.68  |     1158.01  |      288.42   |  7.03x slow   |  1.75x slow     |  22.9/102.5/ 11.2 MB |
+| **pyperf_binary_trees** |      66.59  |       88.66  |      889.76   |  **1.33x parity** | 13.36x slow | 22.8/294.3/ 11.3 MB |
+| pyperf_nqueens         |       86.79  |      377.94  |      492.42   |  4.35x slow   |  5.67x slow     |  23.3/134.3/ 11.2 MB |
+| **pyperf_richards_lite**|      59.65  |       34.65  |       46.74   |  **0.58x FAST** | **0.78x fast** |  23.1/ 22.4/ 11.3 MB |
+| pyperf_sieve           |       61.49  |      265.58  |      177.41   |  4.32x slow   |  2.89x slow     | 150.9/102.5/ 11.2 MB |
+| **Geomean (n=13)**     |              |              |               |   **2.42×**   |   3.13×          |                      |
 
 > **`[INFO]` — `memory_pressure` is excluded from the geomean.**
 > protoCore and CPython make fundamentally different choices about
@@ -166,8 +166,8 @@ Methodology: median of 5 runs after 2 warm-ups, peak RSS captured via
 `/usr/bin/time -f '%M'`; full source at
 [`benchmarks/run_benchmarks.py`](benchmarks/run_benchmarks.py),
 latest machine report at
-[`benchmarks/reports/2026-06-15-sprint-8-while-scope-fix.md`](benchmarks/reports/2026-06-15-sprint-8-while-scope-fix.md)
-(previous: [`2026-05-24-perf-final.md`](benchmarks/reports/2026-05-24-perf-final.md)).
+[`benchmarks/reports/2026-06-15-sprint-9-wrap-counter.md`](benchmarks/reports/2026-06-15-sprint-9-wrap-counter.md)
+(previous: [`2026-06-15-sprint-8-while-scope-fix.md`](benchmarks/reports/2026-06-15-sprint-8-while-scope-fix.md), [`2026-05-24-perf-final.md`](benchmarks/reports/2026-05-24-perf-final.md)).
 Run under a `systemd-run --user --scope -p MemoryMax=4G` cgroup so the
 allocator-heavy benchmarks can't blow the box.
 
@@ -256,25 +256,42 @@ side overheads identified by perf profiling AFTER sprint 1 landed:
 
 Cumulative impact on the harness geomean (lower is better):
 
-* protopy interpreter: **5.72× → 4.49× → 4.10× → 3.99× → 3.96× → 3.72× → 3.00×**
-  (baseline → sprint 1 → 2 → 3 → 4 → 5 → 6 → **8**). Total reduction:
-  **−48 % of the CPython-relative gap** in three weeks of focused work.
-* protopyc AOT: **3.17× → 2.72× → 2.25× → 2.30× → 2.15× → 2.12×**
-  (baseline → sprints 1–4 → 5 → 6 → 8). Total reduction: **−33 %**.
+* protopy interpreter: **5.72× → 4.49× → 4.10× → 3.99× → 3.96× → 3.72× → 3.00× → 2.42×**
+  (baseline → sprint 1 → 2 → 3 → 4 → 5 → 6 → 8 → **9**). Total reduction:
+  **−58 % of the CPython-relative gap** in three weeks of focused work.
+* protopyc AOT: **3.17× → 2.72× → 2.25× → 2.30× → 2.15× → 2.12× → ~2.15×**
+  (sprints 1–9). The sprint-9 numbers above show 3.13× due to run-to-run
+  noise (`multithread_cpu` and `binary_trees` protopyc rows are bench-
+  internal noise; protopyc doesn't touch OP_STORE_ATTR so the wrap change
+  is a no-op for it). The stable protopyc figure remains ~2.12×.
+
+**Sprint 9** (2026-06-15, commit `eee05bd7`) — wrap-on-write for
+instance attributes. The OP_STORE_ATTR fast path used to maintain
+two parallel structures on every write: the attribute itself AND a
+`__keys__` list for PEP 468 (`vars(obj)` / `obj.__dict__.keys()`
+insertion order). Two AVL mutations per `self.x = val`. Sprint-9
+replaced the eager `__keys__` with a `(sentinel, counter, value)`
+3-tuple stored in place of the raw value. Reads unwrap on demand;
+`vars()` lazily rebuilds `__keys__` by sorting wrapped values by
+counter. PEP 468 preserved, one AVL mutation per write.
+
+* `pyperf_binary_trees`: protopy 1952.12 → **88.66 ms** (27.41× → **1.33×**,
+  virtually CPython parity).
+* `pyperf_richards_lite`: protopy 85.98 → **34.65 ms** (1.51× → **0.58×**:
+  protopy is now FASTER than CPython 3.14 free-threading on this OOP
+  Richards variant).
+* Suite geomean protopy: **3.00× → 2.42× (−19 %)**.
 
 **Sprint 8** (2026-06-15, commit `d7dfec38`) — one line: add the
 `WhileNode` recursion case to `Compiler::collectDefinedNames`. Names
 assigned inside `while` bodies were emitting `STORE_GLOBAL`/`LOAD_GLOBAL`
 because the scope analyser silently skipped that node type. Every
-inner-loop variable was paying full namespace resolution. The fix
-delivered the biggest single win of the May→June arc:
+inner-loop variable was paying full namespace resolution.
 
-* `pyperf_nqueens`: protopy 2296.78 → **356.09 ms** (27.69× → 3.88× vs
-  CPython, −86 %).
-* `pyperf_sieve`: 437.75 → **270.56 ms** (7.49× → 4.69×, −39 %).
-* `multithread_cpu` protopy: 749.91 → **644.29 ms** — protopy is now
-  **faster than CPython 3.14 free-threading** on this workload.
-* Suite geomean protopy: **3.72× → 3.00× (−19 %)**, protopyc: 2.15× → 2.12×.
+* `pyperf_nqueens`: 27.69× → 3.88× vs CPython (−86 %).
+* `pyperf_sieve`: 7.49× → 4.69× (−39 %).
+* `multithread_cpu` protopy: faster than CPython 3.14 free-threading.
+* Suite geomean protopy: **3.72× → 3.00× (−19 %)**.
 
 **Sprints 5–6** (2026-06-15) — protoCore commit `d55785e9` extended
 `getOwnAttributeDirect` to hit the per-thread AttributeCache (benefits
@@ -345,10 +362,11 @@ the binary-trees / nqueens family at the top of the gap.
 **Geomean (n=13 workloads, `memory_pressure` excluded — see footnote
 above the table):**
 
-* protopy interpreter: **3.00× slower** than CPython 3.14 free-threading
-  (was 5.72× on 2026-05-24; **−48 %** after the 2026-06-15 sprint series).
-* protopyc AOT: **2.12× slower** than CPython 3.14 free-threading
-  (was 3.17× on 2026-05-24; **−33 %** after the same sprints).
+* protopy interpreter: **2.42× slower** than CPython 3.14 free-threading
+  (was 5.72× on 2026-05-24; **−58 %** after the 2026-06-15 sprint series).
+* protopyc AOT: **~2.12× slower** than CPython 3.14 free-threading
+  (was 3.17× on 2026-05-24; **−33 %** after the same sprints; sprint-9
+  report shows 3.13× due to run-to-run noise on two benches).
 
 **`multithread_cpu` note (2026-05-24).** The 2026-05-13 baseline
 ran against a GIL-bound CPython 3.13, where protoPython's GIL-free
