@@ -80,6 +80,21 @@ set_target_properties(protoPython PROPERTIES
 # level.  Override per-config below if a finer-grained tweak is needed.
 target_compile_options(protoPython PRIVATE -g)
 
+# Step #3 (2026-06-15): TLS model. Every thread_local declared inside this
+# shared library defaults to the `global-dynamic` model, which means every
+# access calls __tls_get_addr — a libc helper that resolves the variable
+# at runtime. perf showed __tls_get_addr at 14.54 % of fib(25) wall-clock
+# after step #4. Switching to `initial-exec` makes each access a single
+# `%fs:offset` load (no helper call), which is correct because protopy
+# links libprotoPython.so at program load — never via dlopen after start.
+#
+# If a future deployment ever needs to dlopen libprotoPython at runtime
+# (REPL extensions, embedding scenarios), revert this flag — initial-exec
+# requires the library to be in the loader's initial set.
+if(NOT WIN32 AND NOT APPLE)
+    target_compile_options(protoPython PRIVATE -ftls-model=initial-exec)
+endif()
+
 # Same intra-DSO PLT-elision as protoCore: profile of nqueens showed every
 # recursive ContextScope teardown trampolining through PLT for callees that
 # live in the same shared library.  -Bsymbolic-functions keeps the symbol
