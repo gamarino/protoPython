@@ -4,6 +4,26 @@
 #include <cstdlib>
 #include <cstring>
 
+// PROTOPY_DIAG_ENABLED controls whether the diagnostic accessors below are
+// runtime-checkable (1) or compile-time false (0). Default: ON in debug
+// builds, OFF in release (NDEBUG) so the optimiser dead-code-eliminates
+// every `if (diagXxxEnabled()) { ... }` branch. Override at configure
+// time with `-DPROTOPY_DIAG_ENABLED=1` if you need to chase a problem
+// in a release-shaped build.
+//
+// Motivation (2026-06-15): perf profiling showed `diagEnabled` self-time
+// at 0.5-2.1 % across every microbench because the per-opcode
+// `if (diagEnabled()) { ... }` was paying for a memory load + branch on
+// a value that never changes once the process starts. With this gate,
+// the entire diagnostic-checking apparatus compiles away in release.
+#ifndef PROTOPY_DIAG_ENABLED
+#  ifdef NDEBUG
+#    define PROTOPY_DIAG_ENABLED 0
+#  else
+#    define PROTOPY_DIAG_ENABLED 1
+#  endif
+#endif
+
 namespace protoPython {
 namespace {
     // Truthy helper: a diagnostic env var is considered "enabled" iff it is
@@ -61,6 +81,7 @@ namespace {
     const bool g_no_color        = envFlagEnabled("NO_COLOR");
 }
 
+#if PROTOPY_DIAG_ENABLED
 inline bool diagEnabled()         { return g_diag_enabled; }
 inline bool diagDict2Enabled()    { return g_diag_dict2; }
 inline bool diagMetaEnabled()     { return g_diag_meta; }
@@ -77,6 +98,31 @@ inline bool diagSetEnabled()      { return g_diag_set; }
 inline bool diagHpyEnabled()      { return g_diag_hpy; }
 inline bool diagPcTraceEnabled()  { return g_diag_pc_trace; }
 inline bool diagSubscrEnabled()   { return g_diag_subscr; }
+#else
+// Release-mode constants. The optimiser dead-code-eliminates every
+// `if (diagXxxEnabled()) { … }` block, including the function calls
+// inside it, so the diagnostic apparatus has zero runtime cost.
+constexpr bool diagEnabled()         { return false; }
+constexpr bool diagDict2Enabled()    { return false; }
+constexpr bool diagMetaEnabled()     { return false; }
+constexpr bool diagAttrEnabled()     { return false; }
+constexpr bool diagThreadEnabled()   { return false; }
+constexpr bool diagResolveEnabled()  { return false; }
+constexpr bool diagImportEnabled()   { return false; }
+constexpr bool diagModEnabled()      { return false; }
+constexpr bool diagModUpdateEnabled(){ return false; }
+constexpr bool diagEnvDebugEnabled() { return false; }
+constexpr bool diagReplEnabled()     { return false; }
+constexpr bool diagClassTraceEnabled(){return false; }
+constexpr bool diagSetEnabled()      { return false; }
+constexpr bool diagHpyEnabled()      { return false; }
+constexpr bool diagPcTraceEnabled()  { return false; }
+constexpr bool diagSubscrEnabled()   { return false; }
+#endif
+
+// Behavioural flags — NOT diagnostics. These control real runtime
+// decisions (warning suppression, NO_COLOR) so they always have to
+// honour the env-var configuration even in release.
 inline bool quietWarnings()       { return g_quiet_warnings; }
 inline bool noColor()             { return g_no_color; }
 
