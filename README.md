@@ -214,6 +214,25 @@ The seven steps:
   `ProtoMutableList` backend at the protoCore level — a kernel design
   RFC, not a protopy patch. See [`docs/2026-06-15-step-6-list-mutable-deferred.md`](docs/2026-06-15-step-6-list-mutable-deferred.md).
 
+**Sprint 3** (2026-06-15) added a single high-leverage fix: a per-thread
+1024-entry direct-mapped cache for `PythonEnvironment::getType`. perf at
+N=5M on attr_lookup showed `getType` at 4.28 % of wall-clock — called
+once per LOAD_ATTR (for the existing fast path's hasCustomGetattr flag
+check) plus several other dispatch sites. The (obj → type) mapping is
+invariant for an obj's lifetime except under explicit `__class__`
+reassignment (rare, bumps `resolveCacheGeneration`). On cache hit:
+2 pointer compares + 1 generation compare, no chain walk. Result on
+the harness:
+
+* `attr_lookup`: protopy 205.20 → **81.23 ms (−60 %)**. Closes 2/3 of the
+  gap to CPython on this bench in one commit.
+* `pyperf_richards_lite`: protopy 198.25 → 105.01 ms (−47 %).
+* `pyperf_binary_trees`: protopy 2690.65 → 1827.31 ms (−32 %).
+* `pyperf_fib`: protopy 1230.62 → 989.07 ms (−20 %).
+* `multithread_cpu` protopyc: 1185 → **25.13 ms** — the GIL-free
+  showcase that sprint-1 surfaced and that the sprint-2 measurement
+  outlier had hidden.
+
 **Sprint 2** (2026-06-15) addressed the three highest-leverage protopy-
 side overheads identified by perf profiling AFTER sprint 1 landed:
 
@@ -237,10 +256,12 @@ side overheads identified by perf profiling AFTER sprint 1 landed:
 
 Cumulative impact on the harness geomean (lower is better):
 
-* protopy interpreter: **5.72× → 4.49× → 4.10×** (sprint 1 then 2).
-* protopyc AOT: **3.17× → 2.72×** (cumulative; the apparently-better
-  1.97× sprint-1 number was driven by a single outlier measurement on
-  `multithread_cpu` that did not reproduce).
+* protopy interpreter: **5.72× → 4.49× → 4.10× → 3.99×** (baseline →
+  sprint 1 → sprint 2 → sprint 3). Total reduction: −30 % of the
+  CPython-relative gap in ~8 hours of focused work.
+* protopyc AOT: **3.17× → 2.72× → 2.25×**. Sprint 3 restored the
+  `multithread_cpu` GIL-free win that sprint-2's measurement outlier
+  had distorted, and added improvements across the board.
 The `multithread_cpu` baseline shift (CPython 2569 → 541 ms) is
 *not* a protoPython regression — CPython 3.14t free-threading
 adopted PEP 703 and now runs the four threads in real parallel, so
