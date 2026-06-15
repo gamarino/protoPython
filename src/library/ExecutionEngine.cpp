@@ -870,9 +870,16 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
 
     if (!useSlotFastPath) {
         // Build a temporary ProtoList and call the full implementation.
-        const proto::ProtoList* argsList = ctx->newList();
-        for (unsigned long i = 0; i < rawArgCount; ++i)
-            argsList = argsList->appendLast(ctx, rawArgs[i]);
+        //
+        // Step #7 (2026-06-15, mirror of protoJS P-JS-5): use the single-
+        // allocation `newList(n, items)` API instead of newList() + N×
+        // appendLast. The old form rebuilt the list N+1 times (each
+        // appendLast allocates a fresh ProtoList wrapping the previous
+        // one as its tail), so calling a 4-arg function paid 5 cell
+        // allocations on the args list alone. The new form is one
+        // ProtoList ctor call regardless of arg count.
+        const proto::ProtoList* argsList =
+            ctx->newList(static_cast<unsigned>(rawArgCount), rawArgs);
         return runUserFunctionCall(ctx, self, nullptr, argsList, kwargs);
     }
 
