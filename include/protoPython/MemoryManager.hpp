@@ -36,7 +36,20 @@ inline void promote(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
  * while the ProtoContext struct itself still lives on the stack.
  */
 class ContextScope {
-    static constexpr size_t SBO_SLOTS = 64;
+    // SBO_SLOTS caps how many automatic-locals fit on the parent stack frame
+    // (small-buffer optimisation) before falling back to ProtoContext's
+    // internal heap allocation. Sized to match protoJS's parallel choice
+    // (commit b989e88a on protoJS).
+    //
+    // 64 → 256 (2026-06-15, step #1): perf showed ProtoContext::ProtoContext
+    // self-time at 4.5 % on fib(25) AFTER step #3 landed. Most Python
+    // functions need 1-3 args + a handful of locals + a small operand stack,
+    // well under 64. But functions that even occasionally exceed it spill
+    // every call into `new const ProtoObject*[N]` / `delete[]`. Bumping to
+    // 256 captures every realistic function's footprint at the cost of
+    // 2 KB additional stack per Python call (256 × 8 bytes pointers,
+    // negligible against the typical Python call's recursion budget).
+    static constexpr size_t SBO_SLOTS = 256;
 
     // Stack storage for the ProtoContext struct itself — no heap alloc for the struct.
     alignas(proto::ProtoContext) char ctxStorage_[sizeof(proto::ProtoContext)];
