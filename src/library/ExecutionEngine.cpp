@@ -1558,17 +1558,28 @@ static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
         return result;
     }
     if (a->isString(ctx) && b->isString(ctx)) {
-        std::string s1, s2;
-        a->asString(ctx)->toUTF8String(ctx, s1);
-        b->asString(ctx)->toUTF8String(ctx, s2);
-        // Explicit length: a c_str()-based construction truncates the
-        // concatenation at the first embedded NUL (`'a' + chr(0)`).
-        std::string sc = s1 + s2;
-        uint8_t rem[4]; uint8_t remCount = 0;
-        const proto::ProtoString* res = proto::ProtoString::fromUTF8Buffer(
-            ctx, reinterpret_cast<const uint8_t*>(sc.data()), sc.size(),
-            nullptr, 0, rem, &remCount);
-        return res ? res->asObject(ctx) : PROTO_NONE;
+        // Sprint-2 step C (2026-06-15): use protoCore's native rope-level
+        // appendLast on ProtoString. The previous implementation went
+        // `toUTF8String + std::string concat + fromUTF8Buffer`, which is
+        // O(N) per call: every concat materialised both operands into
+        // std::string buffers, allocated a new combined std::string, and
+        // built a fresh ProtoString from scratch. For `s = s + "x"` in a
+        // loop that is O(N²) total work.
+        //
+        // ProtoString::appendLast does the rope-level structural-sharing
+        // concat in O(log N) per call, O(N log N) total. Same algorithm
+        // protoCpp uses to hit 19 ms on str_concat_loop (we were paying
+        // 354 ms on the std::string round-trip).
+        //
+        // protoCore's rope handles UTF-8 continuation byte boundaries
+        // internally — appendLast on two well-formed ProtoStrings yields
+        // a well-formed result without intermediate decoding.
+        const proto::ProtoString* sa = a->asString(ctx);
+        const proto::ProtoString* sb = b->asString(ctx);
+        if (sa && sb) {
+            const proto::ProtoString* res = sa->appendLast(ctx, sb);
+            return res ? res->asObject(ctx) : PROTO_NONE;
+        }
     }
     const proto::ProtoList* l1 = a->asList(ctx);
     if (!l1) {
