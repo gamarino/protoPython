@@ -5527,25 +5527,33 @@ const proto::ProtoObject* executeBytecodeRange(
                 // followed via __data__ to its underlying ProtoList. We
                 // only use the public API here; no representation bits
                 // are inspected.
-                const proto::ProtoList* lst = lstObj->asList(ctx);
-                if (lst) {
-                    lst = lst->appendLast(ctx, val);
-                    // Decide write-back via public API: a wrapped Python
-                    // list exposes __data__ as a list attribute, while a
-                    // raw ProtoList does not (its prototype chain has no
-                    // __data__). Discriminate accordingly.
-                    const proto::ProtoString* dataS = env
-                        ? env->getDataString()
-                        : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
-                    const proto::ProtoObject* curData = lstObj->getAttribute(ctx, dataS);
-                    if (curData && curData->asList(ctx)) {
+                //
+                // Step A (sprint-2, 2026-06-15): discriminate wrapped vs
+                // raw by POINTER IDENTITY between asList's result and the
+                // original lstObj. asList on a raw ProtoList returns the
+                // same address (cast to ProtoList*); asList on a wrapper
+                // follows __data__ to a different object. This replaces a
+                // redundant getAttribute(__data__) + asList(curData) pair
+                // (visible at 6%+ in perf on list_append_loop) with a
+                // single pointer compare. The discrimination has to be
+                // captured BEFORE appendLast, which returns a new
+                // ProtoList in either case.
+                const proto::ProtoList* origLst = lstObj->asList(ctx);
+                if (origLst) {
+                    const bool isWrapped =
+                        reinterpret_cast<const proto::ProtoObject*>(origLst) != lstObj;
+                    const proto::ProtoList* newLst = origLst->appendLast(ctx, val);
+                    if (isWrapped) {
                         // Wrapped: rebind __data__ to the new ProtoList.
+                        const proto::ProtoString* dataS = env
+                            ? env->getDataString()
+                            : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
                         stack[stack.size() - arg - 1] = const_cast<proto::ProtoObject*>(
-                            lstObj->setAttribute(ctx, dataS, lst->asObject(ctx)));
+                            lstObj->setAttribute(ctx, dataS, newLst->asObject(ctx)));
                     } else {
                         // Raw: replace TOS with the new ProtoList object.
                         stack[stack.size() - arg - 1] =
-                            const_cast<proto::ProtoObject*>(lst->asObject(ctx));
+                            const_cast<proto::ProtoObject*>(newLst->asObject(ctx));
                     }
                 }
                 stack.pop_back();
