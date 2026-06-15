@@ -22909,6 +22909,30 @@ bool PythonEnvironment::isActuallyAClass(proto::ProtoContext* ctx, const proto::
 const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     if (!obj || obj == PROTO_NONE) return getNoneTypePrototype();
 
+    // Sprint-3 (2026-06-15): per-thread cache of (obj -> type) lookups.
+    // perf at N=5M attr_lookup showed PythonEnvironment::getType at 4.28 %
+    // of wall-clock — called once per LOAD_ATTR (in the existing fast path,
+    // for the hasCustomGetattr check) plus several other dispatch sites.
+    //
+    // The (obj -> type) mapping is invariant for the obj's lifetime except
+    // under explicit `__class__` reassignment, which bumps
+    // resolveCacheGeneration. Direct-mapped 1024-entry thread-local cache;
+    // miss falls through to the full chain walk below and populates on
+    // return.
+    struct GetTypePicEntry {
+        const proto::ProtoObject* obj = nullptr;
+        const proto::ProtoObject* type = nullptr;
+        uint64_t generation = 0;
+    };
+    constexpr size_t kGetTypePicSize = 1024;
+    static thread_local GetTypePicEntry s_getTypePic[kGetTypePicSize];
+    const uint64_t gen = resolveCacheGeneration_.load(std::memory_order_acquire);
+    const size_t idx = (reinterpret_cast<uintptr_t>(obj) >> 4) & (kGetTypePicSize - 1);
+    GetTypePicEntry* slot = &s_getTypePic[idx];
+    if (slot->obj == obj && slot->generation == gen) {
+        return slot->type;
+    }
+
     const proto::ProtoObject* res = nullptr;
     if (obj->isString(ctx)) {
         // ProtoObject::isString returns true for two shapes:
@@ -23052,6 +23076,17 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
                 else res = objectPrototype;
             }
         }
+    }
+    // Sprint-3: populate per-thread (obj -> type) cache for the bottom-
+    // path case (the common case for non-primitive Python instances). The
+    // early-return special cases (str subclasses, namedtuple subclasses)
+    // are not cached to keep the patch minimal — they are rare in the
+    // hot loop and the cache check at the top costs roughly the same as
+    // the existing special-case checks they go through.
+    if (res) {
+        slot->obj = obj;
+        slot->generation = gen;
+        slot->type = res;
     }
     return res;
 }
