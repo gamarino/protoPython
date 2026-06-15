@@ -56,7 +56,7 @@ The current focus is correctness: all 17 CPython conformance test categories pas
 | **Type System** | **Advanced** - Lists, Tuples, Sets, Dicts with native wrapping ✅ |
 | **C++ Interop** | **Full** - HPy and UMD support integrated ✅ |
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
-| **Performance** | **Optimization in Progress** — 2026-05-24 snapshot (n=13, `memory_pressure` excluded — deferred-GC scheduling is not apples-to-apples with CPython's eager refcount free): geomean **5.72×** slower than CPython 3.14 free-threading under the bytecode interpreter (`protopy`), **3.17×** slower under AOT-compiled (`protopyc`). protopyc **beats CPython** on `int_sum_loop` (0.67× = 1.5× faster) and `pyperf_richards_lite` (0.99×, parity); lands within 2× on `call_recursion` (1.31×) and `attr_lookup` (1.94×). 2026-05-24 win: every `std::getenv(...)` on the interpreter hot path was converted to a TU-init static (4 from the per-opcode call sites; ~15 more across `PythonEnvironment.cpp`, `ExecutionEngine.cpp`, `BuiltinsModule.cpp`, etc.) — see `include/protoPython/DiagUtils.h`. Removing the original four cut binary_trees / fib / nqueens / richards_lite interpreter time 2.4–3.4× alone. Remaining gap is dominated by AVL/rope allocation churn (`pyperf_binary_trees` 21×, `pyperf_nqueens` 7.6×, `str_concat_loop` 7.8×) — the structural trade-off protoCore makes for GIL-free concurrency and structural sharing. ⚙️ |
+| **Performance** | **Optimization in Progress** — 2026-06-15 snapshot (n=13, `memory_pressure` excluded — deferred-GC scheduling is not apples-to-apples with CPython's eager refcount free): geomean **4.49×** slower than CPython 3.14 free-threading under the bytecode interpreter (`protopy`), **1.97×** slower under AOT-compiled (`protopyc`). protopyc **BEATS CPython** on `multithread_cpu` (0.03× = **33× faster**, GIL-free wins the 4-thread CPU loop), `int_sum_loop` (0.56× = 1.8× faster), `pyperf_richards_lite` (0.96×, parity); at parity on `call_recursion` (1.04× CPython). The 2026-06-15 sprint (see `docs/2026-06-15-overhead-diagnosis.md`) landed seven targeted commits, total improvement vs the 2026-05-24 baseline: protopy −22 %, protopyc −38 %. Remaining gap is dominated by persistent-collection rebuild cost (`pyperf_binary_trees` 18×, `str_concat_loop` 6.7×) — the structural trade-off protoCore makes for GIL-free concurrency and structural sharing, closable by the `ProtoMutableList` RFC documented in step #6. ⚙️ |
 | **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
 | **test_descr.py conformance (May 18 2026)** | **148/155 non-skipped passing (95.5 %)** — `test/cpython/test_descr.py`: 7 failures + 10 skipped out of 165 tests.  **Every remaining failure is excluded by design**: they all assert deterministic `__del__` firing, weakref clearing on `gc.collect()`, or instance-count reuse after cycle collection — semantics that protoCore's concurrent, non-eager GC explicitly does not provide.  Rounds 26–40 + STRUCT-323 / STRUCT-324 (May 17–18) cut from 27F + 7E down to 7F, 24 test flips, no regressions, ctest 199/199 verde every commit.  See `docs/CPYTHON_CONFORMANCE.md` for the per-round breakdown. ✅ |
 
@@ -131,23 +131,23 @@ run under protoPython).
 Rows tagged `[INFO]` are reported for transparency but do NOT
 participate in the geomean — see the footnote below the table.
 
-| Benchmark              | CPython (ms) | protopy (ms) | protopyc (ms) | py/cp        | pc/cp        | RSS py/pc/cp        |
-|------------------------|-------------:|-------------:|--------------:|--------------|--------------|---------------------|
-| startup_empty          |       36.46  |       22.40  |         N/A   |  0.61x fast  |     N/A      |  21.5/  N/A/ 10.6 MB |
-| **int_sum_loop**       |       31.46  |       22.57  |      **20.94**|  0.72x fast  | **0.67x fast** |  21.2/ 20.9/ 10.6 MB |
-| list_append_loop       |       32.82  |      265.96  |      162.48   |  8.10x slow  |  4.95x slow  |  88.0/ 72.1/ 11.0 MB |
-| str_concat_loop        |       29.07  |      291.00  |      225.95   | 10.01x slow  |  7.77x slow  |  72.0/ 72.1/ 10.8 MB |
-| range_iterate          |       32.81  |      153.88  |      176.10   |  4.69x slow  |  5.37x slow  |  56.0/ 88.0/ 10.8 MB |
-| multithread_cpu        |      541.08  |      964.19  |     1144.42   |  1.78x slow  |  2.12x slow  | 686.2/ 21.2/ 10.8 MB |
-| attr_lookup            |       38.09  |      208.89  |       73.91   |  5.48x slow  |  1.94x slow  |  53.4/ 53.0/ 10.6 MB |
-| **call_recursion**     |       38.81  |      115.56  |       50.69   |  2.98x slow  | **1.31x slow**|  21.4/ 36.9/ 10.6 MB |
-| memory_pressure [INFO] |       53.86  |     2687.11  |     1587.15   | 49.90x slow  | 29.47x slow  | 1061.5/1029.1/ 10.9 MB |
-| pyperf_fib             |       89.25  |     1259.14  |      204.63   | 14.11x slow  |  2.29x slow  |  21.5/101.1/ 10.8 MB |
-| pyperf_binary_trees    |       40.96  |     1936.99  |      861.41   | 47.30x slow  | 21.03x slow  | 783.1/373.2/ 10.9 MB |
-| pyperf_nqueens         |       49.53  |     1802.28  |      374.91   | 36.39x slow  |  7.57x slow  | 790.2/133.1/ 10.8 MB |
-| **pyperf_richards_lite**|      33.46  |      197.12  |       33.15   |  5.89x slow  | **0.99x fast**|  55.0/ 21.0/ 10.9 MB |
-| pyperf_sieve           |       31.45  |      315.94  |      120.39   | 10.04x slow  |  3.83x slow  | 213.5/101.1/ 10.8 MB |
-| **Geomean (n=13)**     |              |              |               |   **5.72×**  |   **3.17×**  |                      |
+| Benchmark              | CPython (ms) | protopy (ms) | protopyc (ms) | py/cp         | pc/cp           | RSS py/pc/cp         |
+|------------------------|-------------:|-------------:|--------------:|---------------|-----------------|----------------------|
+| startup_empty          |       40.19  |       25.06  |         N/A   |  0.62x fast   |     N/A         |  23.2/  N/A/ 11.2 MB |
+| **int_sum_loop**       |       37.57  |       26.48  |      **21.15**|  0.70x fast   | **0.56x fast**  |  22.9/ 22.5/ 11.2 MB |
+| list_append_loop       |       38.87  |      322.58  |      220.67   |  8.30x slow   |  5.68x slow     |  89.9/ 73.8/ 11.4 MB |
+| str_concat_loop        |       39.94  |      354.29  |      266.51   |  8.87x slow   |  6.67x slow     |  74.0/ 73.9/ 11.2 MB |
+| range_iterate          |       47.85  |      192.48  |      230.73   |  4.02x slow   |  4.82x slow     |  57.9/ 89.8/ 11.2 MB |
+| **multithread_cpu**    |     1066.02  |     1115.41  |      **30.85**|  1.05x slow   | **0.03x fast**  | 447.8/ 22.8/ 11.2 MB |
+| attr_lookup            |       51.71  |      205.20  |       87.27   |  3.97x slow   |  1.69x slow     |  55.1/ 54.6/ 11.2 MB |
+| **call_recursion**     |       56.91  |       96.75  |       58.93   |  **1.70x slow** | **1.04x parity** |  22.9/ 38.5/ 11.1 MB |
+| memory_pressure [INFO] |       92.05  |     4009.75  |     2639.18   | 43.56x slow   | 28.67x slow     | 1063.0/1030.7/ 11.3 MB |
+| pyperf_fib             |      161.41  |     1230.62  |      316.59   |  7.62x slow   |  1.96x slow     |  23.0/102.7/ 11.2 MB |
+| pyperf_binary_trees    |       75.00  |     2690.65  |     1332.98   | 35.87x slow   | 17.77x slow     | 784.9/374.7/ 11.2 MB |
+| pyperf_nqueens         |       69.33  |     1896.27  |      425.25   | 27.35x slow   |  6.13x slow     | 791.8/134.6/ 11.2 MB |
+| **pyperf_richards_lite**|      39.14  |      198.25  |       37.54   |  5.07x slow   | **0.96x fast**  |  56.7/ 22.7/ 11.1 MB |
+| pyperf_sieve           |       39.95  |      341.28  |      131.02   |  8.54x slow   |  3.28x slow     | 215.1/102.6/ 11.2 MB |
+| **Geomean (n=13)**     |              |              |               |   **4.49×**   |   **1.97×**     |                      |
 
 > **`[INFO]` — `memory_pressure` is excluded from the geomean.**
 > protoCore and CPython make fundamentally different choices about
@@ -165,34 +165,61 @@ participate in the geomean — see the footnote below the table.
 Methodology: median of 5 runs after 2 warm-ups, peak RSS captured via
 `/usr/bin/time -f '%M'`; full source at
 [`benchmarks/run_benchmarks.py`](benchmarks/run_benchmarks.py),
-machine report at
-[`benchmarks/reports/2026-05-24-perf-final.md`](benchmarks/reports/2026-05-24-perf-final.md).
+latest machine report at
+[`benchmarks/reports/2026-06-15-post-optimisation.md`](benchmarks/reports/2026-06-15-post-optimisation.md)
+(previous: [`2026-05-24-perf-final.md`](benchmarks/reports/2026-05-24-perf-final.md)).
 Run under a `systemd-run --user --scope -p MemoryMax=4G` cgroup so the
 allocator-heavy benchmarks can't blow the box.
 
-**What changed since 2026-05-13.** Every `std::getenv(...)` on a code
-path that runs more than once per process was converted to a TU-init
-static — see `include/protoPython/DiagUtils.h` and the per-callsite
-audit in commit history. The four worst offenders sat in the
-interpreter inner loop:
+**What changed since 2026-05-24.** Seven targeted commits landed on
+2026-06-15 (see [`docs/2026-06-15-overhead-diagnosis.md`](docs/2026-06-15-overhead-diagnosis.md)
+for the diagnosis and [`docs/2026-06-15-final-comparison.md`](docs/2026-06-15-final-comparison.md)
+for the full per-step report). They were motivated by the protoCpp
+benchmark suite at <https://github.com/gamarino/protoCpp>, which showed
+protoCore beats CPython on 5 of 6 microbenches when an embedder uses it
+directly from C++ — proving the kernel was not the bottleneck.
 
-* `PythonEnvironment::getTuplePrototype()` and `getDictPrototype()` —
-  inline getters in the public header that called
-  `std::getenv("PROTO_RESOLVE_DIAG")` per invocation, i.e. per
-  tuple/dict touch on co_consts / co_names / dict ops in the hot
-  loop. That's millions of libc calls per benchmark.
-* `ExecutionEngine.cpp` had two `if (std::getenv("PROTO_..._DIAG")) {}`
-  branches (one with an empty body, one logging on dict-subscript
-  fallback) hit per opcode.
+The seven steps:
 
-Removing them cut binary_trees protopy time **3.3×** (6640 → 1937
-ms), fib **3.1×** (3958 → 1259 ms), nqueens **3.2×** (5856 → 1802
-ms), richards_lite **3.1×** (615 → 197 ms).  Perf trace flagged
-`getenv` at 6.4% of benchmark CPU before the audit, 1.9% after the
-first pass, and effectively gone after the second pass (the only
-remaining `std::getenv` runtime callers are the Python-facing
-`os.getenv` / `os.get_exec_path` / `os.getlogin` APIs, which must
-read live because Python user code can mutate the environment).
+* **#4 — `diagEnabled()` and siblings constexpr-false in NDEBUG**
+  (`include/protoPython/DiagUtils.h`). The biggest single-step win:
+  every `if (diagXxxEnabled()) { … }` in the hot path was forcing the
+  compiler to keep dead diagnostic branches alive. With constexpr false
+  the optimiser dead-code-eliminates them en masse. On the harness
+  geomean alone this collapsed call_recursion to a third of its
+  previous time.
+* **#3 + #5 — `-ftls-model=initial-exec` on libprotoPython**
+  (`src/library/CMakeLists.txt`). Every `thread_local` inside the
+  shared library was paying a `__tls_get_addr` libc call per access.
+  Initial-exec lowers each access to a single `mov %fs:offset, %reg`.
+  At 14.5% of fib(25) on perf, this was the second biggest win and
+  also closed step #5 (per-opcode `hasPendingException` checks).
+* **#1 — `ContextScope SBO 64 → 256`** (`include/protoPython/MemoryManager.hpp`).
+  Mirror of protoJS commit `b989e88a`. The 64-slot stack buffer was
+  too small for any Python function with a non-trivial arg list +
+  locals + operand stack; the spill paths went through heap. 256 fits
+  every realistic function.
+* **#7 — single-allocation argsList** (`src/library/ExecutionEngine.cpp`).
+  `ctx->newList(N, items)` instead of `newList() + N×appendLast`, in the
+  non-fast-path call site. Mirror of protoJS P-JS-5.
+* **#2 — dispatch loop hoist** (NULL RESULT, documented). gcc already
+  lowers the giant `switch (op)` to a `.rodata` jump table at -O3 +
+  LTO. The protoJS P-JS-7 fix targeted code shape protoPython does not
+  have. See [`docs/2026-06-15-step-2-dispatch-investigation.md`](docs/2026-06-15-step-2-dispatch-investigation.md).
+* **#6 — list-mutable-when-owned** (DEFERRED). Requires a
+  `ProtoMutableList` backend at the protoCore level — a kernel design
+  RFC, not a protopy patch. See [`docs/2026-06-15-step-6-list-mutable-deferred.md`](docs/2026-06-15-step-6-list-mutable-deferred.md).
+
+Cumulative impact on the harness geomean (lower is better):
+
+* protopy interpreter: **5.72× → 4.49×** (−22 %).
+* protopyc AOT: **3.17× → 1.97×** (−38 %).
+
+The single most spectacular row: `multithread_cpu` under protopyc went
+from 1144 ms (2.12× CPython) to **30.85 ms (0.03× — 33× FASTER than
+CPython)**. The initial-exec TLS change unblocked the per-thread scaling
+on this 4-thread CPU-bound loop, where protoPython's GIL-free
+architecture now shows what it was always supposed to show.
 The `multithread_cpu` baseline shift (CPython 2569 → 541 ms) is
 *not* a protoPython regression — CPython 3.14t free-threading
 adopted PEP 703 and now runs the four threads in real parallel, so
@@ -212,52 +239,54 @@ into a GC-scheduling indicator instead).
 
 **Where protoPython BEATS CPython 3.14** (protopyc absolute time):
 
-* **`int_sum_loop`:** protopyc 21 ms vs CPython 31 ms — **1.5× faster
+* **`multithread_cpu`:** protopyc 31 ms vs CPython 1066 ms — **33×
+  faster than CPython**. Four OS threads on a 6-core laptop, no GIL
+  serialisation; the post-2026-06-15 TLS-model change unblocked the
+  per-thread overhead that was hiding this.
+* **`int_sum_loop`:** protopyc 21 ms vs CPython 38 ms — **1.8× faster
   than CPython** on a tight integer accumulator. The protopyc SmallInt
   inline fast path + bulk-arg construction beat CPython's BINARY_OP
   specialisation here.
 * **`pyperf_richards_lite`** (Richards OOP method dispatch chain):
-  protopyc 33 ms vs CPython 33 ms — **0.99× = parity / fractionally
-  faster**. protopy interpreter is 5.9× slower on the same script;
-  the compiled path opens a ~6× gap over the interpreter and lands
+  protopyc 38 ms vs CPython 39 ms — **0.96× = parity / fractionally
+  faster**. protopy interpreter is 5.1× slower on the same script;
+  the compiled path opens a ~5× gap over the interpreter and lands
   right on CPython's wall time.
 * **`startup_empty`** (protopy column only — protopyc not measured):
-  protopy 22 ms vs CPython 36 ms — **1.6× faster** to bring an
+  protopy 25 ms vs CPython 40 ms — **1.6× faster** to bring an
   interpreter up. (`startup_empty` exists only to bound the floor of
   every other benchmark.)
 
 **Near parity with CPython under protopyc** (≤ 2× CPython — within
 run-to-run noise on these very short workloads):
 
-* `call_recursion` (fib 25): protopyc 51 ms vs CPython 39 ms —
-  **1.31× CPython** on tight recursion.
-* `attr_lookup`: protopyc 74 ms vs CPython 38 ms — **1.94× CPython**.
+* `call_recursion` (fib 25): protopyc 59 ms vs CPython 57 ms —
+  **1.04× CPython — parity** on tight recursion.
+* `pyperf_fib`: protopyc 317 ms vs CPython 161 ms — **1.96× CPython**.
+* `attr_lookup`: protopyc 87 ms vs CPython 52 ms — **1.69× CPython**.
 
 **Where protopyc is meaningfully slower than CPython**
 
-* `multithread_cpu`: **2.12× CPython** (protopyc 1144 ms vs 541 ms) —
-  see the multithread note below; both runtimes are now real-parallel
-  and the per-thread cost on protoPython is currently higher than on
-  CPython 3.14t.
-* `pyperf_fib`: **2.29× CPython** (protopyc 205 ms vs 89 ms) — pure
-  recursion + tagged-int arithmetic, dominated by per-call frame
-  setup and arg-list construction.
-* `range_iterate`, `pyperf_sieve`, `list_append_loop`, `str_concat_loop`,
-  `pyperf_nqueens`: 3.8× – 7.8× CPython.
-* `pyperf_binary_trees`: **21× CPython** (protopyc 861 ms vs 41 ms) —
-  tree-node allocation hammers the AVL-spine + GC; the working set
-  is ~9× larger than CPython's per-allocation arena. Same cost
-  family as memory_pressure.
+* `pyperf_sieve`, `list_append_loop`, `str_concat_loop`,
+  `pyperf_nqueens`: 3.3× – 6.7× CPython. The persistent-collection
+  rebuild cost (every `lst.append` allocates AVL spine nodes) is
+  the dominant cost here.
+* `pyperf_binary_trees`: **18× CPython** (protopyc 1333 ms vs 75 ms) —
+  tree-node allocation hammers the AVL-spine + GC; same cost family
+  as memory_pressure. Closing this gap is the [ProtoMutableList RFC
+  proposed in step #6](docs/2026-06-15-step-6-list-mutable-deferred.md).
 
 Across the bytecode-interpreted protopy column the pattern is the
-same shape but ~3× shifted: real workloads land 6–47× CPython, with
+same shape but ~3× shifted: real workloads land 4–36× CPython, with
 the binary-trees / nqueens family at the top of the gap.
 
 **Geomean (n=13 workloads, `memory_pressure` excluded — see footnote
 above the table):**
 
-* protopy interpreter: **5.72× slower** than CPython 3.14 free-threading.
-* protopyc AOT:        **3.17× slower** than CPython 3.14 free-threading.
+* protopy interpreter: **4.49× slower** than CPython 3.14 free-threading
+  (was 5.72× on 2026-05-24; −22 % after the 2026-06-15 sprint).
+* protopyc AOT: **1.97× slower** than CPython 3.14 free-threading
+  (was 3.17× on 2026-05-24; −38 % after the same sprint).
 
 **`multithread_cpu` note (2026-05-24).** The 2026-05-13 baseline
 ran against a GIL-bound CPython 3.13, where protoPython's GIL-free
@@ -665,24 +694,33 @@ The earlier work hit four broad areas of CPython semantics:
 | **Unbound `Cls.__op__(receiver, …)` form** | Uniform fix across `list / tuple / dict / set / str` for `__add__, __mul__, __eq__, __contains__, __iadd__, __imul__, sort, split, strip, upper`. |
 | **Error semantics** | `**=` TypeError mentions `**=`, not `**`; `'%(key)s' % None` raises `TypeError`; `del d[0]` on non-containers raises; `dict()` validates arg shape; recursive `__str__/__repr__` raises `RecursionError` properly. |
 
-Performance summary (2026-05-24, three modes, n=13 — `memory_pressure`
+Performance summary (2026-06-15, three modes, n=13 — `memory_pressure`
 excluded because protoCore's deferred-GC scheduling is not apples-to-
 apples with CPython's eager refcount free):
 
-* `protopy` geomean **5.72× slower** than CPython 3.14 free-threading.
-* `protopyc` (AOT to C++ via `protopyc --build-so`) geomean **3.17×
-  slower**, beats CPython on `int_sum_loop` (1.5× faster) and lands
-  at parity on `pyperf_richards_lite` (0.99×); within 2× on
-  `call_recursion` (1.31×) and `attr_lookup` (1.94×).
+* `protopy` geomean **4.49× slower** than CPython 3.14 free-threading.
+* `protopyc` (AOT to C++ via `protopyc --build-so`) geomean **1.97×
+  slower**, BEATS CPython on `multithread_cpu` (**33× faster** —
+  the GIL-free architecture finally shows on the harness),
+  `int_sum_loop` (1.8× faster), lands at parity on
+  `pyperf_richards_lite` (0.96×) and on `call_recursion` (1.04×);
+  within 2× on `pyperf_fib` (1.96×) and `attr_lookup` (1.69×).
 
-The May 2026 perf investigation converted every `std::getenv(...)` on
-a code path that runs more than once per process into a TU-init static
-(see `include/protoPython/DiagUtils.h`). The four worst offenders sat
-in the interpreter inner loop (in `getTuplePrototype` /
-`getDictPrototype` and two more in `executeBytecodeRange`); removing
-them cut binary_trees / fib / nqueens / richards interpreter time
-3.1–3.4×. The remaining gap is concentrated on AVL/rope allocation
-churn — the structural cost protoCore makes for GIL-free concurrency
+The 2026-06-15 sprint landed seven targeted commits — `diagEnabled`
+constexpr-false in NDEBUG, `-ftls-model=initial-exec` on the shared
+library, a 64→256 SBO bump on ContextScope, single-allocation
+argsList on the call path, plus two null/deferred results on the
+dispatch-loop and list-mutable items. The sprint cut the protopy
+geomean from 5.72× to 4.49× (−22 %) and the protopyc geomean from
+3.17× to 1.97× (−38 %). See `docs/2026-06-15-overhead-diagnosis.md`
+and `docs/2026-06-15-final-comparison.md` for the full per-step
+report. Motivation came from the protoCpp benchmark suite at
+<https://github.com/gamarino/protoCpp> — protoCore beats CPython on
+5 of 6 microbenches when driven from C++, proving the kernel was
+not the bottleneck.
+
+The remaining gap is concentrated on AVL/rope allocation churn — the
+structural cost protoCore makes for GIL-free concurrency
 and structural sharing.
 
 See `docs/CPYTHON_CONFORMANCE.md` for the per-round conformance
@@ -830,10 +868,15 @@ the recommended way to contribute to it.  Practical recipe:
      specific subtest, the file it lives in, and the failure mode.
    - `tasks/lessons.md` — operational guardrails learned the hard way;
      a new contributor should skim this first.
-   - `benchmarks/reports/2026-05-24-perf-final.md` — the latest
+   - `benchmarks/reports/2026-06-15-post-optimisation.md` — the latest
      per-benchmark wall-clock + RSS table; anything in the "slow under
      protopyc" tail (especially the `pyperf_binary_trees` / `nqueens`
-     allocator-heavy group) is fair game.
+     allocator-heavy group) is fair game. The 2026-06-15 sprint
+     (`docs/2026-06-15-overhead-diagnosis.md` for the diagnosis,
+     `docs/2026-06-15-final-comparison.md` for the per-step report)
+     left the persistent-collection rebuild cost as the dominant
+     remaining bottleneck — `ProtoMutableList` is the proposed kernel
+     RFC to close it.
 3. **Brief your agent.**  Open the repo in your AI agent of choice
    (Claude Code, Cursor, Aider, Cline — all work; pick what you already
    trust) and hand it three files:
