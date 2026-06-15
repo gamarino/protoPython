@@ -2905,6 +2905,18 @@ static void collectDefinedNames(ASTNode* node, std::unordered_set<std::string>& 
         if (iff->orelse) collectDefinedNames(iff->orelse.get(), out);
         return;
     }
+    if (auto* wh = dynamic_cast<WhileNode*>(node)) {
+        // Names assigned inside `while` body are locals of the enclosing
+        // function — same rule as for/if/try. Missing this case was a long-
+        // standing scope-analysis bug: a `while x < n:` loop body that
+        // assigned `ok = True` / `cc = cols[r]` had those names emit
+        // STORE_GLOBAL / LOAD_GLOBAL instead of STORE_FAST / LOAD_FAST,
+        // turning hot inner loops (nqueens, sieve, fib refactors) into
+        // global-namespace lookup churn.
+        collectDefinedNames(wh->body.get(), out);
+        if (wh->orelse) collectDefinedNames(wh->orelse.get(), out);
+        return;
+    }
     if (auto* fn = dynamic_cast<FunctionDefNode*>(node)) {
         // A function definition defines the function name in the CURRENT scope.
         // It does NOT define its parameters or internal names in the outer scope.
