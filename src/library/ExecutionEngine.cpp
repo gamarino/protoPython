@@ -986,6 +986,43 @@ const proto::ProtoObject* runBoundMethodCall(proto::ProtoContext* ctx,
 }
 
 namespace {
+
+// Polymorphic Inline Cache for LOAD_ATTR / LOAD_METHOD slow-path lookups
+// (sprint-2 step B, 2026-06-15). Caches the resolved value for
+// `(type(obj), name)` pairs WITHOUT instance shadow.
+//
+// Cacheability invariant: an `obj.name` lookup that descends into the type
+// chain (because the instance has no own `name`) returns the same value
+// across all instances of `type(obj)`. The slow path's `env->getAttribute`
+// returns the unbound function on a class (with isUnboundFunc=true) so
+// the result is shared across instances — no per-instance binding state
+// is captured in the cached value. The CALL opcode applies the bound-vs-
+// unbound layout at dispatch time.
+//
+// Invalidation: tied to PythonEnvironment::resolveCacheGeneration. Class
+// mutations bump the generation; cache entries with a stale generation
+// miss and are refilled.
+struct LoadAttrPicEntry {
+    const proto::ProtoObject* type      = nullptr;
+    const proto::ProtoString* name      = nullptr;
+    const proto::ProtoObject* value     = nullptr;
+    uint64_t                  generation = 0;
+    bool                      isUnbound = false;
+};
+constexpr size_t kLoadAttrPicSize = 1024;
+thread_local LoadAttrPicEntry g_loadAttrPic[kLoadAttrPicSize];
+
+static inline size_t loadAttrPicIndex(const proto::ProtoObject* type,
+                                       const proto::ProtoString* name) {
+    // XOR-and-rotate the two pointer addresses. Both are aligned to at
+    // least 8 bytes, so the low 3 bits are redundant; mixing higher bits
+    // gives a reasonable spread for the direct-mapped cache.
+    uintptr_t a = reinterpret_cast<uintptr_t>(type);
+    uintptr_t b = reinterpret_cast<uintptr_t>(name);
+    uintptr_t h = (a >> 3) ^ ((b >> 3) << 5) ^ (b >> 11);
+    return static_cast<size_t>(h) & (kLoadAttrPicSize - 1);
+}
+
 static const proto::ProtoObject* py_function_get(proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
@@ -6264,9 +6301,57 @@ const proto::ProtoObject* executeBytecodeRange(
                     // prepend self via its [Method, Self, Arg1...] layout, avoiding the
                     // ~10-cell bound method object that py_function_get would otherwise build.
                     bool isUnboundFunc = false;
-                    val = env ? env->getAttribute(ctx, obj, attrName, false,
-                                                  pushNull ? &isUnboundFunc : nullptr)
-                              : obj->getAttribute(ctx, attrName);
+                    bool picHandled = false;
+
+                    // Sprint-2 step B (2026-06-15): polymorphic inline cache for
+                    // LOAD_METHOD / LOAD_ATTR slow path. When the instance has no
+                    // OWN attribute by this name, the resolved value is a function
+                    // of (type, name) — same answer for every instance of the same
+                    // type — so we can cache by (type ptr, name ptr) and skip the
+                    // descriptor / MRO walk. The hot case in `lst.append(...)`,
+                    // `s + "x"` (BINARY_ADD's __add__ lookup), `dict.get(...)`,
+                    // etc. all hit this PIC after the first call.
+                    //
+                    // Safety: the cache key incorporates the env's resolve-cache
+                    // generation, which is bumped on every class-side mutation.
+                    // A monkey-patch invalidates every cached entry on the next
+                    // access. Instance-shadow is handled by the hasOwnAttribute
+                    // probe — we only consult the PIC when the instance does NOT
+                    // override the name.
+                    if (env && pushNull && obj && attrName
+                            && obj->hasOwnAttribute(ctx, attrName) != PROTO_TRUE) {
+                        const proto::ProtoObject* type = env->getType(ctx, obj);
+                        if (type && type != PROTO_NONE) {
+                            const uint64_t gen = env->resolveCacheGeneration();
+                            LoadAttrPicEntry* slot =
+                                &g_loadAttrPic[loadAttrPicIndex(type, attrName)];
+                            if (slot->type == type
+                                && slot->name == attrName
+                                && slot->generation == gen) {
+                                // PIC HIT — skip env->getAttribute entirely.
+                                val = slot->value;
+                                isUnboundFunc = slot->isUnbound;
+                                picHandled = true;
+                            } else {
+                                // PIC MISS — do the slow path and populate.
+                                val = env->getAttribute(ctx, obj, attrName, false, &isUnboundFunc);
+                                if (val && val != PROTO_NONE
+                                        && (!env->hasPendingException())) {
+                                    slot->type      = type;
+                                    slot->name      = attrName;
+                                    slot->value     = val;
+                                    slot->generation = gen;
+                                    slot->isUnbound = isUnboundFunc;
+                                }
+                                picHandled = true;
+                            }
+                        }
+                    }
+                    if (!picHandled) {
+                        val = env ? env->getAttribute(ctx, obj, attrName, false,
+                                                      pushNull ? &isUnboundFunc : nullptr)
+                                  : obj->getAttribute(ctx, attrName);
+                    }
                     if (!val && env && env->hasPendingException()) {
                         // A descriptor or __getattr__ already raised an exception — propagate it.
                         stack.pop_back();

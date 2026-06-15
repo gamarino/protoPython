@@ -1404,6 +1404,7 @@ private:
 
 public:
     void incrementResolveCacheGeneration() { resolveCacheGeneration_.fetch_add(1, std::memory_order_release); }
+    uint64_t resolveCacheGeneration() const { return resolveCacheGeneration_.load(std::memory_order_acquire); }
 
     /** Signal handling flag (Step 1310). */
     static std::atomic<bool> s_sigintReceived;
