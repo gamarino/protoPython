@@ -320,9 +320,169 @@ const proto::ProtoTuple* Compiler::getNames() {
     return names_;
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Sprint-11 — peephole specialiser for accumulator-loop patterns.
+//
+// Scans the freshly emitted bytecode in a sliding window of 4
+// instructions (8 slots in the flat (op,arg) layout) and rewrites
+// three patterns into single-dispatch fused opcodes:
+//
+//   1.  LOAD_FAST a; LOAD_FAST b; INPLACE_ADD; STORE_FAST a
+//       →  OP_ACC_FAST_FAST | (a << 8 | b)
+//
+//   2.  LOAD_FAST idx; LOAD_CONST kIdx; INPLACE_ADD; STORE_FAST idx
+//       →  OP_INC_FAST_K   | (idx << 8 | kIdx)
+//       (only when the constant is a SmallInt-shaped integer literal;
+//        the handler still range-checks, but emitting the fused form
+//        for a float / string would be wasted work.)
+//
+//   3.  LOAD_FAST a; LOAD_FAST b; COMPARE_OP <; PJUMP_IF_FALSE T
+//       →  OP_LT_FAST_FAST_JF | (a << 8 | b),
+//          with the jump target T preserved in the LAST arg slot
+//          (where PJUMP_IF_FALSE originally stored it) so the
+//          existing jump-patching machinery keeps working.
+//
+// In every case the remaining 6 slots are filled with OP_NOP / 0,
+// preserving the byte-offset of every later instruction.  Any
+// pre-existing jump that lands inside the rewritten block now
+// lands on a NOP and walks forward harmlessly until it reaches
+// the next real opcode — semantics-preserving, no jump-table
+// fix-up required.
+//
+// The pass runs at bytecode-finalisation time, AFTER applyPatches
+// has resolved every forward jump and BEFORE the ProtoTuple is
+// materialised.
+// ─────────────────────────────────────────────────────────────────
+namespace {
+
+constexpr int SLOTS_PER_INSTR = 2;
+constexpr int WINDOW_SLOTS = 4 * SLOTS_PER_INSTR;  // 4 instructions
+constexpr int SLOT_NOP_OP = 135;                    // OP_NOP
+
+inline int slotAt(const proto::ProtoList* vec, proto::ProtoContext* ctx,
+                  unsigned long idx) {
+    if (idx >= vec->getSize(ctx)) return -1;
+    const proto::ProtoObject* o = vec->getAt(ctx, (int)idx);
+    if (!o || !o->isInteger(ctx)) return -1;
+    return (int)o->asLong(ctx);
+}
+
+// Fits in a single byte AND in the upper byte of a packed 16-bit arg.
+inline bool fitsByte(int v) { return v >= 0 && v <= 0xFF; }
+
+}  // namespace
+
+const proto::ProtoList* Compiler::specialiseBytecode(const proto::ProtoList* in) {
+    if (!in) return in;
+    // Kill-switch for A/B measurement.  Set PROTOPY_NO_PEEPHOLE=1 to
+    // bypass the specialiser (useful for before/after benchmarking on
+    // the same binary).
+    static const bool disabled = []() {
+        const char* v = std::getenv("PROTOPY_NO_PEEPHOLE");
+        return v && v[0] == '1';
+    }();
+    if (disabled) return in;
+    const unsigned long nSlots = in->getSize(ctx_);
+    if (nSlots < WINDOW_SLOTS) return in;
+
+    // Build an array-of-ints view we can scan/rewrite in O(N).  We
+    // commit back to a ProtoList only once at the end.
+    std::vector<int> bc;
+    bc.reserve(nSlots);
+    for (unsigned long k = 0; k < nSlots; ++k) {
+        bc.push_back(slotAt(in, ctx_, k));
+    }
+
+    auto matchLoadFast = [&](int base) -> int {
+        // Returns the FAST index, or -1 if not a LOAD_FAST.
+        if (base + 1 >= (int)bc.size()) return -1;
+        if (bc[base] != OP_LOAD_FAST) return -1;
+        int idx = bc[base + 1];
+        return fitsByte(idx) ? idx : -1;
+    };
+    auto matchInplaceAdd = [&](int base) -> bool {
+        return base + 1 < (int)bc.size() && bc[base] == OP_INPLACE_ADD;
+    };
+    auto matchStoreFastSame = [&](int base, int expected) -> bool {
+        return base + 1 < (int)bc.size()
+            && bc[base] == OP_STORE_FAST
+            && bc[base + 1] == expected;
+    };
+
+    unsigned long rewrites = 0;
+    for (unsigned long i = 0; i + WINDOW_SLOTS <= bc.size(); ) {
+        // Pattern 1: LOAD_FAST a; LOAD_FAST b; INPLACE_ADD; STORE_FAST a
+        int a = matchLoadFast(i);
+        int b = (a >= 0) ? matchLoadFast(i + 2) : -1;
+        if (a >= 0 && b >= 0
+                && matchInplaceAdd(i + 4)
+                && matchStoreFastSame(i + 6, a)
+                && fitsByte(a) && fitsByte(b)) {
+            bc[i]     = OP_ACC_FAST_FAST;
+            bc[i + 1] = (a << 8) | b;
+            bc[i + 2] = SLOT_NOP_OP;  bc[i + 3] = 0;
+            bc[i + 4] = SLOT_NOP_OP;  bc[i + 5] = 0;
+            bc[i + 6] = SLOT_NOP_OP;  bc[i + 7] = 0;
+            i += WINDOW_SLOTS;
+            ++rewrites;
+            continue;
+        }
+
+        // Pattern 2: LOAD_FAST idx; LOAD_CONST kIdx; INPLACE_ADD; STORE_FAST idx
+        if (a >= 0
+                && i + 3 < bc.size() && bc[i + 2] == OP_LOAD_CONST
+                && fitsByte(bc[i + 3])
+                && matchInplaceAdd(i + 4)
+                && matchStoreFastSame(i + 6, a)) {
+            int kIdx = bc[i + 3];
+            bc[i]     = OP_INC_FAST_K;
+            bc[i + 1] = (a << 8) | kIdx;
+            bc[i + 2] = SLOT_NOP_OP;  bc[i + 3] = 0;
+            bc[i + 4] = SLOT_NOP_OP;  bc[i + 5] = 0;
+            bc[i + 6] = SLOT_NOP_OP;  bc[i + 7] = 0;
+            i += WINDOW_SLOTS;
+            ++rewrites;
+            continue;
+        }
+
+        // Pattern 3: LOAD_FAST a; LOAD_FAST b; COMPARE_OP <(==2); PJUMP_IF_FALSE T
+        if (a >= 0 && b >= 0
+                && i + 5 < bc.size() && bc[i + 4] == OP_COMPARE_OP && bc[i + 5] == 2
+                && i + 7 < bc.size() && bc[i + 6] == OP_POP_JUMP_IF_FALSE) {
+            int target = bc[i + 7];
+            bc[i]     = OP_LT_FAST_FAST_JF;
+            bc[i + 1] = (a << 8) | b;
+            bc[i + 2] = SLOT_NOP_OP;  bc[i + 3] = 0;
+            bc[i + 4] = SLOT_NOP_OP;  bc[i + 5] = 0;
+            // Keep the target where PJUMP_IF_FALSE put it; the LT_JF
+            // handler reads it from `i + 7` so applyPatches stays correct.
+            bc[i + 6] = SLOT_NOP_OP;  bc[i + 7] = target;
+            i += WINDOW_SLOTS;
+            ++rewrites;
+            continue;
+        }
+
+        i += SLOTS_PER_INSTR;
+    }
+
+    if (rewrites == 0) return in;
+
+    // Materialise the rewritten stream back into a ProtoList.
+    const proto::ProtoList* out = ctx_->newList();
+    for (int v : bc) {
+        out = out->appendLast(ctx_, ctx_->fromInteger(v));
+    }
+    if (get_env_diag()) {
+        fprintf(stderr, "PEEPHOLE: %lu fused-op rewrites in this function\n",
+                (unsigned long)rewrites);
+    }
+    return out;
+}
+
 const proto::ProtoTuple* Compiler::getBytecode() {
     if (!bytecode_) {
-        bytecode_ = ctx_->newTupleFromList(bytecodeVec_);
+        const proto::ProtoList* spec = specialiseBytecode(bytecodeVec_);
+        bytecode_ = ctx_->newTupleFromList(spec);
     }
     return bytecode_;
 }

@@ -56,6 +56,13 @@ private:
     int addConstant(const proto::ProtoObject* obj);
     int addName(const std::string& name);
     void emit(int op, int arg = 0);
+
+    /** Sprint-11 peephole specialiser — rewrites accumulator-loop
+        sequences into fused single-dispatch opcodes.  Returns the
+        rewritten ProtoList; if no rewrite applied, returns the input
+        unchanged. */
+    const proto::ProtoList* specialiseBytecode(const proto::ProtoList* in);
+
     bool compileNode(ASTNode* node);
     bool compileConstant(ConstantNode* n);
     bool compileName(NameNode* n, bool pushNull = false);

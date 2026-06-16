@@ -9976,6 +9976,138 @@ const proto::ProtoObject* executeBytecodeRange(
             }
             blockStack.push_back({static_cast<unsigned long>(arg), stack.size()});
         } break;
+
+        // ─────────────────────────────────────────────────────────────
+        // Sprint-11 — fused / specialised opcodes produced by the
+        // post-codegen peephole pass (Compiler::specialiseBytecode).
+        //
+        // Each handler reads the operand pair (or operand + const slot)
+        // out of `arg` and applies the SmallInt fast path directly on
+        // the function's `slots[]` array, bypassing the GCStack push/
+        // pop work that the unfused sequence had to do.  Worst case
+        // (operand isn't a SmallInt, or the arithmetic overflows): the
+        // handler reconstructs the equivalent stack state and re-runs
+        // the original slow path through the existing helpers, so the
+        // observable behaviour is identical to the unfused sequence.
+        // ─────────────────────────────────────────────────────────────
+        case OP_ACC_FAST_FAST: {
+            // ACC a, b  ⇔  LOAD_FAST a; LOAD_FAST b; INPLACE_ADD; STORE_FAST a
+            //
+            // Layout in the bytecode tuple (8 slots, NOPs preserve
+            // jump targets that may already point at slot i+2..i+7):
+            //   i  : OP_ACC_FAST_FAST | (idxA << 8) | idxB
+            //   i+2: OP_NOP | 0
+            //   i+4: OP_NOP | 0
+            //   i+6: OP_NOP | 0
+            // Execution advances by 8 slots (= 4 original instructions).
+            int idxA = (arg >> 8) & 0xFF;
+            int idxB = arg & 0xFF;
+            const proto::ProtoObject** slots = ctx->getAutomaticLocals();
+            unsigned int nSlots = ctx->getAutomaticLocalsCount();
+            if (slots && idxA < (int)nSlots && idxB < (int)nSlots) {
+                const proto::ProtoObject* a = slots[idxA];
+                const proto::ProtoObject* b = slots[idxB];
+                if (a && b && proto::isSmallInt(a) && proto::isSmallInt(b)) {
+                    long long s = proto::asSmallInt(a) + proto::asSmallInt(b);
+                    if (proto::smallIntInRange(s)) {
+                        slots[idxA] = proto::makeSmallInt(s);
+                        i = i + 8;
+                        continue;
+                    }
+                }
+                // Slow path — emulate the four-op sequence via binaryAdd.
+                const proto::ProtoObject* r = binaryAdd(ctx, a, b);
+                slots[idxA] = r;
+            }
+            i = i + 8;
+            continue;
+        }
+
+        case OP_INC_FAST_K: {
+            // INC idx, kIdx  ⇔  LOAD_FAST idx; LOAD_CONST kIdx; INPLACE_ADD; STORE_FAST idx
+            // Same 8-slot layout as ACC_FAST_FAST.
+            int idx  = (arg >> 8) & 0xFF;
+            int kIdx = arg & 0xFF;
+            const proto::ProtoObject** slots = ctx->getAutomaticLocals();
+            unsigned int nSlots = ctx->getAutomaticLocalsCount();
+            const proto::ProtoObject* k = nullptr;
+            if (nativeConsts && (uint32_t)kIdx < (uint32_t)constants->getSize(ctx)) {
+                k = nativeConsts[kIdx];
+            } else if ((unsigned long)kIdx < constants->getSize(ctx)) {
+                k = constants->getAt(ctx, kIdx);
+            }
+            if (slots && idx < (int)nSlots && k) {
+                const proto::ProtoObject* a = slots[idx];
+                if (a && proto::isSmallInt(a) && proto::isSmallInt(k)) {
+                    long long s = proto::asSmallInt(a) + proto::asSmallInt(k);
+                    if (proto::smallIntInRange(s)) {
+                        slots[idx] = proto::makeSmallInt(s);
+                        i = i + 8;
+                        continue;
+                    }
+                }
+                const proto::ProtoObject* r = binaryAdd(ctx, a, k);
+                slots[idx] = r;
+            }
+            i = i + 8;
+            continue;
+        }
+
+        case OP_LT_FAST_FAST_JF: {
+            // LT_JF a, b ⇔ LOAD_FAST a; LOAD_FAST b; COMPARE_OP <; PJUMP_IF_FALSE target
+            //
+            // Layout in the bytecode tuple (8 slots):
+            //   i  : OP_LT_FAST_FAST_JF | (idxA << 8) | idxB
+            //   i+2: OP_NOP | 0
+            //   i+4: OP_NOP | 0
+            //   i+6: OP_NOP | target   ← target stays in the slot the
+            //                            original PJUMP_IF_FALSE used,
+            //                            so the existing jump-patching
+            //                            in Compiler::applyPatches keeps
+            //                            working unchanged.
+            int idxA = (arg >> 8) & 0xFF;
+            int idxB = arg & 0xFF;
+            unsigned long targetSlot = i + 7;   // the arg slot of the NOP that replaces PJUMP_IF_FALSE
+            int target = 0;
+            if (nativeBc && targetSlot < n) {
+                target = nativeBc[targetSlot];
+            } else if (bytecode && targetSlot < bytecode->getSize(ctx)) {
+                const proto::ProtoObject* tobj = bytecode->getAt(ctx, (int)targetSlot);
+                if (tobj && tobj->isInteger(ctx)) target = (int)tobj->asLong(ctx);
+            }
+            const proto::ProtoObject** slots = ctx->getAutomaticLocals();
+            unsigned int nSlots = ctx->getAutomaticLocalsCount();
+            bool predicate = false;
+            bool tookFastPath = false;
+            if (slots && idxA < (int)nSlots && idxB < (int)nSlots) {
+                const proto::ProtoObject* a = slots[idxA];
+                const proto::ProtoObject* b = slots[idxB];
+                if (a && b && proto::isSmallInt(a) && proto::isSmallInt(b)) {
+                    predicate = (proto::asSmallInt(a) < proto::asSmallInt(b));
+                    tookFastPath = true;
+                }
+            }
+            if (!tookFastPath) {
+                const proto::ProtoObject* a = (slots && idxA < (int)nSlots) ? slots[idxA] : PROTO_NONE;
+                const proto::ProtoObject* b = (slots && idxB < (int)nSlots) ? slots[idxB] : PROTO_NONE;
+                const proto::ProtoObject* r = compareOp(ctx, a, b, /*arg=*/2);
+                predicate = (r == PROTO_TRUE);
+            }
+            if (predicate) {
+                // Predicate true: execution continues at the instruction
+                // AFTER the original PJUMP_IF_FALSE (i + 8).
+                i = i + 8;
+            } else {
+                // Predicate false: jump to target (array index).
+                if (target >= 0 && (unsigned long)target < n) {
+                    i = (unsigned long)target;
+                } else {
+                    i = i + 8;
+                }
+            }
+            continue;
+        }
+
         default:
             break;
         }  // end switch (op)

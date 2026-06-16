@@ -260,6 +260,40 @@ constexpr int OP_DICT_MERGE = 211;
  *  the duplicate-keyword TypeError names the called function. */
 constexpr int DICT_MERGE_CALL_SITE = 0x100;
 
+// ─────────────────────────────────────────────────────────────────────
+// Sprint-11 fused / specialised opcodes — produced by the post-codegen
+// peephole specialiser (see Compiler::specialiseBytecode).  Each one
+// replaces a recognisable 3-4 opcode sliding window in the original
+// stream with a single dispatch that does the same work inline.
+//
+// The SmallInt fast path inside the handler is identical to the one in
+// the generic INPLACE_ADD / COMPARE_OP — what the fused opcode saves
+// is the surrounding LOAD_FAST / LOAD_CONST / STORE_FAST dispatches
+// plus the corresponding GCStack push/pop work.  Worst case (operand
+// is not a SmallInt or the sum overflows): the handler falls back to
+// the exact slow path the original sequence took.
+// ─────────────────────────────────────────────────────────────────────
+
+/** ACC_FAST_FAST_INPLACE_ADD a, b
+ *  Fused form of:  LOAD_FAST a; LOAD_FAST b; INPLACE_ADD; STORE_FAST a
+ *  Encodes (a << 8) | b in the arg (each index ≤ 255).
+ *  The accumulator pattern `a += b` where both are locals. */
+constexpr int OP_ACC_FAST_FAST = 212;
+
+/** INC_FAST_K idx, k
+ *  Fused form of:  LOAD_FAST idx; LOAD_CONST k; INPLACE_ADD; STORE_FAST idx
+ *  Encodes (idx << 8) | k_const_index in the arg.  k_const must be a
+ *  SmallInt literal in the function's co_consts pool.  The increment-by-
+ *  literal pattern (`i += 1`, `i += 2`, etc.). */
+constexpr int OP_INC_FAST_K = 213;
+
+/** LT_FAST_FAST_JF a, b, target
+ *  Fused form of:  LOAD_FAST a; LOAD_FAST b; COMPARE_OP <; PJUMP_IF_FALSE target
+ *  Encoded across two slots: arg = (a << 8) | b for the operand pair;
+ *  the following slot's pc reuses the existing nativeBc[idx+1] target
+ *  for the jump address.  Loop guard `while a < b: ...`. */
+constexpr int OP_LT_FAST_FAST_JF = 214;
+
 /**
  * @brief Executes a range of bytecode (one basic block). No per-instruction
  *        scheduler dispatch; runs until pc exits [pcStart, pcEnd] or RETURN_VALUE.
