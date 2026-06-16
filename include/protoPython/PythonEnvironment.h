@@ -1402,9 +1402,52 @@ private:
     mutable std::atomic<uint64_t> resolveCacheGeneration_{0};
     std::istream* stdin_{&std::cin};
 
+    // ─────────────────────────────────────────────────────────────────
+    // Ordered-attribute support for PEP 468 (`vars(obj)` / `obj.__dict__`
+    // insertion order).
+    //
+    // Storage convention (sprint-9, 2026-06-15): when STORE_ATTR writes
+    // an instance attribute, it stores not the raw value but a 3-tuple
+    //     ( orderedAttrSentinel , insertionCounter , value )
+    // into the object's attribute SparseList.  The sentinel is a unique
+    // ProtoObject singleton — never user-reachable, never equal to any
+    // legitimate value — so attribute reads can detect the wrapper by a
+    // single pointer compare on tuple[0] and unwrap with tuple[2].
+    // `vars()` / `__dict__.keys()` rebuild insertion order on demand by
+    // iterating the attributes, filtering for wrapped values, and
+    // sorting by counter.  This replaces the previous eager `__keys__`
+    // list-append on every STORE_ATTR, which doubled allocations on
+    // OOP-init hot paths (binary_trees: 2 setAttribute per node became
+    // 4 — 1 attr + 1 __keys__ probe + 1 newList + 1 setAttribute(__keys__)).
+    //
+    // Counter is a single global atomic — only the relative order
+    // between writes matters, never the absolute value.  Per-object
+    // counter was rejected: it would need its own cell slot, and
+    // sorted-on-demand iteration only cares about ordering, not
+    // continuity.
+    mutable std::atomic<uint64_t> attrInsertionCounter_{0};
+    const proto::ProtoObject* orderedAttrSentinel_{nullptr};
+
 public:
     void incrementResolveCacheGeneration() { resolveCacheGeneration_.fetch_add(1, std::memory_order_release); }
     uint64_t resolveCacheGeneration() const { return resolveCacheGeneration_.load(std::memory_order_acquire); }
+
+    /** Initialised in PythonEnvironment::init(); see attrInsertionCounter_ block above. */
+    const proto::ProtoObject* getOrderedAttrSentinel() const { return orderedAttrSentinel_; }
+    uint64_t nextAttrInsertionCounter() { return attrInsertionCounter_.fetch_add(1, std::memory_order_relaxed); }
+
+    /** Wrap a raw value as (sentinel, counter, value) so that STORE_ATTR can
+     *  preserve insertion order without maintaining a separate __keys__ list.
+     *  Returns the original value unchanged if the sentinel hasn't been
+     *  initialised yet (early-init paths). */
+    const proto::ProtoObject* wrapOrderedAttr(proto::ProtoContext* ctx, const proto::ProtoObject* value);
+
+    /** Inverse of wrapOrderedAttr.  Cheap (one isTuple + size + getAt(0) +
+     *  pointer compare).  Returns `value` unchanged when not wrapped. */
+    const proto::ProtoObject* unwrapOrderedAttr(proto::ProtoContext* ctx, const proto::ProtoObject* value) const;
+
+    /** True iff `value` is a (sentinel, counter, val) wrapper. */
+    bool isOrderedAttrWrap(const proto::ProtoObject* value) const;
 
     // Sprint-4 hook for OP_LOAD_ATTR fast path: query the per-thread
     // getType cache for this obj's primitive classification.
