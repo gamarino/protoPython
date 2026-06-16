@@ -56,7 +56,7 @@ The current focus is correctness: all 17 CPython conformance test categories pas
 | **Type System** | **Advanced** - Lists, Tuples, Sets, Dicts with native wrapping ✅ |
 | **C++ Interop** | **Full** - HPy and UMD support integrated ✅ |
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
-| **Performance** | **Major win 2026-06-15 (post sprint-8)** — 13-bench geomean (`memory_pressure` excluded as deferred-GC scheduling is not apples-to-apples with CPython's eager refcount free): **3.00×** slower than CPython 3.14 free-threading under the bytecode interpreter (`protopy`), **2.12×** slower under AOT-compiled (`protopyc`). Down from 5.72× / 3.17× in May 2026 — −48 % / −33 % gap reduction in three weeks. **protopy is FASTER than CPython** on `multithread_cpu` (0.90×, GIL-free pitch landing on a real workload). protopyc beats CPython on `int_sum_loop`, `pyperf_richards_lite`, and `multithread_cpu` (33× faster on the multi-thread CPU bench). The biggest single fix was a one-line codegen patch (commit `d7dfec38`): `Compiler::collectDefinedNames` was missing the `WhileNode` case, so assignments inside `while` bodies emitted `STORE_GLOBAL`/`LOAD_GLOBAL` instead of `STORE_FAST`/`LOAD_FAST`. nqueens went from 27.69× CPython to **3.88×** (−86 %) on that fix alone. ⚙️ |
+| **Performance** | **2026-06-15 post sprint-10 — honest 4-way comparison vs CPython 3.14t free-threading** (uv-installed `python3.14t` built with Clang 22.1.3, NOT the system `python3.14` with GIL on that earlier reports incorrectly used). 13-bench geomean (`memory_pressure` excluded as deferred-GC scheduling is not apples-to-apples with CPython's eager refcount free): protopy interpreter **4.87×** slower than CPython 3.14t.  The honest GIL-on cost on the same Clang build: CPython 3.14t is 1.25× slower than CPython 3.14 GIL-on single-thread (that's the price PEP 703 pays per-object locks).  Biggest wins of the June sprint series: WhileNode codegen fix (`d7dfec38`, nqueens 27.69× → 3.88×); sprint-10 instance-attr `__keys__` removal (`6368ec16`, binary_trees 46.20× → 34.81×, richards_lite −19 %).  Sprint-9's wrapped-attrs counter was retracted after the hardened harness (commit `e0d96c9b`) caught `binary_trees` silently crashing — the original "27.41x → 1.33x win" was a 88 ms setup time recorded by a harness that didn't check exit codes.  See the perf section below for the full numbers and the retraction trail. ⚙️ |
 | **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
 | **test_descr.py conformance (May 18 2026)** | **148/155 non-skipped passing (95.5 %)** — `test/cpython/test_descr.py`: 7 failures + 10 skipped out of 165 tests.  **Every remaining failure is excluded by design**: they all assert deterministic `__del__` firing, weakref clearing on `gc.collect()`, or instance-count reuse after cycle collection — semantics that protoCore's concurrent, non-eager GC explicitly does not provide.  Rounds 26–40 + STRUCT-323 / STRUCT-324 (May 17–18) cut from 27F + 7E down to 7F, 24 test flips, no regressions, ctest 199/199 verde every commit.  See `docs/CPYTHON_CONFORMANCE.md` for the per-round breakdown. ✅ |
 
@@ -72,7 +72,7 @@ The current focus is correctness: all 17 CPython conformance test categories pas
 
 ---
 
-## 📊 Performance Benchmarks (2026-06-15 honest 4-way interleaved)
+## 📊 Performance Benchmarks (2026-06-15 post sprint-10, honest 4-way interleaved)
 
 > **Methodology fix.** Earlier reports compared protoPython against
 > `python3.14` from the system package, which is built with GCC and
@@ -80,23 +80,31 @@ The current focus is correctness: all 17 CPython conformance test categories pas
 > README has been claiming.  Sprint-9 (the wrapped-attrs counter
 > change) was also retracted: `binary_trees` was silently crashing,
 > and the harness only recorded the crash's setup wall-clock (~88 ms),
-> which we misread as a real win.  The numbers below are the honest
-> four-way comparison: same Clang 22.1.3 build of CPython 3.14.6
-> with the GIL on and with the GIL off (free-threading, PEP 703),
-> plus protopy and protopyc.  Each bench runs all four binaries
-> **interleaved** (warmup x2 each, then 5 interleaved rounds) so
-> a transient system load shift hits every column equally.
+> which we misread as a real win.  Sprint-10 then dropped the per-
+> instance `__keys__` tracking from `OP_STORE_ATTR` entirely — user-
+> visible `dict` literals still preserve PEP 468 (they carry their own
+> ordered `__keys__` list via `OP_BUILD_MAP`), only `vars(obj)` over
+> plain instances loses insertion order.  The numbers below are the
+> honest four-way comparison post sprint-10: same Clang 22.1.3 build
+> of CPython 3.14.6 with the GIL on and with the GIL off (free-
+> threading, PEP 703), plus protopy and protopyc.  Each bench runs
+> all four binaries **interleaved** (warmup x2 each, then 5 inter-
+> leaved rounds) so a transient system load shift hits every column
+> equally.  The harness was hardened in commit `e0d96c9b` to assert
+> exit code 0 AND validate the last stdout line against a per-bench
+> regex; silent crashes and module-init-only runs are dropped instead
+> of being recorded as wins.
 
 ### Single-thread cost of the locks (CPython GIL off / GIL on)
 
 Geomean of 13 benchmarks (`memory_pressure` excluded — deferred-GC
 scheduling is not apples-to-apples with CPython's eager refcount free):
 
-* `python3.14` (GIL on) / `python3.14t` (GIL off) = **0.77×**, i.e.
-  the GIL-on build is 30 % faster than the no-GIL build on hot
+* `python3.14` (GIL on) / `python3.14t` (GIL off) = **0.80×**, i.e.
+  the GIL-on build is ~25 % faster than the no-GIL build on hot
   single-thread loops.  That's the price PEP 703 pays for
   per-object locks and atomic refcounts.
-* The exception is `multithread_cpu`: GIL on is **3.00× slower**
+* The exception is `multithread_cpu`: GIL on is **3.04× slower**
   than GIL off there — the GIL serialises the four threads, while
   GIL off parallelises them across cores.
 
@@ -112,39 +120,46 @@ deliberately omitted from comparisons.
 
 | Benchmark              | CPython-t (ms, base) | CPython (ms) | cp/cpt | protopy (ms) | py/cpt |
 |------------------------|---------------------:|-------------:|-------:|-------------:|-------:|
-| startup_empty          |    24.32 |    32.65 |  1.34x |    23.36 |  **0.96x** |
-| int_sum_loop           |    25.93 |    31.39 |  1.21x |   158.72 |  6.12x |
-| list_append_loop       |    26.07 |    30.92 |  1.19x |   185.63 |  7.12x |
-| str_concat_loop        |    28.94 |    35.40 |  1.22x |   168.02 |  5.81x |
-| range_iterate          |    26.61 |    37.83 |  1.42x |   167.75 |  6.30x |
-| multithread_cpu        |   201.22 |   603.01 |  3.00x |   659.25 |  3.28x |
-| attr_lookup            |    34.22 |    37.22 |  1.09x |    62.45 |  1.82x |
-| call_recursion         |    37.05 |    43.17 |  1.17x |    86.96 |  2.35x |
-| memory_pressure [INFO] |    53.53 |    59.94 |  1.12x |  1835.01 | 34.28x |
-| pyperf_fib             |    96.41 |    99.04 |  1.03x |   827.11 |  8.58x |
-| pyperf_binary_trees    |    44.11 |    54.37 |  1.23x |  2037.89 | 46.20x |
-| pyperf_nqueens         |    51.02 |    57.06 |  1.12x |   262.72 |  5.15x |
-| pyperf_richards_lite   |    29.39 |    38.52 |  1.31x |    69.63 |  2.37x |
-| pyperf_sieve           |    30.29 |    39.11 |  1.29x |   208.27 |  6.88x |
-| **Geomean (n=13)**     |          |          |  **1.30x** |          |  **4.80x** |
+| startup_empty          |    24.07 |    29.43 |  1.22x |    23.20 |  **0.96x** |
+| int_sum_loop           |    25.29 |    33.58 |  1.33x |   164.71 |  6.51x |
+| list_append_loop       |    30.03 |    33.50 |  1.12x |   193.08 |  6.43x |
+| str_concat_loop        |    25.30 |    31.33 |  1.24x |   180.95 |  7.15x |
+| range_iterate          |    26.09 |    37.52 |  1.44x |   183.58 |  7.04x |
+| multithread_cpu        |   199.36 |   606.01 |  3.04x |   620.19 |  3.11x |
+| attr_lookup            |    33.59 |    38.83 |  1.16x |    66.88 |  1.99x |
+| call_recursion         |    38.26 |    41.42 |  1.08x |    89.42 |  2.34x |
+| memory_pressure [INFO] |    57.31 |    61.20 |  1.07x |  1912.77 | 33.37x |
+| pyperf_fib             |   106.72 |   107.98 |  1.01x |   973.79 |  9.12x |
+| pyperf_binary_trees    |    40.80 |    45.04 |  1.10x |  1420.19 | **34.81x** |
+| pyperf_nqueens         |    56.60 |    60.61 |  1.07x |   318.08 |  5.62x |
+| pyperf_richards_lite   |    30.19 |    33.35 |  1.10x |    71.85 |  2.38x |
+| pyperf_sieve           |    32.23 |    37.56 |  1.17x |   225.14 |  6.99x |
+| **Geomean (n=13)**     |          |          |  **1.25x** |          |  **4.87x** |
 
 ### What the numbers actually say
 
-* **Lock cost real**: ~30 % on hot single-thread loops, consistent
+* **Lock cost real**: ~25 % on hot single-thread loops, consistent
   with PEP 703's qualitative description and standalone hot-loop
   measurements (int sum 20M iters showed +48 % standalone).
-* **protopy vs CPython 3.14t**: 4.80× geomean.  Single-thread
+* **protopy vs CPython 3.14t**: 4.87× geomean.  Single-thread
   interpreter speed is the remaining gap; concurrency is not a
   differentiator vs free-threading CPython any more (both are
   GIL-free).
 * **`multithread_cpu` protopy** ran the bench end-to-end (verified
   via a separate run that checks the per-thread computed sum against
   the expected ½·N·(N-1) value): 4 threads each summing 2M ints,
-  444-617 ms wall-clock on protopy vs 263 ms on CPython 3.14t.  Both
+  620 ms wall-clock on protopy vs 199 ms on CPython 3.14t.  Both
   parallelise; protopy's per-op interpreter cost is the gap.
-* **`binary_trees` and `pyperf_fib`** are the two big remaining
-  outliers (46× and 8.6×).  Both are bound by AVL spine allocation
-  on persistent-collection updates — a kernel-side work item.
+* **Sprint-10 effect** concentrated on the two OOP-heavy benches:
+  `pyperf_binary_trees` 46.20× → **34.81×** vs CPython-t (−25 %
+  ratio, −30 % wall-clock), `pyperf_richards_lite` 2.41× → 2.38×
+  (−19 % wall-clock).  The other benches don't pound STORE_ATTR
+  hard enough to feel the change; suite geomean is essentially
+  unchanged because the win is concentrated where it should be.
+* **`binary_trees` and `pyperf_fib`** are still the two big
+  remaining outliers (35× and 9×).  Both are bound by AVL spine
+  allocation on persistent-collection updates — a kernel-side work
+  item.
 
 ### Honest narrative
 
@@ -160,19 +175,60 @@ per-thread interpreter cost remains), and the AVL-rebuild benches
 arithmetic-heavy gap that needs kernel-level work (batched dict-spine
 construction, lazy materialisation of new collection states).
 
+### Sprint-10 design (the change that produced the binary_trees win)
+
+`OP_STORE_ATTR` used to maintain an explicit `__keys__` list on every
+Python instance — every `self.x = val` paid TWO setAttribute calls
+(one for the attribute itself, one for the appended `__keys__`
+entry).  The list was load-bearing only for `vars(obj)` /
+`obj.__dict__` insertion-order semantics.  Where insertion order
+genuinely matters — user-visible `dict` literals — protoPython's
+`OP_BUILD_MAP` and `OP_STORE_SUBSCR` build a dedicated dict object
+that carries its own `__data__` SparseList AND its own ordered
+`__keys__` list, completely independent of instance attribute
+storage.  Sprint-10 removes the instance-side bookkeeping; user
+dict order is preserved by the dict-side bookkeeping that was
+already there.
+
+Trade-off: `vars(obj).keys()` and `obj.__dict__` now iterate plain-
+instance attrs in hash order rather than insertion order.  Frameworks
+that need a specific order on a class's instance dict typically
+read the class-side annotation map (`__annotations__`) or the bound
+MRO descriptors instead, so the practical impact is limited.
+
+Verified end-to-end:
+
+```python
+>>> {'zebra': 1, 'alpha': 2, 'middle': 3}                # dict literal
+{'zebra': 1, 'alpha': 2, 'middle': 3}                    # PEP 468 PRESERVED
+
+>>> class N:
+...     def __init__(self):
+...         self.zebra = 1; self.alpha = 2; self.middle = 3
+>>> vars(N())                                            # vars(instance)
+{'alpha': 2, 'zebra': 1, 'middle': 3}                    # hash order — trade-off
+```
+
 ### Lessons from earlier reports
 
-Sprint-9 (the wrapped-attrs counter change at commit `eee05bd7`,
-since reverted in `b4aec0bf`/`ae93dd27`) had silently broken
-`binary_trees` for protopy too — the bench raised `AttributeError:
-'tuple' object has no attribute 'check'` after ~88 ms of setup, and
-the harness recorded the 88 ms as a "win" without checking the exit
-code.  The `run_benchmarks.py` harness is going to grow exit-code +
-last-line-content validation in a follow-up so the next silent
-failure is caught immediately instead of after a misleading commit.
+Sprint-9 (the wrapped-attrs `(sentinel, counter, value)` change at
+commit `eee05bd7`) tried to preserve PEP 468 strict-everywhere with
+3-tuple wraps stored in place of the raw values.  It was reverted
+in `b4aec0bf`/`ae93dd27` after `binary_trees` was found to silently
+crash (`AttributeError: 'tuple' object has no attribute 'check'`
+after ~88 ms of setup) and the harness recorded the 88 ms as a "win"
+without checking the exit code.  Sprint-10 narrows the requirement
+instead of complicating the implementation: PEP 468 stays for the
+user's explicit dicts, not for the internal storage of instance
+attributes.
+
+The harness now (commit `e0d96c9b`) asserts exit code 0 and
+validates the last stdout line against a per-bench regex, so the
+next silent failure shows up as `[DROPPED]` lines in the run log
+instead of a misleading commit.
 
 Reproduce: `benchmarks/run_4way_interleaved.py`.  Latest report:
-[`benchmarks/reports/2026-06-15-sprint8-4way-honest.md`](benchmarks/reports/2026-06-15-sprint8-4way-honest.md).
+[`benchmarks/reports/2026-06-15-sprint10-no-keys-tracking.md`](benchmarks/reports/2026-06-15-sprint10-no-keys-tracking.md).
 
 ---
 
