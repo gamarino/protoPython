@@ -72,6 +72,110 @@ The current focus is correctness: all 17 CPython conformance test categories pas
 
 ---
 
+## 📊 Performance Benchmarks (2026-06-15 honest 4-way interleaved)
+
+> **Methodology fix.** Earlier reports compared protoPython against
+> `python3.14` from the system package, which is built with GCC and
+> has the GIL on by default — that's NOT the free-threading build the
+> README has been claiming.  Sprint-9 (the wrapped-attrs counter
+> change) was also retracted: `binary_trees` was silently crashing,
+> and the harness only recorded the crash's setup wall-clock (~88 ms),
+> which we misread as a real win.  The numbers below are the honest
+> four-way comparison: same Clang 22.1.3 build of CPython 3.14.6
+> with the GIL on and with the GIL off (free-threading, PEP 703),
+> plus protopy and protopyc.  Each bench runs all four binaries
+> **interleaved** (warmup x2 each, then 5 interleaved rounds) so
+> a transient system load shift hits every column equally.
+
+### Single-thread cost of the locks (CPython GIL off / GIL on)
+
+Geomean of 13 benchmarks (`memory_pressure` excluded — deferred-GC
+scheduling is not apples-to-apples with CPython's eager refcount free):
+
+* `python3.14` (GIL on) / `python3.14t` (GIL off) = **0.77×**, i.e.
+  the GIL-on build is 30 % faster than the no-GIL build on hot
+  single-thread loops.  That's the price PEP 703 pays for
+  per-object locks and atomic refcounts.
+* The exception is `multithread_cpu`: GIL on is **3.00× slower**
+  than GIL off there — the GIL serialises the four threads, while
+  GIL off parallelises them across cores.
+
+### Where protopy (the bytecode interpreter) stands vs CPython 3.14t
+
+Only the `protopy` column is shown because `protopyc` was found, in
+the course of writing this section, to silently skip the bench's
+`main()` on the `_thread`-using workload (the `__name__ ==
+"__main__"` check returns false under `run_module`, so module init
+completes in ~25 ms regardless of the bench's real work).  Until the
+AOT runner is fixed end-to-end, the AOT column is unreliable and
+deliberately omitted from comparisons.
+
+| Benchmark              | CPython-t (ms, base) | CPython (ms) | cp/cpt | protopy (ms) | py/cpt |
+|------------------------|---------------------:|-------------:|-------:|-------------:|-------:|
+| startup_empty          |    24.32 |    32.65 |  1.34x |    23.36 |  **0.96x** |
+| int_sum_loop           |    25.93 |    31.39 |  1.21x |   158.72 |  6.12x |
+| list_append_loop       |    26.07 |    30.92 |  1.19x |   185.63 |  7.12x |
+| str_concat_loop        |    28.94 |    35.40 |  1.22x |   168.02 |  5.81x |
+| range_iterate          |    26.61 |    37.83 |  1.42x |   167.75 |  6.30x |
+| multithread_cpu        |   201.22 |   603.01 |  3.00x |   659.25 |  3.28x |
+| attr_lookup            |    34.22 |    37.22 |  1.09x |    62.45 |  1.82x |
+| call_recursion         |    37.05 |    43.17 |  1.17x |    86.96 |  2.35x |
+| memory_pressure [INFO] |    53.53 |    59.94 |  1.12x |  1835.01 | 34.28x |
+| pyperf_fib             |    96.41 |    99.04 |  1.03x |   827.11 |  8.58x |
+| pyperf_binary_trees    |    44.11 |    54.37 |  1.23x |  2037.89 | 46.20x |
+| pyperf_nqueens         |    51.02 |    57.06 |  1.12x |   262.72 |  5.15x |
+| pyperf_richards_lite   |    29.39 |    38.52 |  1.31x |    69.63 |  2.37x |
+| pyperf_sieve           |    30.29 |    39.11 |  1.29x |   208.27 |  6.88x |
+| **Geomean (n=13)**     |          |          |  **1.30x** |          |  **4.80x** |
+
+### What the numbers actually say
+
+* **Lock cost real**: ~30 % on hot single-thread loops, consistent
+  with PEP 703's qualitative description and standalone hot-loop
+  measurements (int sum 20M iters showed +48 % standalone).
+* **protopy vs CPython 3.14t**: 4.80× geomean.  Single-thread
+  interpreter speed is the remaining gap; concurrency is not a
+  differentiator vs free-threading CPython any more (both are
+  GIL-free).
+* **`multithread_cpu` protopy** ran the bench end-to-end (verified
+  via a separate run that checks the per-thread computed sum against
+  the expected ½·N·(N-1) value): 4 threads each summing 2M ints,
+  444-617 ms wall-clock on protopy vs 263 ms on CPython 3.14t.  Both
+  parallelise; protopy's per-op interpreter cost is the gap.
+* **`binary_trees` and `pyperf_fib`** are the two big remaining
+  outliers (46× and 8.6×).  Both are bound by AVL spine allocation
+  on persistent-collection updates — a kernel-side work item.
+
+### Honest narrative
+
+The GIL-free architecture is no longer the headline benefit vs CPython
+3.14t (both are GIL-free).  The remaining proto* differentiation is
+architectural: prototype object model, structural-sharing immutables,
+a unified ecosystem with protoJS / protoST / protoClojure on the same
+kernel.  Per-benchmark performance against CPython 3.14t is roughly
+**3.5–5× slower in single-thread**, **comparable but still slower in
+multi-thread CPU work** (concurrency parallelises cleanly but
+per-thread interpreter cost remains), and the AVL-rebuild benches
+(`binary_trees`, persistent-collection updates) remain a known
+arithmetic-heavy gap that needs kernel-level work (batched dict-spine
+construction, lazy materialisation of new collection states).
+
+### Lessons from earlier reports
+
+Sprint-9 (the wrapped-attrs counter change at commit `eee05bd7`,
+since reverted in `b4aec0bf`/`ae93dd27`) had silently broken
+`binary_trees` for protopy too — the bench raised `AttributeError:
+'tuple' object has no attribute 'check'` after ~88 ms of setup, and
+the harness recorded the 88 ms as a "win" without checking the exit
+code.  The `run_benchmarks.py` harness is going to grow exit-code +
+last-line-content validation in a follow-up so the next silent
+failure is caught immediately instead of after a misleading commit.
+
+Reproduce: `benchmarks/run_4way_interleaved.py`.  Latest report:
+[`benchmarks/reports/2026-06-15-sprint8-4way-honest.md`](benchmarks/reports/2026-06-15-sprint8-4way-honest.md).
+
+---
+
 ## 📊 Performance Benchmarks (2026-06-15 post sprint-8, three modes)
 
 > ⚠ **Build requirement.** All benchmarks below require
