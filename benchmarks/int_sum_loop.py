@@ -1,14 +1,22 @@
 # int_sum_loop.py - Benchmark: sum(range(N))
 #
-# N defaults to 100000 (matching the canonical harness baseline since 2026-05).
-# Set BENCH_N=<int> in the environment to override — the protoCpp comparison
-# at <https://github.com/gamarino/protoCpp> uses BENCH_N=10000000 so the loop
-# body dominates the ~3 ms binary startup floor.
+# N matches the protoCpp bench (N=10_000_000) so wall-clocks are directly
+# comparable to <https://github.com/gamarino/protoCpp>'s int_sum_loop.
+# Set BENCH_N=<int> in the environment to override.
 import os
-N = int(os.environ.get("BENCH_N", "100000"))
+import time
+N = int(os.environ.get("BENCH_N", "10000000"))
+
 
 def main():
-    return sum(range(N))
+    s = 0
+    for i in range(N):
+        s += i
+    return s
+
 
 if __name__ == "__main__":
-    main()
+    t0 = time.perf_counter()
+    r = main()
+    elapsed_ms = (time.perf_counter() - t0) * 1000.0
+    print(f"BENCH_RESULT name=int_sum_loop N={N} result={r} ms={elapsed_ms:.2f}")

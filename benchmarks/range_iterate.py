@@ -1,8 +1,10 @@
-# range_iterate.py - Benchmark: iterate over range(N) with N=100000
+# range_iterate.py - Benchmark: iterate over range(N) counting per element.
+#
+# N=10_000_000 matches int_sum_loop and the corresponding protoCpp bench.
+# Set BENCH_N to override.
 import os
-print("DEBUG: os is", os)
-print("DEBUG: type(os) is", type(os))
-N = int(os.environ.get("BENCH_N", "100000"))
+import time
+N = int(os.environ.get("BENCH_N", "10000000"))
 
 
 def main():
@@ -13,4 +15,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    t0 = time.perf_counter()
+    r = main()
+    elapsed_ms = (time.perf_counter() - t0) * 1000.0
+    print(f"BENCH_RESULT name=range_iterate N={N} result={r} ms={elapsed_ms:.2f}")

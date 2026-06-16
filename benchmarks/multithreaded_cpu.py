@@ -97,4 +97,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    elapsed = main()
+    grand = sum(_results)
+    print(f"BENCH_RESULT name=multithread_cpu N_THREADS={N_THREADS} "
+          f"CHUNK={CHUNK} result={grand} ms={elapsed*1000.0:.2f}")
