@@ -57,11 +57,19 @@ def median(lst):
 
 
 def run_cmd(cmd, cwd=None, timeout=60, stderr_file=None, env=None, verbose=False):
-    """Run command; return (elapsed_ms, returncode, timed_out, peak_rss_kb)."""
+    """Run command; return RunResult dict.
+
+    Fields:
+      elapsed_ms : wall-clock of the child process
+      returncode : exit code from the child
+      timed_out  : True if killed by the timeout
+      rss_kb     : peak RSS reported by /usr/bin/time
+      stdout     : captured stdout (string)
+      stderr     : captured stderr minus the trailing /usr/bin/time RSS line
+    """
     # Use /usr/bin/time -f "%M" to get peak RSS in KB
     time_cmd = ["/usr/bin/time", "-f", "%M"] + list(cmd)
     start = time.perf_counter()
-    stderr_handle = None
     is_protopy = cmd and "protopy" in os.path.basename(cmd[0])
     try:
         kwargs = {
@@ -72,7 +80,7 @@ def run_cmd(cmd, cwd=None, timeout=60, stderr_file=None, env=None, verbose=False
         }
         if env is not None:
             kwargs["env"] = {**os.environ, **env}
-        
+
         p = subprocess.Popen(time_cmd, **kwargs)
         try:
             stdout_data, stderr_data = p.communicate(timeout=timeout)
@@ -80,27 +88,95 @@ def run_cmd(cmd, cwd=None, timeout=60, stderr_file=None, env=None, verbose=False
             p.kill()
             p.communicate()
             if verbose: print(" TIMEOUT", end="")
-            return (time.perf_counter() - start) * 1000, -1, True, 0
+            return {
+                "elapsed_ms": (time.perf_counter() - start) * 1000,
+                "returncode": -1, "timed_out": True, "rss_kb": 0,
+                "stdout": "", "stderr": "",
+            }
 
         elapsed_ms = (time.perf_counter() - start) * 1000
-        
+
         rss = 0
+        stderr_user = stderr_data or ""
         if stderr_data:
             lines = stderr_data.strip().split("\n")
             if lines:
                 try:
                     rss = int(lines[-1].strip())
+                    stderr_user = "\n".join(lines[:-1])
                 except ValueError:
                     if verbose: print(f" (RSS parse fail: {lines[-1]})", end="")
-                    pass
 
         if verbose:
             print(f" {elapsed_ms:.0f}ms (exit={p.returncode}, rss={rss}KB)", end="")
-        return elapsed_ms, p.returncode, False, rss
+        return {
+            "elapsed_ms": elapsed_ms,
+            "returncode": p.returncode, "timed_out": False, "rss_kb": rss,
+            "stdout": stdout_data or "", "stderr": stderr_user,
+        }
     except Exception as e:
         if verbose:
             print(f"      ERROR: {e}")
-        return 0, -1, False, 0
+        return {
+            "elapsed_ms": 0, "returncode": -1, "timed_out": False, "rss_kb": 0,
+            "stdout": "", "stderr": str(e),
+        }
+
+
+# ---------------------------------------------------------------------------
+# Per-bench output validation.  Each bench is tagged with a regex its child
+# is expected to emit on the final non-empty line of stdout.  Silent failures
+# (sprint-9 binary_trees raising AttributeError after ~88 ms of setup;
+# protopyc skipping main() under run_module because __name__ != "__main__")
+# show up as either non-zero exit codes or as a "Done" / empty stdout that
+# fails to match the required pattern.
+#
+# `None` means "this bench does not print and we cannot output-validate" —
+# only the exit code is enforced.  Default for unknown bench is None.
+# ---------------------------------------------------------------------------
+import re as _re
+OUTPUT_PATTERNS = {
+    "pyperf_fib":           _re.compile(r"\bfib\s+n=\d+\s+min=", _re.IGNORECASE),
+    "pyperf_binary_trees":  _re.compile(r"\bbinary_trees\s+depth=\d+\s+min=", _re.IGNORECASE),
+    "pyperf_nqueens":       _re.compile(r"\bnqueens\s+n=\d+\s+min=", _re.IGNORECASE),
+    "pyperf_richards_lite": _re.compile(r"\brichards_lite\s+rounds=\d+", _re.IGNORECASE),
+    "pyperf_sieve":         _re.compile(r"\bsieve\s+n=\d+\s+min=", _re.IGNORECASE),
+}
+
+
+def validate_run(name, result, mode_label, verbose=False):
+    """Return True if the run is trustworthy, False if it failed validation.
+
+    Three failure modes captured:
+      * non-zero exit code  (sprint-9 binary_trees crashed: exit 70)
+      * empty stdout when the bench is known to print
+      * stdout last line doesn't match the bench's expected pattern
+        (protopyc skipping main() under run_module prints "Done." only)
+    """
+    if result["timed_out"]:
+        if verbose:
+            print(f"    [DROPPED] {name} {mode_label}: timed out", flush=True)
+        return False
+    if result["returncode"] != 0:
+        tail = (result["stderr"] or result["stdout"] or "").strip().splitlines()[-3:]
+        tail_str = " | ".join(tail) if tail else "(no output)"
+        print(f"    [DROPPED] {name} {mode_label}: exit={result['returncode']} "
+              f"-- {tail_str}", flush=True)
+        return False
+    pat = OUTPUT_PATTERNS.get(name)
+    if pat is None:
+        return True
+    stdout_lines = [ln for ln in (result["stdout"] or "").splitlines() if ln.strip()]
+    if not stdout_lines:
+        print(f"    [DROPPED] {name} {mode_label}: empty stdout but "
+              f"pattern {pat.pattern!r} required (silent skip?)", flush=True)
+        return False
+    last = stdout_lines[-1]
+    if not pat.search(last):
+        print(f"    [DROPPED] {name} {mode_label}: last stdout line "
+              f"{last!r} does not match {pat.pattern!r}", flush=True)
+        return False
+    return True
 
 
 def _script_paths(script_path):
@@ -180,28 +256,29 @@ def bench_generic(name, script_name, protopy_bin, cpython_bin,
 
     for i in range(N_RUNS):
         if verbose: print(f"    {name} protopy {i+1}/{N_RUNS}:", end="")
-        tp, _, to, rp = run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy], timeout=timeout, stderr_file=trace_file, verbose=verbose)
-        if not to:
-            times_p.append(tp)
-            rss_p.append(rp)
+        r = run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy],
+                    timeout=timeout, stderr_file=trace_file, verbose=verbose)
+        if validate_run(name, r, "protopy", verbose=verbose):
+            times_p.append(r["elapsed_ms"])
+            rss_p.append(r["rss_kb"])
 
         if verbose: print(f"    {name} cpython {i+1}/{N_RUNS}:", end="")
-        tc, _, to, rc = run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
-        if not to:
-            times_c.append(tc)
-            rss_c.append(rc)
+        r = run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
+        if validate_run(name, r, "cpython", verbose=verbose):
+            times_c.append(r["elapsed_ms"])
+            rss_c.append(r["rss_kb"])
 
         if so_path:
             if verbose: print(f"    {name} protopyc {i+1}/{N_RUNS}:", end="")
-            tpc, _, to, rpc = run_cmd(
+            r = run_cmd(
                 [run_module_bin, str(so_path)],
                 cwd=str(so_path.parent),
                 env=lib_env,
                 timeout=timeout, verbose=verbose,
             )
-            if not to:
-                times_pc.append(tpc)
-                rss_pc.append(rpc)
+            if validate_run(name, r, "protopyc", verbose=verbose):
+                times_pc.append(r["elapsed_ms"])
+                rss_pc.append(r["rss_kb"])
 
     def pack(times, rss):
         if not times:
@@ -471,10 +548,12 @@ def main():
                 run_cmd([protopy_bin, "--module", "abc"])
                 run_cmd([cpython_bin, "-c", "import abc"])
             for _ in range(N_RUNS):
-                tp, _, _, rp = run_cmd([protopy_bin, "--module", "abc"])
-                times_p.append(tp); rss_p.append(rp)
-                tc, _, _, rc = run_cmd([cpython_bin, "-c", "import abc"])
-                times_c.append(tc); rss_c.append(rc)
+                r = run_cmd([protopy_bin, "--module", "abc"])
+                if validate_run(name, r, "protopy"):
+                    times_p.append(r["elapsed_ms"]); rss_p.append(r["rss_kb"])
+                r = run_cmd([cpython_bin, "-c", "import abc"])
+                if validate_run(name, r, "cpython"):
+                    times_c.append(r["elapsed_ms"]); rss_c.append(r["rss_kb"])
             results[name] = {
                 "protopy":  (median(times_p), median(rss_p)) if times_p else None,
                 "cpython":  (median(times_c), median(rss_c)) if times_c else None,

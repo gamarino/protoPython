@@ -24,7 +24,7 @@ from pathlib import Path
 # Reuse helpers from the main harness.
 sys.path.insert(0, str(Path(__file__).parent))
 from run_benchmarks import (  # noqa: E402
-    SCRIPT_DIR, PROJECT_ROOT, run_cmd, compile_protopyc,
+    SCRIPT_DIR, PROJECT_ROOT, run_cmd, compile_protopyc, validate_run,
 )
 BENCH_DIR = SCRIPT_DIR
 
@@ -61,13 +61,15 @@ def run_4way(name, script_rel, args_for_script,
 
     # Measurement: N_RUNS interleaved rounds.  Each round visits all four
     # binaries so a transient load spike during round k hits every column.
+    # validate_run drops silent failures (non-zero exit, empty stdout when
+    # a pattern is required, etc.) instead of letting them poison medians.
     times = {label: [] for label, _ in bins}
     for _ in range(N_RUNS):
         for label, cmd in bins:
-            t_ms, rc, timed_out, _rss = run_cmd(cmd, env=lib_env, timeout=timeout)
-            if timed_out or rc != 0:
+            r = run_cmd(cmd, env=lib_env, timeout=timeout)
+            if not validate_run(name, r, label):
                 continue
-            times[label].append(t_ms)
+            times[label].append(r["elapsed_ms"])
 
     return {label: median_ms(t) for label, t in times.items()}
 
@@ -85,10 +87,10 @@ def startup_4way(protopy_bin, cpython_bin, cpythont_bin, timeout):
     times = {label: [] for label, _ in bins}
     for _ in range(N_RUNS):
         for label, cmd in bins:
-            t_ms, rc, timed_out, _ = run_cmd(cmd, timeout=timeout)
-            if timed_out or rc != 0:
+            r = run_cmd(cmd, timeout=timeout)
+            if not validate_run("startup_empty", r, label):
                 continue
-            times[label].append(t_ms)
+            times[label].append(r["elapsed_ms"])
     return {label: median_ms(t) for label, t in times.items()}
 
 
