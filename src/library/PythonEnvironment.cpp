@@ -20302,13 +20302,6 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     space_->booleanPrototype = const_cast<proto::ProtoObject*>(boolPrototype);
 
-    // 4.4b Initialise the ordered-attribute sentinel.  See declaration in
-    // PythonEnvironment.h.  A fresh ProtoObject that no user-reachable
-    // path can ever produce — it has no class, no attrs, no parent.  Used
-    // as the discriminator at position 0 of the (sentinel, counter, value)
-    // wrap tuples that STORE_ATTR plants in instance attribute storage.
-    orderedAttrSentinel_ = rootContext_->newObject(false);
-
     // 4.5 Initialize modulePrototype
     modulePrototype = objectPrototype->newChild(rootContext_, true);
     modulePrototype = modulePrototype->setAttribute(rootContext_, getClassString(), typePrototype);
@@ -22682,44 +22675,6 @@ void PythonEnvironment::enableDefaultTrace() {
 
 void PythonEnvironment::invalidateResolveCache() {
     resolveCacheGeneration_.fetch_add(1, std::memory_order_release);
-}
-
-// -----------------------------------------------------------------------------
-// Ordered-attribute wrap / unwrap helpers (sprint-9).  See the storage-
-// convention comment in PythonEnvironment.h next to attrInsertionCounter_.
-// -----------------------------------------------------------------------------
-bool PythonEnvironment::isOrderedAttrWrap(const proto::ProtoObject* value) const {
-    if (!value || value == PROTO_NONE || !orderedAttrSentinel_) return false;
-    // Hot-path detection: a wrapper is a 3-tuple whose [0] is our sentinel.
-    // getCurrentContext() is only used to satisfy the tuple-tag check; no
-    // allocations or chain walks happen here.
-    proto::ProtoContext* ctx = s_threadContext ? s_threadContext : rootContext_;
-    if (!ctx) return false;
-    const proto::ProtoTuple* t = value->asTuple(ctx);
-    if (!t) return false;
-    if (t->getSize(ctx) != 3) return false;
-    return t->getAt(ctx, 0) == orderedAttrSentinel_;
-}
-
-const proto::ProtoObject* PythonEnvironment::wrapOrderedAttr(
-        proto::ProtoContext* ctx, const proto::ProtoObject* value) {
-    if (!orderedAttrSentinel_ || !ctx) return value;
-    uint64_t counter = nextAttrInsertionCounter();
-    const proto::ProtoObject* counterObj = ctx->fromInteger(static_cast<long long>(counter));
-    const proto::ProtoList* triple = ctx->newList()
-        ->appendLast(ctx, orderedAttrSentinel_)
-        ->appendLast(ctx, counterObj)
-        ->appendLast(ctx, value);
-    return ctx->newTupleFromList(triple)->asObject(ctx);
-}
-
-const proto::ProtoObject* PythonEnvironment::unwrapOrderedAttr(
-        proto::ProtoContext* ctx, const proto::ProtoObject* value) const {
-    if (!value || value == PROTO_NONE || !orderedAttrSentinel_ || !ctx) return value;
-    const proto::ProtoTuple* t = value->asTuple(ctx);
-    if (!t || t->getSize(ctx) != 3) return value;
-    if (t->getAt(ctx, 0) != orderedAttrSentinel_) return value;
-    return t->getAt(ctx, 2);
 }
 
 bool PythonEnvironment::isCompleteBlock(const std::string& code) {
@@ -27907,18 +27862,6 @@ struct SyncContext {
     const proto::ProtoString* dataName;
     const proto::ProtoString* keysName;
     int count;
-    // Sprint-9: collect (counter, name, value) for every wrapped own attr
-    // and rebuild keysList in counter order after processElements completes.
-    // The triple of legacy un-wrapped attrs (modules, class objects, etc.)
-    // is appended after the sorted run, preserving prior behaviour for
-    // storage that never went through OP_STORE_ATTR.
-    PythonEnvironment* env;
-    struct Entry {
-        uint64_t counter;        // UINT64_MAX => legacy un-wrapped
-        const proto::ProtoString* name;
-        const proto::ProtoObject* unwrappedVal;
-    };
-    std::vector<Entry>* entries;
 };
 
 static void syncAttr(proto::ProtoContext* ctx, void* self, unsigned long key, const proto::ProtoObject* val) {
@@ -27929,56 +27872,34 @@ static void syncAttr(proto::ProtoContext* ctx, void* self, unsigned long key, co
         if (ks && ks != sCtx->dataName && ks != sCtx->keysName) {
             std::string kstr;
             ks->toUTF8String(ctx, kstr);
+            // Universal exclusion list — these keys describe the class
+            // identity or back the runtime's own dict-storage proxy and
+            // never belong in a user-visible instance dict.  Without this
+            // filter, py_object_get_dict's "raw __data__" else-branch
+            // surfaces `__class__` (and friends) inside `obj.__dict__`
+            // for dict/list/set subclasses, contaminating pickle's reduce
+            // protocol state.
             if (kstr != "__data__" && kstr != "__keys__"
                 && kstr != "__pydict_data__" && kstr != "__pydict_keys__"
                 && kstr != "__is_python_class__"
                 && kstr != "__class__" && kstr != "__name__"
                 && kstr != "__bases__" && kstr != "__mro__") {
-                // Sprint-9: detect (sentinel, counter, value) wrappers.
-                // syncAttr is the single rebuild point for __dict__ / vars()
-                // proxies, so unwrapping here keeps every consumer above
-                // ignorant of the wrap.
-                uint64_t counter = UINT64_MAX;
-                const proto::ProtoObject* realVal = val;
-                if (sCtx->env && sCtx->env->isOrderedAttrWrap(val)) {
-                    const proto::ProtoTuple* t = val->asTuple(ctx);
-                    if (t && t->getSize(ctx) == 3) {
-                        const proto::ProtoObject* cObj = t->getAt(ctx, 1);
-                        if (cObj && cObj->isInteger(ctx)) {
-                            counter = static_cast<uint64_t>(cObj->asLong(ctx));
-                        }
-                        realVal = t->getAt(ctx, 2);
-                    }
-                }
-                if (sCtx->entries) {
-                    sCtx->entries->push_back({counter, ks, realVal});
+                // protoCore's attribute SparseList is keyed by the
+                // `ProtoString*` pointer cast to ulong, but a Python `dict`
+                // keys by `key->getHash(ctx)` (string content hash). The
+                // two are NOT the same — pointer-keyed storage made
+                // `obj.__dict__[name]` lookups miss, so `vars(obj)`
+                // appeared to have the right keys with `None` values.
+                // Re-key with the content hash so the dict-proxy hot path
+                // (`py_dict_getitem` → `dictKeyHash` → `dataList->getAt(hash)`)
+                // resolves to the actual value.
+                unsigned long contentHash = ks->getHash(ctx);
+                sCtx->dataList = const_cast<proto::ProtoSparseList*>(sCtx->dataList->setAt(ctx, contentHash, val));
+                if (!sCtx->keysList->has(ctx, keyObj)) {
+                    sCtx->keysList = const_cast<proto::ProtoList*>(sCtx->keysList->appendLast(ctx, keyObj));
+                    sCtx->count++;
                 }
             }
-        }
-    }
-}
-
-// Flush the SyncContext entry buffer into dataList (content-hash keyed) and
-// keysList (PEP 468 insertion order).  Wrapped entries sort by counter;
-// legacy un-wrapped entries (counter == UINT64_MAX) keep their natural hash
-// iteration order and follow the wrapped block.  Idempotent against
-// duplicates by name.
-static void flushSyncEntries(SyncContext& sCtx) {
-    if (!sCtx.entries || sCtx.entries->empty()) return;
-    std::stable_sort(sCtx.entries->begin(), sCtx.entries->end(),
-        [](const SyncContext::Entry& a, const SyncContext::Entry& b) {
-            return a.counter < b.counter;
-        });
-    proto::ProtoContext* ctx = sCtx.ctx;
-    for (const auto& e : *sCtx.entries) {
-        unsigned long contentHash = e.name->getHash(ctx);
-        sCtx.dataList = const_cast<proto::ProtoSparseList*>(
-            sCtx.dataList->setAt(ctx, contentHash, e.unwrappedVal));
-        const proto::ProtoObject* nameObj = reinterpret_cast<const proto::ProtoObject*>(e.name);
-        if (!sCtx.keysList->has(ctx, nameObj)) {
-            sCtx.keysList = const_cast<proto::ProtoList*>(
-                sCtx.keysList->appendLast(ctx, nameObj));
-            sCtx.count++;
         }
     }
 }
@@ -28029,15 +27950,11 @@ const proto::ProtoObject* PythonEnvironment::initDictStorage(proto::ProtoContext
         const proto::ProtoSparseList* dl = d->asSparseList(ctx);
         const proto::ProtoList* kl = k->asList(ctx);
         if (attrs && dl && kl) {
-            std::vector<SyncContext::Entry> entries;
-            entries.reserve(16);
             SyncContext sCtx = { ctx,
                                  const_cast<proto::ProtoSparseList*>(dl),
                                  const_cast<proto::ProtoList*>(kl),
-                                 dataName, keysName, 0,
-                                 this, &entries };
+                                 dataName, keysName, 0 };
             attrs->processElements(ctx, &sCtx, syncAttr);
-            flushSyncEntries(sCtx);
             currentObj = const_cast<proto::ProtoObject*>(currentObj)->proto::ProtoObject::setAttribute(ctx, dataName, sCtx.dataList->asObject(ctx));
             currentObj = const_cast<proto::ProtoObject*>(currentObj)->proto::ProtoObject::setAttribute(ctx, keysName, sCtx.keysList->asObject(ctx));
         }

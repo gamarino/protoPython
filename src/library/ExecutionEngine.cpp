@@ -6269,14 +6269,6 @@ const proto::ProtoObject* executeBytecodeRange(
                             // 1 uncached AVL lookup: hits for self.field, misses for self.method().
                             const proto::ProtoObject* ownFv =
                                 obj->getOwnAttributeDirect(ctx, attrName);
-                            // Sprint-9: instance attribute storage now keeps values wrapped
-                            // as (sentinel, counter, value).  Unwrap once here so every
-                            // downstream check (descriptor, isMethod, etc.) sees the real
-                            // value.  unwrapOrderedAttr is a no-op for non-wrapped values,
-                            // so class attributes and module globals flow through unchanged.
-                            if (ownFv && ownFv != PROTO_NONE && env) {
-                                ownFv = env->unwrapOrderedAttr(ctx, ownFv);
-                            }
                             if (ownFv && ownFv != PROTO_NONE && !ownFv->isMethod(ctx)) {
                                 const proto::ProtoObject* ownType = ownFv->getFirstParent(ctx);
                                 if (ownType != env->getFunctionPrototype()) {
@@ -6748,14 +6740,7 @@ const proto::ProtoObject* executeBytecodeRange(
                             bool hasSetattrOverride =
                                 directType->hasOwnAttribute(ctx, setattrS) == PROTO_TRUE;
                             if (noSlots && noDescr && !hasSetattrOverride) {
-                                // Sprint-9: wrap the stored value with (sentinel, counter, value)
-                                // so PEP 468 insertion order can be reconstructed on demand
-                                // (vars(obj) / obj.__dict__) without paying the per-write
-                                // __keys__ list-append the old code did below.  The wrap is
-                                // unwrapped at every legitimate read site (LOAD_ATTR fast path,
-                                // env->getAttribute, vars()-style helpers).
-                                const proto::ProtoObject* valToStore = env->wrapOrderedAttr(ctx, val);
-                                newObj = const_cast<proto::ProtoObject*>(obj)->setAttribute(ctx, nameS, valToStore);
+                                newObj = const_cast<proto::ProtoObject*>(obj)->setAttribute(ctx, nameS, val);
                                 fastStoreTaken = true;
                                 // STRUCT-321: dict / list / tuple / set
                                 // subclass instances must NOT have STORE_ATTR
@@ -6807,12 +6792,29 @@ const proto::ProtoObject* executeBytecodeRange(
                                 // already tracked (re-assigning an existing
                                 // attribute keeps its original slot, matching
                                 // CPython's dict.__setitem__ semantics).
-                                // Sprint-9: the eager __keys__ list maintenance that used
-                                // to live here is gone.  Insertion order is now reconstructed
-                                // on demand from the (sentinel, counter, value) wraps in
-                                // attribute storage (see env->wrapOrderedAttr above and the
-                                // PEP-468 helpers in PythonEnvironment).
-                                (void)isContainerSubclass;
+                                if (env && !isContainerSubclass) {
+                                    const proto::ProtoString* keysName = env->getKeysString();
+                                    const proto::ProtoObject* keysObj = (newObj->hasOwnAttribute(ctx, keysName) == PROTO_TRUE)
+                                        ? newObj->proto::ProtoObject::getAttribute(ctx, keysName) : nullptr;
+                                    const proto::ProtoList* keysList = (keysObj && keysObj != PROTO_NONE) ? keysObj->asList(ctx) : nullptr;
+                                    bool present = false;
+                                    if (keysList) {
+                                        unsigned long h = nameS->getHash(ctx);
+                                        for (unsigned long i = 0; i < keysList->getSize(ctx); ++i) {
+                                            const proto::ProtoObject* k = keysList->getAt(ctx, i);
+                                            if (k && k->isString(ctx) && k->getHash(ctx) == h) {
+                                                present = true;
+                                                break;
+                                            }
+                                        }
+                                    } else {
+                                        keysList = ctx->newList();
+                                    }
+                                    if (!present) {
+                                        keysList = keysList->appendLast(ctx, nameS->asObject(ctx));
+                                        const_cast<proto::ProtoObject*>(newObj)->proto::ProtoObject::setAttribute(ctx, keysName, keysList->asObject(ctx));
+                                    }
+                                }
                             }
                         }
                     }
