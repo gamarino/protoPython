@@ -6792,29 +6792,31 @@ const proto::ProtoObject* executeBytecodeRange(
                                 // already tracked (re-assigning an existing
                                 // attribute keeps its original slot, matching
                                 // CPython's dict.__setitem__ semantics).
-                                if (env && !isContainerSubclass) {
-                                    const proto::ProtoString* keysName = env->getKeysString();
-                                    const proto::ProtoObject* keysObj = (newObj->hasOwnAttribute(ctx, keysName) == PROTO_TRUE)
-                                        ? newObj->proto::ProtoObject::getAttribute(ctx, keysName) : nullptr;
-                                    const proto::ProtoList* keysList = (keysObj && keysObj != PROTO_NONE) ? keysObj->asList(ctx) : nullptr;
-                                    bool present = false;
-                                    if (keysList) {
-                                        unsigned long h = nameS->getHash(ctx);
-                                        for (unsigned long i = 0; i < keysList->getSize(ctx); ++i) {
-                                            const proto::ProtoObject* k = keysList->getAt(ctx, i);
-                                            if (k && k->isString(ctx) && k->getHash(ctx) == h) {
-                                                present = true;
-                                                break;
-                                            }
-                                        }
-                                    } else {
-                                        keysList = ctx->newList();
-                                    }
-                                    if (!present) {
-                                        keysList = keysList->appendLast(ctx, nameS->asObject(ctx));
-                                        const_cast<proto::ProtoObject*>(newObj)->proto::ProtoObject::setAttribute(ctx, keysName, keysList->asObject(ctx));
-                                    }
-                                }
+                                // PEP 468 / `vars(obj)` insertion-order tracking removed
+                                // here intentionally.
+                                //
+                                // Rationale: the eager per-STORE_ATTR maintenance of an
+                                // explicit `__keys__` list on every Python instance was
+                                // duplicating the protoCore-internal SparseList that
+                                // already stores the attributes — and it cost a full
+                                // extra setAttribute per write (probe __keys__, scan
+                                // the list, appendLast, setAttribute(__keys__, ...)).
+                                // The list was load-bearing only for `vars(obj)` /
+                                // `obj.__dict__` insertion-order semantics.  Where
+                                // insertion order MUST be preserved — `{}` / `dict(...)`
+                                // literals — protoPython's `OP_BUILD_MAP` /
+                                // `OP_STORE_SUBSCR` build a dedicated dict object that
+                                // carries its own `__data__` SparseList AND its own
+                                // ordered `__keys__` list (see line ~7090 onward).
+                                //
+                                // The trade-off: `vars(obj).keys()` / `obj.__dict__`
+                                // now iterates in hash order rather than insertion
+                                // order.  Programs that rely on the latter for plain
+                                // instance attributes (rare — most reflection consumers
+                                // iterate the class annotation map instead) will see
+                                // the order shift.  This is documented and explicit; we
+                                // no longer pay 2× setAttribute on every `self.x = v`.
+                                (void)isContainerSubclass;
                             }
                         }
                     }
