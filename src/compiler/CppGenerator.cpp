@@ -1320,9 +1320,23 @@ bool CppGenerator::generateFor(ForNode* n) {
     *out_ << "                break;\n";
     *out_ << "            }\n";
     
-    // Bind target
+    // Bind target — route NameNode through generateAssignToTarget so that
+    // the for-loop variable lands in the correct scope.  Inside a function
+    // body collectLocals() already added the name to orderedLocalVars_,
+    // and generateAssignToTarget will emit `local_<id> = __val_<id>`;
+    // at module scope (orderedLocalVars_ empty) it falls through to
+    // `env->storeName(...)`.  Hard-coding storeName here was the parallel
+    // of the WhileNode scope bug fixed in commit d7dfec38 for the
+    // bytecode compiler: `for i in range(N): s += i` then wrote `i` to
+    // module globals while `s += i` read `local_i` (still PROTO_NONE),
+    // producing "Object is not an integer type" inside protopyc-compiled
+    // functions.
     if (auto* nameNode = dynamic_cast<NameNode*>(n->target.get())) {
-        *out_ << "            env->storeName(\"" << nameNode->id << "\", __val_" << id << ");\n";
+        std::ostringstream valStream;
+        valStream << "__val_" << id;
+        *out_ << "            ";
+        if (!generateAssignToTarget(nameNode, valStream.str())) return false;
+        *out_ << ";\n";
     } else if (auto* tupleNode = dynamic_cast<TupleLiteralNode*>(n->target.get())) {
         // Handle unpacking in for target: for x, y in ...
         std::ostringstream targetStream;

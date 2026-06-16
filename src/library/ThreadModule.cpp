@@ -329,8 +329,22 @@ static const proto::ProtoObject* thread_bootstrap(
     const proto::ProtoSparseList* /*kwargs*/) {
     diagBootstrapTid();
     if (!args || args->getSize(context) < 1) return PROTO_NONE;
+    // Args layout produced by py_start_new_thread / py_start_joinable_thread:
+    //   args[0]   = ExternalPointer(env)              (optional)
+    //   args[1]   = spawner's currentGlobals           (optional, sentinel-tagged)
+    //   args[N]   = callable                           (required)
+    //   args[N+1..] = positional args for callable
+    //
+    // The globals slot carries the Python-level globals visible at the
+    // moment of the spawn so the new OS thread can resolve LOAD_GLOBAL
+    // / lookupName from the same module as the spawner.  Without this,
+    // protopyc-generated functions (whose body calls
+    // env->lookupName("x")) ran in a fresh thread with NULL
+    // s_currentGlobals and saw every name as missing — silently
+    // raising and dying before any side effect.
     unsigned long callableIdx = 0;
     protoPython::PythonEnvironment* env = nullptr;
+    const proto::ProtoObject* spawnerGlobals = nullptr;
     if (args->getSize(context) >= 2) {
         const proto::ProtoObject* first = args->getAt(context, 0);
         const proto::ProtoExternalPointer* ep = first ? first->asExternalPointer(context) : nullptr;
@@ -338,6 +352,21 @@ static const proto::ProtoObject* thread_bootstrap(
             env = static_cast<protoPython::PythonEnvironment*>(ep->getPointer(context));
             if (env) {
                 callableIdx = 1;
+                // Slot args[1] is the inherited globals when args has
+                // at least 3 entries.  We never store a callable
+                // directly at args[1] from our producers, so a 2-entry
+                // tuple is the legacy "no globals" shape and we leave
+                // s_currentGlobals untouched.
+                if (args->getSize(context) >= 3) {
+                    const proto::ProtoObject* second = args->getAt(context, 1);
+                    if (second && second != PROTO_NONE) {
+                        spawnerGlobals = second;
+                        callableIdx = 2;
+                    } else if (second == PROTO_NONE) {
+                        // Explicit "no globals inheritance" sentinel.
+                        callableIdx = 2;
+                    }
+                }
             }
         }
     }
@@ -345,11 +374,18 @@ static const proto::ProtoObject* thread_bootstrap(
     const proto::ProtoObject* result = nullptr;
     {
         protoPython::PythonEnvironment::ContextScope scope(env, context);
+        const proto::ProtoObject* oldGlobals = protoPython::PythonEnvironment::getCurrentGlobals();
+        if (spawnerGlobals) {
+            protoPython::PythonEnvironment::setCurrentGlobals(spawnerGlobals);
+        }
         const proto::ProtoObject* callable = args->getAt(context, static_cast<int>(callableIdx));
         const proto::ProtoList* argList = context->newList();
         for (unsigned long i = callableIdx + 1; i < args->getSize(context); ++i)
             argList = argList->appendLast(context, args->getAt(context, static_cast<int>(i)));
         result = protoPython::invokePythonCallable(context, callable, argList, nullptr);
+        if (spawnerGlobals) {
+            protoPython::PythonEnvironment::setCurrentGlobals(oldGlobals);
+        }
     }
     return result;
 }
@@ -364,8 +400,16 @@ static const proto::ProtoObject* py_start_new_thread(
     const proto::ProtoObject* callable = posArgs->getAt(ctx, 0);
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
     const proto::ProtoList* argsForThread = ctx->newList();
-    if (env)
+    // Layout consumed by thread_bootstrap: [env, globals, callable, *args].
+    // Both env and globals are optional in principle, but py_start_new_thread
+    // always has an env (we're inside one).  We pass PROTO_NONE if the
+    // spawner has no currentGlobals so bootstrap stays at the same shape.
+    if (env) {
         argsForThread = argsForThread->appendLast(ctx, ctx->fromExternalPointer(env, nullptr));
+        const proto::ProtoObject* spawnerGlobals = protoPython::PythonEnvironment::getCurrentGlobals();
+        argsForThread = argsForThread->appendLast(
+            ctx, spawnerGlobals ? spawnerGlobals : PROTO_NONE);
+    }
     argsForThread = argsForThread->appendLast(ctx, callable);
     if (posArgs->getSize(ctx) >= 2) {
         const proto::ProtoObject* second = posArgs->getAt(ctx, 1);
@@ -631,13 +675,22 @@ static const proto::ProtoObject* py_start_joinable_thread(
         handle = py_make_thread_handle(ctx, self, nullptr, ctx->newList(), nullptr);
     }
 
-    // Build the args list passed to thread_bootstrap: [env_ptr, callable].
+    // Build the args list passed to thread_bootstrap:
+    //   [env_ptr, spawner_globals_or_None, callable, ...].
+    // The globals slot lets the new OS thread resolve LOAD_GLOBAL /
+    // lookupName from the same module as the spawner — see the
+    // thread_bootstrap comment for the why.
     protoPython::PythonEnvironment* env =
         protoPython::PythonEnvironment::fromContext(ctx);
     const proto::ProtoList* argsForThread = ctx->newList();
-    if (env)
+    if (env) {
         argsForThread = argsForThread->appendLast(
             ctx, ctx->fromExternalPointer(env, nullptr));
+        const proto::ProtoObject* spawnerGlobals =
+            protoPython::PythonEnvironment::getCurrentGlobals();
+        argsForThread = argsForThread->appendLast(
+            ctx, spawnerGlobals ? spawnerGlobals : PROTO_NONE);
+    }
     argsForThread = argsForThread->appendLast(ctx, callable);
 
     // Spawn.
