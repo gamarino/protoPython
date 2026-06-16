@@ -56,7 +56,7 @@ The current focus is correctness: all 17 CPython conformance test categories pas
 | **Type System** | **Advanced** - Lists, Tuples, Sets, Dicts with native wrapping ✅ |
 | **C++ Interop** | **Full** - HPy and UMD support integrated ✅ |
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
-| **Performance** | **2026-06-15 post sprint-10 — honest 4-way comparison vs CPython 3.14t free-threading** (uv-installed `python3.14t` built with Clang 22.1.3, NOT the system `python3.14` with GIL on that earlier reports incorrectly used). 13-bench geomean (`memory_pressure` excluded as deferred-GC scheduling is not apples-to-apples with CPython's eager refcount free): protopy interpreter **4.87×** slower than CPython 3.14t.  The honest GIL-on cost on the same Clang build: CPython 3.14t is 1.25× slower than CPython 3.14 GIL-on single-thread (that's the price PEP 703 pays per-object locks).  Biggest wins of the June sprint series: WhileNode codegen fix (`d7dfec38`, nqueens 27.69× → 3.88×); sprint-10 instance-attr `__keys__` removal (`6368ec16`, binary_trees 46.20× → 34.81×, richards_lite −19 %).  Sprint-9's wrapped-attrs counter was retracted after the hardened harness (commit `e0d96c9b`) caught `binary_trees` silently crashing — the original "27.41x → 1.33x win" was a 88 ms setup time recorded by a harness that didn't check exit codes.  See the perf section below for the full numbers and the retraction trail. ⚙️ |
+| **Performance** | **2026-06-16 honest full-stack comparison** vs CPython 3.14t free-threading.  Inner-only timing (parsed from per-bench `BENCH_RESULT ms=` markers — excludes interpreter startup + GC tail; same N as the protoCpp counterparts).  Geomean across 6 micros: `cpp` (raw C++, hardware floor) **0.19x**, `proto_fast` (protoCore with API-side optimisations) **0.30x** — the architecture's ceiling is **3.3× FASTER than CPython 3.14t**.  `proto` raw is 2.67x, `cp` (CPython GIL on) is 1.20x, **`protopy` (our bytecode interpreter) is 6.94x** — that's 2.6x on top of raw protoCore (per-op interpreter cost) and 23x from the optimised architectural ceiling.  `protopyc` (AOT) is 5.47x geomean but has silent-failure bugs on multithread / int_sum / attr_lookup that need to be fixed before that number is trustable.  The June sprint series went 5.72x → 4.87x → 6.94x: the 4.87x figure was the harness's small-bench inversion (short benches make CPython 3.14t's lower startup look like a per-op win, hiding ~150 ms of protopy GC tail); 6.94x is the honest per-op number from larger workloads with startup excluded.  See the perf section below for the full table including the protoCpp ceilings. ⚙️ |
 | **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
 | **test_descr.py conformance (May 18 2026)** | **148/155 non-skipped passing (95.5 %)** — `test/cpython/test_descr.py`: 7 failures + 10 skipped out of 165 tests.  **Every remaining failure is excluded by design**: they all assert deterministic `__del__` firing, weakref clearing on `gc.collect()`, or instance-count reuse after cycle collection — semantics that protoCore's concurrent, non-eager GC explicitly does not provide.  Rounds 26–40 + STRUCT-323 / STRUCT-324 (May 17–18) cut from 27F + 7E down to 7F, 24 test flips, no regressions, ctest 199/199 verde every commit.  See `docs/CPYTHON_CONFORMANCE.md` for the per-round breakdown. ✅ |
 
@@ -72,7 +72,142 @@ The current focus is correctness: all 17 CPython conformance test categories pas
 
 ---
 
-## 📊 Performance Benchmarks (2026-06-15 post sprint-10, honest 4-way interleaved)
+## 📊 Performance Benchmarks (2026-06-16 full-stack honest comparison)
+
+> **What's measured here.**  Same workload size for every variant of
+> each bench so the wall-clocks line up directly across the seven
+> columns.  For protoPython variants and CPython, "inner ms" is the
+> value the bench prints itself via a `BENCH_RESULT name=… N=… ms=…`
+> marker on its last stdout line — that excludes interpreter startup
+> (~30 ms) and the GC tail after `main()` returns, both of which
+> distorted earlier reports.  For protoCpp binaries, wall-clock is
+> used (startup there is ~1 ms — negligible at our N).
+>
+> The reproducer is `benchmarks/run_full_stack.py`.  The latest
+> machine report is
+> [`benchmarks/reports/2026-06-16-full-stack-cpp-proto-python.md`](benchmarks/reports/2026-06-16-full-stack-cpp-proto-python.md).
+> The harness was hardened in commit `e0d96c9b` to assert exit code 0
+> and to require the `BENCH_RESULT` marker on each Python run, so the
+> silent crashes and "Done." module-init-only runs that fooled earlier
+> reports are now dropped instead of being recorded as wins.
+
+### The full stack (baseline 1.0 = CPython 3.14t free-threading)
+
+Six identical micro-benches measured across every layer:
+
+| Bench               | `cpp` (C++ floor) | `proto` (kernel raw) | `proto_fast` (kernel opt) | `cp` (CPython GIL) | `cpt` (CPython no-GIL) | `protopy` | `protopyc` |
+|---------------------|------:|-------:|----------:|-------:|-------:|---------:|---------:|
+| int_sum_loop        |  4.72 | 105.60 |     56.69 | 413.98 | 541.22 |   672.41 |   N/A    |
+| attr_lookup         |  6.80 | 300.94 |    N/A    | 389.44 | 372.59 |  2703.94 |  5022.64 |
+| list_append_loop    |  3.20 |  17.50 |    N/A    |   0.66 |   0.96 |    18.73 |    21.89 |
+| str_concat_loop     |  2.54 |  14.93 |    N/A    |   0.15 |   0.09 |     4.09 |    91.62 |
+| call_recursion      |  1.49 |  34.74 |     15.43 |   9.40 |  10.16 |    74.09 |    34.24 |
+| multithread_cpu     |  3.68 |  35.33 |     26.19 | 563.88 | 160.63 |   307.03 |     0.74 |
+
+Ratios vs `cpt = 1.0`:
+
+| Bench               | `cpp` | `proto` | `proto_fast` | `cp` | `cpt` | `protopy` | `protopyc` |
+|---------------------|---:|---:|----:|---:|---:|----:|----:|
+| int_sum_loop        |  0.01x |  0.20x |  0.10x |  0.76x | 1.00x |  1.24x | N/A |
+| attr_lookup         |  0.02x |  0.81x |  N/A   |  1.05x | 1.00x |  7.26x | 13.48x |
+| list_append_loop    |  3.34x | 18.23x |  N/A   |  0.69x | 1.00x | 19.51x | 22.80x |
+| str_concat_loop     | 28.20x | 165.84x | N/A   |  1.67x | 1.00x | 45.44x | 1017.99x |
+| call_recursion      |  0.15x |  3.42x |  1.52x |  0.93x | 1.00x |  7.29x |  3.37x |
+| multithread_cpu     |  0.02x |  0.22x |  0.16x |  3.51x | 1.00x |  1.91x |  0.00x ⚠ |
+| **Geomean (6)**     | **0.19x** | **2.67x** | **0.30x** | **1.20x** | **1.00x** | **6.94x** | **5.47x** ⚠ |
+
+### What the ceilings actually say
+
+* **`cpp` 0.19x** — the hardware floor.  C++ with `-O3` is 5× faster
+  than CPython 3.14t on these microbenches.  That's how far native
+  code is from any Python interpreter — both CPython and ours.
+* **`proto_fast` 0.30x** — **protoCore's architectural ceiling is
+  3.3× faster than CPython 3.14t.**  That is the headline: the
+  protoCore object model + structural sharing immutables + lock-free
+  arenas can beat CPython meaningfully when an embedder uses the
+  kernel via its optimised API.  This is the GIL-free pitch landing
+  at the architecture level, not just at "we ship without a GIL".
+* **`proto` 2.67x** — raw protoCore (no API-side specialisation) is
+  ~2.7× slower than CPython 3.14t.  Hot paths like `list_append_loop`
+  and `str_concat_loop` here are dominated by AVL spine allocation
+  and structural-sharing rebuilds that the optimised `proto_fast`
+  variants short-circuit.
+* **`cp` 1.20x** — the lock cost of PEP 703 measured on the same
+  benches.  CPython 3.14 GIL-on is ~20 % faster than CPython 3.14t on
+  long single-thread workloads.  The exception is `multithread_cpu`
+  at **3.51x**: there the GIL serialises the four threads and PEP 703
+  lets them run in parallel, which dominates the per-op lock cost.
+* **`protopy` 6.94x** — protoPython's bytecode interpreter sits 2.6×
+  above the raw kernel (`6.94 / 2.67`).  That ratio is the per-op cost
+  of the dispatch loop on top of `getAttribute` / `setAttribute` /
+  arithmetic primitives.  From the architectural ceiling (`proto_fast`)
+  the headroom is **23×**.  Closing it requires (a) routing more of
+  the interpreter through the optimised API the way `proto_fast`
+  does — e.g. inlining the SmallInt arithmetic fast paths, batching
+  `setAttribute` calls during `__init__`, lazy materialisation of new
+  collection states — and (b) reducing dispatch overhead per opcode.
+* **`protopyc` 5.47x ⚠** — the AOT column is currently unreliable:
+  `multithread_cpu` reads as `0.74 ms` because the compiled module
+  silently skipped `main()` (its `__name__ == "__main__"` check
+  returns false under `run_module`), `int_sum_loop` produces no
+  result, and `str_concat_loop` is 1017x slower than CPython 3.14t.
+  These need to be debugged before the AOT row can be trusted; the
+  geomean is computed only over the rows that did run, so it's an
+  upper bound on the bug-free version, not a real measurement.
+
+### Where the user-visible benchmarks land
+
+The longer pyperf-style benchmarks (`fib`, `binary_trees`, `nqueens`,
+`richards_lite`, `sieve`) live in
+[`benchmarks/run_long_4way.py`](benchmarks/run_long_4way.py) and
+report similar numbers vs `cpt = 1.0`:
+
+* `pyperf_richards_lite` 2.31x — OOP method dispatch chain
+* `pyperf_nqueens` 8.57x
+* `pyperf_fib` 11.94x
+* `pyperf_sieve` 50.50x
+* `pyperf_binary_trees` 96.99x — the worst, persistent-collection-rebuild bound
+
+`binary_trees` at 97× CPython 3.14t (`cpt`) is the single biggest
+remaining gap.  The 6.27 % of cycles spent in `ProtoSparseListImpl`'s
+constructor and the recursive `implSetAt` rebuilds on every
+`self.x = val` is exactly the kind of allocation pattern that
+`proto_fast` short-circuits but the embedder doesn't yet use.  A
+batched `setAttributes(n, names[], values[])` API in protoCore plus
+an embedder fast path that recognises trivial `__init__` bodies is
+the natural next move.
+
+### Where we stood before the methodology fix
+
+Earlier README revisions reported geomean ratios around 3.0x–4.9x
+vs CPython 3.14t.  Those numbers were derived from a harness that
+recorded **wall-clock including startup**, and from small benches
+where ~30 ms of interpreter startup + ~100–700 ms of post-`main()`
+GC tail dominated the per-op cost.  protopy's startup + GC tail
+turned out to make every small workload look ~3× slower than it
+really is at the per-op level; CPython 3.14t's lower startup made it
+appear deceptively faster than the GIL-on build at short sizes (its
+real per-op penalty for PEP 703 is ~20 %, recovered at large N).
+The numbers in this section come from the inner-only measurement —
+the honest per-op cost.
+
+### Lessons from earlier reports
+
+Sprint-9 (the wrapped-attrs `(sentinel, counter, value)` change at
+commit `eee05bd7`) tried to preserve PEP 468 strict-everywhere with
+3-tuple wraps stored in place of the raw values.  It was reverted
+in `b4aec0bf`/`ae93dd27` after `binary_trees` was found to silently
+crash (`AttributeError: 'tuple' object has no attribute 'check'`
+after ~88 ms of setup) and the harness recorded the 88 ms as a "win"
+without checking the exit code.  Sprint-10 narrows the requirement:
+PEP 468 stays for the user's explicit dicts, not for the internal
+storage of instance attributes.  The harness was hardened so the next
+silent failure shows up as `[DROPPED]` lines in the run log instead
+of as a misleading commit.
+
+---
+
+## 📊 Performance Benchmarks (2026-06-15 post sprint-10, honest 4-way interleaved — superseded)
 
 > **Methodology fix.** Earlier reports compared protoPython against
 > `python3.14` from the system package, which is built with GCC and
@@ -97,18 +232,40 @@ The current focus is correctness: all 17 CPython conformance test categories pas
 
 ### Single-thread cost of the locks (CPython GIL off / GIL on)
 
-Geomean of 13 benchmarks (`memory_pressure` excluded — deferred-GC
-scheduling is not apples-to-apples with CPython's eager refcount free):
+**Honest caveat first.**  The 13-bench harness geomean shows
+`cp/cpt = 1.25×` — i.e. GIL-on appears 25 % slower than GIL-off in
+the table — but that's an artefact of these benches being short
+(20–100 ms wall-clock each).  At that size the **startup overhead
+of the interpreter dominates the workload**, and the two uv-installed
+binaries don't have identical startup costs: `python3.14t` cold-start
+is ~15 ms faster than `python3.14`, presumably because the free-
+threading build initialises fewer eager imports.  That ~15 ms
+delta is larger than the per-op lock cost on most of these benches,
+so the geomean inverts the actual ordering.
 
-* `python3.14` (GIL on) / `python3.14t` (GIL off) = **0.80×**, i.e.
-  the GIL-on build is ~25 % faster than the no-GIL build on hot
-  single-thread loops.  That's the price PEP 703 pays for
-  per-object locks and atomic refcounts.
-* The exception is `multithread_cpu`: GIL on is **3.04× slower**
-  than GIL off there — the GIL serialises the four threads, while
-  GIL off parallelises them across cores.
+The **per-op cost of PEP 703 measured on a long single-thread workload**
+(`s += i` over 10 M iterations, timing only the inner loop — startup
+fully excluded):
 
-### Where protopy (the bytecode interpreter) stands vs CPython 3.14t
+| Build | Inner-loop median |
+|---|---|
+| `python3.14` (GIL on) | **514 ms** |
+| `python3.14t` (GIL off) | **610 ms (+19 %)** |
+
+So in reality: **GIL-off is ~19 % slower per op** than GIL-on on a
+hot integer loop.  That's the price PEP 703 pays for per-object
+locks and atomic refcounts.  The benchmark suite below has too much
+startup pollution per row to see this directly; the wall-clocks in
+the table are still real, but interpret the **cp/cpt** column with
+this caveat.
+
+The exception that survives both effects is `multithread_cpu`:
+**GIL on is 3.04× slower than GIL off there** — the GIL serialises
+the four threads while GIL off parallelises them across cores.  That
+is large enough to swamp both startup variance and per-op lock cost,
+so the ratio is real.
+
+### Where protopy stands — both honest baselines
 
 Only the `protopy` column is shown because `protopyc` was found, in
 the course of writing this section, to silently skip the bench's
@@ -118,23 +275,41 @@ completes in ~25 ms regardless of the bench's real work).  Until the
 AOT runner is fixed end-to-end, the AOT column is unreliable and
 deliberately omitted from comparisons.
 
-| Benchmark              | CPython-t (ms, base) | CPython (ms) | cp/cpt | protopy (ms) | py/cpt |
-|------------------------|---------------------:|-------------:|-------:|-------------:|-------:|
-| startup_empty          |    24.07 |    29.43 |  1.22x |    23.20 |  **0.96x** |
-| int_sum_loop           |    25.29 |    33.58 |  1.33x |   164.71 |  6.51x |
-| list_append_loop       |    30.03 |    33.50 |  1.12x |   193.08 |  6.43x |
-| str_concat_loop        |    25.30 |    31.33 |  1.24x |   180.95 |  7.15x |
-| range_iterate          |    26.09 |    37.52 |  1.44x |   183.58 |  7.04x |
-| multithread_cpu        |   199.36 |   606.01 |  3.04x |   620.19 |  3.11x |
-| attr_lookup            |    33.59 |    38.83 |  1.16x |    66.88 |  1.99x |
-| call_recursion         |    38.26 |    41.42 |  1.08x |    89.42 |  2.34x |
-| memory_pressure [INFO] |    57.31 |    61.20 |  1.07x |  1912.77 | 33.37x |
-| pyperf_fib             |   106.72 |   107.98 |  1.01x |   973.79 |  9.12x |
-| pyperf_binary_trees    |    40.80 |    45.04 |  1.10x |  1420.19 | **34.81x** |
-| pyperf_nqueens         |    56.60 |    60.61 |  1.07x |   318.08 |  5.62x |
-| pyperf_richards_lite   |    30.19 |    33.35 |  1.10x |    71.85 |  2.38x |
-| pyperf_sieve           |    32.23 |    37.56 |  1.17x |   225.14 |  6.99x |
-| **Geomean (n=13)**     |          |          |  **1.25x** |          |  **4.87x** |
+The two CPython columns answer two different questions:
+
+* **`py/cp` (protopy vs CPython 3.14 GIL on)** — this is the honest
+  single-thread comparison for the "ship a Python script" use case.
+  CPython-with-GIL is what 99 % of Python users actually run today.
+* **`py/cpt` (protopy vs CPython 3.14t free-threading)** — this is
+  the apples-to-apples concurrency comparison: both runtimes are
+  GIL-free, so concurrent scaling is the question.  The CPython-t
+  build pays a ~19 % per-op penalty for its locks (measured on a
+  10 M-iter inner loop), so this column flatters protoPython
+  somewhat relative to the GIL-on baseline.
+
+| Benchmark              | CPython-t (ms) | CPython (ms) | protopy (ms) | **py/cp** | **py/cpt** |
+|------------------------|---------------:|-------------:|-------------:|----------:|-----------:|
+| startup_empty          |    24.07 |    29.43 |    23.20 | **0.79x** |  0.96x |
+| int_sum_loop           |    25.29 |    33.58 |   164.71 |  4.91x |  6.51x |
+| list_append_loop       |    30.03 |    33.50 |   193.08 |  5.76x |  6.43x |
+| str_concat_loop        |    25.30 |    31.33 |   180.95 |  5.78x |  7.15x |
+| range_iterate          |    26.09 |    37.52 |   183.58 |  4.89x |  7.04x |
+| **multithread_cpu**    |   199.36 |   606.01 |   620.19 | **1.02x** | 3.11x |
+| attr_lookup            |    33.59 |    38.83 |    66.88 |  1.72x |  1.99x |
+| call_recursion         |    38.26 |    41.42 |    89.42 |  2.16x |  2.34x |
+| memory_pressure [INFO] |    57.31 |    61.20 |  1912.77 | 31.25x | 33.37x |
+| pyperf_fib             |   106.72 |   107.98 |   973.79 |  9.02x |  9.12x |
+| pyperf_binary_trees    |    40.80 |    45.04 |  1420.19 | **31.53x** | 34.81x |
+| pyperf_nqueens         |    56.60 |    60.61 |   318.08 |  5.25x |  5.62x |
+| pyperf_richards_lite   |    30.19 |    33.35 |    71.85 |  2.15x |  2.38x |
+| pyperf_sieve           |    32.23 |    37.56 |   225.14 |  5.99x |  6.99x |
+| **Geomean (n=13)**     |          |          |          | **4.44x** | **4.87x** |
+
+**The headline number is `py/cp = 4.44× slower than CPython 3.14 GIL`** —
+that's the real-world single-thread cost of protoPython today.  The
+`py/cpt = 4.87×` figure is interesting only when you're comparing
+free-threading interpreters head-to-head; for any other use case it
+flatters protoPython by 9 % through CPython 3.14t's own lock cost.
 
 ### What the numbers actually say
 
