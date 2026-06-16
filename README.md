@@ -13,15 +13,17 @@
 > ## 🔥 GIL-free Python — one Python thread per hardware core, end-to-end
 >
 > `multithread_cpu` benchmark (4 native OS threads × 2M-iteration
-> accumulator loops, 2026-05-24 baseline with CPython 3.14 free-threading):
-> **CPython — 0.54 s** vs **protopy — 0.96 s** vs **protopyc — 1.14 s**.
-> Both runtimes now run the four threads in real parallel (CPython
-> 3.14t adopted PEP 703); protoPython gives the same architectural
-> property with no GIL, no global runtime lock, and no GC
-> stop-the-world jitter on the hot path. Under the higher-contention
-> workloads where free-threaded CPython pays mutex / atomic overhead
-> on shared mutables, protoCore's immutable structural sharing
-> (AVL trees, ropes) is contention-free by construction.
+> accumulator loops, 2026-06-16 baseline, inner-only timing parsed from
+> the bench's own `BENCH_RESULT ms=` marker):
+> **CPython 3.14t — 152 ms** vs **CPython 3.14 GIL on — 575 ms** vs
+> **protopy — 78 ms** vs **protopyc — 285 ms (intermittent)**.
+> protopy is **1.9× faster than CPython 3.14t** on this workload and
+> **7.4× faster than CPython with the GIL**.  Both PEP-703 CPython
+> and protoPython run the four threads in real parallel; protoPython's
+> edge comes from contention-free reads on immutable structural-sharing
+> mutables (AVL trees, ropes) and lock-free CAS on the shared
+> writer slot.  No GIL, no global runtime lock, no GC stop-the-world
+> jitter on the hot path.
 >
 > If you build **edge / IoT controllers, robotics control loops, real-time
 > data ingestion, simulation, or any system that needs to model concurrent
@@ -56,7 +58,7 @@ The current focus is correctness: all 17 CPython conformance test categories pas
 | **Type System** | **Advanced** - Lists, Tuples, Sets, Dicts with native wrapping ✅ |
 | **C++ Interop** | **Full** - HPy and UMD support integrated ✅ |
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
-| **Performance** | **2026-06-16 honest full-stack comparison** vs CPython 3.14t free-threading.  Inner-only timing (parsed from per-bench `BENCH_RESULT ms=` markers — excludes interpreter startup + GC tail; same N as the protoCpp counterparts).  Geomean across 6 micros: `cpp` (raw C++, hardware floor) **0.19x**, `proto_fast` (protoCore with API-side optimisations) **0.30x** — the architecture's ceiling is **3.3× FASTER than CPython 3.14t**.  `proto` raw is 2.67x, `cp` (CPython GIL on) is 1.20x, **`protopy` (our bytecode interpreter) is 6.94x** — that's 2.6x on top of raw protoCore (per-op interpreter cost) and 23x from the optimised architectural ceiling.  `protopyc` (AOT) is 5.47x geomean but has silent-failure bugs on multithread / int_sum / attr_lookup that need to be fixed before that number is trustable.  The June sprint series went 5.72x → 4.87x → 6.94x: the 4.87x figure was the harness's small-bench inversion (short benches make CPython 3.14t's lower startup look like a per-op win, hiding ~150 ms of protopy GC tail); 6.94x is the honest per-op number from larger workloads with startup excluded.  See the perf section below for the full table including the protoCpp ceilings. ⚙️ |
+| **Performance** | **2026-06-16 honest full-stack comparison** vs CPython 3.14t free-threading.  Inner-only timing (parsed from per-bench `BENCH_RESULT ms=` markers — excludes interpreter startup + GC tail; same N as the protoCpp counterparts).  Geomean across 6 micros: `cpp` (raw C++, hardware floor) **0.19x**, `proto_fast` (protoCore with API-side optimisations) **0.30x** — the architecture's ceiling is **3.3× FASTER than CPython 3.14t**.  `proto` raw is 2.67x, `cp` (CPython GIL on) is 1.33x, **`protopy` (our bytecode interpreter) is 4.8–5.6x** (the sprint-11 peephole specialiser landed June 16 — geomean dropped from 6.94x by recognising the LOAD_FAST/LOAD_FAST/INPLACE_ADD/STORE_FAST accumulator-loop shape and fusing it into a single-dispatch opcode with an inline SmallInt fast path).  On `multithread_cpu` protopy is now **0.5–0.7x** — faster than CPython 3.14t, the GIL-free architecture landing.  `protopyc` (AOT) now produces real numbers on every bench after the CppGenerator scope + thread-globals fixes; geomean **~8–12x** depending on whether `multithread_cpu` lands a clean run (still intermittent under heavy contention).  See the perf section below for the full table including the protoCpp ceilings. ⚙️ |
 | **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
 | **test_descr.py conformance (May 18 2026)** | **148/155 non-skipped passing (95.5 %)** — `test/cpython/test_descr.py`: 7 failures + 10 skipped out of 165 tests.  **Every remaining failure is excluded by design**: they all assert deterministic `__del__` firing, weakref clearing on `gc.collect()`, or instance-count reuse after cycle collection — semantics that protoCore's concurrent, non-eager GC explicitly does not provide.  Rounds 26–40 + STRUCT-323 / STRUCT-324 (May 17–18) cut from 27F + 7E down to 7F, 24 test flips, no regressions, ctest 199/199 verde every commit.  See `docs/CPYTHON_CONFORMANCE.md` for the per-round breakdown. ✅ |
 
@@ -93,28 +95,38 @@ The current focus is correctness: all 17 CPython conformance test categories pas
 
 ### The full stack (baseline 1.0 = CPython 3.14t free-threading)
 
-Six identical micro-benches measured across every layer:
+Six identical micro-benches measured across every layer.  Numbers
+post sprint-11 peephole specialiser + protopyc unblock + list
+`__setitem__` CAS fix (commits `13b2c278`, `57f68522`, `5e91dd15`):
 
 | Bench               | `cpp` (C++ floor) | `proto` (kernel raw) | `proto_fast` (kernel opt) | `cp` (CPython GIL) | `cpt` (CPython no-GIL) | `protopy` | `protopyc` |
 |---------------------|------:|-------:|----------:|-------:|-------:|---------:|---------:|
-| int_sum_loop        |  4.72 | 105.60 |     56.69 | 413.98 | 541.22 |   672.41 |   N/A    |
-| attr_lookup         |  6.80 | 300.94 |    N/A    | 389.44 | 372.59 |  2703.94 |  5022.64 |
-| list_append_loop    |  3.20 |  17.50 |    N/A    |   0.66 |   0.96 |    18.73 |    21.89 |
-| str_concat_loop     |  2.54 |  14.93 |    N/A    |   0.15 |   0.09 |     4.09 |    91.62 |
-| call_recursion      |  1.49 |  34.74 |     15.43 |   9.40 |  10.16 |    74.09 |    34.24 |
-| multithread_cpu     |  3.68 |  35.33 |     26.19 | 563.88 | 160.63 |   307.03 |     0.74 |
+| int_sum_loop        |  3.74 |  87.30 |     49.11 | 468.55 | 468.53 |   335.97 |   399.85 |
+| attr_lookup         |  5.90 | 234.25 |    N/A    | 529.38 | 323.98 |  1972.24 |  1065.50 |
+| list_append_loop    |  2.61 |  16.00 |    N/A    |   0.50 |   0.83 |    16.63 |    16.86 |
+| str_concat_loop     |  3.13 |  14.59 |    N/A    |   0.13 |   0.08 |     3.86 |    79.99 |
+| call_recursion      |  1.86 |  32.34 |     14.18 |  10.34 |  11.13 |    63.67 |    32.46 |
+| multithread_cpu     |  2.94 |  27.80 |     21.10 | 574.80 | 151.66 |    77.96 |   284.75† |
 
 Ratios vs `cpt = 1.0`:
 
 | Bench               | `cpp` | `proto` | `proto_fast` | `cp` | `cpt` | `protopy` | `protopyc` |
 |---------------------|---:|---:|----:|---:|---:|----:|----:|
-| int_sum_loop        |  0.01x |  0.20x |  0.10x |  0.76x | 1.00x |  1.24x | N/A |
-| attr_lookup         |  0.02x |  0.81x |  N/A   |  1.05x | 1.00x |  7.26x | 13.48x |
-| list_append_loop    |  3.34x | 18.23x |  N/A   |  0.69x | 1.00x | 19.51x | 22.80x |
-| str_concat_loop     | 28.20x | 165.84x | N/A   |  1.67x | 1.00x | 45.44x | 1017.99x |
-| call_recursion      |  0.15x |  3.42x |  1.52x |  0.93x | 1.00x |  7.29x |  3.37x |
-| multithread_cpu     |  0.02x |  0.22x |  0.16x |  3.51x | 1.00x |  1.91x |  0.00x ⚠ |
-| **Geomean (6)**     | **0.19x** | **2.67x** | **0.30x** | **1.20x** | **1.00x** | **6.94x** | **5.47x** ⚠ |
+| int_sum_loop        |  0.01x |  0.19x |  0.10x |  1.00x | 1.00x |  0.72x |  0.85x |
+| attr_lookup         |  0.02x |  0.72x |  N/A   |  1.63x | 1.00x |  6.09x |  3.29x |
+| list_append_loop    |  3.15x | 19.28x |  N/A   |  0.60x | 1.00x | 20.04x | 20.32x |
+| str_concat_loop     | 39.13x | 182.38x | N/A   |  1.62x | 1.00x | 48.25x | 999.83x |
+| call_recursion      |  0.17x |  2.91x |  1.27x |  0.93x | 1.00x |  5.72x |  2.92x |
+| multithread_cpu     |  0.02x |  0.18x |  0.14x |  3.79x | 1.00x |  **0.51x** |  1.88x† |
+| **Geomean (6)**     | **0.20x** | **2.51x** | **0.26x** | **1.33x** | **1.00x** | **4.81x** | **8.4–12x**† |
+
+† `multithread_cpu` on protopyc is intermittent under the current
+4-thread × 2M-iteration workload: the bench passes on most runs
+(producing the ~285 ms number above) but occasionally hangs in the
+GC stop-the-world path on a writer thread — the harness drops the
+hung iteration.  When the bench lands it sits around 1.4–1.9× cpythont
+(still slower than the interpreter on the same workload).  See
+`benchmarks/run_full_stack.py` for the per-run captures.
 
 ### What the ceilings actually say
 
@@ -137,23 +149,41 @@ Ratios vs `cpt = 1.0`:
   long single-thread workloads.  The exception is `multithread_cpu`
   at **3.51x**: there the GIL serialises the four threads and PEP 703
   lets them run in parallel, which dominates the per-op lock cost.
-* **`protopy` 6.94x** — protoPython's bytecode interpreter sits 2.6×
-  above the raw kernel (`6.94 / 2.67`).  That ratio is the per-op cost
+* **`protopy` 4.81x** — protoPython's bytecode interpreter sits ~1.9×
+  above the raw kernel (`4.81 / 2.51`).  That ratio is the per-op cost
   of the dispatch loop on top of `getAttribute` / `setAttribute` /
-  arithmetic primitives.  From the architectural ceiling (`proto_fast`)
-  the headroom is **23×**.  Closing it requires (a) routing more of
-  the interpreter through the optimised API the way `proto_fast`
-  does — e.g. inlining the SmallInt arithmetic fast paths, batching
-  `setAttribute` calls during `__init__`, lazy materialisation of new
-  collection states — and (b) reducing dispatch overhead per opcode.
-* **`protopyc` 5.47x ⚠** — the AOT column is currently unreliable:
-  `multithread_cpu` reads as `0.74 ms` because the compiled module
-  silently skipped `main()` (its `__name__ == "__main__"` check
-  returns false under `run_module`), `int_sum_loop` produces no
-  result, and `str_concat_loop` is 1017x slower than CPython 3.14t.
-  These need to be debugged before the AOT row can be trusted; the
-  geomean is computed only over the rows that did run, so it's an
-  upper bound on the bug-free version, not a real measurement.
+  arithmetic primitives.  Sprint-11 (commit `13b2c278`) added a
+  post-codegen peephole specialiser that fuses three accumulator-loop
+  shapes — `LOAD_FAST/LOAD_FAST/INPLACE_ADD/STORE_FAST`,
+  `LOAD_FAST/LOAD_CONST/INPLACE_ADD/STORE_FAST`, and
+  `LOAD_FAST/LOAD_FAST/COMPARE_OP </POP_JUMP_IF_FALSE` — into single
+  opcodes (`OP_ACC_FAST_FAST` / `OP_INC_FAST_K` / `OP_LT_FAST_FAST_JF`)
+  with inline SmallInt fast paths.  Set `PROTOPY_NO_PEEPHOLE=1` for an
+  A/B on the same binary: int_sum_loop drops from 1.15× to 0.72× and
+  multithread_cpu from 1.68× to 0.51× cpythont.  The remaining
+  headroom (23× from the `proto_fast` ceiling) needs (a) routing more
+  of the interpreter through the optimised kernel API the way
+  `proto_fast` does, and (b) further reducing dispatch overhead per
+  opcode.
+* **`protopyc` 8.4–12x** — the AOT column went from "3 silent skips
+  out of 6 benches" to "every row produces a real measurement" after
+  three fixes (commits `57f68522` and `5e91dd15`):
+  (1) `CppGenerator::generateFor` was hard-coding `env->storeName(...)`
+  for the loop target, so `for i in range(N): s += i` wrote `i` to
+  globals while every reader hit `local_i = PROTO_NONE`;
+  (2) `thread_bootstrap` didn't propagate `s_currentGlobals` to the
+  new OS thread, so protopyc workers raised on every global lookup;
+  (3) `CppGenerator::generateBinOp` had no case for `and`/`or` — they
+  fell through to `Plus /* Unsupported op */`, so the
+  `multithread_cpu` spin-wait `_done[0] != 0 and _done[1] != 0` broke
+  on the first worker.  A fourth fix in the same series, `py_list_setitem`
+  now drives a CAS retry loop on `__data__` via
+  `setAttributeIfEqual` instead of a plain read-modify-write —
+  eliminating the lost-update window every concurrent setItem hit.
+  `str_concat_loop` at 1000× cpythont remains the dominant outlier;
+  it's the `s = s + chunk` rope-rebuild pattern through
+  `env->binaryOp`, fixable with an embedder-side rope-builder fast
+  path.
 
 ### Where the user-visible benchmarks land
 
