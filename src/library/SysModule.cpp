@@ -433,6 +433,70 @@ static const proto::ProtoObject* sys_getswitchinterval(
     return context->fromDouble(s_switchInterval.load(std::memory_order_relaxed));
 }
 
+// sys.is_finalizing(): True while the interpreter shuts down.  protoPython
+// has no interpreter-finalization state to report, so running code always
+// sees False (asyncio's unix event loop asks when it closes).
+static const proto::ProtoObject* sys_is_finalizing(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)context; (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
+    return PROTO_FALSE;
+}
+
+// sys.get_asyncgen_hooks() / sys.set_asyncgen_hooks(firstiter, finalizer):
+// asyncio's event loop saves, installs and restores them around
+// run_forever().  Kept as attributes of the sys module (so they stay
+// reachable); protoPython's async generators do not call them yet.
+static const char* const kAsyncgenHookAttrs[2] = {"_asyncgen_firstiter", "_asyncgen_finalizer"};
+
+static const proto::ProtoObject* sys_get_asyncgen_hooks(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* sysMod = env ? env->getSysModule() : nullptr;
+    const proto::ProtoList* hooks = context->newList();
+    for (const char* attr : kAsyncgenHookAttrs) {
+        const proto::ProtoObject* v = sysMod
+            ? sysMod->getAttribute(context, PythonEnvironment::getInternedString(context, attr)) : nullptr;
+        hooks = hooks->appendLast(context, v ? v : PROTO_NONE);
+    }
+    return env ? env->newTuple(hooks) : context->newTupleFromList(hooks)->asObject(context);
+}
+
+static const proto::ProtoObject* sys_set_asyncgen_hooks(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self; (void)parentLink;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* sysMod = env ? env->getSysModule() : nullptr;
+    if (!sysMod) return PROTO_NONE;
+    static const char* const kParams[2] = {"firstiter", "finalizer"};
+    for (int w = 0; w < 2; ++w) {
+        const proto::ProtoObject* v = nullptr;  // not given: keep the current hook
+        if (positionalParameters && positionalParameters->getSize(context) > static_cast<unsigned long>(w)) {
+            v = positionalParameters->getAt(context, w);
+        }
+        if (keywordParameters) {
+            const unsigned long h = PythonEnvironment::getInternedString(context, kParams[w])->getHash(context);
+            if (keywordParameters->has(context, h)) v = keywordParameters->getAt(context, h);
+        }
+        if (!v) continue;
+        env->setAttribute(context, sysMod, PythonEnvironment::getInternedString(context, kAsyncgenHookAttrs[w]), v);
+        if (env->hasPendingException()) return nullptr;
+    }
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* sys_intern(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -665,6 +729,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getrecursionlimit"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getrecursionlimit));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "setswitchinterval"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_setswitchinterval));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getswitchinterval"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getswitchinterval));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "is_finalizing"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_is_finalizing));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "get_asyncgen_hooks"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_get_asyncgen_hooks));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "set_asyncgen_hooks"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_set_asyncgen_hooks));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getfilesystemencoding"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getfilesystemencoding));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getfilesystemencodeerrors"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getfilesystemencodeerrors));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_get_cpu_count_config"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_get_cpu_count_config));

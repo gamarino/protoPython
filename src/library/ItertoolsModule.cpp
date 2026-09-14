@@ -897,6 +897,23 @@ static const proto::ProtoObject* py_chain(
     return ch;
 }
 
+// chain.__new__(cls, *iterables): itertools.chain is a class, so calling it
+// runs __new__ with the class first.
+static const proto::ProtoObject* py_chain_new(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject*,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* cls = posArgs->getAt(ctx, 0);
+    const proto::ProtoList* iterables = ctx->newList();
+    for (unsigned long i = 1; i < posArgs->getSize(ctx); ++i) {
+        iterables = iterables->appendLast(ctx, posArgs->getAt(ctx, static_cast<int>(i)));
+    }
+    return py_chain(ctx, cls, nullptr, iterables, nullptr);
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(false);
 
@@ -924,9 +941,27 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     chainProto = chainProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__next__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(chainProto), py_chain_next));
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__chain_proto__"), chainProto);
-    const proto::ProtoObject* chainObj = ctx->newObject(false);
-    chainObj = chainObj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__call__"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(chainObj), py_chain));
+    // itertools.chain was a plain object holding a __call__ method.  Calls
+    // look __call__ up on the type, so `chain(a, b)` raised "'object' object
+    // is not callable" (asyncio.all_tasks() calls it); and every
+    // setAttribute on the immutable object made a new one, so the methods
+    // bound to it never saw __chain_proto__ (chain.from_iterable failed).
+    // Make it a mutable class whose __new__ builds the iterator, like
+    // builtins.map.
+    const proto::ProtoObject* chainObj = ctx->newObject(true);
+    if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx)) {
+        if (env->getTypePrototype() && env->getObjectPrototype()) {
+            chainObj = chainObj->addParent(ctx, env->getObjectPrototype());
+            chainObj = chainObj->setAttribute(ctx, env->getClassString(), env->getTypePrototype());
+            chainObj = chainObj->setAttribute(ctx, env->getNameString(),
+                PythonEnvironment::getInternedString(ctx, "chain")->asObject(ctx));
+            chainObj = chainObj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__mro__"),
+                ctx->newTupleFromList(ctx->newList()->appendLast(ctx, chainObj)
+                    ->appendLast(ctx, env->getObjectPrototype()))->asObject(ctx));
+        }
+    }
+    chainObj = chainObj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__new__"),
+        ctx->fromMethod(nullptr, py_chain_new));
     chainObj = chainObj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "from_iterable"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(chainObj), py_chain_from_iterable));
     chainObj = chainObj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__chain_proto__"), chainProto);

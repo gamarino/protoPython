@@ -134,9 +134,33 @@ def getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
 def getnameinfo(sockaddr, flags):
     raise OSError("getnameinfo: not implemented in stub")
 
-# socketpair stub
+# socketpair: this stub has no socket syscalls, so a connected pair is built
+# from two pipes.  Each end reads its own pipe and writes the other end's;
+# the read end is its fileno(), the descriptor selectors watch (asyncio's
+# event loop wakes itself through such a pair, so asyncio.run() needs it).
+# _pipe_peer maps an end's read fd to the write fd it sends through.
+_pipe_peer = {}
+
+
 def socketpair(family=AF_UNIX, type=SOCK_STREAM, proto=0):
-    raise OSError("socketpair: not implemented in stub")
+    if family is None:
+        family = AF_UNIX
+    r1, w1 = _os.pipe()
+    r2, w2 = _os.pipe()
+    _pipe_peer[r1] = w2
+    _pipe_peer[r2] = w1
+    return socket(family, type, proto, r1), socket(family, type, proto, r2)
+
+
+def _pipe_io(op, fd, arg):
+    try:
+        return op(fd, arg)
+    except OSError as exc:
+        # A non-blocking pipe reports EAGAIN; sockets raise BlockingIOError.
+        if (exc.errno in (_errno.EAGAIN, _errno.EWOULDBLOCK)
+                and not isinstance(exc, BlockingIOError)):
+            raise BlockingIOError(exc.errno, _os.strerror(exc.errno))
+        raise
 
 # setdefaulttimeout / getdefaulttimeout
 _default_timeout = None
@@ -226,6 +250,22 @@ class socket:
 
     def close(self):
         self._closed = True
+        fd = self._fileno
+        peer = _pipe_peer.pop(fd, None) if fd is not None else None
+        if peer is not None:
+            # A socketpair() end owns its read fd and the fd it writes to.
+            self._fileno = None
+            for f in (fd, peer):
+                try:
+                    _os.close(f)
+                except OSError:
+                    pass
+
+    def detach(self):
+        fd = self._fileno
+        self._fileno = None
+        self._closed = True
+        return -1 if fd is None else fd
 
     def __del__(self):
         self.close()
@@ -237,10 +277,21 @@ class socket:
         return 0
 
     def setblocking(self, flag):
-        pass
+        fd = self._fileno
+        if fd is None or fd not in _pipe_peer:
+            return
+        import fcntl
+        for f in (fd, _pipe_peer[fd]):
+            flags = fcntl.fcntl(f, fcntl.F_GETFL)
+            if flag:
+                flags &= ~_os.O_NONBLOCK
+            else:
+                flags |= _os.O_NONBLOCK
+            fcntl.fcntl(f, fcntl.F_SETFL, flags)
 
     def settimeout(self, timeout):
-        pass
+        if timeout is None or timeout == 0:
+            self.setblocking(timeout is None)
 
     def gettimeout(self):
         return None
@@ -261,13 +312,24 @@ class socket:
         return _errno.ENOTCONN
 
     def send(self, data, flags=0):
-        raise OSError("send: not implemented in stub")
+        fd = self._fileno
+        if fd is None or fd not in _pipe_peer:
+            raise OSError("send: not implemented in stub")
+        return _pipe_io(_os.write, _pipe_peer[fd], data)
 
     def sendall(self, data, flags=0):
-        raise OSError("sendall: not implemented in stub")
+        fd = self._fileno
+        if fd is None or fd not in _pipe_peer:
+            raise OSError("sendall: not implemented in stub")
+        data = bytes(data)
+        while data:
+            data = data[_pipe_io(_os.write, _pipe_peer[fd], data):]
 
     def recv(self, bufsize, flags=0):
-        raise OSError("recv: not implemented in stub")
+        fd = self._fileno
+        if fd is None or fd not in _pipe_peer:
+            raise OSError("recv: not implemented in stub")
+        return _pipe_io(_os.read, fd, bufsize)
 
     def recvfrom(self, bufsize, flags=0):
         raise OSError("recvfrom: not implemented in stub")

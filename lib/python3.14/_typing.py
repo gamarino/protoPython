@@ -356,5 +356,20 @@ class _UnionForm:
     def __repr__(self):
         return 'typing.Union'
 
+    # In CPython 3.14 typing.Union IS types.UnionType, a class, so it is a
+    # valid isinstance()/issubclass() target: typing.get_origin() runs
+    # `isinstance(tp, Union)` for every annotation it inspects (dataclasses
+    # does so for each field once typing is imported).  Union is an instance
+    # here, which made isinstance() raise TypeError; answer through the
+    # metaclass-style hooks instead.
+    def __instancecheck__(self, obj):
+        return (isinstance(obj, _UnionGenericAlias)
+                or type(obj).__name__ == 'UnionType')
+
+    def __subclasscheck__(self, cls):
+        if not isinstance(cls, type):
+            raise TypeError("issubclass() arg 1 must be a class")
+        return issubclass(cls, _UnionGenericAlias) or cls.__name__ == 'UnionType'
+
 
 Union = _UnionForm()

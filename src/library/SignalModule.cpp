@@ -158,6 +158,20 @@ static const proto::ProtoObject* py_signal(
     return oldHandler;
 }
 
+// signal.default_int_handler(signalnum, frame): Python's default SIGINT
+// handler, raising KeyboardInterrupt.  asyncio.Runner compares
+// signal.getsignal(SIGINT) with it before installing its own handler.
+static const proto::ProtoObject* py_default_int_handler(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject*,
+    const proto::ParentLink*,
+    const proto::ProtoList*,
+    const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env) env->raiseKeyboardInterrupt(ctx);
+    return nullptr;
+}
+
 static const proto::ProtoObject* py_getsig(
     proto::ProtoContext* ctx,
     const proto::ProtoObject*,
@@ -275,6 +289,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_signal));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getsignal"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getsig));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "default_int_handler"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_default_int_handler));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "raise_signal"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_raise_signal));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "strsignal"),
