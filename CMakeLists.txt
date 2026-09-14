@@ -352,6 +352,13 @@ set_tests_properties(protopy_dict_subclass_str PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# map(func, *iterables, strict=True) raises ValueError on unequal lengths.
+add_test(NAME protopy_map_strict
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/map_strict.py)
+set_tests_properties(protopy_map_strict PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # sorted() accepts builtin subclasses and Python-level iterators.
 add_test(NAME protopy_sorted_iterables
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/sorted_iterables.py)

@@ -10529,10 +10529,21 @@ static const proto::ProtoObject* py_map(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     (void)parentLink;
-    (void)keywordParameters;
     if (positionalParameters->getSize(context) < 3) return PROTO_NONE;
     const proto::ProtoObject* func = positionalParameters->getAt(context, 1);
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
+    // map(func, *iterables, strict=False), new in 3.14: with strict=True
+    // iteration raises ValueError when the iterables differ in length, like
+    // zip(strict=True).  The keyword used to be ignored.
+    bool strict = false;
+    if (keywordParameters && keywordParameters->getSize(context) > 0) {
+        const proto::ProtoString* strictS = PythonEnvironment::getInternedString(context, "strict");
+        const unsigned long sh = strictS->getHash(context);
+        if (keywordParameters->has(context, sh)) {
+            const proto::ProtoObject* v = keywordParameters->getAt(context, sh);
+            strict = env ? env->isTrue(v) : (v == PROTO_TRUE);
+        }
+    }
     const proto::ProtoString* mapFuncS = env ? env->getMapFuncString() : PythonEnvironment::getInternedString(context, "__map_func__");
     const proto::ProtoString* mapIterS = env ? env->getMapIterString() : PythonEnvironment::getInternedString(context, "__map_iter__");
     const proto::ProtoObject* noneObj = env ? env->getNonePrototype() : nullptr;
@@ -10565,6 +10576,10 @@ static const proto::ProtoObject* py_map(
     const proto::ProtoObject* mapObj = cls->newChild(context, true);
     mapObj = mapObj->setAttribute(context, mapFuncS, func);
     mapObj = mapObj->setAttribute(context, mapIterS, iterStorage);
+    if (strict && nIter > 1) {
+        mapObj = mapObj->setAttribute(context,
+            PythonEnvironment::getInternedString(context, "__map_strict__"), PROTO_TRUE);
+    }
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG: py_map created mapObj=%p func=%p iter=%p (n=%lu)\n",
             (void*)mapObj, (void*)func, (void*)iterStorage, nIter);
@@ -10601,13 +10616,47 @@ static const proto::ProtoObject* py_map_next(
     if (itersList) {
         unsigned long n = itersList->getSize(context);
         vals.reserve(n);
+        const bool strict = self->getAttribute(context,
+            PythonEnvironment::getInternedString(context, "__map_strict__")) == PROTO_TRUE;
+        // After a __next__ returned nothing: true for plain exhaustion (a
+        // pending StopIteration is cleared); any other exception propagates.
+        auto exhausted = [&]() -> bool {
+            if (!env || !env->hasPendingException()) return true;
+            if (!env->isStopIteration(context, env->peekPendingException())) return false;
+            env->clearPendingException();
+            return true;
+        };
+        // CPython's wording: "map() argument 2 is shorter than argument 1",
+        // "map() argument 3 is longer than arguments 1-2".
+        auto lengthMismatch = [&](unsigned long idx, const char* how) {
+            std::string msg = "map() argument " + std::to_string(idx + 1) + " is " + how
+                + " than argument" + (idx == 1 ? " " : "s 1-") + std::to_string(idx);
+            if (env) env->raiseValueError(context,
+                PythonEnvironment::getInternedString(context, msg.c_str())->asObject(context));
+        };
         for (unsigned long i = 0; i < n; ++i) {
             const proto::ProtoObject* it = itersList->getAt(context, static_cast<int>(i));
             const proto::ProtoObject* nextM = it->getAttribute(context, nextS);
             if (!nextM || !nextM->asMethod(context)) return nullptr;
             const proto::ProtoObject* v = nextM->asMethod(context)(context, it, nullptr, emptyL, nullptr);
             if (!v) {
-                // Any iterator exhausted → end of map.
+                // Any iterator exhausted → end of map, unless strict=True
+                // requires all of them to end together.
+                if (!strict || !exhausted()) return nullptr;
+                if (i > 0) {
+                    lengthMismatch(i, "shorter");
+                    return nullptr;
+                }
+                for (unsigned long j = 1; j < n; ++j) {
+                    const proto::ProtoObject* itj = itersList->getAt(context, static_cast<int>(j));
+                    const proto::ProtoObject* nextJ = itj->getAttribute(context, nextS);
+                    if (!nextJ || !nextJ->asMethod(context)) return nullptr;
+                    if (nextJ->asMethod(context)(context, itj, nullptr, emptyL, nullptr)) {
+                        lengthMismatch(j, "longer");
+                        return nullptr;
+                    }
+                    if (!exhausted()) return nullptr;
+                }
                 return nullptr;
             }
             vals.push_back(v);
