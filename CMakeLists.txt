@@ -72,6 +72,13 @@ add_test(NAME protopy_load_method_pic_receivers
 set_tests_properties(protopy_load_method_pic_receivers PROPERTIES
     TIMEOUT 60
     LABELS "regression_gate")
+# threading.Thread.join() must wait for the thread to finish.
+add_test(NAME protopy_thread_join_waits
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/thread_join_waits.py)
+set_tests_properties(protopy_thread_join_waits PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
 
 # Optional benchmark test (off by default: -DPROTOPY_BENCHMARKS=ON)
 option(PROTOPY_BENCHMARKS "Run benchmark suite in CTest" OFF)

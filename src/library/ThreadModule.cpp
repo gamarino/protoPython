@@ -608,12 +608,16 @@ static const proto::ProtoObject* py_start_joinable_thread(
     if (kwargs) {
         const proto::ProtoString* handleKey =
             proto::ProtoString::createSymbol(ctx, "handle");
-        unsigned long handleHash = reinterpret_cast<uintptr_t>(handleKey);
+        unsigned long handleHash = handleKey->getHash(ctx);
         if (kwargs->has(ctx, handleHash)) {
             handle = kwargs->getAt(ctx, handleHash);
         }
     }
     if (!handle || handle == PROTO_NONE) {
+    // Keyword arguments are keyed by the string hash, like every other
+    // native function reads them. Keying by the symbol pointer never
+    // matched, so threading.Thread's own handle was never populated and
+    // Thread.join() / is_alive() saw a thread that had "already finished".
         handle = py_make_thread_handle(ctx, self, nullptr, ctx->newList(), nullptr);
     }
 
