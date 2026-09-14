@@ -6331,49 +6331,16 @@ static const proto::ProtoObject* py_set_call(
     (void)parentLink;
     (void)keywordParameters;
 
+    // CPython: set.__new__ ignores its arguments. set.__init__ (py_set_init),
+    // which instance creation runs next with the same arguments, fills the
+    // set; consuming the iterable here too would exhaust a generator, and a
+    // subclass that overrides __init__ must start empty.
     const proto::ProtoObject* cls = positionalParameters && positionalParameters->getSize(context) > 0 ? positionalParameters->getAt(context, 0) : self;
     if (!cls) return PROTO_NONE;
     proto::ProtoObject* instance = const_cast<proto::ProtoObject*>(cls->newChild(context, true));
     instance->setAttribute(context, PythonEnvironment::getInternalString(context, "__class__"), cls);
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoSet* s = context->newSet();
-
-    if (positionalParameters->getSize(context) >= 2) {
-        const proto::ProtoObject* iterable = positionalParameters->getAt(context, 1);
-        PythonEnvironment* env = PythonEnvironment::fromContext(context);
-        // Drive iteration through env->iter / env->next so user
-        // classes with Python-level __iter__ / __next__ work too —
-        // the previous direct asMethod check skipped every Python
-        // callable and rejected the iterable as not iterable.
-        const proto::ProtoObject* it = env ? env->iter(iterable) : nullptr;
-        if (!it) {
-            if (env && env->hasPendingException()) return nullptr;
-            if (env) {
-                std::string clsName = "object";
-                const proto::ProtoObject* cls2 = env->getType(context, iterable);
-                if (cls2) {
-                    const proto::ProtoObject* nameAttr = cls2->getAttribute(context, env->getNameString());
-                    if (nameAttr && nameAttr->isString(context)) {
-                        nameAttr->asString(context)->toUTF8String(context, clsName);
-                    }
-                }
-                env->raiseTypeError(context, "'" + clsName + "' object is not iterable");
-            }
-            return nullptr;
-        }
-        PythonEnvironment::TransientPin pinIt(env, it);
-        for (;;) {
-            const proto::ProtoObject* item = env->next(it);
-            if (!item) {
-                if (env && env->hasPendingException()) return nullptr;
-                break;
-            }
-            s = PythonEnvironment::setAdd(context, s, item);
-            if (!s) return nullptr;
-        }
-    }
-
-    instance->setAttribute(context, dataName, s->asObject(context));
+    instance->setAttribute(context, dataName, context->newSet()->asObject(context));
     return instance;
 }
 
@@ -7240,6 +7207,94 @@ static const proto::ProtoObject* py_str_translate(
     return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
 }
 
+// The elements of `iterable` for set.__init__. Returns nullptr, with the
+// exception pending, when iterating raises or an element is unhashable.
+static const proto::ProtoSet* set_items_from_iterable(
+    proto::ProtoContext* context,
+    PythonEnvironment* env,
+    const proto::ProtoObject* iterable) {
+    const proto::ProtoSet* s = context->newSet();
+    // Drive iteration through env->iter / env->next so user
+    // classes with Python-level __iter__ / __next__ work too —
+    // the previous direct asMethod check skipped every Python
+    // callable and rejected the iterable as not iterable.
+    const proto::ProtoObject* it = env->iter(iterable);
+    if (!it) {
+        if (env->hasPendingException()) return nullptr;
+        std::string clsName = "object";
+        const proto::ProtoObject* cls2 = env->getType(context, iterable);
+        if (cls2) {
+            const proto::ProtoObject* nameAttr = cls2->getAttribute(context, env->getNameString());
+            if (nameAttr && nameAttr->isString(context)) {
+                nameAttr->asString(context)->toUTF8String(context, clsName);
+            }
+        }
+        env->raiseTypeError(context, "'" + clsName + "' object is not iterable");
+        return nullptr;
+    }
+    PythonEnvironment::TransientPin pinIt(env, it);
+    for (;;) {
+        const proto::ProtoObject* item = env->next(it);
+        if (!item) {
+            if (env->hasPendingException()) return nullptr;
+            break;
+        }
+        s = PythonEnvironment::setAdd(context, s, item);
+        if (!s) return nullptr;
+    }
+    return s;
+}
+
+// set.__init__(iterable=(), /): replaces the contents with the elements of
+// iterable, like CPython's (clear, then update). Instance creation calls it
+// after set.__new__ with the new instance as the first argument, as does
+// `set.__init__(obj, it)`.
+static const proto::ProtoObject* py_set_init(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)parentLink;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    const proto::ProtoString* dataName = env->getDataString();
+    const unsigned long nargs = positionalParameters ? positionalParameters->getSize(context) : 0;
+    const proto::ProtoObject* receiver = self;
+    unsigned long posOff = 0;
+    if (!set_underlying(context, self) && nargs >= 1) {
+        receiver = positionalParameters->getAt(context, 0);
+        posOff = 1;
+    }
+    if (!receiver || !set_underlying(context, receiver)) {
+        env->raiseTypeError(context, "descriptor '__init__' requires a 'set' object");
+        return nullptr;
+    }
+    if (keywordParameters && keywordParameters->getSize(context) > 0) {
+        env->raiseTypeError(context, "set() takes no keyword arguments");
+        return nullptr;
+    }
+    if (nargs - posOff > 1) {
+        env->raiseTypeError(context, "set expected at most 1 argument, got "
+            + std::to_string(nargs - posOff));
+        return nullptr;
+    }
+    // Collect the elements first: an arbitrary iterable can be consumed only
+    // once, so a retried publish must not iterate it again.
+    const proto::ProtoSet* items = context->newSet();
+    if (nargs - posOff == 1) {
+        items = set_items_from_iterable(context, env,
+            positionalParameters->getAt(context, static_cast<int>(posOff)));
+        if (!items) return nullptr;
+    }
+    for (;;) {
+        const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
+        if (publishListData(context, receiver, dataName, data, items->asObject(context))) {
+            return PROTO_NONE;
+        }
+    }
+}
+
 static const proto::ProtoObject* py_set_len(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -8094,7 +8149,13 @@ static const proto::ProtoObject* py_set_iter(
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* iterProtoName = PythonEnvironment::getInternedString(context, "__iter_prototype__");
     const proto::ProtoObject* iterProto = self->getAttribute(context, iterProtoName);
-    if (!iterProto) return PROTO_NONE;
+    // A set subclass instance does not reach it through its own chain: look
+    // it up on the type.
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if ((!iterProto || iterProto == PROTO_NONE) && env) {
+        iterProto = env->getAttribute(context, env->getType(context, self), iterProtoName, false);
+    }
+    if (!iterProto || iterProto == PROTO_NONE) return PROTO_NONE;
     const proto::ProtoSet* s = set_underlying(context, self);
     if (!s) return PROTO_NONE;
     const proto::ProtoSetIterator* it = s->getIterator(context);
@@ -8166,7 +8227,11 @@ static const proto::ProtoObject* py_frozenset_iter(
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* iterProtoName = PythonEnvironment::getInternedString(context, "__iter_prototype__");
     const proto::ProtoObject* iterProto = self->getAttribute(context, iterProtoName);
-    if (!iterProto) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if ((!iterProto || iterProto == PROTO_NONE) && env) {
+        iterProto = env->getAttribute(context, env->getType(context, self), iterProtoName, false);
+    }
+    if (!iterProto || iterProto == PROTO_NONE) return PROTO_NONE;
     const proto::ProtoSet* s = set_underlying(context, self);
     if (!s) return PROTO_NONE;
     const proto::ProtoSetIterator* it = s->getIterator(context);
@@ -19749,7 +19814,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     setPrototype = setPrototype->setAttribute(rootContext_, py_module, builtinsVal);
     setPrototype = setPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(nullptr, py_set_len));
     setPrototype = setPrototype->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, py_set_call));
-    setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternalString(rootContext_, "__init__"), rootContext_->fromMethod(nullptr, protoPython::builtins::py_python_ignore_init));
+    setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternalString(rootContext_, "__init__"), rootContext_->fromMethod(nullptr, py_set_init));
     setPrototype = setPrototype->setAttribute(rootContext_, py_contains, rootContext_->fromMethod(nullptr, py_set_contains));
     setPrototype = setPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_set_bool));
     setPrototype = setPrototype->setAttribute(rootContext_, py_add, rootContext_->fromMethod(nullptr, py_set_add));

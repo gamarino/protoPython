@@ -296,6 +296,13 @@ set_tests_properties(protopy_sorted_iterables PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# set subclasses fill through set.__init__ and iterate.
+add_test(NAME protopy_set_subclass_init
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/set_subclass_init.py)
+set_tests_properties(protopy_set_subclass_init PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # `import typing` completes; Generic[T] subclasses, Protocol and aliases work.
 add_test(NAME protopy_typing_import
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/typing_import.py)
