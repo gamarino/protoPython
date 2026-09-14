@@ -4303,6 +4303,37 @@ const proto::ProtoObject* executeBytecodeRange(
                                                || frame->hasAttribute(ctx, nameS) == PROTO_TRUE)) {
                             found = true;
                         }
+                        // Found through the parent chain, the very value a built-in
+                        // prototype provides (object's __init__ / __class__ /
+                        // __dict__ for a class body, dict.copy for eval's locals
+                        // mirror) is an attribute of the namespace object, not a name.
+                        // Only object values are compared: None, booleans, numbers
+                        // and strings are shared values, so matching a prototype's
+                        // attribute says nothing about where a local came from.
+                        const bool objectValue = found && val != PROTO_NONE && !val->isBoolean(ctx)
+                            && !val->isInteger(ctx) && !val->isFloat(ctx) && !val->isString(ctx);
+                        if (objectValue && env) {
+                            // Modules hold copies of modulePrototype's methods:
+                            // compare native methods by function.
+                            auto providedBy = [&](const proto::ProtoObject* proto) {
+                                const proto::ProtoObject* pv = proto ? proto->getAttribute(ctx, nameS) : nullptr;
+                                return pv && (pv == val
+                                    || (pv->isMethod(ctx) && val->isMethod(ctx)
+                                        && pv->asMethod(ctx) == val->asMethod(ctx)));
+                            };
+                            // `__class__` and `__dict__` are never names reached this
+                            // way: the class cell is ".__class__", and a module's own
+                            // __dict__ is the module itself.
+                            const proto::ProtoString* dictDunderS = env->getDictDunderString();
+                            const bool objectAttributeName = nameS == env->getClassString()
+                                || (dictDunderS && nameS == dictDunderS);
+                            if (objectAttributeName
+                                || providedBy(env->getObjectPrototype()) || providedBy(env->getDictPrototype())
+                                || providedBy(env->getTypePrototype()) || providedBy(env->getModulePrototype())) {
+                                found = false;
+                                val = nullptr;
+                            }
+                        }
                     }
 
                     // A module's __class__ and modulePrototype's methods are attributes
@@ -4342,9 +4373,9 @@ const proto::ProtoObject* executeBytecodeRange(
                         }
                     }
 
-                    // Fallback: builtins, sys.modules, etc.
+                    // Fallback: globals, then builtins.
                     if (!found) {
-                        val = env ? env->resolve(nameS, ctx) : nullptr;
+                        val = env ? env->resolveGlobalName(nameS, ctx) : nullptr;
                         if (val) found = true;
                     }
 
@@ -6273,7 +6304,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 stack.pop_back(); // Remove worklist
                     if (!found && env) {
-                        val = env->resolve(nameS, ctx);
+                        val = env->resolveGlobalName(nameS, ctx);
                         if (val != nullptr) found = true;
                     }
                     if (!found) {
@@ -9219,7 +9250,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 if (nameS && env) {
                     // LOAD_GLOBAL resolves in globals+builtins only — never in the local frame.
-                    const proto::ProtoObject* val = env->resolve(nameS, ctx);
+                    const proto::ProtoObject* val = env->resolveGlobalName(nameS, ctx);
                     if (val != nullptr) {
                         if (pushNull) stack.push_back(nullptr);
                         stack.push_back(val);

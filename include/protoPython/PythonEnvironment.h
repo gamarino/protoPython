@@ -188,6 +188,15 @@ public:
      */
     const proto::ProtoObject* resolve(const std::string& name, proto::ProtoContext* ctx = nullptr);
     const proto::ProtoObject* resolve(const proto::ProtoString* name, proto::ProtoContext* ctx = nullptr);
+
+    /**
+     * @brief A global or builtin name, as LOAD_NAME / LOAD_GLOBAL see it: the
+     * current module's globals, then builtins.  Unlike resolve(), never a
+     * module found in sys.modules or imported by that name (a bare `json`
+     * is a NameError until something binds it).  Cached like resolve().
+     */
+    const proto::ProtoObject* resolveGlobalName(const proto::ProtoString* name, proto::ProtoContext* ctx = nullptr);
+    const proto::ProtoObject* lookupGlobalName(const proto::ProtoString* name, proto::ProtoContext* ctx);
     bool isResolved(const std::string& name, proto::ProtoContext* ctx = nullptr);
 
     static inline bool is_missing(const proto::ProtoObject* obj) {

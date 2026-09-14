@@ -26741,16 +26741,71 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
     return res;
 }
 
+const proto::ProtoObject* PythonEnvironment::lookupGlobalName(const proto::ProtoString* nameObj, proto::ProtoContext* ctx) {
+    // Current module's globals.
+    if (s_currentGlobals) {
+        if (s_currentGlobals->hasAttribute(ctx, nameObj) == PROTO_TRUE) {
+            const proto::ProtoObject* global = s_currentGlobals->getAttribute(ctx, nameObj);
+            if (!isInheritedModuleName(ctx, s_currentGlobals, nameObj, global)) return global;
+        }
+
+        // Support dictionary-based globals (e.g. from eval/exec namespace)
+        const proto::ProtoString* ds = getDataString();
+        if (ds) {
+            const proto::ProtoObject* dataAttr = s_currentGlobals->getAttribute(ctx, ds);
+            if (dataAttr && dataAttr != PROTO_NONE) {
+                const proto::ProtoSparseList* dict = dataAttr->asSparseList(ctx);
+                if (dict && dict->has(ctx, nameObj->getHash(ctx))) {
+                    // The __data__ mirror holds the module's copies of
+                    // modulePrototype's methods too.
+                    const proto::ProtoObject* global = dict->getAt(ctx, nameObj->getHash(ctx));
+                    if (!isInheritedModuleName(ctx, s_currentGlobals, nameObj, global)) return global;
+                }
+            }
+        }
+    }
+
+    // Builtins.
+    if (builtinsModule) {
+        if (builtinsModule->hasAttribute(ctx, nameObj) == PROTO_TRUE) {
+            const proto::ProtoObject* builtin = builtinsModule->getAttribute(ctx, nameObj);
+            if (!isInheritedModuleName(ctx, builtinsModule, nameObj, builtin)) return builtin;
+        }
+    }
+    return nullptr;
+}
+
+const proto::ProtoObject* PythonEnvironment::resolveGlobalName(const proto::ProtoString* nameObj, proto::ProtoContext* ctx) {
+    if (!nameObj) return nullptr;
+    if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
+    // Same per-thread, generation-checked cache as resolve() keeps, apart
+    // from it: resolve() also caches modules it imported by name.
+    static thread_local std::unordered_map<uintptr_t, const proto::ProtoObject*> s_nameCache;
+    static thread_local uint64_t s_nameCacheGen = UINT64_MAX;
+    const uint64_t gen = resolveCacheGeneration_.load(std::memory_order_acquire);
+    if (s_nameCacheGen != gen) {
+        s_nameCache.clear();
+        s_nameCacheGen = gen;
+    }
+    auto cit = s_nameCache.find(reinterpret_cast<uintptr_t>(nameObj));
+    if (cit != s_nameCache.end()) return cit->second;
+    const proto::ProtoObject* result = lookupGlobalName(nameObj, ctx);
+    s_nameCache[reinterpret_cast<uintptr_t>(nameObj)] = result;
+    return result;
+}
+
 bool PythonEnvironment::isInheritedModuleName(proto::ProtoContext* ctx, const proto::ProtoObject* ns,
                                               const proto::ProtoString* name, const proto::ProtoObject* value) {
     if (!modulePrototype || !ns || !name || !value) return false;
-    // A module's globals are its own namespace.  Its `__class__` and the
-    // methods modulePrototype gives every module (keys, get, __init__, ...)
-    // are attributes of the module object, not global names: CPython raises
-    // NameError for them.  Module copies of those methods are recognised by
-    // function, as getAttribute's module binding does.
+    // A module's globals are its own namespace.  Its `__class__`, `__dict__`
+    // and the methods modulePrototype gives every module (keys, get,
+    // __init__, ...) are attributes of the module object, not global names:
+    // CPython raises NameError for them.  Module copies of those methods are
+    // recognised by function, as getAttribute's module binding does.
     const proto::ProtoString* classS = getClassString();
-    if (classS && (name == classS || name->getHash(ctx) == classS->getHash(ctx))) {
+    const proto::ProtoString* dictS = getDictDunderString();
+    if ((classS && (name == classS || name->getHash(ctx) == classS->getHash(ctx)))
+        || (dictS && (name == dictS || name->getHash(ctx) == dictS->getHash(ctx)))) {
         return getType(ctx, ns) == modulePrototype;
     }
     if (!value->isMethod(ctx)) return false;
@@ -26825,36 +26880,8 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
 
     // Single-exit helper: run the lookup, cache the result, return it.
     auto doLookup = [&]() -> const proto::ProtoObject* {
-        // 2. Try current module's globals (Lock-free)
-        if (s_currentGlobals) {
-            if (s_currentGlobals->hasAttribute(ctx, nameObj) == PROTO_TRUE) {
-                const proto::ProtoObject* global = s_currentGlobals->getAttribute(ctx, nameObj);
-                if (!isInheritedModuleName(ctx, s_currentGlobals, nameObj, global)) return global;
-            }
-
-            // Support dictionary-based globals (e.g. from eval/exec namespace)
-            const proto::ProtoString* ds = getDataString();
-            if (ds) {
-                const proto::ProtoObject* dataAttr = s_currentGlobals->getAttribute(ctx, ds);
-                if (dataAttr && dataAttr != PROTO_NONE) {
-                    const proto::ProtoSparseList* dict = dataAttr->asSparseList(ctx);
-                    if (dict && dict->has(ctx, nameObj->getHash(ctx))) {
-                        // The __data__ mirror holds the module's copies of
-                        // modulePrototype's methods too.
-                        const proto::ProtoObject* global = dict->getAt(ctx, nameObj->getHash(ctx));
-                        if (!isInheritedModuleName(ctx, s_currentGlobals, nameObj, global)) return global;
-                    }
-                }
-            }
-        }
-
-        // 3. Builtins (Lock-free)
-        if (builtinsModule) {
-            if (builtinsModule->hasAttribute(ctx, nameObj) == PROTO_TRUE) {
-                const proto::ProtoObject* builtin = builtinsModule->getAttribute(ctx, nameObj);
-                if (!isInheritedModuleName(ctx, builtinsModule, nameObj, builtin)) return builtin;
-            }
-        }
+        // 2-3. Module globals, then builtins (lock-free).
+        if (const proto::ProtoObject* global = lookupGlobalName(nameObj, ctx)) return global;
 
         // 4. Fallback to Imports/Sys (Locked)
         SafeImportLock lock(this, ctx);

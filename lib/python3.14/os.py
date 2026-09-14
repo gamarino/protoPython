@@ -20,6 +20,7 @@ only use functions that are defined by all platforms (e.g., unlink
 and opendir), and leave all pathname manipulation to os.path
 (e.g., split and join).
 """
+import abc
 import sys
 import stat as st
 
