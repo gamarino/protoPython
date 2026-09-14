@@ -9813,10 +9813,10 @@ static const proto::ProtoObject* py_tuple_index(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     if (!positionalParameters || positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
-    if (!data || !data->asTuple(context)) return PROTO_NONE;
-    const proto::ProtoTuple* tuple = data->asTuple(context);
+    // asTuple covers both a wrapped tuple instance and a raw ProtoTuple such
+    // as a *args tuple, which has no __data__ (index() returned None for it).
+    const proto::ProtoTuple* tuple = self ? self->asTuple(context) : nullptr;
+    if (!tuple) return PROTO_NONE;
     const proto::ProtoObject* value = positionalParameters->getAt(context, 0);
     long long start = 0;
     long long stop = static_cast<long long>(tuple->getSize(context));
@@ -9842,10 +9842,9 @@ static const proto::ProtoObject* py_tuple_count(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     if (!positionalParameters || positionalParameters->getSize(context) < 1) return context->fromInteger(0);
-    const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
-    if (!data || !data->asTuple(context)) return context->fromInteger(0);
-    const proto::ProtoTuple* tuple = data->asTuple(context);
+    // asTuple covers both a wrapped tuple instance and a raw ProtoTuple.
+    const proto::ProtoTuple* tuple = self ? self->asTuple(context) : nullptr;
+    if (!tuple) return context->fromInteger(0);
     const proto::ProtoObject* value = positionalParameters->getAt(context, 0);
     long count = 0;
     unsigned long size = tuple->getSize(context);

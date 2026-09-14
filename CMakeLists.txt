@@ -170,6 +170,13 @@ set_tests_properties(protopy_type_getset_descriptors PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 60
     LABELS "regression_gate")
+# tuple.index / tuple.count work on raw tuples such as *args.
+add_test(NAME protopy_tuple_index_raw
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/tuple_index_raw.py)
+set_tests_properties(protopy_tuple_index_raw PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
 # The _typing stub's Generic must compose with ABCMeta-derived metaclasses.
 add_test(NAME protopy_typing_stub_generic
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/typing_stub_generic.py)
