@@ -27195,6 +27195,35 @@ skip_cache_label:
         }
     }
 
+    // CPython's _find_and_load: import the parent package first, then take the
+    // submodule from sys.modules when the parent's __init__ imported it.  The
+    // submodule is registered in sys.modules below before it runs, so loading
+    // the parent only from executeModule handed `from .child import *` in the
+    // parent's __init__ that empty, unexecuted module (`import
+    // asyncio.base_events` ran asyncio/__init__.py into a NameError).
+    {
+        const size_t lastDot = nameStr.find_last_of('.');
+        if (lastDot != std::string::npos && sysModule) {
+            auto sysModulesGet = [&](const std::string& name) -> const proto::ProtoObject* {
+                const proto::ProtoObject* modules = sysModule->getAttribute(ctx, modulesS);
+                const proto::ProtoObject* dataAttr = (modules && modules != PROTO_NONE)
+                    ? modules->getAttribute(ctx, dataString) : nullptr;
+                const proto::ProtoSparseList* dict = (dataAttr && dataAttr != PROTO_NONE)
+                    ? dataAttr->asSparseList(ctx) : nullptr;
+                const unsigned long h = PythonEnvironment::getInternedString(ctx, name.c_str())->getHash(ctx);
+                return (dict && dict->has(ctx, h)) ? dict->getAt(ctx, h) : nullptr;
+            };
+            const std::string parentName = nameStr.substr(0, lastDot);
+            auto inProgress = s_threadResolveCache.find(parentName);
+            const bool parentLoading = inProgress != s_threadResolveCache.end()
+                && inProgress->second && inProgress->second != PROTO_NONE;
+            if (!parentLoading && !sysModulesGet(parentName)) {
+                if (!resolveModule(parentName, ctx) && hasPendingException()) return nullptr;
+                if (const proto::ProtoObject* loaded = sysModulesGet(nameStr)) return loaded;
+            }
+        }
+    }
+
     // Module import search
     const proto::ProtoObject* modWrapper = ctx->space->getImportModule(ctx, nameStr.c_str(), "val");
     if (modWrapper && modWrapper != PROTO_NONE) {
