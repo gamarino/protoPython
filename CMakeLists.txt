@@ -534,6 +534,20 @@ set_tests_properties(protopy_delattr_removes PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# asyncio.run() drives programs with sleep, gather, create_task and exceptions.
+add_test(NAME protopy_asyncio_run_programs
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/asyncio_run_programs.py)
+set_tests_properties(protopy_asyncio_run_programs PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
+# nonlocal rebinding reaches the enclosing function (closures share the binding).
+add_test(NAME protopy_nonlocal_rebinding
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/nonlocal_rebinding.py)
+set_tests_properties(protopy_nonlocal_rebinding PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # `import typing` completes; Generic[T] subclasses, Protocol and aliases work.
 add_test(NAME protopy_typing_import
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/typing_import.py)

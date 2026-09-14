@@ -6342,21 +6342,31 @@ const proto::ProtoObject* executeBytecodeRange(
                         
                         if (!curr || curr == PROTO_NONE || visited.count(curr)) continue;
                         visited.insert(curr);
-                        
-                        const proto::ProtoString* dName = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
-                        const proto::ProtoObject* dataObj = curr->getAttribute(ctx, dName);
-                        if (dataObj && dataObj->asSparseList(ctx)) {
-                            if (dataObj->asSparseList(ctx)->getAt(ctx, h) != PROTO_NONE) {
-                                const proto::ProtoSparseList* newData = dataObj->asSparseList(ctx)->setAt(ctx, h, val);
-                                curr->setAttribute(ctx, dName, newData->asObject(ctx));
-                                found = true;
-                                break;
-                            }
-                        }
-                        if (curr->getAttribute(ctx, nameS)) {
+
+                        // The binding is where LOAD_DEREF reads it: the first
+                        // object of the walk that OWNS the name.  getAttribute
+                        // walks the parent chain and returns PROTO_NONE (not
+                        // nullptr) for a missing name, so testing it matched the
+                        // running function's own frame every time: `nonlocal n;
+                        // n += 1` bound a new n there and the enclosing scope
+                        // never saw the write.
+                        if (curr->hasOwnAttribute(ctx, nameS) == PROTO_TRUE) {
                             curr->setAttribute(ctx, nameS, val);
                             found = true;
                             break;
+                        }
+                        const proto::ProtoString* dName = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
+                        const proto::ProtoObject* dataObj =
+                            (curr->hasOwnAttribute(ctx, dName) == PROTO_TRUE)
+                                ? curr->getOwnAttributeDirect(ctx, dName)
+                                : nullptr;
+                        if (dataObj && dataObj->asSparseList(ctx)) {
+                            const proto::ProtoSparseList* sl = dataObj->asSparseList(ctx);
+                            if (sl->has(ctx, h)) {
+                                curr->setAttribute(ctx, dName, sl->setAt(ctx, h, val)->asObject(ctx));
+                                found = true;
+                                break;
+                            }
                         }
                         if (env) {
                             const proto::ProtoObject* closureAttr = curr->getAttribute(ctx, env->getClosureString());
@@ -6379,10 +6389,13 @@ const proto::ProtoObject* executeBytecodeRange(
                                 }
                             }
                         }
+                        // Parents in reverse, as LOAD_DEREF walks them (STRUCT-303):
+                        // the closest scope is popped first, so a store and a load
+                        // of the same name resolve to the same binding.
                         const proto::ProtoList* parents = curr->getParents(ctx);
                         if (parents) {
-                            for (unsigned long j = 0; j < parents->getSize(ctx); ++j) {
-                                worklist = worklist->appendLast(ctx, parents->getAt(ctx, j));
+                            for (long j = static_cast<long>(parents->getSize(ctx)) - 1; j >= 0; --j) {
+                                worklist = worklist->appendLast(ctx, parents->getAt(ctx, static_cast<int>(j)));
                                 stack[stack.top - 1] = worklist->asObject(ctx);
                             }
                         }
@@ -7946,40 +7959,25 @@ const proto::ProtoObject* executeBytecodeRange(
                                         }
                                         if (!needed) continue;
                                     }
-                                    // STRUCT-303: snapshot the OWN-attribute value into
-                                    // closureFrame for forceMapped (frame-mapped) outer
-                                    // locals.  Previously we skipped snapshot when frame
-                                    // had the name as an own attribute, relying on the
-                                    // parent-chain walk (closureFrame → frame) to expose
-                                    // the live value.  That walk continues PAST `frame`
-                                    // into its parent (e.g. the class body namespace), so
-                                    // a free var whose name matches a class-body local
-                                    // (e.g. a method's `callback` parameter inside `class
-                                    // A: def callback(self, callback, ...): self.make(
-                                    // callback, ...)`) resolved to the class-namespace
-                                    // value (the method function) instead of the parameter
-                                    // binding.  Snapshotting via getOwnAttributeDirect
-                                    // captures the correct OWN value without ever touching
-                                    // the chain.  Trade-off: outer-frame mutations to the
-                                    // captured local become invisible to the inner closure
-                                    // (it sees the snapshot, not a live cell), but
-                                    // parameters and the vast majority of locals are not
-                                    // mutated after the inner is created.  Real cell-style
-                                    // mutability would require a separate cell object on
-                                    // each cellvar — a larger restructuring left as a
-                                    // follow-up.
+                                    // A CO_OPTIMIZED outer keeps its locals in automatic
+                                    // slots the closure cannot reach, so their current
+                                    // values are copied into closureFrame.  A frame-mapped
+                                    // (forceMapped) outer has no slots: its binding is an
+                                    // own attribute of `frame`, closureFrame's parent, and
+                                    // LOAD_DEREF / STORE_DEREF find it there live — they
+                                    // accept only own attributes and pop the closest
+                                    // parent first, so a class-body namespace further up
+                                    // (a method's `callback` parameter inside `class A:
+                                    // def callback(self, callback, ...)`, STRUCT-303)
+                                    // cannot shadow it.  Copying the frame's attribute too
+                                    // gave the closure a private snapshot: `nonlocal`
+                                    // rebinds and later assignments in the outer were
+                                    // never shared.
                                     const proto::ProtoObject* val = (j < outerNSlots) ? outerSlots[j] : nullptr;
                                     // An outer local that is not bound yet has no value to capture.
                                     if (val && env && val == env->getUnboundSentinel()) val = nullptr;
                                     // For CO_OPTIMIZED slots, PROTO_NONE is a legitimate
                                     // bound value (e.g. `boundary=None` parameter).  Accept.
-                                    if (!val && frame->hasOwnAttribute(ctx, vname) == PROTO_TRUE) {
-                                        val = frame->getOwnAttributeDirect(ctx, vname);
-                                        if (val == PROTO_NONE) {
-                                            // PROTO_NONE on an OWN slot is a legitimate
-                                            // bound None — keep it.
-                                        }
-                                    }
 
                                     if (val) {
                                         closureFrame = const_cast<proto::ProtoObject*>(closureFrame->setAttribute(ctx, vname, val));

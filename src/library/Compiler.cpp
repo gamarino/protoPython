@@ -3060,6 +3060,12 @@ static void collectNestedScopeFreeVarsImpl(ASTNode* node, std::unordered_set<std
         if (!fn->vararg.empty()) def.insert(fn->vararg);
         if (!fn->kwarg.empty())  def.insert(fn->kwarg);
         scopeFreeVars(fn->body.get(), def, out);
+        // A name the nested scope declares `nonlocal` is a free variable of
+        // it even when it only assigns the name (an assignment target is not
+        // a use): it must bubble up, or the outer keeps it in a fast slot
+        // that the nested STORE_DEREF never reaches (`nonlocal n; n += 1`
+        // left n unchanged).
+        collectNonlocalsFromNode(fn->body.get(), out);
         return;
     }
     if (auto* afn = dynamic_cast<AsyncFunctionDefNode*>(node)) {
@@ -3070,6 +3076,7 @@ static void collectNestedScopeFreeVarsImpl(ASTNode* node, std::unordered_set<std
         if (!afn->vararg.empty()) def.insert(afn->vararg);
         if (!afn->kwarg.empty())  def.insert(afn->kwarg);
         scopeFreeVars(afn->body.get(), def, out);
+        collectNonlocalsFromNode(afn->body.get(), out);
         return;
     }
     // STRUCT-171 (round 16): ClassDefNode handler — class body's own
