@@ -15694,7 +15694,6 @@ PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::v
     // Multiple instances check removed for silence
     s_mainThreadId = std::this_thread::get_id();
     registerContext(rootContext_, this);
-    kwNamesStack = rootContext_->newList();
     // GC anchor for active exceptions (see `activeExcsRoots_` doc and
     // `s_activeExcsHandles`).  Replaces the prior `_active_excs` attribute
     // anchor whose read path was vulnerable to mutable-shard cache desync.
@@ -22975,8 +22974,8 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
             const proto::ProtoString* classS = getClassString();
             if (classS && obj->hasOwnAttribute(ctx, classS) == PROTO_TRUE) {
                 const proto::ProtoObject* cls = obj->proto::ProtoObject::getAttribute(ctx, classS);
-    uint64_t gcEpoch = 0;
                 if (cls && cls != PROTO_NONE && cls != obj && !cls->isString(ctx)) {
+    uint64_t gcEpoch = 0;
                     return cls;
                 }
             }
@@ -23001,10 +23000,10 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
     else if (obj->isBoolean(ctx)) res = boolPrototype;
     else if (obj->isTuple(ctx) && !this->isActuallyAClass(ctx, obj)) {
         // A tuple-shaped instance is normally just `tuple`, but namedtuple
+        // and other tuple subclasses are constructed via
     // Read the GC epoch before resolving, so a cycle that starts while we
     // resolve leaves the new entry already stale.
     const uint64_t gcEpoch = space_ ? space_->getGCCycleCount() : 0;
-        // and other tuple subclasses are constructed via
         // `type(name, (tuple,), {...})` and instances carry their actual
         // class as an OWN __class__ attribute.  Without this branch every
         // namedtuple instance reports type() == tuple, breaking field
@@ -23164,8 +23163,8 @@ int PythonEnvironment::primitiveCacheHit(const proto::ProtoObject* obj) const {
 //   * the resolved value either has __code__ (Python function — caller
 //     handles binding via outIsUnboundFunc) or does not own __get__
 //     (so it is not an explicit descriptor needing __get__ invocation).
-        slot->gcEpoch = gcEpoch;
 //
+        slot->gcEpoch = gcEpoch;
 // Plain Python functions inherit __get__ from functionPrototype as an
 // inherited attribute (not own), so hasOwnAttribute("__get__") is false
 // for them — they pass the descriptor check and reach the LOAD_METHOD
@@ -23189,8 +23188,8 @@ static bool attributeExistsCompat(PythonEnvironment* env,
     if (!env) return false;
     const proto::ProtoObject* cls = env->getType(ctx, obj);
     if (!cls || cls == PROTO_NONE) return false;
-    const uint64_t gcEpoch = space_ ? space_->getGCCycleCount() : 0;
     const proto::ProtoString* mroS = env->getMroString();
+    const uint64_t gcEpoch = space_ ? space_->getGCCycleCount() : 0;
     if (!mroS) return false;
     const proto::ProtoObject* mroObj = cls->proto::ProtoObject::getAttribute(ctx, mroS);
     if (!mroObj || mroObj == PROTO_NONE) return false;
@@ -27812,18 +27811,26 @@ void PythonEnvironment::delName(const std::string& name) {
 }
 
 void PythonEnvironment::pushKwNames(const proto::ProtoTuple* names) {
-    kwNamesStack = kwNamesStack->appendLast(rootContext_, names->asObject(rootContext_));
+    proto::ProtoRootSet::Handle h = proto::ProtoRootSet::kNullHandle;
+    if (transientArgsRoots_ && names) {
+        h = transientArgsRoots_->add(names->asObject(s_threadContext ? s_threadContext : rootContext_));
+    }
+    s_kwNamesStack.push_back(names);
+    s_kwNamesHandles.push_back(h);
 }
 
 void PythonEnvironment::popKwNames() {
-    if (kwNamesStack->getSize(rootContext_) != 0) {
-        kwNamesStack = kwNamesStack->removeLast(rootContext_);
+    if (s_kwNamesStack.empty()) return;
+    const proto::ProtoRootSet::Handle h = s_kwNamesHandles.back();
+    s_kwNamesStack.pop_back();
+    s_kwNamesHandles.pop_back();
+    if (transientArgsRoots_ && h != proto::ProtoRootSet::kNullHandle) {
+        transientArgsRoots_->remove(h);
     }
 }
 
 const proto::ProtoTuple* PythonEnvironment::getCurrentKwNames() const {
-    if (kwNamesStack->getSize(rootContext_) == 0) return nullptr;
-    return kwNamesStack->getLast(rootContext_)->asTuple(rootContext_);
+    return s_kwNamesStack.empty() ? nullptr : s_kwNamesStack.back();
 }
 
 const proto::ProtoObject* PythonEnvironment::runUntilComplete(const proto::ProtoObject* coro) {
@@ -27869,6 +27876,18 @@ void PythonEnvironment::addTask(const proto::ProtoObject* coro) {
     if (!taskQueue) taskQueue = rootContext_->newList();
     taskQueue = taskQueue->appendLast(rootContext_, coro);
 }
+// Keyword-name stack for the CALL_FUNCTION_KW protocol. It is per thread:
+// a call pushes its names, the callee reads them and the call pops them,
+// always on the same thread. It used to be a PythonEnvironment member
+// rebuilt with appendLast(rootContext_) from every thread: a data race on
+// the member, allocations into the main thread's context from workers
+// (SEGV in ProtoList::appendLast under ASAN), and one thread could read or
+// pop another thread's names. A std::vector is invisible to the GC, so
+// each entry is pinned in transientArgsRoots_ while it is on the stack
+// (same pattern as s_activeExcs / activeExcsRoots_).
+static thread_local std::vector<const proto::ProtoTuple*> s_kwNamesStack;
+static thread_local std::vector<proto::ProtoRootSet::Handle> s_kwNamesHandles;
+
 
 struct SyncContext {
     proto::ProtoContext* ctx;
