@@ -155,7 +155,8 @@ class TypeVar:
         return self.__name__
 
     def __typing_subst__(self, arg):
-        return arg
+        import typing
+        return typing._typevar_subst(self, arg)
 
     def __or__(self, other):
         return _UnionGenericAlias(Union, (self, other))
@@ -231,8 +232,13 @@ class ParamSpec:
     def __reduce__(self):
         return self.__name__
 
+    def __typing_subst__(self, arg):
+        import typing
+        return typing._paramspec_subst(self, arg)
+
     def __typing_prepare_subst__(self, alias, args):
-        return args
+        import typing
+        return typing._paramspec_prepare_subst(self, alias, args)
 
     def has_default(self):
         return self.__default__ is not NoDefault
@@ -255,18 +261,17 @@ class TypeVarTuple:
         return self.__name__
 
     def __iter__(self):
-        yield self
+        # `*Ts` is Unpack[Ts], as in CPython: its __parameters__ carry Ts, and
+        # only the unpacked form counts as an unpacked TypeVarTuple.
+        import typing
+        yield typing.Unpack[self]
 
-    @property
-    def __typing_unpacked_tuple_args__(self):
-        return (self,)
-
-    @property
-    def __typing_is_unpacked_typevartuple__(self):
-        return True
+    def __typing_subst__(self, arg):
+        raise TypeError("Substitution of bare TypeVarTuple is not supported")
 
     def __typing_prepare_subst__(self, alias, args):
-        return args
+        import typing
+        return typing._typevartuple_prepare_subst(self, alias, args)
 
     def has_default(self):
         return self.__default__ is not NoDefault
