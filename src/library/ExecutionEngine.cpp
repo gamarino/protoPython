@@ -2345,7 +2345,8 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
     }
     if (op >= 0 && op <= 5) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-        if (env) return env->compareObjects(ctx, a, b, op);
+        // COMPARE_OP: the operator yields the dunder's result unchanged.
+        if (env) return env->compareObjects(ctx, a, b, op, /*richResult=*/true);
         
         // Fallback for null environment (e.g. unit tests)
         int c = a->compare(ctx, b);

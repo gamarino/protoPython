@@ -226,6 +226,13 @@ set_tests_properties(protopy_class_cell PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# Comparison operators return the dunder's result as is; unsupported orderings raise TypeError.
+add_test(NAME protopy_rich_compare_results
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/rich_compare_results.py)
+set_tests_properties(protopy_rich_compare_results PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # `del name` unbinds the name in module, class, global and exec() scopes.
 add_test(NAME protopy_del_name
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/del_name.py)

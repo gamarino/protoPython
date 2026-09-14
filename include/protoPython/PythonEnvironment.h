@@ -301,7 +301,10 @@ public:
 
     const proto::ProtoObject* setAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, const proto::ProtoObject* value);
 
-    const proto::ProtoObject* compareObjects(proto::ProtoContext* ctx, const proto::ProtoObject* a, const proto::ProtoObject* b, int op);
+    // richResult: return a rich comparison dunder's result as is and raise
+    // TypeError for orderings nobody implements (the comparison operators);
+    // otherwise the answer is coerced to True/False for internal callers.
+    const proto::ProtoObject* compareObjects(proto::ProtoContext* ctx, const proto::ProtoObject* a, const proto::ProtoObject* b, int op, bool richResult = false);
     bool objectsEqual(proto::ProtoContext* ctx, const proto::ProtoObject* a, const proto::ProtoObject* b);
 
     // Helpers for C++ generated code

@@ -27021,8 +27021,11 @@ bool PythonEnvironment::isResolved(const std::string& name, proto::ProtoContext*
     return r != nullptr;
 }
 
-const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext* ctx, const proto::ProtoObject* a, const proto::ProtoObject* b, int op) {
+const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext* ctx, const proto::ProtoObject* a, const proto::ProtoObject* b, int op, bool richResult) {
     if (!a || !b) return PROTO_FALSE;
+    // Set when a comparison dunder answered NotImplemented; see the
+    // ordering check before the native comparisons below.
+    bool sawNotImplemented = false;
 
     // IEEE 754 NaN semantics — `nan == nan` is False and
     // `nan != nan` is True even when both sides are the same
@@ -27122,8 +27125,9 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
                                 }
                             }
                             const proto::ProtoObject* notImpl = getNotImplementedPrototype();
+                            if (res == notImpl) sawNotImplemented = true;
                             if (res && res != PROTO_NONE && res != notImpl) {
-                                if (res == PROTO_TRUE || res == PROTO_FALSE || res->isBoolean(ctx)) {
+                                if (richResult || res == PROTO_TRUE || res == PROTO_FALSE || res->isBoolean(ctx)) {
                                     return res;
                                 }
                                 bool truthy = false;
@@ -27143,7 +27147,16 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
             // type defines (e.g. dict/list).  Always consult __eq__ first for
             // op == 1 and only fall back to a type-specific `__ne__` (or the
             // raw comparison below) when __eq__ declines to answer.
-            if (op == 1) {
+            // A Python-level __ne__ answers `!=` itself: CPython derives
+            // != from __eq__ only in the default object.__ne__.
+            bool userNe = false;
+            if (op == 1 && !isActuallyAClass(ctx, a)) {
+                const proto::ProtoObject* neMethod = a->getAttribute(ctx, py_ne_s);
+                const proto::ProtoString* neCodeS = getCodeString();
+                userNe = neMethod && neMethod != PROTO_NONE && !neMethod->asMethod(ctx)
+                    && neCodeS && neMethod->hasOwnAttribute(ctx, neCodeS) == PROTO_TRUE;
+            }
+            if (op == 1 && !userNe) {
                 const proto::ProtoObject* eqMethod = a->getAttribute(ctx, py_eq_s);
                 if (eqMethod && eqMethod != PROTO_NONE) {
                     const proto::ProtoObject* res = nullptr;
@@ -27204,8 +27217,9 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
                     res = invokePythonCallable(ctx, method, selfPrepended, nullptr);
                 }
             }
+            if (res == notImpl) sawNotImplemented = true;
             if (res && res != PROTO_NONE && res != notImpl) {
-                if (res == PROTO_TRUE || res == PROTO_FALSE || res->isBoolean(ctx)) {
+                if (richResult || res == PROTO_TRUE || res == PROTO_FALSE || res->isBoolean(ctx)) {
                     return res;
                 }
                 // Non-bool result from a user dunder: bool-coerce via the
@@ -27248,8 +27262,9 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
                             res2 = invokePythonCallable(ctx, rmethod, sp, nullptr);
                         }
                     }
+                    if (res2 == notImpl) sawNotImplemented = true;
                     if (res2 && res2 != PROTO_NONE && res2 != notImpl) {
-                        if (res2 == PROTO_TRUE || res2 == PROTO_FALSE || res2->isBoolean(ctx)) {
+                        if (richResult || res2 == PROTO_TRUE || res2 == PROTO_FALSE || res2->isBoolean(ctx)) {
                             return res2;
                         }
                         bool truthy2 = false;
@@ -27264,6 +27279,39 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
         }
     }
 
+    // PyObject_RichCompare: when the dunders of both operands answered
+    // NotImplemented, `<`, `<=`, `>` and `>=` raise TypeError; only == and
+    // != fall back (to identity).  Operands this function orders natively
+    // below (numbers, str, tuple, list) keep that path.
+    if (richResult && sawNotImplemented && op >= 2 && op <= 5) {
+        auto payload = [&](const proto::ProtoObject* x) -> const proto::ProtoObject* {
+            if (x->isInteger(ctx) || x->isFloat(ctx) || x->isBoolean(ctx) || x->isString(ctx)) return x;
+            const proto::ProtoObject* d = x->getAttribute(ctx, getDataString());
+            return (d && (d->isInteger(ctx) || d->isFloat(ctx) || d->isBoolean(ctx))) ? d : x;
+        };
+        auto isNumber = [&](const proto::ProtoObject* x) {
+            return x->isInteger(ctx) || x->isFloat(ctx) || x->isBoolean(ctx);
+        };
+        const proto::ProtoObject* pa = payload(a);
+        const proto::ProtoObject* pb = payload(b);
+        const proto::ProtoObject* ta = getType(ctx, a);
+        const proto::ProtoObject* tb = getType(ctx, b);
+        const bool nativelyOrdered = (isNumber(pa) && isNumber(pb))
+            || (pa->isString(ctx) && pb->isString(ctx))
+            || (ta == tb && (ta == getTuplePrototype() || ta == getListPrototype()));
+        if (!nativelyOrdered) {
+            auto typeName = [&](const proto::ProtoObject* t) {
+                std::string n = "object";
+                const proto::ProtoObject* nm = t ? t->getAttribute(ctx, getNameString()) : nullptr;
+                if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, n);
+                return n;
+            };
+            const char* opName = (op == 2) ? "<" : (op == 3) ? "<=" : (op == 4) ? ">" : ">=";
+            raiseTypeError(ctx, std::string("'") + opName + "' not supported between instances of '"
+                + typeName(ta) + "' and '" + typeName(tb) + "'");
+            return nullptr;
+        }
+    }
     int c = 0;
     // Unwrap subclass-of-int / subclass-of-float instances via __data__
     // before the kind-based dispatch below.  Wrapped instances carry
