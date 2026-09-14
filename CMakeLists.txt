@@ -478,6 +478,13 @@ set_tests_properties(protopy_ordering_type_errors PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# str(KeyError(k)) is repr(k).
+add_test(NAME protopy_keyerror_str
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/keyerror_str.py)
+set_tests_properties(protopy_keyerror_str PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # `import typing` completes; Generic[T] subclasses, Protocol and aliases work.
 add_test(NAME protopy_typing_import
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/typing_import.py)

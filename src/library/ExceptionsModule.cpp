@@ -170,6 +170,29 @@ static const proto::ProtoObject* exception_str(
     return args->asObject(context);
 }
 
+// KeyError.__str__: repr of a single argument, so a missing key reads as it
+// was written (str(KeyError('a')) == "'a'", and '' stays visible).
+static const proto::ProtoObject* keyerror_str(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoObject* instance = self;
+    if ((!instance || instance == PROTO_NONE) && positionalParameters && positionalParameters->getSize(context) > 0) {
+        instance = positionalParameters->getAt(context, 0);
+    }
+    if (instance && instance != PROTO_NONE) {
+        const proto::ProtoObject* argsObj = instance->getAttribute(context, PythonEnvironment::getInternedString(context, "args"));
+        const proto::ProtoTuple* args = argsObj && argsObj->isTuple(context) ? argsObj->asTuple(context) : nullptr;
+        if (args && args->getSize(context) == 1) {
+            return PythonEnvironment::getInternedString(context,
+                PythonEnvironment::reprObject(context, args->getAt(context, 0)).c_str())->asObject(context);
+        }
+    }
+    return exception_str(context, self, parentLink, positionalParameters, keywordParameters);
+}
+
 static const proto::ProtoObject* exception_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -425,6 +448,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoObject* arithmeticErrorType = make_exception_type(ctx, objectProto, typeProto, "ArithmeticError", exceptionType);
     const proto::ProtoObject* lookupErrorType = make_exception_type(ctx, objectProto, typeProto, "LookupError", exceptionType);
     const proto::ProtoObject* keyErrorType = make_exception_type(ctx, objectProto, typeProto, "KeyError", lookupErrorType);
+    keyErrorType = keyErrorType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__str__"),
+        ctx->fromMethod(nullptr, keyerror_str));
     const proto::ProtoObject* valueErrorType = make_exception_type(ctx, objectProto, typeProto, "ValueError", exceptionType);
     const proto::ProtoObject* nameErrorType = make_exception_type(ctx, objectProto, typeProto, "NameError", exceptionType);
     const proto::ProtoObject* attributeErrorType = make_exception_type(ctx, objectProto, typeProto, "AttributeError", exceptionType);
