@@ -7858,6 +7858,51 @@ static const proto::ProtoObject* py_set_xor(
     return py_set_symmetric_difference(context, self, parent, args, kwargs);
 }
 
+// Reflected set operators: `view & s` reaches s.__rand__(view) when the left
+// operand (a dict view) has no __and__. The left operand is taken as a set and
+// the forward operation runs in the original order.
+static const proto::ProtoObject* set_reflected(
+    proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ProtoList* args,
+    const proto::ProtoSparseList* kwargs, proto::ProtoMethod forward) {
+    unwrap_set_binop_args(context, self, args);
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* notImplemented = env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    if (!args || args->getSize(context) != 1) return notImplemented;
+    const proto::ProtoObject* left = args->getAt(context, 0);
+    if (!set_op_other_is_setlike(context, left)) return notImplemented;
+    const proto::ProtoObject* leftSet = left;
+    if (!set_underlying(context, left)) {
+        const proto::ProtoSet* elements = set_from_iterable(context, left);
+        if (!elements) return nullptr;
+        leftSet = new_set_like(context, nullptr, elements);
+    }
+    return forward(context, leftSet, nullptr, context->newList()->appendLast(context, self), kwargs);
+}
+
+static const proto::ProtoObject* py_set_rand(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    return set_reflected(context, self, args, kwargs, py_set_and);
+}
+
+static const proto::ProtoObject* py_set_ror(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    return set_reflected(context, self, args, kwargs, py_set_or);
+}
+
+static const proto::ProtoObject* py_set_rsub(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    return set_reflected(context, self, args, kwargs, py_set_sub);
+}
+
+static const proto::ProtoObject* py_set_rxor(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    return set_reflected(context, self, args, kwargs, py_set_xor);
+}
+
 // Resolve `self`'s underlying ProtoSet, honouring set instances that store
 // the data in the `__data__` attribute (the standard layout produced by
 // py_set_call). Returns nullptr if the object isn't set-like.
@@ -19635,6 +19680,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__lt__"), rootContext_->fromMethod(nullptr, py_set_lt));
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ge__"), rootContext_->fromMethod(nullptr, py_set_ge));
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__gt__"), rootContext_->fromMethod(nullptr, py_set_gt));
+    setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__rand__"), rootContext_->fromMethod(nullptr, py_set_rand));
+    setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ror__"), rootContext_->fromMethod(nullptr, py_set_ror));
+    setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__rsub__"), rootContext_->fromMethod(nullptr, py_set_rsub));
+    setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__rxor__"), rootContext_->fromMethod(nullptr, py_set_rxor));
     // set instances are unhashable in CPython (frozenset is the hashable variant).
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__hash__"), PROTO_NONE);
     setPrototype = setPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_set_iter));
@@ -19680,12 +19729,13 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // `EXCLUDED_ATTRIBUTES = _TYPING_INTERNALS | _SPECIAL_NAMES | {...}`
     // and by any other code that relies on `frozenset | frozenset` etc.
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__or__"),  rootContext_->fromMethod(nullptr, py_set_or));
-    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ror__"), rootContext_->fromMethod(nullptr, py_set_or));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ror__"), rootContext_->fromMethod(nullptr, py_set_ror));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__and__"), rootContext_->fromMethod(nullptr, py_set_and));
-    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__rand__"),rootContext_->fromMethod(nullptr, py_set_and));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__rand__"),rootContext_->fromMethod(nullptr, py_set_rand));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__sub__"), rootContext_->fromMethod(nullptr, py_set_sub));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__rsub__"), rootContext_->fromMethod(nullptr, py_set_rsub));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__xor__"), rootContext_->fromMethod(nullptr, py_set_xor));
-    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__rxor__"),rootContext_->fromMethod(nullptr, py_set_xor));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__rxor__"),rootContext_->fromMethod(nullptr, py_set_rxor));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_iter_proto, setIterProto);
 
     bytesPrototype = objectPrototype->newChild(rootContext_, true);
