@@ -3686,7 +3686,9 @@ static void updateContextLocation(proto::ProtoContext* ctx, proto::ProtoObject* 
     // Set filename
     const proto::ProtoObject* fn = co->getAttribute(ctx, env->getCoFilenameString());
     if (fn && fn->isString(ctx)) {
-        static std::unordered_map<const proto::ProtoObject*, std::string> filenameCache;
+        // thread_local: a process-wide map was read and written without a
+        // lock from every thread that dispatched an exception concurrently.
+        static thread_local std::unordered_map<const proto::ProtoObject*, std::string> filenameCache;
         if (filenameCache.find(fn) == filenameCache.end()) {
             std::string s;
             fn->asString(ctx)->toUTF8String(ctx, s);
@@ -5418,8 +5420,6 @@ const proto::ProtoObject* executeBytecodeRange(
                         }
                     }
                 }
-                return nullptr;
-            };
                 // Native objects such as `_thread` locks keep their special
                 // methods on a protoCore prototype that is not part of the
                 // Python MRO, so the walk above cannot see them and `with
@@ -5433,6 +5433,8 @@ const proto::ProtoObject* executeBytecodeRange(
                         return ctx->fromMethod(const_cast<proto::ProtoObject*>(obj), v->asMethod(ctx));
                     }
                 }
+                return nullptr;
+            };
             const proto::ProtoObject* exitM = lookupTypeOnly(manager, exitS);
             stack.push_back(exitM ? exitM : (const proto::ProtoObject*)PROTO_NONE);
 
@@ -6367,9 +6369,9 @@ const proto::ProtoObject* executeBytecodeRange(
                         const proto::ProtoObject* type = env->getType(ctx, obj);
                         if (type && type != PROTO_NONE) {
                             const uint64_t gen = env->resolveCacheGeneration();
+                            const uint64_t gcEpoch = ctx->space->getGCCycleCount();
                             LoadAttrPicEntry* slot =
                                 &g_loadAttrPic[loadAttrPicIndex(type, attrName)];
-                            const uint64_t gcEpoch = ctx->space->getGCCycleCount();
                             if (slot->type == type
                                 && slot->name == attrName
                                 && slot->generation == gen
@@ -6399,18 +6401,18 @@ const proto::ProtoObject* executeBytecodeRange(
                                         slot->value        = val;
                                         slot->nativeMethod = nullptr;
                                         slot->generation   = gen;
+                                        slot->gcEpoch      = gcEpoch;
                                         slot->isUnbound    = true;
                                     } else if (val->isMethod(ctx)
-                                        slot->gcEpoch      = gcEpoch;
                                                && val->asMethodSelf(ctx) == obj) {
                                         slot->type         = type;
                                         slot->name         = attrName;
                                         slot->value        = nullptr;
                                         slot->nativeMethod = val->asMethod(ctx);
                                         slot->generation   = gen;
+                                        slot->gcEpoch      = gcEpoch;
                                         slot->isUnbound    = false;
                                     }
-                                        slot->gcEpoch      = gcEpoch;
                                 }
                                 picHandled = true;
                             }
