@@ -9288,33 +9288,140 @@ const proto::ProtoObject* executeBytecodeRange(
         } break;
         case OP_DELETE_NAME:
         case OP_DELETE_GLOBAL: {
+            // `del name` undoes what STORE_NAME / STORE_GLOBAL wrote: the
+            // namespace's own attribute, its __data__ entry and its __keys__
+            // entry.  The old code discarded the SparseList returned by
+            // removeAt, so every del was a no-op, and it swallowed errors, so
+            // deleting an unbound name never raised NameError.
+            // DELETE_GLOBAL acts on the module globals; DELETE_NAME on the
+            // current namespace (module, class body namespace, exec() dict).
             int nameIdx = arg >> 1;
-            // Swallow any pre-existing or subsequent exception from delete path (e.g. os.py del _create_environ_mapping)
-            if (env && env->hasPendingException()) env->clearPendingException();
-            // i++;
-            if (frame) {
-                const proto::ProtoObject* nameObj = names->getAt(ctx, nameIdx);
-                if (nameObj && proto::ProtoObject::isStringTagFast(nameObj)) {
-                    const proto::ProtoString* data_name = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
-                    const proto::ProtoObject* data = frame->getAttribute(ctx, data_name);
-                    if (data && data->asSparseList(ctx)) {
-                        data->asSparseList(ctx)->removeAt(ctx, nameObj->getHash(ctx));
-                        // removeAt can set TypeError (e.g. wrong key type); clear so del does not abort module load
-                        if (env && env->hasPendingException()) {
+            if (!names || static_cast<unsigned long>(nameIdx) >= names->getSize(ctx)) break;
+            const proto::ProtoObject* nameObj = names->getAt(ctx, nameIdx);
+            if (!nameObj || !proto::ProtoObject::isStringTagFast(nameObj)) break;
+            const proto::ProtoString* nS = nameObj->asString(ctx);
+            const bool isGlobalDel = (op == OP_DELETE_GLOBAL);
+            proto::ProtoObject* target = frame;
+            if (isGlobalDel && PythonEnvironment::getCurrentGlobals()) {
+                target = const_cast<proto::ProtoObject*>(PythonEnvironment::getCurrentGlobals());
+            }
+            if (!target) break;
+
+            // Custom class namespace from __prepare__ (e.g. EnumDict): the
+            // same interception STORE_NAME does with __setitem__.
+            if (!isGlobalDel && env) {
+                const proto::ProtoObject* frameType = env->getType(ctx, target);
+                if (frameType == env->getDictPrototype()) {
+                    const proto::ProtoString* classS = env->getClassString() ? env->getClassString() : PythonEnvironment::getInternedString(ctx, "__class__");
+                    const proto::ProtoObject* cls = target->proto::ProtoObject::getAttribute(ctx, classS);
+                    if (cls && cls != PROTO_NONE) frameType = cls;
+                }
+                if (frameType && frameType != PROTO_NONE &&
+                    frameType != env->getDictPrototype() &&
+                    frameType != env->getModulePrototype()) {
+                    const proto::ProtoObject* delitem = env->getAttribute(ctx, frameType, env->getDelItemString(), false);
+                    if (delitem && delitem != PROTO_NONE) {
+                        const proto::ProtoList* delArgs = ctx->newList()->appendLast(ctx, nameObj);
+                        invokeDunder(ctx, target, env->getDelItemString(), delArgs);
+                        env->invalidateResolveCache();
+                        if (env->hasPendingException()) {
+                            // CPython reports the mapping's failure as NameError.
+                            std::string nStr;
+                            nS->toUTF8String(ctx, nStr);
                             env->clearPendingException();
+                            env->raiseNameError(ctx, nStr);
+                            i = next_i;
+                            continue;
                         }
+                        break;
                     }
                 }
             }
-            if (env) env->invalidateResolveCache();
-            // Swallow any exception from delete path so "del name" does not abort module (e.g. os.py del _create_environ_mapping)
-            if (env && env->hasPendingException()) env->clearPendingException();
+
+            const proto::ProtoString* dataS = env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "__data__");
+            const proto::ProtoString* keysS = env ? env->getKeysString() : PythonEnvironment::getInternedString(ctx, "__keys__");
+            const unsigned long nameHash = nameObj->getHash(ctx);
+            const bool ownAttr = target->hasOwnAttribute(ctx, nS) == PROTO_TRUE;
+            const proto::ProtoObject* dataObj = target->getAttribute(ctx, dataS);
+            const proto::ProtoSparseList* dataList = dataObj ? dataObj->asSparseList(ctx) : nullptr;
+            const bool inData = dataList && dataList->has(ctx, nameHash);
+            if (!ownAttr && !inData) {
+                if (env) {
+                    std::string nStr;
+                    nS->toUTF8String(ctx, nStr);
+                    env->raiseNameError(ctx, nStr);
+                }
+                i = next_i;
+                continue;
+            }
+
+            const proto::ProtoObject* oldTarget = target;
+            if (ownAttr) {
+                target = const_cast<proto::ProtoObject*>(target->removeAttribute(ctx, nS));
+            }
+            if (inData) {
+                target = const_cast<proto::ProtoObject*>(target->setAttribute(ctx, dataS,
+                    dataList->removeAt(ctx, nameHash)->asObject(ctx)));
+            }
+            if (target->hasOwnAttribute(ctx, keysS) == PROTO_TRUE) {
+                const proto::ProtoObject* keysObj = target->getOwnAttributeDirect(ctx, keysS);
+                const proto::ProtoList* keysList = keysObj ? keysObj->asList(ctx) : nullptr;
+                const int keysSize = keysList ? static_cast<int>(keysList->getSize(ctx)) : 0;
+                for (int k = 0; k < keysSize; ++k) {
+                    const proto::ProtoObject* key = keysList->getAt(ctx, k);
+                    if (key == nameObj || (key && key->isString(ctx) && key->getHash(ctx) == nameHash)) {
+                        target = const_cast<proto::ProtoObject*>(target->setAttribute(ctx, keysS,
+                            keysList->removeAt(ctx, k)->asObject(ctx)));
+                        break;
+                    }
+                }
+            }
+            syncModuleIdentity(ctx, env, oldTarget, target);
+            if (isGlobalDel) {
+                PythonEnvironment::setCurrentGlobals(target);
+                if (frame == oldTarget) {
+                    frame = target;
+                } else if (frame && target != oldTarget) {
+                    const proto::ProtoString* fg = env ? env->getFGlobalsString() : protoPython::PythonEnvironment::getInternalString(ctx, "f_globals");
+                    frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, fg, target));
+                }
+            } else {
+                frame = target;
+            }
+            if (env) {
+                PythonEnvironment::setCurrentFrame(frame);
+                if (!isGlobalDel && sync_globals && frame != PythonEnvironment::getCurrentGlobals()) {
+                    frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, env->getFGlobalsString(), frame));
+                    PythonEnvironment::setCurrentGlobals(frame);
+                }
+                env->invalidateResolveCache();
+            }
         } break;
         case OP_DELETE_FAST: {
             const unsigned int nSlots = ctx->getAutomaticLocalsCount();
             if (arg >= 0 && static_cast<unsigned long>(arg) < nSlots) {
                 proto::ProtoObject** slots = const_cast<proto::ProtoObject**>(ctx->getAutomaticLocals());
-                slots[arg] = nullptr; 
+                // LOAD_FAST reads nullptr as None; the unbound sentinel (the one
+                // annotation-only locals start with) makes a read after `del x`
+                // raise UnboundLocalError.
+                const proto::ProtoObject* unbound = env ? env->getUnboundSentinel() : nullptr;
+                if (env && unbound && (slots[arg] == nullptr || slots[arg] == unbound)) {
+                    std::string nStr = "?";
+                    const proto::ProtoObject* codeObj = PythonEnvironment::getCurrentCodeObject();
+                    const proto::ProtoObject* varnamesObj = codeObj ? codeObj->getAttribute(ctx, env->getCoVarnamesString()) : nullptr;
+                    const proto::ProtoTuple* vt = varnamesObj ? varnamesObj->asTuple(ctx) : nullptr;
+                    if (vt && static_cast<unsigned long>(arg) < vt->getSize(ctx)) {
+                        const proto::ProtoObject* nameObj = vt->getAt(ctx, arg);
+                        if (nameObj && proto::ProtoObject::isStringTagFast(nameObj)) {
+                            nameObj->asString(ctx)->toUTF8String(ctx, nStr);
+                        }
+                    }
+                    env->raiseUnboundLocalError(ctx,
+                        "cannot access local variable '" + nStr + "' where it is not associated with a value");
+                    i = next_i;
+                    continue;
+                }
+                slots[arg] = const_cast<proto::ProtoObject*>(unbound);
             }
         } break;
         case OP_DELETE_ATTR: {
