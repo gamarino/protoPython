@@ -520,6 +520,13 @@ set_tests_properties(protopy_global_names_no_import PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# list, tuple and dict __eq__ answer NotImplemented for other types.
+add_test(NAME protopy_container_eq_notimplemented
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/container_eq_notimplemented.py)
+set_tests_properties(protopy_container_eq_notimplemented PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # `import typing` completes; Generic[T] subclasses, Protocol and aliases work.
 add_test(NAME protopy_typing_import
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/typing_import.py)

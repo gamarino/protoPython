@@ -3882,7 +3882,9 @@ static const proto::ProtoObject* py_list_eq(
     const proto::ProtoObject* otherData = (other && other->hasOwnAttribute(context, dataName) == PROTO_TRUE) ? other->getAttribute(context, dataName) : nullptr;
     const proto::ProtoList* list = (data && data != PROTO_NONE && data->asList(context)) ? data->asList(context) : (receiver ? receiver->asList(context) : nullptr);
     const proto::ProtoList* otherList = (otherData && otherData != PROTO_NONE && otherData->asList(context)) ? otherData->asList(context) : (other ? other->asList(context) : nullptr);
-    if (!list || !otherList) return PROTO_FALSE;
+    // Not a list: NotImplemented, so the other operand's __eq__ answers
+    // (`[1] == AnyEq()`) and `[1] == (1,)` falls back to identity.
+    if (!list || !otherList) return env ? env->getNotImplementedPrototype() : PROTO_FALSE;
     if (list == otherList) return PROTO_TRUE;
     unsigned long size = list->getSize(context);
     if (size != otherList->getSize(context)) return PROTO_FALSE;
@@ -4559,7 +4561,11 @@ static const proto::ProtoObject* py_dict_eq(
     if (receiver == other) return PROTO_TRUE;
     const proto::ProtoObject* data = receiver ? receiver->getAttribute(context, dataName) : nullptr;
     const proto::ProtoObject* otherData = (other && other->hasOwnAttribute(context, dataName) == PROTO_TRUE) ? other->getAttribute(context, dataName) : nullptr;
-    if (!data || !data->asSparseList(context) || !otherData || !otherData->asSparseList(context)) return PROTO_FALSE;
+    // Not a dict: NotImplemented, so the other operand's __eq__ answers.
+    if (!data || !data->asSparseList(context) || !otherData || !otherData->asSparseList(context)) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        return env ? env->getNotImplementedPrototype() : PROTO_FALSE;
+    }
     const proto::ProtoSparseList* dictA = data->asSparseList(context);
     const proto::ProtoSparseList* dictB = otherData->asSparseList(context);
 
@@ -4874,7 +4880,8 @@ static const proto::ProtoObject* py_tuple_eq(
     const proto::ProtoTuple* otherTup = (otherData && otherData != PROTO_NONE && otherData->asTuple(context)) ? otherData->asTuple(context) : other->asTuple(context);
     const proto::ProtoList* list = tup ? tup->asList(context) : nullptr;
     const proto::ProtoList* otherList = otherTup ? otherTup->asList(context) : nullptr;
-    if (!list || !otherList) return PROTO_FALSE;
+    // Not a tuple: NotImplemented, so the other operand's __eq__ answers.
+    if (!list || !otherList) return env ? env->getNotImplementedPrototype() : PROTO_FALSE;
     if (list == otherList) return PROTO_TRUE;
     unsigned long size = list->getSize(context);
     if (size != otherList->getSize(context)) return PROTO_FALSE;
