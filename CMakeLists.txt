@@ -107,6 +107,13 @@ set_tests_properties(protopy_set_mutation_threads PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# dict mutators called from parallel threads must keep keys and values in sync.
+add_test(NAME protopy_dict_mutation_threads
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/dict_mutation_threads.py)
+set_tests_properties(protopy_dict_mutation_threads PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # sys.setswitchinterval / sys.getswitchinterval exist and validate like CPython.
 add_test(NAME protopy_sys_switchinterval
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/sys_switchinterval.py)
