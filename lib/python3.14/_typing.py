@@ -279,23 +279,24 @@ class _GenericAlias:
         return f'{self.__origin__!r}[{args}]'
 
 
-# Generic is a plain class, as in CPython: subscription goes through
-# __class_getitem__. A private metaclass here made `class Protocol(Generic,
-# metaclass=_ProtocolMeta)` in typing.py a metaclass conflict (_ProtocolMeta
-# derives from ABCMeta, not from that metaclass), so `import typing` failed.
+# Generic is a plain class, as in CPython: a private metaclass here made
+# `class Protocol(Generic, metaclass=_ProtocolMeta)` a metaclass conflict.
+# Like CPython's C implementation, subscription and subclassing defer to
+# typing's own machinery, so Generic[T] is a typing._GenericAlias (with
+# __mro_entries__) and subclasses get __parameters__ and __orig_bases__.
 class Generic:
-    """Base class for generic types."""
+    """Abstract base class for generic types."""
 
     __slots__ = ()
-    _special = False
+    _is_protocol = False
 
     def __class_getitem__(cls, params):
-        if not isinstance(params, tuple):
-            params = (params,)
-        return _GenericAlias(cls, params)
+        import typing
+        return typing._generic_class_getitem(cls, params)
 
     def __init_subclass__(cls, *args, **kwargs):
-        super().__init_subclass__(**kwargs)
+        import typing
+        return typing._generic_init_subclass(cls, *args, **kwargs)
 
 
 class _UnionForm:

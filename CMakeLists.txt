@@ -191,6 +191,13 @@ set_tests_properties(protopy_init_subclass_exception PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 60
     LABELS "regression_gate")
+# `import typing` completes; Generic[T] subclasses, Protocol and aliases work.
+add_test(NAME protopy_typing_import
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/typing_import.py)
+set_tests_properties(protopy_typing_import PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # The _typing stub's Generic must compose with ABCMeta-derived metaclasses.
 add_test(NAME protopy_typing_stub_generic
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/typing_stub_generic.py)
