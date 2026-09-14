@@ -1902,7 +1902,14 @@ static const proto::ProtoObject* py_reversed(
         ? env->getAttribute(context, revTy, reversedS, false)
         : (obj->hasOwnAttribute(context, reversedS) == PROTO_TRUE ? obj->getAttribute(context, reversedS) : nullptr);
     if (revMethod && revMethod != PROTO_NONE) {
-        const proto::ProtoObject* r = ::protoPython::invokePythonCallable(context, revMethod, emptyL, nullptr);
+        // Looked up on the type, so the receiver is passed explicitly, the way
+        // env->iter calls __iter__: a native method takes it as self (it got
+        // none, so reversed([1, 2]) was empty), a Python function as its
+        // first argument.
+        const proto::ProtoObject* r = revMethod->asMethod(context)
+            ? revMethod->asMethod(context)(context, obj, nullptr, emptyL, nullptr)
+            : ::protoPython::invokePythonCallable(context, revMethod,
+                  context->newList()->appendLast(context, obj), nullptr);
         if (r) return r;
         if (env) env->clearPendingException(); // fallback if exception
     }
@@ -1930,7 +1937,11 @@ static const proto::ProtoObject* py_reversed(
     }
     
     if (get_env_diag()) fprintf(stderr, "DEBUG: py_reversed calling lenMethod=%p\n", (void*)lenMethod);
-    const proto::ProtoObject* lenObj = ::protoPython::invokePythonCallable(context, lenMethod, emptyL, nullptr);
+    // A native __len__ needs obj as self too (py_reversed_next does the same
+    // for __getitem__); a Python method comes back bound.
+    const proto::ProtoObject* lenObj = lenMethod->asMethod(context)
+        ? lenMethod->asMethod(context)(context, obj, nullptr, emptyL, nullptr)
+        : ::protoPython::invokePythonCallable(context, lenMethod, emptyL, nullptr);
     if (!lenObj) {
         if (get_env_diag()) fprintf(stderr, "DEBUG: py_reversed lenMethod->call returned nullptr\n");
         return nullptr; // Exception thrown by __len__

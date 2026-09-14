@@ -3770,16 +3770,26 @@ static const proto::ProtoObject* py_str_iter_next(
 static const proto::ProtoObject* py_list_reversed(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
+    // Unbound form, list.__reversed__(obj): the receiver is the first argument.
+    const proto::ProtoObject* data = self ? self->getAttribute(context, dataName) : nullptr;
+    if ((!data || !data->asList(context)) && posArgs && posArgs->getSize(context) >= 1) {
+        self = posArgs->getAt(context, 0);
+        data = self ? self->getAttribute(context, dataName) : nullptr;
+    }
+    if (!data || !data->asList(context)) return PROTO_NONE;
     const proto::ProtoString* revProtoName = PythonEnvironment::getInternedString(context, "__reversed_prototype__");
     const proto::ProtoObject* revProto = self->getAttribute(context, revProtoName);
+    // A list subclass instance does not reach it through its own chain.
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if ((!revProto || revProto == PROTO_NONE) && env && env->getListPrototype()) {
+        revProto = env->getListPrototype()->getAttribute(context, revProtoName);
+    }
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG: py_list_reversed self=%p revProto=%p\n", (void*)self, (void*)revProto);
     }
-    if (!revProto) return PROTO_NONE;
-    const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
-    if (!data || !data->asList(context)) return PROTO_NONE;
+    if (!revProto || revProto == PROTO_NONE) return PROTO_NONE;
     const proto::ProtoList* list = data->asList(context);
     long long n = static_cast<long long>(list->getSize(context));
     const proto::ProtoObject* revObj = revProto->newChild(context, true);
@@ -9674,20 +9684,37 @@ static const proto::ProtoObject* py_tuple_iter(
 static const proto::ProtoObject* py_tuple_reversed(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
+    // The tuple payload: a raw tuple, or the __data__ of a tuple instance
+    // (subclass instances included); in the unbound form
+    // tuple.__reversed__(obj) the receiver is the first argument.
+    auto payload = [&](const proto::ProtoObject* obj) -> const proto::ProtoObject* {
+        if (!obj) return nullptr;
+        if (obj->asTuple(context)) return obj->asTuple(context)->asObject(context);
+        const proto::ProtoObject* d = obj->getAttribute(context, dataName);
+        if (d && d->asTuple(context)) return d->asTuple(context)->asObject(context);
+        if (d && d->asList(context)) return d;
+        return nullptr;
+    };
+    const proto::ProtoObject* data = payload(self);
+    if (!data && posArgs && posArgs->getSize(context) >= 1) {
+        self = posArgs->getAt(context, 0);
+        data = payload(self);
+    }
+    if (!data) return PROTO_NONE;
     const proto::ProtoString* revProtoName = PythonEnvironment::getInternedString(context, "__reversed_prototype__");
     const proto::ProtoObject* revProto = self->getAttribute(context, revProtoName);
+    if ((!revProto || revProto == PROTO_NONE) && env && env->getTuplePrototype()) {
+        revProto = env->getTuplePrototype()->getAttribute(context, revProtoName);
+    }
     if (!revProto || revProto == PROTO_NONE) return PROTO_NONE;
-    const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
-    if (!data) return PROTO_NONE;
-    
+
     long long n = 0;
     if (data->asList(context)) n = static_cast<long long>(data->asList(context)->getSize(context));
-    else if (data->isTuple(context)) n = static_cast<long long>(data->asTuple(context)->getSize(context));
-    else return PROTO_NONE;
-    
+    else n = static_cast<long long>(data->asTuple(context)->getSize(context));
+
     const proto::ProtoObject* revObj = revProto->newChild(context, true);
     revObj->setAttribute(context, PythonEnvironment::getInternedString(context, "__reversed_list__"), data);
     revObj->setAttribute(context, PythonEnvironment::getInternedString(context, "__reversed_idx__"), context->fromInteger(n - 1));
@@ -14056,6 +14083,27 @@ static const proto::ProtoObject* getOrBuildDictView(
             const proto::ProtoObject* d = self->getAttribute(ctx, dataS);
             const proto::ProtoList* l = d ? d->asList(ctx) : nullptr;
             return ctx->fromInteger(l ? static_cast<long long>(l->getSize(ctx)) : 0);
+        })));
+    // __reversed__: the data list in reverse (views keep insertion order).
+    proto = const_cast<proto::ProtoObject*>(proto->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "__reversed__"),
+        context->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList*,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            PythonEnvironment* e = PythonEnvironment::fromContext(ctx);
+            if (!e || !e->getListPrototype()) return PROTO_NONE;
+            const proto::ProtoString* dataS = e->getDataString();
+            const proto::ProtoObject* d = self->getAttribute(ctx, dataS);
+            const proto::ProtoList* l = d ? d->asList(ctx) : nullptr;
+            if (!l) return PROTO_NONE;
+            const proto::ProtoList* rev = ctx->newList();
+            for (unsigned long i = l->getSize(ctx); i > 0; --i) {
+                rev = rev->appendLast(ctx, l->getAt(ctx, static_cast<int>(i - 1)));
+            }
+            proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(e->getListPrototype()->newChild(ctx, true));
+            listObj = const_cast<proto::ProtoObject*>(listObj->setAttribute(ctx, dataS, rev->asObject(ctx)));
+            return e->iter(listObj);
         })));
     // __repr__: dict_keys([...]) shape.
     proto = const_cast<proto::ProtoObject*>(proto->setAttribute(context,
