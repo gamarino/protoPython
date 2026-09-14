@@ -8842,15 +8842,22 @@ const proto::ProtoObject* executeBytecodeRange(
                                 }
                                 invokeCallable(ctx, hook, iscArgs, filtered);
                                 if (iscNames && env) env->popKwNames();
-                                if (env->hasPendingException()) {
-                                    return nullptr;
-                                }
+                                // A raised exception unwinds below through the
+                                // dispatch loop (it used to `return nullptr`,
+                                // bypassing any enclosing try/except).
                                 break;
                             }
                         }
                     }
                 }
 
+                if (env && env->hasPendingException()) {
+                    // The metaclass call or __init_subclass__ raised: let the
+                    // dispatch loop unwind through the enclosing handlers, as the
+                    // class-body path above does.
+                    i = next_i;
+                    continue;
+                }
                 if (!targetClass) targetClass = PROTO_NONE;
                 for (int j = 0; j < 5; ++j) stack.pop_back(); // Pop name, bases, kwds, body, ns
                 stack.push_back(targetClass);

@@ -184,6 +184,13 @@ set_tests_properties(protopy_mro_entries PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 60
     LABELS "regression_gate")
+# Exceptions from __init_subclass__ or the metaclass are catchable.
+add_test(NAME protopy_init_subclass_exception
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/init_subclass_exception.py)
+set_tests_properties(protopy_init_subclass_exception PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
 # The _typing stub's Generic must compose with ABCMeta-derived metaclasses.
 add_test(NAME protopy_typing_stub_generic
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/typing_stub_generic.py)
