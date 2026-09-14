@@ -149,6 +149,13 @@ set_tests_properties(protopy_dict_subclass_init PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 60
     LABELS "regression_gate")
+# collections.defaultdict is a working dict subclass.
+add_test(NAME protopy_defaultdict_basic
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/defaultdict_basic.py)
+set_tests_properties(protopy_defaultdict_basic PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
 # sys.setswitchinterval / sys.getswitchinterval exist and validate like CPython.
 add_test(NAME protopy_sys_switchinterval
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/sys_switchinterval.py)

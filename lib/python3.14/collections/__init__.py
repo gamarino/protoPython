@@ -316,10 +316,55 @@ try:
 except ImportError:
     pass
 
-try:
-    from _collections import defaultdict
-except ImportError:
-    pass
+# protoPython implements defaultdict in Python on top of dict.__missing__, so
+# it is a real class (type(), isinstance, subclassing, copy, pickle).
+class defaultdict(dict):
+    """defaultdict(default_factory=None, /, [...]) --> dict with default factory
+
+    The default factory is called without arguments to produce
+    a new value when a key is not present, in __getitem__ only.
+    A defaultdict compares equal to a dict with the same items.
+    All remaining arguments are treated the same as if they were
+    passed to the dict constructor, including keyword arguments.
+    """
+
+    def __init__(self, default_factory=None, /, *args, **kwds):
+        if default_factory is not None and not callable(default_factory):
+            raise TypeError("first argument must be callable or None")
+        self.default_factory = default_factory
+        self.update(*args, **kwds)
+
+    def __missing__(self, key):
+        if self.default_factory is None:
+            raise KeyError(key)
+        self[key] = value = self.default_factory()
+        return value
+
+    def __repr__(self):
+        return f"{type(self).__name__}({self.default_factory!r}, {super().__repr__()})"
+
+    def copy(self):
+        return type(self)(self.default_factory, self)
+
+    __copy__ = copy
+
+    def __reduce__(self):
+        args = (self.default_factory,) if self.default_factory is not None else ()
+        return type(self), args, None, None, iter(self.items())
+
+    def __or__(self, other):
+        if not isinstance(other, dict):
+            return NotImplemented
+        new = self.copy()
+        new.update(other)
+        return new
+
+    def __ror__(self, other):
+        if not isinstance(other, dict):
+            return NotImplemented
+        new = type(self)(self.default_factory, other)
+        new.update(self)
+        return new
 
 heapq = None  # Lazily imported
 

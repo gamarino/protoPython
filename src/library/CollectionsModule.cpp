@@ -521,59 +521,6 @@ static const proto::ProtoObject* py_deque_reverse_iterator_next(
     return val;
 }
 
-static const proto::ProtoObject* py_defaultdict_getitem(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    const proto::ProtoString* dataName = PythonEnvironment::getInternalString(ctx, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(ctx, dataName);
-    if (!data || !data->asSparseList(ctx)) return PROTO_NONE;
-    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
-
-    const proto::ProtoObject* key = posArgs->getAt(ctx, 0);
-    unsigned long hash = key->getHash(ctx);
-    const proto::ProtoObject* value = data->asSparseList(ctx)->getAt(ctx, hash);
-    if (value) return value;
-
-    const proto::ProtoObject* factory = self->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "default_factory"));
-    if (!factory || factory == PROTO_NONE) {
-        protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
-        if (env) env->raiseKeyError(ctx, key);
-        return PROTO_NONE;
-    }
-    const proto::ProtoObject* callAttr = factory->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__call__"));
-    if (!callAttr || !callAttr->asMethod(ctx)) {
-        protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
-        if (env) env->raiseKeyError(ctx, key);
-        return PROTO_NONE;
-    }
-    const proto::ProtoList* empty = ctx->newList();
-    value = callAttr->asMethod(ctx)(ctx, factory, nullptr, empty, nullptr);
-    if (!value) return PROTO_NONE;
-
-    const proto::ProtoSparseList* newSparse = data->asSparseList(ctx)->setAt(ctx, hash, value);
-    self->setAttribute(ctx, dataName, newSparse->asObject(ctx));
-    const proto::ProtoString* keysName = PythonEnvironment::getInternalString(ctx, "__keys__");
-    const proto::ProtoObject* keysObj = self->getAttribute(ctx, keysName);
-    const proto::ProtoList* keysList = keysObj && keysObj->asList(ctx) ? keysObj->asList(ctx) : ctx->newList();
-    keysList = keysList->appendLast(ctx, key);
-    self->setAttribute(ctx, keysName, keysList->asObject(ctx));
-    return value;
-}
-
-static const proto::ProtoObject* py_defaultdict_new(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    const proto::ProtoObject* proto = self->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__defaultdict_prototype__"));
-    if (!proto) return PROTO_NONE;
-
-    const proto::ProtoObject* d = proto->newChild(ctx, true);
-    d = d->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__data__"), ctx->newSparseList()->asObject(ctx));
-    d = d->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__keys__"), ctx->newList()->asObject(ctx));
-    const proto::ProtoObject* factory = posArgs->getSize(ctx) > 0 ? posArgs->getAt(ctx, 0) : PROTO_NONE;
-    d = d->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "default_factory"), factory ? factory : PROTO_NONE);
-    return d;
-}
-
 static const proto::ProtoObject* py_ordereddict_new(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
@@ -695,21 +642,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
     // native _tuplegetter for namedtuple
     module = module->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "_tuplegetter"), ctx->fromMethod(nullptr, py_tuplegetter));
 
-    const proto::ProtoString* py_getitem = PythonEnvironment::getInternalString(ctx, "__getitem__");
-    const proto::ProtoObject* defaultdictPrototype = env && env->getDictPrototype() ? env->getDictPrototype()->newChild(ctx, true) : ctx->newObject(false);
-    if (env && env->getTypePrototype()) {
-        defaultdictPrototype = defaultdictPrototype->setAttribute(ctx, py_getitem,
-            ctx->fromMethod(nullptr, py_defaultdict_getitem));
-        defaultdictPrototype = defaultdictPrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__class__"), env->getTypePrototype());
-    }
-
-    const proto::ProtoObject* defaultdictMod = ctx->newObject(false);
-    defaultdictMod = defaultdictMod->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__defaultdict_prototype__"), defaultdictPrototype);
-
+    // defaultdict is implemented in Python (collections/__init__.py) on top
+    // of dict.__missing__. The native constructor registered here was a bare
+    // method whose prototype lived on an unreferenced object, so
+    // defaultdict(list) returned None.
     const proto::ProtoObject* ordereddictMod = ctx->newObject(false);
 
-    module = module->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "defaultdict"),
-                                 ctx->fromMethod(nullptr, py_defaultdict_new));
     module = module->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "OrderedDict"),
                                  ctx->fromMethod(nullptr, py_ordereddict_new));
 
