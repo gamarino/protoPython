@@ -555,6 +555,13 @@ set_tests_properties(protopy_submodule_import_first PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# itertools.filterfalse is callable, so @dataclass(slots=True) works.
+add_test(NAME protopy_dataclass_slots
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/dataclass_slots.py)
+set_tests_properties(protopy_dataclass_slots PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # `import typing` completes; Generic[T] subclasses, Protocol and aliases work.
 add_test(NAME protopy_typing_import
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/typing_import.py)

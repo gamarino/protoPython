@@ -314,24 +314,24 @@ static const proto::ProtoObject* py_filterfalse_next(
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
     const proto::ProtoObject* pred = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__filterfalse_pred__"));
     const proto::ProtoObject* it = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__filterfalse_it__"));
-    if (!it) return nullptr;
-    const proto::ProtoObject* nextM = it->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__next__"));
-    if (!nextM || !nextM->asMethod(ctx)) return nullptr;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!it || !env) return nullptr;
 
     for (;;) {
-        const proto::ProtoObject* val = nextM->asMethod(ctx)(ctx, it, nullptr, ctx->newList(), nullptr);
-        if (!val || val == PROTO_NONE) return nullptr;
+        // env->next drives generators and user iterators as well, and
+        // yields None elements instead of treating them as exhaustion.
+        const proto::ProtoObject* val = env->next(it);
+        if (!val) return nullptr;
 
-        bool ok;
-        if (pred == PROTO_NONE) {
-            ok = (val == PROTO_FALSE || (val->isInteger(ctx) && val->asLong(ctx) == 0));
-        } else {
-            const proto::ProtoList* args = ctx->newList()->appendLast(ctx, val);
-            const proto::ProtoObject* res = pred->call(ctx, nullptr, PythonEnvironment::getInternedString(ctx, "__call__"), pred, args, nullptr);
-            ok = (!res || res == PROTO_NONE || res == PROTO_FALSE || (res->isInteger(ctx) && res->asLong(ctx) == 0));
+        const proto::ProtoObject* res = val;
+        if (pred && pred != PROTO_NONE) {
+            // Any callable: a lambda, a bound builtin such as
+            // `set().__contains__`, a class with __call__ (as builtin filter).
+            PythonEnvironment::TransientPin pinVal(env, val);
+            res = env->callObject(pred, {val});
+            if (env->hasPendingException()) return nullptr;
         }
-
-        if (ok) return val;
+        if (!env->isTrue(res)) return val;
     }
 }
 
@@ -341,23 +341,17 @@ static const proto::ProtoObject* py_filterfalse(
     const proto::ParentLink*,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList*) {
-    // If called as type(pred, iterable), posArgs[0] is the type itself.
-    // If called as filterfalse(pred, iterable), posArgs size is 2.
-    size_t startIdx = 0;
-    if (posArgs && posArgs->getSize(ctx) >= 3 && posArgs->getAt(ctx, 0) == self) {
-        startIdx = 1;
-    }
-    
-    if (!posArgs || posArgs->getSize(ctx) < startIdx + 2) return PROTO_NONE;
-    const proto::ProtoObject* pred = posArgs->getAt(ctx, (int)startIdx);
-    const proto::ProtoObject* iterable = posArgs->getAt(ctx, (int)startIdx + 1);
+    if (!posArgs || posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    const proto::ProtoObject* pred = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* iterable = posArgs->getAt(ctx, 1);
 
-    const proto::ProtoObject* iterM = iterable->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__iter__"));
-    if (!iterM || !iterM->asMethod(ctx)) return PROTO_NONE;
-    const proto::ProtoObject* it = iterM->asMethod(ctx)(ctx, iterable, nullptr, ctx->newList(), nullptr);
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoObject* it = env ? env->iter(iterable) : nullptr;
     if (!it) return PROTO_NONE;
+    const proto::ProtoObject* proto = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__filterfalse_proto__"));
+    if (!proto) return PROTO_NONE;
 
-    const proto::ProtoObject* ff = self->newChild(ctx, true);
+    const proto::ProtoObject* ff = proto->newChild(ctx, true);
     ff = ff->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__filterfalse_pred__"), pred);
     ff = ff->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__filterfalse_it__"), it);
     return ff;
@@ -1057,9 +1051,13 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(filterfalseProto), py_iter_self));
     filterfalseProto = filterfalseProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__next__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(filterfalseProto), py_filterfalse_next));
-    filterfalseProto = filterfalseProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__new__"),
-        ctx->fromMethod(nullptr, py_filterfalse));
-    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "filterfalse"), filterfalseProto);
+    // filterfalse is constructed like dropwhile/starmap: a module-level
+    // callable building a child of its iterator proto.  Registering the
+    // proto itself (with only a __new__) left `filterfalse(pred, it)`
+    // non-callable, which broke dataclasses._create_slots.
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__filterfalse_proto__"), filterfalseProto);
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "filterfalse"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_filterfalse));
 
     // itertools.pairwise(iterable) — 3.10+.  Yields successive overlapping
     // pairs (s[0],s[1]), (s[1],s[2]), ... from the source iterable.
