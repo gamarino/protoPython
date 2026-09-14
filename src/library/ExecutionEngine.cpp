@@ -7035,9 +7035,27 @@ const proto::ProtoObject* executeBytecodeRange(
             // instance produced a spurious KeyError on every generic-alias
             // expression like `dict[str, object]`.
             if (env && env->isActuallyAClass(ctx, container)) {
-                const proto::ProtoString* classGetItemS = PythonEnvironment::getInternedString(ctx, "__class_getitem__");
-                result = invokeDunder(ctx, container, classGetItemS, args);
-                if (env->hasPendingException()) result = nullptr;
+                // CPython looks `cls[X]` up on the metaclass first: a
+                // metaclass __getitem__ (EnumType: Color["RED"]) wins over
+                // cls.__class_getitem__, and its exceptions propagate.
+                const proto::ProtoObject* meta = env->getType(ctx, container);
+                const proto::ProtoObject* metaGetItem = (meta && meta != env->getTypePrototype())
+                    ? env->getAttribute(ctx, meta, getItemS, false) : nullptr;
+                if (env->hasPendingException()) {
+                    env->clearPendingException();
+                    metaGetItem = nullptr;
+                }
+                if (metaGetItem && metaGetItem != PROTO_NONE) {
+                    result = metaGetItem->asMethod(ctx)
+                        ? metaGetItem->asMethod(ctx)(ctx, container, nullptr, args, nullptr)
+                        : invokeCallable(ctx, metaGetItem,
+                              ctx->newList()->appendLast(ctx, container)->appendLast(ctx, key), nullptr);
+                    if (!result && env->hasPendingException()) continue;
+                } else {
+                    const proto::ProtoString* classGetItemS = PythonEnvironment::getInternedString(ctx, "__class_getitem__");
+                    result = invokeDunder(ctx, container, classGetItemS, args);
+                    if (env->hasPendingException()) result = nullptr;
+                }
             }
             if (!result) {
                 result = invokeDunder(ctx, container, getItemS, args);
