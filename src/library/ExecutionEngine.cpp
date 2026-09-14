@@ -165,6 +165,32 @@ namespace {
 static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const proto::ProtoObject* container, const proto::ProtoString* name, const proto::ProtoList* args);
 static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
 
+// CPython's _PyObject_FunctionStr, naming a callable in call errors:
+// "module.qualname()" outside builtins, "qualname()" in it, and
+// "<type> object" for a callable without __qualname__.
+static std::string callableDescription(proto::ProtoContext* ctx, PythonEnvironment* env,
+                                       const proto::ProtoObject* callable) {
+    auto strAttr = [&](const proto::ProtoObject* o, const char* attr, std::string& out) {
+        const proto::ProtoObject* v = o ? o->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, attr)) : nullptr;
+        if (!v || !v->isString(ctx)) return false;
+        v->asString(ctx)->toUTF8String(ctx, out);
+        return true;
+    };
+    const proto::ProtoObject* fn = callable;
+    std::string qualname;
+    if (!strAttr(fn, "__qualname__", qualname)) {
+        fn = callable ? callable->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__func__")) : nullptr;
+        if (!strAttr(fn, "__qualname__", qualname)) {
+            std::string typeName = "function";
+            if (env && callable) strAttr(env->getType(ctx, callable), "__name__", typeName);
+            return typeName + " object";
+        }
+    }
+    std::string module;
+    if (strAttr(fn, "__module__", module) && module != "builtins") return module + "." + qualname + "()";
+    return qualname + "()";
+}
+
 static void syncModuleIdentity(proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* oldMod, const proto::ProtoObject* newMod) {
     if (oldMod == newMod || !env) return;
     
@@ -5796,21 +5822,32 @@ const proto::ProtoObject* executeBytecodeRange(
         } break;
         case OP_DICT_MERGE:
         case OP_DICT_UPDATE: {
-            // DICT_MERGE (class statement keywords) rejects a key the dict
-            // already has, as CPython's DICT_MERGE does.
+            // DICT_MERGE (class statement and call keywords) rejects a key the
+            // dict already has, as CPython's DICT_MERGE does.  Its argument
+            // carries DICT_MERGE_CALL_SITE above the dict's stack depth.
+            const bool callSite = op == OP_DICT_MERGE && (arg & DICT_MERGE_CALL_SITE) != 0;
+            const int depth = op == OP_DICT_MERGE ? (arg & ~DICT_MERGE_CALL_SITE) : arg;
             bool duplicateKey = false;
             auto rejectDuplicate = [&](const proto::ProtoObject* key) -> bool {
                 if (op != OP_DICT_MERGE || !env) return false;
                 std::string keyName = "?";
                 if (key && key->isString(ctx)) key->asString(ctx)->toUTF8String(ctx, keyName);
-                std::string msg = "__build_class__() got multiple values for keyword argument '" + keyName + "'";
+                std::string callee = "__build_class__()";
+                // A call's keyword dict sits above [X, Y, args] (see
+                // OP_CALL_FUNCTION_EX): the callable is X, or Y when X is NULL.
+                if (callSite && stack.size() >= static_cast<size_t>(depth + 4)) {
+                    const proto::ProtoObject* x = stack[stack.size() - depth - 4];
+                    const proto::ProtoObject* y = stack[stack.size() - depth - 3];
+                    callee = callableDescription(ctx, env, x ? x : y);
+                }
+                std::string msg = callee + " got multiple values for keyword argument '" + keyName + "'";
                 env->raiseTypeError(ctx, msg.c_str());
                 duplicateKey = true;
                 return true;
             };
-            if (stack.size() >= static_cast<size_t>(arg + 1)) {
+            if (stack.size() >= static_cast<size_t>(depth + 1)) {
                 const proto::ProtoObject* from = stack.back();
-                proto::ProtoObject* toObj = const_cast<proto::ProtoObject*>(stack[stack.size() - arg - 1]);
+                proto::ProtoObject* toObj = const_cast<proto::ProtoObject*>(stack[stack.size() - depth - 1]);
                 const proto::ProtoString* dataString = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
                 const proto::ProtoString* keysName = protoPython::PythonEnvironment::getInternalString(ctx, "__keys__");
                 const proto::ProtoObject* toData = toObj->getAttribute(ctx, dataString);

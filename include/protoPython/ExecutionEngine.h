@@ -255,6 +255,10 @@ constexpr int OP_BUILD_RAW_LIST = 210;
  *  multiple values for keyword argument 'k'" when a key of the mapping on TOS
  *  is already in the dict below it (class statement keywords). */
 constexpr int OP_DICT_MERGE = 211;
+/** Flag in DICT_MERGE's argument, above the dict's stack depth: the dict holds
+ *  a call's keywords, above [X, Y, args] as OP_CALL_FUNCTION_EX reads them, so
+ *  the duplicate-keyword TypeError names the called function. */
+constexpr int DICT_MERGE_CALL_SITE = 0x100;
 
 /**
  * @brief Executes a range of bytecode (one basic block). No per-instruction

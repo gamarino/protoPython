@@ -707,25 +707,20 @@ bool Compiler::compileCall(CallNode* n) {
         }
         emit(OP_LIST_TO_TUPLE, 0);
 
-        // Build keyword args dict
+        // Build keyword args dict: every `**mapping` and every `k=v` (as a
+        // one-entry dict) merges into a fresh dict with DICT_MERGE, which
+        // raises TypeError for a keyword given twice (`f(a=1, **{'a': 2})`).
         bool hasKw = false;
         if (!n->keywords.empty()) {
             emit(OP_BUILD_MAP, 0);
             for (auto& kw : n->keywords) {
-                if (kw.first.empty()) {
-                    if (!compileNode(kw.second.get())) return false;
-                    emit(OP_DICT_UPDATE, 1);
-                } else {
-                    // OP_MAP_ADD impl reads `key` from TOS and `val` from TOS-1,
-                    // and resolves `mapObj` at stack[size - arg - 1]. The dict
-                    // is at TOS-2 here (we have [map, val, key] above it after
-                    // the loads), so we push value FIRST and key SECOND, then
-                    // emit arg=2 so mapObj resolves to `map`.
-                    if (!compileNode(kw.second.get())) return false;
+                if (!kw.first.empty()) {
                     int nameIdx = addConstant(PythonEnvironment::getInternedString(ctx_, kw.first.c_str())->asObject(ctx_));
                     emit(OP_LOAD_CONST, nameIdx);
-                    emit(OP_MAP_ADD, 2);
                 }
+                if (!compileNode(kw.second.get())) return false;
+                if (!kw.first.empty()) emit(OP_BUILD_MAP, 1);
+                emit(OP_DICT_MERGE, 1 | DICT_MERGE_CALL_SITE);
             }
             hasKw = true;
         }
