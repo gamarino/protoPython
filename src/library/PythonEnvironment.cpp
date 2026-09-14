@@ -26733,9 +26733,27 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
     return res;
 }
 
+bool PythonEnvironment::isInheritedModuleName(proto::ProtoContext* ctx, const proto::ProtoObject* ns,
+                                              const proto::ProtoString* name, const proto::ProtoObject* value) {
+    if (!modulePrototype || !ns || !name || !value) return false;
+    // A module's globals are its own namespace.  Its `__class__` and the
+    // methods modulePrototype gives every module (keys, get, __init__, ...)
+    // are attributes of the module object, not global names: CPython raises
+    // NameError for them.  Module copies of those methods are recognised by
+    // function, as getAttribute's module binding does.
+    const proto::ProtoString* classS = getClassString();
+    if (classS && (name == classS || name->getHash(ctx) == classS->getHash(ctx))) {
+        return getType(ctx, ns) == modulePrototype;
+    }
+    if (!value->isMethod(ctx)) return false;
+    const proto::ProtoObject* inherited = modulePrototype->getAttribute(ctx, name);
+    return inherited && inherited->isMethod(ctx) && inherited->asMethod(ctx) == value->asMethod(ctx)
+        && getType(ctx, ns) == modulePrototype;
+}
+
 const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name, proto::ProtoContext* ctx) {
     if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
-    
+
     // Check per-thread cache first (Lock-free)
     uint64_t gen = resolveCacheGeneration_.load(std::memory_order_acquire);
     if (s_threadResolveCacheGeneration != gen) {
@@ -26802,7 +26820,8 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
         // 2. Try current module's globals (Lock-free)
         if (s_currentGlobals) {
             if (s_currentGlobals->hasAttribute(ctx, nameObj) == PROTO_TRUE) {
-                return s_currentGlobals->getAttribute(ctx, nameObj);
+                const proto::ProtoObject* global = s_currentGlobals->getAttribute(ctx, nameObj);
+                if (!isInheritedModuleName(ctx, s_currentGlobals, nameObj, global)) return global;
             }
 
             // Support dictionary-based globals (e.g. from eval/exec namespace)
@@ -26812,7 +26831,10 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
                 if (dataAttr && dataAttr != PROTO_NONE) {
                     const proto::ProtoSparseList* dict = dataAttr->asSparseList(ctx);
                     if (dict && dict->has(ctx, nameObj->getHash(ctx))) {
-                        return dict->getAt(ctx, nameObj->getHash(ctx));
+                        // The __data__ mirror holds the module's copies of
+                        // modulePrototype's methods too.
+                        const proto::ProtoObject* global = dict->getAt(ctx, nameObj->getHash(ctx));
+                        if (!isInheritedModuleName(ctx, s_currentGlobals, nameObj, global)) return global;
                     }
                 }
             }
@@ -26821,7 +26843,8 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
         // 3. Builtins (Lock-free)
         if (builtinsModule) {
             if (builtinsModule->hasAttribute(ctx, nameObj) == PROTO_TRUE) {
-                return builtinsModule->getAttribute(ctx, nameObj);
+                const proto::ProtoObject* builtin = builtinsModule->getAttribute(ctx, nameObj);
+                if (!isInheritedModuleName(ctx, builtinsModule, nameObj, builtin)) return builtin;
             }
         }
 

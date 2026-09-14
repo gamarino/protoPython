@@ -300,6 +300,12 @@ public:
 
     bool isActuallyAClass(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
 
+    /** True when `value`, found under `name` in namespace `ns`, is what every
+     *  module inherits as an object (its __class__, or a method of the module
+     *  prototype such as keys or __init__) rather than a global name. */
+    bool isInheritedModuleName(proto::ProtoContext* ctx, const proto::ProtoObject* ns,
+                               const proto::ProtoString* name, const proto::ProtoObject* value);
+
     const proto::ProtoObject* setAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, const proto::ProtoObject* value);
 
     // richResult: return a rich comparison dunder's result as is and raise

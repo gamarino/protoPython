@@ -4305,6 +4305,13 @@ const proto::ProtoObject* executeBytecodeRange(
                         }
                     }
 
+                    // A module's __class__ and modulePrototype's methods are attributes
+                    // of the module object, not globals: look further, as for a missing name.
+                    if (found && env && env->isInheritedModuleName(ctx, frame, nameS, val)) {
+                        found = false;
+                        val = nullptr;
+                    }
+
                     // For custom class namespace dicts (e.g. EnumDict from __prepare__), call
                     // __getitem__ to mirror the __setitem__ interception done in STORE_NAME.
                     if (!found && env) {
