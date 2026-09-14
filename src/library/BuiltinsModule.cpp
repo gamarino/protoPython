@@ -6884,7 +6884,15 @@ const proto::ProtoObject* py_type(
             }
         }
 
-
+        // CPython: a class body that defines __eq__ but not __hash__ makes its
+        // instances unhashable (__hash__ = None); subclasses inherit that.
+        {
+            const proto::ProtoString* hashS = env ? env->getHashString() : PythonEnvironment::getInternedString(context, "__hash__");
+            if (targetClass->hasOwnAttribute(context, PythonEnvironment::getInternedString(context, "__eq__")) == PROTO_TRUE
+                && targetClass->hasOwnAttribute(context, hashS) != PROTO_TRUE) {
+                targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, hashS, PROTO_NONE));
+            }
+        }
 
         // 2. Bases and MRO Computation
         const proto::ProtoList* mroList = nullptr;
