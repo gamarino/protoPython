@@ -7861,6 +7861,16 @@ static const proto::ProtoObject* py_isinstance(
         }
     }
 
+    // Native method cells (len, [].append, object().__str__) have no parent
+    // link: getType() classifies them through the native-method side table
+    // as builtin_function_or_method / method_descriptor / wrapper_descriptor,
+    // so `type(len)` is types.BuiltinFunctionType, yet none of the chain
+    // walks below can see that type.  An object is an instance of its own
+    // type.
+    if (env && obj && obj->isMethod(context) && env->getType(context, obj) == cls) {
+        return PROTO_TRUE;
+    }
+
     if (obj == PROTO_TRUE || obj == PROTO_FALSE) {
         const proto::ProtoObject* boolType = env ? env->getBoolPrototype() : nullptr;
         const proto::ProtoObject* intType = env ? env->getIntPrototype() : nullptr;

@@ -198,6 +198,13 @@ set_tests_properties(protopy_set_python_hash PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# Native callables (len, [].append) are instances of types.BuiltinFunctionType & co.
+add_test(NAME protopy_isinstance_native_methods
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/isinstance_native_methods.py)
+set_tests_properties(protopy_isinstance_native_methods PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # Unhashable dict keys raise TypeError; non-str/int keys are looked up by hash.
 add_test(NAME protopy_dict_unhashable_keys
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/dict_unhashable_keys.py)
