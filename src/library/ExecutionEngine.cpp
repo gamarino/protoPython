@@ -1008,13 +1008,17 @@ namespace {
 //
 // Invalidation: tied to PythonEnvironment::resolveCacheGeneration. Class
 // mutations bump the generation; cache entries with a stale generation
-// miss and are refilled.
+// miss and are refilled. Entries are also tagged with the GC cycle count:
+// `type` and `value` are raw pointers this thread_local table does not
+// root, so once a GC cycle may have freed them an address can come back
+// as an unrelated class.
 struct LoadAttrPicEntry {
     const proto::ProtoObject* type         = nullptr;
     const proto::ProtoString* name         = nullptr;
     const proto::ProtoObject* value        = nullptr;
     proto::ProtoMethod        nativeMethod = nullptr;
     uint64_t                  generation   = 0;
+    uint64_t                  gcEpoch      = 0;
     bool                      isUnbound    = false;
 };
 constexpr size_t kLoadAttrPicSize = 1024;
@@ -5416,10 +5420,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 return nullptr;
             };
-            const proto::ProtoObject* exitM = lookupTypeOnly(manager, exitS);
-            stack.push_back(exitM ? exitM : (const proto::ProtoObject*)PROTO_NONE);
-
-            const proto::ProtoObject* enterM = lookupTypeOnly(manager, enterS);
                 // Native objects such as `_thread` locks keep their special
                 // methods on a protoCore prototype that is not part of the
                 // Python MRO, so the walk above cannot see them and `with
@@ -5433,6 +5433,10 @@ const proto::ProtoObject* executeBytecodeRange(
                         return ctx->fromMethod(const_cast<proto::ProtoObject*>(obj), v->asMethod(ctx));
                     }
                 }
+            const proto::ProtoObject* exitM = lookupTypeOnly(manager, exitS);
+            stack.push_back(exitM ? exitM : (const proto::ProtoObject*)PROTO_NONE);
+
+            const proto::ProtoObject* enterM = lookupTypeOnly(manager, enterS);
             const proto::ProtoObject* enterResult = nullptr;
             if (enterM && enterM != PROTO_NONE) {
                 // Method bound to manager via descriptor __get__ above —
@@ -6365,9 +6369,11 @@ const proto::ProtoObject* executeBytecodeRange(
                             const uint64_t gen = env->resolveCacheGeneration();
                             LoadAttrPicEntry* slot =
                                 &g_loadAttrPic[loadAttrPicIndex(type, attrName)];
+                            const uint64_t gcEpoch = ctx->space->getGCCycleCount();
                             if (slot->type == type
                                 && slot->name == attrName
-                                && slot->generation == gen) {
+                                && slot->generation == gen
+                                && slot->gcEpoch == gcEpoch) {
                                 // PIC HIT — skip env->getAttribute entirely.
                                 if (slot->nativeMethod) {
                                     // Re-bind the cached native method to
@@ -6395,6 +6401,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                         slot->generation   = gen;
                                         slot->isUnbound    = true;
                                     } else if (val->isMethod(ctx)
+                                        slot->gcEpoch      = gcEpoch;
                                                && val->asMethodSelf(ctx) == obj) {
                                         slot->type         = type;
                                         slot->name         = attrName;
@@ -6403,6 +6410,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                         slot->generation   = gen;
                                         slot->isUnbound    = false;
                                     }
+                                        slot->gcEpoch      = gcEpoch;
                                 }
                                 picHandled = true;
                             }

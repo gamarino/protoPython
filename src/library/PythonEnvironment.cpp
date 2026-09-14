@@ -22909,7 +22909,15 @@ bool PythonEnvironment::isActuallyAClass(proto::ProtoContext* ctx, const proto::
 // Sprint-3 (2026-06-15): per-thread cache of (obj -> type) lookups.
 // Hoisted to file scope in sprint-4 so isPrimitiveTypeCached() can share
 // the storage. Direct-mapped 1024 entries; key by obj-pointer hash.
-// Invalidation by `resolveCacheGeneration_` bumps (rare).
+// Invalidation by `resolveCacheGeneration_` bumps (rare) and by any GC
+// cycle: the key is an address, and once the GC frees an object its
+// address is reused by unrelated objects. Without the GC epoch a new
+// object inherited the dead object's type (a threading.Thread reported
+// "'dict' object has no attribute '_initialized'") or a freed type cell
+// that ensureClassFlags then wrote into. protoCore bumps gcCycleCount at
+// the start of each cycle's STW, before that cycle's sweep publishes any
+// freed cell, so an entry tagged with the current epoch cannot name a
+// reused address.
 namespace {
 struct GetTypePicEntry {
     const proto::ProtoObject* obj = nullptr;
@@ -22942,7 +22950,7 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
     const uint64_t gen = resolveCacheGeneration_.load(std::memory_order_acquire);
     const size_t idx = (reinterpret_cast<uintptr_t>(obj) >> 4) & (kGetTypePicSize - 1);
     GetTypePicEntry* slot = &s_getTypePic[idx];
-    if (slot->obj == obj && slot->generation == gen) {
+    if (slot->obj == obj && slot->generation == gen && slot->gcEpoch == gcEpoch) {
         return slot->type;
     }
 
@@ -22967,6 +22975,7 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
             const proto::ProtoString* classS = getClassString();
             if (classS && obj->hasOwnAttribute(ctx, classS) == PROTO_TRUE) {
                 const proto::ProtoObject* cls = obj->proto::ProtoObject::getAttribute(ctx, classS);
+    uint64_t gcEpoch = 0;
                 if (cls && cls != PROTO_NONE && cls != obj && !cls->isString(ctx)) {
                     return cls;
                 }
@@ -22992,6 +23001,9 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
     else if (obj->isBoolean(ctx)) res = boolPrototype;
     else if (obj->isTuple(ctx) && !this->isActuallyAClass(ctx, obj)) {
         // A tuple-shaped instance is normally just `tuple`, but namedtuple
+    // Read the GC epoch before resolving, so a cycle that starts while we
+    // resolve leaves the new entry already stale.
+    const uint64_t gcEpoch = space_ ? space_->getGCCycleCount() : 0;
         // and other tuple subclasses are constructed via
         // `type(name, (tuple,), {...})` and instances carry their actual
         // class as an OWN __class__ attribute.  Without this branch every
@@ -23125,7 +23137,8 @@ int PythonEnvironment::primitiveCacheHit(const proto::ProtoObject* obj) const {
     const uint64_t gen = resolveCacheGeneration_.load(std::memory_order_acquire);
     const size_t idx = (reinterpret_cast<uintptr_t>(obj) >> 4) & (kGetTypePicSize - 1);
     const GetTypePicEntry* slot = &s_getTypePic[idx];
-    if (slot->obj != obj || slot->generation != gen || !slot->isPrimitiveValid) {
+    if (slot->obj != obj || slot->generation != gen || slot->gcEpoch != gcEpoch
+            || !slot->isPrimitiveValid) {
         return 0;
     }
     return slot->isPrimitive ? 1 : 2;
@@ -23151,6 +23164,7 @@ int PythonEnvironment::primitiveCacheHit(const proto::ProtoObject* obj) const {
 //   * the resolved value either has __code__ (Python function — caller
 //     handles binding via outIsUnboundFunc) or does not own __get__
 //     (so it is not an explicit descriptor needing __get__ invocation).
+        slot->gcEpoch = gcEpoch;
 //
 // Plain Python functions inherit __get__ from functionPrototype as an
 // inherited attribute (not own), so hasOwnAttribute("__get__") is false
@@ -23175,6 +23189,7 @@ static bool attributeExistsCompat(PythonEnvironment* env,
     if (!env) return false;
     const proto::ProtoObject* cls = env->getType(ctx, obj);
     if (!cls || cls == PROTO_NONE) return false;
+    const uint64_t gcEpoch = space_ ? space_->getGCCycleCount() : 0;
     const proto::ProtoString* mroS = env->getMroString();
     if (!mroS) return false;
     const proto::ProtoObject* mroObj = cls->proto::ProtoObject::getAttribute(ctx, mroS);

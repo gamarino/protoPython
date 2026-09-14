@@ -86,6 +86,13 @@ set_tests_properties(protopy_with_native_context_manager PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 60
     LABELS "regression_gate")
+# Short-lived threads with allocation churn must not crash (GC address reuse).
+add_test(NAME protopy_thread_stress_no_crash
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/thread_stress_no_crash.py)
+set_tests_properties(protopy_thread_stress_no_crash PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 
 # Optional benchmark test (off by default: -DPROTOPY_BENCHMARKS=ON)
 option(PROTOPY_BENCHMARKS "Run benchmark suite in CTest" OFF)
