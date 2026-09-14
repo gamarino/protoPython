@@ -597,6 +597,8 @@ class EnumType(type):
                     enum_class._singles_mask_ |= member_value
                 else:
                     enum_class._flag_mask_ |= member_value
+                # _missing_ range-checks composite values against _all_bits_
+                enum_class._all_bits_ = 2 ** (enum_class._flag_mask_.bit_length()) - 1
 
         # replace any other __new__ with our own
         if Enum is not None:
@@ -1360,6 +1362,7 @@ class FlagBoundary(StrEnum):
     CONFORM = auto()
     EJECT = auto()
     KEEP = auto()
+STRICT, CONFORM, EJECT, KEEP = FlagBoundary
 
 
 class Flag(Enum, boundary=STRICT):
@@ -1396,7 +1399,7 @@ class Flag(Enum, boundary=STRICT):
         for val in _iter_bits_lsb(value & cls._flag_mask_):
             yield cls._value2member_map_.get(val)
 
-        _iter_member_ = _iter_member_by_value_
+    _iter_member_ = _iter_member_by_value_
 
     @classmethod
     def _iter_member_by_def_(cls, value):
