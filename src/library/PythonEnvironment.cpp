@@ -6543,7 +6543,8 @@ static const proto::ProtoObject* py_list_init(
     // Collect the items first: an arbitrary iterable can be consumed only
     // once, so a retried publish must not iterate it again.
     const proto::ProtoList* items = context->newList();
-    if (nargs - posOff == 1) {
+    // CPython clears the list before extending it, so x.__init__(x) empties x.
+    if (nargs - posOff == 1 && positionalParameters->getAt(context, static_cast<int>(posOff)) != receiver) {
         items = list_items_from_iterable(context, env,
             positionalParameters->getAt(context, static_cast<int>(posOff)));
         if (!items) return nullptr;

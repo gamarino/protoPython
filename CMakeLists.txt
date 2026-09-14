@@ -317,6 +317,13 @@ set_tests_properties(protopy_dict_unbound_methods PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# list.__init__ clears the list before extending it: x.__init__(x) empties x.
+add_test(NAME protopy_list_init_self
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/list_init_self.py)
+set_tests_properties(protopy_list_init_self PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # `import typing` completes; Generic[T] subclasses, Protocol and aliases work.
 add_test(NAME protopy_typing_import
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/typing_import.py)
