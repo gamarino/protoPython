@@ -128,6 +128,13 @@ set_tests_properties(protopy_sys_switchinterval PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 60
     LABELS "regression_gate")
+# The _typing stub's Generic must compose with ABCMeta-derived metaclasses.
+add_test(NAME protopy_typing_stub_generic
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/typing_stub_generic.py)
+set_tests_properties(protopy_typing_stub_generic PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
 
 # Optional benchmark test (off by default: -DPROTOPY_BENCHMARKS=ON)
 option(PROTOPY_BENCHMARKS "Run benchmark suite in CTest" OFF)

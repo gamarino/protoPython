@@ -279,14 +279,11 @@ class _GenericAlias:
         return f'{self.__origin__!r}[{args}]'
 
 
-class _GenericMeta(type):
-    def __getitem__(cls, params):
-        if not isinstance(params, tuple):
-            params = (params,)
-        return _GenericAlias(cls, params)
-
-
-class Generic(metaclass=_GenericMeta):
+# Generic is a plain class, as in CPython: subscription goes through
+# __class_getitem__. A private metaclass here made `class Protocol(Generic,
+# metaclass=_ProtocolMeta)` in typing.py a metaclass conflict (_ProtocolMeta
+# derives from ABCMeta, not from that metaclass), so `import typing` failed.
+class Generic:
     """Base class for generic types."""
 
     __slots__ = ()
