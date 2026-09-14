@@ -20864,7 +20864,13 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     ellipsisType = ellipsisType->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "ellipsis")->asObject(rootContext_));
     ellipsisType = ellipsisType->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "ellipsis")->asObject(rootContext_));
     ellipsisType = ellipsisType->setAttribute(rootContext_, py_module, builtinsVal);
-    ellipsisType = ellipsisType->setAttribute(rootContext_, py_repr, PythonEnvironment::getInternedString(rootContext_, "Ellipsis")->asObject(rootContext_));
+    // __repr__ is a method, as on every type: stored as the bare string,
+    // print(Ellipsis) and repr(NotImplemented) tried to call that string.
+    ellipsisType = ellipsisType->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr,
+        [](proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+           const proto::ProtoList*, const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            return PythonEnvironment::getInternedString(ctx, "Ellipsis")->asObject(ctx);
+        }));
     // STRUCT-281: do NOT install __call__ on ellipsisType.  CPython's
     // ellipsis instance (Ellipsis) is not callable — `Ellipsis()`
     // raises TypeError.  The previous install leaked `__call__` into
@@ -20893,7 +20899,11 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     notImplType = notImplType->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "NotImplementedType")->asObject(rootContext_));
     notImplType = notImplType->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "NotImplementedType")->asObject(rootContext_));
     notImplType = notImplType->setAttribute(rootContext_, py_module, builtinsVal);
-    notImplType = notImplType->setAttribute(rootContext_, py_repr, PythonEnvironment::getInternedString(rootContext_, "NotImplemented")->asObject(rootContext_));
+    notImplType = notImplType->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr,
+        [](proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+           const proto::ProtoList*, const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            return PythonEnvironment::getInternedString(ctx, "NotImplemented")->asObject(ctx);
+        }));
     notImplType = notImplType->setAttribute(rootContext_, py_call, rootContext_->fromMethod(nullptr, py_notimplemented_type_call));
     // Q-70: __mro__ for NotImplementedType.
     {
