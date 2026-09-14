@@ -3395,19 +3395,18 @@ static const proto::ProtoObject* py_compile(
         compiler.getLnotab());
 }
 
-/** eval(expr, globals=None, locals=None): compile and run expression. */
-static const proto::ProtoObject* py_eval(
+/** True for code objects: compile() results and function __code__. */
+static bool is_code_object(proto::ProtoContext* context, const proto::ProtoObject* obj) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !obj || obj == PROTO_NONE || !env->getCodePrototype()) return false;
+    return env->getType(context, obj) == env->getCodePrototype();
+}
+
+/** Compile eval() source text; nullptr on failure (a SyntaxError is pending
+ *  when the text did not parse). */
+static const proto::ProtoObject* compile_eval_source(
     proto::ProtoContext* context,
-    const proto::ProtoObject* self,
-    const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
-    (void)self;
-    (void)parentLink;
-    (void)keywordParameters;
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    const proto::ProtoObject* exprObj = positionalParameters->getAt(context, 0);
-    if (!exprObj->isString(context)) return PROTO_NONE;
+    const proto::ProtoObject* exprObj) {
     std::string source;
     exprObj->asString(context)->toUTF8String(context, source);
     Parser parser(source);
@@ -3443,10 +3442,10 @@ static const proto::ProtoObject* py_eval(
             lineText = source.substr(start, end == std::string::npos ? std::string::npos : end - start);
             env->raiseSyntaxError(context, msg, line, parser.getLastErrorColumn(), lineText);
         }
-        return PROTO_NONE;
+        return nullptr;
     }
     Compiler compiler(context, "<string>");
-    if (!compiler.compileExpression(expr.get())) return PROTO_NONE;
+    if (!compiler.compileExpression(expr.get())) return nullptr;
     const proto::ProtoTuple* cos = compiler.getConstants();
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG: py_eval compiling source='%s'\n", source.c_str());
@@ -3458,7 +3457,29 @@ static const proto::ProtoObject* py_eval(
     // py_eval: expression compile.  Size automatic_count to the operand-stack
     // max so the GC sees every value pushed during evaluation.
     const int evalAutomaticCount = compiler.getMaxStack() + 32;
-    const proto::ProtoObject* codeObj = makeCodeObject(context, cos, compiler.getNames(), compiler.getBytecode(), nullptr, nullptr, 0, 0, evalAutomaticCount, false, false, nullptr, 1, compiler.getLnotab());
+    return makeCodeObject(context, cos, compiler.getNames(), compiler.getBytecode(), nullptr, nullptr, 0, 0, evalAutomaticCount, false, false, nullptr, 1, compiler.getLnotab());
+}
+
+/** eval(expr, globals=None, locals=None): run a code object, or compile and
+ *  run an expression. */
+static const proto::ProtoObject* py_eval(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self;
+    (void)parentLink;
+    (void)keywordParameters;
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* exprObj = positionalParameters->getAt(context, 0);
+    // eval(code) runs a compile() result as is; eval(str) compiles it first.
+    const proto::ProtoObject* codeObj = nullptr;
+    if (is_code_object(context, exprObj)) {
+        codeObj = exprObj;
+    } else if (exprObj->isString(context)) {
+        codeObj = compile_eval_source(context, exprObj);
+    }
     if (!codeObj) return PROTO_NONE;
     proto::ProtoObject* globals = nullptr;
     proto::ProtoObject* locals = nullptr;
@@ -3470,11 +3491,16 @@ static const proto::ProtoObject* py_eval(
         const proto::ProtoObject* l = positionalParameters->getAt(context, 2);
         if (l && l != PROTO_NONE) locals = const_cast<proto::ProtoObject*>(l);
     }
+    const bool callerNamespace = !globals;
     if (!globals) {
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         if (env) globals = const_cast<proto::ProtoObject*>(env->getGlobals());
     }
     if (!globals) globals = const_cast<proto::ProtoObject*>(context->newObject(false));
+    if (!locals && !callerNamespace) {
+        // eval(expr, globals): locals default to globals, not to the caller.
+        locals = globals;
+    }
     if (!locals) {
         // CPython: bare `eval(expr)` evaluates in the CALLER's namespace.
         // py_eval is a native trampoline that pushes no Python frame, so
@@ -3493,7 +3519,7 @@ static const proto::ProtoObject* py_eval(
     // If globals and locals are different, we primarily use locals for the execution frame.
     const proto::ProtoObject* result = runCodeObject(context, codeObj, locals);
     if (get_env_diag()) {
-        fprintf(stderr, "DEBUG: py_eval source='%s' result=%p\n", source.c_str(), (void*)result);
+        fprintf(stderr, "DEBUG: py_eval code=%p result=%p\n", (void*)codeObj, (void*)result);
     }
     return result ? result : PROTO_NONE;
 }
@@ -4574,19 +4600,11 @@ static const proto::ProtoObject* py_super_get(
     return make_super_proxy(context, superCls, storedType, instance);
 }
 
-/** exec(source, globals=None, locals=None): compile and run source. */
-static const proto::ProtoObject* py_exec(
+/** Compile exec() source text; nullptr on failure or an empty module (a
+ *  SyntaxError is pending when the text did not parse). */
+static const proto::ProtoObject* compile_exec_source(
     proto::ProtoContext* context,
-    const proto::ProtoObject* self,
-    const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
-    (void)self;
-    (void)parentLink;
-    (void)keywordParameters;
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    const proto::ProtoObject* sourceObj = positionalParameters->getAt(context, 0);
-    if (!sourceObj->isString(context)) return PROTO_NONE;
+    const proto::ProtoObject* sourceObj) {
     std::string source;
     sourceObj->asString(context)->toUTF8String(context, source);
     Parser parser(source);
@@ -4605,10 +4623,10 @@ static const proto::ProtoObject* py_exec(
             lineText = source.substr(start, end == std::string::npos ? std::string::npos : end - start);
             env->raiseSyntaxError(context, parser.getLastErrorMsg(), line, parser.getLastErrorColumn(), lineText);
         }
-        return PROTO_NONE;
+        return nullptr;
     }
     if (!mod || mod->body.empty()) {
-        return PROTO_NONE;
+        return nullptr;
     }
     Compiler compiler(context, "<string>");
     if (get_env_diag()) {
@@ -4617,13 +4635,35 @@ static const proto::ProtoObject* py_exec(
         fprintf(stderr, "DEBUG: py_exec compiling source='%.100s...'\n", source.c_str());
     }
     if (!compiler.compileModule(mod.get())) {
-        return PROTO_NONE;
+        return nullptr;
     }
     // See py_compile / executeModule: route the operand stack through
     // GC-visible automaticLocals by sizing automatic_count to the
     // compile-time max stack depth plus a safety margin.
     const int moduleAutomaticCount = compiler.getMaxStack() + 32;
-    const proto::ProtoObject* codeObj = makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode(), nullptr, nullptr, 0, 0, moduleAutomaticCount, 0, false, nullptr, 1, compiler.getLnotab());
+    return makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode(), nullptr, nullptr, 0, 0, moduleAutomaticCount, 0, false, nullptr, 1, compiler.getLnotab());
+}
+
+/** exec(source, globals=None, locals=None): run a code object, or compile
+ *  and run source.  Returns None. */
+static const proto::ProtoObject* py_exec(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self;
+    (void)parentLink;
+    (void)keywordParameters;
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* sourceObj = positionalParameters->getAt(context, 0);
+    // exec(code) runs a compile() result as is; exec(str) compiles it first.
+    const proto::ProtoObject* codeObj = nullptr;
+    if (is_code_object(context, sourceObj)) {
+        codeObj = sourceObj;
+    } else if (sourceObj->isString(context)) {
+        codeObj = compile_exec_source(context, sourceObj);
+    }
     if (!codeObj) {
         return PROTO_NONE;
     }
@@ -4637,11 +4677,26 @@ static const proto::ProtoObject* py_exec(
         const proto::ProtoObject* l = positionalParameters->getAt(context, 2);
         if (l && l != PROTO_NONE) locals = const_cast<proto::ProtoObject*>(l);
     }
+    const bool callerNamespace = !globals;
     if (!globals) {
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         if (env) globals = const_cast<proto::ProtoObject*>(env->getGlobals());
     }
     if (!globals) globals = const_cast<proto::ProtoObject*>(context->newObject(false));
+    if (!locals && callerNamespace) {
+        // CPython: bare `exec(src)` runs in the caller's globals AND locals.
+        // As in py_eval, the current frame is the calling function's
+        // namespace, but trust it only while it belongs to the running code
+        // object: module-level code has no frame of its own and leaf
+        // functions push none.
+        PythonEnvironment* fenv = PythonEnvironment::fromContext(context);
+        const proto::ProtoObject* callerFrame = PythonEnvironment::getCurrentFrame();
+        if (fenv && callerFrame && callerFrame != PROTO_NONE
+            && callerFrame->getAttribute(context, fenv->getFCodeString())
+                   == PythonEnvironment::getCurrentCodeObject()) {
+            locals = const_cast<proto::ProtoObject*>(callerFrame);
+        }
+    }
     if (!locals) locals = globals;
 
     // exec(code, globals, locals) is documented to expose `locals` as the
@@ -4691,7 +4746,7 @@ static const proto::ProtoObject* py_exec(
     }
 
     GlobalsScope gscope(globals);
-    const proto::ProtoObject* result = runCodeObject(context, codeObj, frame);
+    runCodeObject(context, codeObj, frame);
 
     // Mirror any new bindings the executed code created back into the
     // user-supplied locals dict.
@@ -4732,7 +4787,8 @@ static const proto::ProtoObject* py_exec(
             }
         }
     }
-    return result;
+    // exec() returns None; an exception raised by the code stays pending.
+    return (env && env->hasPendingException()) ? nullptr : PROTO_NONE;
 }
 
 /** breakpoint(): no-op stub; real breakpoint requires debugger integration. */
