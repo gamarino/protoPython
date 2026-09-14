@@ -4005,6 +4005,17 @@ unsigned long pyDictKeyHash(proto::ProtoContext* context, const proto::ProtoObje
 
 static unsigned long dictKeyHash(proto::ProtoContext* context, const proto::ProtoObject* key) {
     if (!key) return 0;
+    // Python makes 1 == 1.0 == True the same key, while protoCore hashes a
+    // bool, a double and an int by their own representation. Map bool and
+    // integral floats to the int they equal and hash that.
+    if (key == PROTO_TRUE) return context->fromInteger(1)->getHash(context);
+    if (key == PROTO_FALSE) return context->fromInteger(0)->getHash(context);
+    if (key->isFloat(context)) {
+        const double v = key->asDouble(context);
+        if (std::isfinite(v) && v == std::trunc(v) && v >= -9.2e18 && v <= 9.2e18) {
+            return context->fromInteger(static_cast<long long>(v))->getHash(context);
+        }
+    }
     // For str-subclass / int-subclass / similar wrappers with a user
     // __hash__ override, dispatch through the user dunder so dict
     // bucketing matches the override.  cistr (lower-case canonical
@@ -4098,44 +4109,6 @@ static const proto::ProtoObject* py_dict_getitem(
         if (dict->has(context, hash)) {
             return dict->getAt(context, hash);
         }
-        // STRUCT-190: hash miss when two equal-content keys hash
-        // differently in protoCore.  This manifests for tuple keys
-        // whose string elements come from different sources (e.g.
-        // interned literal vs `bytes.decode()` result); the Python-
-        // level `hash(t1) == hash(t2)` but protoCore's tuple hash
-        // depends on element identity for non-symbol strings.  Fall
-        // back to a linear scan of __keys__ comparing content; the
-        // matching key's stored hash is then used for the value
-        // retrieval.  Mirrors CPython's hash-collision resolution
-        // path semantically.
-        {
-            const proto::ProtoString* keysName = env ? env->getKeysString()
-                : PythonEnvironment::getInternedString(context, "__keys__");
-            const proto::ProtoObject* keysObj = realSelf->getAttribute(context, keysName);
-            const proto::ProtoList* keysList = keysObj ? keysObj->asList(context) : nullptr;
-            if (keysList && env) {
-                const proto::ProtoString* eqS = PythonEnvironment::getInternedString(context, "__eq__");
-                for (unsigned long i = 0; i < keysList->getSize(context); ++i) {
-                    const proto::ProtoObject* candKey = keysList->getAt(context, static_cast<int>(i));
-                    if (!candKey) continue;
-                    bool match = (candKey == key);
-                    if (!match) {
-                        const proto::ProtoObject* eqM = env->getAttribute(context, candKey, eqS, false);
-                        if (eqM && eqM != PROTO_NONE && eqM->asMethod(context)) {
-                            const proto::ProtoList* a = context->newList()->appendLast(context, key);
-                            const proto::ProtoObject* r = eqM->asMethod(context)(
-                                context, const_cast<proto::ProtoObject*>(candKey), nullptr, a, nullptr);
-                            match = (r == PROTO_TRUE);
-                        }
-                    }
-                    if (match) {
-                        unsigned long candHash = dictKeyHash(context, candKey);
-                        const proto::ProtoObject* v2 = dict->getAt(context, candHash);
-                        if (v2) return v2;
-                    }
-                }
-            }
-        }
         // CPython: if this is a dict subclass that overrides __missing__,
         // dispatch to it before raising KeyError. Detect via OWN-attribute
         // lookup on the *instance type* — `self.__missing__` walked via
@@ -4206,35 +4179,8 @@ static const proto::ProtoObject* py_dict_setitem(
         const proto::ProtoObject* data = realSelf->getAttribute(context, dataName);
         if (!data || !data->asSparseList(context)) return PROTO_NONE;
         const proto::ProtoObject* keysObj = realSelf->getAttribute(context, keysName);
-        unsigned long hash = keyHash;
-        bool hadKey = data->asSparseList(context)->has(context, hash);
-        // STRUCT-190 symmetric: if hash-bucket lookup misses, scan __keys__
-        // for a content-equal stored key (same root cause as py_dict_getitem
-        // — equal Python hash, identity-sensitive protoCore bucket).  Reuse
-        // the matching key's stored hash so the write updates the existing
-        // entry instead of creating a duplicate.
-        if (!hadKey) {
-            const proto::ProtoList* keysList2 = keysObj ? keysObj->asList(context) : nullptr;
-            if (keysList2 && env) {
-                const proto::ProtoString* eqS = PythonEnvironment::getInternedString(context, "__eq__");
-                for (unsigned long i = 0; i < keysList2->getSize(context); ++i) {
-                    const proto::ProtoObject* candKey = keysList2->getAt(context, static_cast<int>(i));
-                    if (!candKey || candKey == key) continue;
-                    const proto::ProtoObject* eqM = env->getAttribute(context, candKey, eqS, false);
-                    if (eqM && eqM != PROTO_NONE && eqM->asMethod(context)) {
-                        const proto::ProtoList* a = context->newList()->appendLast(context, key);
-                        const proto::ProtoObject* r = eqM->asMethod(context)(
-                            context, const_cast<proto::ProtoObject*>(candKey), nullptr, a, nullptr);
-                        if (r == PROTO_TRUE) {
-                            hash = dictKeyHash(context, candKey);
-                            hadKey = data->asSparseList(context)->has(context, hash);
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        const proto::ProtoSparseList* newSparse = data->asSparseList(context)->setAt(context, hash, value);
+        const bool hadKey = data->asSparseList(context)->has(context, keyHash);
+        const proto::ProtoSparseList* newSparse = data->asSparseList(context)->setAt(context, keyHash, value);
         const proto::ProtoObject* newKeysObj = keysObj;
         if (!hadKey) {
             const proto::ProtoList* keysList = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
@@ -4274,44 +4220,10 @@ static const proto::ProtoObject* py_dict_delitem(
         const proto::ProtoObject* data = realSelf->getAttribute(context, dataName);
         if (!data || !data->asSparseList(context)) return PROTO_NONE;
         const proto::ProtoObject* keysObj = realSelf->getAttribute(context, keysName);
-        unsigned long hash = keyHash;
-
+        const unsigned long hash = keyHash;
         if (!data->asSparseList(context)->has(context, hash)) {
-            // STRUCT-193: same fallback as STRUCT-190/192.  When the
-            // hash-bucket misses, scan __keys__ for a content-equal key
-            // and use ITS hash for the removal — otherwise `del d[t2]`
-            // where t1 == t2 silently raised KeyError despite t2 being
-            // equivalent to a stored key.
-            const proto::ProtoList* keysList3 = keysObj ? keysObj->asList(context) : nullptr;
-            bool foundEq = false;
-            if (keysList3) {
-                const proto::ProtoString* eqS = PythonEnvironment::getInternedString(context, "__eq__");
-                for (unsigned long i = 0; i < keysList3->getSize(context); ++i) {
-                    const proto::ProtoObject* candKey = keysList3->getAt(context, static_cast<int>(i));
-                    if (!candKey) continue;
-                    bool match = (candKey == key);
-                    if (!match) {
-                        const proto::ProtoObject* eqM = env->getAttribute(context, candKey, eqS, false);
-                        if (eqM && eqM != PROTO_NONE && eqM->asMethod(context)) {
-                            const proto::ProtoList* a = context->newList()->appendLast(context, key);
-                            const proto::ProtoObject* r = eqM->asMethod(context)(
-                                context, const_cast<proto::ProtoObject*>(candKey), nullptr, a, nullptr);
-                            match = (r == PROTO_TRUE);
-                        }
-                    }
-                    if (match) {
-                        hash = dictKeyHash(context, candKey);
-                        if (data->asSparseList(context)->has(context, hash)) {
-                            foundEq = true;
-                        }
-                        break;
-                    }
-                }
-            }
-            if (!foundEq) {
-                env->raiseKeyError(context, key);
-                return PROTO_NONE;
-            }
+            env->raiseKeyError(context, key);
+            return PROTO_NONE;
         }
 
         const proto::ProtoSparseList* newSparse = data->asSparseList(context)->removeAt(context, hash);

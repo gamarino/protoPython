@@ -121,6 +121,13 @@ set_tests_properties(protopy_dict_mutation_threads PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# dict keys are found through the key hash alone; inserting keys is linear.
+add_test(NAME protopy_dict_key_hash
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/dict_key_hash.py)
+set_tests_properties(protopy_dict_key_hash PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # sys.setswitchinterval / sys.getswitchinterval exist and validate like CPython.
 add_test(NAME protopy_sys_switchinterval
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/sys_switchinterval.py)
