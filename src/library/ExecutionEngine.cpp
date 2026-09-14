@@ -7889,6 +7889,56 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoString* nameS = env ? env->getNameString() : protoPython::PythonEnvironment::getInternalString(ctx, "__name__");
                 const proto::ProtoString* callS = env ? env->getCallString() : PythonEnvironment::getInternedString(ctx, "__call__");
                 
+                // PEP 560: a base that is not a class but defines
+                // __mro_entries__ (typing's Generic[T]) is replaced by the tuple
+                // that method returns, so metaclass selection, __prepare__ and
+                // the metaclass call all see the resolved bases. The bases as
+                // written are recorded as __orig_bases__ before the metaclass
+                // call. The resolved tuple is a young cell of this context and
+                // the original stays in its stack slot, so both stay reachable.
+                const proto::ProtoObject* origBases = nullptr;
+                if (env && bases && bases != PROTO_NONE && bases->asTuple(ctx)) {
+                    const proto::ProtoTuple* baseTuple = bases->asTuple(ctx);
+                    const proto::ProtoString* mroEntriesS =
+                        PythonEnvironment::getInternedString(ctx, "__mro_entries__");
+                    const proto::ProtoList* resolved = ctx->newList();
+                    bool changed = false;
+                    bool failed = false;
+                    for (unsigned long bi = 0; bi < baseTuple->getSize(ctx); ++bi) {
+                        const proto::ProtoObject* base = baseTuple->getAt(ctx, static_cast<int>(bi));
+                        const proto::ProtoObject* entries = nullptr;
+                        if (base && base != PROTO_NONE && !env->isActuallyAClass(ctx, base)) {
+                            entries = env->getAttribute(ctx, base, mroEntriesS, false);
+                            if (env->hasPendingException()) env->clearPendingException();
+                        }
+                        if (!entries || entries == PROTO_NONE) {
+                            resolved = resolved->appendLast(ctx, base);
+                            continue;
+                        }
+                        const proto::ProtoObject* result =
+                            invokeCallable(ctx, entries, ctx->newList()->appendLast(ctx, bases));
+                        if (env->hasPendingException()) { failed = true; break; }
+                        const proto::ProtoTuple* resultTuple = result ? result->asTuple(ctx) : nullptr;
+                        if (!resultTuple) {
+                            env->raiseTypeError(ctx, "__mro_entries__ must return a tuple");
+                            failed = true;
+                            break;
+                        }
+                        for (unsigned long ri = 0; ri < resultTuple->getSize(ctx); ++ri) {
+                            resolved = resolved->appendLast(ctx, resultTuple->getAt(ctx, static_cast<int>(ri)));
+                        }
+                        changed = true;
+                    }
+                    if (failed) {
+                        i = next_i;
+                        continue;
+                    }
+                    if (changed) {
+                        origBases = bases;
+                        bases = ctx->newTupleFromList(resolved)->asObject(ctx);
+                    }
+                }
+
                 // 1. Identify Metaclass
                 const proto::ProtoObject* metaclass = nullptr;
                 if (kwds && kwds != PROTO_NONE) {
@@ -8446,6 +8496,23 @@ const proto::ProtoObject* executeBytecodeRange(
                                 injectIfMissing(s.c_str());
                             }
                         }
+                        stack.back() = ns;
+                    }
+                }
+
+                // PEP 560: CPython's __build_class__ stores the bases as written
+                // in the namespace when __mro_entries__ replaced any of them.
+                if (origBases && env && ns && ns != PROTO_NONE) {
+                    const proto::ProtoString* origBasesS =
+                        PythonEnvironment::getInternedString(ctx, "__orig_bases__");
+                    if (ns->hasOwnAttribute(ctx, origBasesS) != PROTO_TRUE) {
+                        ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, origBasesS, origBases));
+                        const proto::ProtoString* nsKeysName = env->getKeysString();
+                        const proto::ProtoObject* nsKeysObj = ns->getAttribute(ctx, nsKeysName);
+                        const proto::ProtoList* nsKeys = (nsKeysObj && nsKeysObj->asList(ctx))
+                            ? nsKeysObj->asList(ctx) : ctx->newList();
+                        nsKeys = nsKeys->appendLast(ctx, origBasesS->asObject(ctx));
+                        ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, nsKeysName, nsKeys->asObject(ctx)));
                         stack.back() = ns;
                     }
                 }
