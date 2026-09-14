@@ -3920,7 +3920,14 @@ static int compare_values(proto::ProtoContext* context, const proto::ProtoObject
     return ha < hb ? -1 : 1;
 }
 
-static int compare_lists(proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ProtoObject* other, bool* ok) {
+// Lexicographic list compare; ok=false when either operand is not a list.
+// The first unequal elements decide, ordered through compareObjects so their
+// own __lt__ runs and unorderable ones raise (callers check for a pending
+// exception); otherwise the lengths decide.
+// With `decided`, the first unequal elements are compared with `op` (2..5 as
+// in compareObjects) and that answer is stored instead of a sign.
+static int compare_lists(proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ProtoObject* other, bool* ok,
+                         int op = 2, const proto::ProtoObject** decided = nullptr, bool* haveDecided = nullptr) {
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
     const proto::ProtoObject* data = self->getAttribute(context, dataName);
     const proto::ProtoObject* otherData = (other->hasOwnAttribute(context, dataName) == PROTO_TRUE) ? other->getAttribute(context, dataName) : nullptr;
@@ -3930,12 +3937,24 @@ static int compare_lists(proto::ProtoContext* context, const proto::ProtoObject*
         if (ok) *ok = false;
         return 0;
     }
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
     unsigned long size = list->getSize(context);
     unsigned long otherSize = otherList->getSize(context);
     unsigned long minSize = size < otherSize ? size : otherSize;
     for (unsigned long i = 0; i < minSize; ++i) {
         const proto::ProtoObject* a = list->getAt(context, static_cast<int>(i));
         const proto::ProtoObject* b = otherList->getAt(context, static_cast<int>(i));
+        if (env) {
+            if (a == b || env->objectsEqual(context, a, b)) continue;
+            if (ok) *ok = true;
+            if (env->hasPendingException()) return 0;
+            if (decided && haveDecided) {
+                *decided = env->compareObjects(context, a, b, op);
+                *haveDecided = true;
+                return 0;
+            }
+            return env->compareObjects(context, a, b, 2 /*lt*/) == PROTO_TRUE ? -1 : 1;
+        }
         int cmp = compare_values(context, a, b);
         if (cmp != 0) {
             if (ok) *ok = true;
@@ -3966,6 +3985,22 @@ static void list_cmp_unwrap(proto::ProtoContext* context,
     }
 }
 
+// list <, <=, >, >= from compare_lists: NotImplemented for a non-list operand
+// (the reflected operand or a TypeError answers `[1] < (1,)`), nullptr when an
+// element comparison raised.
+static const proto::ProtoObject* list_order_result(proto::ProtoContext* context,
+        const proto::ProtoObject* self, const proto::ProtoObject* other, int op, bool (*holds)(int)) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    bool ok = false;
+    bool haveDecided = false;
+    const proto::ProtoObject* decided = nullptr;
+    const int cmp = (self && other) ? compare_lists(context, self, other, &ok, op, &decided, &haveDecided) : 0;
+    if (!ok) return env ? env->getNotImplementedPrototype() : PROTO_FALSE;
+    if (env && env->hasPendingException()) return nullptr;
+    if (haveDecided) return decided;
+    return holds(cmp) ? PROTO_TRUE : PROTO_FALSE;
+}
+
 static const proto::ProtoObject* py_list_lt(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -3974,10 +4009,7 @@ static const proto::ProtoObject* py_list_lt(
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoObject* other = nullptr;
     list_cmp_unwrap(context, self, other, positionalParameters);
-    if (!other) return PROTO_FALSE;
-    bool ok = false;
-    int cmp = compare_lists(context, self, other, &ok);
-    return ok && cmp < 0 ? PROTO_TRUE : PROTO_FALSE;
+    return list_order_result(context, self, other, 2, [](int c) { return c < 0; });
 }
 
 static const proto::ProtoObject* py_list_le(
@@ -3988,10 +4020,7 @@ static const proto::ProtoObject* py_list_le(
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoObject* other = nullptr;
     list_cmp_unwrap(context, self, other, positionalParameters);
-    if (!other) return PROTO_FALSE;
-    bool ok = false;
-    int cmp = compare_lists(context, self, other, &ok);
-    return ok && cmp <= 0 ? PROTO_TRUE : PROTO_FALSE;
+    return list_order_result(context, self, other, 3, [](int c) { return c <= 0; });
 }
 
 static const proto::ProtoObject* py_list_gt(
@@ -4002,10 +4031,7 @@ static const proto::ProtoObject* py_list_gt(
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoObject* other = nullptr;
     list_cmp_unwrap(context, self, other, positionalParameters);
-    if (!other) return PROTO_FALSE;
-    bool ok = false;
-    int cmp = compare_lists(context, self, other, &ok);
-    return ok && cmp > 0 ? PROTO_TRUE : PROTO_FALSE;
+    return list_order_result(context, self, other, 4, [](int c) { return c > 0; });
 }
 
 static const proto::ProtoObject* py_list_ge(
@@ -4016,10 +4042,7 @@ static const proto::ProtoObject* py_list_ge(
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoObject* other = nullptr;
     list_cmp_unwrap(context, self, other, positionalParameters);
-    if (!other) return PROTO_FALSE;
-    bool ok = false;
-    int cmp = compare_lists(context, self, other, &ok);
-    return ok && cmp >= 0 ? PROTO_TRUE : PROTO_FALSE;
+    return list_order_result(context, self, other, 5, [](int c) { return c >= 0; });
 }
 
 // --- Dict Methods ---
@@ -5198,48 +5221,18 @@ static int py_sort_cmp(proto::ProtoContext* ctx,
         if (sa > sb) return 1;
         return 0;
     }
-    // Dispatch user-defined __lt__ for arbitrary types — sort()
-    // previously fell through to protoCore's identity-based compare,
-    // which returned 0 for any two distinct user objects and left
-    // the input list unsorted.  CPython uses < exclusively: a < b
-    // means a sorts before b; ties keep input order.
+    // Everything else sorts by <, through compareObjects: a user __lt__, the
+    // reflected __gt__, and TypeError for operands that cannot be ordered
+    // (`[3, 'a'].sort()`).  CPython uses < exclusively: a < b means a sorts
+    // before b; ties keep input order.  Once a comparison raised, the rest
+    // answer "equal" and py_list_sort propagates the exception.
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (env) {
-        const proto::ProtoString* ltS = PythonEnvironment::getInternedString(ctx, "__lt__");
-        const proto::ProtoObject* ltA = env->getAttribute(ctx, a, ltS, false);
-        if (ltA && ltA != PROTO_NONE) {
-            const proto::ProtoObject* res = nullptr;
-            const proto::ProtoList* args = ctx->newList()->appendLast(ctx, b);
-            if (ltA->asMethod(ctx)) {
-                res = ltA->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(a), nullptr, args, nullptr);
-            } else {
-                const proto::ProtoString* codeS = env->getCodeString();
-                bool raw = (codeS && ltA->hasOwnAttribute(ctx, codeS) == PROTO_TRUE);
-                const proto::ProtoList* selfArgs = ctx->newList();
-                if (raw) selfArgs = selfArgs->appendLast(ctx, a);
-                selfArgs = selfArgs->appendLast(ctx, b);
-                res = invokePythonCallable(ctx, ltA, selfArgs, nullptr);
-            }
-            if (res == PROTO_TRUE) return -1;
-            // Try b < a for the symmetric result.
-            const proto::ProtoObject* ltB = env->getAttribute(ctx, b, ltS, false);
-            if (ltB && ltB != PROTO_NONE) {
-                const proto::ProtoObject* res2 = nullptr;
-                const proto::ProtoList* args2 = ctx->newList()->appendLast(ctx, a);
-                if (ltB->asMethod(ctx)) {
-                    res2 = ltB->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(b), nullptr, args2, nullptr);
-                } else {
-                    const proto::ProtoString* codeS = env->getCodeString();
-                    bool raw = (codeS && ltB->hasOwnAttribute(ctx, codeS) == PROTO_TRUE);
-                    const proto::ProtoList* selfArgs = ctx->newList();
-                    if (raw) selfArgs = selfArgs->appendLast(ctx, b);
-                    selfArgs = selfArgs->appendLast(ctx, a);
-                    res2 = invokePythonCallable(ctx, ltB, selfArgs, nullptr);
-                }
-                if (res2 == PROTO_TRUE) return 1;
-            }
-            return 0;  // neither a<b nor b<a → equal-for-sort
-        }
+        if (env->hasPendingException()) return 0;
+        const proto::ProtoObject* lt = env->compareObjects(ctx, a, b, 2);
+        if (lt == PROTO_TRUE) return -1;
+        if (env->hasPendingException()) return 0;
+        return env->compareObjects(ctx, b, a, 2) == PROTO_TRUE ? 1 : 0;
     }
     return a->compare(ctx, b);
 }
@@ -5347,6 +5340,8 @@ static const proto::ProtoObject* py_list_sort(
             });
     }
 
+    // A comparison raised (unorderable items): the list stays as it was.
+    if (env && env->hasPendingException()) return nullptr;
     const proto::ProtoList* newList = context->newList();
     for (const proto::ProtoObject* obj : elems)
         newList = newList->appendLast(context, obj);
@@ -9942,8 +9937,11 @@ static const proto::ProtoObject* py_tuple_mul(
 
 // Helper: lexicographic tuple compare, returns ok=false when either
 // operand isn't tuple-shaped or contains an unsupported element type.
+// With `decided`, the first unequal elements are compared with `op` (2..5)
+// and that answer is stored instead of a sign.
 static int compare_tuples(proto::ProtoContext* context,
-        const proto::ProtoObject* a, const proto::ProtoObject* b, bool* ok) {
+        const proto::ProtoObject* a, const proto::ProtoObject* b, bool* ok,
+        int op = 2, const proto::ProtoObject** decided = nullptr, bool* haveDecided = nullptr) {
     *ok = false;
     auto unwrap = [&](const proto::ProtoObject* x) -> const proto::ProtoTuple* {
         if (!x) return nullptr;
@@ -9965,8 +9963,15 @@ static int compare_tuples(proto::ProtoContext* context,
         if (ea == eb) continue;
         if (env) {
             if (env->objectsEqual(context, ea, eb)) continue;
-            const proto::ProtoObject* r = env->compareObjects(context, ea, eb, 2 /*lt*/);
             *ok = true;
+            if (env->hasPendingException()) return 0;
+            // Raises for unorderable elements; py_tuple_cmp_dispatch checks.
+            const proto::ProtoObject* r = env->compareObjects(context, ea, eb, decided ? op : 2 /*lt*/);
+            if (decided && haveDecided) {
+                *decided = r;
+                *haveDecided = true;
+                return 0;
+            }
             if (r == PROTO_TRUE) return -1;
             return 1;
         }
@@ -9997,10 +10002,17 @@ static const proto::ProtoObject* py_tuple_cmp_dispatch(proto::ProtoContext* ctx,
     } else if (args && args->getSize(ctx) >= 1) {
         other = args->getAt(ctx, 0);
     }
-    if (!self || !other) return PROTO_FALSE;
+    // A non-tuple operand: NotImplemented, so the reflected operand or a
+    // TypeError answers `(1,) < [1]`; an element comparison may raise.
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!self || !other) return env ? env->getNotImplementedPrototype() : PROTO_FALSE;
     bool ok = false;
-    int c = compare_tuples(ctx, self, other, &ok);
-    if (!ok) return PROTO_FALSE;
+    bool haveDecided = false;
+    const proto::ProtoObject* decided = nullptr;
+    int c = compare_tuples(ctx, self, other, &ok, op + 2, &decided, &haveDecided);
+    if (!ok) return env ? env->getNotImplementedPrototype() : PROTO_FALSE;
+    if (env && env->hasPendingException()) return nullptr;
+    if (haveDecided) return decided;
     switch (op) {
         case 0: return c <  0 ? PROTO_TRUE : PROTO_FALSE;
         case 1: return c <= 0 ? PROTO_TRUE : PROTO_FALSE;
@@ -27319,9 +27331,11 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
 
     // PyObject_RichCompare: when the dunders of both operands answered
     // NotImplemented, `<`, `<=`, `>` and `>=` raise TypeError; only == and
-    // != fall back (to identity).  Operands this function orders natively
-    // below (numbers, str, tuple, list) keep that path.
-    if (richResult && sawNotImplemented && op >= 2 && op <= 5) {
+    // != fall back (to identity).  That holds for every caller, sorted(),
+    // max() and element-wise container comparisons as much as the operators.
+    // Operands this function orders natively below (numbers, str, tuple,
+    // list) keep that path.
+    if (sawNotImplemented && op >= 2 && op <= 5) {
         auto payload = [&](const proto::ProtoObject* x) -> const proto::ProtoObject* {
             if (x->isInteger(ctx) || x->isFloat(ctx) || x->isBoolean(ctx) || x->isString(ctx)) return x;
             const proto::ProtoObject* d = x->getAttribute(ctx, getDataString());
@@ -27421,7 +27435,11 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
             const proto::ProtoObject* ea = ta->getAt(ctx, static_cast<int>(i));
             const proto::ProtoObject* eb = tb->getAt(ctx, static_cast<int>(i));
             if (compareObjects(ctx, ea, eb, 0) == PROTO_TRUE) continue;
-            c = (compareObjects(ctx, ea, eb, 2) == PROTO_TRUE) ? -1 : 1;
+            // The first unequal elements decide an ordering with the same
+            // operator (which raises for unorderable ones); == and != only
+            // need to know they differ.
+            if (op >= 2 && op <= 5) return compareObjects(ctx, ea, eb, op, richResult);
+            c = 1;
             break;
         }
         if (c == 0) {
@@ -27441,7 +27459,11 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
             const proto::ProtoObject* ea = la->getAt(ctx, static_cast<int>(i));
             const proto::ProtoObject* eb = lb->getAt(ctx, static_cast<int>(i));
             if (compareObjects(ctx, ea, eb, 0) == PROTO_TRUE) continue;
-            c = (compareObjects(ctx, ea, eb, 2) == PROTO_TRUE) ? -1 : 1;
+            // The first unequal elements decide an ordering with the same
+            // operator (which raises for unorderable ones); == and != only
+            // need to know they differ.
+            if (op >= 2 && op <= 5) return compareObjects(ctx, ea, eb, op, richResult);
+            c = 1;
             break;
         }
         if (c == 0) {

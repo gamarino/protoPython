@@ -15,6 +15,7 @@ assert deque([1]) != deque([2]) and deque() == deque()
 assert not (deque([1]) == [1]) and deque([1]) != [1]
 assert deque([1]) < deque([2]) and deque([1, 2]) >= deque([1])
 assert deque([1]) <= deque([1]) and deque([2]) > deque([1, 5])
+assert raises(TypeError, lambda: deque([1]) < [1])
 
 
 class D(deque):
