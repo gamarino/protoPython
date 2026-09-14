@@ -6374,11 +6374,10 @@ static const proto::ProtoObject* py_list_call(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     (void)parentLink;
-    if (keywordParameters && keywordParameters->getSize(context) > 0) {
-        PythonEnvironment* envEarly = PythonEnvironment::fromContext(context);
-        if (envEarly) envEarly->raiseTypeError(context, "list() takes no keyword arguments");
-        return nullptr;
-    }
+    // CPython: list.__new__ ignores its arguments, keyword arguments
+    // included. list.__init__ (py_list_init) validates and consumes them, so
+    // a subclass that overrides __init__ receives every argument itself.
+    (void)keywordParameters;
 
     const proto::ProtoObject* cls = positionalParameters && positionalParameters->getSize(context) > 0 ? positionalParameters->getAt(context, 0) : self;
     if (!cls) return PROTO_NONE;
@@ -6410,27 +6409,25 @@ static const proto::ProtoObject* py_list_call(
     }
     proto::ProtoObject* instance = const_cast<proto::ProtoObject*>(cls->newChild(context, true));
     const proto::ProtoString* dataName = env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__");
+
+    // CPython: `list.__new__(cls, *args)` ignores args entirely; the
+    // iterable is consumed by `list.__init__`, which instance creation runs
+    // next with the same arguments. Consuming it here as well would exhaust
+    // a one-shot iterable (a generator) before __init__ refills the list
+    // from it, and a subclass that overrides __init__ must start empty.
+    instance->setAttribute(context, env ? env->getClassString() : PythonEnvironment::getInternalString(context, "__class__"), cls);
+    instance->setAttribute(context, dataName, context->newList()->asObject(context));
+    return instance;
+}
+
+// Collects the items of `iterable` for list.__init__. Returns nullptr, with
+// the exception pending, when iterating raises.
+static const proto::ProtoList* list_items_from_iterable(
+    proto::ProtoContext* context,
+    PythonEnvironment* env,
+    const proto::ProtoObject* iterable) {
     proto::ProtoList* l = const_cast<proto::ProtoList*>(context->newList());
-
-    // CPython: `list.__new__(cls, *args)` ignores args entirely — the
-    // iterable is consumed by `list.__init__`.  protoPython folds both
-    // into py_list_call, which is fine for the canonical `list(it)`
-    // path (list.__init__ is a no-op), but a list *subclass* with a
-    // user-defined __init__ must get an EMPTY list from __new__ and
-    // let its own __init__ run.  Otherwise `class C(list): __init__
-    // (self, value): ...` + `C(1)` tries to iterate the int `1`.
-    bool customInit = false;
-    if (env && cls != env->getListPrototype()) {
-        const proto::ProtoObject* initM = env->getAttribute(context, cls, env->getInitString(), false);
-        const proto::ProtoString* codeS = env->getCodeString();
-        if (initM && initM != PROTO_NONE && codeS &&
-            initM->hasOwnAttribute(context, codeS) == PROTO_TRUE) {
-            customInit = true;
-        }
-    }
-
-    if (!customInit && positionalParameters && positionalParameters->getSize(context) >= 2) {
-        const proto::ProtoObject* iterable = positionalParameters->getAt(context, 1);
+    {
         if (get_env_diag()) {
         }
         // Bytes objects store content in __data__ (a ProtoString), so asList() would
@@ -6526,10 +6523,60 @@ static const proto::ProtoObject* py_list_call(
             }
         }
     }
+    return l;
+}
 
-    instance->setAttribute(context, env ? env->getClassString() : PythonEnvironment::getInternalString(context, "__class__"), cls);
-    instance->setAttribute(context, dataName, l->asObject(context));
-    return instance;
+// list.__init__(iterable=(), /): replaces the contents with the items of
+// iterable, like CPython's (clear, then extend). Instance creation calls it
+// after list.__new__ with the new instance as the first argument, as does
+// `list.__init__(obj, it)`; the receiver is resolved the way the other list
+// methods resolve that unbound form.
+static const proto::ProtoObject* py_list_init(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)parentLink;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    const proto::ProtoString* dataName = env->getDataString();
+    unsigned long nargs = positionalParameters ? positionalParameters->getSize(context) : 0;
+    const proto::ProtoObject* selfData = self ? self->getAttribute(context, dataName) : nullptr;
+    const proto::ProtoObject* receiver = self;
+    unsigned long posOff = 0;
+    if ((!selfData || !selfData->asList(context)) && nargs >= 1) {
+        receiver = positionalParameters->getAt(context, 0);
+        posOff = 1;
+    }
+    const proto::ProtoObject* data = receiver ? receiver->getAttribute(context, dataName) : nullptr;
+    if (!data || !data->asList(context)) {
+        env->raiseTypeError(context, "descriptor '__init__' requires a 'list' object");
+        return nullptr;
+    }
+    if (keywordParameters && keywordParameters->getSize(context) > 0) {
+        env->raiseTypeError(context, "list() takes no keyword arguments");
+        return nullptr;
+    }
+    if (nargs - posOff > 1) {
+        env->raiseTypeError(context, "list expected at most 1 argument, got "
+            + std::to_string(nargs - posOff));
+        return nullptr;
+    }
+    // Collect the items first: an arbitrary iterable can be consumed only
+    // once, so a retried publish must not iterate it again.
+    const proto::ProtoList* items = context->newList();
+    if (nargs - posOff == 1) {
+        items = list_items_from_iterable(context, env,
+            positionalParameters->getAt(context, static_cast<int>(posOff)));
+        if (!items) return nullptr;
+    }
+    for (;;) {
+        data = receiver->getAttribute(context, dataName);
+        if (publishListData(context, receiver, dataName, data, items->asObject(context))) {
+            return PROTO_NONE;
+        }
+    }
 }
 
 static const proto::ProtoObject* py_tuple_call(
@@ -19508,7 +19555,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     listPrototype = listPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_list_repr));
     listPrototype = listPrototype->setAttribute(rootContext_, py_module, builtinsVal);
     listPrototype = listPrototype->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, py_list_call));
-    listPrototype = listPrototype->setAttribute(rootContext_, PythonEnvironment::getInternalString(rootContext_, "__init__"), rootContext_->fromMethod(nullptr, protoPython::builtins::py_python_ignore_init));
+    listPrototype = listPrototype->setAttribute(rootContext_, PythonEnvironment::getInternalString(rootContext_, "__init__"), rootContext_->fromMethod(nullptr, py_list_init));
     listPrototype = listPrototype->setAttribute(rootContext_, py_append, rootContext_->fromMethod(nullptr, py_list_append));
     listPrototype = listPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(nullptr, py_list_len));
     listPrototype = listPrototype->setAttribute(rootContext_, py_getitem, rootContext_->fromMethod(nullptr, py_list_getitem));
