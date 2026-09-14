@@ -7923,6 +7923,16 @@ static const proto::ProtoObject* py_isinstance(
         }
     }
 
+    // A class is an instance of its metaclass and of the metaclass's bases
+    // only: isinstance(C, X) == issubclass(type(C), X).  The prototype-chain
+    // checks below treat a class as an instance of itself and of its bases,
+    // so isinstance(str, str) was True (and typing._type_convert(str) took
+    // the class str for a string).
+    if (env && obj && cls != PROTO_NONE && env->isActuallyAClass(context, obj)) {
+        const proto::ProtoObject* metaOfObj = env->getType(context, obj);
+        return (metaOfObj && py_issubclass_check_single(context, metaOfObj, cls)) ? PROTO_TRUE : PROTO_FALSE;
+    }
+
     if (checkInterfaceInstanceOf(context, obj, cls)) {
         return PROTO_TRUE;
     }
