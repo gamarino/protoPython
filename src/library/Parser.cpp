@@ -259,6 +259,15 @@ void Parser::skipTrash() {
 std::unique_ptr<ASTNode> Parser::parseSubscript() {
     auto parsePart = [&]() -> std::unique_ptr<ASTNode> {
         if (cur_.type == TokenType::RSquare) return nullptr;
+        // PEP 646: `*expr` unpacks into the index tuple (`x[*a, b]`,
+        // `Generic[T, *Ts]`); CPython's grammar takes a full expression.
+        if (cur_.type == TokenType::Star) {
+            advance();
+            auto star = createNode<StarredNode>();
+            star->value = parseExpression();
+            if (!star->value) return nullptr;
+            return star;
+        }
         if (cur_.type == TokenType::Colon) {
              advance();
              auto sl = createNode<SliceNode>();
@@ -300,8 +309,10 @@ std::unique_ptr<ASTNode> Parser::parseSubscript() {
 
     // `d[x]` is a single subscript; `d[x,]` is `d[(x,)]` (a 1-tuple),
     // matching CPython.  A trailing comma after a lone expression must
-    // therefore still produce a tuple.
-    if (parts.size() == 1 && !sawComma) return std::move(parts[0]);
+    // therefore still produce a tuple.  So must a starred element:
+    // `d[*a]` is `d[(*a,)]`.
+    const bool starred = parts.size() == 1 && dynamic_cast<StarredNode*>(parts[0].get());
+    if (parts.size() == 1 && !sawComma && !starred) return std::move(parts[0]);
 
     auto t = createNode<TupleLiteralNode>();
     t->elements = std::move(parts);

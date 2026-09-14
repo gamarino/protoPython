@@ -247,6 +247,13 @@ set_tests_properties(protopy_class_star_bases PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# Starred expressions in subscripts (PEP 646) build the index tuple.
+add_test(NAME protopy_subscript_starred
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/subscript_starred.py)
+set_tests_properties(protopy_subscript_starred PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # PEP 695 type parameters on classes, functions and `type` aliases.
 add_test(NAME protopy_pep695_type_params
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/pep695_type_params.py)
