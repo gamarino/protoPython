@@ -93,6 +93,13 @@ set_tests_properties(protopy_thread_stress_no_crash PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# list mutators called from parallel threads must not lose or duplicate items.
+add_test(NAME protopy_list_mutation_threads
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/list_mutation_threads.py)
+set_tests_properties(protopy_list_mutation_threads PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 
 # Optional benchmark test (off by default: -DPROTOPY_BENCHMARKS=ON)
 option(PROTOPY_BENCHMARKS "Run benchmark suite in CTest" OFF)

@@ -3145,6 +3145,28 @@ static const proto::ProtoObject* py_repr_call(
 
 // --- List Methods ---
 
+// Atomic publish for list mutators. Every list mutation is a read-modify-
+// write of the list object's `__data__` payload: read the ProtoList, derive
+// a new one, store it back. With truly parallel threads a plain
+// setAttribute between another thread's read and write silently dropped
+// that thread's update (`results.append(i)` from four threads lost
+// elements). setAttributeIfEqual installs `newData` only while `__data__`
+// is still the snapshot the mutation was derived from; on false the caller
+// re-reads and recomputes. A receiver that cannot be CAS'd (immutable
+// cell, or `__data__` not an own attribute) keeps the plain write it always
+// had, since retrying would never succeed.
+static bool publishListData(proto::ProtoContext* context,
+                            const proto::ProtoObject* receiver,
+                            const proto::ProtoString* dataName,
+                            const proto::ProtoObject* expected,
+                            const proto::ProtoObject* newData) {
+    if (receiver->setAttributeIfEqual(context, dataName, expected, newData)) return true;
+    const proto::ProtoObject* own = receiver->getOwnAttributeDirect(context, dataName);
+    if (own != expected && own != nullptr && own != PROTO_NONE) return false;
+    const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, newData);
+    return true;
+}
+
 static const proto::ProtoObject* py_list_append(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -3161,16 +3183,17 @@ static const proto::ProtoObject* py_list_append(
         posOff = 1;
     }
     if (!receiver) return PROTO_NONE;
-    const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
-    if (!data || !data->asList(context)) return PROTO_NONE;
-    const proto::ProtoList* list = data->asList(context);
+    if (positionalParameters->getSize(context) <= static_cast<unsigned long>(posOff)) return PROTO_NONE;
+    const proto::ProtoObject* item = positionalParameters->getAt(context, posOff);
 
-    if (positionalParameters->getSize(context) > static_cast<unsigned long>(posOff)) {
-        const proto::ProtoObject* item = positionalParameters->getAt(context, posOff);
-        const proto::ProtoList* newList = list->appendLast(context, item);
-        const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, newList->asObject(context));
+    for (;;) {
+        const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
+        if (!data || !data->asList(context)) return PROTO_NONE;
+        const proto::ProtoList* newList = data->asList(context)->appendLast(context, item);
+        if (publishListData(context, receiver, dataName, data, newList->asObject(context))) {
+            return PROTO_NONE;
+        }
     }
-    return PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_list_len(
@@ -3417,63 +3440,67 @@ static const proto::ProtoObject* py_list_setitem(
         }
     }
     if (!data || !data->asList(context)) return PROTO_NONE;
-    const proto::ProtoList* list = data->asList(context);
     if (positionalParameters->getSize(context) < static_cast<unsigned long>(argOff + 2)) return PROTO_NONE;
 
     const proto::ProtoObject* indexObj = positionalParameters->getAt(context, argOff);
     const proto::ProtoObject* value = positionalParameters->getAt(context, argOff + 1);
-    unsigned long size = list->getSize(context);
-
     // Honour bool as int (subclass) for list assignment too.
-    if (indexObj->isInteger(context) || indexObj == PROTO_TRUE || indexObj == PROTO_FALSE) {
-        int index = indexObj == PROTO_TRUE ? 1
-                  : indexObj == PROTO_FALSE ? 0
-                  : static_cast<int>(indexObj->asLong(context));
-        if (index < 0) index += static_cast<int>(size);
-        if (index < 0 || static_cast<unsigned long>(index) >= size) return PROTO_NONE;
-        const proto::ProtoList* newList = list->setAt(context, index, value);
-        self->setAttribute(context, dataName, newList->asObject(context));
-        return PROTO_NONE;
+    const bool intIndex = indexObj->isInteger(context) || indexObj == PROTO_TRUE || indexObj == PROTO_FALSE;
+
+    // Retry loop: see publishListData.
+    for (;;) {
+        const proto::ProtoList* list = data->asList(context);
+        unsigned long size = list->getSize(context);
+        const proto::ProtoList* newList = nullptr;
+
+        if (intIndex) {
+            int index = indexObj == PROTO_TRUE ? 1
+                      : indexObj == PROTO_FALSE ? 0
+                      : static_cast<int>(indexObj->asLong(context));
+            if (index < 0) index += static_cast<int>(size);
+            if (index < 0 || static_cast<unsigned long>(index) >= size) return PROTO_NONE;
+            newList = list->setAt(context, index, value);
+        } else {
+            SliceBounds sb = get_slice_bounds(context, indexObj, size);
+            if (!sb.isSlice) {
+                if (env) env->raiseTypeError(context, "list indices must be integers or slices, not other types");
+                return PROTO_NONE;
+            }
+            if (sb.step != 1) {
+                if (env) env->raiseValueError(context, PythonEnvironment::getInternedString(context, "extended slice assignment with step != 1 not supported natively yet")->asObject(context));
+                return PROTO_NONE;
+            }
+
+            const proto::ProtoList* valueList = value->asList(context);
+            if (!valueList) {
+                const proto::ProtoObject* vd = value->getAttribute(context, dataName);
+                if (vd) valueList = vd->asList(context);
+            }
+            if (!valueList) {
+                const proto::ProtoTuple* vTuple = value->asTuple(context);
+                if (vTuple) valueList = vTuple->asList(context);
+            }
+            if (!valueList) {
+                if (env) env->raiseTypeError(context, "can only assign an iterable");
+                return PROTO_NONE;
+            }
+
+            newList = context->newList();
+            for (long long i = 0; i < sb.start; ++i) {
+                newList = newList->appendLast(context, list->getAt(context, static_cast<int>(i)));
+            }
+            for (unsigned long i = 0; i < valueList->getSize(context); ++i) {
+                newList = newList->appendLast(context, valueList->getAt(context, static_cast<int>(i)));
+            }
+            for (long long i = sb.stop; i < static_cast<long long>(size); ++i) {
+                newList = newList->appendLast(context, list->getAt(context, static_cast<int>(i)));
+            }
+        }
+
+        if (publishListData(context, self, dataName, data, newList->asObject(context))) return PROTO_NONE;
+        data = self->getAttribute(context, dataName);
+        if (!data || !data->asList(context)) return PROTO_NONE;
     }
-
-    SliceBounds sb = get_slice_bounds(context, indexObj, size);
-    if (sb.isSlice) {
-        if (sb.step != 1) {
-            if (env) env->raiseValueError(context, PythonEnvironment::getInternedString(context, "extended slice assignment with step != 1 not supported natively yet")->asObject(context));
-            return PROTO_NONE;
-        }
-
-        const proto::ProtoList* valueList = value->asList(context);
-        if (!valueList) {
-            const proto::ProtoObject* vd = value->getAttribute(context, dataName);
-            if (vd) valueList = vd->asList(context);
-        }
-        if (!valueList) {
-            const proto::ProtoTuple* vTuple = value->asTuple(context);
-            if (vTuple) valueList = vTuple->asList(context);
-        }
-        if (!valueList) {
-            if (env) env->raiseTypeError(context, "can only assign an iterable");
-            return PROTO_NONE;
-        }
-
-        const proto::ProtoList* newList = context->newList();
-        for (long long i = 0; i < sb.start; ++i) {
-            newList = newList->appendLast(context, list->getAt(context, static_cast<int>(i)));
-        }
-        for (unsigned long i = 0; i < valueList->getSize(context); ++i) {
-            newList = newList->appendLast(context, valueList->getAt(context, static_cast<int>(i)));
-        }
-        for (long long i = sb.stop; i < static_cast<long long>(size); ++i) {
-            newList = newList->appendLast(context, list->getAt(context, static_cast<int>(i)));
-        }
-
-        self->setAttribute(context, dataName, newList->asObject(context));
-        return PROTO_NONE;
-    }
-
-    if (env) env->raiseTypeError(context, "list indices must be integers or slices, not other types");
-    return PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_list_delitem(
@@ -3496,48 +3523,53 @@ static const proto::ProtoObject* py_list_delitem(
     if (!receiver) return PROTO_NONE;
     const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
     if (!data || !data->asList(context)) return PROTO_NONE;
-    const proto::ProtoList* list = data->asList(context);
     if (positionalParameters->getSize(context) < static_cast<unsigned long>(1 + posOff)) return PROTO_NONE;
 
     const proto::ProtoObject* indexObj = positionalParameters->getAt(context, posOff);
-    unsigned long size = list->getSize(context);
 
-    // del lst[i:j:k] — drop the selected indices, keep the rest.
-    SliceBounds sb = get_slice_bounds(context, indexObj, static_cast<long long>(size));
-    if (sb.isSlice) {
-        std::unordered_set<long long> drop;
-        if (sb.step > 0) {
-            for (long long i = sb.start; i < sb.stop; i += sb.step) drop.insert(i);
-        } else if (sb.step < 0) {
-            for (long long i = sb.start; i > sb.stop; i += sb.step) drop.insert(i);
+    // Retry loop: see publishListData.
+    for (;;) {
+        const proto::ProtoList* list = data->asList(context);
+        unsigned long size = list->getSize(context);
+        const proto::ProtoList* newList = nullptr;
+
+        // del lst[i:j:k] — drop the selected indices, keep the rest.
+        SliceBounds sb = get_slice_bounds(context, indexObj, static_cast<long long>(size));
+        if (sb.isSlice) {
+            std::unordered_set<long long> drop;
+            if (sb.step > 0) {
+                for (long long i = sb.start; i < sb.stop; i += sb.step) drop.insert(i);
+            } else if (sb.step < 0) {
+                for (long long i = sb.start; i > sb.stop; i += sb.step) drop.insert(i);
+            }
+            newList = context->newList();
+            for (long long i = 0; i < static_cast<long long>(size); ++i) {
+                if (drop.count(i)) continue;
+                newList = newList->appendLast(context, list->getAt(context, static_cast<int>(i)));
+            }
+        } else {
+            if (!indexObj->isInteger(context)) {
+                if (env) env->raiseTypeError(context, "list indices must be integers or slices, not other types");
+                return PROTO_NONE;
+            }
+
+            int index = static_cast<int>(indexObj->asLong(context));
+            if (index < 0) index += static_cast<int>(size);
+            if (index < 0 || static_cast<unsigned long>(index) >= size) {
+                // CPython: `del l[10]` on a 3-element list raises
+                //   IndexError: list assignment index out of range
+                // Previously the helper silently returned PROTO_NONE, leaving
+                // the list unchanged — `del l[oops]` typo was invisible.
+                if (env) env->raiseIndexError(context, "list assignment index out of range");
+                return nullptr;
+            }
+            newList = list->removeAt(context, index);
         }
-        const proto::ProtoList* newList = context->newList();
-        for (long long i = 0; i < static_cast<long long>(size); ++i) {
-            if (drop.count(i)) continue;
-            newList = newList->appendLast(context, list->getAt(context, static_cast<int>(i)));
-        }
-        const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, newList->asObject(context));
-        return PROTO_NONE;
-    }
 
-    if (!indexObj->isInteger(context)) {
-        if (env) env->raiseTypeError(context, "list indices must be integers or slices, not other types");
-        return PROTO_NONE;
+        if (publishListData(context, receiver, dataName, data, newList->asObject(context))) return PROTO_NONE;
+        data = receiver->getAttribute(context, dataName);
+        if (!data || !data->asList(context)) return PROTO_NONE;
     }
-
-    int index = static_cast<int>(indexObj->asLong(context));
-    if (index < 0) index += static_cast<int>(size);
-    if (index < 0 || static_cast<unsigned long>(index) >= size) {
-        // CPython: `del l[10]` on a 3-element list raises
-        //   IndexError: list assignment index out of range
-        // Previously the helper silently returned PROTO_NONE, leaving
-        // the list unchanged — `del l[oops]` typo was invisible.
-        if (env) env->raiseIndexError(context, "list assignment index out of range");
-        return nullptr;
-    }
-    const proto::ProtoList* newList = list->removeAt(context, index);
-    const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, newList->asObject(context));
-    return PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_list_iter(
@@ -4771,58 +4803,63 @@ static const proto::ProtoObject* py_list_pop(
         posOff = 1;
     }
     if (!receiver) return PROTO_NONE;
-    const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
-    const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
-    if (!list) return PROTO_NONE;
 
-    unsigned long size = list->getSize(context);
-    if (size == 0) {
-        PythonEnvironment* env = PythonEnvironment::fromContext(context);
-        if (env) env->raiseIndexError(context, "pop from empty list");
-        return PROTO_NONE;
-    }
+    // Retry loop: see publishListData. The item is returned only when this
+    // thread's removal was the one published, so two threads never pop the
+    // same element.
+    for (;;) {
+        const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
+        const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
+        if (!list) return PROTO_NONE;
 
-    int index = static_cast<int>(size - 1);
-    if (positionalParameters && positionalParameters->getSize(context) > static_cast<unsigned long>(posOff)) {
-        const proto::ProtoObject* idxObj = positionalParameters->getAt(context, posOff);
-        if (idxObj->isInteger(context)) {
-            index = static_cast<int>(idxObj->asLong(context));
-            if (index < 0) index += static_cast<int>(size);
-        } else if (idxObj == PROTO_TRUE) {
-            index = 1; if (index < 0) index += static_cast<int>(size);
-        } else if (idxObj == PROTO_FALSE) {
-            index = 0;
-        } else {
-            // CPython: l.pop(non_int) raises
-            //   TypeError: 'X' object cannot be interpreted as an integer
-            // Previously the bad index was silently ignored and the last
-            // element popped — making `l.pop('a')` silently identical to
-            // `l.pop()`, masking misuse.
-            PythonEnvironment* envE = PythonEnvironment::fromContext(context);
-            if (envE) {
-                std::string clsName = "object";
-                const proto::ProtoObject* cls = envE->getType(context, idxObj);
-                if (cls) {
-                    const proto::ProtoObject* nm = cls->getAttribute(context, envE->getNameString());
-                    if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
-                }
-                envE->raiseTypeError(context,
-                    "'" + clsName + "' object cannot be interpreted as an integer");
-            }
-            return nullptr;
+        unsigned long size = list->getSize(context);
+        if (size == 0) {
+            PythonEnvironment* env = PythonEnvironment::fromContext(context);
+            if (env) env->raiseIndexError(context, "pop from empty list");
+            return PROTO_NONE;
         }
-    }
 
-    if (index < 0 || static_cast<unsigned long>(index) >= size) {
-        PythonEnvironment* env = PythonEnvironment::fromContext(context);
-        if (env) env->raiseIndexError(context, "pop index out of range");
-        return PROTO_NONE;
-    }
+        int index = static_cast<int>(size - 1);
+        if (positionalParameters && positionalParameters->getSize(context) > static_cast<unsigned long>(posOff)) {
+            const proto::ProtoObject* idxObj = positionalParameters->getAt(context, posOff);
+            if (idxObj->isInteger(context)) {
+                index = static_cast<int>(idxObj->asLong(context));
+                if (index < 0) index += static_cast<int>(size);
+            } else if (idxObj == PROTO_TRUE) {
+                index = 1; if (index < 0) index += static_cast<int>(size);
+            } else if (idxObj == PROTO_FALSE) {
+                index = 0;
+            } else {
+                // CPython: l.pop(non_int) raises
+                //   TypeError: 'X' object cannot be interpreted as an integer
+                // Previously the bad index was silently ignored and the last
+                // element popped — making `l.pop('a')` silently identical to
+                // `l.pop()`, masking misuse.
+                PythonEnvironment* envE = PythonEnvironment::fromContext(context);
+                if (envE) {
+                    std::string clsName = "object";
+                    const proto::ProtoObject* cls = envE->getType(context, idxObj);
+                    if (cls) {
+                        const proto::ProtoObject* nm = cls->getAttribute(context, envE->getNameString());
+                        if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+                    }
+                    envE->raiseTypeError(context,
+                        "'" + clsName + "' object cannot be interpreted as an integer");
+                }
+                return nullptr;
+            }
+        }
 
-    const proto::ProtoObject* item = list->getAt(context, index);
-    const proto::ProtoList* newList = list->removeAt(context, index);
-    const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, newList->asObject(context));
-    return item;
+        if (index < 0 || static_cast<unsigned long>(index) >= size) {
+            PythonEnvironment* env = PythonEnvironment::fromContext(context);
+            if (env) env->raiseIndexError(context, "pop index out of range");
+            return PROTO_NONE;
+        }
+
+        const proto::ProtoObject* item = list->getAt(context, index);
+        const proto::ProtoList* newList = list->removeAt(context, index);
+        if (publishListData(context, receiver, dataName, data, newList->asObject(context))) return item;
+    }
 }
 
 /**
@@ -4868,44 +4905,42 @@ static const proto::ProtoObject* py_list_extend(
     // Get the current list from receiver
     const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
     if (!data || !data->asList(context)) return PROTO_NONE;
-    const proto::ProtoList* list = data->asList(context);
-    
-    if (!otherList && !otherTuple) {
+
+    // Collect the items first: an arbitrary iterable can be consumed only
+    // once, so a retried publish must not iterate it again.
+    const proto::ProtoList* items = otherList;
+    if (!items && otherTuple) items = otherTuple->asList(context);
+    if (!items) {
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         const proto::ProtoObject* iterator = env ? env->iter(otherObj) : nullptr;
-        if (iterator) {
-            const proto::ProtoList* newList = list;
-            for (;;) {
-                const proto::ProtoObject* item = env->next(iterator);
-                if (!item) {
-                    if (env && env->handleExhaustion(context)) break;
-                    return nullptr;
-                }
-                newList = newList->appendLast(context, item);
+        if (!iterator) {
+            if (env && !env->hasPendingException()) {
+                env->raiseTypeError(context, "object is not iterable");
             }
-            const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, newList->asObject(context));
-        } else {
-             if (env && !env->hasPendingException()) {
-                 env->raiseTypeError(context, "object is not iterable");
-             }
+            return PROTO_NONE;
         }
-        return PROTO_NONE;
-    }
-    
-    const proto::ProtoList* newList = list;
-    if (otherList) {
-        unsigned long otherSize = otherList->getSize(context);
-        for (unsigned long i = 0; i < otherSize; ++i) {
-            newList = newList->appendLast(context, otherList->getAt(context, static_cast<int>(i)));
-        }
-    } else if (otherTuple) {
-        unsigned long otherSize = otherTuple->getSize(context);
-        for (unsigned long i = 0; i < otherSize; ++i) {
-            newList = newList->appendLast(context, otherTuple->getAt(context, static_cast<int>(i)));
+        items = context->newList();
+        for (;;) {
+            const proto::ProtoObject* item = env->next(iterator);
+            if (!item) {
+                if (env && env->handleExhaustion(context)) break;
+                return nullptr;
+            }
+            items = items->appendLast(context, item);
         }
     }
-    const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, newList->asObject(context));
-    return PROTO_NONE;
+
+    // Retry loop: see publishListData.
+    const unsigned long itemCount = items->getSize(context);
+    for (;;) {
+        const proto::ProtoList* newList = data->asList(context);
+        for (unsigned long i = 0; i < itemCount; ++i) {
+            newList = newList->appendLast(context, items->getAt(context, static_cast<int>(i)));
+        }
+        if (publishListData(context, receiver, dataName, data, newList->asObject(context))) return PROTO_NONE;
+        data = receiver->getAttribute(context, dataName);
+        if (!data || !data->asList(context)) return PROTO_NONE;
+    }
 }
 
 /** list.__add__(other): return a new list concatenating self and other. */
@@ -4979,16 +5014,19 @@ static const proto::ProtoObject* py_list_iadd(
     }
     const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
     if (!data || !data->asList(context)) return PROTO_NONE;
-    const proto::ProtoList* list = data->asList(context);
     if (!otherList) return PROTO_NONE;
 
-    const proto::ProtoList* newList = list;
-    unsigned long otherSize = otherList->getSize(context);
-    for (unsigned long i = 0; i < otherSize; ++i) {
-        newList = newList->appendLast(context, otherList->getAt(context, static_cast<int>(i)));
+    // Retry loop: see publishListData.
+    const unsigned long otherSize = otherList->getSize(context);
+    for (;;) {
+        const proto::ProtoList* newList = data->asList(context);
+        for (unsigned long i = 0; i < otherSize; ++i) {
+            newList = newList->appendLast(context, otherList->getAt(context, static_cast<int>(i)));
+        }
+        if (publishListData(context, receiver, dataName, data, newList->asObject(context))) return receiver;
+        data = receiver->getAttribute(context, dataName);
+        if (!data || !data->asList(context)) return PROTO_NONE;
     }
-    const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, newList->asObject(context));
-    return receiver;
 }
 
 static const proto::ProtoObject* py_list_reverse(
@@ -5227,8 +5265,7 @@ static const proto::ProtoObject* py_list_insert(
     }
     if (!receiver || positionalParameters->getSize(context) < static_cast<unsigned long>(2 + posOff)) return PROTO_NONE;
     const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
-    const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
-    if (!list) return PROTO_NONE;
+    if (!data || !data->asList(context)) return PROTO_NONE;
     const proto::ProtoObject* idxObj = positionalParameters->getAt(context, posOff);
     // CPython: list.insert(i, x) requires i to be an integer (bool counts
     // — subclass of int).  Previously asLong(non-int) panicked with the
@@ -5249,17 +5286,25 @@ static const proto::ProtoObject* py_list_insert(
         }
         return nullptr;
     }
-    int index = idxObj == PROTO_TRUE ? 1
-              : idxObj == PROTO_FALSE ? 0
-              : static_cast<int>(idxObj->asLong(context));
+    const int requested = idxObj == PROTO_TRUE ? 1
+                        : idxObj == PROTO_FALSE ? 0
+                        : static_cast<int>(idxObj->asLong(context));
     const proto::ProtoObject* value = positionalParameters->getAt(context, 1 + posOff);
-    unsigned long size = list->getSize(context);
-    if (index < 0) index += static_cast<int>(size);
-    if (index < 0) index = 0;
-    if (static_cast<unsigned long>(index) > size) index = static_cast<int>(size);
-    const proto::ProtoList* newList = list->insertAt(context, index, value);
-    const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, newList->asObject(context));
-    return PROTO_NONE;
+
+    // Retry loop: see publishListData. The index is normalised against the
+    // size of the snapshot each attempt is derived from.
+    for (;;) {
+        const proto::ProtoList* list = data->asList(context);
+        unsigned long size = list->getSize(context);
+        int index = requested;
+        if (index < 0) index += static_cast<int>(size);
+        if (index < 0) index = 0;
+        if (static_cast<unsigned long>(index) > size) index = static_cast<int>(size);
+        const proto::ProtoList* newList = list->insertAt(context, index, value);
+        if (publishListData(context, receiver, dataName, data, newList->asObject(context))) return PROTO_NONE;
+        data = receiver->getAttribute(context, dataName);
+        if (!data || !data->asList(context)) return PROTO_NONE;
+    }
 }
 
 static const proto::ProtoObject* py_list_remove(
@@ -5279,18 +5324,26 @@ static const proto::ProtoObject* py_list_remove(
         posOff = 1;
     }
     if (!receiver || positionalParameters->getSize(context) < static_cast<unsigned long>(1 + posOff)) return PROTO_NONE;
-    const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
-    const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
-    if (!list) return PROTO_NONE;
     const proto::ProtoObject* value = positionalParameters->getAt(context, posOff);
-    unsigned long size = list->getSize(context);
-    for (unsigned long i = 0; i < size; ++i) {
-        const proto::ProtoObject* elem = list->getAt(context, static_cast<int>(i));
-        if (list_elem_equal(context, elem, value)) {
-            const proto::ProtoList* newList = list->removeAt(context, static_cast<int>(i));
-            const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, newList->asObject(context));
-            return PROTO_NONE;
+
+    // Retry loop: see publishListData. A lost race rescans the new snapshot;
+    // falling out of the loop means the value is not in the list.
+    for (;;) {
+        const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
+        const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
+        if (!list) return PROTO_NONE;
+        unsigned long size = list->getSize(context);
+        bool matched = false;
+        for (unsigned long i = 0; i < size; ++i) {
+            const proto::ProtoObject* elem = list->getAt(context, static_cast<int>(i));
+            if (list_elem_equal(context, elem, value)) {
+                const proto::ProtoList* newList = list->removeAt(context, static_cast<int>(i));
+                if (publishListData(context, receiver, dataName, data, newList->asObject(context))) return PROTO_NONE;
+                matched = true;
+                break;
+            }
         }
+        if (!matched) break;
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (env) env->raiseValueError(context, PythonEnvironment::getInternedString(context, "list.remove(x): x not in list")->asObject(context));
@@ -22922,6 +22975,7 @@ struct GetTypePicEntry {
     const proto::ProtoObject* obj = nullptr;
     const proto::ProtoObject* type = nullptr;
     uint64_t generation = 0;
+    uint64_t gcEpoch = 0;
     bool isPrimitive = false;          // str/int/bool/float (incl. subclasses)
     bool isPrimitiveValid = false;     // false until populated
 };
@@ -22947,6 +23001,9 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
     // sprint-4's hook for the LOAD_ATTR fast path to skip 4 isXxx tag
     // checks per access on cache hit.
     const uint64_t gen = resolveCacheGeneration_.load(std::memory_order_acquire);
+    // Read the GC epoch before resolving, so a cycle that starts while we
+    // resolve leaves the new entry already stale.
+    const uint64_t gcEpoch = space_ ? space_->getGCCycleCount() : 0;
     const size_t idx = (reinterpret_cast<uintptr_t>(obj) >> 4) & (kGetTypePicSize - 1);
     GetTypePicEntry* slot = &s_getTypePic[idx];
     if (slot->obj == obj && slot->generation == gen && slot->gcEpoch == gcEpoch) {
@@ -22975,7 +23032,6 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
             if (classS && obj->hasOwnAttribute(ctx, classS) == PROTO_TRUE) {
                 const proto::ProtoObject* cls = obj->proto::ProtoObject::getAttribute(ctx, classS);
                 if (cls && cls != PROTO_NONE && cls != obj && !cls->isString(ctx)) {
-    uint64_t gcEpoch = 0;
                     return cls;
                 }
             }
@@ -23001,9 +23057,6 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
     else if (obj->isTuple(ctx) && !this->isActuallyAClass(ctx, obj)) {
         // A tuple-shaped instance is normally just `tuple`, but namedtuple
         // and other tuple subclasses are constructed via
-    // Read the GC epoch before resolving, so a cycle that starts while we
-    // resolve leaves the new entry already stale.
-    const uint64_t gcEpoch = space_ ? space_->getGCCycleCount() : 0;
         // `type(name, (tuple,), {...})` and instances carry their actual
         // class as an OWN __class__ attribute.  Without this branch every
         // namedtuple instance reports type() == tuple, breaking field
@@ -23110,6 +23163,7 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
     if (res) {
         slot->obj = obj;
         slot->generation = gen;
+        slot->gcEpoch = gcEpoch;
         slot->type = res;
         // Sprint-4: cache the primitive classification too. By construction
         // of this bottom path, the obj already failed isString/isInteger/
@@ -23134,6 +23188,7 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
 int PythonEnvironment::primitiveCacheHit(const proto::ProtoObject* obj) const {
     if (!obj) return 0;
     const uint64_t gen = resolveCacheGeneration_.load(std::memory_order_acquire);
+    const uint64_t gcEpoch = space_ ? space_->getGCCycleCount() : 0;
     const size_t idx = (reinterpret_cast<uintptr_t>(obj) >> 4) & (kGetTypePicSize - 1);
     const GetTypePicEntry* slot = &s_getTypePic[idx];
     if (slot->obj != obj || slot->generation != gen || slot->gcEpoch != gcEpoch
@@ -23164,7 +23219,6 @@ int PythonEnvironment::primitiveCacheHit(const proto::ProtoObject* obj) const {
 //     handles binding via outIsUnboundFunc) or does not own __get__
 //     (so it is not an explicit descriptor needing __get__ invocation).
 //
-        slot->gcEpoch = gcEpoch;
 // Plain Python functions inherit __get__ from functionPrototype as an
 // inherited attribute (not own), so hasOwnAttribute("__get__") is false
 // for them — they pass the descriptor check and reach the LOAD_METHOD
@@ -23189,7 +23243,6 @@ static bool attributeExistsCompat(PythonEnvironment* env,
     const proto::ProtoObject* cls = env->getType(ctx, obj);
     if (!cls || cls == PROTO_NONE) return false;
     const proto::ProtoString* mroS = env->getMroString();
-    const uint64_t gcEpoch = space_ ? space_->getGCCycleCount() : 0;
     if (!mroS) return false;
     const proto::ProtoObject* mroObj = cls->proto::ProtoObject::getAttribute(ctx, mroS);
     if (!mroObj || mroObj == PROTO_NONE) return false;
@@ -27820,6 +27873,18 @@ void PythonEnvironment::pushKwNames(const proto::ProtoTuple* names) {
 }
 
 void PythonEnvironment::popKwNames() {
+// Keyword-name stack for the CALL_FUNCTION_KW protocol. It is per thread:
+// a call pushes its names, the callee reads them and the call pops them,
+// always on the same thread. It used to be a PythonEnvironment member
+// rebuilt with appendLast(rootContext_) from every thread: a data race on
+// the member, allocations into the main thread's context from workers
+// (SEGV in ProtoList::appendLast under ASAN), and one thread could read or
+// pop another thread's names. A std::vector is invisible to the GC, so
+// each entry is pinned in transientArgsRoots_ while it is on the stack
+// (same pattern as s_activeExcs / activeExcsRoots_).
+static thread_local std::vector<const proto::ProtoTuple*> s_kwNamesStack;
+static thread_local std::vector<proto::ProtoRootSet::Handle> s_kwNamesHandles;
+
     if (s_kwNamesStack.empty()) return;
     const proto::ProtoRootSet::Handle h = s_kwNamesHandles.back();
     s_kwNamesStack.pop_back();
@@ -27876,18 +27941,6 @@ void PythonEnvironment::addTask(const proto::ProtoObject* coro) {
     if (!taskQueue) taskQueue = rootContext_->newList();
     taskQueue = taskQueue->appendLast(rootContext_, coro);
 }
-// Keyword-name stack for the CALL_FUNCTION_KW protocol. It is per thread:
-// a call pushes its names, the callee reads them and the call pops them,
-// always on the same thread. It used to be a PythonEnvironment member
-// rebuilt with appendLast(rootContext_) from every thread: a data race on
-// the member, allocations into the main thread's context from workers
-// (SEGV in ProtoList::appendLast under ASAN), and one thread could read or
-// pop another thread's names. A std::vector is invisible to the GC, so
-// each entry is pinned in transientArgsRoots_ while it is on the stack
-// (same pattern as s_activeExcs / activeExcsRoots_).
-static thread_local std::vector<const proto::ProtoTuple*> s_kwNamesStack;
-static thread_local std::vector<proto::ProtoRootSet::Handle> s_kwNamesHandles;
-
 
 struct SyncContext {
     proto::ProtoContext* ctx;
