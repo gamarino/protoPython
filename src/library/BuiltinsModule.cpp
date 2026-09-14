@@ -2874,6 +2874,11 @@ static const proto::ProtoObject* py_dir(
                     // who explicitly assign `x = None`, but matches
                     // CPython's dir() for the common case (test_dir).
                     if (!val || val == PROTO_NONE) continue;
+                    // Locals not bound yet hold the unbound sentinel.
+                    {
+                        PythonEnvironment* dirEnv = PythonEnvironment::fromContext(context);
+                        if (dirEnv && val == dirEnv->getUnboundSentinel()) continue;
+                    }
                     const proto::ProtoObject* nm = vnT->getAt(context, static_cast<int>(i));
                     if (!nm || !nm->isString(context)) continue;
                     std::string s; nm->asString(context)->toUTF8String(context, s);

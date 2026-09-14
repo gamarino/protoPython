@@ -4383,6 +4383,10 @@ bool Compiler::compileLambda(LambdaNode* n) {
     int co_flags = CO_NEWLOCALS;
     if (!forceMapped) co_flags |= CO_OPTIMIZED;
     if (!captured.empty()) co_flags |= CO_NESTED;
+    // The call path binds *args / **kwargs, and leaves their slots out of the
+    // locals it marks unbound, only when these flags are set.
+    if (!n->vararg.empty()) co_flags |= CO_VARARGS;
+    if (!n->kwarg.empty()) co_flags |= CO_VARKEYWORDS;
     if (bodyCompiler.isGenerator_) co_flags |= 0x20; // CO_GENERATOR
 
     const proto::ProtoTuple* co_lnotab = bodyCompiler.getLnotab();

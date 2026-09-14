@@ -233,6 +233,13 @@ set_tests_properties(protopy_del_name PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# Fast locals start unbound: reading or deleting one before assignment raises.
+add_test(NAME protopy_unbound_fast_locals
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/unbound_fast_locals.py)
+set_tests_properties(protopy_unbound_fast_locals PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # Class statements accept *bases and **keywords.
 add_test(NAME protopy_class_star_bases
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/class_star_bases.py)

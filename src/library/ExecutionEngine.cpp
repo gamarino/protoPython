@@ -56,6 +56,7 @@ struct FunctionMetaCache {
     const int*               nativeBc;          // co_bytecode_native ByteBuffer data
     uint32_t                 nConsts;           // number of elements in co_consts
     uint32_t                 nNames;            // number of elements in co_names
+    uint32_t                 nVarnames;         // number of elements in co_varnames (parameters, then locals)
     // Followed in memory by flat arrays:
     //   const proto::ProtoObject* nativeConsts[nConsts]
     //   const proto::ProtoObject* nativeNames[nNames]
@@ -277,6 +278,7 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     bool cacheHit = false;
     bool cacheNoInnerFunctions = false;
     bool cacheNoLoadDeref = false;
+    unsigned long nVarnames = 0;
     if (env && env->getFnMetaCacheString()) {
         const proto::ProtoObject* cacheAttr = self->getAttribute(ctx, env->getFnMetaCacheString());
         if (cacheAttr && cacheAttr != PROTO_NONE) {
@@ -290,6 +292,7 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
                 nparams_count          = cache->nparams;
                 kwonly_count           = cache->kwonly;
                 automatic_count        = cache->automatic_count;
+                nVarnames              = cache->nVarnames;
                 isGenerator            = cache->is_generator;
                 co_varnames            = cache->co_varnames;
                 cacheNoInnerFunctions  = cache->no_inner_functions;
@@ -320,6 +323,7 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         const proto::ProtoObject* cvObj = (env && env->getCoVarnamesString())
             ? codeObj->getAttribute(ctx, env->getCoVarnamesString()) : nullptr;
         co_varnames = (cvObj && cvObj->asTuple(ctx)) ? cvObj->asTuple(ctx) : nullptr;
+        nVarnames = co_varnames ? co_varnames->getSize(ctx) : 0;
         const proto::ProtoObject* isGenObj = (env && env->getCoIsGeneratorString())
             ? codeObj->getAttribute(ctx, env->getCoIsGeneratorString()) : nullptr;
         isGenerator = isGenObj && isGenObj->isBoolean(ctx) && isGenObj->asBoolean(ctx);
@@ -408,6 +412,21 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     // Bind parameters
     unsigned int nSlots = calleeCtx->getAutomaticLocalsCount();
     proto::ProtoObject** slots = const_cast<proto::ProtoObject**>(calleeCtx->getAutomaticLocals());
+
+    // Fast locals start unbound, like CPython's NULL slots.  The context
+    // fills every slot with PROTO_NONE, so a local read before assignment
+    // gave None and `del` of it succeeded.  co_varnames lists the parameters
+    // first (positional, keyword-only, *args, **kwargs); they are bound
+    // below, and the remaining names are locals that LOAD_FAST / DELETE_FAST
+    // must see as unbound.
+    if ((co_flags & CO_OPTIMIZED) && slots && co_varnames && env && env->getUnboundSentinel()) {
+        unsigned long nParamSlots = static_cast<unsigned long>(nparams_count + kwonly_count)
+            + ((co_flags & CO_VARARGS) ? 1 : 0) + ((co_flags & CO_VARKEYWORDS) ? 1 : 0);
+        unsigned long nVars = nVarnames;
+        if (nVars > nSlots) nVars = nSlots;
+        for (unsigned long vi = nParamSlots; vi < nVars; ++vi)
+            slots[vi] = const_cast<proto::ProtoObject*>(env->getUnboundSentinel());
+    }
 
     auto bindVar = [&](int idx, const proto::ProtoObject* val) {
         if (get_env_diag()) {
@@ -825,6 +844,7 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
     const proto::ProtoObject** cached_nativeNames  = nullptr;
 
     bool cacheHit = false;
+    unsigned long nVarnames = 0;
     if (env && env->getFnMetaCacheString()) {
         const proto::ProtoObject* cacheAttr = self->getAttribute(ctx, env->getFnMetaCacheString());
         if (cacheAttr && cacheAttr != PROTO_NONE) {
@@ -838,6 +858,7 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
                 nparams_count         = cache->nparams;
                 kwonly_count          = cache->kwonly;
                 automatic_count       = cache->automatic_count;
+                nVarnames             = cache->nVarnames;
                 isGenerator           = cache->is_generator;
                 co_varnames           = cache->co_varnames;
                 cacheNoInnerFunctions = cache->no_inner_functions;
@@ -899,6 +920,14 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
     proto::ProtoObject** slots = const_cast<proto::ProtoObject**>(calleeCtx->getAutomaticLocals());
     for (unsigned long i = 0; i < rawArgCount && i < (unsigned long)nparams_count && i < nSlots; ++i)
         slots[i] = const_cast<proto::ProtoObject*>(rawArgs[i]);
+    // The other co_varnames slots are locals and start unbound (see
+    // runUserFunctionCall); this path only takes plain positional parameters.
+    if (slots && co_varnames && env && env->getUnboundSentinel()) {
+        unsigned long nVars = nVarnames;
+        if (nVars > nSlots) nVars = nSlots;
+        for (unsigned long vi = static_cast<unsigned long>(nparams_count); vi < nVars; ++vi)
+            slots[vi] = const_cast<proto::ProtoObject*>(env->getUnboundSentinel());
+    }
 
     // Frame creation: only when actually needed.
     //
@@ -1282,6 +1311,7 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
         cache->nparams            = nparams_val;
         cache->kwonly             = kwonly_val;
         cache->automatic_count    = automatic_val;
+        cache->nVarnames          = co_varnames_val ? static_cast<uint32_t>(co_varnames_val->getSize(ctx)) : 0;
         cache->is_generator       = is_generator_val;
         cache->no_inner_functions = no_inner_functions_val;
         cache->no_load_deref      = no_load_deref_val;
@@ -2938,8 +2968,12 @@ const proto::ProtoObject* py_generator_send_impl(
         
         const proto::ProtoTuple* co_consts = codeObj->getAttribute(calleeCtx, env->getCoConstsString())->asTuple(calleeCtx);
         const proto::ProtoTuple* co_names = codeObj->getAttribute(calleeCtx, env->getCoNamesString())->asTuple(calleeCtx);
-        
-        result = executeBytecodeRange(calleeCtx, 
+
+        // As in runUserFunctionCall: LOAD_FAST / DELETE_FAST name an unbound
+        // local from the running code object's co_varnames.
+        const proto::ProtoObject* prevCodeObj = PythonEnvironment::getCurrentCodeObject();
+        PythonEnvironment::setCurrentCodeObject(codeObj);
+        result = executeBytecodeRange(calleeCtx,
             co_consts,
             reinterpret_cast<const proto::ProtoObject*>(co_code_tuple)->asTuple(calleeCtx),
             co_names,
@@ -2952,7 +2986,8 @@ const proto::ProtoObject* py_generator_send_impl(
             &blockStack,
             initialTop,
             &finalTop);
-            
+        PythonEnvironment::setCurrentCodeObject(prevCodeObj);
+
         const proto::ProtoList* newLocals = calleeCtx->newList();
         const proto::ProtoObject** updatedSlots = calleeCtx->getAutomaticLocals();
         unsigned int updatedSlotsN = calleeCtx->getAutomaticLocalsCount();
@@ -7822,6 +7857,8 @@ const proto::ProtoObject* executeBytecodeRange(
                                     // each cellvar — a larger restructuring left as a
                                     // follow-up.
                                     const proto::ProtoObject* val = (j < outerNSlots) ? outerSlots[j] : nullptr;
+                                    // An outer local that is not bound yet has no value to capture.
+                                    if (val && env && val == env->getUnboundSentinel()) val = nullptr;
                                     // For CO_OPTIMIZED slots, PROTO_NONE is a legitimate
                                     // bound value (e.g. `boundary=None` parameter).  Accept.
                                     if (!val && frame->hasOwnAttribute(ctx, vname) == PROTO_TRUE) {
