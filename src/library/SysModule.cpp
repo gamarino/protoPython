@@ -1,5 +1,6 @@
 #include <protoPython/SysModule.h>
 #include <protoPython/PythonEnvironment.h>
+#include <atomic>
 #include <iostream>
 #include <memory>
 #if defined(__linux__)
@@ -302,6 +303,55 @@ static const proto::ProtoObject* sys_setrecursionlimit(
     return PROTO_NONE;
 }
 
+// sys.setswitchinterval / sys.getswitchinterval. CPython uses the value as
+// the GIL switch interval. protoPython has no GIL and its threads run in
+// parallel, so the value has no scheduling effect; it is stored process-wide
+// and validated exactly like CPython so code (and tests) that tune it keep
+// working. Default 0.005 s, as in CPython.
+static std::atomic<double> s_switchInterval{0.005};
+
+static const proto::ProtoObject* sys_setswitchinterval(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self; (void)parentLink; (void)keywordParameters;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!positionalParameters || positionalParameters->getSize(context) != 1) {
+        if (env) env->raiseTypeError(context, "setswitchinterval() takes exactly one argument");
+        return nullptr;
+    }
+    const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
+    double interval;
+    if (arg->isDouble(context)) {
+        interval = arg->asDouble(context);
+    } else if (arg == PROTO_TRUE || arg == PROTO_FALSE) {
+        interval = (arg == PROTO_TRUE) ? 1.0 : 0.0;   // float(True) as CPython does
+    } else if (arg->isInteger(context)) {
+        interval = static_cast<double>(arg->asLong(context));
+    } else {
+        if (env) env->raiseTypeError(context, "must be real number");
+        return nullptr;
+    }
+    if (!(interval > 0.0)) {
+        if (env) env->raiseValueError(context, PythonEnvironment::getInternedString(context, "switch interval must be strictly positive")->asObject(context));
+        return nullptr;
+    }
+    s_switchInterval.store(interval, std::memory_order_relaxed);
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* sys_getswitchinterval(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
+    return context->fromDouble(s_switchInterval.load(std::memory_order_relaxed));
+}
+
 static const proto::ProtoObject* sys_intern(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -531,6 +581,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_getframe"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getframe));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "setrecursionlimit"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_setrecursionlimit));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getrecursionlimit"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getrecursionlimit));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "setswitchinterval"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_setswitchinterval));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getswitchinterval"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getswitchinterval));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getfilesystemencoding"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getfilesystemencoding));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getfilesystemencodeerrors"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getfilesystemencodeerrors));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_get_cpu_count_config"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_get_cpu_count_config));
