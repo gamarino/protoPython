@@ -15245,10 +15245,14 @@ static const proto::ProtoObject* py_dict_clear(
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
+    // Unbound form dict.clear(d): the receiver is the first argument (self is
+    // null there, which crashed).
+    const proto::ProtoObject* receiver = dict_self_or_arg(context, self, positionalParameters);
+    if (!receiver) return PROTO_NONE;
     for (;;) {
-        const proto::ProtoObject* keysObj = self->getOwnAttributeDirect(context, keysName);
-        const proto::ProtoObject* dataObj = self->getOwnAttributeDirect(context, dataName);
-        if (publishDictState(context, self, dataName, keysName, dataObj, keysObj,
+        const proto::ProtoObject* keysObj = receiver->getOwnAttributeDirect(context, keysName);
+        const proto::ProtoObject* dataObj = receiver->getOwnAttributeDirect(context, dataName);
+        if (publishDictState(context, receiver, dataName, keysName, dataObj, keysObj,
                              context->newSparseList()->asObject(context),
                              context->newList()->asObject(context))) {
             return PROTO_NONE;
@@ -15347,8 +15351,14 @@ static const proto::ProtoObject* py_dict_copy(
     const proto::ProtoList* keys = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
     const proto::ProtoSparseList* dict = dataObj && dataObj->asSparseList(context) ? dataObj->asSparseList(context) : context->newSparseList();
 
-    const proto::ProtoList* parents = receiver->getParents(context);
-    const proto::ProtoObject* parent = parents && parents->getSize(context) > 0 ? parents->getAt(context, 0) : nullptr;
+    // dict.copy() returns a plain dict, for subclass instances too (as in
+    // CPython; OrderedDict and defaultdict define their own copy).
+    PythonEnvironment* envCopy = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* parent = envCopy ? envCopy->getDictPrototype() : nullptr;
+    if (!parent) {
+        const proto::ProtoList* parents = receiver->getParents(context);
+        parent = parents && parents->getSize(context) > 0 ? parents->getAt(context, 0) : nullptr;
+    }
     // Dict copies must be mutable so that subsequent in-place mutations
     // (`d[k] = v`, `del d[k]`, `d.update(other)`, …) persist on the same
     // object handle.  Immutable copies caused pprint's `context.copy()`
@@ -15644,16 +15654,18 @@ static const proto::ProtoObject* py_dict_popitem(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     (void)parentLink;
-    (void)positionalParameters;
     (void)keywordParameters;
     const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
+    // Unbound form dict.popitem(d): the receiver is the first argument.
+    const proto::ProtoObject* receiver = dict_self_or_arg(context, self, positionalParameters);
+    if (!receiver) return PROTO_NONE;
     // Retry loop: the last entry is chosen from, and removed out of, one
     // snapshot installed with publishDictState, so two threads never pop the
     // same entry.
     for (;;) {
-        const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
-        const proto::ProtoObject* dataObj = self->getAttribute(context, dataName);
+        const proto::ProtoObject* keysObj = receiver->getAttribute(context, keysName);
+        const proto::ProtoObject* dataObj = receiver->getAttribute(context, dataName);
         const proto::ProtoList* keys = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
         const proto::ProtoSparseList* dict = dataObj && dataObj->asSparseList(context) ? dataObj->asSparseList(context) : nullptr;
         if (!dict || keys->getSize(context) == 0) {
@@ -15669,7 +15681,7 @@ static const proto::ProtoObject* py_dict_popitem(
         const proto::ProtoObject* value = dict->getAt(context, hash);
         const proto::ProtoSparseList* newDict = dict->removeAt(context, hash);
         const proto::ProtoList* newKeys = keys->removeAt(context, static_cast<int>(lastIdx));
-        if (!publishDictState(context, self, dataName, keysName, dataObj, keysObj,
+        if (!publishDictState(context, receiver, dataName, keysName, dataObj, keysObj,
                               newDict->asObject(context), newKeys->asObject(context))) {
             continue;
         }
