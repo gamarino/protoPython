@@ -4999,12 +4999,14 @@ static const proto::ProtoObject* py_sorted(
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
     if (!positionalParameters || positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* iterable = positionalParameters->getAt(context, 0);
-    const proto::ProtoObject* iterMethod = iterable->getAttribute(context, env ? env->getIterString() : PythonEnvironment::getInternedString(context, "__iter__"));
-    if (!iterMethod || !iterMethod->asMethod(context)) return PROTO_NONE;
-    const proto::ProtoObject* it = iterMethod->asMethod(context)(context, iterable, nullptr, env ? env->getEmptyList() : context->newList(), nullptr);
-    if (!it) return PROTO_NONE;
-    const proto::ProtoObject* nextMethod = it->getAttribute(context, env ? env->getNextString() : PythonEnvironment::getInternedString(context, "__next__"));
-    if (!nextMethod || !nextMethod->asMethod(context)) return PROTO_NONE;
+    if (!env) return PROTO_NONE;
+    // env->iter / env->next resolve __iter__ / __next__ through the type, so
+    // instances of builtin subclasses (a set subclass's chain does not reach
+    // set.__iter__) and Python-level iterators work; looking __iter__ up on
+    // the instance and requiring a native method returned None for them.
+    const proto::ProtoObject* it = env->iter(iterable);
+    if (!it) return env->hasPendingException() ? nullptr : PROTO_NONE;
+    PythonEnvironment::TransientPin pinIt(env, it);
 
     // Resolve key / reverse from kwargs.  CPython accepts both as
     // keyword-only (no positional fallback after iterable).  Without
@@ -5068,7 +5070,7 @@ static const proto::ProtoObject* py_sorted(
     // still work via the early-exit; we just no longer crash on the
     // exception form.
     for (;;) {
-        const proto::ProtoObject* val = nextMethod->asMethod(context)(context, it, nullptr, context->newList(), nullptr);
+        const proto::ProtoObject* val = env->next(it);
         if (!val) {
             if (env && env->handleExhaustion(context)) break;
             // Some other pending exception — propagate by stopping
