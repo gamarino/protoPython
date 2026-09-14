@@ -4018,33 +4018,76 @@ static const proto::ProtoObject* integralDoubleToInt(proto::ProtoContext* contex
     return context->fromString(digits, 10);
 }
 
-static unsigned long dictKeyHash(proto::ProtoContext* context, const proto::ProtoObject* key) {
-    if (!key) return 0;
-    // Python makes 1 == 1.0 == True (and 2**70 == 2.0**70) the same key,
-    // while protoCore hashes a bool, a double and an int by their own
-    // representation. Map bool and integral floats to the int they equal and
-    // hash that.
-    if (key == PROTO_TRUE) return context->fromInteger(1)->getHash(context);
-    if (key == PROTO_FALSE) return context->fromInteger(0)->getHash(context);
+static const proto::ProtoObject* py_int_hash(proto::ProtoContext*, const proto::ProtoObject*,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*);
+static const proto::ProtoObject* py_float_hash(proto::ProtoContext*, const proto::ProtoObject*,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*);
+static const proto::ProtoObject* py_str_hash(proto::ProtoContext*, const proto::ProtoObject*,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*);
+static const proto::ProtoObject* py_tuple_hash(proto::ProtoContext*, const proto::ProtoObject*,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*);
+static const proto::ProtoSet* set_underlying(proto::ProtoContext* context, const proto::ProtoObject* self);
+
+static bool keyHash(proto::ProtoContext* context, const proto::ProtoObject* key, bool raiseUnhashable, unsigned long& out);
+
+// hash((1, 2)) == hash((1.0, 2)): the elements are keyed like dict keys and
+// mixed the way ProtoTupleImplementation::getHash mixes element hashes, so a
+// tuple of ints and strings keeps the hash protoCore gives it.
+static bool tupleKeyHash(proto::ProtoContext* context, const proto::ProtoTuple* t, bool raiseUnhashable, unsigned long& out) {
+    const unsigned long size = t->getSize(context);
+    unsigned long h = 0x345678UL ^ (size * 0xa6b3f7UL + 1UL);
+    for (unsigned long i = 0; i < size; ++i) {
+        const proto::ProtoObject* e = t->getAt(context, static_cast<int>(i));
+        unsigned long eh = 0;
+        if (e && !keyHash(context, e, raiseUnhashable, eh)) return false;
+        h = (h * 1000003UL) ^ eh;
+    }
+    out = h;
+    return true;
+}
+
+// A frozenset's hash, from the hashes its elements are stored under and
+// independent of their order.
+static unsigned long frozensetKeyHash(proto::ProtoContext* context, const proto::ProtoSet* s) {
+    unsigned long h = 0x345678UL ^ (s->getSize(context) * 1927868237UL);
+    for (const proto::ProtoSetIterator* it = s->getIterator(context); it && it->hasNext(context); it = it->advance(context)) {
+        const unsigned long eh = it->nextHash(context);
+        h ^= (eh ^ (eh << 16) ^ 89869747UL) * 3644798167UL;
+    }
+    return h;
+}
+
+// The hash a dict or a set stores `key` under. Python makes 1 == 1.0 == True
+// (and 2**70 == 2.0**70) the same key, while protoCore hashes a bool, a double
+// and an int by their own representation: bool and integral floats are keyed
+// as the int they equal, tuples by their elements, and a class's own __hash__
+// is honoured. An unhashable key (type(key).__hash__ is None) or a raising
+// __hash__ makes it return false with the exception pending; with
+// raiseUnhashable false (dicts) such a key falls back to its protoCore hash.
+static bool keyHash(proto::ProtoContext* context, const proto::ProtoObject* key, bool raiseUnhashable, unsigned long& out) {
+    out = 0;
+    if (!key) return true;
+    if (key == PROTO_TRUE) { out = context->fromInteger(1)->getHash(context); return true; }
+    if (key == PROTO_FALSE) { out = context->fromInteger(0)->getHash(context); return true; }
     if (key->isFloat(context)) {
         const double v = key->asDouble(context);
         if (std::isfinite(v) && v == std::trunc(v)) {
-            return integralDoubleToInt(context, v)->getHash(context);
+            out = integralDoubleToInt(context, v)->getHash(context);
+            return true;
         }
     }
-    // For str-subclass / int-subclass / similar wrappers with a user
-    // __hash__ override, dispatch through the user dunder so dict
-    // bucketing matches the override.  cistr (lower-case canonical
-    // hash) is the canonical example: without this, `d[cistr('TWO')]`
-    // and `d[cistr('two')]` land in different buckets even though
-    // they are __eq__ and produce the same __hash__.
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (env) {
         const proto::ProtoObject* cls = env->getType(context, key);
-        // Skip the dispatch when the type is one of the built-in
-        // primitives — their stored __hash__ is the value-based one,
-        // and falling back to protoCore's primitive hash matches it
-        // bit-for-bit while avoiding the descriptor round-trip.
+        if (cls == env->getTuplePrototype()) {
+            const proto::ProtoTuple* t = key->asTuple(context);
+            if (!t) {
+                const proto::ProtoObject* data = key->getAttribute(context, env->getDataString());
+                t = data ? data->asTuple(context) : nullptr;
+            }
+            if (t) return tupleKeyHash(context, t, raiseUnhashable, out);
+        }
+        // The other built-in primitives keep protoCore's value-based hash.
         bool isPrimitive = (cls == env->getStrPrototype()
             || cls == env->getIntPrototype()
             || cls == env->getFloatPrototype()
@@ -4053,17 +4096,29 @@ static unsigned long dictKeyHash(proto::ProtoContext* context, const proto::Prot
             || cls == env->getTuplePrototype()
             || cls == env->getNonePrototype());
         if (!isPrimitive && cls && cls != PROTO_NONE) {
-            const proto::ProtoString* hashS = env->getHashString();
-            // Only consult __hash__ if the type owns one (or inherits
-            // a non-default one).  hasOwnAttribute keeps the cost
-            // bounded to a single AVL lookup per call.
-            const proto::ProtoObject* hM = env->getAttribute(context, cls, hashS, false);
+            // For str-subclass / int-subclass / similar wrappers with a user
+            // __hash__ override, dispatch through the user dunder so dict
+            // bucketing matches the override.  cistr (lower-case canonical
+            // hash) is the canonical example.
+            const proto::ProtoObject* hM = env->getAttribute(context, cls, env->getHashString(), false);
+            if (hM == PROTO_NONE && raiseUnhashable) {
+                std::string typeName = "object";
+                const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
+                if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, typeName);
+                env->raiseTypeError(context, "unhashable type: '" + typeName + "'");
+                return false;
+            }
             if (hM && hM != PROTO_NONE) {
+                const proto::ProtoMethod m = hM->asMethod(context);
+                if (m == py_int_hash || m == py_float_hash || m == py_str_hash || m == py_tuple_hash) {
+                    // A subclass of int, float, str or tuple that keeps the
+                    // built-in __hash__ is keyed by its value: MyInt(3) finds 3.
+                    const proto::ProtoObject* data = key->getAttribute(context, env->getDataString());
+                    if (data && data != key) return keyHash(context, data, raiseUnhashable, out);
+                }
                 const proto::ProtoObject* res = nullptr;
-                if (hM->asMethod(context)) {
-                    res = hM->asMethod(context)(context,
-                        const_cast<proto::ProtoObject*>(key), nullptr,
-                        env->getEmptyList(), nullptr);
+                if (m) {
+                    res = m(context, key, nullptr, env->getEmptyList(), nullptr);
                 } else {
                     const proto::ProtoString* codeS = env->getCodeString();
                     if (codeS && hM->hasOwnAttribute(context, codeS) == PROTO_TRUE) {
@@ -4072,17 +4127,54 @@ static unsigned long dictKeyHash(proto::ProtoContext* context, const proto::Prot
                     }
                 }
                 if (res && res->isInteger(context)) {
-                    long long v = res->asLong(context);
-                    return static_cast<unsigned long>(v);
+                    try {
+                        out = static_cast<unsigned long>(res->asLong(context));
+                    } catch (const std::exception&) {
+                        out = res->getHash(context);
+                    }
+                    return true;
                 }
+                if (raiseUnhashable && env->hasPendingException()) return false;
             }
         }
     }
     if (key->isString(context)) {
         const proto::ProtoString* s = key->asString(context);
-        if (s) return s->getHash(context);
+        if (s) { out = s->getHash(context); return true; }
     }
-    return key->getHash(context);
+    out = key->getHash(context);
+    return true;
+}
+
+static unsigned long dictKeyHash(proto::ProtoContext* context, const proto::ProtoObject* key) {
+    unsigned long h = 0;
+    keyHash(context, key, false, h);
+    return h;
+}
+
+bool PythonEnvironment::hashKey(proto::ProtoContext* ctx, const proto::ProtoObject* value, unsigned long& hash) {
+    return keyHash(ctx, value, true, hash);
+}
+
+const proto::ProtoSet* PythonEnvironment::setAdd(proto::ProtoContext* ctx, const proto::ProtoSet* s, const proto::ProtoObject* value) {
+    unsigned long h = 0;
+    if (!keyHash(ctx, value, true, h)) return nullptr;
+    return s->hasHash(ctx, h) ? s : s->addWithHash(ctx, h, value);
+}
+
+// set.__contains__, remove and discard look a set up as the equal frozenset,
+// as CPython does.
+static bool setLookupHash(proto::ProtoContext* context, const proto::ProtoObject* value, unsigned long& out) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (env && value && !value->isInteger(context) && !value->isString(context)) {
+        const proto::ProtoObject* cls = env->getType(context, value);
+        const proto::ProtoSet* data = cls ? set_underlying(context, value) : nullptr;
+        if (data && env->getAttribute(context, cls, env->getHashString(), false) == PROTO_NONE) {
+            out = frozensetKeyHash(context, data);
+            return true;
+        }
+    }
+    return keyHash(context, value, true, out);
 }
 
 unsigned long pyDictKeyHash(proto::ProtoContext* context, const proto::ProtoObject* key) {
@@ -6262,7 +6354,8 @@ static const proto::ProtoObject* py_set_call(
                 if (env && env->hasPendingException()) return nullptr;
                 break;
             }
-            s = s->add(context, item);
+            s = PythonEnvironment::setAdd(context, s, item);
+            if (!s) return nullptr;
         }
     }
 
@@ -7129,7 +7222,9 @@ static const proto::ProtoObject* py_set_contains(
         value = positionalParameters->getAt(context, 0);
     }
     if (!s || !value) return PROTO_FALSE;
-    return s->has(context, value);
+    unsigned long h = 0;
+    if (!setLookupHash(context, value, h)) return nullptr;
+    return s->hasHash(context, h) ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_set_bool(
@@ -7186,12 +7281,15 @@ static const proto::ProtoObject* py_set_add(
     if (!receiver) return PROTO_NONE;
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
     const proto::ProtoObject* item = positionalParameters->getAt(context, posOff);
+    unsigned long h = 0;
+    if (!PythonEnvironment::hashKey(context, item, h)) return nullptr;
     // Retry loop: set payloads use the same compare-and-swap publish as
     // lists (see publishListData).
     for (;;) {
         const proto::ProtoObject* data = receiver->proto::ProtoObject::getAttribute(context, dataName);
         const proto::ProtoSet* s = data && data->asSet(context) ? data->asSet(context) : context->newSet();
-        const proto::ProtoSet* newSet = s->add(context, item);
+        if (data && s->hasHash(context, h)) return PROTO_NONE;
+        const proto::ProtoSet* newSet = s->addWithHash(context, h, item);
         if (publishListData(context, receiver, dataName, data, newSet->asObject(context))) return PROTO_NONE;
     }
 }
@@ -7208,19 +7306,20 @@ static const proto::ProtoObject* py_set_remove(
     if (positionalParameters->getSize(context) < static_cast<unsigned long>(1 + posOff)) return PROTO_NONE;
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
     const proto::ProtoObject* value = positionalParameters->getAt(context, posOff);
+    unsigned long h = 0;
+    if (!setLookupHash(context, value, h)) return nullptr;
     for (;;) {
         const proto::ProtoObject* data = receiver ? receiver->getAttribute(context, dataName) : nullptr;
         const proto::ProtoSet* s = data && data->asSet(context) ? data->asSet(context) : context->newSet();
         // CPython: `s.remove(x)` raises KeyError when x is not in s.
-        // discard() is the silent variant.  Note: ProtoSet::has returns
-        // a ProtoObject*, not bool — compare to PROTO_TRUE.
-        if (s->has(context, value) != PROTO_TRUE) {
+        // discard() is the silent variant.
+        if (!s->hasHash(context, h)) {
             PythonEnvironment* env = PythonEnvironment::fromContext(context);
             if (env) env->raiseKeyError(context, value);
             return nullptr;
         }
         if (!receiver) return PROTO_NONE;
-        const proto::ProtoSet* newSet = s->remove(context, value);
+        const proto::ProtoSet* newSet = s->removeHash(context, h);
         if (publishListData(context, receiver, dataName, data, newSet->asObject(context))) return PROTO_NONE;
     }
 }
@@ -7285,12 +7384,14 @@ static const proto::ProtoObject* py_set_discard(
     if (!receiver) return PROTO_NONE;
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
     const proto::ProtoObject* elem = positionalParameters->getAt(context, posOff);
+    unsigned long h = 0;
+    if (!setLookupHash(context, elem, h)) return nullptr;
     for (;;) {
         const proto::ProtoObject* d = receiver->getAttribute(context, dataName);
         const proto::ProtoSet* s = d ? d->asSet(context) : nullptr;
         if (!s) return PROTO_NONE;
-        if (s->has(context, elem) != PROTO_TRUE) return PROTO_NONE;
-        const proto::ProtoSet* newSet = s->remove(context, elem);
+        if (!s->hasHash(context, h)) return PROTO_NONE;
+        const proto::ProtoSet* newSet = s->removeHash(context, h);
         if (publishListData(context, receiver, dataName, d, newSet->asObject(context))) return PROTO_NONE;
     }
 }
@@ -7327,19 +7428,127 @@ static const proto::ProtoObject* py_set_clear(
     return PROTO_NONE;
 }
 
-static void add_iterable_to_set(proto::ProtoContext* context, const proto::ProtoObject* iterable, proto::ProtoSet*& acc) {
-    if (!iterable || iterable == PROTO_NONE) return;
+// Adds every element of `iterable` to `acc`. False, with the exception
+// pending, when iterating raises or an element is unhashable. The elements of
+// a set are taken with the hashes they are stored under.
+static bool add_iterable_to_set(proto::ProtoContext* context, const proto::ProtoObject* iterable, const proto::ProtoSet*& acc) {
+    if (!iterable || iterable == PROTO_NONE) return true;
+    if (const proto::ProtoSet* other = set_underlying(context, iterable)) {
+        for (const proto::ProtoSetIterator* it = other->getIterator(context); it && it->hasNext(context); it = it->advance(context)) {
+            const unsigned long h = it->nextHash(context);
+            if (!acc->hasHash(context, h)) acc = acc->addWithHash(context, h, it->next(context));
+        }
+        return true;
+    }
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* iterator = env ? env->iter(iterable) : nullptr;
-    if (!iterator) return;
+    if (!iterator) return !(env && env->hasPendingException());
+    PythonEnvironment::TransientPin pinIt(env, iterator);
     for (;;) {
         const proto::ProtoObject* val = env->next(iterator);
-        if (!val) {
-            if (env && env->handleExhaustion(context)) break;
-            return;
-        }
-        acc = const_cast<proto::ProtoSet*>(acc->add(context, val));
+        if (!val) return env->handleExhaustion(context);
+        const proto::ProtoSet* next = PythonEnvironment::setAdd(context, acc, val);
+        if (!next) return false;
+        acc = next;
     }
+}
+
+// The elements of `iterable` as a set: its own payload when it is a set.
+// nullptr with the exception pending on failure.
+static const proto::ProtoSet* set_from_iterable(proto::ProtoContext* context, const proto::ProtoObject* iterable) {
+    if (const proto::ProtoSet* s = set_underlying(context, iterable)) return s;
+    const proto::ProtoSet* s = context->newSet();
+    return add_iterable_to_set(context, iterable, s) ? s : nullptr;
+}
+
+static bool set_is_subset(proto::ProtoContext* context, const proto::ProtoSet* a, const proto::ProtoSet* b) {
+    if (a->getSize(context) > b->getSize(context)) return false;
+    for (const proto::ProtoSetIterator* it = a->getIterator(context); it && it->hasNext(context); it = it->advance(context)) {
+        if (!b->hasHash(context, it->nextHash(context))) return false;
+    }
+    return true;
+}
+
+static bool set_shares_element(proto::ProtoContext* context, const proto::ProtoSet* a, const proto::ProtoSet* b) {
+    if (a->getSize(context) > b->getSize(context)) { const proto::ProtoSet* t = a; a = b; b = t; }
+    for (const proto::ProtoSetIterator* it = a->getIterator(context); it && it->hasNext(context); it = it->advance(context)) {
+        if (b->hasHash(context, it->nextHash(context))) return true;
+    }
+    return false;
+}
+
+// The elements of `s` that are in every set of `others` (a list of sets).
+static const proto::ProtoSet* set_intersect(proto::ProtoContext* context, const proto::ProtoSet* s, const proto::ProtoList* others) {
+    const unsigned long n = others->getSize(context);
+    const proto::ProtoSet* acc = context->newSet();
+    for (const proto::ProtoSetIterator* it = s->getIterator(context); it && it->hasNext(context); it = it->advance(context)) {
+        const unsigned long h = it->nextHash(context);
+        bool inAll = true;
+        for (unsigned long i = 0; i < n && inAll; ++i) {
+            inAll = others->getAt(context, static_cast<int>(i))->asSet(context)->hasHash(context, h);
+        }
+        if (inAll) acc = acc->addWithHash(context, h, it->next(context));
+    }
+    return acc;
+}
+
+// `s` without the elements of `remove`.
+static const proto::ProtoSet* set_without(proto::ProtoContext* context, const proto::ProtoSet* s, const proto::ProtoSet* remove) {
+    if (remove->getSize(context) <= s->getSize(context)) {
+        const proto::ProtoSet* acc = s;
+        for (const proto::ProtoSetIterator* it = remove->getIterator(context); it && it->hasNext(context); it = it->advance(context)) {
+            acc = acc->removeHash(context, it->nextHash(context));
+        }
+        return acc;
+    }
+    const proto::ProtoSet* acc = context->newSet();
+    for (const proto::ProtoSetIterator* it = s->getIterator(context); it && it->hasNext(context); it = it->advance(context)) {
+        const unsigned long h = it->nextHash(context);
+        if (!remove->hasHash(context, h)) acc = acc->addWithHash(context, h, it->next(context));
+    }
+    return acc;
+}
+
+// The elements in exactly one of `a` and `b`.
+static const proto::ProtoSet* set_symmetric(proto::ProtoContext* context, const proto::ProtoSet* a, const proto::ProtoSet* b) {
+    const proto::ProtoSet* acc = a;
+    for (const proto::ProtoSetIterator* it = b->getIterator(context); it && it->hasNext(context); it = it->advance(context)) {
+        const unsigned long h = it->nextHash(context);
+        acc = a->hasHash(context, h) ? acc->removeHash(context, h) : acc->addWithHash(context, h, it->next(context));
+    }
+    return acc;
+}
+
+// The result of a set operation on `receiver`: a frozenset when the receiver
+// is one (as in CPython), a set otherwise.
+static const proto::ProtoObject* new_set_like(proto::ProtoContext* context, const proto::ProtoObject* receiver, const proto::ProtoSet* data) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    const proto::ProtoObject* frozen = env->getFrozensetPrototype();
+    const proto::ProtoObject* cls = receiver ? env->getType(context, receiver) : nullptr;
+    bool isFrozen = frozen && cls == frozen;
+    if (!isFrozen && frozen && cls && cls != env->getSetPrototype()) {
+        const proto::ProtoObject* mroAttr = env->getAttribute(context, cls, env->getMroString(), false);
+        const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
+        for (unsigned long i = 0; mroT && i < mroT->getSize(context) && !isFrozen; ++i) {
+            isFrozen = mroT->getAt(context, static_cast<int>(i)) == frozen;
+        }
+    }
+    if (isFrozen) {
+        // Same layout as py_frozenset_call.
+        proto::ProtoObject* fs = const_cast<proto::ProtoObject*>(context->newObject(true));
+        fs = const_cast<proto::ProtoObject*>(fs->addParent(context, frozen));
+        fs = const_cast<proto::ProtoObject*>(fs->setAttribute(context, env->getClassString(), frozen));
+        fs = const_cast<proto::ProtoObject*>(fs->setAttribute(context, env->getDataString(), data->asObject(context)));
+        fs = const_cast<proto::ProtoObject*>(fs->setAttribute(context, PythonEnvironment::getInternedString(context, "__is_python_class__"), PROTO_TRUE));
+        return fs;
+    }
+    const proto::ProtoObject* parent = env->getSetPrototype();
+    if (!parent) return PROTO_NONE;
+    proto::ProtoObject* result = const_cast<proto::ProtoObject*>(parent->newChild(context, true));
+    result = const_cast<proto::ProtoObject*>(result->setAttribute(context, env->getClassString(), parent));
+    result = const_cast<proto::ProtoObject*>(result->setAttribute(context, env->getDataString(), data->asObject(context)));
+    return result;
 }
 
 static const proto::ProtoObject* py_set_union(
@@ -7361,25 +7570,11 @@ static const proto::ProtoObject* py_set_union(
         }
         posArgs = shifted;
     }
-    proto::ProtoSet* acc = const_cast<proto::ProtoSet*>(context->newSet());
-    const proto::ProtoSetIterator* it = s->getIterator(context);
-    if (it) {
-        while (it && it->hasNext(context)) {
-            acc = const_cast<proto::ProtoSet*>(acc->add(context, it->next(context)));
-            it = it->advance(context);
-        }
-    }
+    const proto::ProtoSet* acc = s;
     for (unsigned long i = 0; i < posArgs->getSize(context); ++i) {
-        add_iterable_to_set(context, posArgs->getAt(context, static_cast<int>(i)), acc);
+        if (!add_iterable_to_set(context, posArgs->getAt(context, static_cast<int>(i)), acc)) return nullptr;
     }
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    if (!env) return PROTO_NONE;
-    const proto::ProtoObject* parent = env->getSetPrototype();
-    if (!parent) return PROTO_NONE;
-    proto::ProtoObject* result = const_cast<proto::ProtoObject*>(parent->newChild(context, true));
-    result = const_cast<proto::ProtoObject*>(result->setAttribute(context, env->getClassString(), parent));
-    result = const_cast<proto::ProtoObject*>(result->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"), acc->asObject(context)));
-    return result;
+    return new_set_like(context, receiver, acc);
 }
 
 // set.update(*others): add elements from each iterable to self in place.
@@ -7393,19 +7588,15 @@ static const proto::ProtoObject* py_set_update(
     // Iterating the arguments runs Python code and cannot be repeated, so
     // the incoming elements are collected once; only the merge into the
     // current payload is retried.
-    proto::ProtoSet* incoming = const_cast<proto::ProtoSet*>(context->newSet());
+    const proto::ProtoSet* incoming = context->newSet();
     for (unsigned long i = posOff; i < posArgs->getSize(context); ++i) {
-        add_iterable_to_set(context, posArgs->getAt(context, static_cast<int>(i)), incoming);
+        if (!add_iterable_to_set(context, posArgs->getAt(context, static_cast<int>(i)), incoming)) return nullptr;
     }
     for (;;) {
         const proto::ProtoObject* d = receiver->getAttribute(context, dn);
         const proto::ProtoSet* s = d && d->asSet(context) ? d->asSet(context) : context->newSet();
         const proto::ProtoSet* acc = s;
-        const proto::ProtoSetIterator* it = incoming->getIterator(context);
-        while (it && it->hasNext(context)) {
-            acc = acc->add(context, it->next(context));
-            it = it->advance(context);
-        }
+        add_iterable_to_set(context, incoming->asObject(context), acc);
         if (publishListData(context, receiver, dn, d, acc->asObject(context))) return PROTO_NONE;
     }
 }
@@ -7422,16 +7613,9 @@ static const proto::ProtoObject* py_set_isdisjoint(
     const proto::ProtoSet* s = d && d->asSet(context) ? d->asSet(context) : nullptr;
     if (!s || posArgs->getSize(context) <= static_cast<unsigned long>(posOff)) return PROTO_TRUE;
     // Walk the other iterable; return False on the first element in s.
-    const proto::ProtoObject* other = posArgs->getAt(context, posOff);
-    proto::ProtoSet* otherSet = const_cast<proto::ProtoSet*>(context->newSet());
-    add_iterable_to_set(context, other, otherSet);
-    const proto::ProtoSetIterator* it = otherSet->getIterator(context);
-    while (it && it->hasNext(context)) {
-        const proto::ProtoObject* v = it->next(context);
-        if (s->has(context, v) == PROTO_TRUE) return PROTO_FALSE;
-        it = it->advance(context);
-    }
-    return PROTO_TRUE;
+    const proto::ProtoSet* otherSet = set_from_iterable(context, posArgs->getAt(context, posOff));
+    if (!otherSet) return nullptr;
+    return set_shares_element(context, s, otherSet) ? PROTO_FALSE : PROTO_TRUE;
 }
 
 // set.intersection_update / difference_update / symmetric_difference_update:
@@ -7448,35 +7632,14 @@ static const proto::ProtoObject* py_set_intersection_update(
     // is retried.
     const proto::ProtoList* others = context->newList();
     for (unsigned long i = posOff; i < posArgs->getSize(context); ++i) {
-        const proto::ProtoObject* other = posArgs->getAt(context, static_cast<int>(i));
-        const proto::ProtoSet* os = other->asSet(context);
-        if (!os) {
-            const proto::ProtoObject* od = other->getAttribute(context, dn);
-            os = od ? od->asSet(context) : nullptr;
-        }
-        if (!os) {
-            proto::ProtoSet* tmp = const_cast<proto::ProtoSet*>(context->newSet());
-            add_iterable_to_set(context, other, tmp);
-            os = tmp;
-        }
+        const proto::ProtoSet* os = set_from_iterable(context, posArgs->getAt(context, static_cast<int>(i)));
+        if (!os) return nullptr;
         others = others->appendLast(context, os->asObject(context));
     }
-    const unsigned long nOthers = others->getSize(context);
     for (;;) {
         const proto::ProtoObject* d = receiver->getAttribute(context, dn);
         const proto::ProtoSet* s = d && d->asSet(context) ? d->asSet(context) : context->newSet();
-        const proto::ProtoSet* acc = context->newSet();
-        const proto::ProtoSetIterator* it = s->getIterator(context);
-        while (it && it->hasNext(context)) {
-            const proto::ProtoObject* v = it->next(context);
-            bool inAll = true;
-            for (unsigned long i = 0; i < nOthers && inAll; ++i) {
-                const proto::ProtoSet* os = others->getAt(context, static_cast<int>(i))->asSet(context);
-                if (os->has(context, v) != PROTO_TRUE) inAll = false;
-            }
-            if (inAll) acc = acc->add(context, v);
-            it = it->advance(context);
-        }
+        const proto::ProtoSet* acc = set_intersect(context, s, others);
         if (publishListData(context, receiver, dn, d, acc->asObject(context))) return PROTO_NONE;
     }
 }
@@ -7488,22 +7651,14 @@ static const proto::ProtoObject* py_set_difference_update(
     const proto::ProtoObject* receiver = set_self_or_arg(context, self, posArgs, &posOff);
     if (!receiver) return PROTO_NONE;
     const proto::ProtoString* dn = PythonEnvironment::getInternalString(context, "__data__");
-    proto::ProtoSet* removeSet = const_cast<proto::ProtoSet*>(context->newSet());
+    const proto::ProtoSet* removeSet = context->newSet();
     for (unsigned long i = posOff; i < posArgs->getSize(context); ++i) {
-        add_iterable_to_set(context, posArgs->getAt(context, static_cast<int>(i)), removeSet);
+        if (!add_iterable_to_set(context, posArgs->getAt(context, static_cast<int>(i)), removeSet)) return nullptr;
     }
     for (;;) {
         const proto::ProtoObject* d = receiver->getAttribute(context, dn);
         const proto::ProtoSet* s = d && d->asSet(context) ? d->asSet(context) : context->newSet();
-        const proto::ProtoSet* acc = context->newSet();
-        const proto::ProtoSetIterator* it = s->getIterator(context);
-        while (it && it->hasNext(context)) {
-            const proto::ProtoObject* v = it->next(context);
-            if (removeSet->has(context, v) != PROTO_TRUE) {
-                acc = acc->add(context, v);
-            }
-            it = it->advance(context);
-        }
+        const proto::ProtoSet* acc = set_without(context, s, removeSet);
         if (publishListData(context, receiver, dn, d, acc->asObject(context))) return PROTO_NONE;
     }
 }
@@ -7516,30 +7671,12 @@ static const proto::ProtoObject* py_set_symmetric_difference_update(
     if (!receiver) return PROTO_NONE;
     const proto::ProtoString* dn = PythonEnvironment::getInternalString(context, "__data__");
     if (posArgs->getSize(context) <= static_cast<unsigned long>(posOff)) return PROTO_NONE;
-    proto::ProtoSet* other = const_cast<proto::ProtoSet*>(context->newSet());
-    add_iterable_to_set(context, posArgs->getAt(context, posOff), other);
+    const proto::ProtoSet* other = set_from_iterable(context, posArgs->getAt(context, posOff));
+    if (!other) return nullptr;
     for (;;) {
         const proto::ProtoObject* d = receiver->getAttribute(context, dn);
         const proto::ProtoSet* s = d && d->asSet(context) ? d->asSet(context) : context->newSet();
-        const proto::ProtoSet* acc = context->newSet();
-        // elements in s not in other
-        const proto::ProtoSetIterator* it = s->getIterator(context);
-        while (it && it->hasNext(context)) {
-            const proto::ProtoObject* v = it->next(context);
-            if (other->has(context, v) != PROTO_TRUE) {
-                acc = acc->add(context, v);
-            }
-            it = it->advance(context);
-        }
-        // elements in other not in s
-        const proto::ProtoSetIterator* it2 = other->getIterator(context);
-        while (it2 && it2->hasNext(context)) {
-            const proto::ProtoObject* v = it2->next(context);
-            if (s->has(context, v) != PROTO_TRUE) {
-                acc = acc->add(context, v);
-            }
-            it2 = it2->advance(context);
-        }
+        const proto::ProtoSet* acc = set_symmetric(context, s, other);
         if (publishListData(context, receiver, dn, d, acc->asObject(context))) return PROTO_NONE;
     }
 }
@@ -7563,40 +7700,13 @@ static const proto::ProtoObject* py_set_intersection(
         }
         posArgs = shifted;
     }
-    proto::ProtoSet* acc = const_cast<proto::ProtoSet*>(context->newSet());
-    if (posArgs->getSize(context) == 0) {
-        const proto::ProtoSetIterator* it = s->getIterator(context);
-        while (it && it->hasNext(context)) {
-            acc = const_cast<proto::ProtoSet*>(acc->add(context, it->next(context)));
-            it = it->advance(context);
-        }
-    } else {
-        const proto::ProtoSetIterator* it = s->getIterator(context);
-        while (it && it->hasNext(context)) {
-            const proto::ProtoObject* val = it->next(context);
-            bool in_all = true;
-            for (unsigned long i = 0; i < posArgs->getSize(context) && in_all; ++i) {
-                const proto::ProtoObject* other = posArgs->getAt(context, static_cast<int>(i));
-                const proto::ProtoSet* os = other->asSet(context);
-                if (os && os->has(context, val) == PROTO_TRUE) continue;
-                const proto::ProtoObject* containsM = other->getAttribute(context, PythonEnvironment::getInternalString(context, "__contains__"));
-                if (!containsM || !containsM->asMethod(context)) { in_all = false; break; }
-                const proto::ProtoList* arg = context->newList()->appendLast(context, val);
-                const proto::ProtoObject* has = containsM->asMethod(context)(context, other, nullptr, arg, nullptr);
-                in_all = (has && has == PROTO_TRUE);
-            }
-            if (in_all) acc = const_cast<proto::ProtoSet*>(acc->add(context, val));
-            it = it->advance(context);
-        }
+    const proto::ProtoList* others = context->newList();
+    for (unsigned long i = 0; i < posArgs->getSize(context); ++i) {
+        const proto::ProtoSet* os = set_from_iterable(context, posArgs->getAt(context, static_cast<int>(i)));
+        if (!os) return nullptr;
+        others = others->appendLast(context, os->asObject(context));
     }
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    if (!env) return PROTO_NONE;
-    const proto::ProtoObject* parent = env->getSetPrototype();
-    if (!parent) return PROTO_NONE;
-    proto::ProtoObject* result = const_cast<proto::ProtoObject*>(parent->newChild(context, true));
-    result = const_cast<proto::ProtoObject*>(result->setAttribute(context, env->getClassString(), parent));
-    result = const_cast<proto::ProtoObject*>(result->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"), acc->asObject(context)));
-    return result;
+    return new_set_like(context, receiver, set_intersect(context, s, others));
 }
 
 static const proto::ProtoObject* py_set_difference(
@@ -7618,71 +7728,25 @@ static const proto::ProtoObject* py_set_difference(
         }
         posArgs = shifted;
     }
-    proto::ProtoSet* acc = const_cast<proto::ProtoSet*>(context->newSet());
-    const proto::ProtoSetIterator* it = s->getIterator(context);
-    while (it && it->hasNext(context)) {
-        acc = const_cast<proto::ProtoSet*>(acc->add(context, it->next(context)));
-        it = it->advance(context);
-    }
+    const proto::ProtoSet* acc = s;
     for (unsigned long i = 0; i < posArgs->getSize(context); ++i) {
-        const proto::ProtoObject* other = posArgs->getAt(context, static_cast<int>(i));
-        const proto::ProtoObject* iterM = other->getAttribute(context, PythonEnvironment::getInternalString(context, "__iter__"));
-        if (!iterM || !iterM->asMethod(context)) continue;
-        const proto::ProtoObject* it2 = iterM->asMethod(context)(context, other, nullptr, context->newList(), nullptr);
-        if (!it2) continue;
-        const proto::ProtoObject* nextM = it2->getAttribute(context, PythonEnvironment::getInternalString(context, "__next__"));
-        if (!nextM || !nextM->asMethod(context)) continue;
-        for (;;) {
-            const proto::ProtoObject* val = nextM->asMethod(context)(context, it2, nullptr, context->newList(), nullptr);
-            if (!val || val == PROTO_NONE) break;
-            if (acc->has(context, val) == PROTO_TRUE) acc = const_cast<proto::ProtoSet*>(acc->remove(context, val));
-        }
+        const proto::ProtoSet* os = set_from_iterable(context, posArgs->getAt(context, static_cast<int>(i)));
+        if (!os) return nullptr;
+        acc = set_without(context, acc, os);
     }
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    if (!env) return PROTO_NONE;
-    const proto::ProtoObject* parent = env->getSetPrototype();
-    if (!parent) return PROTO_NONE;
-    proto::ProtoObject* result = const_cast<proto::ProtoObject*>(parent->newChild(context, true));
-    result = const_cast<proto::ProtoObject*>(result->setAttribute(context, env->getClassString(), parent));
-    result = const_cast<proto::ProtoObject*>(result->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"), acc->asObject(context)));
-    return result;
+    return new_set_like(context, receiver, acc);
 }
 
 static const proto::ProtoObject* py_set_symmetric_difference(
     proto::ProtoContext* context, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    const proto::ProtoSet* s = self->asSet(context);
-    if (!s) return PROTO_NONE;
-    proto::ProtoSet* acc = const_cast<proto::ProtoSet*>(context->newSet());
-    const proto::ProtoSetIterator* it = s->getIterator(context);
-    while (it && it->hasNext(context)) {
-        const proto::ProtoObject* val = it->next(context);
-        acc = const_cast<proto::ProtoSet*>(acc->add(context, val));
-        it = it->advance(context);
-    }
-    for (unsigned long i = 0; i < posArgs->getSize(context); ++i) {
-        const proto::ProtoObject* other = posArgs->getAt(context, static_cast<int>(i));
-        const proto::ProtoObject* iterM = other->getAttribute(context, PythonEnvironment::getInternalString(context, "__iter__"));
-        if (!iterM || !iterM->asMethod(context)) continue;
-        const proto::ProtoObject* it2 = iterM->asMethod(context)(context, other, nullptr, context->newList(), nullptr);
-        if (!it2) continue;
-        const proto::ProtoObject* nextM = it2->getAttribute(context, PythonEnvironment::getInternalString(context, "__next__"));
-        if (!nextM || !nextM->asMethod(context)) continue;
-        for (;;) {
-            const proto::ProtoObject* val = nextM->asMethod(context)(context, it2, nullptr, context->newList(), nullptr);
-            if (!val || val == PROTO_NONE) break;
-            if (acc->has(context, val) == PROTO_TRUE) acc = const_cast<proto::ProtoSet*>(acc->remove(context, val));
-            else acc = const_cast<proto::ProtoSet*>(acc->add(context, val));
-        }
-    }
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    if (!env) return PROTO_NONE;
-    const proto::ProtoObject* parent = env->getSetPrototype();
-    if (!parent) return PROTO_NONE;
-    proto::ProtoObject* result = const_cast<proto::ProtoObject*>(parent->newChild(context, true));
-    result = const_cast<proto::ProtoObject*>(result->setAttribute(context, env->getClassString(), parent));
-    result = const_cast<proto::ProtoObject*>(result->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"), acc->asObject(context)));
-    return result;
+    int posOff = 0;
+    const proto::ProtoObject* receiver = set_self_or_arg(context, self, posArgs, &posOff);
+    const proto::ProtoSet* s = set_underlying(context, receiver);
+    if (!s || posArgs->getSize(context) <= static_cast<unsigned long>(posOff)) return PROTO_NONE;
+    const proto::ProtoSet* other = set_from_iterable(context, posArgs->getAt(context, posOff));
+    if (!other) return nullptr;
+    return new_set_like(context, receiver, set_symmetric(context, s, other));
 }
 
 // Helper: accept bound (1 arg) and unbound (2 args) forms.  Returns the
@@ -7817,13 +7881,7 @@ static const proto::ProtoObject* py_set_eq(
     const proto::ProtoSet* b = set_underlying(context, other);
     if (!a || !b) return PROTO_NONE;
     if (a->getSize(context) != b->getSize(context)) return PROTO_FALSE;
-    const proto::ProtoSetIterator* it = a->getIterator(context);
-    while (it && it->hasNext(context)) {
-        const proto::ProtoObject* v = it->next(context);
-        if (b->has(context, v) != PROTO_TRUE) return PROTO_FALSE;
-        it = it->advance(context);
-    }
-    return PROTO_TRUE;
+    return set_is_subset(context, a, b) ? PROTO_TRUE : PROTO_FALSE;
 }
 
 // set / frozenset __ne__: negation of __eq__, returning NotImplemented for
@@ -7836,56 +7894,65 @@ static const proto::ProtoObject* py_set_ne(
     return (eq == PROTO_TRUE) ? PROTO_FALSE : PROTO_TRUE;
 }
 
-static bool set_contains_all(proto::ProtoContext* context, const proto::ProtoObject* container, const proto::ProtoSet* elements) {
-    const proto::ProtoSetIterator* it = elements->getIterator(context);
-    while (it && it->hasNext(context)) {
-        const proto::ProtoObject* val = it->next(context);
-        const proto::ProtoSet* cs = container->asSet(context);
-        if (cs && cs->has(context, val) == PROTO_TRUE) { it = it->advance(context); continue; }
-        const proto::ProtoObject* containsM = container->getAttribute(context, PythonEnvironment::getInternalString(context, "__contains__"));
-        if (!containsM || !containsM->asMethod(context)) return false;
-        const proto::ProtoList* arg = context->newList()->appendLast(context, val);
-        const proto::ProtoObject* has = containsM->asMethod(context)(context, container, nullptr, arg, nullptr);
-        if (!has || has != PROTO_TRUE) return false;
-        it = it->advance(context);
-    }
-    return true;
+// set.issubset(iterable) / set.issuperset(iterable).
+static const proto::ProtoObject* set_subset_method(
+    proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ProtoList* posArgs, bool superset) {
+    int posOff = 0;
+    const proto::ProtoObject* receiver = set_self_or_arg(context, self, posArgs, &posOff);
+    const proto::ProtoSet* s = set_underlying(context, receiver);
+    if (!s || posArgs->getSize(context) <= static_cast<unsigned long>(posOff)) return PROTO_NONE;
+    const proto::ProtoSet* other = set_from_iterable(context, posArgs->getAt(context, posOff));
+    if (!other) return nullptr;
+    const bool result = superset ? set_is_subset(context, other, s) : set_is_subset(context, s, other);
+    return result ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_set_issubset(
     proto::ProtoContext* context, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    const proto::ProtoSet* s = self->asSet(context);
-    if (!s || posArgs->getSize(context) < 1) return PROTO_NONE;
-    return set_contains_all(context, posArgs->getAt(context, 0), s) ? PROTO_TRUE : PROTO_FALSE;
-}
-
-static bool iterable_contained_in(proto::ProtoContext* context, const proto::ProtoObject* container, const proto::ProtoObject* iterable) {
-    const proto::ProtoObject* iterM = iterable->getAttribute(context, PythonEnvironment::getInternalString(context, "__iter__"));
-    if (!iterM || !iterM->asMethod(context)) return false;
-    const proto::ProtoObject* it = iterM->asMethod(context)(context, iterable, nullptr, context->newList(), nullptr);
-    if (!it) return false;
-    const proto::ProtoObject* nextM = it->getAttribute(context, PythonEnvironment::getInternalString(context, "__next__"));
-    if (!nextM || !nextM->asMethod(context)) return false;
-    for (;;) {
-        const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, context->newList(), nullptr);
-        if (!val || val == PROTO_NONE) break;
-        const proto::ProtoSet* cs = container->asSet(context);
-        if (cs && cs->has(context, val) == PROTO_TRUE) continue;
-        const proto::ProtoObject* containsM = container->getAttribute(context, PythonEnvironment::getInternalString(context, "__contains__"));
-        if (!containsM || !containsM->asMethod(context)) return false;
-        const proto::ProtoList* arg = context->newList()->appendLast(context, val);
-        const proto::ProtoObject* has = containsM->asMethod(context)(context, container, nullptr, arg, nullptr);
-        if (!has || has != PROTO_TRUE) return false;
-    }
-    return true;
+    return set_subset_method(context, self, posArgs, false);
 }
 
 static const proto::ProtoObject* py_set_issuperset(
     proto::ProtoContext* context, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (posArgs->getSize(context) < 1) return PROTO_NONE;
-    return iterable_contained_in(context, self, posArgs->getAt(context, 0)) ? PROTO_TRUE : PROTO_FALSE;
+    return set_subset_method(context, self, posArgs, true);
+}
+
+// set <= other, <, >= and >: subset and superset tests between sets;
+// NotImplemented when either operand is not a set.
+static const proto::ProtoObject* set_compare(
+    proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ProtoList* args, bool superset, bool strict) {
+    unwrap_set_binop_args(context, self, args);
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* notImplemented = env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    if (!args || args->getSize(context) != 1) return notImplemented;
+    const proto::ProtoSet* a = set_underlying(context, self);
+    const proto::ProtoSet* b = set_underlying(context, args->getAt(context, 0));
+    if (!a || !b) return notImplemented;
+    if (superset) { const proto::ProtoSet* t = a; a = b; b = t; }
+    if (strict && a->getSize(context) == b->getSize(context)) return PROTO_FALSE;
+    return set_is_subset(context, a, b) ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_set_le(proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return set_compare(context, self, args, false, false);
+}
+
+static const proto::ProtoObject* py_set_lt(proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return set_compare(context, self, args, false, true);
+}
+
+static const proto::ProtoObject* py_set_ge(proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return set_compare(context, self, args, true, false);
+}
+
+static const proto::ProtoObject* py_set_gt(proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return set_compare(context, self, args, true, true);
 }
 
 static const proto::ProtoObject* py_set_pop(
@@ -7908,7 +7975,7 @@ static const proto::ProtoObject* py_set_pop(
         const proto::ProtoSetIterator* it = s->getIterator(context);
         if (!it || !it->hasNext(context)) return PROTO_NONE;
         const proto::ProtoObject* value = it->next(context);
-        const proto::ProtoSet* newSet = s->remove(context, value);
+        const proto::ProtoSet* newSet = s->removeHash(context, it->nextHash(context));
         if (publishListData(context, self, dataName, data, newSet->asObject(context))) return value;
     }
 }
@@ -7922,7 +7989,7 @@ static const proto::ProtoObject* py_set_iter(
     const proto::ProtoString* iterProtoName = PythonEnvironment::getInternedString(context, "__iter_prototype__");
     const proto::ProtoObject* iterProto = self->getAttribute(context, iterProtoName);
     if (!iterProto) return PROTO_NONE;
-    const proto::ProtoSet* s = self->asSet(context);
+    const proto::ProtoSet* s = set_underlying(context, self);
     if (!s) return PROTO_NONE;
     const proto::ProtoSetIterator* it = s->getIterator(context);
     const proto::ProtoObject* iterObj = iterProto->newChild(context, true);
@@ -7956,7 +8023,7 @@ static const proto::ProtoObject* py_frozenset_len(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    const proto::ProtoSet* s = self->asSet(context);
+    const proto::ProtoSet* s = set_underlying(context, self);
     if (!s) return context->fromInteger(0);
     return context->fromInteger(s->getSize(context));
 }
@@ -7967,14 +8034,11 @@ static const proto::ProtoObject* py_frozenset_contains(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    const proto::ProtoSet* s = self->asSet(context);
+    const proto::ProtoSet* s = set_underlying(context, self);
     if (!s || positionalParameters->getSize(context) < 1) return PROTO_FALSE;
-    const proto::ProtoObject* item = positionalParameters->getAt(context, 0);
-    const proto::ProtoObject* res = s->has(context, item);
-    if (get_env_diag()) {
-        fflush(stderr);
-    }
-    return res;
+    unsigned long h = 0;
+    if (!setLookupHash(context, positionalParameters->getAt(context, 0), h)) return nullptr;
+    return s->hasHash(context, h) ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_frozenset_bool(
@@ -7983,7 +8047,7 @@ static const proto::ProtoObject* py_frozenset_bool(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    const proto::ProtoSet* s = self->asSet(context);
+    const proto::ProtoSet* s = set_underlying(context, self);
     if (!s) return PROTO_FALSE;
     return s->getSize(context) > 0 ? PROTO_TRUE : PROTO_FALSE;
 }
@@ -7997,7 +8061,7 @@ static const proto::ProtoObject* py_frozenset_iter(
     const proto::ProtoString* iterProtoName = PythonEnvironment::getInternedString(context, "__iter_prototype__");
     const proto::ProtoObject* iterProto = self->getAttribute(context, iterProtoName);
     if (!iterProto) return PROTO_NONE;
-    const proto::ProtoSet* s = self->asSet(context);
+    const proto::ProtoSet* s = set_underlying(context, self);
     if (!s) return PROTO_NONE;
     const proto::ProtoSetIterator* it = s->getIterator(context);
     const proto::ProtoObject* iterObj = iterProto->newChild(context, true);
@@ -8012,16 +8076,9 @@ static const proto::ProtoObject* py_frozenset_hash(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    const proto::ProtoSet* s = self->asSet(context);
+    const proto::ProtoSet* s = set_underlying(context, self);
     if (!s) return context->fromInteger(0);
-    unsigned long h = 0x345678UL;
-    const proto::ProtoSetIterator* it = s->getIterator(context);
-    while (it && it->hasNext(context)) {
-        const proto::ProtoObject* val = it->next(context);
-        h ^= (val->getHash(context) + (h << 6) + (h >> 2));
-        it = it->advance(context);
-    }
-    return context->fromInteger(static_cast<long long>(h));
+    return context->fromInteger(static_cast<long long>(frozensetKeyHash(context, s)));
 }
 
 static const proto::ProtoObject* py_frozenset_call(
@@ -8046,10 +8103,11 @@ static const proto::ProtoObject* py_frozenset_call(
             for (;;) {
                 const proto::ProtoObject* item = env->next(it);
                 if (!item) {
-                    if (env && env->handleExhaustion(context)) break;
+                    if (!env->handleExhaustion(context)) return nullptr;
                     break;
                 }
-                acc = acc->add(context, item);
+                acc = PythonEnvironment::setAdd(context, acc, item);
+                if (!acc) return nullptr;
             }
         }
     }
@@ -9316,16 +9374,15 @@ static const proto::ProtoObject* py_tuple_hash(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
-    const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
-    if (!data || !data->asTuple(context)) return context->fromInteger(0);
-    const proto::ProtoTuple* t = data->asTuple(context);
-    unsigned long h = 0x345678UL;
-    long n = static_cast<long>(t->getSize(context));
-    for (long i = 0; i < n; ++i) {
-        const proto::ProtoObject* el = t->getAt(context, static_cast<int>(i));
-        h ^= (el ? el->getHash(context) : 0) + (h << 6) + (h >> 2);
+    const proto::ProtoTuple* t = self->asTuple(context);
+    if (!t) {
+        const proto::ProtoObject* data = self->getAttribute(context, PythonEnvironment::getInternalString(context, "__data__"));
+        t = data ? data->asTuple(context) : nullptr;
     }
+    if (!t) return context->fromInteger(0);
+    // The hash a dict or set keys the tuple by, so hash((1, 2)) == hash((1.0, 2)).
+    unsigned long h = 0;
+    if (!tupleKeyHash(context, t, true, h)) return nullptr;
     return context->fromInteger(static_cast<long long>(h));
 }
 
@@ -19569,6 +19626,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__xor__"), rootContext_->fromMethod(nullptr, py_set_xor));
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__eq__"), rootContext_->fromMethod(nullptr, py_set_eq));
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ne__"), rootContext_->fromMethod(nullptr, py_set_ne));
+    setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__le__"), rootContext_->fromMethod(nullptr, py_set_le));
+    setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__lt__"), rootContext_->fromMethod(nullptr, py_set_lt));
+    setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ge__"), rootContext_->fromMethod(nullptr, py_set_ge));
+    setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__gt__"), rootContext_->fromMethod(nullptr, py_set_gt));
     // set instances are unhashable in CPython (frozenset is the hashable variant).
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__hash__"), PROTO_NONE);
     setPrototype = setPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_set_iter));
@@ -19606,6 +19667,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_hash, rootContext_->fromMethod(nullptr, py_frozenset_hash));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__eq__"), rootContext_->fromMethod(nullptr, py_set_eq));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ne__"), rootContext_->fromMethod(nullptr, py_set_ne));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__le__"), rootContext_->fromMethod(nullptr, py_set_le));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__lt__"), rootContext_->fromMethod(nullptr, py_set_lt));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ge__"), rootContext_->fromMethod(nullptr, py_set_ge));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__gt__"), rootContext_->fromMethod(nullptr, py_set_gt));
     // Set operator dunders — these are used by typing.py's
     // `EXCLUDED_ATTRIBUTES = _TYPING_INTERNALS | _SPECIAL_NAMES | {...}`
     // and by any other code that relies on `frozenset | frozenset` etc.

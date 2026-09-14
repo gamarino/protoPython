@@ -1878,9 +1878,10 @@ bool CppGenerator::emitComprehensionBody(const std::vector<Comprehension>& gener
             *out_ << ");\n";
         } else if (kind == 1) {
             // Set — append + add via env-aware set semantics.
-            *out_ << "                __set_acc = __set_acc->add(ctx, ";
+            *out_ << "                __set_acc = protoPython::PythonEnvironment::setAdd(ctx, __set_acc, ";
             if (!generateNode(elt)) return false;
             *out_ << ");\n";
+            *out_ << "                if (!__set_acc) return nullptr;\n";
         } else if (kind == 2) {
             // Dict — set key/value on the accumulator's __data__ / __keys__.
             *out_ << "                {\n";

@@ -5702,7 +5702,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoString* dataString = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
                 const proto::ProtoObject* data = setObj->getAttribute(ctx, dataString);
                 const proto::ProtoSet* s = (data && data->asSet(ctx)) ? data->asSet(ctx) : ctx->newSet();
-                s = s->add(ctx, val);
+                s = PythonEnvironment::setAdd(ctx, s, val);
+                if (!s) continue;
                 const proto::ProtoObject* newSet = setObj->setAttribute(ctx, dataString, s->asObject(ctx));
                 stack[stack.size() - arg - 1] = const_cast<proto::ProtoObject*>(newSet);
                 stack.pop_back(); // Now safe to pop val
@@ -5895,8 +5896,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     const proto::ProtoObject* fromData = iterable->getAttribute(ctx, dataString);
                     const proto::ProtoList* fromList = (fromData && fromData->asList(ctx)) ? fromData->asList(ctx) : iterable->asList(ctx);
                     if (fromList) {
-                        for (unsigned long j = 0; j < fromList->getSize(ctx); ++j) {
-                            s = s->add(ctx, fromList->getAt(ctx, j));
+                        for (unsigned long j = 0; s && j < fromList->getSize(ctx); ++j) {
+                            s = PythonEnvironment::setAdd(ctx, s, fromList->getAt(ctx, j));
                         }
                     } else if (env) {
                         const proto::ProtoObject* it = env->iter(iterable);
@@ -5904,10 +5905,12 @@ const proto::ProtoObject* executeBytecodeRange(
                             for (;;) {
                                 const proto::ProtoObject* item = env->next(it);
                                 if (!item) break;
-                                s = s->add(ctx, item);
+                                s = PythonEnvironment::setAdd(ctx, s, item);
+                                if (!s) break;
                             }
                         }
                     }
+                    if (!s) continue;
                     setObj->setAttribute(ctx, dataString, s->asObject(ctx));
                 }
                 stack.pop_back();
@@ -5928,11 +5931,15 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.push_back(dataPinned); // Root data
             
             size_t baseIdx = stack.size() - 2 - arg;
+            bool unhashable = false;
             for (int j = 0; j < arg; ++j) {
                 const proto::ProtoObject* item = stack[baseIdx + j];
-                data = data->add(ctx, item);
+                const proto::ProtoSet* next = PythonEnvironment::setAdd(ctx, data, item);
+                if (!next) { unhashable = true; break; }
+                data = next;
                 stack[stack.size() - 1] = const_cast<proto::ProtoObject*>(data->asObject(ctx)); // Update root
             }
+            if (unhashable) continue;
             
             setObj = const_cast<proto::ProtoObject*>(setObj->setAttribute(ctx, env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__"), data->asObject(ctx)));
             stack[stack.size() - 2] = setObj; // update root

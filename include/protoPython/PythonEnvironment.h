@@ -890,6 +890,15 @@ public:
     static std::string reprObject(proto::ProtoContext* context, const proto::ProtoObject* obj);
 
     /**
+     * @brief The hash dicts and sets store `value` under (1, 1.0 and True are one key, tuples hash
+     * by their elements, a class's __hash__ is honoured), and set insertion by that hash.
+     * @details Both raise TypeError for an unhashable value and return false / nullptr. setAdd keeps
+     * the element already stored under an equal key.
+     */
+    static bool hashKey(proto::ProtoContext* ctx, const proto::ProtoObject* value, unsigned long& hash);
+    static const proto::ProtoSet* setAdd(proto::ProtoContext* ctx, const proto::ProtoSet* s, const proto::ProtoObject* value);
+
+    /**
      * @brief Returns true if the object is a StopIteration exception.
      */
     bool isStopIteration(proto::ProtoContext* ctx, const proto::ProtoObject* exc) const;
