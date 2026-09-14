@@ -16694,6 +16694,35 @@ static const proto::ProtoObject* py_getset_get(
     return PROTO_NONE;
 }
 
+// getset_descriptor.__repr__: `<attribute 'NAME' of 'OWNER' objects>`, as in
+// CPython. The prototype carried a placeholder string under __repr__, so
+// repr() of any getset descriptor tried to call a str and raised
+// "'str' object is not callable".
+static const proto::ProtoObject* py_getset_repr(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList*) {
+    const proto::ProtoObject* descr = self;
+    if ((!descr || descr == PROTO_NONE) && args && args->getSize(context) > 0) {
+        descr = args->getAt(context, 0);
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    std::string name = "?", owner = "?";
+    if (env && descr && descr != PROTO_NONE) {
+        const proto::ProtoObject* nm = descr->getAttribute(context, env->getNameString());
+        if (nm && nm != PROTO_NONE && nm->isString(context)) nm->asString(context)->toUTF8String(context, name);
+        const proto::ProtoObject* objclass =
+            descr->getAttribute(context, PythonEnvironment::getInternedString(context, "__objclass__"));
+        const proto::ProtoObject* on = (objclass && objclass != PROTO_NONE)
+            ? objclass->getAttribute(context, env->getNameString()) : nullptr;
+        if (on && on != PROTO_NONE && on->isString(context)) on->asString(context)->toUTF8String(context, owner);
+    }
+    const std::string out = "<attribute '" + name + "' of '" + owner + "' objects>";
+    return proto::ProtoString::fromUTF8(context, out.c_str())->asObject(context);
+}
+
 // getset_descriptor.__set__(self, instance, value).  A getset descriptor
 // instance optionally carries an `fset` native method; when present it is
 // invoked as `fset(instance, value)` (mirroring py_getset_get's fget
@@ -17982,7 +18011,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     getSetDescriptorPrototype = getSetDescriptorPrototype->setAttribute(rootContext_, py_class, typePrototype);
     getSetDescriptorPrototype = getSetDescriptorPrototype->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "getset_descriptor")->asObject(rootContext_));
     getSetDescriptorPrototype = getSetDescriptorPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "getset_descriptor")->asObject(rootContext_));
-    getSetDescriptorPrototype = getSetDescriptorPrototype->setAttribute(rootContext_, py_repr, PythonEnvironment::getInternedString(rootContext_, "<getset_descriptor>")->asObject(rootContext_)); // Placeholder
+    getSetDescriptorPrototype = getSetDescriptorPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_getset_repr));
     // STRUCT-96: descriptor instances default `__doc__` to None when no
     // explicit docstring was assigned.  CPython's getset_descriptor /
     // member_descriptor / wrapper_descriptor types all expose this slot
@@ -24170,7 +24199,24 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                      const proto::ProtoObject* owner = objClass;
 
                      if (isClass) {
-                         if (foundOnMeta) {
+                         // A data descriptor defined on the metatype takes precedence
+                         // (CPython type_getattro). For `type` itself or a metaclass
+                         // M(type), the lookup finds type's __qualname__ / __doc__
+                         // getset in the class's own MRO, so foundOnMeta stayed false
+                         // and __get__(None, cls) returned the descriptor itself
+                         // (`type.__qualname__` was a getset_descriptor).
+                         bool dataDescrOnMeta = foundOnMeta;
+                         if (!dataDescrOnMeta && objClass && objClass != PROTO_NONE) {
+                             const proto::ProtoObject* metaVal = objClass->getAttribute(ctx, name);
+                             if (metaVal == val) {
+                                 const proto::ProtoObject* valType = this->getType(ctx, val);
+                                 const proto::ProtoObject* setM = valType
+                                     ? valType->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__set__"))
+                                     : nullptr;
+                                 dataDescrOnMeta = setM && setM != PROTO_NONE;
+                             }
+                         }
+                         if (dataDescrOnMeta) {
                              // Descriptor found on metaclass: the class IS the instance
                              // (e.g. cls.__dict__ where __dict__ is a getset_descriptor on type)
                              instance = obj;
