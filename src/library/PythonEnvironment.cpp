@@ -25049,6 +25049,110 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     return val;
 }
 
+bool PythonEnvironment::deleteAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* nameS) {
+    if (!obj || !nameS) return false;
+    // Data descriptor __delete__ on the type chain.  Mirrors STORE_ATTR's
+    // data-descriptor short-circuit: walk the type's MRO with raw attribute
+    // access to avoid __get__ re-entry, then dispatch to either a native or
+    // Python-defined __delete__.  Checked even when the instance has its own
+    // attribute, since a data descriptor takes precedence over the instance
+    // dict for del.
+    const proto::ProtoObject* type = getType(ctx, obj);
+    const proto::ProtoObject* descr = nullptr;
+    if (type && type != PROTO_NONE) {
+        if (type->hasOwnAttribute(ctx, nameS) == PROTO_TRUE) {
+            descr = type->getOwnAttributeDirect(ctx, nameS);
+        } else {
+            const proto::ProtoObject* mroObj = getAttribute(ctx, type, getMroString(), false);
+            const proto::ProtoTuple* mroT = mroObj ? mroObj->asTuple(ctx) : nullptr;
+            if (mroT) {
+                for (unsigned long mi = 0; mi < mroT->getSize(ctx); ++mi) {
+                    const proto::ProtoObject* base = mroT->getAt(ctx, mi);
+                    if (!base || base == PROTO_NONE) continue;
+                    if (base->hasOwnAttribute(ctx, nameS) == PROTO_TRUE) {
+                        descr = base->getOwnAttributeDirect(ctx, nameS);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if (descr && descr != PROTO_NONE) {
+        const proto::ProtoString* delS = PythonEnvironment::getInternedString(ctx, "__delete__");
+        const proto::ProtoObject* delM = descr->getAttribute(ctx, delS);
+        const proto::ProtoObject* descrType = getType(ctx, descr);
+        if ((!delM || delM == PROTO_NONE) && descrType && descrType != PROTO_NONE) {
+            delM = getAttribute(ctx, descrType, delS, false);
+        }
+        if (delM && delM != PROTO_NONE) {
+            if (delM->asMethod(ctx)) {
+                delM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(descr), nullptr,
+                    ctx->newList()->appendLast(ctx, obj), nullptr);
+            } else {
+                invokePythonCallable(ctx, delM,
+                    ctx->newList()->appendLast(ctx, descr)->appendLast(ctx, obj), nullptr);
+            }
+            return !hasPendingException();
+        }
+    }
+    // No descriptor: delete the object's own attribute.  CPython raises
+    // AttributeError when the attribute is not OWN on the receiver, even if
+    // the type chain has one (deletion only affects instance state).
+    bool removed = false;
+    const proto::ProtoString* dataName = getDataString();
+    const proto::ProtoString* keysName = getKeysString();
+    const proto::ProtoObject* d = (obj->hasOwnAttribute(ctx, dataName) == PROTO_TRUE) ? obj->getAttribute(ctx, dataName) : nullptr;
+    const proto::ProtoObject* k = (keysName && obj->hasOwnAttribute(ctx, keysName) == PROTO_TRUE) ? obj->getAttribute(ctx, keysName) : nullptr;
+    if (d && d != PROTO_NONE && d->asSparseList(ctx)) {
+        unsigned long h = nameS->getHash(ctx);
+        const proto::ProtoSparseList* sl = d->asSparseList(ctx);
+        if (sl->has(ctx, h)) {
+            // SparseList::removeAt returns a NEW immutable list; rebind
+            // __data__ so later reads (vars/keys/items) see the entry gone.
+            const proto::ProtoSparseList* newSl = sl->removeAt(ctx, h);
+            const_cast<proto::ProtoObject*>(obj)->setAttribute(ctx, dataName, newSl->asObject(ctx));
+            removed = true;
+        }
+        if (hasPendingException()) clearPendingException();
+    }
+    if (k && k != PROTO_NONE && k->asList(ctx)) {
+        unsigned long targetHash = nameS->getHash(ctx);
+        const proto::ProtoList* listIn = k->asList(ctx);
+        const proto::ProtoList* newKeys = ctx->newList();
+        bool anyDropped = false;
+        for (unsigned long ki = 0; ki < listIn->getSize(ctx); ++ki) {
+            const proto::ProtoObject* key = listIn->getAt(ctx, ki);
+            if (key && key->isString(ctx) && key->getHash(ctx) == targetHash) {
+                anyDropped = true;
+                continue;
+            }
+            newKeys = newKeys->appendLast(ctx, key);
+        }
+        if (anyDropped) {
+            const_cast<proto::ProtoObject*>(obj)->setAttribute(ctx, keysName, newKeys->asObject(ctx));
+            removed = true;
+        }
+    }
+    // Cell-storage attribute: removeAttribute erases the entry from the own
+    // attribute table rather than overwriting it with None, which would keep
+    // it visible through hasattr/vars.
+    if (obj->hasOwnAttribute(ctx, nameS) == PROTO_TRUE) {
+        const_cast<proto::ProtoObject*>(obj)->removeAttribute(ctx, nameS);
+        removed = true;
+    }
+    if (!removed) {
+        std::string nm;
+        nameS->toUTF8String(ctx, nm);
+        raiseAttributeError(ctx, obj, nm.c_str());
+        return false;
+    }
+    // `del module.name` unbinds a global (or a builtin).
+    if (obj == builtinsModule || getType(ctx, obj) == modulePrototype) {
+        invalidateResolveCache();
+    }
+    return true;
+}
+
 const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, const proto::ProtoObject* value) {
     if (!obj || !name || !value) return obj;
 

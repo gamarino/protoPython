@@ -9759,134 +9759,15 @@ const proto::ProtoObject* executeBytecodeRange(
                             }
                         }
                     }
-                    // PH: data-descriptor __delete__ on the type chain.
-                    // Mirrors STORE_ATTR's data-descriptor short-circuit:
-                    // walk the type's MRO with raw attribute access to
-                    // avoid __get__ re-entry, then dispatch to either
-                    // a native or Python-defined __delete__.  PI: check
-                    // even when the instance has its own attribute, since
-                    // a data descriptor (with __set__/__delete__) takes
-                    // precedence over instance dict for del.
+                    // The generic delete: a data descriptor's __delete__, else
+                    // the own attribute, else AttributeError (shared with
+                    // object.__delattr__ and delattr()).  Advancing past the
+                    // opcode on success matters (STRUCT-267): re-running it
+                    // would pop the enclosing for-loop's iterator.
                     if (env) {
-                        const proto::ProtoObject* type = env->getType(ctx, obj);
-                        const proto::ProtoObject* descr = nullptr;
-                        if (type && type != PROTO_NONE) {
-                            if (type->hasOwnAttribute(ctx, nameS) == PROTO_TRUE) {
-                                descr = type->getOwnAttributeDirect(ctx, nameS);
-                            } else {
-                                const proto::ProtoObject* mroObj = env->getAttribute(ctx, type, env->getMroString(), false);
-                                const proto::ProtoTuple* mroT = mroObj ? mroObj->asTuple(ctx) : nullptr;
-                                if (mroT) {
-                                    for (unsigned long mi = 0; mi < mroT->getSize(ctx); ++mi) {
-                                        const proto::ProtoObject* base = mroT->getAt(ctx, mi);
-                                        if (!base || base == PROTO_NONE) continue;
-                                        if (base->hasOwnAttribute(ctx, nameS) == PROTO_TRUE) {
-                                            descr = base->getOwnAttributeDirect(ctx, nameS);
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        if (descr && descr != PROTO_NONE) {
-                            const proto::ProtoString* delS =
-                                PythonEnvironment::getInternedString(ctx, "__delete__");
-                            const proto::ProtoObject* delM = descr->getAttribute(ctx, delS);
-                            const proto::ProtoObject* descrType = env->getType(ctx, descr);
-                            if ((!delM || delM == PROTO_NONE) && descrType && descrType != PROTO_NONE) {
-                                delM = env->getAttribute(ctx, descrType, delS, false);
-                            }
-                            if (delM && delM != PROTO_NONE) {
-                                if (delM->asMethod(ctx)) {
-                                    delM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(descr), nullptr,
-                                        ctx->newList()->appendLast(ctx, obj), nullptr);
-                                } else {
-                                    invokePythonCallable(ctx, delM,
-                                        ctx->newList()->appendLast(ctx, descr)->appendLast(ctx, obj), nullptr);
-                                }
-                                // STRUCT-267: when the descriptor's
-                                // __delete__ succeeds (no pending
-                                // exception), the bare `continue` would
-                                // re-run OP_DELETE_ATTR on the same
-                                // operand-stack-position, popping the
-                                // enclosing for-loop's iterator on the
-                                // second pass — surfacing as
-                                // "<tuple_iterator object> has no
-                                // attribute '__annotations__'".  Advance
-                                // pc to the next opcode on the
-                                // success path; on failure, leave i
-                                // alone so the top-of-loop exception
-                                // handler can unwind.
-                                if (env->hasPendingException()) continue;
-                                i = next_i;
-                                continue; // descriptor handled the delete
-                            }
-                        }
-                    }
-                    // No descriptor — fall through to instance attribute deletion.
-                    // CPython raises AttributeError when the attribute is not
-                    // OWN on the receiver: delete reports a missing attribute
-                    // even if the type chain has one (because deletion only
-                    // affects instance state). Track whether anything actually
-                    // got removed so we can raise on missing names.
-                    bool removed = false;
-                    const proto::ProtoString* dataName = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
-                    const proto::ProtoString* keysName = env ? env->getKeysString() : protoPython::PythonEnvironment::getInternalString(ctx, "__keys__");
-                    const proto::ProtoObject* d = (obj->hasOwnAttribute(ctx, dataName) == PROTO_TRUE) ? obj->proto::ProtoObject::getAttribute(ctx, dataName) : nullptr;
-                    const proto::ProtoObject* k = (keysName && obj->hasOwnAttribute(ctx, keysName) == PROTO_TRUE) ? obj->proto::ProtoObject::getAttribute(ctx, keysName) : nullptr;
-                    if (d && d != PROTO_NONE && d->asSparseList(ctx)) {
-                        unsigned long h = nameS->getHash(ctx);
-                        const proto::ProtoSparseList* sl = d->asSparseList(ctx);
-                        if (sl->has(ctx, h)) {
-                            // SparseList::removeAt returns a NEW immutable list;
-                            // capture it and rebind __data__ so subsequent reads
-                            // (vars/keys/items) see the entry as gone instead
-                            // of just losing the structural-sharing slot.
-                            const proto::ProtoSparseList* newSl = sl->removeAt(ctx, h);
-                            const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setAttribute(ctx, dataName, newSl->asObject(ctx));
-                            removed = true;
-                        }
-                        if (env && env->hasPendingException()) env->clearPendingException();
-                    }
-                    if (k && k != PROTO_NONE && k->asList(ctx)) {
-                        unsigned long targetHash = nameS->getHash(ctx);
-                        const proto::ProtoList* listIn = k->asList(ctx);
-                        const proto::ProtoList* newKeys = ctx->newList();
-                        bool anyDropped = false;
-                        for (unsigned long ki = 0; ki < listIn->getSize(ctx); ++ki) {
-                            const proto::ProtoObject* key = listIn->getAt(ctx, ki);
-                            if (key && key->isString(ctx) && key->getHash(ctx) == targetHash) {
-                                anyDropped = true;
-                                continue;
-                            }
-                            newKeys = newKeys->appendLast(ctx, key);
-                        }
-                        if (anyDropped) {
-                            const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setAttribute(ctx, keysName, newKeys->asObject(ctx));
-                            removed = true;
-                        }
-                    }
-                    // Cell-storage attribute path: protoCore exposes a proper
-                    // removeAttribute that erases the entry from the OWN
-                    // attribute table (mirrors setAttribute's mutable-vs-
-                    // immutable contract). Use it instead of overwriting with
-                    // PROTO_NONE, which would (a) leave the attribute visible
-                    // through hasattr/vars and (b) lose the user's ability to
-                    // explicitly assign None as a sentinel value that shadows
-                    // a parent binding.
-                    if (obj->hasOwnAttribute(ctx, nameS) == PROTO_TRUE) {
+                        env->deleteAttribute(ctx, obj, nameS);
+                    } else if (obj->hasOwnAttribute(ctx, nameS) == PROTO_TRUE) {
                         const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::removeAttribute(ctx, nameS);
-                        removed = true;
-                    }
-                    if (!removed && env) {
-                        std::string nm;
-                        nameS->toUTF8String(ctx, nm);
-                        env->raiseAttributeError(ctx, obj, nm.c_str());
-                    }
-                    // `del module.name` unbinds a global (or a builtin).
-                    if (removed && env && (obj == env->getBuiltinsModule()
-                                           || env->getType(ctx, obj) == env->getModulePrototype())) {
-                        env->invalidateResolveCache();
                     }
                 }
             }

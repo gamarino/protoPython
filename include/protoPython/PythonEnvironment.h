@@ -317,6 +317,12 @@ public:
 
     const proto::ProtoObject* setAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, const proto::ProtoObject* value);
 
+    /** The generic `del obj.name` below any __delattr__ override: a data
+     *  descriptor's __delete__, else the object's own attribute (and its
+     *  __data__ / __keys__ entries); AttributeError when there is neither.
+     *  False when an exception is pending. */
+    bool deleteAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name);
+
     // richResult: return a rich comparison dunder's result as is and raise
     // TypeError for orderings nobody implements (the comparison operators);
     // otherwise the answer is coerced to True/False for internal callers.

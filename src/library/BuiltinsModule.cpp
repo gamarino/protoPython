@@ -5463,8 +5463,27 @@ static const proto::ProtoObject* py_delattr(
             }
         }
     }
-    obj->setAttribute(context, nameObj->asString(context), PROTO_NONE);
-    return PROTO_NONE;
+    // delattr(obj, name) is `del obj.name`: type(obj).__delattr__, a Python
+    // override or object.__delattr__'s generic delete.  It used to store
+    // None, so the attribute stayed visible to hasattr and vars.
+    std::string keyStr;
+    nameObj->asString(context)->toUTF8String(context, keyStr);
+    const proto::ProtoString* key = PythonEnvironment::getInternedString(context, keyStr.c_str());
+    if (!env) {
+        const_cast<proto::ProtoObject*>(obj)->removeAttribute(context, key);
+        return PROTO_NONE;
+    }
+    const proto::ProtoObject* type = env->getType(context, obj);
+    const proto::ProtoObject* delattrM = (type && type != PROTO_NONE)
+        ? env->getAttribute(context, type, PythonEnvironment::getInternedString(context, "__delattr__"), false)
+        : nullptr;
+    if (env->hasPendingException()) env->clearPendingException();
+    if (delattrM && delattrM != PROTO_NONE) {
+        env->callObject(delattrM, {obj, key->asObject(context)});
+    } else {
+        env->deleteAttribute(context, obj, key);
+    }
+    return env->hasPendingException() ? nullptr : PROTO_NONE;
 }
 
 static bool areSameClasses(proto::ProtoContext* context, const proto::ProtoObject* c1, const proto::ProtoObject* c2) {
@@ -11487,8 +11506,13 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                     }
                 }
                 const proto::ProtoString* key = PythonEnvironment::getInternedString(context, nameStr.c_str());
-                const_cast<proto::ProtoObject*>(target)->removeAttribute(context, key);
-                return PROTO_NONE;
+                // The generic delete under any __delattr__ override: data
+                // descriptors, the own attribute, AttributeError otherwise.
+                if (!env) {
+                    const_cast<proto::ProtoObject*>(target)->removeAttribute(context, key);
+                    return PROTO_NONE;
+                }
+                return env->deleteAttribute(context, target, key) ? PROTO_NONE : nullptr;
             }));
         protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
         objectProto = const_cast<proto::ProtoObject*>(objectProto)->setAttribute(ctx, env ? env->getInitString() : PythonEnvironment::getInternedString(ctx, "__init__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(objectProto), py_object_init));
