@@ -145,6 +145,7 @@ extern const proto::ProtoObject* exported_runUserFunctionCall(proto::ProtoContex
 extern const proto::ProtoObject* exported_py_function_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
 extern const proto::ProtoObject* exported_py_function_code_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
 extern const proto::ProtoObject* exported_py_function_globals_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+extern thread_local const proto::ProtoObject* g_initSubclassClass;  // ExecutionEngine.cpp
 extern const proto::ProtoObject* exported_py_function_doc_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
 
 namespace builtins {
@@ -18209,15 +18210,42 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             // No slots: surface __dict__ directly (CPython convention).
             return instDictOrNone;
         }));
-    // PH: object.__init_subclass__ is a no-op; classmethod-bound to keep
-    // `super().__init_subclass__(**kwargs)` chains terminating cleanly.
+    // object.__init_subclass__ does nothing, but takes no keyword arguments:
+    // it ends every `super().__init_subclass__(**kwargs)` chain, so class
+    // keywords nobody consumed (`class C(flag=1)`, `type(n, b, ns, flag=1)`)
+    // raise TypeError here instead of vanishing.  classmethod-bound: the
+    // class arrives as self or as the first argument.
     {
         const proto::ProtoObject* iscMethod = rootContext_->fromMethod(nullptr,
-            [](proto::ProtoContext* ctx, const proto::ProtoObject*,
+            [](proto::ProtoContext* ctx, const proto::ProtoObject* self,
                const proto::ParentLink*,
-               const proto::ProtoList*,
-               const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+               const proto::ProtoList* args,
+               const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
                 PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                if (env && kwargs && kwargs->getSize(ctx) > 0) {
+                    (void)self;
+                    // The class: the first argument (invokeInitSubclass
+                    // passes it), else the class whose chain is running.
+                    const proto::ProtoObject* cls = g_initSubclassClass;
+                    if (args && args->getSize(ctx) > 0
+                        && env->isActuallyAClass(ctx, args->getAt(ctx, 0))) {
+                        cls = args->getAt(ctx, 0);
+                    }
+                    std::string clsName = "object";
+                    // Own attributes only: a class made by type() inherits
+                    // object's __qualname__ through its parent chain.
+                    for (const char* attr : {"__qualname__", "__name__"}) {
+                        const proto::ProtoString* attrS = PythonEnvironment::getInternedString(ctx, attr);
+                        const proto::ProtoObject* v = (cls && cls->hasOwnAttribute(ctx, attrS) == PROTO_TRUE)
+                            ? cls->getOwnAttributeDirect(ctx, attrS) : nullptr;
+                        if (v && v->isString(ctx)) {
+                            v->asString(ctx)->toUTF8String(ctx, clsName);
+                            break;
+                        }
+                    }
+                    env->raiseTypeError(ctx, clsName + ".__init_subclass__() takes no keyword arguments");
+                    return nullptr;
+                }
                 return env ? env->getNonePrototype() : PROTO_NONE;
             });
         objectPrototype = objectPrototype->setAttribute(rootContext_,

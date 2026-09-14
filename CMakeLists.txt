@@ -310,6 +310,13 @@ set_tests_properties(protopy_init_subclass_dynamic PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# Unconsumed class keywords make object.__init_subclass__ raise TypeError.
+add_test(NAME protopy_init_subclass_keywords
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/init_subclass_keywords.py)
+set_tests_properties(protopy_init_subclass_keywords PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # reversed() works for lists, tuples, subclasses and dict views.
 add_test(NAME protopy_reversed_native
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/reversed_native.py)

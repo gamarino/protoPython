@@ -3514,6 +3514,11 @@ struct GCStack {
 };
 }
 
+// The class whose __init_subclass__ chain runs on this thread.
+// object.__init_subclass__ names it in its TypeError: a hook forwarding
+// keywords with super().__init_subclass__(**kw) passes it no class.
+thread_local const proto::ProtoObject* g_initSubclassClass = nullptr;
+
 bool invokeInitSubclass(proto::ProtoContext* ctx,
     const proto::ProtoObject* cls,
     const proto::ProtoSparseList* kwargs,
@@ -3544,7 +3549,10 @@ bool invokeInitSubclass(proto::ProtoContext* ctx,
         // binding recovers the key names from the kw-names stack.
         const bool pushNames = kw && kwNames;
         if (pushNames) env->pushKwNames(kwNames);
+        const proto::ProtoObject* outerClass = g_initSubclassClass;
+        g_initSubclassClass = cls;
         invokeCallable(ctx, hook, ctx->newList()->appendLast(ctx, cls), kw);
+        g_initSubclassClass = outerClass;
         if (pushNames) env->popKwNames();
         return !env->hasPendingException();
     }
