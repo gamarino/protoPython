@@ -106,6 +106,14 @@ private:
     bool compileAsyncWith(AsyncWithNode* n);
     bool compileCondExpr(ConditionalExprNode* n);
     bool compileTypeAlias(TypeAliasNode* n);
+    /** PEP 695: a class or def with type parameters, compiled through an
+     *  annotation scope (see the section comment in Compiler.cpp). */
+    bool compileGenericClassDef(ClassDefNode* n);
+    bool compileGenericFunctionDef(FunctionDefNode* n);
+    /** Compile the annotation scope `scope`, call it with `args` evaluated in
+     *  the current scope, and leave the result on the stack. */
+    bool emitAnnotationScopeCall(FunctionDefNode* scope,
+        const std::vector<std::unique_ptr<ASTNode>>& args);
     /** match/case (PEP 634). compileMatch handles the outer match/case
      *  scaffolding; compilePattern emits per-pattern test code.
      *
@@ -190,6 +198,13 @@ private:
      *  ("Outer", "Outer.Inner", etc.).  compileClassDef uses this to
      *  emit __qualname__ on class objects. */
     std::string qualnamePrefix_;
+    /** PEP 695: set just before compileFunctionDef compiles an annotation
+     *  scope, which is then left on the stack instead of stored. */
+    bool leaveDefOnStack_ = false;
+    /** True in the body compiler of a PEP 695 annotation scope sitting
+     *  directly in a class body: the def it wraps is a method and keeps the
+     *  class name for zero-arg super() and private-name mangling. */
+    bool classAnnotationScope_ = false;
     int bytecodeOffset() const;
     /** Record a jump arg slot to be patched later with target (bytecode list index). */
     void addPatch(int argSlotIndex, int targetBytecodeIndex);

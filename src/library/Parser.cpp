@@ -2139,12 +2139,12 @@ std::vector<std::unique_ptr<TypeParamNode>> Parser::parseTypeParams() {
     if (accept(TokenType::LSquare)) {
         while (cur_.type != TokenType::RSquare && cur_.type != TokenType::EndOfFile) {
             auto param = createNode<TypeParamNode>();
-            if (accept(TokenType::Star)) {
-                if (accept(TokenType::Star)) {
-                    param->kind = TypeParamNode::Kind::ParamSpec;
-                } else {
-                    param->kind = TypeParamNode::Kind::TypeVarTuple;
-                }
+            // The tokenizer yields `**` as a single DoubleStar token, so
+            // `**P` never matched two Star tokens.
+            if (accept(TokenType::DoubleStar)) {
+                param->kind = TypeParamNode::Kind::ParamSpec;
+            } else if (accept(TokenType::Star)) {
+                param->kind = TypeParamNode::Kind::TypeVarTuple;
             } else {
                 param->kind = TypeParamNode::Kind::TypeVar;
             }
@@ -2157,7 +2157,9 @@ std::vector<std::unique_ptr<TypeParamNode>> Parser::parseTypeParams() {
             
             if (accept(TokenType::Colon)) {
                 param->bound = parseExpression();
-            } else if (accept(TokenType::Assign)) {
+            }
+            // PEP 696: `T: int = str` has both a bound and a default.
+            if (accept(TokenType::Assign)) {
                 param->default_val = parseExpression();
             }
             

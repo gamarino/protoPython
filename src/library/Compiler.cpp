@@ -3830,6 +3830,10 @@ static void collectAnnotatedNames(ASTNode* node, std::unordered_set<std::string>
 
 bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     if (!n) return false;
+    // Consumed on entry so nothing compiled below inherits it.
+    const bool leaveOnStack = leaveDefOnStack_;
+    leaveDefOnStack_ = false;
+    if (!n->type_params.empty()) return compileGenericFunctionDef(n);
     std::unordered_set<std::string> bodyGlobals;
     std::unordered_set<std::string> bodyNonlocals;
     std::vector<std::string> localsOrdered;
@@ -3909,8 +3913,9 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     // currentClassName_ is bound in an enclosing scope, explicitly add
     // it to bodyNonlocals so emitNameOp picks LOAD_DEREF over
     // LOAD_GLOBAL.  Module-level classes still resolve fine via
-    // LOAD_GLOBAL.
-    if (isClassBody_ && !currentClassName_.empty()) {
+    // LOAD_GLOBAL.  The def wrapped by a PEP 695 annotation scope in a
+    // class body is a method too.
+    if ((isClassBody_ || classAnnotationScope_) && !currentClassName_.empty()) {
         const std::string& cn = currentClassName_;
         bool isLocal = false;
         for (const auto& p : params) if (p == cn) isLocal = true;
@@ -4022,7 +4027,8 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     // Only propagate currentClassName_ when this function is a direct class method
     // (i.e., defined inside a class body). Nested functions inside methods do not
     // inherit the class name to avoid false super() rewrites.
-    if (isClassBody_) bodyCompiler.currentClassName_ = currentClassName_;
+    if (isClassBody_ || classAnnotationScope_) bodyCompiler.currentClassName_ = currentClassName_;
+    bodyCompiler.classAnnotationScope_ = n->isAnnotationScope && isClassBody_;
 
     // CPython qualname rules for nested defs:
     //   class C:        prefix=""        → method qualname "C.method"
@@ -4036,7 +4042,9 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     std::string fnQualname = (qualnamePrefix_.empty() || globalNames_.count(n->name))
         ? n->name
         : qualnamePrefix_ + "." + n->name;
-    bodyCompiler.qualnamePrefix_ = fnQualname + ".<locals>";
+    // A PEP 695 annotation scope does not show in qualnames: `def f[T]` is
+    // "f", not "<generic parameters of f>.<locals>.f".
+    bodyCompiler.qualnamePrefix_ = n->isAnnotationScope ? qualnamePrefix_ : fnQualname + ".<locals>";
 
     // Pre-bind annotation-only locals (`x: int` with no value) to the
     // env's "<unbound>" sentinel.  CO_OPTIMIZED slots are otherwise
@@ -4234,6 +4242,7 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
         }
     }
 
+    if (leaveOnStack) return true;
     return emitNameOp(n->name, TargetCtx::Store);
 }
 
@@ -4778,6 +4787,7 @@ bool Compiler::compileAsyncWith(AsyncWithNode* n) {
 
 bool Compiler::compileClassDef(ClassDefNode* n) {
     if (!n) return false;
+    if (!n->type_params.empty()) return compileGenericClassDef(n);
     
     // 1. Name
     int nameIdx = addConstant(PythonEnvironment::getInternedString(ctx_, n->name.c_str())->asObject(ctx_));
@@ -5457,11 +5467,330 @@ bool Compiler::compileNonlocal(NonlocalNode* n) {
     return true;
 }
 
+// =========================================================================
+// PEP 695 type parameters
+// =========================================================================
+//
+// `class A[T](Base): ...`, `def f[T](x: T): ...` and `type X[T] = v` compile
+// the way CPython compiles them: an annotation scope, a synthetic function
+// `<generic parameters of A>` called on the spot, creates the TypeVar /
+// ParamSpec / TypeVarTuple objects as its locals, so the class body, the
+// annotations and the alias value close over them.  The scope is AST built
+// around the parser's own nodes, which are borrowed and handed back by
+// Pep695Restore on every return (the tree must stay intact: a finally body
+// is compiled once per exit path).  The objects come from the _typing stub
+// through `__import__('_typing')`, which binds no name in any scope.
+//
+// Not modelled: __classdict__ (an annotation scope in a class body cannot
+// see that body's names, except in the hoisted bases/keywords/defaults),
+// lazy evaluation of bounds/constraints/defaults, async generic defs.
+
+namespace {
+
+struct Pep695Restore {
+    std::vector<std::function<void()>> steps;
+    ~Pep695Restore() {
+        for (auto it = steps.rbegin(); it != steps.rend(); ++it) (*it)();
+    }
+};
+
+std::unique_ptr<ASTNode> pep695Name(const std::string& id, int line) {
+    auto nm = std::make_unique<NameNode>();
+    nm->id = id;
+    nm->line = line;
+    return nm;
+}
+
+std::unique_ptr<ASTNode> pep695Str(const std::string& s, int line) {
+    auto c = std::make_unique<ConstantNode>();
+    c->constType = ConstantNode::ConstType::Str;
+    c->strVal = s;
+    c->line = line;
+    return c;
+}
+
+std::unique_ptr<ASTNode> pep695Attr(std::unique_ptr<ASTNode> value, const char* attr, int line) {
+    auto at = std::make_unique<AttributeNode>();
+    at->value = std::move(value);
+    at->attr = attr;
+    at->line = line;
+    return at;
+}
+
+// `__import__('_typing').<attr>`
+std::unique_ptr<ASTNode> pep695Typing(const char* attr, int line) {
+    auto call = std::make_unique<CallNode>();
+    call->func = pep695Name("__import__", line);
+    call->args.push_back(pep695Str("_typing", line));
+    call->line = line;
+    return pep695Attr(std::move(call), attr, line);
+}
+
+// `(T, Ts, P)`; with unpackTuples `(T, *Ts, P)`, for the Generic[...] base.
+std::unique_ptr<ASTNode> pep695ParamTuple(
+        const std::vector<std::unique_ptr<TypeParamNode>>& params, bool unpackTuples, int line) {
+    auto tup = std::make_unique<TupleLiteralNode>();
+    tup->line = line;
+    for (auto& tp : params) {
+        if (unpackTuples && tp->kind == TypeParamNode::Kind::TypeVarTuple) {
+            auto star = std::make_unique<StarredNode>();
+            star->value = pep695Name(tp->name, line);
+            star->line = line;
+            tup->elements.push_back(std::move(star));
+        } else {
+            tup->elements.push_back(pep695Name(tp->name, line));
+        }
+    }
+    return tup;
+}
+
+// `T = _typing.TypeVar("T", bound=B, default=D)` per parameter; a tuple
+// bound `T: (int, str)` declares constraints: `TypeVar("T", *(int, str))`.
+void pep695ParamAssigns(std::vector<std::unique_ptr<TypeParamNode>>& params,
+        std::vector<std::unique_ptr<ASTNode>>& out, Pep695Restore& restore) {
+    for (auto& owned : params) {
+        TypeParamNode* tp = owned.get();
+        const char* ctor = tp->kind == TypeParamNode::Kind::TypeVarTuple ? "TypeVarTuple"
+            : (tp->kind == TypeParamNode::Kind::ParamSpec ? "ParamSpec" : "TypeVar");
+        auto call = std::make_unique<CallNode>();
+        CallNode* callRaw = call.get();
+        call->func = pep695Typing(ctor, tp->line);
+        call->args.push_back(pep695Str(tp->name, tp->line));
+        call->line = tp->line;
+        if (tp->bound && dynamic_cast<TupleLiteralNode*>(tp->bound.get())) {
+            auto star = std::make_unique<StarredNode>();
+            StarredNode* starRaw = star.get();
+            star->value = std::move(tp->bound);
+            star->line = tp->line;
+            call->args.push_back(std::move(star));
+            restore.steps.push_back([tp, starRaw] { tp->bound = std::move(starRaw->value); });
+        } else if (tp->bound) {
+            const size_t k = call->keywords.size();
+            call->keywords.push_back({"bound", std::move(tp->bound)});
+            restore.steps.push_back([tp, callRaw, k] { tp->bound = std::move(callRaw->keywords[k].second); });
+        }
+        if (tp->default_val) {
+            const size_t k = call->keywords.size();
+            call->keywords.push_back({"default", std::move(tp->default_val)});
+            restore.steps.push_back([tp, callRaw, k] { tp->default_val = std::move(callRaw->keywords[k].second); });
+        }
+        auto assign = std::make_unique<AssignNode>();
+        assign->targets.push_back(pep695Name(tp->name, tp->line));
+        assign->value = std::move(call);
+        assign->line = tp->line;
+        out.push_back(std::move(assign));
+    }
+}
+
+// Moves the expression in `slot` out, to be evaluated by the caller in the
+// enclosing scope and received by the annotation scope as parameter `.argN`.
+void pep695Hoist(std::function<std::unique_ptr<ASTNode>&()> slot, FunctionDefNode* scope,
+        std::vector<std::unique_ptr<ASTNode>>& hoisted, Pep695Restore& restore) {
+    const std::string argName = ".arg" + std::to_string(hoisted.size());
+    scope->parameters.push_back(argName);
+    hoisted.push_back(pep695Name(argName, slot()->line));
+    std::swap(slot(), hoisted.back());
+    const size_t j = hoisted.size() - 1;
+    restore.steps.push_back([slot, &hoisted, j] { std::swap(slot(), hoisted[j]); });
+}
+
+std::unique_ptr<FunctionDefNode> pep695Scope(const std::string& name, int line) {
+    auto scope = std::make_unique<FunctionDefNode>();
+    scope->name = "<generic parameters of " + name + ">";
+    scope->isAnnotationScope = true;
+    scope->body = std::make_unique<SuiteNode>();
+    scope->line = line;
+    return scope;
+}
+
+} // namespace
+
+bool Compiler::emitAnnotationScopeCall(FunctionDefNode* scope,
+        const std::vector<std::unique_ptr<ASTNode>>& args) {
+    leaveDefOnStack_ = true;
+    if (!compileFunctionDef(scope)) return false;
+    emit(OP_PUSH_NULL, 0);
+    emit(OP_ROT_TWO, 0);
+    for (auto& a : args) {
+        if (!compileNode(a.get())) return false;
+    }
+    emit(OP_CALL_FUNCTION, static_cast<int>(args.size()));
+    return true;
+}
+
+bool Compiler::compileGenericClassDef(ClassDefNode* n) {
+    auto* classBody = dynamic_cast<SuiteNode*>(n->body.get());
+    if (!classBody) return false;
+    const int line = n->line;
+    std::unique_ptr<FunctionDefNode> scope = pep695Scope(n->name, line);
+    auto* scopeBody = static_cast<SuiteNode*>(scope->body.get());
+    std::vector<std::unique_ptr<TypeParamNode>> params = std::move(n->type_params);
+    std::vector<std::unique_ptr<ASTNode>> decorators = std::move(n->decorator_list);
+    std::vector<std::unique_ptr<ASTNode>> hoisted;
+    // Declared after everything its steps touch, so it runs first on return.
+    Pep695Restore restore;
+    restore.steps.push_back([n, &params, &decorators] {
+        n->type_params = std::move(params);
+        n->decorator_list = std::move(decorators);
+    });
+
+    // Bases and class keywords that do not mention a type parameter are
+    // evaluated outside, so names of an enclosing class body stay visible.
+    std::unordered_set<std::string> paramNames;
+    for (auto& tp : params) paramNames.insert(tp->name);
+    auto usesParam = [&](ASTNode* expr) {
+        std::unordered_set<std::string> used;
+        collectUsedNames(expr, used);
+        for (const auto& u : used) if (paramNames.count(u)) return true;
+        return false;
+    };
+    for (size_t i = 0; i < n->bases.size(); ++i) {
+        if (dynamic_cast<StarredNode*>(n->bases[i].get()) || usesParam(n->bases[i].get())) continue;
+        pep695Hoist([n, i]() -> std::unique_ptr<ASTNode>& { return n->bases[i]; }, scope.get(), hoisted, restore);
+    }
+    for (size_t i = 0; i < n->keywords.size(); ++i) {
+        if (usesParam(n->keywords[i].second.get())) continue;
+        pep695Hoist([n, i]() -> std::unique_ptr<ASTNode>& { return n->keywords[i].second; }, scope.get(), hoisted, restore);
+    }
+
+    if (!isFunctionScope_ && !isClassBody_) {
+        // Module scope: the class is bound as a global from inside the scope,
+        // so its methods read the module binding, as in CPython.
+        auto g = std::make_unique<GlobalNode>();
+        g->names.push_back(n->name);
+        g->line = line;
+        scopeBody->statements.push_back(std::move(g));
+    }
+    pep695ParamAssigns(params, scopeBody->statements, restore);
+
+    // `__type_params__ = (T, Ts, P)` ends the class body (statement 0 may be
+    // the docstring) and `Generic[T, *Ts, P]` ends the bases.
+    auto tpAssign = std::make_unique<AssignNode>();
+    tpAssign->targets.push_back(pep695Name("__type_params__", line));
+    tpAssign->value = pep695ParamTuple(params, false, line);
+    tpAssign->line = line;
+    classBody->statements.push_back(std::move(tpAssign));
+    restore.steps.push_back([classBody] { classBody->statements.pop_back(); });
+    auto genericBase = std::make_unique<SubscriptNode>();
+    genericBase->value = pep695Typing("Generic", line);
+    genericBase->index = pep695ParamTuple(params, true, line);
+    genericBase->line = line;
+    n->bases.push_back(std::move(genericBase));
+    restore.steps.push_back([n] { n->bases.pop_back(); });
+
+    // The class statement itself, borrowed: without type params and
+    // decorators it compiles, and binds its name, as a plain class.
+    const size_t classIdx = scopeBody->statements.size();
+    scopeBody->statements.push_back(std::unique_ptr<ASTNode>(n));
+    restore.steps.push_back([scopeBody, classIdx] { scopeBody->statements[classIdx].release(); });
+    auto ret = std::make_unique<ReturnNode>();
+    ret->value = pep695Name(n->name, line);
+    ret->line = line;
+    scopeBody->statements.push_back(std::move(ret));
+
+    if (!emitAnnotationScopeCall(scope.get(), hoisted)) return false;
+    for (auto it = decorators.rbegin(); it != decorators.rend(); ++it) {
+        emit(OP_PUSH_NULL, 0);
+        emit(OP_ROT_TWO, 0);
+        if (!compileNode(it->get())) return false;
+        emit(OP_ROT_TWO, 0);
+        emit(OP_CALL_FUNCTION, 1);
+    }
+    return emitNameOp(n->name, TargetCtx::Store);
+}
+
+bool Compiler::compileGenericFunctionDef(FunctionDefNode* n) {
+    const int line = n->line;
+    std::unique_ptr<FunctionDefNode> scope = pep695Scope(n->name, line);
+    auto* scopeBody = static_cast<SuiteNode*>(scope->body.get());
+    std::vector<std::unique_ptr<TypeParamNode>> params = std::move(n->type_params);
+    std::vector<std::unique_ptr<ASTNode>> decorators = std::move(n->decorator_list);
+    std::vector<std::unique_ptr<ASTNode>> hoisted;
+    Pep695Restore restore;
+    restore.steps.push_back([n, &params, &decorators] {
+        n->type_params = std::move(params);
+        n->decorator_list = std::move(decorators);
+    });
+
+    // Defaults are evaluated in the enclosing scope, as in CPython.
+    for (size_t i = 0; i < n->defaults.size(); ++i) {
+        pep695Hoist([n, i]() -> std::unique_ptr<ASTNode>& { return n->defaults[i]; }, scope.get(), hoisted, restore);
+    }
+    for (size_t i = 0; i < n->kw_defaults.size(); ++i) {
+        if (!n->kw_defaults[i]) continue;
+        pep695Hoist([n, i]() -> std::unique_ptr<ASTNode>& { return n->kw_defaults[i]; }, scope.get(), hoisted, restore);
+    }
+
+    if (!isFunctionScope_ && !isClassBody_) {
+        auto g = std::make_unique<GlobalNode>();
+        g->names.push_back(n->name);
+        g->line = line;
+        scopeBody->statements.push_back(std::move(g));
+    }
+    pep695ParamAssigns(params, scopeBody->statements, restore);
+
+    const size_t defIdx = scopeBody->statements.size();
+    scopeBody->statements.push_back(std::unique_ptr<ASTNode>(n));
+    restore.steps.push_back([scopeBody, defIdx] { scopeBody->statements[defIdx].release(); });
+    // f.__type_params__ = (T, Ts, P); return f
+    auto tpAssign = std::make_unique<AssignNode>();
+    tpAssign->targets.push_back(pep695Attr(pep695Name(n->name, line), "__type_params__", line));
+    tpAssign->value = pep695ParamTuple(params, false, line);
+    tpAssign->line = line;
+    scopeBody->statements.push_back(std::move(tpAssign));
+    auto ret = std::make_unique<ReturnNode>();
+    ret->value = pep695Name(n->name, line);
+    ret->line = line;
+    scopeBody->statements.push_back(std::move(ret));
+
+    if (!emitAnnotationScopeCall(scope.get(), hoisted)) return false;
+    for (auto it = decorators.rbegin(); it != decorators.rend(); ++it) {
+        emit(OP_PUSH_NULL, 0);
+        emit(OP_ROT_TWO, 0);
+        if (!compileNode(it->get())) return false;
+        emit(OP_ROT_TWO, 0);
+        emit(OP_CALL_FUNCTION, 1);
+    }
+    return emitNameOp(n->name, TargetCtx::Store);
+}
+
 bool Compiler::compileTypeAlias(TypeAliasNode* n) {
     if (!n) return false;
-    // PEP 695: type Alias[T] = Value.
-    // For now, we compile the value and store it to the name.
-    if (!compileNode(n->value.get())) return false;
+    // PEP 695: `type X[T] = v` binds `_typing.TypeAliasType._lazy("X",
+    // lambda: v, (T,))`; __value__ runs the lambda on first access, so v may
+    // name later bindings.  Type parameters get an annotation scope.
+    const int line = n->line;
+    std::unique_ptr<FunctionDefNode> scope = pep695Scope(n->name, line);
+    auto* scopeBody = static_cast<SuiteNode*>(scope->body.get());
+    std::unique_ptr<ASTNode> make;
+    std::vector<std::unique_ptr<TypeParamNode>> params = std::move(n->type_params);
+    const std::vector<std::unique_ptr<ASTNode>> noArgs;
+    Pep695Restore restore;
+    restore.steps.push_back([n, &params] { n->type_params = std::move(params); });
+
+    auto lambda = std::make_unique<LambdaNode>();
+    LambdaNode* lambdaRaw = lambda.get();
+    lambda->body = std::move(n->value);
+    lambda->line = line;
+    restore.steps.push_back([n, lambdaRaw] { n->value = std::move(lambdaRaw->body); });
+    auto call = std::make_unique<CallNode>();
+    call->func = pep695Attr(pep695Typing("TypeAliasType", line), "_lazy", line);
+    call->args.push_back(pep695Str(n->name, line));
+    call->args.push_back(std::move(lambda));
+    call->args.push_back(pep695ParamTuple(params, false, line));
+    call->line = line;
+    if (params.empty()) {
+        make = std::move(call);
+        if (!compileNode(make.get())) return false;
+        return emitNameOp(n->name, TargetCtx::Store);
+    }
+
+    pep695ParamAssigns(params, scopeBody->statements, restore);
+    auto ret = std::make_unique<ReturnNode>();
+    ret->value = std::move(call);
+    ret->line = line;
+    scopeBody->statements.push_back(std::move(ret));
+    if (!emitAnnotationScopeCall(scope.get(), noArgs)) return false;
     return emitNameOp(n->name, TargetCtx::Store);
 }
 

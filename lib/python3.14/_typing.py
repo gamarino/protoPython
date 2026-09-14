@@ -251,9 +251,20 @@ class TypeAliasType:
     """Type alias created via `type` statement."""
 
     def __init__(self, name, value, *, type_params=()):
+        if not isinstance(name, str):
+            raise TypeError("TypeAliasType() argument 'name' must be str")
         self.__name__ = name
-        self.__value__ = value
+        self._value = value
+        self._evaluate = None
         self.__type_params__ = tuple(type_params)
+
+    @classmethod
+    def _lazy(cls, name, evaluate, type_params=()):
+        # Compiled `type X = v` statement (PEP 695): `evaluate` computes the
+        # value on first access to __value__, so v may name later bindings.
+        alias = cls(name, None, type_params=type_params)
+        alias._evaluate = evaluate
+        return alias
 
     def __repr__(self):
         return self.__name__
@@ -261,9 +272,14 @@ class TypeAliasType:
     def __reduce__(self):
         return self.__name__
 
+    # Assigning self.__value__ in __init__ hit this read-only property
+    # ("has no setter"), and the getter returned itself.
     @property
     def __value__(self):
-        return self.__value__
+        if self._evaluate is not None:
+            self._value = self._evaluate()
+            self._evaluate = None
+        return self._value
 
     def __getitem__(self, params):
         return _GenericAlias(self, params if isinstance(params, tuple) else (params,))

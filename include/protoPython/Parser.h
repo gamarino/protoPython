@@ -250,6 +250,9 @@ struct FunctionDefNode : ASTNode {
     int posonlyargcount = 0;
     std::unique_ptr<ASTNode> returns;
     std::map<std::string, std::unique_ptr<ASTNode>> parameter_annotations;
+    /** Synthetic PEP 695 annotation scope built by the compiler: it adds no
+     *  `<locals>` level to the qualnames of the definition it wraps. */
+    bool isAnnotationScope = false;
 };
 
 /** lambda params: body. */
