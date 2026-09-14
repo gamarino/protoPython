@@ -4441,6 +4441,17 @@ bool Compiler::compileLambda(LambdaNode* n) {
 
     const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), PythonEnvironment::getInternedString(ctx_, filename_.c_str()), co_varnames, nparams, kwonlyargcount, automatic_count, co_flags, bodyCompiler.isGenerator_, PythonEnvironment::getInternedString(ctx_, "<lambda>"), bodyCompiler.firstLine_, co_lnotab);
     if (!codeObj) return false;
+    // Stamp `co_freevars` as compileFunctionDef does: OP_BUILD_FUNCTION
+    // snapshots exactly these names, and `__closure__` has one cell per name.
+    {
+        std::vector<const proto::ProtoObject*> freeVec;
+        freeVec.reserve(bodyNonlocals.size());
+        for (const auto& fv : bodyNonlocals)
+            freeVec.push_back(PythonEnvironment::getInternedString(ctx_, fv.c_str())->asObject(ctx_));
+        codeObj = codeObj->setAttribute(ctx_,
+            PythonEnvironment::getInternedString(ctx_, "co_freevars"),
+            ctx_->newTuple(freeVec)->asObject(ctx_));
+    }
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
 

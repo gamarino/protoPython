@@ -2936,7 +2936,7 @@ static const proto::ProtoObject* py_dir(
                     // bare dir() output so test_descr.test_dir's
                     // assertEqual(dir(), ['junk', 'self']) sees only
                     // user-bound locals.
-                    "__closure__", "__code__", "__defaults__",
+                    "__closure_frames__", "__code__", "__defaults__",
                     "__globals__", "__kwdefaults__", "__module__",
                     "__qualname__", "__wrapped__", "__annotations__",
                     "f_back", "f_code", "f_globals", "f_locals",

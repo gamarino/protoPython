@@ -1144,6 +1144,7 @@ public:
     const proto::ProtoObject* getMethodDescriptorPrototype() const { return methodDescriptorPrototype; }
     const proto::ProtoObject* getWrapperDescriptorPrototype() const { return wrapperDescriptorPrototype; }
     const proto::ProtoObject* getMemberDescriptorPrototype() const { return memberDescriptorPrototype; }
+    const proto::ProtoObject* getCellPrototype() const { return cellPrototype; }
     const proto::ProtoObject* getBuiltinFunctionOrMethodPrototype() const { return builtinFunctionOrMethodPrototype; }
     const proto::ProtoObject* getUnionTypePrototype() const { return unionTypePrototype; }
     const proto::ProtoObject* getStopAsyncIterationType() const { return stopAsyncIterationType; }
