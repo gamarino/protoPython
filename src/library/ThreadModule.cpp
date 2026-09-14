@@ -84,39 +84,42 @@ static const proto::ProtoObject* py_lock_acquire(
         }
     }
 
-    std::unique_lock<std::mutex> lk(ld->internal_m);
-    if (!blocking) {
-        if (ld->taken) return PROTO_FALSE;
-        ld->taken = true;
-        ld->held = true;
-        return PROTO_TRUE;
+    {
+        std::lock_guard<std::mutex> lk(ld->internal_m);
+        if (!ld->taken) {
+            ld->taken = true;
+            ld->held = true;
+            return PROTO_TRUE;
+        }
+        if (!blocking) return PROTO_FALSE;
     }
-    // 2026-05-25: a `threading.Lock.acquire()` blocks the calling
-    // thread on a foreign condition variable that the protoCore GC
-    // cannot inspect. Without bracketing the wait in an unmanaged
-    // region, a concurrent GC cycle would stall behind every locked
-    // thread for the duration of the wait. The `lk` mutex is foreign
-    // (a plain std::mutex on LockData) so it does NOT need to be
-    // released — the contract says NO protoCore heap access while
-    // unmanaged, but waiting on a std::condition_variable is fine.
-    if (timeout < 0) {
+    // Contended: a `threading.Lock.acquire()` blocks the calling thread
+    // on a foreign condition variable that the protoCore GC cannot
+    // inspect, so the wait runs inside an unmanaged region (otherwise a
+    // GC cycle would stall behind every waiting thread). internal_m must
+    // be released BEFORE the region ends: returnFromUnmanaged() parks
+    // while a stop-the-world is in progress, and parking with
+    // internal_m held blocks every managed thread that then calls
+    // release() on this lock — the GC waits for those threads to park
+    // and they wait for the mutex.
+    bool acquired;
+    {
         proto::ProtoContext::UnmanagedScope u(ctx);
-        ld->cv.wait(lk, [&]{ return !ld->taken; });
-    } else {
-        auto dur = std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::duration<double>(timeout));
-        bool acquired;
-        {
-            proto::ProtoContext::UnmanagedScope u(ctx);
+        std::unique_lock<std::mutex> lk(ld->internal_m);
+        if (timeout < 0) {
+            ld->cv.wait(lk, [&]{ return !ld->taken; });
+            acquired = true;
+        } else {
+            auto dur = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::duration<double>(timeout));
             acquired = ld->cv.wait_for(lk, dur, [&]{ return !ld->taken; });
         }
-        if (!acquired) {
-            return PROTO_FALSE;
+        if (acquired) {
+            ld->taken = true;
+            ld->held = true;
         }
     }
-    ld->taken = true;
-    ld->held = true;
-    return PROTO_TRUE;
+    return acquired ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_lock_release(
@@ -177,22 +180,29 @@ static const proto::ProtoObject* py_rlock_acquire(
         ld->owner.store(current_thread_id(), std::memory_order_release);
     };
 
-    if (!blocking) {
-        if (ld->m.try_lock()) { recordAcquired(); return PROTO_TRUE; }
-        return PROTO_FALSE;
+    if (ld->m.try_lock()) { recordAcquired(); return PROTO_TRUE; }
+    if (!blocking) return PROTO_FALSE;
+
+    // Contended: block inside an unmanaged region. The owner may be parked
+    // at a GC safepoint while holding the RLock; a waiter blocked in lock()
+    // as a managed thread would never park, so the stop-the-world quorum
+    // could never be reached (threading's _active_limbo_lock is an RLock
+    // taken by every Thread start and exit).
+    bool acquired;
+    {
+        proto::ProtoContext::UnmanagedScope u(ctx);
+        if (timeout < 0) {
+            ld->m.lock();
+            acquired = true;
+        } else {
+            auto dur = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::duration<double>(timeout));
+            acquired = ld->m.try_lock_for(dur);
+        }
     }
-    if (timeout < 0) {
-        ld->m.lock();
-        recordAcquired();
-        return PROTO_TRUE;
-    }
-    auto dur = std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::duration<double>(timeout));
-    if (ld->m.try_lock_for(dur)) {
-        recordAcquired();
-        return PROTO_TRUE;
-    }
-    return PROTO_FALSE;
+    if (!acquired) return PROTO_FALSE;
+    recordAcquired();
+    return PROTO_TRUE;
 }
 
 static const proto::ProtoObject* py_rlock_release(
@@ -604,6 +614,10 @@ static const proto::ProtoObject* py_start_joinable_thread(
     const proto::ProtoObject* callable = posArgs->getAt(ctx, 0);
 
     // Resolve handle (kwarg "handle"; otherwise build a fresh one).
+    // Keyword arguments are keyed by the string hash, like every other
+    // native function reads them. Keying by the symbol pointer never
+    // matched, so threading.Thread's own handle was never populated and
+    // Thread.join() / is_alive() saw a thread that had "already finished".
     const proto::ProtoObject* handle = nullptr;
     if (kwargs) {
         const proto::ProtoString* handleKey =
@@ -614,10 +628,6 @@ static const proto::ProtoObject* py_start_joinable_thread(
         }
     }
     if (!handle || handle == PROTO_NONE) {
-    // Keyword arguments are keyed by the string hash, like every other
-    // native function reads them. Keying by the symbol pointer never
-    // matched, so threading.Thread's own handle was never populated and
-    // Thread.join() / is_alive() saw a thread that had "already finished".
         handle = py_make_thread_handle(ctx, self, nullptr, ctx->newList(), nullptr);
     }
 
