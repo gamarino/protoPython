@@ -14008,6 +14008,11 @@ static const proto::ProtoObject* py_dict_str(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
+    // CPython's dict has no __str__ of its own: str() falls back to repr(),
+    // so a subclass's __repr__ (OrderedDict, defaultdict) is honoured.
+    if (self && self->getAttribute(context, PythonEnvironment::getInternalString(context, "__data__"))) {
+        return PythonEnvironment::getInternedString(context, PythonEnvironment::reprObject(context, self))->asObject(context);
+    }
     return py_dict_repr(context, self, parentLink, positionalParameters, keywordParameters);
 }
 
