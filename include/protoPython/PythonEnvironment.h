@@ -175,6 +175,7 @@ public:
 
     /** @brief Gets the sys module object. */
     const proto::ProtoObject* getSysModule() const { return sysModule; }
+    const proto::ProtoObject* getBuiltinsModule() const { return builtinsModule; }
     
     /** @brief Ensures a module is registered in sys.modules. */
     void ensureModuleInSysModules(proto::ProtoContext* ctx, const std::string& name, const proto::ProtoObject* mod);

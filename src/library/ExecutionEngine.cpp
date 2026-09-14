@@ -6946,6 +6946,11 @@ const proto::ProtoObject* executeBytecodeRange(
                             if (noSlots && noDescr && !hasSetattrOverride) {
                                 newObj = const_cast<proto::ProtoObject*>(obj)->setAttribute(ctx, nameS, val);
                                 fastStoreTaken = true;
+                                // A module attribute is a global of that module
+                                // (or a builtin): names resolved before are stale.
+                                if (directType == env->getModulePrototype() || obj == env->getBuiltinsModule()) {
+                                    env->invalidateResolveCache();
+                                }
                                 // STRUCT-321: dict / list / tuple / set
                                 // subclass instances must NOT have STORE_ATTR
                                 // write the name into their __keys__ slot —
@@ -7027,6 +7032,9 @@ const proto::ProtoObject* executeBytecodeRange(
                     if (!fastStoreTaken) {
                         if (env) {
                             newObj = env->setAttribute(ctx, obj, nameS, val);
+                            if (obj == env->getBuiltinsModule() || env->getType(ctx, obj) == env->getModulePrototype()) {
+                                env->invalidateResolveCache();
+                            }
                         } else {
                             proto::ProtoObject* mutableObj = const_cast<proto::ProtoObject*>(obj);
                             newObj = mutableObj->setAttribute(ctx, nameS, val);
@@ -9836,6 +9844,11 @@ const proto::ProtoObject* executeBytecodeRange(
                         std::string nm;
                         nameS->toUTF8String(ctx, nm);
                         env->raiseAttributeError(ctx, obj, nm.c_str());
+                    }
+                    // `del module.name` unbinds a global (or a builtin).
+                    if (removed && env && (obj == env->getBuiltinsModule()
+                                           || env->getType(ctx, obj) == env->getModulePrototype())) {
+                        env->invalidateResolveCache();
                     }
                 }
             }

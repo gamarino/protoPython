@@ -2823,8 +2823,15 @@ static const proto::ProtoObject* py_setattr(
     nameObj->asString(context)->toUTF8String(context, nameStr);
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoString* key = PythonEnvironment::getInternedString(context, nameStr.c_str());
-    if (env) env->setAttribute(context, obj, key, value);
-    else obj->setAttribute(context, key, value);
+    if (env) {
+        env->setAttribute(context, obj, key, value);
+        // setattr(module, name, v) rebinds a global (or a builtin).
+        if (obj == env->getBuiltinsModule() || env->getType(context, obj) == env->getModulePrototype()) {
+            env->invalidateResolveCache();
+        }
+    } else {
+        obj->setAttribute(context, key, value);
+    }
     return PROTO_NONE;
 }
 
@@ -11380,7 +11387,11 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         fflush(stderr);
     }
     protoPython::PythonEnvironment* pEnv = protoPython::PythonEnvironment::fromContext(ctx);
-    const proto::ProtoObject* builtins = ctx->newObject(false);
+    // Mutable, like every other module: `builtins.x = v` must update this
+    // object in place.  Immutable, each store made a new builtins object that
+    // only sys.modules saw, so the name `builtins` and name lookups kept the
+    // old one.
+    const proto::ProtoObject* builtins = ctx->newObject(true);
     if (objectProto) builtins = builtins->addParent(ctx, objectProto);
     if (noneProto) {
         builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "None"), noneProto);
