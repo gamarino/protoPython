@@ -30,7 +30,8 @@ static const proto::ProtoObject* exception_init(
         if (first) {
             const proto::ProtoString* clsKey = PythonEnvironment::getInternedString(context, "__class__");
             const proto::ProtoObject* firstCls = first->getAttribute(context, clsKey);
-            if (firstCls == self) {
+            // The duplicate is the instance itself.
+            if (first == self || firstCls == self) {
                 startIdx = 1;
             }
         }
@@ -545,23 +546,28 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     // StopIteration custom init
     const proto::ProtoString* py_init = PythonEnvironment::getInternedString(ctx, "__init__");
     proto::ProtoObject* stopIterMutable = const_cast<proto::ProtoObject*>(stopIterationType);
-    stopIterMutable->setAttribute(ctx, py_init, ctx->fromMethod(stopIterMutable, [](proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* positionalParameters, const proto::ProtoSparseList* keywordParameters) -> const proto::ProtoObject* {
-        // Run base init so `self.args` is populated, then read value
-        // back from `self.args` (which has the duplicate-self already
-        // stripped if applicable).  This avoids the historical bug
-        // where StopIteration.value held `(class_obj, real_value)`
-        // because the caller leaked the class as posArgs[0].
+    // Registered unbound like exception_init: bound to the type, the call
+    // received the new instance both as self and as the first argument, so
+    // args became (instance, value) and repr(value) recursed until the stack
+    // overflowed.
+    stopIterMutable->setAttribute(ctx, py_init, ctx->fromMethod(nullptr, [](proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* positionalParameters, const proto::ProtoSparseList* keywordParameters) -> const proto::ProtoObject* {
+        // Run base init so the instance's `args` is populated (without the
+        // duplicated instance), then derive `value` from it.
         exception_init(context, self, parentLink, positionalParameters, keywordParameters);
-        const proto::ProtoObject* args = self->getAttribute(context,
-            PythonEnvironment::getInternedString(context, "args"));
-        const proto::ProtoObject* value = PROTO_NONE;
-        if (args && args->isTuple(context)) {
-            const proto::ProtoTuple* t = args->asTuple(context);
-            unsigned long n = t->getSize(context);
-            if (n == 1) value = t->getAt(context, 0);
-            else if (n > 1) value = args;       // tuple of values
+        const proto::ProtoObject* instance = self;
+        if ((!instance || instance == PROTO_NONE) && positionalParameters && positionalParameters->getSize(context) > 0) {
+            instance = positionalParameters->getAt(context, 0);
         }
-        self = self->setAttribute(context, PythonEnvironment::getInternedString(context, "value"), value);
+        if (!instance || instance == PROTO_NONE) return PROTO_NONE;
+        const proto::ProtoObject* args = instance->getAttribute(context,
+            PythonEnvironment::getInternedString(context, "args"));
+        // CPython: value is args[0], or None without arguments.
+        const proto::ProtoObject* value = PROTO_NONE;
+        if (args && args->isTuple(context) && args->asTuple(context)->getSize(context) > 0) {
+            value = args->asTuple(context)->getAt(context, 0);
+        }
+        const_cast<proto::ProtoObject*>(instance)->setAttribute(context,
+            PythonEnvironment::getInternedString(context, "value"), value);
         return PROTO_NONE;
     }));
 
