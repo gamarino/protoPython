@@ -59,6 +59,7 @@
 #include <sstream>
 #include <mutex>
 #include <vector>
+#include <deque>
 #include <unordered_set>
 #include <functional>
 #include <execinfo.h>
@@ -21466,7 +21467,6 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
         addRoot(iterString ? iterString->asObject(rootContext_) : nullptr);
         addRoot(nextString ? nextString->asObject(rootContext_) : nullptr);
-        addRoot(taskQueue ? taskQueue->asObject(rootContext_) : nullptr);
         if (emptyList) addRoot(emptyList->asObject(rootContext_));
         if (rangeCurString) addRoot(rangeCurString->asObject(rootContext_));
         if (rangeStopString) addRoot(rangeStopString->asObject(rootContext_));
@@ -27903,48 +27903,71 @@ const proto::ProtoTuple* PythonEnvironment::getCurrentKwNames() const {
     return s_kwNamesStack.empty() ? nullptr : s_kwNamesStack.back();
 }
 
+// Task queue of the minimal native coroutine loop. It was a PythonEnvironment
+// member mutated through rootContext_ from whichever thread ran the loop: the
+// same shared-state and cross-context allocation defects fixed for the
+// keyword-names stack. Each thread drives its own loop, so the queue is
+// thread_local; a std::deque is invisible to the GC, so every queued
+// coroutine is pinned in transientArgsRoots_ until it finishes or is
+// re-queued.
+static thread_local std::deque<std::pair<const proto::ProtoObject*, proto::ProtoRootSet::Handle>> s_taskQueue;
+
 const proto::ProtoObject* PythonEnvironment::runUntilComplete(const proto::ProtoObject* coro) {
     if (!coro) return PROTO_NONE;
-    
+    proto::ProtoContext* ctx = s_threadContext ? s_threadContext : rootContext_;
+    auto unpin = [this](proto::ProtoRootSet::Handle h) {
+        if (transientArgsRoots_ && h != proto::ProtoRootSet::kNullHandle) {
+            transientArgsRoots_->remove(h);
+        }
+    };
+
     // Add the initial coroutine as a task
     addTask(coro);
-    
+
     const proto::ProtoObject* lastResult = PROTO_NONE;
-    
-    while (taskQueue && taskQueue->getSize(rootContext_) > 0) {
-        // Simple FIFO queue: pull the first task
-        const proto::ProtoObject* task = taskQueue->getAt(rootContext_, 0);
-        taskQueue = taskQueue->removeAt(rootContext_, 0);
-        
+
+    while (!s_taskQueue.empty()) {
+        // Simple FIFO queue: pull the first task. Its pin is released only
+        // after it has been re-queued (pinned again) or has finished, so the
+        // coroutine stays reachable while it runs.
+        const proto::ProtoObject* task = s_taskQueue.front().first;
+        const proto::ProtoRootSet::Handle handle = s_taskQueue.front().second;
+        s_taskQueue.pop_front();
+
         // Resume the coroutine by calling .send(None)
         const proto::ProtoObject* sendMethod = getAttr(task, "send");
         if (sendMethod && sendMethod != PROTO_NONE) {
             try {
                 lastResult = callObject(sendMethod, {PROTO_NONE});
-                
+
                 // If callObject returns successfully, it means the coroutine yielded.
                 // In a minimal loop, we just put it back at the end of the queue to be resumed later.
                 addTask(task);
             } catch (const proto::ProtoObject* exc) {
                 // If it raised StopIteration, the coroutine is finished.
-                if (isStopIteration(rootContext_, exc)) {
-                    lastResult = getStopIterationValue(rootContext_, exc);
+                if (isStopIteration(ctx, exc)) {
+                    lastResult = getStopIterationValue(ctx, exc);
                     // Finished - don't add back to queue.
                 } else {
                     // A real error occurred - report and re-raise.
+                    unpin(handle);
                     handleException(exc);
                     throw exc;
                 }
             }
         }
+        unpin(handle);
     }
-    
+
     return lastResult;
 }
 
 void PythonEnvironment::addTask(const proto::ProtoObject* coro) {
-    if (!taskQueue) taskQueue = rootContext_->newList();
-    taskQueue = taskQueue->appendLast(rootContext_, coro);
+    proto::ProtoRootSet::Handle h = proto::ProtoRootSet::kNullHandle;
+    if (transientArgsRoots_ && coro) {
+        h = transientArgsRoots_->add(coro);
+    }
+    s_taskQueue.emplace_back(coro, h);
 }
 
 struct SyncContext {

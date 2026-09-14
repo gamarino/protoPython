@@ -1142,7 +1142,6 @@ private:
     const proto::ProtoObject* bytesWarningType{nullptr};
     const proto::ProtoObject* resourceWarningType{nullptr};
     const proto::ProtoObject* encodingWarningType{nullptr};
-    const proto::ProtoList* taskQueue{nullptr};
     const proto::ProtoString* iterString{nullptr};
     const proto::ProtoString* nextString{nullptr};
     const proto::ProtoList* emptyList{nullptr};
