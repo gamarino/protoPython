@@ -55,3 +55,4 @@ The most fundamental difference from CPython is the **absence of the Global Inte
 1. **Memory Management**: Uses `protoCore`'s hybrid GC and context-based promotion rather than simple reference counting. `sys.getrefcount` is not supported.
 2. **Performance Profile**: Startup is significantly faster. CPU-bound threaded code scales linearly with cores.
 3. **C API**: Does not support the CPython C API directly. Use **HPy** for writing or porting C extensions.
+4. **Known semantic gaps**: frozen dataclasses, some introspection (`types.FunctionType` with a closure, `inspect.getclosurevars`), a few error messages and reprs, and `gc.collect()` being a no-op. The maintained list is in [CPYTHON_CONFORMANCE.md](CPYTHON_CONFORMANCE.md#known-divergences-pending).
