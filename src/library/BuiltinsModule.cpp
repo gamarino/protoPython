@@ -3402,6 +3402,28 @@ static const proto::ProtoObject* py_compile(
                     parser.getLastErrorLine(), parser.getLastErrorColumn());
             return PROTO_NONE;
         }
+        if (mode == "single") {
+            // The interactive grammar takes one statement: a compound
+            // statement, or simple statements on a single line.  A compound
+            // first statement is recognised by its type: the parser stamps
+            // if / while / for nodes with the line after their body.
+            ASTNode* first = mod->body[0].get();
+            const bool compound = dynamic_cast<IfNode*>(first) || dynamic_cast<WhileNode*>(first) ||
+                dynamic_cast<ForNode*>(first) || dynamic_cast<AsyncForNode*>(first) ||
+                dynamic_cast<TryNode*>(first) || dynamic_cast<WithNode*>(first) ||
+                dynamic_cast<AsyncWithNode*>(first) || dynamic_cast<FunctionDefNode*>(first) ||
+                dynamic_cast<AsyncFunctionDefNode*>(first) || dynamic_cast<ClassDefNode*>(first) ||
+                dynamic_cast<MatchNode*>(first);
+            for (size_t si = 1; si < mod->body.size(); ++si) {
+                if (!mod->body[si]) continue;
+                if (compound || !first || mod->body[si]->line != first->line) {
+                    raiseSE("multiple statements found while compiling a single statement",
+                            mod->body[si]->line > 0 ? mod->body[si]->line : 1, 0);
+                    return PROTO_NONE;
+                }
+            }
+            compiler.setInteractive(true);
+        }
         if (!compiler.compileModule(mod.get())) {
             int line = (!mod->body.empty() && mod->body[0]) ? mod->body[0]->line : 1;
             raiseSE("invalid syntax", line > 0 ? line : 1, 0);

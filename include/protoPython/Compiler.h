@@ -27,6 +27,9 @@ public:
     bool compileExpression(ASTNode* expr);
     /** Compile a module (exec mode). Returns true on success. */
     bool compileModule(ModuleNode* mod);
+    /** compile(..., "single"): expression statements outside functions and
+     *  classes pass their value to sys.displayhook instead of dropping it. */
+    void setInteractive(bool on) { interactive_ = on; }
 
     const proto::ProtoTuple* getConstants();
     const proto::ProtoTuple* getNames();
@@ -150,6 +153,11 @@ private:
     bool emitNameOp(const std::string& id, TargetCtx ctx, bool pushNull = false);
     /** True if executing this node leaves a value on the stack (expression stmt). */
     static bool statementLeavesValue(ASTNode* node);
+    /** See setInteractive(). */
+    bool interactive_ = false;
+    /** Drop the value `stmt` left on the stack: POP_TOP, or in interactive
+     *  mode, for an expression statement, sys.displayhook(value). */
+    void emitStatementValueEnd(ASTNode* stmt);
     /** Collect names from function body: globals from GlobalNode, locals (ordered) from Name/Assign. */
     static void collectLocalsFromBody(ASTNode* body,
         std::unordered_set<std::string>& globalsOut,

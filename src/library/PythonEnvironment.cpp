@@ -23067,6 +23067,45 @@ void PythonEnvironment::invalidateResolveCache() {
     resolveCacheGeneration_.fetch_add(1, std::memory_order_release);
 }
 
+void PythonEnvironment::setBuiltinsAttribute(proto::ProtoContext* ctx, const proto::ProtoString* name,
+                                             const proto::ProtoObject* value) {
+    if (!ctx || !name || !builtinsModule) return;
+    const proto::ProtoObject* old = builtinsModule;
+    const proto::ProtoObject* updated = old->setAttribute(ctx, name, value);
+    if (!updated) return;
+    if (updated != old) {
+        // Root the new version before publishing it, in the slot of the old
+        // one (every echoed value would otherwise add a root for good). The
+        // GC reads moduleRoots under moduleRootsMutex.
+        {
+            std::lock_guard<std::mutex> rootsLock(space_->moduleRootsMutex);
+            auto& roots = space_->moduleRoots;
+            auto slot = std::find(roots.begin(), roots.end(), old);
+            if (slot != roots.end()) *slot = updated;
+            else roots.push_back(updated);
+        }
+        builtinsModule = updated;
+        if (sysModule) {
+            const proto::ProtoObject* modules = sysModule->getAttribute(ctx, modulesS);
+            const proto::ProtoObject* dataAttr = (modules && modules != PROTO_NONE)
+                ? modules->getAttribute(ctx, getDataString()) : nullptr;
+            const proto::ProtoSparseList* dict = (dataAttr && dataAttr != PROTO_NONE)
+                ? dataAttr->asSparseList(ctx) : nullptr;
+            unsigned long h = getInternedString(ctx, "builtins")->getHash(ctx);
+            if (dict && dict->has(ctx, h) && dict->getAt(ctx, h) == old) {
+                const_cast<proto::ProtoObject*>(modules)->setAttribute(ctx, getDataString(),
+                    dict->setAt(ctx, h, updated)->asObject(ctx));
+            }
+        }
+        // protoCore's import cache, as syncModuleIdentity updates it.
+        const proto::ProtoObject* modWrapper = ctx->space->getImportModule(ctx, "builtins", "val");
+        if (modWrapper && modWrapper != PROTO_NONE) {
+            const_cast<proto::ProtoObject*>(modWrapper)->setAttribute(ctx, getInternedString(ctx, "val"), updated);
+        }
+    }
+    invalidateResolveCache();
+}
+
 bool PythonEnvironment::isCompleteBlock(const std::string& code) {
     if (code.empty()) return true;
     int p = 0, s = 0, c = 0;

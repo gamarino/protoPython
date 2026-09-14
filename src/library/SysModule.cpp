@@ -1,5 +1,6 @@
 #include <protoPython/SysModule.h>
 #include <protoPython/PythonEnvironment.h>
+#include <protoPython/ExecutionEngine.h>
 #include <atomic>
 #include <iostream>
 #include <memory>
@@ -29,17 +30,61 @@ static const proto::ProtoObject* sys_exit(
     return PROTO_NONE;
 }
 
-// PEP 217: sys.displayhook(value).  Interactive REPL hook that prints
-// `repr(value)` and rebinds `builtins._`.  protoPython runs scripts
-// non-interactively, so a no-op suffices for stdlib code that swaps
-// the hook in and out (doctest, IDLE, traceback).
+// PEP 217: sys.displayhook(value), which code compiled in "single" mode
+// calls for each expression statement.  None is ignored; otherwise
+// builtins._ is cleared, repr(value) and a newline go to sys.stdout.write,
+// and builtins._ is set to the value.
 static const proto::ProtoObject* sys_displayhook(
     proto::ProtoContext* context,
     const proto::ProtoObject*,
     const proto::ParentLink*,
-    const proto::ProtoList*,
+    const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList*) {
-    (void)context;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    if (!positionalParameters || positionalParameters->getSize(context) != 1) {
+        env->raiseTypeError(context, "displayhook() takes exactly one argument");
+        return nullptr;
+    }
+    const proto::ProtoObject* value = positionalParameters->getAt(context, 0);
+    if (!value || value == PROTO_NONE || value == env->getNonePrototype()) return PROTO_NONE;
+
+    const proto::ProtoString* underscoreS = PythonEnvironment::getInternedString(context, "_");
+    env->setBuiltinsAttribute(context, underscoreS, PROTO_NONE);
+
+    // repr() through the builtin, so a __repr__ written in Python runs.
+    const proto::ProtoObject* builtins = env->getBuiltins();
+    const proto::ProtoObject* reprFn = builtins
+        ? builtins->getAttribute(context, PythonEnvironment::getInternedString(context, "repr")) : nullptr;
+    if (!reprFn || !reprFn->asMethod(context)) return PROTO_NONE;
+    const proto::ProtoObject* text = reprFn->asMethod(context)(context,
+        const_cast<proto::ProtoObject*>(builtins), nullptr,
+        context->newList()->appendLast(context, value), nullptr);
+    if (env->hasPendingException() || !text || !text->isString(context)) return nullptr;
+
+    // sys.stdout.write(text + "\n").  `write` is looked up on the stream
+    // object, so a Python-level method comes back bound.
+    const proto::ProtoObject* sysMod = env->getSysModule();
+    const proto::ProtoObject* out = sysMod
+        ? sysMod->getAttribute(context, PythonEnvironment::getInternedString(context, "stdout")) : nullptr;
+    if (!out || out == PROTO_NONE) return PROTO_NONE;
+    const proto::ProtoObject* writeFn =
+        env->getAttribute(context, out, PythonEnvironment::getInternedString(context, "write"), false);
+    if (env->hasPendingException()) return nullptr;
+    if (!writeFn || writeFn == PROTO_NONE) return PROTO_NONE;
+    std::string line;
+    text->asString(context)->toUTF8String(context, line);
+    line += "\n";
+    const proto::ProtoObject* lineObj = PythonEnvironment::getInternedString(context, line.c_str())->asObject(context);
+    if (writeFn->asMethod(context)) {
+        writeFn->asMethod(context)(context, const_cast<proto::ProtoObject*>(out), nullptr,
+            context->newList()->appendLast(context, lineObj), nullptr);
+    } else {
+        invokePythonCallable(context, writeFn, context->newList()->appendLast(context, lineObj), nullptr);
+    }
+    if (env->hasPendingException()) return nullptr;
+
+    env->setBuiltinsAttribute(context, underscoreS, value);
     return PROTO_NONE;
 }
 

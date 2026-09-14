@@ -3625,10 +3625,45 @@ bool Compiler::compileSuite(SuiteNode* n) {
                     continue;
                 }
             }
-            emit(OP_POP_TOP, 0);
+            emitStatementValueEnd(n->statements[i].get());
         }
     }
     return true;
+}
+
+// The AST nodes that are expressions: as statements, the ones whose value an
+// interactive compile passes to sys.displayhook.
+static bool isExpressionNode(ASTNode* node) {
+    return dynamic_cast<ConstantNode*>(node) || dynamic_cast<NameNode*>(node) ||
+        dynamic_cast<BinOpNode*>(node) || dynamic_cast<UnaryOpNode*>(node) ||
+        dynamic_cast<CondExprNode*>(node) || dynamic_cast<ConditionalExprNode*>(node) ||
+        dynamic_cast<CallNode*>(node) || dynamic_cast<AttributeNode*>(node) ||
+        dynamic_cast<SubscriptNode*>(node) || dynamic_cast<ListLiteralNode*>(node) ||
+        dynamic_cast<DictLiteralNode*>(node) || dynamic_cast<SetLiteralNode*>(node) ||
+        dynamic_cast<TupleLiteralNode*>(node) || dynamic_cast<JoinedStrNode*>(node) ||
+        dynamic_cast<NamedExprNode*>(node) || dynamic_cast<ListCompNode*>(node) ||
+        dynamic_cast<DictCompNode*>(node) || dynamic_cast<SetCompNode*>(node) ||
+        dynamic_cast<GeneratorExpNode*>(node) || dynamic_cast<LambdaNode*>(node) ||
+        dynamic_cast<AwaitNode*>(node) || dynamic_cast<YieldNode*>(node);
+}
+
+void Compiler::emitStatementValueEnd(ASTNode* stmt) {
+    if (!interactive_ || !isExpressionNode(stmt)) {
+        emit(OP_POP_TOP, 0);
+        return;
+    }
+    // CPython's PRINT_EXPR: sys.displayhook(value), looked up when it runs.
+    //   [value] -> [NULL, value] -> [NULL, value, sys] -> [NULL, value, hook]
+    //   -> [NULL, hook, value] -> CALL_FUNCTION 1 -> [result] -> POP_TOP
+    emit(OP_PUSH_NULL, 0);
+    emit(OP_ROT_TWO, 0);
+    emit(OP_LOAD_GLOBAL, (addName("__import__") << 1) | 1);
+    emit(OP_LOAD_CONST, addConstant(PythonEnvironment::getInternedString(ctx_, "sys")->asObject(ctx_)));
+    emit(OP_CALL_FUNCTION, 1);
+    emit(OP_LOAD_ATTR, addName("displayhook") << 1);
+    emit(OP_ROT_TWO, 0);
+    emit(OP_CALL_FUNCTION, 1);
+    emit(OP_POP_TOP, 0);
 }
 
 // Walk a function body collecting names that appear as AnnAssignNode
@@ -5189,7 +5224,7 @@ bool Compiler::compileModule(ModuleNode* mod) {
     for (size_t i = 0; i < mod->body.size(); ++i) {
         if (!compileNode(mod->body[i].get())) return false;
         if (statementLeavesValue(mod->body[i].get()))
-            emit(OP_POP_TOP, 0);
+            emitStatementValueEnd(mod->body[i].get());
     }
 
     // PEP 649 / 695: when the module body contained at least one

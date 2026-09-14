@@ -547,6 +547,12 @@ public:
      */
     static PythonEnvironment* getCurrentEnvironment();
     void invalidateResolveCache();
+    /** Bind `name` in the builtins module (sys.displayhook's `builtins._`).
+     *  The module object is immutable, so this republishes the updated one
+     *  where name resolution and `import builtins` find it (this pointer and
+     *  sys.modules["builtins"]) and invalidates the resolve caches. */
+    void setBuiltinsAttribute(proto::ProtoContext* ctx, const proto::ProtoString* name,
+                              const proto::ProtoObject* value);
 
     /**
      * @brief Resolves the module by name, then invokes its \c main attribute if it is callable.

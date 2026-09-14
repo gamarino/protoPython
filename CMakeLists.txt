@@ -268,6 +268,13 @@ set_tests_properties(protopy_exec_code_object PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# compile(..., "single") echoes expression values through sys.displayhook.
+add_test(NAME protopy_compile_single
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/compile_single.py)
+set_tests_properties(protopy_compile_single PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # list.__init__ fills the list; subclasses receive their own arguments.
 add_test(NAME protopy_list_subclass_init
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/list_subclass_init.py)
