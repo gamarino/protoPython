@@ -153,13 +153,20 @@ static const proto::ProtoObject* exception_str(
     if (args->getSize(context) == 0) {
         return PythonEnvironment::getInternedString(context, "")->asObject(context);
     }
+    // CPython: str(e) is str(e.args[0]) for one argument and str(e.args)
+    // otherwise. The argument itself was returned, so str(ValueError(5)) was
+    // the int 5 and print(e) fell back to other renderings.
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (args->getSize(context) == 1) {
         const proto::ProtoObject* firstArg = args->getAt(context, 0);
         if (get_env_diag()) {
             fprintf(stderr, "DEBUG exception_str: returning firstArg=%p isString=%d\n", (void*)firstArg, firstArg->isString(context));
         }
-        return firstArg;
+        if (firstArg && firstArg->isString(context)) return firstArg;
+        if (env && env->getStrPrototype()) return env->callObject(env->getStrPrototype(), {firstArg});
+        return PythonEnvironment::getInternedString(context, PythonEnvironment::reprObject(context, firstArg))->asObject(context);
     }
+    if (env && env->getStrPrototype()) return env->callObject(env->getStrPrototype(), {args->asObject(context)});
     return args->asObject(context);
 }
 
