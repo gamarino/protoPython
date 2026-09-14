@@ -22194,6 +22194,7 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
 
                             const proto::ProtoObject* oldGlobals = getCurrentGlobals();
                             setCurrentGlobals(mutableMod);
+                            pushScopeGlobals(mutableMod);
                             
                             // Update sys.modules BEFORE execution to handle cyclic imports (CPython behavior)
                             if (sysModule) {
@@ -22292,6 +22293,7 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                                 mutableMod = framePtr;
                             }
 
+                            popScopeGlobals();
                             setCurrentGlobals(oldGlobals);
                             // Honor `sys.modules[__name__] = OTHER` rebinding done
                             // inside the module body.  Notable user: decimal.py,
@@ -28156,6 +28158,56 @@ void PythonEnvironment::delName(const std::string& name) {
         const_cast<proto::ProtoObject*>(frame)->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, name.c_str()), PROTO_NONE);
     }
     invalidateResolveCache();
+}
+
+// Module names of the active Python-level scopes, innermost last (see
+// pushScopeGlobals).  The name is resolved on entry; the globals pointer is
+// kept only to compare with the next push, so consecutive calls within one
+// module reuse the name without a lookup.  It is never dereferenced after the
+// push: a globals object replaced and collected while its scope still runs
+// is never read.
+namespace {
+struct ScopeModule {
+    const proto::ProtoObject* globals;
+    const proto::ProtoObject* name;
+};
+thread_local std::vector<ScopeModule> s_scopeModules;
+
+// A scope's module name: the item of an exec()/eval() globals dict (its own
+// __data__; an inherited __name__ would be the dict type's) or the module's
+// __name__ attribute.  nullptr when there is no string name.
+const proto::ProtoObject* scopeModuleName(const proto::ProtoObject* globals) {
+    proto::ProtoContext* ctx = PythonEnvironment::getCurrentContext();
+    PythonEnvironment* env = ctx ? PythonEnvironment::fromContext(ctx) : nullptr;
+    if (!env || !globals || globals == PROTO_NONE) return nullptr;
+    const proto::ProtoString* nameS = env->getNameString();
+    if (globals->hasOwnAttribute(ctx, env->getDataString()) == PROTO_TRUE) {
+        const proto::ProtoObject* dataObj = globals->getAttribute(ctx, env->getDataString());
+        const proto::ProtoSparseList* data = dataObj ? dataObj->asSparseList(ctx) : nullptr;
+        const unsigned long h = nameS->getHash(ctx);
+        const proto::ProtoObject* name = (data && data->has(ctx, h)) ? data->getAt(ctx, h) : nullptr;
+        if (name && name->isString(ctx)) return name;
+    }
+    const proto::ProtoObject* name = globals->getAttribute(ctx, nameS);
+    return (name && name->isString(ctx)) ? name : nullptr;
+}
+} // namespace
+
+void PythonEnvironment::pushScopeGlobals(const proto::ProtoObject* globals) {
+    if (!s_scopeModules.empty() && s_scopeModules.back().globals == globals) {
+        s_scopeModules.push_back(s_scopeModules.back());
+        return;
+    }
+    s_scopeModules.push_back({globals, scopeModuleName(globals)});
+}
+
+void PythonEnvironment::popScopeGlobals() {
+    if (!s_scopeModules.empty()) s_scopeModules.pop_back();
+}
+
+const proto::ProtoObject* PythonEnvironment::getScopeModuleName(unsigned long depth) {
+    if (depth >= s_scopeModules.size()) return nullptr;
+    return s_scopeModules[s_scopeModules.size() - 1 - depth].name;
 }
 
 // Keyword-name stack for the CALL_FUNCTION_KW protocol. It is per thread:

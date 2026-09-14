@@ -716,6 +716,25 @@ public:
      * @brief Gets the current code object for the current thread.
      */
     static const proto::ProtoObject* getCurrentCodeObject();
+
+    /**
+     * @brief Scope-globals stack for sys._getframemodulename().
+     *
+     * Every Python-level scope (module body, function call, class body,
+     * exec/eval) pushes its globals on entry and pops them on exit.  Leaf
+     * calls run without frame objects, so the f_back chain cannot tell which
+     * module is N levels up; this stack can.
+     */
+    static void pushScopeGlobals(const proto::ProtoObject* globals);
+    static void popScopeGlobals();
+
+    /**
+     * @brief __name__ of the module whose code runs `depth` scopes out
+     * (0 = innermost), or nullptr past the outermost scope or when its
+     * globals have no string __name__.  The name is resolved when the scope
+     * is entered, so the stack never reads a globals object afterwards.
+     */
+    static const proto::ProtoObject* getScopeModuleName(unsigned long depth);
     
     /** Sets the current thread-local context (for RAII management). */
     static void setCurrentContext(proto::ProtoContext* ctx) { s_threadContext = ctx; }

@@ -36,11 +36,14 @@ namespace builtins {
 namespace {
 struct GlobalsScope {
     GlobalsScope(const proto::ProtoObject* g) : old(PythonEnvironment::getCurrentGlobals()) {
+        // exec()/eval() code is a Python-level scope for sys._getframemodulename().
+        PythonEnvironment::pushScopeGlobals(g);
         PythonEnvironment::setCurrentGlobals(g);
         PythonEnvironment* env = PythonEnvironment::getCurrentEnvironment();
         if (env) env->invalidateResolveCache();
     }
     ~GlobalsScope() {
+        PythonEnvironment::popScopeGlobals();
         PythonEnvironment::setCurrentGlobals(old);
         PythonEnvironment* env = PythonEnvironment::getCurrentEnvironment();
         if (env) env->invalidateResolveCache();
@@ -7734,6 +7737,25 @@ static const proto::ProtoObject* py_isinstance(
             }
             return PROTO_FALSE;
         }
+    }
+
+    // CPython: a (possibly nested) tuple matches when any member does.
+    // Route each member through this function so the `type` special case,
+    // metaclass __instancecheck__ and the non-class TypeError apply per
+    // member.  checkInterfaceInstanceOf's own tuple walk skips all three,
+    // which made isinstance(C, (type, ...)) False for every class C.
+    if (cls && cls->isTuple(context)) {
+        const proto::ProtoTuple* tup = cls->asTuple(context);
+        for (unsigned long i = 0; i < tup->getSize(context); ++i) {
+            const proto::ProtoList* one = context->newList()
+                ->appendLast(context, obj)
+                ->appendLast(context, tup->getAt(context, i));
+            const proto::ProtoObject* r = py_isinstance(context, self, parentLink, one,
+                                                        keywordParameters);
+            if (!r) return nullptr;
+            if (r == PROTO_TRUE) return PROTO_TRUE;
+        }
+        return PROTO_FALSE;
     }
 
     cls = resolveClassType(env, self, context, cls);

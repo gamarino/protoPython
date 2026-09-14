@@ -64,7 +64,9 @@ const proto::ProtoObject* CompiledModuleProvider::tryLoad(const std::string& log
     // Also, we might need a way to mark it as executed
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__executed__"), PROTO_TRUE);
 
+    PythonEnvironment::pushScopeGlobals(mod);
     initFunc();
+    PythonEnvironment::popScopeGlobals();
 
     PythonEnvironment::setCurrentGlobals(oldGlobals);
 

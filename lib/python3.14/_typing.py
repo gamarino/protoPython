@@ -1,5 +1,7 @@
 """Stub implementation of the _typing C extension module for protoPython."""
 
+import sys
+
 __all__ = [
     '_idfunc', 'TypeVar', 'ParamSpec', 'TypeVarTuple',
     'ParamSpecArgs', 'ParamSpecKwargs', 'TypeAliasType', 'Generic', 'Union',
@@ -9,6 +11,18 @@ __all__ = [
 
 def _idfunc(_, x):
     return x
+
+
+def _caller_module(depth=1):
+    """Name of the module that called the function `depth` levels up.
+
+    CPython's C TypeVar, ParamSpec and TypeVarTuple record the calling
+    module as __module__; pickle needs it to find them again by name.
+    """
+    try:
+        return sys._getframemodulename(depth + 1)
+    except AttributeError:
+        return None
 
 
 class _SpecialForm:
@@ -127,7 +141,7 @@ class TypeVar:
         self.__contravariant__ = bool(contravariant)
         self.__infer_variance__ = bool(infer_variance)
         self.__default__ = default
-        self.__module__ = None
+        self.__module__ = _caller_module()
 
     def __repr__(self):
         prefix = '~'
@@ -136,6 +150,9 @@ class TypeVar:
         elif self.__contravariant__:
             prefix = '-'
         return prefix + self.__name__
+
+    def __reduce__(self):
+        return self.__name__
 
     def __typing_subst__(self, arg):
         return arg
@@ -193,6 +210,7 @@ class ParamSpec:
         self.__contravariant__ = bool(contravariant)
         self.__infer_variance__ = bool(infer_variance)
         self.__default__ = default
+        self.__module__ = _caller_module()
 
     @property
     def args(self):
@@ -210,6 +228,9 @@ class ParamSpec:
             prefix = '-'
         return prefix + self.__name__
 
+    def __reduce__(self):
+        return self.__name__
+
     def __typing_prepare_subst__(self, alias, args):
         return args
 
@@ -225,8 +246,12 @@ class TypeVarTuple:
             raise TypeError("TypeVarTuple() requires a string first argument")
         self.__name__ = name
         self.__default__ = default
+        self.__module__ = _caller_module()
 
     def __repr__(self):
+        return self.__name__
+
+    def __reduce__(self):
         return self.__name__
 
     def __iter__(self):

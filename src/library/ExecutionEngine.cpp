@@ -225,6 +225,8 @@ struct FrameScope {
 
 struct GlobalsScope {
     GlobalsScope(const proto::ProtoObject* globals) : oldGlobals(PythonEnvironment::getCurrentGlobals()) {
+        // One entry per Python-level call, for sys._getframemodulename().
+        PythonEnvironment::pushScopeGlobals(globals);
         if (globals != oldGlobals) {
             PythonEnvironment::setCurrentGlobals(globals);
             PythonEnvironment* env = PythonEnvironment::getCurrentEnvironment();
@@ -232,6 +234,7 @@ struct GlobalsScope {
         }
     }
     ~GlobalsScope() {
+        PythonEnvironment::popScopeGlobals();
         if (oldGlobals != PythonEnvironment::getCurrentGlobals()) {
             PythonEnvironment::setCurrentGlobals(oldGlobals);
             PythonEnvironment* env = PythonEnvironment::getCurrentEnvironment();
@@ -8457,7 +8460,10 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
                     if (codeObj && codeObj != PROTO_NONE) {
                         if (diag_local) fprintf(stderr, "DEBUG OP_BUILD_CLASS: before body run ns=%p\n", (void*)ns);
+                        // The class body is a Python-level scope of its own.
+                        PythonEnvironment::pushScopeGlobals(PythonEnvironment::getCurrentGlobals());
                         runCodeObject(ctx, codeObj, ns);
+                        PythonEnvironment::popScopeGlobals();
                         if (env && env->hasPendingException()) {
                             // Class body raised — let the dispatch loop
                             // unwind through the enclosing SETUP_FINALLY

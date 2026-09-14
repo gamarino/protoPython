@@ -279,6 +279,42 @@ static const proto::ProtoObject* sys_getframe(
     return deepest;
 }
 
+/** sys._getframemodulename(depth=0): __name__ of the module whose code runs
+ *  `depth` Python-level scopes above the caller, or None past the outermost.
+ *  Leaf calls run without frame objects (see sys_getframe's depth clamp), so
+ *  this reads the scope-globals stack instead of walking f_back. */
+static const proto::ProtoObject* sys_getframemodulename(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self;
+    (void)parentLink;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* arg = nullptr;
+    if (positionalParameters && positionalParameters->getSize(context) > 0) {
+        arg = positionalParameters->getAt(context, 0);
+    } else if (keywordParameters) {
+        const proto::ProtoString* depthS = PythonEnvironment::getInternedString(context, "depth");
+        if (keywordParameters->has(context, depthS->getHash(context))) {
+            arg = keywordParameters->getAt(context, depthS->getHash(context));
+        }
+    }
+    long depth = 0;
+    if (arg) {
+        if (!arg->isInteger(context)) {
+            if (env) env->raiseTypeError(context, "_getframemodulename() depth must be an integer");
+            return nullptr;
+        }
+        depth = static_cast<long>(arg->asLong(context));
+    }
+    // CPython treats a negative depth as 0.
+    const proto::ProtoObject* name = PythonEnvironment::getScopeModuleName(
+        depth > 0 ? static_cast<unsigned long>(depth) : 0UL);
+    return name ? name : PROTO_NONE;
+}
+
 static const proto::ProtoObject* sys_setrecursionlimit(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -579,6 +615,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     }
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getsizeof"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getsizeof));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_getframe"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getframe));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_getframemodulename"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getframemodulename));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "setrecursionlimit"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_setrecursionlimit));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getrecursionlimit"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getrecursionlimit));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "setswitchinterval"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_setswitchinterval));
