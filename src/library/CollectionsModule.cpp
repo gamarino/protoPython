@@ -629,7 +629,6 @@ static const proto::ProtoObject* py_deque_new(
     // CPython: deque.__new__ ignores its arguments. deque.__init__, which
     // instance creation runs next with the same arguments, consumes the
     // iterable and maxlen; consuming them here too would exhaust a generator.
-    instance = instance->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "maxlen"), PROTO_NONE);
 
     return instance;
 }
@@ -692,7 +691,6 @@ static const proto::ProtoObject* py_deque_init(
         state->data.clear();
         state->mutationCount++;
     }
-    self->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "maxlen"), maxlenObj);
     if (!iterable) return PROTO_NONE;
     const proto::ProtoObject* it = env->iter(iterable);
     if (!it) return nullptr;
@@ -712,6 +710,76 @@ static const proto::ProtoObject* py_deque_init(
         state->mutationCount++;
     }
     return PROTO_NONE;
+}
+
+// A deque's items as a Python list: comparisons delegate to list comparison
+// (lexicographic, with the items' own __eq__ / __lt__). The items are copied
+// under the lock and the list is built outside it.
+static const proto::ProtoObject* deque_as_list(proto::ProtoContext* ctx, PythonEnvironment* env, DequeState* state) {
+    std::vector<const proto::ProtoObject*> snapshot;
+    {
+        std::lock_guard<std::mutex> lock(state->mutex);
+        snapshot.assign(state->data.begin(), state->data.end());
+    }
+    const proto::ProtoList* items = ctx->newList();
+    for (const proto::ProtoObject* item : snapshot) items = items->appendLast(ctx, item);
+    proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(env->getListPrototype()->newChild(ctx, true));
+    listObj = const_cast<proto::ProtoObject*>(listObj->setAttribute(ctx, env->getDataString(), items->asObject(ctx)));
+    return listObj;
+}
+
+// deque == / != / < / <= / > / >= another deque (op as in compareObjects:
+// 0 eq, 1 ne, 2 lt, 3 le, 4 gt, 5 ge); NotImplemented for any other operand.
+static const proto::ProtoObject* deque_compare(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ProtoList* posArgs, int op) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return PROTO_NONE;
+    unsigned long argOff = 0;
+    DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
+    if (!state || !posArgs || posArgs->getSize(ctx) <= argOff) return env->getNotImplementedPrototype();
+    const proto::ProtoObject* other = posArgs->getAt(ctx, static_cast<int>(argOff));
+    DequeState* otherState = other ? get_deque_state(ctx, other) : nullptr;
+    if (!otherState) return env->getNotImplementedPrototype();
+    const proto::ProtoObject* a = deque_as_list(ctx, env, state);
+    PythonEnvironment::TransientPin pinA(env, a);
+    const proto::ProtoObject* b = deque_as_list(ctx, env, otherState);
+    PythonEnvironment::TransientPin pinB(env, b);
+    return env->compareObjects(ctx, a, b, op);
+}
+
+static const proto::ProtoObject* py_deque_eq(proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    return deque_compare(ctx, self, posArgs, 0);
+}
+static const proto::ProtoObject* py_deque_ne(proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    return deque_compare(ctx, self, posArgs, 1);
+}
+static const proto::ProtoObject* py_deque_lt(proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    return deque_compare(ctx, self, posArgs, 2);
+}
+static const proto::ProtoObject* py_deque_le(proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    return deque_compare(ctx, self, posArgs, 3);
+}
+static const proto::ProtoObject* py_deque_gt(proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    return deque_compare(ctx, self, posArgs, 4);
+}
+static const proto::ProtoObject* py_deque_ge(proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    return deque_compare(ctx, self, posArgs, 5);
+}
+
+// fget of the read-only `maxlen` property: None when unbounded.
+static const proto::ProtoObject* py_deque_maxlen_get(proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    unsigned long argOff = 0;
+    DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
+    if (!state) return PROTO_NONE;
+    std::lock_guard<std::mutex> lock(state->mutex);
+    return state->maxlen < 0 ? PROTO_NONE : ctx->fromInteger(state->maxlen);
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env) {
@@ -759,6 +827,33 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
                                                  ctx->fromMethod(nullptr, py_deque_extend));
     dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "extendleft"),
                                                  ctx->fromMethod(nullptr, py_deque_extendleft));
+    // Comparisons between deques; deques are mutable, so unhashable.
+    dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__eq__"),
+                                                 ctx->fromMethod(nullptr, py_deque_eq));
+    dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__ne__"),
+                                                 ctx->fromMethod(nullptr, py_deque_ne));
+    dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__lt__"),
+                                                 ctx->fromMethod(nullptr, py_deque_lt));
+    dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__le__"),
+                                                 ctx->fromMethod(nullptr, py_deque_le));
+    dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__gt__"),
+                                                 ctx->fromMethod(nullptr, py_deque_gt));
+    dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__ge__"),
+                                                 ctx->fromMethod(nullptr, py_deque_ge));
+    dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__hash__"), PROTO_NONE);
+    // maxlen is a read-only property over the native state.
+    if (env && env->getBuiltins()) {
+        const proto::ProtoObject* propertyType = env->getBuiltins()->getAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "property"));
+        if (propertyType && propertyType != PROTO_NONE) {
+            const proto::ProtoObject* maxlenProp = env->callObject(propertyType,
+                {ctx->fromMethod(nullptr, py_deque_maxlen_get)});
+            if (maxlenProp && maxlenProp != PROTO_NONE) {
+                dequePrototype = dequePrototype->setAttribute(ctx,
+                    PythonEnvironment::getInternedString(ctx, "maxlen"), maxlenProp);
+            }
+        }
+    }
     
     dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__new__"),
                                                  ctx->fromMethod(nullptr, py_deque_new));

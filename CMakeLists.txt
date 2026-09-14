@@ -324,6 +324,13 @@ set_tests_properties(protopy_list_init_self PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# deque comparisons, __hash__ = None and read-only maxlen.
+add_test(NAME protopy_deque_compare
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/deque_compare.py)
+set_tests_properties(protopy_deque_compare PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # `import typing` completes; Generic[T] subclasses, Protocol and aliases work.
 add_test(NAME protopy_typing_import
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/typing_import.py)
