@@ -4784,16 +4784,51 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     emit(OP_LOAD_CONST, nameIdx);
     
     // 2. Bases
-    for (auto& b : n->bases) {
-        if (!compileNode(b.get())) return false;
+    bool hasStarredBase = false;
+    for (auto& b : n->bases) if (dynamic_cast<StarredNode*>(b.get())) { hasStarredBase = true; break; }
+    if (!hasStarredBase) {
+        for (auto& b : n->bases) {
+            if (!compileNode(b.get())) return false;
+        }
+        emit(OP_BUILD_TUPLE, static_cast<int>(n->bases.size()));
+    } else {
+        // `class C(A, *more)`: build the bases tuple the way compileCall
+        // builds the positional tuple of `f(a, *more)`.
+        emit(OP_BUILD_LIST, 0);
+        for (auto& b : n->bases) {
+            if (auto* s = dynamic_cast<StarredNode*>(b.get())) {
+                if (!compileNode(s->value.get())) return false;
+                emit(OP_LIST_EXTEND, 1);
+            } else {
+                if (!compileNode(b.get())) return false;
+                emit(OP_LIST_APPEND, 1);
+            }
+        }
+        emit(OP_LIST_TO_TUPLE, 0);
     }
-    emit(OP_BUILD_TUPLE, static_cast<int>(n->bases.size()));
     
     // 2.5 Keywords
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG Compiler: class '%s' keywords size=%zu\n", n->name.c_str(), n->keywords.size());
     }
-    if (!n->keywords.empty()) {
+    bool hasKwUnpack = false;
+    for (auto& kw : n->keywords) if (kw.first.empty()) { hasKwUnpack = true; break; }
+    if (hasKwUnpack) {
+        // `class C(metaclass=M, **kw)`: merge into a fresh dict the way
+        // compileCall builds the kwargs of `f(k=v, **kw)`.
+        emit(OP_BUILD_MAP, 0);
+        for (auto& kw : n->keywords) {
+            if (!compileNode(kw.second.get())) return false;
+            if (kw.first.empty()) {
+                emit(OP_DICT_UPDATE, 1);
+            } else {
+                // OP_MAP_ADD takes the value below the key, dict at arg=2.
+                int kIdx = addConstant(PythonEnvironment::getInternedString(ctx_, kw.first.c_str())->asObject(ctx_));
+                emit(OP_LOAD_CONST, kIdx);
+                emit(OP_MAP_ADD, 2);
+            }
+        }
+    } else if (!n->keywords.empty()) {
         for (auto& kw : n->keywords) {
             int kIdx = addConstant(PythonEnvironment::getInternedString(ctx_, kw.first.c_str())->asObject(ctx_));
             emit(OP_LOAD_CONST, kIdx);

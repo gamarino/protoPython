@@ -2000,7 +2000,19 @@ std::unique_ptr<ASTNode> Parser::parseClassDef() {
     if (accept(TokenType::LParen)) {
         while (cur_.type != TokenType::RParen && cur_.type != TokenType::EndOfFile) {
             skipTrash();
-            if (isName(cur_.type) && tok_.peek().type == TokenType::Assign) {
+            // Class arguments follow the call-argument grammar: `*bases`
+            // becomes a StarredNode base, `**kw` a keyword with an empty name
+            // (same encoding as CallNode).
+            if (cur_.type == TokenType::Star) {
+                advance();
+                auto star = createNode<StarredNode>();
+                star->value = parseExpression();
+                if (star->value) cl->bases.push_back(std::move(star));
+            } else if (cur_.type == TokenType::DoubleStar) {
+                advance();
+                auto val = parseExpression();
+                if (val) cl->keywords.push_back({"", std::move(val)});
+            } else if (isName(cur_.type) && tok_.peek().type == TokenType::Assign) {
                 std::string kwname = cur_.value;
                 advance(); // name
                 advance(); // =
