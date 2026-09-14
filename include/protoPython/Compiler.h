@@ -205,6 +205,11 @@ private:
      *  directly in a class body: the def it wraps is a method and keeps the
      *  class name for zero-arg super() and private-name mangling. */
     bool classAnnotationScope_ = false;
+    /** True in a method (a def or lambda directly in a class body) and in
+     *  every scope nested in one: a free `__class__` there is the implicit
+     *  class cell, read with LOAD_DEREF from the class namespace, where
+     *  BUILD_CLASS stores the class it creates. */
+    bool classCellScope_ = false;
     int bytecodeOffset() const;
     /** Record a jump arg slot to be patched later with target (bytecode list index). */
     void addPatch(int argSlotIndex, int targetBytecodeIndex);

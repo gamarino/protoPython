@@ -1076,7 +1076,12 @@ bool Compiler::emitNameOp(const std::string& rawId, TargetCtx ctx, bool pushNull
     // `__name` as the same identifier consistently.
     const std::string id = mangleIdentifier(rawId);
     if (nonlocalNames_.count(id)) {
-        int idx = addName(id);
+        // In a method (or a scope nested in one) `__class__` is the implicit
+        // class cell.  BUILD_CLASS stores the class in the class namespace
+        // under ".__class__": the closure walk also visits prototype objects,
+        // and each of them owns a `__class__` of its own.
+        const bool classCellRead = classCellScope_ && id == "__class__";
+        int idx = addName(classCellRead ? ".__class__" : id);
         int op = OP_LOAD_DEREF;
         if (ctx == TargetCtx::Store) op = OP_STORE_DEREF;
         // For function calls, push NULL marker before the callable (3.11+ calling convention)
@@ -1619,6 +1624,8 @@ bool Compiler::compileListComp(ListCompNode* n) {
     bodyCompiler.localSlotMap_[".0"] = 0;
     bodyCompiler.globalNames_ = globalNames_;
     bodyCompiler.isFunctionScope_ = true;
+    // A comprehension is a function scope: inside a method it sees the class cell.
+    bodyCompiler.classCellScope_ = classCellScope_ || isClassBody_ || classAnnotationScope_;
 
     // Collect locals and nonlocals for comprehension scope
     std::unordered_set<std::string> compLocals;
@@ -1736,6 +1743,8 @@ bool Compiler::compileDictComp(DictCompNode* n) {
     bodyCompiler.localSlotMap_[".0"] = 0;
     bodyCompiler.globalNames_ = globalNames_;
     bodyCompiler.isFunctionScope_ = true;
+    // A comprehension is a function scope: inside a method it sees the class cell.
+    bodyCompiler.classCellScope_ = classCellScope_ || isClassBody_ || classAnnotationScope_;
 
     // Collect locals and nonlocals for comprehension scope
     std::unordered_set<std::string> compLocals;
@@ -1838,6 +1847,8 @@ bool Compiler::compileSetComp(SetCompNode* n) {
     bodyCompiler.localSlotMap_[".0"] = 0;
     bodyCompiler.globalNames_ = globalNames_;
     bodyCompiler.isFunctionScope_ = true;
+    // A comprehension is a function scope: inside a method it sees the class cell.
+    bodyCompiler.classCellScope_ = classCellScope_ || isClassBody_ || classAnnotationScope_;
 
     // Collect locals and nonlocals for comprehension scope
     std::unordered_set<std::string> compLocals;
@@ -1936,6 +1947,8 @@ bool Compiler::compileGeneratorExp(GeneratorExpNode* n) {
     bodyCompiler.localSlotMap_[".0"] = 0;
     bodyCompiler.globalNames_ = globalNames_;
     bodyCompiler.isFunctionScope_ = true;
+    // A comprehension is a function scope: inside a method it sees the class cell.
+    bodyCompiler.classCellScope_ = classCellScope_ || isClassBody_ || classAnnotationScope_;
     
     // Collect locals and nonlocals for generator expression scope
     std::unordered_set<std::string> compLocals;
@@ -3929,6 +3942,23 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
         }
     }
 
+    // Zero-argument `__class__`: in a method, or in any scope nested in one,
+    // a free `__class__` is the implicit cell CPython fills with the class
+    // the class statement creates.  BUILD_CLASS stores that class in the
+    // class namespace (under ".__class__", see emitNameOp), and every
+    // method's closure frame chains to that namespace, so LOAD_DEREF finds
+    // the right class (also for classes defined in functions and for nested
+    // classes), where LOAD_GLOBAL found the module's own `__class__`.
+    const bool classCell = isClassBody_ || classAnnotationScope_ || classCellScope_;
+    // A function binding `__class__` itself shadows the cell for its body and
+    // for the scopes nested in it.
+    bool ownsClassName = n->vararg == "__class__" || n->kwarg == "__class__";
+    for (const auto& p : params) if (p == "__class__") ownsClassName = true;
+    for (const auto& kw : n->kwonlyargs) if (kw == "__class__") ownsClassName = true;
+    for (const auto& l : localsOrdered) if (l == "__class__") ownsClassName = true;
+    if (classCell && !ownsClassName && captured.count("__class__") && !bodyGlobals.count("__class__"))
+        bodyNonlocals.insert("__class__");
+
     std::string dynamicReason = getDynamicLocalsReason(n->body.get());
     bool forceMapped = !dynamicReason.empty();
 
@@ -4029,6 +4059,7 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     // inherit the class name to avoid false super() rewrites.
     if (isClassBody_ || classAnnotationScope_) bodyCompiler.currentClassName_ = currentClassName_;
     bodyCompiler.classAnnotationScope_ = n->isAnnotationScope && isClassBody_;
+    bodyCompiler.classCellScope_ = classCell && !ownsClassName;
 
     // CPython qualname rules for nested defs:
     //   class C:        prefix=""        → method qualname "C.method"
@@ -4281,6 +4312,16 @@ bool Compiler::compileLambda(LambdaNode* n) {
             if (isInOuterScope) bodyNonlocals.insert(c);
         }
     }
+    // Zero-argument `__class__` (see compileFunctionDef).
+    const bool classCell = isClassBody_ || classAnnotationScope_ || classCellScope_;
+    bool ownsClassName = n->vararg == "__class__" || n->kwarg == "__class__";
+    for (const auto& p : params) if (p == "__class__") ownsClassName = true;
+    for (const auto& kw : n->kwonlyargs) if (kw == "__class__") ownsClassName = true;
+    if (classCell && !ownsClassName) {
+        std::unordered_set<std::string> lambdaUsed;
+        collectUsedNames(n->body.get(), lambdaUsed);
+        if (lambdaUsed.count("__class__")) bodyNonlocals.insert("__class__");
+    }
 
     const bool forceMapped = false; // Lambdas never have dynamic locals access like locals() or exec()
     std::vector<std::string> varnamesOrdered;
@@ -4326,6 +4367,7 @@ bool Compiler::compileLambda(LambdaNode* n) {
     for (const auto& v : varnamesOrdered) bodyCompiler.definedLocals_.insert(v);
     bodyCompiler.isFunctionScope_ = true;
     if (isClassBody_) bodyCompiler.currentClassName_ = currentClassName_;
+    bodyCompiler.classCellScope_ = classCell && !ownsClassName;
 
     if (!bodyCompiler.compileNode(n->body.get())) return false;
     bodyCompiler.emit(OP_RETURN_VALUE);
@@ -4432,6 +4474,16 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
             if (isInOuterScope) bodyNonlocals.insert(c);
         }
     }
+    // Zero-argument `__class__` (see compileFunctionDef).
+    const bool classCell = isClassBody_ || classAnnotationScope_ || classCellScope_;
+    // A function binding `__class__` itself shadows the cell for its body and
+    // for the scopes nested in it.
+    bool ownsClassName = n->vararg == "__class__" || n->kwarg == "__class__";
+    for (const auto& p : params) if (p == "__class__") ownsClassName = true;
+    for (const auto& kw : n->kwonlyargs) if (kw == "__class__") ownsClassName = true;
+    for (const auto& l : localsOrdered) if (l == "__class__") ownsClassName = true;
+    if (classCell && !ownsClassName && captured.count("__class__") && !bodyGlobals.count("__class__"))
+        bodyNonlocals.insert("__class__");
 
     std::string dynamicReason = getDynamicLocalsReason(n->body.get());
     const bool forceMapped = !dynamicReason.empty();
@@ -4484,6 +4536,7 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
     bodyCompiler.localSlotMap_ = slotMap;
     bodyCompiler.isFunctionScope_ = true;
     bodyCompiler.isAsyncFunction_ = true;  // PC2
+    bodyCompiler.classCellScope_ = classCell && !ownsClassName;
     if (!bodyCompiler.compileNode(n->body.get())) return false;
 
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx_);
@@ -4855,6 +4908,9 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     bodyCompiler.nonlocalNames_ = nonlocalNames_;
     bodyCompiler.isClassBody_ = true;
     bodyCompiler.currentClassName_ = n->name;
+    // A class body is not a function: a `__class__` read in it (or in a class
+    // nested directly in it) only sees the cell of an enclosing method.
+    bodyCompiler.classCellScope_ = classCellScope_;
     // PI: compute and propagate __qualname__ prefix for nested classes.
     // A `global`-declared class binds at module scope, so CPython gives
     // it a bare __qualname__ with no enclosing `<locals>` prefix.

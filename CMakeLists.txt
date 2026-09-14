@@ -219,6 +219,13 @@ set_tests_properties(protopy_class_eq_unhashable PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# Zero-argument __class__ in methods is the class the statement creates.
+add_test(NAME protopy_class_cell
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/class_cell.py)
+set_tests_properties(protopy_class_cell PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # `del name` unbinds the name in module, class, global and exec() scopes.
 add_test(NAME protopy_del_name
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/del_name.py)

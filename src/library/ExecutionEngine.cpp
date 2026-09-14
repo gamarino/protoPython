@@ -8830,6 +8830,14 @@ const proto::ProtoObject* executeBytecodeRange(
                     if (name && name->isString(ctx)) {
                         ns->setAttribute(ctx, name->asString(ctx), targetClass);
                     }
+                    // The implicit `__class__` cell of the methods: the compiler
+                    // reads `__class__` in a method as LOAD_DEREF ".__class__", a
+                    // name that, unlike `__class__`, no prototype object on the
+                    // closure walk owns.  Unconditional (the STRUCT-219 guard
+                    // above only protects the namespace's own `__class__`).
+                    if (env && ns && ns != PROTO_NONE) {
+                        ns->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, ".__class__"), targetClass);
+                    }
 
                     // __init_subclass__ is not called here: as in CPython it
                     // runs at the end of type.__new__ (py_type ->
