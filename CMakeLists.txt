@@ -100,6 +100,13 @@ set_tests_properties(protopy_list_mutation_threads PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# `lst[i] = x` and list.reverse/sort/*= must not drop concurrent appends.
+add_test(NAME protopy_list_rewrite_threads
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/list_rewrite_threads.py)
+set_tests_properties(protopy_list_rewrite_threads PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # set mutators called from parallel threads must not lose or duplicate items.
 add_test(NAME protopy_set_mutation_threads
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/set_mutation_threads.py)

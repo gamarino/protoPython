@@ -5098,15 +5098,16 @@ static const proto::ProtoObject* py_list_reverse(
         receiver = positionalParameters->getAt(context, 0);
     }
     if (!receiver) return PROTO_NONE;
-    const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
-    const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
-    if (!list) return PROTO_NONE;
-    unsigned long size = list->getSize(context);
-    const proto::ProtoList* newList = context->newList();
-    for (unsigned long i = size; i > 0; --i)
-        newList = newList->appendLast(context, list->getAt(context, static_cast<int>(i - 1)));
-    const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, newList->asObject(context));
-    return PROTO_NONE;
+    for (;;) {
+        const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
+        const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
+        if (!list) return PROTO_NONE;
+        unsigned long size = list->getSize(context);
+        const proto::ProtoList* newList = context->newList();
+        for (unsigned long i = size; i > 0; --i)
+            newList = newList->appendLast(context, list->getAt(context, static_cast<int>(i - 1)));
+        if (publishListData(context, receiver, dataName, data, newList->asObject(context))) return PROTO_NONE;
+    }
 }
 
 // Forward decl — py_list_sort uses sorted_compare-equivalent semantics
@@ -5296,7 +5297,14 @@ static const proto::ProtoObject* py_list_sort(
     const proto::ProtoList* newList = context->newList();
     for (const proto::ProtoObject* obj : elems)
         newList = newList->appendLast(context, obj);
-    const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, newList->asObject(context));
+    // Sorting ran key functions and comparisons that cannot be repeated, so
+    // a concurrent mutation is reported rather than retried or overwritten,
+    // the way CPython reports it.
+    if (!publishListData(context, receiver, dataName, data, newList->asObject(context))) {
+        if (env) env->raiseValueError(context,
+            PythonEnvironment::getInternedString(context, "list modified during sort")->asObject(context));
+        return nullptr;
+    }
     return PROTO_NONE;
 }
 
@@ -5463,16 +5471,17 @@ static const proto::ProtoObject* py_list_imul(
     if (!receiver || !other || !other->isInteger(context)) return PROTO_NONE;
     long long n = other->asLong(context);
     if (n < 0) n = 0;
-    const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
-    const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
-    if (!list) return PROTO_NONE;
-    const proto::ProtoList* result = context->newList();
-    unsigned long size = list->getSize(context);
-    for (long long rep = 0; rep < n; ++rep)
-        for (unsigned long i = 0; i < size; ++i)
-            result = result->appendLast(context, list->getAt(context, static_cast<int>(i)));
-    const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, result->asObject(context));
-    return receiver;
+    for (;;) {
+        const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
+        const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
+        if (!list) return PROTO_NONE;
+        const proto::ProtoList* result = context->newList();
+        unsigned long size = list->getSize(context);
+        for (long long rep = 0; rep < n; ++rep)
+            for (unsigned long i = 0; i < size; ++i)
+                result = result->appendLast(context, list->getAt(context, static_cast<int>(i)));
+        if (publishListData(context, receiver, dataName, data, result->asObject(context))) return receiver;
+    }
 }
 
 static const proto::ProtoObject* py_list_mul(

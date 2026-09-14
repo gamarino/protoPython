@@ -7219,14 +7219,19 @@ const proto::ProtoObject* executeBytecodeRange(
                         // pathway the slow path would (setAttribute on __data__
                         // for wrapped lists, direct replacement otherwise).
                         const proto::ProtoString* dataS = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
-                        bool hasData = dataS && container->hasOwnAttribute(ctx, dataS) == PROTO_TRUE;
-                        if (hasData) {
-                            container->setAttribute(ctx, dataS, newLst->asObject(ctx));
+                        const proto::ProtoObject* ownData = dataS ? container->getOwnAttributeDirect(ctx, dataS) : nullptr;
+                        // Publish only over the payload this write was
+                        // derived from: a plain setAttribute dropped any
+                        // append/pop another thread published in between.
+                        // A lost race falls through to list.__setitem__,
+                        // which retries.
+                        if (ownData && ownData->asList(ctx) == lst
+                            && container->setAttributeIfEqual(ctx, dataS, ownData, newLst->asObject(ctx))) {
                             stack.pop_back(); stack.pop_back(); stack.pop_back();
                             i = next_i;
                             continue;
                         }
-                        // container is a raw ProtoList — fall through to slow path.
+                        // container is a raw ProtoList or lost the race — fall through to slow path.
                     }
                     // Out-of-range or missing __data__ falls through to slow path.
                 }
