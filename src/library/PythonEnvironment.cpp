@@ -375,6 +375,31 @@ static const proto::ProtoObject* py_type_call(
     return protoPython::runUserClassCall(context, self, parentLink, positionalParameters, keywordParameters);
 }
 
+// A class whose own `__name__` is an instance-level descriptor (the module
+// type's getset for module instances, a `__slots__ = ('__name__',)` member)
+// has no name string under `__name__`.  Its name is the last component of
+// the qualname class creation stores (under `__tp_qualname__` when
+// `__qualname__` is a slot too, STRUCT-324).
+static const proto::ProtoObject* classNameFromQualname(proto::ProtoContext* ctx,
+                                                       const proto::ProtoObject* cls) {
+    if (!cls) return nullptr;
+    const proto::ProtoString* keys[] = {
+        PythonEnvironment::getInternedString(ctx, "__tp_qualname__"),
+        PythonEnvironment::getInternedString(ctx, "__qualname__"),
+    };
+    for (const proto::ProtoString* k : keys) {
+        if (cls->hasOwnAttribute(ctx, k) != PROTO_TRUE) continue;
+        const proto::ProtoObject* qn = cls->getOwnAttributeDirect(ctx, k);
+        if (!qn || !qn->isString(ctx)) continue;
+        std::string s;
+        qn->asString(ctx)->toUTF8String(ctx, s);
+        size_t dot = s.rfind('.');
+        if (dot == std::string::npos) return qn;
+        return PythonEnvironment::getInternedString(ctx, s.substr(dot + 1).c_str())->asObject(ctx);
+    }
+    return nullptr;
+}
+
 static const proto::ProtoObject* py_type_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -382,6 +407,10 @@ static const proto::ProtoObject* py_type_repr(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoString* nameS = env ? env->getNameString() : PythonEnvironment::getInternalString(context, "__name__");
     const proto::ProtoObject* name = self ? self->getAttribute(context, nameS) : nullptr;
+    if (self && (!name || !name->isString(context))) {
+        const proto::ProtoObject* fromQn = classNameFromQualname(context, self);
+        if (fromQn) name = fromQn;
+    }
     std::string nStr = "object";
     if (name) {
         if (name->isString(context)) {
@@ -16850,6 +16879,9 @@ static bool isModuleInternalAttr(const std::string& name) {
         name == "f_locals" || name == "f_lasti" || name == "f_lineno") return true;
     // Internal dict storage
     if (name == "__data__" || name == "__keys__") return true;
+    // The module type's class attributes, copied onto every module instance.
+    if (name == "__bases__" || name == "__mro__" || name == "__qualname__"
+        || name == "__module__" || name == "__is_python_class__") return true;
     // Internal runtime flags
     if (!name.empty() && name.front() == '_' && name.back() == '_') {
         if (name == "_executed_" || name == "_resolving_") return true;
@@ -21185,6 +21217,17 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             ->appendLast(rootContext_, objectPrototype);
         modulePrototype = modulePrototype->setAttribute(rootContext_, mroS,
             rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
+        // `__bases__ = (object,)` as in CPython; together with the own
+        // `__name__` it makes isActuallyAClass see ModuleType as a class
+        // (`isinstance(types.ModuleType, type)`).
+        modulePrototype = modulePrototype->setAttribute(rootContext_, basesString,
+            rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
+        // The own `__name__` is the getset descriptor module instances
+        // read (STRUCT-90 below), so class-level reads and type repr take
+        // the class name from `__qualname__` (see classNameFromQualname).
+        modulePrototype = modulePrototype->setAttribute(rootContext_,
+            PythonEnvironment::getInternedString(rootContext_, "__qualname__"),
+            PythonEnvironment::getInternedString(rootContext_, "module")->asObject(rootContext_));
     }
     // STRUCT-216: install __repr__ on modulePrototype.  CPython modules
     // report `<module 'name' from '/path'>` or `<module 'name' (built-in)>`;
@@ -24485,6 +24528,19 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
             // Fall through to the normal lookup path — plain classes
             // store the qualname string directly under `__qualname__`.
         }
+        // Same conflict for `__name__`: modulePrototype's own `__name__`
+        // is the getset descriptor module instances read, and a class
+        // with `__slots__ = ('__name__',)` owns a member_descriptor there.
+        // Class-level reads then report the name from the qualname.
+        const proto::ProtoString* nameSym = getNameString();
+        if (nameSym && (name == nameSym || name->getHash(ctx) == nameSym->getHash(ctx))
+            && obj->hasOwnAttribute(ctx, nameSym) == PROTO_TRUE) {
+            const proto::ProtoObject* own = obj->getOwnAttributeDirect(ctx, nameSym);
+            if (own && own != PROTO_NONE && !own->isString(ctx)) {
+                const proto::ProtoObject* v = classNameFromQualname(ctx, obj);
+                if (v) return v;
+            }
+        }
     }
 
     // Special case: cls.__dict__ is always a data descriptor defined on the metaclass (type).
@@ -27121,6 +27177,22 @@ bool PythonEnvironment::isInheritedModuleName(proto::ProtoContext* ctx, const pr
     if ((classS && (name == classS || name->getHash(ctx) == classS->getHash(ctx)))
         || (dictS && (name == dictS || name->getHash(ctx) == dictS->getHash(ctx)))) {
         return getType(ctx, ns) == modulePrototype;
+    }
+    // The module type's class attributes (__bases__, __mro__, __qualname__,
+    // __module__, __is_python_class__) are copied onto every module too; the
+    // module's own global of that name would hold a different object.
+    static const proto::ProtoString* const kTypeAttrs[] = {
+        PythonEnvironment::getInternedString(ctx, "__bases__"),
+        PythonEnvironment::getInternedString(ctx, "__mro__"),
+        PythonEnvironment::getInternedString(ctx, "__qualname__"),
+        PythonEnvironment::getInternedString(ctx, "__module__"),
+        PythonEnvironment::getInternedString(ctx, "__is_python_class__"),
+    };
+    for (const proto::ProtoString* typeAttr : kTypeAttrs) {
+        if (name == typeAttr) {
+            return modulePrototype->getAttribute(ctx, name) == value
+                && getType(ctx, ns) == modulePrototype;
+        }
     }
     if (!value->isMethod(ctx)) return false;
     const proto::ProtoObject* inherited = modulePrototype->getAttribute(ctx, name);
