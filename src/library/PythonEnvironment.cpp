@@ -2890,11 +2890,29 @@ static const proto::ProtoObject* py_object_format(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    const proto::ProtoObject* strM = self->getAttribute(context, PythonEnvironment::getInternalString(context, "__str__"));
-    if (strM && strM->asMethod(context)) {
-        return strM->asMethod(context)(context, self, nullptr, posArgs && posArgs->getSize(context) > 0 ? posArgs : context->newList(), nullptr);
+    // object.__format__(self, spec) is str(self) for an empty spec and a
+    // TypeError otherwise. A bound call passes [spec]; the unbound form
+    // object.__format__(obj, spec) passes both. Only a native __str__ was
+    // called before, and the result was None for one written in Python.
+    const unsigned long n = posArgs ? posArgs->getSize(context) : 0;
+    const proto::ProtoObject* receiver = self;
+    const proto::ProtoObject* spec = n >= 1 ? posArgs->getAt(context, 0) : nullptr;
+    if (n >= 2) {
+        receiver = posArgs->getAt(context, 0);
+        spec = posArgs->getAt(context, 1);
     }
-    return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !receiver) return PROTO_NONE;
+    if (spec && spec->isString(context) && spec->asString(context)->getSize(context) > 0) {
+        std::string clsName = "object";
+        const proto::ProtoObject* cls = env->getType(context, receiver);
+        const proto::ProtoObject* nm = cls ? cls->getAttribute(context, env->getNameString()) : nullptr;
+        if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+        env->raiseTypeError(context, "unsupported format string passed to " + clsName + ".__format__");
+        return nullptr;
+    }
+    // str(receiver): the str type dispatches a __str__ written in Python too.
+    return env->callObject(env->getStrPrototype(), {receiver});
 }
 
 static thread_local int s_reprDepth = 0;
@@ -8495,14 +8513,21 @@ static const proto::ProtoObject* py_str_format_dunder(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     const proto::ProtoString* s = str_from_self(context, self);
+    // Unbound form str.__format__(value, spec) (Enum.__format__ uses it):
+    // value and spec both arrive as arguments.
+    unsigned long specIdx = 0;
+    if (!s && posArgs && posArgs->getSize(context) >= 2) {
+        s = str_from_self(context, posArgs->getAt(context, 0));
+        specIdx = 1;
+    }
     if (!s) return PROTO_NONE;
     // Parse format spec: [[fill]align][width].  CPython's str format
     // minilanguage subset for str: width + alignment + fill char; the
     // 's' type is the default and only valid type.  Anything else
     // raises ValueError, but we tolerate it for compatibility.
     std::string spec;
-    if (posArgs && posArgs->getSize(context) >= 1) {
-        const proto::ProtoObject* specArg = posArgs->getAt(context, 0);
+    if (posArgs && posArgs->getSize(context) > specIdx) {
+        const proto::ProtoObject* specArg = posArgs->getAt(context, static_cast<int>(specIdx));
         if (specArg && specArg->isString(context)) {
             specArg->asString(context)->toUTF8String(context, spec);
         }
@@ -12348,11 +12373,36 @@ static const proto::ProtoObject* py_str_format(
             if (val && val->isString(context)) {
                 val->asString(context)->toUTF8String(context, s);
             } else {
-                s = PythonEnvironment::reprObject(context, val);
+                // str(val), which honours a __str__ written in Python.
+                const proto::ProtoObject* sv = env ? env->callObject(env->getStrPrototype(), {val}) : nullptr;
+                if (!sv && env && env->hasPendingException()) return nullptr;
+                if (sv && sv->isString(context)) sv->asString(context)->toUTF8String(context, s);
+                else s = PythonEnvironment::reprObject(context, val);
             }
             out += formatSpec.empty() ? s : applyFormatSpec(context, PythonEnvironment::getInternedString(context, s.c_str())->asObject(context), formatSpec);
         } else {
-            out += applyFormatSpec(context, val, formatSpec);
+            // format(val, spec): a value other than str / int / float / bool /
+            // None goes through its own __format__ (object.__format__ is
+            // str(val)); applyFormatSpec rendered repr() for it.
+            bool formatted = false;
+            if (env && val && val != PROTO_NONE && val != PROTO_TRUE && val != PROTO_FALSE
+                && !val->isString(context) && !val->isInteger(context) && !val->isDouble(context)) {
+                const proto::ProtoObject* formatFn = env->getBuiltins()
+                    ? env->getBuiltins()->getAttribute(context, PythonEnvironment::getInternedString(context, "format"))
+                    : nullptr;
+                if (formatFn && formatFn != PROTO_NONE) {
+                    const proto::ProtoObject* specObj = PythonEnvironment::getInternedString(context, formatSpec.c_str())->asObject(context);
+                    const proto::ProtoObject* r = env->callObject(formatFn, {val, specObj});
+                    if (!r && env->hasPendingException()) return nullptr;
+                    if (r && r->isString(context)) {
+                        std::string rs;
+                        r->asString(context)->toUTF8String(context, rs);
+                        out += rs;
+                        formatted = true;
+                    }
+                }
+            }
+            if (!formatted) out += applyFormatSpec(context, val, formatSpec);
         }
     }
     return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);

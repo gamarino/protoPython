@@ -659,6 +659,15 @@ static const proto::ProtoObject* py_print(
                         out->asString(context)->toUTF8String(context, rendered);
                         gotStr = true;
                     }
+                } else if (strMethod && strMethod != PROTO_NONE) {
+                    // A __str__ written in Python (user classes, Enum): it was
+                    // skipped, so print() showed repr() instead.
+                    const proto::ProtoObject* out = env->callObject(strMethod, {obj});
+                    if (!out && env->hasPendingException()) return nullptr;
+                    if (out && out->isString(context)) {
+                        out->asString(context)->toUTF8String(context, rendered);
+                        gotStr = true;
+                    }
                 }
                 if (!gotStr) {
                     rendered = env->reprObject(context, obj);
