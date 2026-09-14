@@ -4202,7 +4202,8 @@ static const proto::ProtoObject* py_dict_getitem(
 
     if (positionalParameters->getSize(context) > offset) {
         const proto::ProtoObject* key = positionalParameters->getAt(context, offset);
-        unsigned long hash = dictKeyHash(context, key);
+        unsigned long hash = 0;
+        if (!PythonEnvironment::hashKey(context, key, hash)) return nullptr;
         const proto::ProtoSparseList* dict = data->asSparseList(context);
         if (protoPython::diagModEnabled() && key && key->isString(context)) {
             std::string ks;
@@ -4279,7 +4280,8 @@ static const proto::ProtoObject* py_dict_setitem(
     if (realPosParams->getSize(context) < 2 + offset) return PROTO_NONE;
     const proto::ProtoObject* key = realPosParams->getAt(context, 0 + offset);
     const proto::ProtoObject* value = realPosParams->getAt(context, 1 + offset);
-    const unsigned long keyHash = dictKeyHash(context, key);
+    unsigned long keyHash = 0;
+    if (!PythonEnvironment::hashKey(context, key, keyHash)) return nullptr;
     // Retry loop: the new __data__/__keys__ pair is derived from one snapshot
     // and installed with publishDictState; a mutation published by another
     // thread in between forces a recompute instead of being overwritten.
@@ -4320,7 +4322,8 @@ static const proto::ProtoObject* py_dict_delitem(
     const proto::ProtoString* keysName = env->getKeysString();
     if (positionalParameters->getSize(context) < 1 + offset) return PROTO_NONE;
     const proto::ProtoObject* key = positionalParameters->getAt(context, offset);
-    const unsigned long keyHash = dictKeyHash(context, key);
+    unsigned long keyHash = 0;
+    if (!PythonEnvironment::hashKey(context, key, keyHash)) return nullptr;
 
     // Retry loop: the removal is derived from one snapshot of __data__ and
     // __keys__ and installed with publishDictState.
@@ -4466,7 +4469,8 @@ static const proto::ProtoObject* py_dict_contains(
     const proto::ProtoObject* key = positionalParameters->getAt(context, keyOff);
     
     if (dict) {
-        unsigned long h = dictKeyHash(context, key);
+        unsigned long h = 0;
+        if (!PythonEnvironment::hashKey(context, key, h)) return nullptr;
         return dict->has(context, h) ? PROTO_TRUE : PROTO_FALSE;
     }
     
@@ -14689,7 +14693,8 @@ static const proto::ProtoObject* py_dict_get(
     const proto::ProtoObject* data = receiver ? receiver->getAttribute(context, dataName) : nullptr;
     const proto::ProtoSparseList* dict = data && data->asSparseList(context) ? data->asSparseList(context) : nullptr;
     if (!dict) return defaultVal;
-    unsigned long hash = dictKeyHash(context, key);
+    unsigned long hash = 0;
+    if (!PythonEnvironment::hashKey(context, key, hash)) return nullptr;
     if (dict->has(context, hash)) {
         const proto::ProtoObject* res = dict->getAt(context, hash);
         return res;
@@ -15339,13 +15344,14 @@ static const proto::ProtoObject* py_dict_setdefault(
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
     const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
     if (!receiver) return PROTO_NONE;
+    unsigned long hash = 0;
+    if (!PythonEnvironment::hashKey(context, key, hash)) return nullptr;
     // Retry loop: the lookup and the insert see the same snapshot, so two
     // threads racing on a missing key agree on one stored value.
     for (;;) {
         const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
         const proto::ProtoSparseList* dict = data && data->asSparseList(context) ? data->asSparseList(context) : nullptr;
         if (!dict) return PROTO_NONE;
-        unsigned long hash = dictKeyHash(context, key);
 
         if (dict->has(context, hash)) {
             return dict->getAt(context, hash);
@@ -15383,6 +15389,8 @@ static const proto::ProtoObject* py_dict_pop(
         ? positionalParameters->getAt(context, 1 + posOff) : nullptr;
     const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
+    unsigned long hash = 0;
+    if (!PythonEnvironment::hashKey(context, key, hash)) return nullptr;
     // Retry loop: value, removal and key list come from one snapshot and are
     // installed with publishDictState, so two threads never pop one entry.
     for (;;) {
@@ -15396,9 +15404,6 @@ static const proto::ProtoObject* py_dict_pop(
             if (env) env->raiseKeyError(context, key);
             return nullptr;
         }
-        // Use the env-aware hash so custom __hash__ overrides bucket
-        // the same way py_dict_setitem / getitem do.
-        unsigned long hash = dictKeyHash(context, key);
         if (!dict->has(context, hash)) {
             if (defaultVal) return defaultVal;
             PythonEnvironment* env = PythonEnvironment::fromContext(context);

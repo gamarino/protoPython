@@ -2194,22 +2194,21 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
                 if (data->asList(ctx)) lst = data->asList(ctx);
                 else if (data->isTuple(ctx)) lst = data->asTuple(ctx)->asList(ctx);
                 else if (data->asSparseList(ctx)) {
+                    // The key is looked up by the hash the dict stores it
+                    // under; an unhashable key raises TypeError.
                     unsigned long hash = 0;
-                    // The dict's own key hash. An int key used its raw value,
-                    // which never matched the stored hash and threw for ints
-                    // beyond long long.
-                    if (a->isString(ctx) || a->isInteger(ctx)) hash = ::protoPython::pyDictKeyHash(ctx, a);
-                    
-                    if (hash != 0 || a->isInteger(ctx)) {
-                        if (data->asSparseList(ctx)->has(ctx, hash)) {
-                            found = true;
-                            result = (op == 6) ? found : !found;
-                            return result ? PROTO_TRUE : PROTO_FALSE;
-                        }
-                        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-                        if (env && env->hasPendingException()) env->clearPendingException();
+                    if (!PythonEnvironment::hashKey(ctx, a, hash)) return nullptr;
+                    if (data->asSparseList(ctx)->has(ctx, hash)) {
+                        found = true;
+                        result = (op == 6) ? found : !found;
+                        return result ? PROTO_TRUE : PROTO_FALSE;
                     }
-                    // Fallback to __keys__ for SparseList if not found in data
+                    if (!a->isString(ctx)) {
+                        result = (op == 6) ? false : true;
+                        return result ? PROTO_TRUE : PROTO_FALSE;
+                    }
+                    // Some namespaces store string keys under another hash:
+                    // fall back to scanning __keys__ for strings.
                     const proto::ProtoString* keysS = protoPython::PythonEnvironment::getInternalString(ctx, "__keys__");
                     const proto::ProtoObject* keysObj = b->getAttribute(ctx, keysS);
                     if (keysObj) lst = keysObj->asList(ctx);
@@ -5676,7 +5675,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* data = mapObj->getAttribute(ctx, dataString);
                 if (data && data->asSparseList(ctx)) {
                     const proto::ProtoSparseList* sl = data->asSparseList(ctx);
-                    unsigned long h = ::protoPython::pyDictKeyHash(ctx, key);
+                    unsigned long h = 0;
+                    if (!PythonEnvironment::hashKey(ctx, key, h)) continue;
                     bool isNew = !sl->has(ctx, h);
                     sl = sl->setAt(ctx, h, val);
                     const proto::ProtoObject* newMap = mapObj->setAttribute(ctx, dataString, sl->asObject(ctx));
@@ -7157,17 +7157,21 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.push_back(keys->asObject(ctx)); // Root keys
 
             size_t baseIdx = stack.size() - 2 - 2 * arg;
+            bool unhashable = false;
             for (int k = 0; k < arg; ++k) {
                 const proto::ProtoObject* key = stack[baseIdx + 2 * k];
                 const proto::ProtoObject* val = stack[baseIdx + 2 * k + 1];
                 // Use the env-aware hash so user __hash__ overrides
                 // (cistr et al.) bucket the same way as
                 // py_dict_getitem / setitem.
-                data = data->setAt(ctx, ::protoPython::pyDictKeyHash(ctx, key), val);
+                unsigned long h = 0;
+                if (!PythonEnvironment::hashKey(ctx, key, h)) { unhashable = true; break; }
+                data = data->setAt(ctx, h, val);
                 stack[stack.size() - 2] = const_cast<proto::ProtoObject*>(data->asObject(ctx)); // Update data root
                 keys = keys->appendLast(ctx, key);
                 stack[stack.size() - 1] = const_cast<proto::ProtoObject*>(keys->asObject(ctx)); // Update keys root
             }
+            if (unhashable) continue;
             
             proto::ProtoObject* dictObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
             stack.push_back(dictObj); // Root dictObj
