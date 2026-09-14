@@ -5420,6 +5420,19 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.push_back(exitM ? exitM : (const proto::ProtoObject*)PROTO_NONE);
 
             const proto::ProtoObject* enterM = lookupTypeOnly(manager, enterS);
+                // Native objects such as `_thread` locks keep their special
+                // methods on a protoCore prototype that is not part of the
+                // Python MRO, so the walk above cannot see them and `with
+                // lock:` ran the body without __enter__/__exit__. Fall back
+                // to the prototype chain for native methods, still ignoring
+                // instance-own attributes as CPython's type-only lookup does.
+                if (obj && obj->hasOwnAttribute(ctx, name) != PROTO_TRUE) {
+                    const proto::ProtoObject* v = obj->getAttribute(ctx, name);
+                    if (v && v != PROTO_NONE && v->isMethod(ctx)) {
+                        if (v->asMethodSelf(ctx) != nullptr) return v;
+                        return ctx->fromMethod(const_cast<proto::ProtoObject*>(obj), v->asMethod(ctx));
+                    }
+                }
             const proto::ProtoObject* enterResult = nullptr;
             if (enterM && enterM != PROTO_NONE) {
                 // Method bound to manager via descriptor __get__ above —

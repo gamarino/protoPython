@@ -79,6 +79,13 @@ set_tests_properties(protopy_thread_join_waits PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 60
     LABELS "regression_gate")
+# `with lock:` on native context managers must run __enter__/__exit__.
+add_test(NAME protopy_with_native_context_manager
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/with_native_context_manager.py)
+set_tests_properties(protopy_with_native_context_manager PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
 
 # Optional benchmark test (off by default: -DPROTOPY_BENCHMARKS=ON)
 option(PROTOPY_BENCHMARKS "Run benchmark suite in CTest" OFF)
