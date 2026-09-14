@@ -2195,8 +2195,10 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
                 else if (data->isTuple(ctx)) lst = data->asTuple(ctx)->asList(ctx);
                 else if (data->asSparseList(ctx)) {
                     unsigned long hash = 0;
-                    if (a->isString(ctx)) hash = a->getHash(ctx);
-                    else if (a->isInteger(ctx)) hash = static_cast<unsigned long>(a->asLong(ctx));
+                    // The dict's own key hash. An int key used its raw value,
+                    // which never matched the stored hash and threw for ints
+                    // beyond long long.
+                    if (a->isString(ctx) || a->isInteger(ctx)) hash = ::protoPython::pyDictKeyHash(ctx, a);
                     
                     if (hash != 0 || a->isInteger(ctx)) {
                         if (data->asSparseList(ctx)->has(ctx, hash)) {
@@ -5741,7 +5743,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         const proto::ProtoList* fromKeys = fromKeysObj->asList(ctx);
                         for (unsigned long j = 0; j < fromKeys->getSize(ctx); ++j) {
                             const proto::ProtoObject* k = fromKeys->getAt(ctx, j);
-                            unsigned long h = k->getHash(ctx);
+                            unsigned long h = ::protoPython::pyDictKeyHash(ctx, k);
                             const proto::ProtoObject* v = fromSL->getAt(ctx, h);
                             bool isNew = !toSL->has(ctx, h);
                             toSL = toSL->setAt(ctx, h, v);
@@ -5795,7 +5797,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                         const proto::ProtoList* gA = ctx->newList()->appendLast(ctx, k);
                                         const proto::ProtoObject* v = invokeBound(getitemM, from, gA);
                                         if (!v) continue;
-                                        unsigned long h = k->getHash(ctx);
+                                        unsigned long h = ::protoPython::pyDictKeyHash(ctx, k);
                                         bool isNew = !toSL->has(ctx, h);
                                         toSL = toSL->setAt(ctx, h, v);
                                         if (isNew) toKeys = toKeys->appendLast(ctx, k);

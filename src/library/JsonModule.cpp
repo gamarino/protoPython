@@ -5,6 +5,10 @@
 #include <cctype>
 
 namespace protoPython {
+
+// Dict __data__ is keyed by this hash (PythonEnvironment.cpp).
+unsigned long pyDictKeyHash(proto::ProtoContext* context, const proto::ProtoObject* key);
+
 namespace json {
 
 static void jsonSkipWs(const std::string& s, size_t& i) {
@@ -161,7 +165,7 @@ static void dumpValue(proto::ProtoContext* ctx, std::ostream& out, const proto::
             if (i > 0) out << ',';
             dumpValue(ctx, out, keys->getAt(ctx, static_cast<int>(i)));
             out << ':';
-            const proto::ProtoObject* v = data->getAt(ctx, keys->getAt(ctx, static_cast<int>(i))->getHash(ctx));
+            const proto::ProtoObject* v = data->getAt(ctx, pyDictKeyHash(ctx, keys->getAt(ctx, static_cast<int>(i))));
             dumpValue(ctx, out, v);
         }
         out << '}';

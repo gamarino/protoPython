@@ -630,6 +630,9 @@ static bool clsNeedsMetaSlotSynthesis(proto::ProtoContext* ctx,
                                        PythonEnvironment* env,
                                        const proto::ProtoObject* cls);
 
+// Defined with the other dict helpers below.
+static unsigned long dictKeyHash(proto::ProtoContext* context, const proto::ProtoObject* key);
+
 static const proto::ProtoObject* py_mappingproxy_contains(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -696,7 +699,7 @@ static const proto::ProtoObject* py_mappingproxy_contains(
         }
         
         if (data->asSparseList(context)) {
-            if (data->asSparseList(context)->has(context, key->getHash(context))) {
+            if (data->asSparseList(context)->has(context, dictKeyHash(context, key))) {
                 return PROTO_TRUE;
             }
         }
@@ -4246,7 +4249,7 @@ static const proto::ProtoObject* py_dict_delitem(
         if (keysObj && keysObj->asList(context)) {
             const proto::ProtoList* list = keysObj->asList(context);
             for (int i = 0; i < list->getSize(context); ++i) {
-                unsigned long kh = list->getAt(context, i)->getHash(context);
+                unsigned long kh = dictKeyHash(context, list->getAt(context, i));
                 if (kh == hash) {
                      list = list->removeAt(context, i);
                      break;
@@ -4422,7 +4425,7 @@ static const proto::ProtoObject* py_dict_eq(
     unsigned long size = keysA->getSize(context);
     for (unsigned long i = 0; i < size; ++i) {
         const proto::ProtoObject* key = keysA->getAt(context, static_cast<int>(i));
-        unsigned long hash = key->getHash(context);
+        unsigned long hash = dictKeyHash(context, key);
         if (!dictB->has(context, hash)) return PROTO_FALSE;
         const proto::ProtoObject* vA = dictA->getAt(context, hash);
         const proto::ProtoObject* vB = dictB->getAt(context, hash);
@@ -6648,7 +6651,7 @@ static const proto::ProtoObject* py_dict_call(
             const proto::ProtoList* otherKeys = d_keys->asList(context);
             for (size_t i = 0; i < otherKeys->getSize(context); ++i) {
                 const proto::ProtoObject* key = otherKeys->getAt(context, i);
-                unsigned long hash = key->getHash(context);
+                unsigned long hash = dictKeyHash(context, key);
                 if (!d->has(context, hash)) {
                     keysList = const_cast<proto::ProtoList*>(keysList->appendLast(context, key));
                 }
@@ -6690,7 +6693,7 @@ static const proto::ProtoObject* py_dict_call(
                                     if (env && env->peekPendingException()) return nullptr;
                                     
                                     if (val) {
-                                        unsigned long hash = keyArg->getHash(context);
+                                        unsigned long hash = dictKeyHash(context, keyArg);
                                         if (!d->has(context, hash)) keysList = const_cast<proto::ProtoList*>(keysList->appendLast(context, keyArg));
                                         d = const_cast<proto::ProtoSparseList*>(d->setAt(context, hash, val));
                                     }
@@ -6836,7 +6839,7 @@ static const proto::ProtoObject* py_dict_call(
                             }
 
                             if (k && v) {
-                                unsigned long hash = k->getHash(context);
+                                unsigned long hash = dictKeyHash(context, k);
                                 if (!d->has(context, hash)) keysList = const_cast<proto::ProtoList*>(keysList->appendLast(context, k));
                                 d = const_cast<proto::ProtoSparseList*>(d->setAt(context, hash, v));
                             } else if (pairLen == 0 && !pairT && !pairL) {
@@ -6932,7 +6935,7 @@ static const proto::ProtoObject* py_str_maketrans(
         }
         for (unsigned long i = 0; i < kl->getSize(context); ++i) {
             const proto::ProtoObject* k = kl->getAt(context, static_cast<int>(i));
-            const proto::ProtoObject* v = sl->getAt(context, k->getHash(context));
+            const proto::ProtoObject* v = sl->getAt(context, dictKeyHash(context, k));
             long long codePoint = 0;
             if (k->isInteger(context)) {
                 codePoint = k->asLong(context);
@@ -14771,16 +14774,12 @@ static const proto::ProtoObject* py_dict_update(
         if (otherDict && otherKeys) {
             for (unsigned long i = 0; i < otherKeys->getSize(context); ++i) {
                 const proto::ProtoObject* key = otherKeys->getAt(context, static_cast<int>(i));
-                const proto::ProtoObject* value = otherDict->getAt(context, key->getHash(context));
+                const proto::ProtoObject* value = otherDict->getAt(context, dictKeyHash(context, key));
                 if (!value) continue;
 
-                unsigned long hash = key->getHash(context);
+                unsigned long hash = dictKeyHash(context, key);
+                if (!dict->has(context, hash)) keys = keys->appendLast(context, key);
                 dict = dict->setAt(context, hash, value);
-                bool found = false;
-                for (unsigned long j = 0; j < keys->getSize(context); ++j) {
-                    if (keys->getAt(context, static_cast<int>(j))->getHash(context) == hash) { found = true; break; }
-                }
-                if (!found) keys = keys->appendLast(context, key);
 
                 // If it's a module, also set as attribute.
                 // CRITICAL FIX: Guard against poisoning the dict class or other core prototypes.
@@ -14844,13 +14843,9 @@ static const proto::ProtoObject* py_dict_update(
                                 const proto::ProtoList* ga = context->newList()->appendLast(context, k);
                                 const proto::ProtoObject* v = invokeBound(getItemM, other, ga);
                                 if (!v) continue;
-                                unsigned long hash = k->getHash(context);
+                                unsigned long hash = dictKeyHash(context, k);
+                                if (!dict->has(context, hash)) keys = keys->appendLast(context, k);
                                 dict = dict->setAt(context, hash, v);
-                                bool found = false;
-                                for (unsigned long j = 0; j < keys->getSize(context); ++j) {
-                                    if (keys->getAt(context, static_cast<int>(j))->getHash(context) == hash) { found = true; break; }
-                                }
-                                if (!found) keys = keys->appendLast(context, k);
                             }
                         } else {
                             // keys() returned an iterator, not a list — walk via env->iter.
@@ -14866,13 +14861,9 @@ static const proto::ProtoObject* py_dict_update(
                                     const proto::ProtoList* ga = context->newList()->appendLast(context, k);
                                     const proto::ProtoObject* v = invokeBound(getItemM, other, ga);
                                     if (!v) continue;
-                                    unsigned long hash = k->getHash(context);
+                                    unsigned long hash = dictKeyHash(context, k);
+                                    if (!dict->has(context, hash)) keys = keys->appendLast(context, k);
                                     dict = dict->setAt(context, hash, v);
-                                    bool found = false;
-                                    for (unsigned long j = 0; j < keys->getSize(context); ++j) {
-                                        if (keys->getAt(context, static_cast<int>(j))->getHash(context) == hash) { found = true; break; }
-                                    }
-                                    if (!found) keys = keys->appendLast(context, k);
                                 }
                             }
                         }
@@ -14931,13 +14922,9 @@ static const proto::ProtoObject* py_dict_update(
                         }
                         return nullptr;
                     }
-                    unsigned long hash = k->getHash(context);
+                    unsigned long hash = dictKeyHash(context, k);
+                    if (!dict->has(context, hash)) keys = keys->appendLast(context, k);
                     dict = dict->setAt(context, hash, v);
-                    bool found = false;
-                    for (unsigned long j = 0; j < keys->getSize(context); ++j) {
-                        if (keys->getAt(context, static_cast<int>(j))->getHash(context) == hash) { found = true; break; }
-                    }
-                    if (!found) keys = keys->appendLast(context, k);
                     bool isModule = target->isInstanceOf(context, env->getModulePrototype()) == PROTO_TRUE;
                     if (k->isString(context) && isModule) {
                         env->setAttribute(context, target, k->asString(context), v);
@@ -14963,12 +14950,8 @@ kwargs_phase:
                 unsigned long hash = ks->getHash(context);
                 if (!keywordParameters->has(context, hash)) continue;
                 const proto::ProtoObject* v = keywordParameters->getAt(context, hash);
+                if (!dict->has(context, hash)) keys = keys->appendLast(context, keyObj);
                 dict = dict->setAt(context, hash, v ? v : PROTO_NONE);
-                bool found = false;
-                for (unsigned long j = 0; j < keys->getSize(context); ++j) {
-                    if (keys->getAt(context, static_cast<int>(j))->getHash(context) == hash) { found = true; break; }
-                }
-                if (!found) keys = keys->appendLast(context, keyObj);
                 bool isModule = target->isInstanceOf(context, env->getModulePrototype()) == PROTO_TRUE;
                 if (isModule) env->setAttribute(context, target, ks, v ? v : PROTO_NONE);
             }
@@ -14986,13 +14969,9 @@ kwargs_phase:
             dict = dataObj && dataObj->asSparseList(context) ? dataObj->asSparseList(context) : context->newSparseList();
             for (unsigned long u = 0; u < updSize; ++u) {
                 const proto::ProtoObject* key = updKeys->getAt(context, static_cast<int>(u));
-                unsigned long hash = key->getHash(context);
+                unsigned long hash = dictKeyHash(context, key);
+                if (!dict->has(context, hash)) keys = keys->appendLast(context, key);
                 dict = dict->setAt(context, hash, updDict->getAt(context, hash));
-                bool found = false;
-                for (unsigned long j = 0; j < keys->getSize(context); ++j) {
-                    if (keys->getAt(context, static_cast<int>(j))->getHash(context) == hash) { found = true; break; }
-                }
-                if (!found) keys = keys->appendLast(context, key);
             }
             if (publishDictState(context, target, dataName, keysName, dataObj, keysObj,
                                  dict->asObject(context), keys->asObject(context))) {
@@ -15135,12 +15114,8 @@ static const proto::ProtoObject* py_dict_fromkeys(
             break;
         }
         if (!key || key == PROTO_NONE) break;
-        unsigned long hash = key->getHash(context);
-        bool found = false;
-        for (unsigned long j = 0; j < keysList->getSize(context); ++j) {
-            if (keysList->getAt(context, static_cast<int>(j))->getHash(context) == hash) { found = true; break; }
-        }
-        if (!found) keysList = keysList->appendLast(context, key);
+        unsigned long hash = dictKeyHash(context, key);
+        if (!sparse->has(context, hash)) keysList = keysList->appendLast(context, key);
         sparse = sparse->setAt(context, hash, value);
     }
 
@@ -15235,10 +15210,10 @@ static const proto::ProtoObject* py_dict_or(
     const proto::ProtoSparseList* dict = context->newSparseList();
     for (unsigned long i = 0; i < selfKeys->getSize(context); ++i) {
         const proto::ProtoObject* key = selfKeys->getAt(context, static_cast<int>(i));
-        const proto::ProtoObject* value = selfDict->getAt(context, key->getHash(context));
+        const proto::ProtoObject* value = selfDict->getAt(context, dictKeyHash(context, key));
         if (!value) continue;
         keys = keys->appendLast(context, key);
-        dict = dict->setAt(context, key->getHash(context), value);
+        dict = dict->setAt(context, dictKeyHash(context, key), value);
     }
     const proto::ProtoObject* otherKeysObj = (other->hasOwnAttribute(context, keysName) == PROTO_TRUE) ? other->getAttribute(context, keysName) : nullptr;
     const proto::ProtoList* otherKeys = otherKeysObj && otherKeysObj->asList(context) ? otherKeysObj->asList(context) : context->newList();
@@ -15247,15 +15222,11 @@ static const proto::ProtoObject* py_dict_or(
     if (otherDict) {
         for (unsigned long i = 0; i < otherKeys->getSize(context); ++i) {
             const proto::ProtoObject* key = otherKeys->getAt(context, static_cast<int>(i));
-            const proto::ProtoObject* value = otherDict->getAt(context, key->getHash(context));
+            const proto::ProtoObject* value = otherDict->getAt(context, dictKeyHash(context, key));
             if (!value) continue;
-            unsigned long hash = key->getHash(context);
+            unsigned long hash = dictKeyHash(context, key);
+            if (!dict->has(context, hash)) keys = keys->appendLast(context, key);
             dict = dict->setAt(context, hash, value);
-            bool found = false;
-            for (unsigned long j = 0; j < keys->getSize(context); ++j) {
-                if (keys->getAt(context, static_cast<int>(j))->getHash(context) == hash) { found = true; break; }
-            }
-            if (!found) keys = keys->appendLast(context, key);
         }
     }
     const proto::ProtoList* parents = self->getParents(context);
@@ -15283,10 +15254,10 @@ static const proto::ProtoObject* py_dict_ror(
     const proto::ProtoSparseList* dict = context->newSparseList();
     for (unsigned long i = 0; i < otherKeys->getSize(context); ++i) {
         const proto::ProtoObject* key = otherKeys->getAt(context, static_cast<int>(i));
-        const proto::ProtoObject* value = otherDict->getAt(context, key->getHash(context));
+        const proto::ProtoObject* value = otherDict->getAt(context, dictKeyHash(context, key));
         if (!value) continue;
         keys = keys->appendLast(context, key);
-        dict = dict->setAt(context, key->getHash(context), value);
+        dict = dict->setAt(context, dictKeyHash(context, key), value);
     }
     const proto::ProtoObject* selfKeysObj = self->getAttribute(context, keysName);
     const proto::ProtoList* selfKeys = selfKeysObj && selfKeysObj->asList(context) ? selfKeysObj->asList(context) : context->newList();
@@ -15295,15 +15266,11 @@ static const proto::ProtoObject* py_dict_ror(
     if (selfDict) {
         for (unsigned long i = 0; i < selfKeys->getSize(context); ++i) {
             const proto::ProtoObject* key = selfKeys->getAt(context, static_cast<int>(i));
-            const proto::ProtoObject* value = selfDict->getAt(context, key->getHash(context));
+            const proto::ProtoObject* value = selfDict->getAt(context, dictKeyHash(context, key));
             if (!value) continue;
-            unsigned long hash = key->getHash(context);
+            unsigned long hash = dictKeyHash(context, key);
+            if (!dict->has(context, hash)) keys = keys->appendLast(context, key);
             dict = dict->setAt(context, hash, value);
-            bool found = false;
-            for (unsigned long j = 0; j < keys->getSize(context); ++j) {
-                if (keys->getAt(context, static_cast<int>(j))->getHash(context) == hash) { found = true; break; }
-            }
-            if (!found) keys = keys->appendLast(context, key);
         }
     }
     const proto::ProtoList* parents = other->getParents(context);
@@ -15338,23 +15305,19 @@ static const proto::ProtoObject* py_dict_ior(
         const proto::ProtoSparseList* dict = context->newSparseList();
         for (unsigned long i = 0; i < selfKeys->getSize(context); ++i) {
             const proto::ProtoObject* key = selfKeys->getAt(context, static_cast<int>(i));
-            const proto::ProtoObject* value = selfDict->getAt(context, key->getHash(context));
+            const proto::ProtoObject* value = selfDict->getAt(context, dictKeyHash(context, key));
             if (!value) continue;
             keys = keys->appendLast(context, key);
-            dict = dict->setAt(context, key->getHash(context), value);
+            dict = dict->setAt(context, dictKeyHash(context, key), value);
         }
         if (otherDict) {
             for (unsigned long i = 0; i < otherKeys->getSize(context); ++i) {
                 const proto::ProtoObject* key = otherKeys->getAt(context, static_cast<int>(i));
-                const proto::ProtoObject* value = otherDict->getAt(context, key->getHash(context));
+                const proto::ProtoObject* value = otherDict->getAt(context, dictKeyHash(context, key));
                 if (!value) continue;
-                unsigned long hash = key->getHash(context);
+                unsigned long hash = dictKeyHash(context, key);
+                if (!dict->has(context, hash)) keys = keys->appendLast(context, key);
                 dict = dict->setAt(context, hash, value);
-                bool found = false;
-                for (unsigned long j = 0; j < keys->getSize(context); ++j) {
-                    if (keys->getAt(context, static_cast<int>(j))->getHash(context) == hash) { found = true; break; }
-                }
-                if (!found) keys = keys->appendLast(context, key);
             }
         }
         if (publishDictState(context, self, dataName, keysName, selfDataObj, selfKeysObj,
@@ -15393,7 +15356,7 @@ static const proto::ProtoObject* py_dict_setdefault(
         const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
         const proto::ProtoSparseList* dict = data && data->asSparseList(context) ? data->asSparseList(context) : nullptr;
         if (!dict) return PROTO_NONE;
-        unsigned long hash = key->getHash(context);
+        unsigned long hash = dictKeyHash(context, key);
 
         if (dict->has(context, hash)) {
             return dict->getAt(context, hash);

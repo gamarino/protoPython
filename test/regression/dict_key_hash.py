@@ -77,6 +77,32 @@ class cistr(str):
 c = {cistr("TWO"): 2}
 check("str subclass hash", c[cistr("two")], 2)
 
+# Every construction and read path hashes keys the way lookups do.
+built = dict([(1.0, "one"), (True, "true"), (P(4), "p4")])
+check("dict(pairs) collapses equal numeric keys", (len(built), built[1]), (2, "true"))
+check("dict(pairs) user key", built[P(4)], "p4")
+check("dict(mapping)", dict({1.0: "f"})[1], "f")
+up = {}
+up.update([(2.0, "a")])
+up.update({True: "b"})
+up.update(x=1)
+check("update paths", (up[2], up[1], up["x"]), ("a", "b", 1))
+check("| operator", ({1.0: "l"} | {2: "r"})[1], "l")
+merged2 = {1: "a"}
+merged2 |= {1.0: "b"}
+check("|= replaces an equal key", (len(merged2), merged2[1]), (1, "b"))
+check("fromkeys collapses equal keys", len(dict.fromkeys([1.0, 1, True])), 1)
+sd = {1: "x"}
+check("setdefault on an equal key", (sd.setdefault(1.0, "y"), len(sd)), ("x", 1))
+dl = {1.0: "z", 2: "w"}
+del dl[1]
+check("del by an equal key removes it", (list(dl), len(dl)), ([2], 1))
+check("dict equality across equal keys", {1: "a"} == {1.0: "a"}, True)
+check("** unpacking", {**{1.0: "u"}}[1], "u")
+check("int in dict", 5 in {5: 1}, True)
+check("big int in dict", 2 ** 70 in {2 ** 70: 1}, True)
+check("values of a float-keyed dict", list({1.0: "v"}.values()), ["v"])
+
 # Missing keys still raise KeyError.
 try:
     lit["absent"]
