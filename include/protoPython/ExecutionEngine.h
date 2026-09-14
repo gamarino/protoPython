@@ -327,6 +327,17 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
     const proto::ProtoList* args,
     const proto::ProtoSparseList* kwargs);
 
+/**
+ * PEP 487: call `super(cls, cls).__init_subclass__(**kwargs)` for a class
+ * type.__new__ just built.  kwNames names the keywords held in kwargs (the
+ * SparseList stores hashes only).  Returns false when the hook raised; the
+ * exception stays pending.
+ */
+bool invokeInitSubclass(proto::ProtoContext* ctx,
+    const proto::ProtoObject* cls,
+    const proto::ProtoSparseList* kwargs,
+    const proto::ProtoTuple* kwNames);
+
 } // namespace protoPython
 
 #endif

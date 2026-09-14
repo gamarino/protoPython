@@ -3474,6 +3474,43 @@ struct GCStack {
 };
 }
 
+bool invokeInitSubclass(proto::ProtoContext* ctx,
+    const proto::ProtoObject* cls,
+    const proto::ProtoSparseList* kwargs,
+    const proto::ProtoTuple* kwNames) {
+    if (!ctx || !cls || cls == PROTO_NONE) return true;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return true;
+    const proto::ProtoObject* mroAttr = cls->getAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__mro__"));
+    const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+    if (!mroT || mroT->getSize(ctx) < 2) return true;
+    const proto::ProtoString* iscS =
+        PythonEnvironment::getInternedString(ctx, "__init_subclass__");
+    // super(cls, cls).__init_subclass__: the first definition after cls.
+    for (unsigned long mi = 1; mi < mroT->getSize(ctx); ++mi) {
+        const proto::ProtoObject* base = mroT->getAt(ctx, mi);
+        if (!base || base == PROTO_NONE) continue;
+        const proto::ProtoObject* hook = base->getOwnAttributeDirect(ctx, iscS);
+        if (!hook || hook == PROTO_NONE) continue;
+        // __init_subclass__ is implicitly a classmethod: call the underlying
+        // function with cls as its first argument.
+        const proto::ProtoObject* unwrapped = hook->getAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__func__"));
+        if (unwrapped && unwrapped != PROTO_NONE) hook = unwrapped;
+        const proto::ProtoSparseList* kw =
+            (kwargs && kwargs->getSize(ctx) > 0) ? kwargs : nullptr;
+        // STRUCT-69: the SparseList stores key hashes only; the **kwargs
+        // binding recovers the key names from the kw-names stack.
+        const bool pushNames = kw && kwNames;
+        if (pushNames) env->pushKwNames(kwNames);
+        invokeCallable(ctx, hook, ctx->newList()->appendLast(ctx, cls), kw);
+        if (pushNames) env->popKwNames();
+        return !env->hasPendingException();
+    }
+    return true;
+}
+
 const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
@@ -8770,96 +8807,13 @@ const proto::ProtoObject* executeBytecodeRange(
                         ns->setAttribute(ctx, name->asString(ctx), targetClass);
                     }
 
-                    // PG: __init_subclass__ hook.  CPython calls
-                    // `super(cls, cls).__init_subclass__(**kwargs)` after
-                    // a class is built, where kwargs are the class-level
-                    // keywords (sans metaclass).  Walk MRO[1:] to find
-                    // the first __init_subclass__ implementation and
-                    // invoke it.
-                    if (env) {
-                        const proto::ProtoObject* mroAttr = targetClass->getAttribute(ctx,
-                            PythonEnvironment::getInternedString(ctx, "__mro__"));
-                        const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
-                        if (mroT && mroT->getSize(ctx) >= 2) {
-                            const proto::ProtoString* iscS =
-                                PythonEnvironment::getInternedString(ctx, "__init_subclass__");
-                            for (unsigned long mi = 1; mi < mroT->getSize(ctx); ++mi) {
-                                const proto::ProtoObject* base = mroT->getAt(ctx, mi);
-                                if (!base || base == PROTO_NONE) continue;
-                                const proto::ProtoObject* hook = base->getOwnAttributeDirect(ctx, iscS);
-                                if (!hook || hook == PROTO_NONE) continue;
-                                // Found __init_subclass__ on this base.
-                                // Filter kwds to drop metaclass key.
-                                const proto::ProtoSparseList* origKw =
-                                    (kwds && kwds->asSparseList(ctx)) ? kwds->asSparseList(ctx) : nullptr;
-                                if (!origKw && kwds && kwds != PROTO_NONE) {
-                                    const proto::ProtoObject* dataAttr = kwds->getAttribute(ctx, env->getDataString());
-                                    if (dataAttr) origKw = dataAttr->asSparseList(ctx);
-                                }
-                                const proto::ProtoSparseList* filtered = origKw;
-                                // PG: __init_subclass__ is implicitly a
-                                // classmethod (CPython semantics).  Unwrap
-                                // the underlying function via __func__ so
-                                // invokeCallable invokes the actual body.
-                                const proto::ProtoString* funcS =
-                                    PythonEnvironment::getInternedString(ctx, "__func__");
-                                const proto::ProtoObject* unwrapped = hook->getAttribute(ctx, funcS);
-                                if (unwrapped && unwrapped != PROTO_NONE) hook = unwrapped;
-                                if (origKw) {
-                                    const proto::ProtoString* mcKey =
-                                        PythonEnvironment::getInternedString(ctx, "metaclass");
-                                    unsigned long mcHash = mcKey->getHash(ctx);
-                                    if (origKw->has(ctx, mcHash)) {
-                                        // Build a sparse list without metaclass.
-                                        const proto::ProtoSparseList* fnew = ctx->newSparseList();
-                                        const proto::ProtoSparseListIterator* it = origKw->getIterator(ctx);
-                                        while (it) {
-                                            unsigned long h = it->nextKey(ctx);
-                                            const proto::ProtoObject* v = it->nextValue(ctx);
-                                            if (!v) break;
-                                            if (h != mcHash) {
-                                                fnew = fnew->setAt(ctx, h, v);
-                                            }
-                                            it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(ctx);
-                                        }
-                                        filtered = fnew;
-                                    }
-                                }
-                                // Pass cls as first positional arg (classmethod-style binding).
-                                const proto::ProtoList* iscArgs = ctx->newList()->appendLast(ctx, targetClass);
-                                // STRUCT-69: thread the kwds dict's __keys__ via pushKwNames so
-                                // the inner **kwargs binding can recover key names from the
-                                // SparseList.  Same approach as the metaclass-invoke site above.
-                                const proto::ProtoTuple* iscNames = nullptr;
-                                if (env && filtered && kwds && kwds != PROTO_NONE) {
-                                    const proto::ProtoObject* keysObj = kwds->getAttribute(ctx, env->getKeysString());
-                                    const proto::ProtoList* keysL = keysObj ? keysObj->asList(ctx) : nullptr;
-                                    if (keysL && keysL->getSize(ctx) > 0) {
-                                        const proto::ProtoString* metaKey =
-                                            PythonEnvironment::getInternedString(ctx, "metaclass");
-                                        unsigned long mcH = metaKey->getHash(ctx);
-                                        const proto::ProtoList* fk = ctx->newList();
-                                        for (unsigned long i = 0; i < keysL->getSize(ctx); ++i) {
-                                            const proto::ProtoObject* k = keysL->getAt(ctx, static_cast<int>(i));
-                                            if (k && k->isString(ctx) && k->getHash(ctx) != mcH) {
-                                                fk = fk->appendLast(ctx, k);
-                                            }
-                                        }
-                                        if (fk->getSize(ctx) > 0) {
-                                            iscNames = ctx->newTupleFromList(fk);
-                                            env->pushKwNames(iscNames);
-                                        }
-                                    }
-                                }
-                                invokeCallable(ctx, hook, iscArgs, filtered);
-                                if (iscNames && env) env->popKwNames();
-                                // A raised exception unwinds below through the
-                                // dispatch loop (it used to `return nullptr`,
-                                // bypassing any enclosing try/except).
-                                break;
-                            }
-                        }
-                    }
+                    // __init_subclass__ is not called here: as in CPython it
+                    // runs at the end of type.__new__ (py_type ->
+                    // invokeInitSubclass), so a metaclass calling
+                    // super().__new__, type(name, bases, ns) and
+                    // types.new_class() all run it exactly once.  A raised
+                    // exception makes the metaclass call return nullptr and
+                    // unwinds below.
                 }
 
                 if (env && env->hasPendingException()) {

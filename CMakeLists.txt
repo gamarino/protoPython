@@ -254,6 +254,13 @@ set_tests_properties(protopy_list_subclass_init PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# __init_subclass__ runs once for type(), types.new_class() and metaclasses.
+add_test(NAME protopy_init_subclass_dynamic
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/init_subclass_dynamic.py)
+set_tests_properties(protopy_init_subclass_dynamic PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # `import typing` completes; Generic[T] subclasses, Protocol and aliases work.
 add_test(NAME protopy_typing_import
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/typing_import.py)

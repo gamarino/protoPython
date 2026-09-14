@@ -7475,6 +7475,39 @@ const proto::ProtoObject* py_type(
             }
         }
         
+        // PEP 487: type.__new__ ends by calling the parent's
+        // __init_subclass__ with its keyword arguments, so type(),
+        // types.new_class(), metaclass calls and class statements all run
+        // the hook exactly once (OP_BUILD_CLASS no longer calls it).
+        if (env) {
+            // A class statement's namespace (OP_BUILD_CLASS gives it an own
+            // f_locals) must bind the class name before the hook runs:
+            // methods of a class defined inside a function reach the class
+            // for zero-arg super() through it, and hooks may instantiate it.
+            if (dict && name && name->isString(context)
+                && dict->hasOwnAttribute(context, env->getFLocalsString()) == PROTO_TRUE) {
+                dict->setAttribute(context, name->asString(context), targetClass);
+            }
+            // The kw-names stack can belong to an enclosing keyword call:
+            // keep only the names this call actually received.
+            const proto::ProtoTuple* hookNames = nullptr;
+            const proto::ProtoTuple* curNames = env->getCurrentKwNames();
+            if (curNames && keywordParameters && keywordParameters->getSize(context) > 0) {
+                const proto::ProtoList* fk = context->newList();
+                for (unsigned long i = 0; i < curNames->getSize(context); ++i) {
+                    const proto::ProtoObject* k = curNames->getAt(context, static_cast<int>(i));
+                    if (k && k->isString(context)
+                        && keywordParameters->has(context, k->getHash(context))) {
+                        fk = fk->appendLast(context, k);
+                    }
+                }
+                if (fk->getSize(context) > 0) hookNames = context->newTupleFromList(fk);
+            }
+            if (!protoPython::invokeInitSubclass(context, targetClass, keywordParameters, hookNames)) {
+                return nullptr;
+            }
+        }
+
         return targetClass;
     }
 
