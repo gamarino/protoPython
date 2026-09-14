@@ -282,6 +282,13 @@ set_tests_properties(protopy_compile_single PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# globals(), vars(module) and module.__dict__ are the module's namespace mapping.
+add_test(NAME protopy_module_namespace_mapping
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/module_namespace_mapping.py)
+set_tests_properties(protopy_module_namespace_mapping PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # list.__init__ fills the list; subclasses receive their own arguments.
 add_test(NAME protopy_list_subclass_init
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/list_subclass_init.py)

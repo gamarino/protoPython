@@ -17004,6 +17004,234 @@ static const proto::ProtoObject* py_module_update(
     return PROTO_NONE;
 }
 
+// Mapping protocol of a module namespace.
+//
+// A module is its own namespace: module.__dict__ and vars(module) return the
+// module (py_object_get_dict) and globals() returns the frame's f_globals,
+// which is the module.  Its globals are the module's own attributes -
+// STORE_NAME / STORE_GLOBAL write them there - so the mapping reads and
+// writes that attribute table.  Only items/keys/values/update/copy existed:
+// `globals()['__name__']` fell into OP_BINARY_SUBSCR's __data__ fallback
+// (None, since __name__ is not mirrored into __data__), `'__name__' in
+// globals()` was False and `globals().get(...)` raised AttributeError.
+static const proto::ProtoString* moduleNamespaceKey(proto::ProtoContext* context,
+                                                    PythonEnvironment* env,
+                                                    const proto::ProtoObject* key) {
+    if (!key) return nullptr;
+    if (key->isString(context)) return key->asString(context);
+    // A str subclass instance carries its payload in __data__; only cell
+    // objects have attributes (see mp_isClassObject).
+    if (env && (reinterpret_cast<uintptr_t>(key) & 0x3F) == 0) {
+        const proto::ProtoObject* d = key->getAttribute(context, env->getDataString());
+        if (d && d->isString(context)) return d->asString(context);
+    }
+    return nullptr;
+}
+
+// The value bound to `name` in the module namespace, or nullptr.  Skips
+// the names keys() / items() / values() skip, so dict(module) agrees.
+static const proto::ProtoObject* moduleNamespaceGet(proto::ProtoContext* context,
+                                                    const proto::ProtoObject* self,
+                                                    const proto::ProtoString* name) {
+    if (!self || self == PROTO_NONE || !name) return nullptr;
+    if (self->hasOwnAttribute(context, name) != PROTO_TRUE) return nullptr;
+    std::string nm;
+    name->toUTF8String(context, nm);
+    if (isModuleInternalAttr(nm)) return nullptr;
+    return self->getOwnAttributeDirect(context, name);
+}
+
+// Keep the module's own __keys__ list (the insertion order keys()/items()
+// report) in step with a mapping write or delete, as OP_DELETE_GLOBAL does.
+// A module without its own __keys__ lists its own attributes instead, so
+// no list is created here.
+static void moduleNamespaceTrackKey(proto::ProtoContext* context, PythonEnvironment* env,
+                                    const proto::ProtoObject* self,
+                                    const proto::ProtoString* name, bool present) {
+    const proto::ProtoString* keysS = env->getKeysString();
+    if (self->hasOwnAttribute(context, keysS) != PROTO_TRUE) return;
+    const proto::ProtoObject* keysObj = self->getOwnAttributeDirect(context, keysS);
+    const proto::ProtoList* keys = keysObj ? keysObj->asList(context) : nullptr;
+    if (!keys) return;
+    const proto::ProtoObject* nameObj = name->asObject(context);
+    const unsigned long h = nameObj->getHash(context);
+    const int n = static_cast<int>(keys->getSize(context));
+    for (int i = 0; i < n; ++i) {
+        const proto::ProtoObject* k = keys->getAt(context, i);
+        if (k == nameObj || (k && k->isString(context) && k->getHash(context) == h)) {
+            if (!present) {
+                const_cast<proto::ProtoObject*>(self)->setAttribute(context, keysS,
+                    keys->removeAt(context, i)->asObject(context));
+            }
+            return;
+        }
+    }
+    if (present) {
+        const_cast<proto::ProtoObject*>(self)->setAttribute(context, keysS,
+            keys->appendLast(context, nameObj)->asObject(context));
+    }
+}
+
+static void moduleNamespaceSet(proto::ProtoContext* context, PythonEnvironment* env,
+                               const proto::ProtoObject* self,
+                               const proto::ProtoString* name,
+                               const proto::ProtoObject* value) {
+    if (!value) value = PROTO_NONE;
+    proto::ProtoObject* target = const_cast<proto::ProtoObject*>(self);
+    target->setAttribute(context, name, value);
+    // STORE_NAME mirrors module globals into __data__, which dict.update()
+    // and friends read directly: keep an existing mirror current.
+    const proto::ProtoString* dataS = env->getDataString();
+    if (target->hasOwnAttribute(context, dataS) == PROTO_TRUE) {
+        const proto::ProtoObject* dataObj = target->getOwnAttributeDirect(context, dataS);
+        const proto::ProtoSparseList* data = dataObj ? dataObj->asSparseList(context) : nullptr;
+        if (data) {
+            target->setAttribute(context, dataS,
+                data->setAt(context, name->asObject(context)->getHash(context), value)->asObject(context));
+        }
+    }
+    moduleNamespaceTrackKey(context, env, self, name, true);
+    env->invalidateResolveCache();
+}
+
+// Unbind `name` the way OP_DELETE_GLOBAL does: own attribute, __data__
+// mirror entry and __keys__ entry.
+static void moduleNamespaceRemove(proto::ProtoContext* context, PythonEnvironment* env,
+                                  const proto::ProtoObject* self,
+                                  const proto::ProtoString* name) {
+    proto::ProtoObject* target = const_cast<proto::ProtoObject*>(self);
+    target->removeAttribute(context, name);
+    const proto::ProtoString* dataS = env->getDataString();
+    if (target->hasOwnAttribute(context, dataS) == PROTO_TRUE) {
+        const proto::ProtoObject* dataObj = target->getOwnAttributeDirect(context, dataS);
+        const proto::ProtoSparseList* data = dataObj ? dataObj->asSparseList(context) : nullptr;
+        const unsigned long h = name->asObject(context)->getHash(context);
+        if (data && data->has(context, h)) {
+            target->setAttribute(context, dataS, data->removeAt(context, h)->asObject(context));
+        }
+    }
+    moduleNamespaceTrackKey(context, env, self, name, false);
+    env->invalidateResolveCache();
+}
+
+static const proto::ProtoObject* py_module_getitem(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !self || !args || args->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* key = args->getAt(context, 0);
+    const proto::ProtoObject* val =
+        moduleNamespaceGet(context, self, moduleNamespaceKey(context, env, key));
+    if (val) return val;
+    env->raiseKeyError(context, key);
+    return nullptr;
+}
+
+static const proto::ProtoObject* py_module_setitem(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !self || !args || args->getSize(context) < 2) return PROTO_NONE;
+    const proto::ProtoString* name = moduleNamespaceKey(context, env, args->getAt(context, 0));
+    if (!name) {
+        env->raiseTypeError(context, "module namespace keys must be strings");
+        return nullptr;
+    }
+    moduleNamespaceSet(context, env, self, name, args->getAt(context, 1));
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_module_delitem(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !self || !args || args->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* key = args->getAt(context, 0);
+    const proto::ProtoString* name = moduleNamespaceKey(context, env, key);
+    if (!moduleNamespaceGet(context, self, name)) {
+        env->raiseKeyError(context, key);
+        return nullptr;
+    }
+    moduleNamespaceRemove(context, env, self, name);
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_module_contains(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !self || !args || args->getSize(context) < 1) return PROTO_FALSE;
+    return moduleNamespaceGet(context, self, moduleNamespaceKey(context, env, args->getAt(context, 0)))
+        ? PROTO_TRUE : PROTO_FALSE;
+}
+
+// module.__dict__.get(key, default=None)
+static const proto::ProtoObject* py_module_get(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !self || !args || args->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* val =
+        moduleNamespaceGet(context, self, moduleNamespaceKey(context, env, args->getAt(context, 0)));
+    if (val) return val;
+    return args->getSize(context) > 1 ? args->getAt(context, 1) : PROTO_NONE;
+}
+
+// module.__dict__.setdefault(key, default=None)
+static const proto::ProtoObject* py_module_setdefault(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !self || !args || args->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoString* name = moduleNamespaceKey(context, env, args->getAt(context, 0));
+    const proto::ProtoObject* val = moduleNamespaceGet(context, self, name);
+    if (val) return val;
+    if (!name) {
+        env->raiseTypeError(context, "module namespace keys must be strings");
+        return nullptr;
+    }
+    const proto::ProtoObject* dflt = args->getSize(context) > 1 ? args->getAt(context, 1) : PROTO_NONE;
+    moduleNamespaceSet(context, env, self, name, dflt);
+    return dflt;
+}
+
+// module.__dict__.pop(key[, default])
+static const proto::ProtoObject* py_module_pop(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !self || !args || args->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* key = args->getAt(context, 0);
+    const proto::ProtoString* name = moduleNamespaceKey(context, env, key);
+    const proto::ProtoObject* val = moduleNamespaceGet(context, self, name);
+    if (val) {
+        moduleNamespaceRemove(context, env, self, name);
+        return val;
+    }
+    if (args->getSize(context) > 1) return args->getAt(context, 1);
+    env->raiseKeyError(context, key);
+    return nullptr;
+}
+
+// iter(module.__dict__) and len(module.__dict__) follow keys().
+static const proto::ProtoObject* py_module_iter(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !self) return PROTO_NONE;
+    const proto::ProtoObject* keys = py_module_keys(context, self, nullptr, nullptr, nullptr);
+    return keys ? env->iter(keys) : nullptr;
+}
+
+static const proto::ProtoObject* py_module_len(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    if (!self) return context->fromInteger(0);
+    const proto::ProtoObject* keys = py_module_keys(context, self, nullptr, nullptr, nullptr);
+    const proto::ProtoList* l = keys ? keys->asList(context) : nullptr;
+    return context->fromInteger(l ? static_cast<long long>(l->getSize(context)) : 0);
+}
+
 static const proto::ProtoObject* py_getset_get(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -20936,6 +21164,26 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         rootContext_->fromMethod(nullptr, py_module_update));
     modulePrototype = modulePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "copy"),
         rootContext_->fromMethod(nullptr, py_module_copy));
+    // The rest of the namespace mapping protocol, so globals(), vars(module)
+    // and module.__dict__ read and write through like CPython's dict.
+    modulePrototype = modulePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__getitem__"),
+        rootContext_->fromMethod(nullptr, py_module_getitem));
+    modulePrototype = modulePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__setitem__"),
+        rootContext_->fromMethod(nullptr, py_module_setitem));
+    modulePrototype = modulePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__delitem__"),
+        rootContext_->fromMethod(nullptr, py_module_delitem));
+    modulePrototype = modulePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__contains__"),
+        rootContext_->fromMethod(nullptr, py_module_contains));
+    modulePrototype = modulePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__iter__"),
+        rootContext_->fromMethod(nullptr, py_module_iter));
+    modulePrototype = modulePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__len__"),
+        rootContext_->fromMethod(nullptr, py_module_len));
+    modulePrototype = modulePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "get"),
+        rootContext_->fromMethod(nullptr, py_module_get));
+    modulePrototype = modulePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "setdefault"),
+        rootContext_->fromMethod(nullptr, py_module_setdefault));
+    modulePrototype = modulePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "pop"),
+        rootContext_->fromMethod(nullptr, py_module_pop));
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG_INIT: modulePrototype=%p\n", (void*)modulePrototype);
     }
@@ -24646,7 +24894,24 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         if (fileDunderS && pathDunderS && name != fileDunderS && name != pathDunderS) {
             const proto::ProtoObject* objClass = this->getType(ctx, obj);
             if (this->modulePrototype && (obj == this->modulePrototype || objClass == this->modulePrototype)) {
-                return val;
+                // A module's own native functions are returned as stored.
+                // The methods modulePrototype provides (keys, get,
+                // __getitem__, ...) bind to the module like any method:
+                // returned unbound, `globals().get(k)` reached py_module_get
+                // without the module and answered None.  Module instances
+                // carry copies of them as OWN attributes (executeModule copies
+                // inherited attributes onto the module), sometimes already
+                // bound elsewhere, so recognise them by function.
+                const proto::ProtoObject* protoMethod =
+                    (obj != this->modulePrototype
+                     && this->modulePrototype->hasOwnAttribute(ctx, name) == PROTO_TRUE)
+                        ? this->modulePrototype->getOwnAttributeDirect(ctx, name) : nullptr;
+                if (!protoMethod || !protoMethod->isMethod(ctx)
+                    || protoMethod->asMethod(ctx) != val->asMethod(ctx)) {
+                    return val;
+                }
+                if (val->asMethodSelf(ctx) == obj) return val;
+                val = protoMethod;  // unbound: bound to obj below
             }
             if (!isClass && obj->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
                 if (val->hasAttribute(ctx, this->getCodeString() ? this->getCodeString() : PythonEnvironment::getInternedString(ctx, "__code__")) == PROTO_TRUE) {
