@@ -142,6 +142,13 @@ set_tests_properties(protopy_aug_assign_targets PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 60
     LABELS "regression_gate")
+# dict subclasses take their own __init__ arguments; dict.__init__ applies kwargs.
+add_test(NAME protopy_dict_subclass_init
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/dict_subclass_init.py)
+set_tests_properties(protopy_dict_subclass_init PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
 # sys.setswitchinterval / sys.getswitchinterval exist and validate like CPython.
 add_test(NAME protopy_sys_switchinterval
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/sys_switchinterval.py)

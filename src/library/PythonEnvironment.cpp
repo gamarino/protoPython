@@ -6547,14 +6547,6 @@ static const proto::ProtoObject* py_dict_call(
     const proto::ProtoObject* cls = positionalParameters && positionalParameters->getSize(context) > 0 ? positionalParameters->getAt(context, 0) : self;
     if (!cls) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    // CPython: dict accepts at most one positional argument (the
-    // initialiser).  Extras MUST raise TypeError before construction.
-    if (positionalParameters && positionalParameters->getSize(context) > 2 && env) {
-        env->raiseTypeError(context,
-            "dict expected at most 1 argument, got "
-            + std::to_string(positionalParameters->getSize(context) - 1));
-        return nullptr;
-    }
     // CPython: dict.__new__(cls) requires cls to be a subclass of dict.
     if (env && cls != env->getDictPrototype()) {
         bool subclassOf = false;
@@ -6616,6 +6608,17 @@ static const proto::ProtoObject* py_dict_call(
         if (initOverridden) {
             return instance;
         }
+    }
+
+    // CPython: dict accepts at most one positional argument (the
+    // initialiser). The check belongs to the initialisation done here: a
+    // subclass that overrides __init__ returned above and receives every
+    // argument itself, so `D(factory, {...})` must not be rejected.
+    if (positionalParameters && positionalParameters->getSize(context) > 2 && env) {
+        env->raiseTypeError(context,
+            "dict expected at most 1 argument, got "
+            + std::to_string(positionalParameters->getSize(context) - 1));
+        return nullptr;
     }
 
     if (positionalParameters && positionalParameters->getSize(context) >= 2) {
@@ -9353,6 +9356,13 @@ static const proto::ProtoObject* py_tuple_len(
     return context->fromInteger(data->asTuple(context)->getSize(context));
 }
 
+static const proto::ProtoObject* py_dict_update(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters);
+
 static const proto::ProtoObject* py_dict_init(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
@@ -9361,99 +9371,22 @@ static const proto::ProtoObject* py_dict_init(
     const proto::ProtoSparseList* kwargs) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env || !self || self == PROTO_NONE) return PROTO_NONE;
-
-    const proto::ProtoString* dataName = env->getDataString();
-    const proto::ProtoString* keysName = env->getKeysString();
-
-    // Helper: insert one (key, value) pair into self.
-    auto insertPair = [&](const proto::ProtoObject* key, const proto::ProtoObject* val) {
-        if (!key || !val) return;
-        const proto::ProtoObject* dataObj = self->getAttribute(ctx, dataName);
-        const proto::ProtoSparseList* dict = (dataObj && dataObj->asSparseList(ctx))
-                                              ? dataObj->asSparseList(ctx) : ctx->newSparseList();
-        unsigned long hash = key->getHash(ctx);
-        bool hadKey = dict->has(ctx, hash);
-        dict = dict->setAt(ctx, hash, val);
-        const_cast<proto::ProtoObject*>(self)->setAttribute(ctx, dataName, dict->asObject(ctx));
-        if (!hadKey) {
-            const proto::ProtoObject* keysObj = self->getAttribute(ctx, keysName);
-            const proto::ProtoList* keys = (keysObj && keysObj->asList(ctx))
-                                            ? keysObj->asList(ctx) : ctx->newList();
-            keys = keys->appendLast(ctx, key);
-            const_cast<proto::ProtoObject*>(self)->setAttribute(ctx, keysName, keys->asObject(ctx));
-        }
-    };
-
-    if (posArgs && posArgs->getSize(ctx) >= 1) {
-        const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
-        if (!arg || arg == PROTO_NONE) goto handle_kwargs;
-
-        // If arg is a dict (has sparse __data__), copy entries directly.
-        {
-            const proto::ProtoObject* argData = (arg->hasOwnAttribute(ctx, dataName) == PROTO_TRUE)
-                                                  ? arg->getAttribute(ctx, dataName) : nullptr;
-            if (argData && argData->asSparseList(ctx)) {
-                const proto::ProtoSparseList* srcSparse = argData->asSparseList(ctx);
-                const proto::ProtoObject* argKeysObj = (arg->hasOwnAttribute(ctx, keysName) == PROTO_TRUE)
-                                                        ? arg->getAttribute(ctx, keysName) : nullptr;
-                const proto::ProtoList* argKeys = (argKeysObj && argKeysObj->asList(ctx))
-                                                   ? argKeysObj->asList(ctx) : nullptr;
-                if (argKeys) {
-                    unsigned long n = argKeys->getSize(ctx);
-                    for (unsigned long i = 0; i < n; ++i) {
-                        const proto::ProtoObject* k = argKeys->getAt(ctx, static_cast<int>(i));
-                        const proto::ProtoObject* v = srcSparse->getAt(ctx, k->getHash(ctx));
-                        if (k && v) insertPair(k, v);
-                    }
-                }
-                goto handle_kwargs;
-            }
-        }
-
-        // Otherwise iterate as iterable of (key, value) pairs.
-        {
-            const proto::ProtoObject* it = env->iter(arg);
-            if (!it) goto handle_kwargs;
-            for (;;) {
-                const proto::ProtoObject* pair = env->next(it);
-                if (!pair) {
-                    if (env->handleExhaustion(ctx)) break;
-                    return nullptr; // Propagate non-StopIteration exceptions.
-                }
-
-                // Unpack pair — expect a 2-tuple or 2-list.
-                const proto::ProtoObject* pairData = pair->getAttribute(ctx, dataName);
-                const proto::ProtoTuple* tpl = pairData ? pairData->asTuple(ctx) : pair->asTuple(ctx);
-                const proto::ProtoList* lst = nullptr;
-                if (!tpl) {
-                    lst = pairData ? pairData->asList(ctx) : pair->asList(ctx);
-                }
-
-                const proto::ProtoObject* key = nullptr;
-                const proto::ProtoObject* val = nullptr;
-                if (tpl && tpl->getSize(ctx) >= 2) {
-                    key = tpl->getAt(ctx, 0);
-                    val = tpl->getAt(ctx, 1);
-                } else if (lst && lst->getSize(ctx) >= 2) {
-                    key = lst->getAt(ctx, 0);
-                    val = lst->getAt(ctx, 1);
-                }
-                if (key && val) insertPair(key, val);
-            }
-        }
+    // CPython: dict.__init__ accepts at most one positional argument. The
+    // check moved here from dict.__new__ so that subclasses overriding
+    // __init__ take their own arguments, while super().__init__(a, b) still
+    // fails.
+    if (posArgs && posArgs->getSize(ctx) > 1) {
+        env->raiseTypeError(ctx, "dict expected at most 1 argument, got "
+            + std::to_string(posArgs->getSize(ctx)));
+        return nullptr;
     }
-
-handle_kwargs:
-    // Handle keyword arguments: each becomes a key-value entry.
-    if (kwargs) {
-        const proto::ProtoString* kwKeysName = PythonEnvironment::getInternalString(ctx, "__kw_keys__");
-        const proto::ProtoObject* kwKeysObj = kwargs->asObject(ctx)->getAttribute(ctx, kwKeysName);
-        // ProtoSparseList does not have a "keys" list, so we handle kwargs
-        // by iterating over the ProtoSparseList if it has an associated keys list.
-        // For now, keyword arguments are uncommon for dict(); skip if no keys list.
-        (void)kwKeysObj;
+    // dict.__init__(mapping_or_iterable, **kwargs) updates self exactly like
+    // dict.update: the same key hashing (numeric and __hash__ equivalence),
+    // the same atomic publish, and keyword arguments are applied instead of
+    // being ignored.
+    if (!py_dict_update(ctx, self, parentLink, posArgs ? posArgs : env->getEmptyList(), kwargs)) {
+        return nullptr;
     }
-
     return PROTO_NONE;
 }
 
