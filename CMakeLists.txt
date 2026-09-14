@@ -135,6 +135,13 @@ set_tests_properties(protopy_numeric_keys PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 60
     LABELS "regression_gate")
+# `d[k] += v` and `obj.attr += v` store the result, evaluating the target once.
+add_test(NAME protopy_aug_assign_targets
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/aug_assign_targets.py)
+set_tests_properties(protopy_aug_assign_targets PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
 # sys.setswitchinterval / sys.getswitchinterval exist and validate like CPython.
 add_test(NAME protopy_sys_switchinterval
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/sys_switchinterval.py)

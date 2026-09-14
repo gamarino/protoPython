@@ -2346,6 +2346,12 @@ bool Compiler::compileAugAssign(AugAssignNode* n) {
         emit(OP_DUP_TOP_TWO, 0);
         // 3. Load currently stored value
         emit(OP_BINARY_SUBSCR, 0);
+    } else if (auto* att = dynamic_cast<AttributeNode*>(n->target.get())) {
+        // Evaluate the object once and keep it for the store:
+        // [obj] -> [obj, obj] -> [obj, old]
+        if (!compileNode(att->value.get())) return false;
+        emit(OP_DUP_TOP, 0);
+        emit(OP_LOAD_ATTR, addName(mangleIdentifier(att->attr)) << 1);
     } else {
         // Load old value
         if (!compileNode(n->target.get())) return false;
@@ -2378,11 +2384,17 @@ bool Compiler::compileAugAssign(AugAssignNode* n) {
     if (auto* name = dynamic_cast<NameNode*>(n->target.get())) {
         return emitNameOp(name->id, TargetCtx::Store);
     } else if (auto* att = dynamic_cast<AttributeNode*>(n->target.get())) {
-        if (!compileNode(att->value.get())) return false;
-        int nameIdx = addName(att->attr);
-        emit(OP_STORE_ATTR, (nameIdx << 1));
+        // [obj, result] -> [result, obj], the order STORE_ATTR expects. The
+        // object used to be evaluated a second time here, and the store used
+        // the unmangled name while the load used the mangled one.
+        emit(OP_ROT_TWO, 0);
+        emit(OP_STORE_ATTR, addName(mangleIdentifier(att->attr)) << 1);
         return true;
     } else if (auto* sub = dynamic_cast<SubscriptNode*>(n->target.get())) {
+        // [container, key, result] -> [result, container, key], the order
+        // STORE_SUBSCR expects. Without the rotation the result was stored
+        // into the wrong object and `d[k] += v` left d unchanged.
+        emit(OP_ROT_THREE, 0);
         emit(OP_STORE_SUBSCR, 0);
         return true;
     }
