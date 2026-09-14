@@ -29,6 +29,7 @@ static const proto::ProtoObject* py_has_arg(
         case OP_LOAD_GLOBAL: case OP_STORE_GLOBAL: case OP_BUILD_SLICE:
         case OP_FOR_ITER: case OP_LIST_APPEND: case OP_MAP_ADD:
         case OP_SET_ADD: case OP_DICT_UPDATE: case OP_LIST_EXTEND:
+        case OP_DICT_MERGE:
         case OP_SET_UPDATE: case OP_BUILD_SET: case OP_BUILD_STRING:
         case OP_LOAD_DEREF: case OP_STORE_DEREF: case OP_SETUP_FINALLY:
         case OP_SETUP_WITH: case OP_SETUP_ASYNC_WITH: case OP_RERAISE:
@@ -115,6 +116,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         {"BUILD_STRING", OP_BUILD_STRING}, {"LOAD_DEREF", OP_LOAD_DEREF},
         {"STORE_DEREF", OP_STORE_DEREF}, {"CALL_FUNCTION_EX", OP_CALL_FUNCTION_EX},
         {"LIST_EXTEND", OP_LIST_EXTEND}, {"DICT_UPDATE", OP_DICT_UPDATE},
+        {"DICT_MERGE", OP_DICT_MERGE},
         {"SET_UPDATE", OP_SET_UPDATE}, {"LIST_TO_TUPLE", OP_LIST_TO_TUPLE},
         {"GET_AWAITABLE", OP_GET_AWAITABLE}, {"GET_AITER", OP_GET_AITER},
         {"GET_ANEXT", OP_GET_ANEXT}, {"EXCEPTION_MATCH", OP_EXCEPTION_MATCH},

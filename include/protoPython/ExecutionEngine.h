@@ -251,6 +251,11 @@ constexpr int OP_WRAP_RAW_LIST = 209;
  *  user-visible `[…]` literals. */
 constexpr int OP_BUILD_RAW_LIST = 210;
 
+/** DICT_MERGE: DICT_UPDATE that raises TypeError "__build_class__() got
+ *  multiple values for keyword argument 'k'" when a key of the mapping on TOS
+ *  is already in the dict below it (class statement keywords). */
+constexpr int OP_DICT_MERGE = 211;
+
 /**
  * @brief Executes a range of bytecode (one basic block). No per-instruction
  *        scheduler dispatch; runs until pc exits [pcStart, pcEnd] or RETURN_VALUE.

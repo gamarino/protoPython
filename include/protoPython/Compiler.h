@@ -113,6 +113,8 @@ private:
      *  annotation scope (see the section comment in Compiler.cpp). */
     bool compileGenericClassDef(ClassDefNode* n);
     bool compileGenericFunctionDef(FunctionDefNode* n);
+    /** The shared body of compileGenericFunctionDef, for `def` and `async def`. */
+    template <class DefNode> bool compileGenericDef(DefNode* n);
     /** Compile the annotation scope `scope`, call it with `args` evaluated in
      *  the current scope, and leave the result on the stack. */
     bool emitAnnotationScopeCall(FunctionDefNode* scope,

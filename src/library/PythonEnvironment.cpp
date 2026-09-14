@@ -18015,6 +18015,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     typePrototype = typePrototype->setAttribute(rootContext_, py_init, rootContext_->fromMethod(nullptr, protoPython::builtins::py_type_init));
     typePrototype = typePrototype->setAttribute(rootContext_, prepareString, rootContext_->fromMethod(nullptr, protoPython::builtins::py_type_prepare));
     typePrototype = typePrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__class_getitem__"), rootContext_->fromMethod(nullptr, py_type_class_getitem));
+    // PEP 695: a class without type parameters has `__type_params__ == ()`;
+    // a generic class binds its own in the class body.
+    typePrototype = typePrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__type_params__"),
+        rootContext_->newTupleFromList(rootContext_->newList())->asObject(rootContext_));
     // type.__subclasses__(): returns a fresh list of the type's direct
     // subclasses (read from the __subclasses_list__ slot maintained by
     // py_type at class creation).  CPython parity: the returned list is
@@ -18635,6 +18639,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     functionPrototype = functionPrototype->setAttribute(rootContext_, py_module, builtinsVal);
     functionPrototype = functionPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__call__"), rootContext_->fromMethod(nullptr, protoPython::exported_runUserFunctionCall));
     functionPrototype = functionPrototype->setAttribute(rootContext_, getDunderString, rootContext_->fromMethod(nullptr, PythonEnvironment::py_function_get));
+    // PEP 695: a function without type parameters has `__type_params__ == ()`;
+    // a generic one gets its own attribute from its annotation scope.
+    functionPrototype = functionPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__type_params__"),
+        rootContext_->newTupleFromList(rootContext_->newList())->asObject(rootContext_));
 
     // Create 'method' prototype
     methodPrototype = objectPrototype->newChild(rootContext_, true);

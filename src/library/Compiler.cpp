@@ -246,6 +246,7 @@ static int stackEffect(int op, int arg) {
 
         // Sequence helpers
         case OP_LIST_EXTEND: case OP_DICT_UPDATE: case OP_SET_UPDATE:
+        case OP_DICT_MERGE:
             return -1;
 
         // UNPACK_SEQUENCE: pop 1, push arg items
@@ -2948,6 +2949,16 @@ static void collectDefinedNames(ASTNode* node, std::unordered_set<std::string>& 
         out.insert(fn->name);
         return;
     }
+    if (auto* afn = dynamic_cast<AsyncFunctionDefNode*>(node)) {
+        // So does `async def`; without this a nested one bound a global.
+        out.insert(afn->name);
+        return;
+    }
+    if (auto* ta = dynamic_cast<TypeAliasNode*>(node)) {
+        // And `type X = ...` (PEP 695).
+        out.insert(ta->name);
+        return;
+    }
     if (auto* cl = dynamic_cast<ClassDefNode*>(node)) {
         // A class definition defines the class name in the CURRENT scope.
         out.insert(cl->name);
@@ -4462,6 +4473,7 @@ bool Compiler::compileLambda(LambdaNode* n) {
 
 bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
     if (!n) return false;
+    if (!n->type_params.empty()) return compileGenericDef(n);
     std::unordered_set<std::string> bodyGlobals;
     std::unordered_set<std::string> bodyNonlocals;
     std::vector<std::string> localsOrdered;
@@ -4916,19 +4928,18 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     bool hasKwUnpack = false;
     for (auto& kw : n->keywords) if (kw.first.empty()) { hasKwUnpack = true; break; }
     if (hasKwUnpack) {
-        // `class C(metaclass=M, **kw)`: merge into a fresh dict the way
-        // compileCall builds the kwargs of `f(k=v, **kw)`.
+        // `class C(metaclass=M, **kw)`: merge every `k=v` (as a one-entry
+        // dict) and every `**mapping` into a fresh dict with DICT_MERGE,
+        // which, like CPython's, raises TypeError for a key already present.
         emit(OP_BUILD_MAP, 0);
         for (auto& kw : n->keywords) {
-            if (!compileNode(kw.second.get())) return false;
-            if (kw.first.empty()) {
-                emit(OP_DICT_UPDATE, 1);
-            } else {
-                // OP_MAP_ADD takes the value below the key, dict at arg=2.
+            if (!kw.first.empty()) {
                 int kIdx = addConstant(PythonEnvironment::getInternedString(ctx_, kw.first.c_str())->asObject(ctx_));
                 emit(OP_LOAD_CONST, kIdx);
-                emit(OP_MAP_ADD, 2);
             }
+            if (!compileNode(kw.second.get())) return false;
+            if (!kw.first.empty()) emit(OP_BUILD_MAP, 1);
+            emit(OP_DICT_MERGE, 1);
         }
     } else if (!n->keywords.empty()) {
         for (auto& kw : n->keywords) {
@@ -5795,6 +5806,14 @@ bool Compiler::compileGenericClassDef(ClassDefNode* n) {
 }
 
 bool Compiler::compileGenericFunctionDef(FunctionDefNode* n) {
+    return compileGenericDef(n);
+}
+
+// `def` and `async def` with type parameters: the definition, borrowed with
+// its type parameters moved out, compiles inside the annotation scope through
+// compileFunctionDef / compileAsyncFunctionDef.
+template <class DefNode>
+bool Compiler::compileGenericDef(DefNode* n) {
     const int line = n->line;
     std::unique_ptr<FunctionDefNode> scope = pep695Scope(n->name, line);
     auto* scopeBody = static_cast<SuiteNode*>(scope->body.get());

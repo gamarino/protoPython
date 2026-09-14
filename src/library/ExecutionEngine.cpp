@@ -93,6 +93,7 @@ static bool opcodeHasArg(int op) {
         case OP_MAP_ADD:
         case OP_SET_ADD:
         case OP_DICT_UPDATE:
+        case OP_DICT_MERGE:
         case OP_LIST_EXTEND:
         case OP_SET_UPDATE:
         case OP_BUILD_SET:
@@ -5784,7 +5785,20 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.pop_back(); // Now safe to pop val
             }
         } break;
+        case OP_DICT_MERGE:
         case OP_DICT_UPDATE: {
+            // DICT_MERGE (class statement keywords) rejects a key the dict
+            // already has, as CPython's DICT_MERGE does.
+            bool duplicateKey = false;
+            auto rejectDuplicate = [&](const proto::ProtoObject* key) -> bool {
+                if (op != OP_DICT_MERGE || !env) return false;
+                std::string keyName = "?";
+                if (key && key->isString(ctx)) key->asString(ctx)->toUTF8String(ctx, keyName);
+                std::string msg = "__build_class__() got multiple values for keyword argument '" + keyName + "'";
+                env->raiseTypeError(ctx, msg.c_str());
+                duplicateKey = true;
+                return true;
+            };
             if (stack.size() >= static_cast<size_t>(arg + 1)) {
                 const proto::ProtoObject* from = stack.back();
                 proto::ProtoObject* toObj = const_cast<proto::ProtoObject*>(stack[stack.size() - arg - 1]);
@@ -5822,6 +5836,7 @@ const proto::ProtoObject* executeBytecodeRange(
                             unsigned long h = ::protoPython::pyDictKeyHash(ctx, k);
                             const proto::ProtoObject* v = fromSL->getAt(ctx, h);
                             bool isNew = !toSL->has(ctx, h);
+                            if (!isNew && rejectDuplicate(k)) break;
                             toSL = toSL->setAt(ctx, h, v);
                             if (isNew) toKeys = toKeys->appendLast(ctx, k);
                         }
@@ -5875,6 +5890,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                         if (!v) continue;
                                         unsigned long h = ::protoPython::pyDictKeyHash(ctx, k);
                                         bool isNew = !toSL->has(ctx, h);
+                                        if (!isNew && rejectDuplicate(k)) break;
                                         toSL = toSL->setAt(ctx, h, v);
                                         if (isNew) toKeys = toKeys->appendLast(ctx, k);
                                     }
@@ -5886,6 +5902,10 @@ const proto::ProtoObject* executeBytecodeRange(
                     toObj->setAttribute(ctx, dataString, toSL->asObject(ctx));
                 }
                 stack.pop_back();
+            }
+            if (duplicateKey) {
+                i = next_i;
+                continue;
             }
         } break;
         case OP_LIST_EXTEND: {

@@ -261,6 +261,13 @@ set_tests_properties(protopy_pep695_type_params PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# async generics, `type`/`async def` in functions, duplicate class keywords, default __type_params__.
+add_test(NAME protopy_pep695_extras
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/pep695_extras.py)
+set_tests_properties(protopy_pep695_extras PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # exec()/eval() run compile() code objects in the right namespaces.
 add_test(NAME protopy_exec_code_object
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/exec_code_object.py)
