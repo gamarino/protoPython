@@ -2011,9 +2011,11 @@ static const proto::ProtoObject* binaryFloorDivide(proto::ProtoContext* ctx,
             }
             return q;
         }
-        double aa = aa_p->isDouble(ctx) ? aa_p->asDouble(ctx) : static_cast<double>(aa_p->asLong(ctx));
-        double bb = bb_p->isDouble(ctx) ? bb_p->asDouble(ctx) : static_cast<double>(bb_p->asLong(ctx));
-        return ctx->fromInteger(static_cast<long long>(std::floor(aa / bb)));
+        // A float operand makes the result a float (CPython: 7 // 2.0 == 3.0).
+        // asDouble also converts ints beyond long long, where asLong threw.
+        double aa = aa_p->asDouble(ctx);
+        double bb = bb_p->asDouble(ctx);
+        return ctx->fromDouble(std::floor(aa / bb));
     }
     // User-class fallback: __floordiv__ / __rfloordiv__.
     const proto::ProtoObject* r = binaryOpDispatch(ctx, a, b, "__floordiv__", "__rfloordiv__");

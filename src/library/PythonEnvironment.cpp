@@ -2544,8 +2544,10 @@ static const proto::ProtoObject* py_int_call(
                 x = ctx->fromInteger(static_cast<long long>(d));
             } else {
                 // Build the integer through its decimal string representation.
-                // %.0f on an out-of-range double prints the integer part exactly.
-                char buf[64];
+                // %.0f on an out-of-range double prints the integer part exactly;
+                // the largest double has 309 digits, which a 64-byte buffer
+                // truncated (int(1e300) came out wrong).
+                char buf[400];
                 std::snprintf(buf, sizeof(buf), "%.0f", d);
                 try { x = ctx->fromString(buf, 10); }
                 catch (...) {
@@ -4003,17 +4005,28 @@ static const proto::ProtoObject* py_list_ge(
 // __hash__-aware bucketing that py_dict_getitem / setitem already use.
 unsigned long pyDictKeyHash(proto::ProtoContext* context, const proto::ProtoObject* key);
 
+// The int equal to a finite integral double `v`. Beyond the long long range
+// every double is an integer and its decimal expansion is exact, so the
+// LargeInteger is built from those digits.
+static const proto::ProtoObject* integralDoubleToInt(proto::ProtoContext* context, double v) {
+    if (v >= -9.2e18 && v <= 9.2e18) return context->fromInteger(static_cast<long long>(v));
+    char digits[400];
+    std::snprintf(digits, sizeof(digits), "%.0f", v);
+    return context->fromString(digits, 10);
+}
+
 static unsigned long dictKeyHash(proto::ProtoContext* context, const proto::ProtoObject* key) {
     if (!key) return 0;
-    // Python makes 1 == 1.0 == True the same key, while protoCore hashes a
-    // bool, a double and an int by their own representation. Map bool and
-    // integral floats to the int they equal and hash that.
+    // Python makes 1 == 1.0 == True (and 2**70 == 2.0**70) the same key,
+    // while protoCore hashes a bool, a double and an int by their own
+    // representation. Map bool and integral floats to the int they equal and
+    // hash that.
     if (key == PROTO_TRUE) return context->fromInteger(1)->getHash(context);
     if (key == PROTO_FALSE) return context->fromInteger(0)->getHash(context);
     if (key->isFloat(context)) {
         const double v = key->asDouble(context);
-        if (std::isfinite(v) && v == std::trunc(v) && v >= -9.2e18 && v <= 9.2e18) {
-            return context->fromInteger(static_cast<long long>(v))->getHash(context);
+        if (std::isfinite(v) && v == std::trunc(v)) {
+            return integralDoubleToInt(context, v)->getHash(context);
         }
     }
     // For str-subclass / int-subclass / similar wrappers with a user
@@ -8416,9 +8429,10 @@ static const proto::ProtoObject* py_int_arith(
         case TokenType::Minus:  return a->subtract(ctx, b);
         case TokenType::Star:   return a->multiply(ctx, b);
         case TokenType::Slash: {
-            // True division: coerce to float.
-            double lhs = a->isInteger(ctx) ? (double)a->asLong(ctx) : a->asDouble(ctx);
-            double rhs = b->isInteger(ctx) ? (double)b->asLong(ctx) : b->asDouble(ctx);
+            // True division: coerce to float (asDouble also converts ints
+            // beyond the long long range).
+            double lhs = a->asDouble(ctx);
+            double rhs = b->asDouble(ctx);
             if (rhs == 0.0) {
                 if (env) env->raiseZeroDivisionError(ctx);
                 return nullptr;
@@ -8440,8 +8454,8 @@ static const proto::ProtoObject* py_int_arith(
                 if ((lhs ^ rhs) < 0 && q * rhs != lhs) --q; // round toward -inf
                 return ctx->fromInteger(q);
             }
-            double lhs = a->isInteger(ctx) ? (double)a->asLong(ctx) : a->asDouble(ctx);
-            double rhs = b->isInteger(ctx) ? (double)b->asLong(ctx) : b->asDouble(ctx);
+            double lhs = a->asDouble(ctx);
+            double rhs = b->asDouble(ctx);
             if (rhs == 0.0) {
                 if (env) env->raiseZeroDivisionError(ctx);
                 return nullptr;
@@ -8934,6 +8948,11 @@ static const proto::ProtoObject* py_str_mul(
     return PythonEnvironment::getInternedString(ctx, out.c_str())->asObject(ctx);
 }
 
+static const proto::ProtoObject* py_int_hash(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*);
+
 static const proto::ProtoObject* py_float_hash(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -8953,13 +8972,13 @@ static const proto::ProtoObject* py_float_hash(
         }
     }
     if (!got) return context->fromInteger(0);
-    // CPython: integer-valued floats hash the same as the int.  We only
-    // hit the integer-equivalence path here; non-integral floats fall
-    // through to a deterministic value-based hash (the bit pattern).
-    if (v == (double)(long long)v && !std::isnan(v) && !std::isinf(v)) {
-        long long iv = (long long)v;
-        if (iv == -1) return context->fromInteger(-2);
-        return context->fromInteger(iv);
+    // CPython: integer-valued floats hash the same as the int, including
+    // floats beyond the long long range (the `(long long)v` cast used here
+    // before was undefined there, so hash(2.0**70) != hash(2**70)).
+    // Non-integral floats fall through to a deterministic value-based hash
+    // (the bit pattern).
+    if (std::isfinite(v) && v == std::trunc(v)) {
+        return py_int_hash(context, integralDoubleToInt(context, v), nullptr, nullptr, nullptr);
     }
     // Non-integer: hash from the IEEE 754 bit pattern with a small tweak.
     union { double d; unsigned long long u; } pun;
