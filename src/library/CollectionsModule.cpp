@@ -521,15 +521,6 @@ static const proto::ProtoObject* py_deque_reverse_iterator_next(
     return val;
 }
 
-static const proto::ProtoObject* py_ordereddict_new(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    const proto::ProtoObject* d = ctx->newObject(false);
-    d = d->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__data__"), ctx->newSparseList()->asObject(ctx));
-        d = d->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__keys__"), ctx->newList()->asObject(ctx));
-    return d;
-}
-
 static const proto::ProtoObject* py_deque_new(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwArgs) {
@@ -646,10 +637,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
     // of dict.__missing__. The native constructor registered here was a bare
     // method whose prototype lived on an unreferenced object, so
     // defaultdict(list) returned None.
-    const proto::ProtoObject* ordereddictMod = ctx->newObject(false);
-
-    module = module->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "OrderedDict"),
-                                 ctx->fromMethod(nullptr, py_ordereddict_new));
+    // OrderedDict is implemented in Python as well, on the insertion order
+    // dict already keeps. The native constructor registered here returned a
+    // plain object that was not a dict and had no move_to_end.
 
 
 
