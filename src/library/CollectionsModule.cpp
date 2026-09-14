@@ -1,5 +1,6 @@
 #include <protoPython/CollectionsModule.h>
 #include <protoPython/PythonEnvironment.h>
+#include <atomic>
 #include <deque>
 #include <mutex>
 
@@ -8,11 +9,12 @@ namespace collections {
 
 // Thread safety: per-instance mutex in DequeState protects mutable shared state (user-level locking, not GIL).
 // L-Shape: acceptable; see docs/L_SHAPE_ARCHITECTURE.md. See also docs/GIL_FREE_AUDIT.md.
+// Native state of a deque. The items are a ProtoList in the instance's
+// __deque_items__ attribute, so the GC traces them: a std::deque of raw
+// pointers behind the external pointer holding this state was invisible to it.
+// Mutations publish a new list with a compare-and-swap, as list mutators do.
 struct DequeState {
-    std::deque<const proto::ProtoObject*> data;
-    std::mutex mutex;
-    size_t mutationCount = 0;
-    long maxlen = -1; // CPython's maxlen; -1 when unbounded
+    std::atomic<long> maxlen{-1}; // CPython's maxlen; -1 when unbounded
 };
 
 static const proto::ProtoObject* py_collections_dummy(
@@ -123,18 +125,75 @@ static DequeState* resolve_deque_receiver(proto::ProtoContext* ctx,
     return state;
 }
 
-// maxlen: adding at one end drops items from the other. Callers hold
-// state->mutex.
-static void deque_trim_front(DequeState* state) {
-    while (state->maxlen >= 0 && state->data.size() > static_cast<size_t>(state->maxlen)) {
-        state->data.pop_front();
-    }
+static const proto::ProtoString* deque_items_name(proto::ProtoContext* ctx) {
+    return PythonEnvironment::getInternalString(ctx, "__deque_items__");
 }
 
-static void deque_trim_back(DequeState* state) {
-    while (state->maxlen >= 0 && state->data.size() > static_cast<size_t>(state->maxlen)) {
-        state->data.pop_back();
+static const proto::ProtoString* deque_snapshot_name(proto::ProtoContext* ctx) {
+    return PythonEnvironment::getInternalString(ctx, "__deque_items_snapshot__");
+}
+
+// The deque's items, and in `raw` the attribute value they were read from:
+// the snapshot a mutation publishes against.
+static const proto::ProtoList* deque_items(proto::ProtoContext* ctx, const proto::ProtoObject* self,
+                                           const proto::ProtoObject*& raw) {
+    raw = self ? self->getOwnAttributeDirect(ctx, deque_items_name(ctx)) : nullptr;
+    const proto::ProtoList* items = raw ? raw->asList(ctx) : nullptr;
+    return items ? items : ctx->newList();
+}
+
+// Installs `next` only while the items are still `expected` (publishListData
+// does the same for lists); false means another thread changed them first and
+// the caller recomputes from a fresh snapshot.
+static bool deque_publish(proto::ProtoContext* ctx, const proto::ProtoObject* self,
+                          const proto::ProtoObject* expected, const proto::ProtoList* next) {
+    const proto::ProtoString* name = deque_items_name(ctx);
+    if (self->setAttributeIfEqual(ctx, name, expected, next->asObject(ctx))) return true;
+    const proto::ProtoObject* own = self->getOwnAttributeDirect(ctx, name);
+    if (own != expected && own != nullptr && own != PROTO_NONE) return false;
+    const_cast<proto::ProtoObject*>(self)->setAttribute(ctx, name, next->asObject(ctx));
+    return true;
+}
+
+// maxlen: adding at one end drops items from the other.
+static const proto::ProtoList* deque_trim_front(proto::ProtoContext* ctx, const DequeState* state,
+                                                const proto::ProtoList* items) {
+    const long maxlen = state->maxlen.load();
+    while (maxlen >= 0 && items->getSize(ctx) > static_cast<unsigned long>(maxlen)) {
+        items = items->removeFirst(ctx);
     }
+    return items;
+}
+
+static const proto::ProtoList* deque_trim_back(proto::ProtoContext* ctx, const DequeState* state,
+                                               const proto::ProtoList* items) {
+    const long maxlen = state->maxlen.load();
+    while (maxlen >= 0 && items->getSize(ctx) > static_cast<unsigned long>(maxlen)) {
+        items = items->removeLast(ctx);
+    }
+    return items;
+}
+
+// The items of `iterable`, collected before the deque is changed: iterating
+// runs Python code, which a retried publish must not repeat. nullptr, with the
+// exception pending, when iterating raises.
+static const proto::ProtoList* deque_collect(proto::ProtoContext* ctx, PythonEnvironment* env,
+                                             const proto::ProtoObject* iterable) {
+    const proto::ProtoList* items = ctx->newList();
+    const proto::ProtoObject* it = env->iter(iterable);
+    if (!it) return env->hasPendingException() ? nullptr : items;
+    PythonEnvironment::TransientPin pinIt(env, it);
+    for (;;) {
+        const proto::ProtoObject* item = env->next(it);
+        if (env->hasPendingException()) {
+            if (!env->isStopIteration(ctx, env->peekPendingException())) return nullptr;
+            env->clearPendingException();
+            break;
+        }
+        if (!item) break;
+        items = items->appendLast(ctx, item);
+    }
+    return items;
 }
 
 static const proto::ProtoObject* py_deque_append(
@@ -158,10 +217,12 @@ static const proto::ProtoObject* py_deque_append(
         return nullptr;
     }
     if (posArgs->getSize(ctx) > argOff) {
-        std::lock_guard<std::mutex> lock(state->mutex);
-        state->data.push_back(posArgs->getAt(ctx, static_cast<int>(argOff)));
-        deque_trim_front(state);
-        state->mutationCount++;
+        const proto::ProtoObject* value = posArgs->getAt(ctx, static_cast<int>(argOff));
+        for (;;) {
+            const proto::ProtoObject* raw = nullptr;
+            const proto::ProtoList* items = deque_items(ctx, self, raw);
+            if (deque_publish(ctx, self, raw, deque_trim_front(ctx, state, items->appendLast(ctx, value)))) break;
+        }
     }
     return PROTO_NONE;
 }
@@ -184,10 +245,12 @@ static const proto::ProtoObject* py_deque_appendleft(
         return nullptr;
     }
     if (posArgs->getSize(ctx) > argOff) {
-        std::lock_guard<std::mutex> lock(state->mutex);
-        state->data.push_front(posArgs->getAt(ctx, static_cast<int>(argOff)));
-        deque_trim_back(state);
-        state->mutationCount++;
+        const proto::ProtoObject* value = posArgs->getAt(ctx, static_cast<int>(argOff));
+        for (;;) {
+            const proto::ProtoObject* raw = nullptr;
+            const proto::ProtoList* items = deque_items(ctx, self, raw);
+            if (deque_publish(ctx, self, raw, deque_trim_back(ctx, state, items->appendFirst(ctx, value)))) break;
+        }
     }
     return PROTO_NONE;
 }
@@ -209,17 +272,18 @@ static const proto::ProtoObject* py_deque_pop(
             "doesn't apply to a non-deque object");
         return nullptr;
     }
-    std::lock_guard<std::mutex> lock(state->mutex);
-    if (state->data.empty()) {
-        protoPython::PythonEnvironment* env =
-            protoPython::PythonEnvironment::fromContext(ctx);
-        if (env) env->raiseIndexError(ctx, "pop from an empty deque");
-        return nullptr;
+    for (;;) {
+        const proto::ProtoObject* raw = nullptr;
+        const proto::ProtoList* items = deque_items(ctx, self, raw);
+        if (items->getSize(ctx) == 0) {
+            protoPython::PythonEnvironment* env =
+                protoPython::PythonEnvironment::fromContext(ctx);
+            if (env) env->raiseIndexError(ctx, "pop from an empty deque");
+            return nullptr;
+        }
+        const proto::ProtoObject* val = items->getLast(ctx);
+        if (deque_publish(ctx, self, raw, items->removeLast(ctx))) return val;
     }
-    const proto::ProtoObject* val = state->data.back();
-    state->data.pop_back();
-    state->mutationCount++;
-    return val;
 }
 
 static const proto::ProtoObject* py_deque_popleft(
@@ -239,17 +303,18 @@ static const proto::ProtoObject* py_deque_popleft(
             "doesn't apply to a non-deque object");
         return nullptr;
     }
-    std::lock_guard<std::mutex> lock(state->mutex);
-    if (state->data.empty()) {
-        protoPython::PythonEnvironment* env =
-            protoPython::PythonEnvironment::fromContext(ctx);
-        if (env) env->raiseIndexError(ctx, "pop from an empty deque");
-        return nullptr;
+    for (;;) {
+        const proto::ProtoObject* raw = nullptr;
+        const proto::ProtoList* items = deque_items(ctx, self, raw);
+        if (items->getSize(ctx) == 0) {
+            protoPython::PythonEnvironment* env =
+                protoPython::PythonEnvironment::fromContext(ctx);
+            if (env) env->raiseIndexError(ctx, "pop from an empty deque");
+            return nullptr;
+        }
+        const proto::ProtoObject* val = items->getFirst(ctx);
+        if (deque_publish(ctx, self, raw, items->removeFirst(ctx))) return val;
     }
-    const proto::ProtoObject* val = state->data.front();
-    state->data.pop_front();
-    state->mutationCount++;
-    return val;
 }
 
 static const proto::ProtoObject* py_deque_len(
@@ -262,8 +327,8 @@ static const proto::ProtoObject* py_deque_len(
     unsigned long argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (state) {
-        std::lock_guard<std::mutex> lock(state->mutex);
-        return ctx->fromInteger(state->data.size());
+        const proto::ProtoObject* raw = nullptr;
+        return ctx->fromInteger(static_cast<long long>(deque_items(ctx, self, raw)->getSize(ctx)));
     }
     return ctx->fromInteger(0);
 }
@@ -284,15 +349,16 @@ static const proto::ProtoObject* py_deque_getitem(
     else if (idxObj == PROTO_FALSE) idx = 0;
     else return PROTO_NONE;
     if (!state) return PROTO_NONE;
-    std::lock_guard<std::mutex> lock(state->mutex);
-    long long n = static_cast<long long>(state->data.size());
+    const proto::ProtoObject* raw = nullptr;
+    const proto::ProtoList* items = deque_items(ctx, self, raw);
+    long long n = static_cast<long long>(items->getSize(ctx));
     if (idx < 0) idx += n;
     if (idx < 0 || idx >= n) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
         if (env) env->raiseIndexError(ctx, "deque index out of range");
         return nullptr;
     }
-    return state->data[static_cast<size_t>(idx)];
+    return items->getAt(ctx, static_cast<int>(idx));
 }
 
 // deque.remove(value): remove the first occurrence of value (Python ==
@@ -317,20 +383,23 @@ static const proto::ProtoObject* py_deque_remove(
     if (!posArgs || posArgs->getSize(ctx) <= argOff) return PROTO_NONE;
     const proto::ProtoObject* value = posArgs->getAt(ctx, static_cast<int>(argOff));
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    std::lock_guard<std::mutex> lock(state->mutex);
-    for (auto it = state->data.begin(); it != state->data.end(); ++it) {
-        bool eq = false;
-        if (*it == value) {
-            eq = true;
-        } else if (env) {
-            const proto::ProtoObject* r = env->compareObjects(ctx, *it, value, 0);
-            eq = (r == PROTO_TRUE);
+    for (;;) {
+        const proto::ProtoObject* raw = nullptr;
+        const proto::ProtoList* items = deque_items(ctx, self, raw);
+        const unsigned long n = items->getSize(ctx);
+        long found = -1;
+        for (unsigned long i = 0; i < n && found < 0; ++i) {
+            const proto::ProtoObject* item = items->getAt(ctx, static_cast<int>(i));
+            bool eq = item == value;
+            if (!eq && env) {
+                const proto::ProtoObject* r = env->compareObjects(ctx, item, value, 0);
+                if (!r && env->hasPendingException()) return nullptr;
+                eq = (r == PROTO_TRUE);
+            }
+            if (eq) found = static_cast<long>(i);
         }
-        if (eq) {
-            state->data.erase(it);
-            state->mutationCount++;
-            return PROTO_NONE;
-        }
+        if (found < 0) break;
+        if (deque_publish(ctx, self, raw, items->removeAt(ctx, static_cast<int>(found)))) return PROTO_NONE;
     }
     if (env) env->raiseValueError(ctx,
         PythonEnvironment::getInternedString(ctx, "deque.remove(x): x not in deque")->asObject(ctx));
@@ -353,10 +422,11 @@ static const proto::ProtoObject* py_deque_clear(
             "doesn't apply to a non-deque object");
         return nullptr;
     }
-    std::lock_guard<std::mutex> lock(state->mutex);
-    state->data.clear();
-    state->mutationCount++;
-    return PROTO_NONE;
+    for (;;) {
+        const proto::ProtoObject* raw = nullptr;
+        deque_items(ctx, self, raw);
+        if (deque_publish(ctx, self, raw, ctx->newList())) return PROTO_NONE;
+    }
 }
 
 static const proto::ProtoObject* py_deque_extend(
@@ -379,18 +449,15 @@ static const proto::ProtoObject* py_deque_extend(
     const proto::ProtoObject* iterable = posArgs->getAt(ctx, static_cast<int>(argOff));
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env) return PROTO_NONE;
-    const proto::ProtoObject* it = env->iter(iterable);
-    if (!it) return PROTO_NONE;
-    PythonEnvironment::TransientPin pinIt(env, it);
-    while (true) {
-        const proto::ProtoObject* item = env->next(it);
-        if (!item) break;
-        std::lock_guard<std::mutex> lock(state->mutex);
-        state->data.push_back(item);
-        deque_trim_front(state);
-        state->mutationCount++;
+    const proto::ProtoList* incoming = deque_collect(ctx, env, iterable);
+    if (!incoming) return nullptr;
+    for (;;) {
+        const proto::ProtoObject* raw = nullptr;
+        const proto::ProtoList* items = deque_items(ctx, self, raw);
+        if (deque_publish(ctx, self, raw, deque_trim_front(ctx, state, items->extend(ctx, incoming)))) {
+            return PROTO_NONE;
+        }
     }
-    return PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_deque_extendleft(
@@ -413,18 +480,17 @@ static const proto::ProtoObject* py_deque_extendleft(
     const proto::ProtoObject* iterable = posArgs->getAt(ctx, static_cast<int>(argOff));
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env) return PROTO_NONE;
-    const proto::ProtoObject* it = env->iter(iterable);
-    if (!it) return PROTO_NONE;
-    PythonEnvironment::TransientPin pinIt(env, it);
-    while (true) {
-        const proto::ProtoObject* item = env->next(it);
-        if (!item) break;
-        std::lock_guard<std::mutex> lock(state->mutex);
-        state->data.push_front(item);
-        deque_trim_back(state);
-        state->mutationCount++;
+    const proto::ProtoList* incoming = deque_collect(ctx, env, iterable);
+    if (!incoming) return nullptr;
+    const unsigned long n = incoming->getSize(ctx);
+    for (;;) {
+        const proto::ProtoObject* raw = nullptr;
+        const proto::ProtoList* items = deque_items(ctx, self, raw);
+        for (unsigned long i = 0; i < n; ++i) {
+            items = items->appendFirst(ctx, incoming->getAt(ctx, static_cast<int>(i)));
+        }
+        if (deque_publish(ctx, self, raw, deque_trim_back(ctx, state, items))) return PROTO_NONE;
     }
-    return PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_module_repr(
@@ -468,12 +534,13 @@ static const proto::ProtoObject* py_deque_repr(
     s += "([";
     long maxlen = -1;
     if (state) {
-        std::lock_guard<std::mutex> lock(state->mutex);
-        for (size_t i = 0; i < state->data.size(); ++i) {
+        const proto::ProtoObject* raw = nullptr;
+        const proto::ProtoList* items = deque_items(context, self, raw);
+        for (unsigned long i = 0; i < items->getSize(context); ++i) {
             if (i > 0) s += ", ";
-            s += protoPython::PythonEnvironment::reprObject(context, state->data[i]);
+            s += protoPython::PythonEnvironment::reprObject(context, items->getAt(context, static_cast<int>(i)));
         }
-        maxlen = state->maxlen;
+        maxlen = state->maxlen.load();
     }
     s += "]";
     if (maxlen >= 0) s += ", maxlen=" + std::to_string(maxlen);
@@ -504,8 +571,11 @@ static const proto::ProtoObject* py_deque_iter(
 
     const proto::ProtoObject* instance = itProto->newChild(ctx, true);
     instance = instance->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_obj__"), self);
+    const proto::ProtoObject* raw = nullptr;
+    deque_items(ctx, self, raw);
     instance = instance->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_idx__"), ctx->fromInteger(0));
-    instance = instance->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_mutation__"), ctx->fromInteger(state->mutationCount));
+    // The iterator reads from, and checks for mutation against, this snapshot.
+    instance = instance->setAttribute(ctx, deque_snapshot_name(ctx), raw ? raw : PROTO_NONE);
     return instance;
 }
 
@@ -530,8 +600,11 @@ static const proto::ProtoObject* py_deque_reversed(
 
     const proto::ProtoObject* instance = itProto->newChild(ctx, true);
     instance = instance->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_obj__"), self);
-    instance = instance->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_idx__"), ctx->fromInteger(state->data.size() - 1));
-    instance = instance->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_mutation__"), ctx->fromInteger(state->mutationCount));
+    const proto::ProtoObject* raw = nullptr;
+    const proto::ProtoList* items = deque_items(ctx, self, raw);
+    instance = instance->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_idx__"),
+        ctx->fromInteger(static_cast<long long>(items->getSize(ctx)) - 1));
+    instance = instance->setAttribute(ctx, deque_snapshot_name(ctx), raw ? raw : PROTO_NONE);
     return instance;
 }
 
@@ -545,25 +618,26 @@ static const proto::ProtoObject* py_deque_iterator_next(
     
     const proto::ProtoObject* dequeObj = self->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_obj__"));
     const proto::ProtoObject* idxObj = self->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_idx__"));
-    const proto::ProtoObject* mutationObj = self->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_mutation__"));
+    const proto::ProtoObject* mutationObj = self->getAttribute(ctx, deque_snapshot_name(ctx));
     if (!dequeObj || !idxObj || !mutationObj) return nullptr;
     
     DequeState* state = get_deque_state(ctx, dequeObj);
     if (!state) return nullptr;
     
-    if (mutationObj->asLong(ctx) != (long long)state->mutationCount) {
+    const proto::ProtoObject* itemsRaw = nullptr;
+    const proto::ProtoList* items = deque_items(ctx, dequeObj, itemsRaw);
+    if ((itemsRaw ? itemsRaw : PROTO_NONE) != mutationObj) {
         protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
         if (env) env->raiseRuntimeError(ctx, "deque mutated during iteration");
         return nullptr;
     }
 
     long long idx = idxObj->asLong(ctx);
-    std::lock_guard<std::mutex> lock(state->mutex);
-    if (idx < 0 || static_cast<size_t>(idx) >= state->data.size()) {
+    if (idx < 0 || static_cast<unsigned long>(idx) >= items->getSize(ctx)) {
         return nullptr;
     }
     
-    const proto::ProtoObject* val = state->data[static_cast<size_t>(idx)];
+    const proto::ProtoObject* val = items->getAt(ctx, static_cast<int>(idx));
     self->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_idx__"), ctx->fromInteger(idx + 1));
     return val;
 }
@@ -578,25 +652,26 @@ static const proto::ProtoObject* py_deque_reverse_iterator_next(
     
     const proto::ProtoObject* dequeObj = self->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_obj__"));
     const proto::ProtoObject* idxObj = self->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_idx__"));
-    const proto::ProtoObject* mutationObj = self->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_mutation__"));
+    const proto::ProtoObject* mutationObj = self->getAttribute(ctx, deque_snapshot_name(ctx));
     if (!dequeObj || !idxObj || !mutationObj) return nullptr;
     
     DequeState* state = get_deque_state(ctx, dequeObj);
     if (!state) return nullptr;
     
-    if (mutationObj->asLong(ctx) != (long long)state->mutationCount) {
+    const proto::ProtoObject* itemsRaw = nullptr;
+    const proto::ProtoList* items = deque_items(ctx, dequeObj, itemsRaw);
+    if ((itemsRaw ? itemsRaw : PROTO_NONE) != mutationObj) {
         protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
         if (env) env->raiseRuntimeError(ctx, "deque mutated during iteration");
         return nullptr;
     }
 
     long long idx = idxObj->asLong(ctx);
-    std::lock_guard<std::mutex> lock(state->mutex);
-    if (idx < 0 || static_cast<size_t>(idx) >= state->data.size()) {
+    if (idx < 0 || static_cast<unsigned long>(idx) >= items->getSize(ctx)) {
         return nullptr;
     }
     
-    const proto::ProtoObject* val = state->data[static_cast<size_t>(idx)];
+    const proto::ProtoObject* val = items->getAt(ctx, static_cast<int>(idx));
     self->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_idx__"), ctx->fromInteger(idx - 1));
     return val;
 }
@@ -625,6 +700,7 @@ static const proto::ProtoObject* py_deque_new(
     const proto::ProtoString* key = PythonEnvironment::getInternalString(ctx, "__deque_ptr__");
     instance = instance->setAttribute(ctx, key,
                                     ctx->fromExternalPointer(state, deque_finalizer));
+    instance = instance->setAttribute(ctx, deque_items_name(ctx), ctx->newList()->asObject(ctx));
     
     // CPython: deque.__new__ ignores its arguments. deque.__init__, which
     // instance creation runs next with the same arguments, consumes the
@@ -685,44 +761,27 @@ static const proto::ProtoObject* py_deque_init(
         }
         maxlen = static_cast<long>(maxlenObj->asLong(ctx));
     }
-    {
-        std::lock_guard<std::mutex> lock(state->mutex);
-        state->maxlen = maxlen;
-        state->data.clear();
-        state->mutationCount++;
+    state->maxlen.store(maxlen);
+    // CPython clears the deque before extending it, so d.__init__(d) empties d.
+    const proto::ProtoList* incoming = ctx->newList();
+    if (iterable && iterable != self) {
+        incoming = deque_collect(ctx, env, iterable);
+        if (!incoming) return nullptr;
     }
-    if (!iterable) return PROTO_NONE;
-    const proto::ProtoObject* it = env->iter(iterable);
-    if (!it) return nullptr;
-    // Pin the iterator across user __next__ callbacks (see py_deque_extend).
-    PythonEnvironment::TransientPin pinIt(env, it);
     for (;;) {
-        const proto::ProtoObject* item = env->next(it);
-        if (env->hasPendingException()) {
-            if (!env->isStopIteration(ctx, env->peekPendingException())) return nullptr;
-            env->clearPendingException();
-            break;
-        }
-        if (!item) break;
-        std::lock_guard<std::mutex> lock(state->mutex);
-        state->data.push_back(item);
-        deque_trim_front(state);
-        state->mutationCount++;
+        const proto::ProtoObject* raw = nullptr;
+        deque_items(ctx, self, raw);
+        if (deque_publish(ctx, self, raw, deque_trim_front(ctx, state, incoming))) return PROTO_NONE;
     }
-    return PROTO_NONE;
 }
 
 // A deque's items as a Python list: comparisons delegate to list comparison
-// (lexicographic, with the items' own __eq__ / __lt__). The items are copied
-// under the lock and the list is built outside it.
-static const proto::ProtoObject* deque_as_list(proto::ProtoContext* ctx, PythonEnvironment* env, DequeState* state) {
-    std::vector<const proto::ProtoObject*> snapshot;
-    {
-        std::lock_guard<std::mutex> lock(state->mutex);
-        snapshot.assign(state->data.begin(), state->data.end());
-    }
-    const proto::ProtoList* items = ctx->newList();
-    for (const proto::ProtoObject* item : snapshot) items = items->appendLast(ctx, item);
+// (lexicographic, with the items' own __eq__ / __lt__), over one snapshot of
+// the items.
+static const proto::ProtoObject* deque_as_list(proto::ProtoContext* ctx, PythonEnvironment* env,
+                                               const proto::ProtoObject* deque) {
+    const proto::ProtoObject* raw = nullptr;
+    const proto::ProtoList* items = deque_items(ctx, deque, raw);
     proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(env->getListPrototype()->newChild(ctx, true));
     listObj = const_cast<proto::ProtoObject*>(listObj->setAttribute(ctx, env->getDataString(), items->asObject(ctx)));
     return listObj;
@@ -740,9 +799,9 @@ static const proto::ProtoObject* deque_compare(
     const proto::ProtoObject* other = posArgs->getAt(ctx, static_cast<int>(argOff));
     DequeState* otherState = other ? get_deque_state(ctx, other) : nullptr;
     if (!otherState) return env->getNotImplementedPrototype();
-    const proto::ProtoObject* a = deque_as_list(ctx, env, state);
+    const proto::ProtoObject* a = deque_as_list(ctx, env, self);
     PythonEnvironment::TransientPin pinA(env, a);
-    const proto::ProtoObject* b = deque_as_list(ctx, env, otherState);
+    const proto::ProtoObject* b = deque_as_list(ctx, env, other);
     PythonEnvironment::TransientPin pinB(env, b);
     return env->compareObjects(ctx, a, b, op);
 }
@@ -778,8 +837,8 @@ static const proto::ProtoObject* py_deque_maxlen_get(proto::ProtoContext* ctx, c
     unsigned long argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (!state) return PROTO_NONE;
-    std::lock_guard<std::mutex> lock(state->mutex);
-    return state->maxlen < 0 ? PROTO_NONE : ctx->fromInteger(state->maxlen);
+    const long maxlen = state->maxlen.load();
+    return maxlen < 0 ? PROTO_NONE : ctx->fromInteger(maxlen);
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env) {
