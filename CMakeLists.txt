@@ -66,6 +66,12 @@ add_test(NAME protopy_cli_script_success
     COMMAND ${CMAKE_SOURCE_DIR}/test/regression/assert_exit.sh 0 $<TARGET_FILE:protopy> --dry-run --script ${CMAKE_SOURCE_DIR}/test/regression/regrtest_runner.py)
 add_test(NAME protopy_cli_bytecode_only
     COMMAND ${CMAKE_SOURCE_DIR}/test/regression/assert_exit.sh 0 $<TARGET_FILE:protopy> --bytecode-only --script ${CMAKE_SOURCE_DIR}/test/regression/regrtest_runner.py)
+# LOAD_METHOD's inline cache must bind every call to its own receiver.
+add_test(NAME protopy_load_method_pic_receivers
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/load_method_pic_receivers.py)
+set_tests_properties(protopy_load_method_pic_receivers PROPERTIES
+    TIMEOUT 60
+    LABELS "regression_gate")
 
 # Optional benchmark test (off by default: -DPROTOPY_BENCHMARKS=ON)
 option(PROTOPY_BENCHMARKS "Run benchmark suite in CTest" OFF)

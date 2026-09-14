@@ -991,23 +991,31 @@ namespace {
 // (sprint-2 step B, 2026-06-15). Caches the resolved value for
 // `(type(obj), name)` pairs WITHOUT instance shadow.
 //
-// Cacheability invariant: an `obj.name` lookup that descends into the type
-// chain (because the instance has no own `name`) returns the same value
-// across all instances of `type(obj)`. The slow path's `env->getAttribute`
-// returns the unbound function on a class (with isUnboundFunc=true) so
-// the result is shared across instances — no per-instance binding state
-// is captured in the cached value. The CALL opcode applies the bound-vs-
-// unbound layout at dispatch time.
+// Cacheability invariant: only results that do not depend on the receiver
+// may be shared across all instances of `type(obj)`. Two shapes qualify:
+//   - isUnbound: a Python function found on the type. The CALL opcode
+//     prepends self at dispatch time, so the cached function is shared.
+//   - nativeMethod: a native method that the slow path bound to `obj`.
+//     The entry keeps only the C++ function pointer and every hit
+//     re-binds it to the current receiver.
+// Anything else — descriptor __get__ results such as property values,
+// or a bound method built for one specific instance — is never cached.
+// Caching the slow path's receiver-bound native method made every later
+// instance of the same type run the call on the first receiver
+// (`b.append(x)` appended to `a`; all `_thread` locks shared one
+// LockData, deadlocking `threading.Thread.start()`), and it parked a
+// freshly allocated bound method in thread_local memory the GC cannot see.
 //
 // Invalidation: tied to PythonEnvironment::resolveCacheGeneration. Class
 // mutations bump the generation; cache entries with a stale generation
 // miss and are refilled.
 struct LoadAttrPicEntry {
-    const proto::ProtoObject* type      = nullptr;
-    const proto::ProtoString* name      = nullptr;
-    const proto::ProtoObject* value     = nullptr;
-    uint64_t                  generation = 0;
-    bool                      isUnbound = false;
+    const proto::ProtoObject* type         = nullptr;
+    const proto::ProtoString* name         = nullptr;
+    const proto::ProtoObject* value        = nullptr;
+    proto::ProtoMethod        nativeMethod = nullptr;
+    uint64_t                  generation   = 0;
+    bool                      isUnbound    = false;
 };
 constexpr size_t kLoadAttrPicSize = 1024;
 thread_local LoadAttrPicEntry g_loadAttrPic[kLoadAttrPicSize];
@@ -6348,19 +6356,40 @@ const proto::ProtoObject* executeBytecodeRange(
                                 && slot->name == attrName
                                 && slot->generation == gen) {
                                 // PIC HIT — skip env->getAttribute entirely.
-                                val = slot->value;
-                                isUnboundFunc = slot->isUnbound;
+                                if (slot->nativeMethod) {
+                                    // Re-bind the cached native method to
+                                    // this receiver (see LoadAttrPicEntry).
+                                    val = ctx->fromMethod(
+                                        const_cast<proto::ProtoObject*>(obj),
+                                        slot->nativeMethod);
+                                    isUnboundFunc = false;
+                                } else {
+                                    val = slot->value;
+                                    isUnboundFunc = slot->isUnbound;
+                                }
                                 picHandled = true;
                             } else {
-                                // PIC MISS — do the slow path and populate.
+                                // PIC MISS — do the slow path, then populate
+                                // only with receiver-independent results.
                                 val = env->getAttribute(ctx, obj, attrName, false, &isUnboundFunc);
                                 if (val && val != PROTO_NONE
                                         && (!env->hasPendingException())) {
-                                    slot->type      = type;
-                                    slot->name      = attrName;
-                                    slot->value     = val;
-                                    slot->generation = gen;
-                                    slot->isUnbound = isUnboundFunc;
+                                    if (isUnboundFunc) {
+                                        slot->type         = type;
+                                        slot->name         = attrName;
+                                        slot->value        = val;
+                                        slot->nativeMethod = nullptr;
+                                        slot->generation   = gen;
+                                        slot->isUnbound    = true;
+                                    } else if (val->isMethod(ctx)
+                                               && val->asMethodSelf(ctx) == obj) {
+                                        slot->type         = type;
+                                        slot->name         = attrName;
+                                        slot->value        = nullptr;
+                                        slot->nativeMethod = val->asMethod(ctx);
+                                        slot->generation   = gen;
+                                        slot->isUnbound    = false;
+                                    }
                                 }
                                 picHandled = true;
                             }
