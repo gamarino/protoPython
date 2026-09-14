@@ -10415,56 +10415,64 @@ static const proto::ProtoObject* py_bytes_add(
         static_cast<unsigned long>(out.size()));
 }
 
+// bytes ==, <, <=, >, >= (op as in compareObjects: 0 eq, 2 lt, 3 le, 4 gt,
+// 5 ge).  Only bytes-like operands compare: a str is NotImplemented (it was
+// read as its UTF-8 bytes, so b'a' == 'a' was True and b'a' < 'a' ordered),
+// and so is anything bytes_view cannot read.
+static const proto::ProtoObject* bytes_compare(proto::ProtoContext* context,
+        const proto::ProtoObject* self, const proto::ProtoList* posArgs, int op) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* notImpl = env ? env->getNotImplementedPrototype() : PROTO_FALSE;
+    if (!posArgs || posArgs->getSize(context) < 1) return notImpl;
+    const proto::ProtoObject* other = posArgs->getAt(context, 0);
+    if (!other || other->isString(context)
+        || (env && env->getStrPrototype()
+            && other->isInstanceOf(context, env->getStrPrototype()) == PROTO_TRUE)) {
+        return notImpl;
+    }
+    std::string a, b;
+    if (!bytes_data_view(context, self, a) || !bytes_view(context, other, b)) return notImpl;
+    bool r = false;
+    switch (op) {
+        case 0: r = a == b; break;
+        case 2: r = a < b; break;
+        case 3: r = a <= b; break;
+        case 4: r = a > b; break;
+        case 5: r = a >= b; break;
+    }
+    return r ? PROTO_TRUE : PROTO_FALSE;
+}
+
 static const proto::ProtoObject* py_bytes_eq(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (!posArgs || posArgs->getSize(context) < 1) return PROTO_FALSE;
-    std::string a, b;
-    if (!bytes_data_view(context, self, a)) return PROTO_FALSE;
-    if (!bytes_view(context, posArgs->getAt(context, 0), b)) return PROTO_FALSE;
-    return (a == b) ? PROTO_TRUE : PROTO_FALSE;
+    return bytes_compare(context, self, posArgs, 0);
 }
 
 static const proto::ProtoObject* py_bytes_lt(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (!posArgs || posArgs->getSize(context) < 1) return PROTO_FALSE;
-    std::string a, b;
-    bytes_data_view(context, self, a);
-    bytes_view(context, posArgs->getAt(context, 0), b);
-    return (a < b) ? PROTO_TRUE : PROTO_FALSE;
+    return bytes_compare(context, self, posArgs, 2);
 }
 static const proto::ProtoObject* py_bytes_le(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (!posArgs || posArgs->getSize(context) < 1) return PROTO_FALSE;
-    std::string a, b;
-    bytes_data_view(context, self, a);
-    bytes_view(context, posArgs->getAt(context, 0), b);
-    return (a <= b) ? PROTO_TRUE : PROTO_FALSE;
+    return bytes_compare(context, self, posArgs, 3);
 }
 static const proto::ProtoObject* py_bytes_gt(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (!posArgs || posArgs->getSize(context) < 1) return PROTO_FALSE;
-    std::string a, b;
-    bytes_data_view(context, self, a);
-    bytes_view(context, posArgs->getAt(context, 0), b);
-    return (a > b) ? PROTO_TRUE : PROTO_FALSE;
+    return bytes_compare(context, self, posArgs, 4);
 }
 static const proto::ProtoObject* py_bytes_ge(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (!posArgs || posArgs->getSize(context) < 1) return PROTO_FALSE;
-    std::string a, b;
-    bytes_data_view(context, self, a);
-    bytes_view(context, posArgs->getAt(context, 0), b);
-    return (a >= b) ? PROTO_TRUE : PROTO_FALSE;
+    return bytes_compare(context, self, posArgs, 5);
 }
 
 // Wrap a raw ProtoList into a Python `list` instance with `__data__`

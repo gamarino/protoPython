@@ -506,6 +506,13 @@ set_tests_properties(protopy_module_global_names PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# bytes compare only with bytes-like objects: b'a' == 'a' is False, b'a' < 'a' raises.
+add_test(NAME protopy_bytes_str_compare
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/bytes_str_compare.py)
+set_tests_properties(protopy_bytes_str_compare PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # `import typing` completes; Generic[T] subclasses, Protocol and aliases work.
 add_test(NAME protopy_typing_import
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/typing_import.py)
