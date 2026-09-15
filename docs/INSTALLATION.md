@@ -74,8 +74,9 @@ find `libprotoPython` and `libprotoCore` without `LD_LIBRARY_PATH`:
 ./build_release/src/runtime/protopy example.py
 ```
 
-From the build tree, protopy finds the repository's `lib/python3.14` standard library
-by searching the parent directories of the executable. If the loader cannot find a
+From the build tree, protopy uses the repository's `lib/python3.14` standard library,
+whose absolute path is compiled into the binary (see
+[Standard library location](#standard-library-location)). If the loader cannot find a
 library (for example with a protoCore installed in a non-standard prefix), add its
 directory to `LD_LIBRARY_PATH`.
 
@@ -101,30 +102,40 @@ The install rules place, under the prefix (`<libdir>` is CMake's
 | protoPython headers | `include/protoPython/` |
 | Standard library | `<libdir>/protoPython/python3.14/` |
 
-When protoCore is built in-tree, protoCore's own install rules also install its
-library. Installed executables use the RPATH `$ORIGIN/../<libdir>` and
-`libprotoPython` uses `$ORIGIN`, so `LD_LIBRARY_PATH` is not needed. Add the prefix's
-`bin` directory to `PATH`:
+The protoPython install rules do not install protoCore, also when protoCore is built
+in-tree: protoCore defines install rules only when it is the top-level project. Install
+a protoCore that matches the one protoPython was built against separately (the DEB and
+RPM packages depend on the `protocore` package for this reason). With protoCore in the
+same prefix, the RPATHs `$ORIGIN/../<libdir>` of the installed executables and `$ORIGIN`
+of `libprotoPython` find it without `LD_LIBRARY_PATH`; otherwise add its library
+directory to `LD_LIBRARY_PATH`. An older `libprotoCore` found first on the loader path
+(for example in `/usr/local/lib`) makes protopy fail with an undefined symbol error.
+
+Add the prefix's `bin` directory to `PATH`:
 
 ```bash
 export PATH=$HOME/.local/bin:$PATH
 ```
 
-### Standard library location after installation
+### Standard library location
 
-By default protopy is compiled with the relative standard library path
-`../<libdir>/python3.14`, which does not match the installed location
-`<libdir>/protoPython/python3.14`; an installed protopy then fails to import
-standard library modules. Either configure the build with the installed path:
+protopy chooses its standard library directory in this order:
 
-```bash
-cmake -S . -B build_release -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_INSTALL_PREFIX=$HOME/.local \
-  -DSTDLIB_INSTALL_PATH=$HOME/.local/lib/protoPython/python3.14
-```
+1. `--stdlib <dir>`, as given;
+2. the installed location compiled into the binary, `<prefix>/<libdir>/protoPython/python3.14`.
+   It is stored relative to the `bin` directory (`../<libdir>/protoPython/python3.14`)
+   and resolved against the directory of the protopy executable, never against the
+   working directory, so a relocated prefix keeps working;
+3. the source tree's `lib/python3.14`, compiled in as an absolute path, which is what a
+   binary run from the build tree uses.
 
-(replace `lib` with your `<libdir>` if it differs), or pass the directory at run time
-with `protopy --stdlib <prefix>/<libdir>/protoPython/python3.14`.
+If none of these exists, protopy prints `protopy: standard library not found; use
+--stdlib <dir>` and continues without a standard library. protopy does not search
+parent directories, so it never picks up another interpreter's `lib/python3.14` (such
+as CPython's in `/usr/local/lib`).
+
+To compile in a different installed location, configure with
+`-DSTDLIB_INSTALL_PATH=<dir>` (absolute, or relative to the executable's directory).
 
 ## Next steps
 

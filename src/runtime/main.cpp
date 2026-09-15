@@ -113,6 +113,31 @@ static bool moduleExists(const std::string& moduleName,
     return false;
 }
 
+/**
+ * Chooses the standard library directory, in this order:
+ *  1. --stdlib, as given (a relative value is relative to the working directory);
+ *  2. STDLIB_PATH, the installed location: used as is when absolute, otherwise
+ *     taken relative to the executable's directory, never to the working directory;
+ *  3. STDLIB_BUILD_PATH, the source tree's copy, for a binary run from its build tree.
+ * Prints a warning and returns an empty string when none of them exists.
+ */
+static std::string resolveStdLibPath(const std::string& cliPath, const std::string& exeDir) {
+    namespace fs = std::filesystem;
+    if (!cliPath.empty()) return cliPath;
+    std::error_code ec;
+    const fs::path installed(DEFAULT_STDLIB);
+    if (!installed.empty()) {
+        fs::path candidate = installed;
+        if (candidate.is_relative()) candidate = exeDir.empty() ? fs::path() : fs::path(exeDir) / installed;
+        if (!candidate.empty() && fs::is_directory(candidate, ec)) return candidate.lexically_normal().string();
+    }
+#ifdef STDLIB_BUILD_PATH
+    if (fs::is_directory(fs::path(STDLIB_BUILD_PATH), ec)) return STDLIB_BUILD_PATH;
+#endif
+    std::cerr << "protopy: standard library not found; use --stdlib <dir>" << std::endl;
+    return "";
+}
+
 static void printUsage(const char* prog) {
     std::cout << "protopy 1.0.0 - protoPython runtime\n"
                  "Usage:\n"
@@ -279,65 +304,21 @@ int main(int argc, char* argv[]) {
         return EXIT_OK;
     }
 
-    // Mark the environment so Python-level code can detect it is running
-    // inside protoPython and adjust behaviour (e.g. CPython conformance
-    // tests use PROTO_PYTHONPATH as a sentinel for "skip CPython-C-API
-    // specific assertions").  `setenv(..., 0)` only sets if not already
-    // present, preserving an explicit user value.
-    setenv("PROTO_PYTHONPATH", "1", 0);
-
-    // V72: Read PROTO_PYTHONPATH
+    // PROTO_PYTHONPATH: extra module search directories, separated by ':'.
+    // Empty entries are ignored.
     if (const char* pathEnv = std::getenv("PROTO_PYTHONPATH")) {
-        std::string paths = pathEnv;
+        const std::string paths = pathEnv;
         size_t start = 0;
-        size_t end = paths.find(':');
-        while (end != std::string::npos) {
-            options.searchPaths.push_back(paths.substr(start, end - start));
+        while (start <= paths.size()) {
+            size_t end = paths.find(':', start);
+            if (end == std::string::npos) end = paths.size();
+            if (end > start) options.searchPaths.push_back(paths.substr(start, end - start));
             start = end + 1;
-            end = paths.find(':', start);
-        }
-        options.searchPaths.push_back(paths.substr(start));
-    }
-
-    std::string exePath = getExecutablePath();
-    std::string exeDir = exePath.empty() ? "." : dirName(exePath);
-
-    std::string stdLibPath = !options.stdLibPath.empty() ? options.stdLibPath : DEFAULT_STDLIB;
-    
-    bool resolved = false;
-    if (!stdLibPath.empty()) {
-        if (stdLibPath[0] == '/' || stdLibPath.find(":\\") != std::string::npos) {
-            resolved = true;
-        } else if (std::filesystem::exists(stdLibPath)) {
-            resolved = true;
-        } else {
-            std::string altPath = exeDir + "/" + stdLibPath;
-            if (std::filesystem::exists(altPath)) {
-                stdLibPath = altPath;
-                resolved = true;
-            }
         }
     }
 
-    if (!resolved) {
-        // Special case for development: traverse up from exeDir to find lib/python3.14
-        std::filesystem::path curr = std::filesystem::absolute(exeDir);
-        bool found = false;
-        for (int i = 0; i < 5; ++i) { // Search up to 5 levels
-            if (std::filesystem::exists(curr / "lib/python3.14")) {
-                stdLibPath = (curr / "lib/python3.14").string();
-                resolved = true;
-                found = true;
-                break;
-            }
-            if (!curr.has_parent_path() || curr == curr.parent_path()) break;
-            curr = curr.parent_path();
-        }
-        if (!found && std::filesystem::exists("lib/python3.14")) {
-            stdLibPath = std::filesystem::absolute("lib/python3.14").string();
-            resolved = true;
-        }
-    }
+    const std::string exePath = getExecutablePath();
+    const std::string stdLibPath = resolveStdLibPath(options.stdLibPath, exePath.empty() ? "" : dirName(exePath));
 
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG MAIN: Resolved stdLibPath: %s\n", stdLibPath.c_str());

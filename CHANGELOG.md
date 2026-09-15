@@ -143,6 +143,13 @@ onwards. Commit hashes are given for reference.
   also passed as an RPATH; `make` honours `CXX`. Modules built this way can be
   imported by protopy: module-level names are now bound on the imported module
   instead of being lost.
+- **Standard library location:** an installed protopy finds
+  `<prefix>/<libdir>/protoPython/python3.14`, resolved relative to the
+  executable; the compiled-in path used to be `../<libdir>/python3.14`, which
+  the install rules never create. protopy no longer resolves that path against
+  the working directory or searches parent directories (which could select
+  CPython's `/usr/local/lib/python3.14`), and no longer exports
+  `PROTO_PYTHONPATH=1`, which it then read back as a search directory `1`.
 
 ### Performance
 

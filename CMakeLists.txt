@@ -7,6 +7,10 @@ add_compile_options(-fno-delete-null-pointer-checks)
 
 include(GNUInstallDirs)
 
+# Installed standard library: <prefix>/<PROTOPYTHON_STDLIB_INSTALL_PARENT>/python3.14.
+# The install rule below and the path compiled into protopy (src/runtime) both use it.
+set(PROTOPYTHON_STDLIB_INSTALL_PARENT "${CMAKE_INSTALL_LIBDIR}/protoPython")
+
 # --- protoCore: use installed package or build from sibling directory ---
 # For packaging: set PROTO_CORE_PREFIX to the install prefix of protoCore (e.g. /usr/local or $HOME/.local).
 # For development: leave unset to build protoCore from ../protoCore.
@@ -75,6 +79,15 @@ if(Python3_FOUND)
         TIMEOUT 60
         LABELS "regression_gate")
 endif()
+# protopy finds the standard library in the installed layout relative to its own
+# directory, is not misled by a ../lib/python3.14 next to the working directory,
+# and does not treat the PROTO_PYTHONPATH marker as a directory.
+add_test(NAME protopy_stdlib_layout
+    COMMAND ${CMAKE_SOURCE_DIR}/test/regression/stdlib_layout.sh
+            $<TARGET_FILE:protopy> ${PROTOPYTHON_STDLIB_INSTALL_PARENT})
+set_tests_properties(protopy_stdlib_layout PROPERTIES
+    TIMEOUT 60
+    LABELS "regression_gate")
 # The const_cast review report runs and exits 0 (--strict would fail on any match).
 add_test(NAME conformity_const_cast_report
     COMMAND ${CMAKE_SOURCE_DIR}/tests/conformity/scripts/check_const_cast.sh)
@@ -705,7 +718,7 @@ install(DIRECTORY include/protoPython
 )
 
 install(DIRECTORY lib/python3.14
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/protoPython
+    DESTINATION ${PROTOPYTHON_STDLIB_INSTALL_PARENT}
     USE_SOURCE_PERMISSIONS
     COMPONENT protoPython
 )

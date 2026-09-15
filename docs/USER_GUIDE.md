@@ -77,13 +77,13 @@ protopy passes these directories to the runtime:
 - directories listed in the `PROTO_PYTHONPATH` environment variable, separated by `:`;
 - on Linux, `~/.local/lib/python3.14/site-packages` (not for the REPL).
 
-`PYTHONPATH` is not read. When `PROTO_PYTHONPATH` is not set, protopy sets it to `1` in
-its own environment so that Python code can detect that it runs under protoPython.
+`PYTHONPATH` is not read.
 
-The standard library directory is taken from `--stdlib`; otherwise from the path
-compiled into the binary; otherwise protopy looks for `lib/python3.14` in the
-executable's directory and its parent directories, and finally in the current
-directory.
+The standard library directory is taken from `--stdlib`; otherwise from the installed
+location compiled into the binary, resolved relative to the executable's directory;
+otherwise from the source tree's `lib/python3.14` (for a binary run from the build
+tree). protopy does not look in the working directory or in the executable's parent
+directories; see [INSTALLATION.md](INSTALLATION.md#standard-library-location).
 
 ## Interactive REPL
 
