@@ -8390,6 +8390,44 @@ static const proto::ProtoObject* py_set_pop(
     }
 }
 
+// set.__reduce__ and frozenset.__reduce__: (type(self), (list(self),), state)
+// with state self.__getstate__() (None without instance attributes), as in
+// CPython's set_reduce. object.__reduce_ex__ defers to this override, so copy
+// and pickle rebuild a set or frozenset subclass instance as cls(list); the
+// generic copyreg path rebuilt it as cls.__new__(cls) with no elements, which
+// frozenset.__new__ rejected.
+static const proto::ProtoObject* py_set_reduce(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* receiver = set_self_or_arg(context, self, args);
+    const proto::ProtoSet* items = set_underlying(context, receiver);
+    if (!env || !items) return PROTO_NONE;
+    const proto::ProtoList* elements = context->newList();
+    for (const proto::ProtoSetIterator* it = items->getIterator(context);
+         it && it->hasNext(context); it = it->advance(context)) {
+        elements = elements->appendLast(context, it->next(context));
+    }
+    PythonEnvironment::TransientPin pinElements(env, elements->asObject(context));
+    const proto::ProtoObject* state = PROTO_NONE;
+    const proto::ProtoObject* getState = env->getAttribute(context, receiver,
+        PythonEnvironment::getInternedString(context, "__getstate__"), false);
+    if (getState && getState != PROTO_NONE) {
+        const proto::ProtoObject* st = env->callObject(getState, {});
+        if (!st && env->hasPendingException()) return nullptr;
+        if (st) state = st;
+    } else if (env->hasPendingException()) {
+        env->clearPendingException();
+    }
+    const proto::ProtoList* argList = context->newList()
+        ->appendLast(context, PythonEnvironment::wrapList(context, elements));
+    const proto::ProtoList* result = context->newList()
+        ->appendLast(context, env->getType(context, receiver))
+        ->appendLast(context, context->newTupleFromList(argList)->asObject(context))
+        ->appendLast(context, state);
+    return context->newTupleFromList(result)->asObject(context);
+}
+
 static const proto::ProtoObject* py_set_iter(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -20557,6 +20595,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__sub__"), rootContext_->fromMethod(nullptr, py_set_sub));
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__xor__"), rootContext_->fromMethod(nullptr, py_set_xor));
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__eq__"), rootContext_->fromMethod(nullptr, py_set_eq));
+    setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__reduce__"), rootContext_->fromMethod(nullptr, py_set_reduce));
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ne__"), rootContext_->fromMethod(nullptr, py_set_ne));
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__le__"), rootContext_->fromMethod(nullptr, py_set_le));
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__lt__"), rootContext_->fromMethod(nullptr, py_set_lt));
@@ -20602,6 +20641,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_frozenset_iter));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_hash, rootContext_->fromMethod(nullptr, py_frozenset_hash));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__eq__"), rootContext_->fromMethod(nullptr, py_set_eq));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__reduce__"), rootContext_->fromMethod(nullptr, py_set_reduce));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ne__"), rootContext_->fromMethod(nullptr, py_set_ne));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__le__"), rootContext_->fromMethod(nullptr, py_set_le));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__lt__"), rootContext_->fromMethod(nullptr, py_set_lt));

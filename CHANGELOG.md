@@ -308,6 +308,12 @@ onwards. Commit hashes are given for reference.
   0 and `__iter__()` None. Every frozenset carried the `__is_python_class__`
   class marker, so attribute lookup treated it as a class; the marker is no
   longer set on instances.
+- **copy of set subclass instances:** `copy.copy()` and `pickle` rebuilt a
+  `set` or `frozenset` subclass instance without its elements (for a
+  `frozenset` subclass, after the fix above; before it the copy raised
+  `TypeError`). `set` and
+  `frozenset` now define `__reduce__` as CPython does, returning the class,
+  the elements as a list and the instance state.
 
 ### Performance
 
