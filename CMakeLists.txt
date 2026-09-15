@@ -284,6 +284,13 @@ set_tests_properties(protopy_io_open_write_modes PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# io.text_encoding follows CPython; Path.read_text and write_text work.
+add_test(NAME protopy_io_text_encoding
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/io_text_encoding.py)
+set_tests_properties(protopy_io_text_encoding PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # Equal ints and floats compare, hash and key dicts as one value beyond long long.
 add_test(NAME protopy_numeric_keys
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/numeric_keys.py)

@@ -296,6 +296,10 @@ onwards. Commit hashes are given for reference.
   objects (also `io.open(fd)`, used by `subprocess`) take their methods
   from a shared prototype, so `with` finds `__exit__` and closes them; it
   used to leave the descriptor open.
+- **io.text_encoding:** it was a placeholder class, so calling it raised
+  `TypeError` and `pathlib.Path.read_text` and `write_text` failed. It now
+  returns an explicit encoding unchanged and, for None, `"locale"` (or
+  `"utf-8"` in UTF-8 mode), as CPython does.
 
 ### Performance
 

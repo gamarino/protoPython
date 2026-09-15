@@ -1154,6 +1154,40 @@ static const proto::ProtoObject* py_sio_new(
     return inst;
 }
 
+// io.text_encoding(encoding, stacklevel=2, /): the encoding argument a text
+// stream should use. An explicit encoding is returned unchanged; None
+// becomes "utf-8" in UTF-8 mode (sys.flags.utf8_mode) and "locale"
+// otherwise, as in CPython's _io.text_encoding. EncodingWarning (emitted
+// by CPython under -X warn_default_encoding) is not implemented.
+static const proto::ProtoObject* py_io_text_encoding(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const unsigned long argc = posArgs ? posArgs->getSize(ctx) : 0;
+    if (argc < 1 || argc > 2) {
+        if (env) env->raiseTypeError(ctx, argc < 1
+            ? "text_encoding() missing required argument 'encoding' (pos 1)"
+            : "text_encoding() takes at most 2 arguments (" + std::to_string(argc) + " given)");
+        return nullptr;
+    }
+    const proto::ProtoObject* encoding = posArgs->getAt(ctx, 0);
+    if (encoding && encoding != PROTO_NONE && !(env && encoding == env->getNonePrototype())) {
+        return encoding;
+    }
+    bool utf8Mode = false;
+    const proto::ProtoObject* sys = env ? env->getSysModule() : nullptr;
+    if (sys) {
+        const proto::ProtoObject* flags = env->getAttribute(ctx, sys,
+            PythonEnvironment::getInternedString(ctx, "flags"), false);
+        const proto::ProtoObject* mode = (flags && flags != PROTO_NONE)
+            ? env->getAttribute(ctx, flags, PythonEnvironment::getInternedString(ctx, "utf8_mode"), false)
+            : nullptr;
+        if (env->hasPendingException()) env->clearPendingException();
+        utf8Mode = mode && mode->isInteger(ctx) && mode->asLong(ctx) != 0;
+    }
+    return PythonEnvironment::getInternedString(ctx, utf8Mode ? "utf-8" : "locale")->asObject(ctx);
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* ioMod = ctx->newObject(false);
     
@@ -1312,7 +1346,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     add_stub("BufferedRWPair");
     add_stub("BufferedRandom");
     add_stub("IncrementalNewlineDecoder");
-    add_stub("text_encoding");
+    ioMod = ioMod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "text_encoding"),
+        ctx->fromMethod(nullptr, py_io_text_encoding));
     add_stub("TextIOWrapper");
     add_stub("_IOBase");
     add_stub("_RawIOBase");

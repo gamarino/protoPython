@@ -251,7 +251,7 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 
 | Module | Item | Behavior |
 |--------|------|----------|
-| pathlib.Path | read_text, write_text | Removed with the native stub; the standard library versions fail while `io.text_encoding` is a stub (docs/CPYTHON_CONFORMANCE.md). |
+| pathlib.Path | read_text, write_text | Removed with the native stub; the standard library versions are used. |
 | os.path | isfile | Implemented: stat-based S_ISREG. |
 | functools | partial | Pre-existing: func, *args, **kwargs; __call__ merges. |
 | datetime | date, timedelta | date(year, month, day); timedelta(days, seconds, microseconds). |
