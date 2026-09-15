@@ -206,6 +206,12 @@ onwards. Commit hashes are given for reference.
   from a header generated from `project()` in `CMakeLists.txt`. The banner reads
   `protoPython 1.0.0 (Python 3.14 compatible)` and no longer includes the build
   date.
+- **Containment and NaN:** containers now compare elements as CPython does,
+  `x is e or x == e`. `nan in [nan]` and `nan in (nan,)` were False, as were
+  `in` over a deque or any other iterable, `{1: nan} == {1: nan}` and equality
+  of tuple subclasses holding the same NaN; `list.__contains__` and
+  `tuple.__contains__` matched only identical objects, ints and strings, so
+  `[2.5].__contains__(float('2.5'))` was False.
 
 ### Performance
 

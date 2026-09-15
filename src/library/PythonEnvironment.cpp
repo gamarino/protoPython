@@ -4029,6 +4029,8 @@ static const proto::ProtoObject* py_list_reversed_next(
     return value;
 }
 
+static bool list_elem_equal(proto::ProtoContext* context, const proto::ProtoObject* elem, const proto::ProtoObject* value);
+
 static const proto::ProtoObject* py_list_contains(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -4050,7 +4052,14 @@ static const proto::ProtoObject* py_list_contains(
     if (!receiver || !value) return PROTO_FALSE;
     const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
     if (!data || !data->asList(context)) return PROTO_FALSE;
-    return data->asList(context)->has(context, value) ? PROTO_TRUE : PROTO_FALSE;
+    // `x is e or x == e` per element, as list.index and list.count do.
+    // ProtoList::has only matched identical objects, ints and strings.
+    const proto::ProtoList* list = data->asList(context);
+    const unsigned long size = list->getSize(context);
+    for (unsigned long i = 0; i < size; ++i) {
+        if (list_elem_equal(context, list->getAt(context, static_cast<int>(i)), value)) return PROTO_TRUE;
+    }
+    return PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_list_eq(
@@ -10274,7 +10283,12 @@ static const proto::ProtoObject* py_tuple_contains(
         t = d ? d->asTuple(context) : nullptr;
     }
     if (!t) return PROTO_FALSE;
-    return t->has(context, value) ? PROTO_TRUE : PROTO_FALSE;
+    // `x is e or x == e` per element, as tuple.index and tuple.count do.
+    const unsigned long size = t->getSize(context);
+    for (unsigned long i = 0; i < size; ++i) {
+        if (list_elem_equal(context, t->getAt(context, static_cast<int>(i)), value)) return PROTO_TRUE;
+    }
+    return PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_tuple_bool(
@@ -27901,7 +27915,7 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
         for (unsigned long i = 0; i < minlen; ++i) {
             const proto::ProtoObject* ea = ta->getAt(ctx, static_cast<int>(i));
             const proto::ProtoObject* eb = tb->getAt(ctx, static_cast<int>(i));
-            if (compareObjects(ctx, ea, eb, 0) == PROTO_TRUE) continue;
+            if (objectsEqual(ctx, ea, eb)) continue;
             // The first unequal elements decide an ordering with the same
             // operator (which raises for unorderable ones); == and != only
             // need to know they differ.
@@ -27925,7 +27939,7 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
         for (unsigned long i = 0; i < minlen; ++i) {
             const proto::ProtoObject* ea = la->getAt(ctx, static_cast<int>(i));
             const proto::ProtoObject* eb = lb->getAt(ctx, static_cast<int>(i));
-            if (compareObjects(ctx, ea, eb, 0) == PROTO_TRUE) continue;
+            if (objectsEqual(ctx, ea, eb)) continue;
             // The first unequal elements decide an ordering with the same
             // operator (which raises for unorderable ones); == and != only
             // need to know they differ.
@@ -28008,6 +28022,10 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
 }
 
 bool PythonEnvironment::objectsEqual(proto::ProtoContext* ctx, const proto::ProtoObject* a, const proto::ProtoObject* b) {
+    // CPython's PyObject_RichCompareBool: identity implies equality. This is
+    // the rule containers use (`x is e or x == e`), so `nan in [nan]` and
+    // `[nan] == [nan]` hold although `nan == nan` is False.
+    if (a == b) return true;
     const proto::ProtoObject* res = compareObjects(ctx, a, b, 0);
     return res && res->isBoolean(ctx) && res->asBoolean(ctx);
 }

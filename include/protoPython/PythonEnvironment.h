@@ -327,6 +327,9 @@ public:
     // TypeError for orderings nobody implements (the comparison operators);
     // otherwise the answer is coerced to True/False for internal callers.
     const proto::ProtoObject* compareObjects(proto::ProtoContext* ctx, const proto::ProtoObject* a, const proto::ProtoObject* b, int op, bool richResult = false);
+    // Container equality (CPython's PyObject_RichCompareBool with Py_EQ):
+    // true when a is b, otherwise the result of a == b. Use it for
+    // membership, index/count/remove and element-wise sequence comparison.
     bool objectsEqual(proto::ProtoContext* ctx, const proto::ProtoObject* a, const proto::ProtoObject* b);
 
     // Helpers for C++ generated code

@@ -2286,8 +2286,8 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
             for (size_t i = 0; i < size; ++i) {
                 bool eq = false;
                 if (env_local) {
-                    const proto::ProtoObject* r = env_local->compareObjects(ctx, a, lst->getAt(ctx, i), 0);
-                    eq = (r == PROTO_TRUE);
+                    // Identity first (`x is e or x == e`), so NaN is found.
+                    eq = env_local->objectsEqual(ctx, a, lst->getAt(ctx, i));
                 } else {
                     eq = (a->compare(ctx, lst->getAt(ctx, i)) == 0);
                 }
@@ -2338,8 +2338,7 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
                             if (env->hasPendingException()) env->clearPendingException();
                             break;
                         }
-                        const proto::ProtoObject* r = env->compareObjects(ctx, a, item, 0);
-                        if (r == PROTO_TRUE) {
+                        if (env->objectsEqual(ctx, a, item)) {
                             found = true;
                             break;
                         }
