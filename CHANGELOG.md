@@ -322,6 +322,9 @@ onwards. Commit hashes are given for reference.
   unorderable operands.
 - **operator.contains:** the function (and its alias `operator.__contains__`)
   was missing. It evaluates `b in a` with the `in` operator's semantics.
+- **collections.deque.count:** the method was missing. It counts the
+  elements equal to its argument, comparing by identity first as
+  `list.count` does.
 
 ### Performance
 

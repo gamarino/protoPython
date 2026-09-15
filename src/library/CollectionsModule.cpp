@@ -364,6 +364,51 @@ static const proto::ProtoObject* py_deque_getitem(
 // deque.remove(value): remove the first occurrence of value (Python ==
 // comparison). Raises ValueError when missing.  threading.Condition.notify
 // calls this on its waiters deque to drop the lock that was just released.
+// deque.count(x): the number of elements equal to x, compared as list.count
+// does (identity first, then ==; an exception from __eq__ propagates).
+static const proto::ProtoObject* py_deque_count(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwArgs*/) {
+    unsigned long argOff = 0;
+    DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!state) {
+        if (env) env->raiseTypeError(ctx,
+            "descriptor 'count' for 'collections.deque' objects "
+            "doesn't apply to a non-deque object");
+        return nullptr;
+    }
+    if (!posArgs || posArgs->getSize(ctx) != argOff + 1) {
+        if (env) env->raiseTypeError(ctx, "deque.count() takes exactly one argument ("
+            + std::to_string(posArgs ? posArgs->getSize(ctx) - argOff : 0) + " given)");
+        return nullptr;
+    }
+    const proto::ProtoObject* value = posArgs->getAt(ctx, static_cast<int>(argOff));
+    // The receiver: the deque itself, also in the unbound form.
+    const proto::ProtoObject* receiver = argOff > 0 ? posArgs->getAt(ctx, 0) : self;
+    const proto::ProtoObject* raw = nullptr;
+    const proto::ProtoList* items = deque_items(ctx, receiver, raw);
+    // A snapshot: `items` is an immutable list, so __eq__ calls that mutate
+    // the deque do not disturb the walk.
+    PythonEnvironment::TransientPin pinItems(env, items ? items->asObject(ctx) : nullptr);
+    long long count = 0;
+    const unsigned long n = items ? items->getSize(ctx) : 0;
+    for (unsigned long i = 0; i < n; ++i) {
+        const proto::ProtoObject* item = items->getAt(ctx, static_cast<int>(i));
+        if (item == value) { ++count; continue; }
+        if (!env) continue;
+        if (env->objectsEqual(ctx, item, value)) {
+            ++count;
+        } else if (env->hasPendingException()) {
+            return nullptr;
+        }
+    }
+    return ctx->fromInteger(count);
+}
+
 static const proto::ProtoObject* py_deque_remove(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
@@ -878,6 +923,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
                                                  ctx->fromMethod(nullptr, py_deque_reversed));
     dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "remove"),
                                                  ctx->fromMethod(nullptr, py_deque_remove));
+    dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "count"),
+                                                 ctx->fromMethod(nullptr, py_deque_count));
     dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__getitem__"),
                                                  ctx->fromMethod(nullptr, py_deque_getitem));
     dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "clear"),
