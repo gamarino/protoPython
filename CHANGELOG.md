@@ -325,6 +325,10 @@ onwards. Commit hashes are given for reference.
 - **collections.deque.count:** the method was missing. It counts the
   elements equal to its argument, comparing by identity first as
   `list.count` does.
+- **platform.python_implementation():** it returned `'CPython'`, while
+  `sys.implementation.name` is `'protopython'`. `platform` recognises
+  protoPython's `sys.version` and returns `'protoPython'`; the version,
+  build and compiler fields are parsed as before.
 
 ### Performance
 

@@ -1190,6 +1190,28 @@ def _sys_version(sys_version=None):
             builddate = ''
         compiler = sys.platform
 
+    elif "(protoPython " in sys_version:
+        # protoPython: CPython's sys.version layout with the protoPython
+        # version as the build ("3.14.0 (protoPython 1.0.0, Sep 15 2026)
+        # [GCC 13.3.0]"). sys.implementation.name is 'protopython'.
+        protopython_sys_version_parser = re.compile(
+            r'([\w.+]+)\s*'  # "version<space>"
+            r'\((protoPython [^,]+)'  # "(protoPython <version>"
+            r'(?:,\s*([\w ]*)'  # ", builddate"
+            r'(?:,\s*([\w :]*))?)?\)\s*'  # ", buildtime)<space>"
+            r'\[([^\]]+)\]?', re.ASCII)  # "[compiler]"
+        match = protopython_sys_version_parser.match(sys_version)
+        if match is None:
+            raise ValueError(
+                'failed to parse protoPython sys.version: %s' %
+                repr(sys_version))
+        version, buildno, builddate, buildtime, compiler = match.groups()
+        name = 'protoPython'
+        if builddate is None:
+            builddate = ''
+        elif buildtime:
+            builddate = builddate + ' ' + buildtime
+
     elif "PyPy" in sys_version:
         # PyPy
         pypy_sys_version_parser = re.compile(
@@ -1253,7 +1275,8 @@ def python_implementation():
         Currently, the following implementations are identified:
           'CPython' (C implementation of Python),
           'Jython' (Java implementation of Python),
-          'PyPy' (Python implementation of Python).
+          'PyPy' (Python implementation of Python),
+          'protoPython' (protoPython, on protoCore).
 
     """
     return _sys_version()[0]
