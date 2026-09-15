@@ -4,11 +4,7 @@ import time
 import sys
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-PROTOPY = os.path.join(BASE_DIR, "cmake-build-asan", "src", "runtime", "protopy")
-if not os.path.exists(PROTOPY):
-    PROTOPY = os.path.join(BASE_DIR, "cmake-build-debug", "src", "runtime", "protopy")
-if not os.path.exists(PROTOPY):
-    PROTOPY = os.path.join(BASE_DIR, "cmake-build-release", "src", "runtime", "protopy")
+PROTOPY = os.path.join(BASE_DIR, "build_release", "src", "runtime", "protopy")
 
 if sys.platform == "win32" and not PROTOPY.endswith(".exe"):
     PROTOPY += ".exe"

@@ -7157,7 +7157,7 @@ const proto::ProtoObject* executeBytecodeRange(
             // Subclass-aware gate: only fire the fast path when type(container)
             // is *exactly* listPrototype (no subclass). A subclass with an
             // overridden __getitem__ must route through the dunder dispatch
-            // below — see audit/02-fast-paths.md F2.2.
+            // below — see docs/audits/02-fast-paths.md F2.2.
             //
             // Skip strings here: ProtoString::asList builds a list of
             // unicode-char embedded values, not a list of single-char
@@ -7438,7 +7438,7 @@ const proto::ProtoObject* executeBytecodeRange(
             // Subclass-aware gate: only fire when type(container) is exactly
             // listPrototype. A user list subclass with __setitem__ override
             // (or one that invalidates its `__data__` differently) must
-            // route through the dunder path below — see audit/02-fast-paths.md F2.2.
+            // route through the dunder path below — see docs/audits/02-fast-paths.md F2.2.
             if (proto::isSmallInt(key) && container
                 && env && env->getType(ctx, container) == env->getListPrototype()) {
                 const proto::ProtoList* lst = container->asList(ctx);

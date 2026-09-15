@@ -23,8 +23,8 @@
 
 ## Current Status
 
-The bytecode format and execution engine are implemented (Phase 3 complete). The parser and compiler are integrated in protoPython; protopy executes `.py` scripts via tokenizer, parser, compiler, and `executeMinimalBytecode`. See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) and [EXECUTION_ENGINE_OPCODES.md](EXECUTION_ENGINE_OPCODES.md).
+The bytecode format and execution engine are implemented (Phase 3 complete). The parser and compiler are integrated in protoPython; protopy executes `.py` scripts via tokenizer, parser, compiler, and `executeMinimalBytecode`. See [archive/IMPLEMENTATION_PLAN.md](archive/IMPLEMENTATION_PLAN.md) and [EXECUTION_ENGINE_OPCODES.md](EXECUTION_ENGINE_OPCODES.md).
 
 ## Revision
 
-This document may be updated as Phase 6 (full stubs, threading, networking) progresses. The choice of CPython bytecode subset and frontend is documented in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
+This document may be updated as Phase 6 (full stubs, threading, networking) progresses. The choice of CPython bytecode subset and frontend is documented in [archive/IMPLEMENTATION_PLAN.md](archive/IMPLEMENTATION_PLAN.md).

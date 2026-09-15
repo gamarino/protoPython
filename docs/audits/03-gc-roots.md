@@ -291,6 +291,6 @@ This audit and its findings are referenced from:
   invariant exists structurally.
 - protoCore `docs/GarbageCollector.md` — link to the research note.
 
-The same invariant audit is being established in protoJS and protoST
-under their own `tasks/audit/gc-roots.md`. The three runtimes share the
+The same invariant audit is being established in protoJS and protoST.
+The three runtimes share the
 same protoCore GC, so the discipline is shared.

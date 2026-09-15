@@ -94,11 +94,11 @@ These are mostly mechanical, with templates already established this session:
 
 ## What this audit delivered
 
-- **`tasks/audit/00-plan.md`** — scope, methodology, success criteria.
-- **`tasks/audit/01-layers.md`** — exhaustive ABI table for every Cell-derived class. 4 findings.
-- **`tasks/audit/02-fast-paths.md`** — every fast-path gate inventoried. 6 findings.
-- **`tasks/audit/03-gc-roots.md`** — every native function analyzed for GC discipline. 6 findings.
-- **`tasks/audit/04-native-stubs.md`** — every native module compared with CPython spec. 6 findings.
+- **`docs/audits/00-plan.md`** — scope, methodology, success criteria.
+- **`docs/audits/01-layers.md`** — exhaustive ABI table for every Cell-derived class. 4 findings.
+- **`docs/audits/02-fast-paths.md`** — every fast-path gate inventoried. 6 findings.
+- **`docs/audits/03-gc-roots.md`** — every native function analyzed for GC discipline. 6 findings.
+- **`docs/audits/04-native-stubs.md`** — every native module compared with CPython spec. 6 findings.
 - **This summary** — 24 findings, prioritised remediation in 4 sprints.
 
 ## What this audit explicitly did NOT do
@@ -110,9 +110,9 @@ These are mostly mechanical, with templates already established this session:
 
 These are the natural next steps but are out of scope for the conceptual audit itself.
 
-## Lessons captured for `tasks/lessons.md`
+## Lessons captured
 
-Three architectural rules emerged. They should be added to `tasks/lessons.md` as durable guidance:
+Three architectural rules emerged. They should be adopted as durable guidance:
 
 ### Rule 1 — Layer discipline
 

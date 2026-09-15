@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # Configuration
-PROTOPY="/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/src/runtime/protopy"
-LOG="/mnt/c/Users/gamar/PycharmProjects/protoPython/tests/conformance_status.log"
-BASE_DIR="/mnt/c/Users/gamar/PycharmProjects/protoPython"
+BASE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+PROTOPY="$BASE_DIR/build_release/src/runtime/protopy"
+LOG="$BASE_DIR/tests/conformance_status.log"
 TIMEOUT="120" # 120 seconds per test
 
 # Test Groups
@@ -44,7 +44,7 @@ run_tests() {
         echo -n "[RUN] $test_file ... " | tee -a "$LOG"
         
         START_TIME=$(date +%s)
-        STDLIB_PATH="/mnt/c/Users/gamar/PycharmProjects/protoPython/lib/python3.14"
+        STDLIB_PATH="$BASE_DIR/lib/python3.14"
         PROTO_PYTHONPATH="$STDLIB_PATH" PROTO_ENV_DIAG=1 timeout "$TIMEOUT" "$PROTOPY" "$BASE_DIR/$test_file" > /tmp/test_out.log 2>&1
         RET=$?
         END_TIME=$(date +%s)

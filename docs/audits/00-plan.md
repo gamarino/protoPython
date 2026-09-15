@@ -23,7 +23,7 @@ The audit is **not** a rewrite. It produces:
 
 ## Methodology
 
-Each phase below produces a single Markdown document under `tasks/audit/` with a fixed structure:
+Each phase below produces a single Markdown document under `docs/audits/` with a fixed structure:
 
 1. **Inventory** — exhaustive list of the relevant sites (no sampling).
 2. **Per-site analysis** — for each: current state, observed risk, severity, fix sketch.
@@ -69,7 +69,7 @@ For each native module:
 - For each gap: what real-world callers does it break?
 
 ### P5 — Synthesis (`00-summary.md`)
-Cross-reference P1-P4. Group findings by root cause. Rank. Produce remediation roadmap. Update `tasks/lessons.md` with the architectural rules learned.
+Cross-reference P1-P4. Group findings by root cause. Rank. Produce remediation roadmap. Record the architectural rules learned as durable guidance.
 
 ## Success criteria
 

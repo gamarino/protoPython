@@ -8,7 +8,7 @@ This document catalogs stub implementations and their completion status.
 |-----------|------|--------|
 | **protoCore** | ProtoExternalBuffer (v60) | Implemented: 64-byte header, aligned_alloc segment; Shadow GC finalize frees segment. API: newExternalBuffer, getRawPointer, getSize, asObject, getHash. |
 | **protoCore** | GetRawPointer API (v61) | ProtoObject::getRawPointerIfExternalBuffer(context) returns segment pointer for ProtoExternalBuffer else nullptr; stable-address contract (no compaction). Swarm tests: ExternalBufferGC, GetRawPointerIfExternalBuffer pass; 1M concat / large rope disabled (v62). |
-| **protoCore** | Swarm hardening (v62) | DISABLED_OneMillionConcats, DISABLED_LargeRopeIndexAccess documented; lessons v58–v62 in tasks/lessons.md; block 1100-1200 V2 complete. |
+| **protoCore** | Swarm hardening (v62) | DISABLED_OneMillionConcats, DISABLED_LargeRopeIndexAccess documented; lessons v58–v62 recorded in internal notes; block 1100-1200 V2 complete. |
 | **set** | union, intersection, difference | Implemented |
 | **itertools** | accumulate | Full implementation (default add, optional binary func) |
 | **itertools** | groupby, product, combinations, combinations_with_replacement, permutations | Return empty iterator (no longer None) |
@@ -299,12 +299,12 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 
 - **HPy Phase 1 (v63 done)**: [HPyContext.h](include/protoPython/HPyContext.h), [HPyContext.cpp](src/library/HPyContext.cpp) — handle table (ref-counted), HPyContext, core ABI: HPy_FromPyObject, HPy_AsPyObject, HPy_Dup, HPy_Close, HPy_GetAttr, HPy_SetAttr, HPy_Call, HPy_Type. Design in [HPY_INTEGRATION_PLAN.md](HPY_INTEGRATION_PLAN.md).
 - **HPy implementation**: [NEXT_100_STEPS_HPY.md](NEXT_100_STEPS_HPY.md) — 100 steps (1185–1284), 5 blocks of 20; each block document and commit. v64–v67: module load, universal ABI, API coverage, ecosystem.
-- **Packaging**: Install layout and wheel design in [PACKAGING_ROADMAP.md](PACKAGING_ROADMAP.md).
+- **Packaging**: Install layout and wheel design in [archive/PACKAGING_ROADMAP.md](archive/PACKAGING_ROADMAP.md).
 
 ## Venv and drop-in replacement (v57)
 
-- **venv**: Stub retained; document `--path` and `PROTOPY_BIN` for using protoPython in a venv. See [PACKAGING_ROADMAP.md](PACKAGING_ROADMAP.md).
-- **Drop-in replacement**: `PROTOPY_BIN` recommended; alias/symlink limitations documented in PACKAGING_ROADMAP.
+- **venv**: Stub retained; document `--path` and `PROTOPY_BIN` for using protoPython in a venv. See [archive/PACKAGING_ROADMAP.md](archive/PACKAGING_ROADMAP.md).
+- **Drop-in replacement**: `PROTOPY_BIN` recommended; alias/symlink limitations documented in archive/PACKAGING_ROADMAP.md.
 
 ## Strings as ProtoTuple and inline (v58–v59)
 

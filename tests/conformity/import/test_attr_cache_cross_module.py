@@ -12,7 +12,7 @@
 # Any future re-attempt of the attribute-cache rework MUST keep this
 # test green.  It runs in <1 s on a clean build.
 #
-# See `tasks/perf_investigation_plan.md` (path #2) for the broader
+# See an internal performance investigation note (path #2) for the broader
 # context of what we are guarding here.
 
 import importlib.machinery

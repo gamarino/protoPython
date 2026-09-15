@@ -887,7 +887,7 @@ rationale.
 #### With `PROTOCORE_GC_REINCLUDE_SURVIVORS` — default ON since May 2026
 
 The protoCore survivor re-chain + per-context allocation-threshold
-submission (see [`protoCore/docs/superpowers/specs/2026-05-03-gc-survivor-rechain.md`](../protoCore/docs/superpowers/specs/2026-05-03-gc-survivor-rechain.md))
+submission (see [`protoCore/docs/archive/design-specs/2026-05-03-gc-survivor-rechain.md`](https://github.com/numaes/protoCore/blob/master/docs/archive/design-specs/2026-05-03-gc-survivor-rechain.md))
 is **enabled by default** in current builds.  Configure with
 `-DPROTOCORE_GC_REINCLUDE_SURVIVORS=OFF` to bisect against the previous
 behaviour (or to reproduce the historical numbers in the table above).
@@ -1293,8 +1293,6 @@ the recommended way to contribute to it.  Practical recipe:
 2. **Pick a target.**  The most actionable lists are:
    - `docs/CPYTHON_CONFORMANCE.md` — per-round semantic gaps with the
      specific subtest, the file it lives in, and the failure mode.
-   - `tasks/lessons.md` — operational guardrails learned the hard way;
-     a new contributor should skim this first.
    - `benchmarks/reports/2026-06-15-post-optimisation.md` — the latest
      per-benchmark wall-clock + RSS table; anything in the "slow under
      protopyc" tail (especially the `pyperf_binary_trees` / `nqueens`

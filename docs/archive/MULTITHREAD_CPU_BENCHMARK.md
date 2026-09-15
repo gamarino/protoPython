@@ -1,5 +1,7 @@
 # Multithreaded CPU Benchmark: protoPython vs CPython 3.14
 
+> **Historical document.** Dated record kept for reference; not maintained and may not match the current code. Current documentation: [docs/README.md](../README.md).
+
 This benchmark compares **wall-clock time** for a fixed amount of CPU-bound work when that work is expressed as a *multithreaded* task.
 
 ## What it measures (multithreading comparison)
@@ -45,7 +47,7 @@ Example:
 
 ## Script details
 
-- **Script:** [multithreaded_cpu.py](multithreaded_cpu.py)
+- **Script:** [multithreaded_cpu.py](../../benchmarks/multithreaded_cpu.py)
 - **Execution:** Both use `threading.Thread` when available. protoPython uses ProtoSpace threads (GIL-less); CPython uses OS threads (GIL serializes CPU-bound work).
 - **Workload:** 4 × `sum(range(50_000))`; identical total CPU work in both runs.
 
@@ -78,10 +80,10 @@ Example:
 
 **Result:** multithread_cpu ratio improves from ~70× to ~3.3× slower (e.g. 215 ms vs 65 ms CPython). Threads now run in parallel with much less contention.
 
-**Remaining work completed (protoPython):** Trace function and pending exception are thread-local (no mutex). Resolve cache is per-thread with lock-free invalidation (generation counter). See [REARCHITECTURE_PROTOCORE.md](../docs/REARCHITECTURE_PROTOCORE.md) §4.
+**Remaining work completed (protoPython):** Trace function and pending exception are thread-local (no mutex). Resolve cache is per-thread with lock-free invalidation (generation counter). See [REARCHITECTURE_PROTOCORE.md](../REARCHITECTURE_PROTOCORE.md) §4.
 
-**Worker context registration (protoPython):** Worker threads created via `_thread.start_new_thread` get a distinct `ProtoContext` but it was not registered with `PythonEnvironment`, so `PythonEnvironment::fromContext(worker_context)` returned `nullptr` for workers. In [ThreadModule.cpp](../src/library/ThreadModule.cpp), the main thread now passes the current `PythonEnvironment*` as the first bootstrap argument; in `thread_bootstrap` the worker registers its context with that env and unregisters on return. This ensures builtins and other code that call `fromContext(context)` work correctly on worker threads. No change to the public `_thread` API.
+**Worker context registration (protoPython):** Worker threads created via `_thread.start_new_thread` get a distinct `ProtoContext` but it was not registered with `PythonEnvironment`, so `PythonEnvironment::fromContext(worker_context)` returned `nullptr` for workers. In [ThreadModule.cpp](../../src/library/ThreadModule.cpp), the main thread now passes the current `PythonEnvironment*` as the first bootstrap argument; in `thread_bootstrap` the worker registers its context with that env and unregisters on return. This ensures builtins and other code that call `fromContext(context)` work correctly on worker threads. No change to the public `_thread` API.
 
 **Diagnostic (PROTO_ALLOC_DIAG=1):** `getFreeCells` logs total calls and `distinct_os_threads` at exit. If `distinct_os_threads` remains 1 despite multiple threads, only one OS thread is allocating (possible causes: workers not running bytecode, or execution serialized elsewhere). Further diagnosis can use `_thread.log_thread_ident` from each worker to confirm they run.
 
-**Remaining gap:** (a) shared allocator—`getFreeCells` still takes the lock when a thread exhausts its batch; (b) single-threaded interpreter throughput. To get protoPython *faster* than CPython on this workload, per-thread heaps (LocalHeap in protoCore) are needed (see [REARCHITECTURE_PROTOCORE.md](../docs/REARCHITECTURE_PROTOCORE.md)).
+**Remaining gap:** (a) shared allocator—`getFreeCells` still takes the lock when a thread exhausts its batch; (b) single-threaded interpreter throughput. To get protoPython *faster* than CPython on this workload, per-thread heaps (LocalHeap in protoCore) are needed (see [REARCHITECTURE_PROTOCORE.md](../REARCHITECTURE_PROTOCORE.md)).

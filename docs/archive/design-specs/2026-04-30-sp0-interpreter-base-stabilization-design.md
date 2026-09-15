@@ -248,7 +248,7 @@ A small "SP1 resume" commit reverts the probe library to v1, updates the SP1 spe
 | Fixes in `src/runtime/*.cpp`, `src/library/*.cpp`, `lib/python3.14/*.py` | Yes |
 | ≥4 commits (one per fixed bug; more if sub-bugs surface) | Yes |
 | New entry in `docs/CPYTHON_CONFORMANCE.md` (V155.0 — SP0 closure) | Yes |
-| `docs/superpowers/specs/2026-04-29-sp1-test-infra-audit-design.md` PAUSED → Active | Yes |
+| `docs/archive/design-specs/2026-04-29-sp1-test-infra-audit-design.md` PAUSED → Active | Yes |
 | Revert of `_probe_lib.py` from v2 (workaround) to v1 (idiomatic) | Yes |
 
 ## Risks and Mitigations

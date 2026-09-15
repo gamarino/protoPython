@@ -57,3 +57,6 @@ repro_output.txt
 /tests/run
 /tests/test_hasattr
 /tests/test_interning
+
+# Internal working notes (task lists, plans); not part of the repository
+/tasks/

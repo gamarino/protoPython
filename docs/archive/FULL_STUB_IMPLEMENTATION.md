@@ -1,6 +1,8 @@
 # Full Stub Implementation Status
 
-This document summarizes the phased implementation of stdlib stubs toward CPython-equivalent behavior. See [STUBS.md](STUBS.md) for the full catalog.
+> **Historical document.** Dated record kept for reference; not maintained and may not match the current code. Current documentation: [docs/README.md](../README.md).
+
+This document summarizes the phased implementation of stdlib stubs toward CPython-equivalent behavior. See [STUBS.md](../STUBS.md) for the full catalog.
 
 ## Phase 0: Shared Infrastructure (C++)
 
@@ -35,7 +37,7 @@ This document summarizes the phased implementation of stdlib stubs toward CPytho
 
 ## References
 
-- [STUBS.md](STUBS.md) — Stub catalog and status.
+- [STUBS.md](../STUBS.md) — Stub catalog and status.
 - [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — Roadmap and standard library note.
 
 ## Known Limitations and Performance

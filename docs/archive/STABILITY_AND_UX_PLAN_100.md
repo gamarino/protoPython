@@ -1,5 +1,7 @@
 # Stability and UX Implementation Plan (Next 100 Steps)
 
+> **Historical document.** Dated record kept for reference; not maintained and may not match the current code. Current documentation: [docs/README.md](../README.md).
+
 This plan covers the next 100 steps (v73–v77) focused on reaching a stable, feature-complete state for the `protoPython` language and REPL.
 
 ## Batch 1: Core Integrity & Frame Awareness (Steps 1385–1404)

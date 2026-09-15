@@ -286,7 +286,7 @@ Each file follows the pattern of the existing `tests/test_generators_synthetic.p
 ### 9.5 Not versioned
 
 - `tests/test_grammar_result.txt` (overwritten between runs)
-- `docs/superpowers/specs/2026-04-25-test-grammar-coverage-design.md` (this file — versioned, but written once at design time)
+- `docs/archive/design-specs/2026-04-25-test-grammar-coverage-design.md` (this file — versioned, but written once at design time)
 
 ---
 

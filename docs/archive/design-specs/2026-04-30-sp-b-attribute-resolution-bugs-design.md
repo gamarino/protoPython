@@ -21,7 +21,7 @@ SP-B is fully closed.  SP-C, SP-D, SP-E, SP-F, and SP-G are closed.
 
 ## Goal
 
-Eliminate the five attribute-resolution-symptom crashes catalogued in `docs/superpowers/specs/2026-04-30-protopy-ground-truth-audit.md` (Cluster 2). After SP-B closes, the affected tests no longer fail at attribute-protocol level; they may still fail for cluster-1 reasons (stdlib import completeness), which is in scope for a separate SP-A.
+Eliminate the five attribute-resolution-symptom crashes catalogued in `docs/archive/design-specs/2026-04-30-protopy-ground-truth-audit.md` (Cluster 2). After SP-B closes, the affected tests no longer fail at attribute-protocol level; they may still fail for cluster-1 reasons (stdlib import completeness), which is in scope for a separate SP-A.
 
 ## Non-goals
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-gdb -batch -ex run -ex "thread apply all bt full" -ex quit --args ./cmake-build-asan/src/runtime/protopy "$@" > gdb_trace.txt 2>&1 &
+gdb -batch -ex run -ex "thread apply all bt full" -ex quit --args ./build_release/src/runtime/protopy "$@" > gdb_trace.txt 2>&1 &
 GDB_PID=$!
 sleep 3
 PROTOPY_PID=$(pgrep -x protopy)

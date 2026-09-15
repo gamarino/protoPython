@@ -1,6 +1,6 @@
 # C Modules to Replace for protoPython StdLib
 
-This document lists Python standard library modules traditionally implemented in C (or with C accelerators) that protoPython aims to replace with GIL-less C++ implementations. See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) and [PROTOPY_SCOPE.md](PROTOPY_SCOPE.md).
+This document lists Python standard library modules traditionally implemented in C (or with C accelerators) that protoPython aims to replace with GIL-less C++ implementations. See [archive/IMPLEMENTATION_PLAN.md](archive/IMPLEMENTATION_PLAN.md) and [PROTOPY_SCOPE.md](PROTOPY_SCOPE.md).
 
 ## Priority for early regrtest
 
@@ -36,5 +36,5 @@ This document lists Python standard library modules traditionally implemented in
 
 ## References
 
-- [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — Section 2 Standard Library Integration
+- [archive/IMPLEMENTATION_PLAN.md](archive/IMPLEMENTATION_PLAN.md) — Section 2 Standard Library Integration
 - [PROTOPY_SCOPE.md](PROTOPY_SCOPE.md) — Runtime and execution scope

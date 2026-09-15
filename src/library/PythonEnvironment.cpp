@@ -21938,11 +21938,11 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // including all four insort/bisect functions plus key= support, gated
     // by `try: from _bisect import * except ImportError: pass`. Without
     // this registration the import fails and the Python impls win.
-    // See audit/04-native-stubs.md F4.2.
+    // See docs/audits/04-native-stubs.md F4.2.
     // registerNativeModule(nativeProviderPtr, "_bisect", [](proto::ProtoContext* c) { return bisect::initialize(c); });
     // _heapq native module disabled: HeapqModule's heappush/heappop are
-    // broken (don't actually mutate the user's list — see audit
-    // 04-native-stubs.md F4.2) and 6 of 8 functions are missing.
+    // broken (don't actually mutate the user's list — see
+    // docs/audits/04-native-stubs.md F4.2) and 6 of 8 functions are missing.
     // lib/python3.14/heapq.py has the full pure-Python implementation
     // and protects the C delegation behind `try: from _heapq import *
     // except ImportError: pass`. Without this registration the import

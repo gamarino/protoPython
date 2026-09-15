@@ -64,6 +64,6 @@ HPy is implemented in 5 blocks of 20 steps (1185–1284). Each block is document
 ## References
 
 - [HPy Documentation](https://docs.hpyproject.org/)
-- [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — Section 2 HPy Support
+- [archive/IMPLEMENTATION_PLAN.md](archive/IMPLEMENTATION_PLAN.md) — Section 2 HPy Support
 - [NEXT_100_STEPS_HPY.md](NEXT_100_STEPS_HPY.md) — 100-step implementation plan
 - [C_MODULES_TO_REPLACE.md](C_MODULES_TO_REPLACE.md)

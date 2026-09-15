@@ -136,4 +136,4 @@ For every native function you write or modify, answer:
 - `py_str_join`, `py_reduce` (functools), `py_filter_next`, `py_map_next`, `py_mutable_mapping_update`, `py_mapping_keys`/`items`, deque init: pin their derived iterators.
 - `OP_LIST_EXTEND`, `OP_UNPACK_SEQUENCE`, `OP_UNPACK_EX`: pin their internal iterators.
 
-When adding a new native trampoline that iterates or callbacks, follow the same pattern. Audit `tasks/audit/03-gc-roots.md` lists every site we know about; add yours there if you discover a new one.
+When adding a new native trampoline that iterates or callbacks, follow the same pattern. Audit `docs/audits/03-gc-roots.md` lists every site we know about; add yours there if you discover a new one.

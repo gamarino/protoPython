@@ -1,5 +1,7 @@
 # Packaging and Distribution Roadmap
 
+> **Historical document.** Dated record kept for reference; not maintained and may not match the current code. Current documentation: [docs/README.md](../README.md).
+
 This document outlines the path to distributing protoPython via standard Python packaging and installation channels.
 
 ## Goals
@@ -66,4 +68,4 @@ Proposed wheel contents:
 ## References
 
 - [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — Section 7 Installation & Distribution
-- [PROTOPY_SCOPE.md](PROTOPY_SCOPE.md) — Runtime and execution scope
+- [PROTOPY_SCOPE.md](../PROTOPY_SCOPE.md) — Runtime and execution scope
