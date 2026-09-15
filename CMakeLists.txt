@@ -46,6 +46,10 @@ include_directories(include)
 # Version header generated from project(); included (not installed) by the
 # library and protopy for the REPL banner, help(), --help and sys.version.
 set(PROTOPYTHON_GENERATED_INCLUDE_DIR "${PROJECT_BINARY_DIR}/generated")
+# Build date for sys.version ("Mon DD YYYY", as CPython's), taken when CMake
+# configures the build. string(TIMESTAMP) uses SOURCE_DATE_EPOCH when it is
+# set, so reproducible builds get a fixed date.
+string(TIMESTAMP PROTOPYTHON_BUILD_DATE "%b %d %Y" UTC)
 configure_file(src/Version.h.in "${PROTOPYTHON_GENERATED_INCLUDE_DIR}/protoPython/Version.h" @ONLY)
 
 # Subdirectories
@@ -337,6 +341,14 @@ set_tests_properties(protopy_deque_count PROPERTIES
 add_test(NAME protopy_platform_implementation
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/platform_implementation.py)
 set_tests_properties(protopy_platform_implementation PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
+# sys.version carries the build date generated at configure time.
+add_test(NAME protopy_sys_version_build_date
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/sys_version_build_date.py
+            "${PROTOPYTHON_BUILD_DATE}")
+set_tests_properties(protopy_sys_version_build_date PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")

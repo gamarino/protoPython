@@ -5,4 +5,8 @@
 // The single source of the version is project() in the top-level CMakeLists.txt.
 #define PROTOPYTHON_VERSION "@PROJECT_VERSION@"
 
+// Build date ("Mon DD YYYY") for sys.version; set at CMake configure time
+// from SOURCE_DATE_EPOCH when defined, otherwise from the current date.
+#define PROTOPYTHON_BUILD_DATE "@PROTOPYTHON_BUILD_DATE@"
+
 #endif // PROTOPYTHON_VERSION_H

@@ -329,6 +329,10 @@ onwards. Commit hashes are given for reference.
   `sys.implementation.name` is `'protopython'`. `platform` recognises
   protoPython's `sys.version` and returns `'protoPython'`; the version,
   build and compiler fields are parsed as before.
+- **sys.version build date:** the date in `sys.version` was the fixed text
+  `Apr 2026`. CMake now generates the build date into `Version.h` when it
+  configures the build (`Sep 15 2026`, CPython's format); it uses
+  `SOURCE_DATE_EPOCH` when set, so builds can be reproducible.
 
 ### Performance
 
