@@ -1,6 +1,6 @@
 /**
- * protopy - Minimal Python runtime entrypoint.
- * Creates PythonEnvironment and resolves a module or script path (execution stubbed).
+ * protopy - Python runtime entrypoint.
+ * Creates a PythonEnvironment and executes a module, a script, a -c command or the REPL.
  */
 
 #include <protoPython/PythonEnvironment.h>
@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 #include <unistd.h>
@@ -113,7 +114,7 @@ static bool moduleExists(const std::string& moduleName,
 }
 
 static void printUsage(const char* prog) {
-    std::cout << "protopy 0.1.0 - minimal runtime (execution stubbed)\n"
+    std::cout << "protopy 1.0.0 - protoPython runtime\n"
                  "Usage:\n"
                  "  " << prog << " [-m <name> | --module <name>] [-p <path> | --path <path>]...\n"
                  "  " << prog << " [-c <cmd>] [-p <path> | --path <path>]...\n"
@@ -126,7 +127,7 @@ static void printUsage(const char* prog) {
                  "  --stdlib <path>   Override stdlib location (defaults to build-time path)\n"
                  "  --dry-run         Validate inputs but skip environment initialization\n"
                  "  --bytecode-only   Stub: validate bytecode loading path (no execution)\n"
-                 "  --trace           Enable tracing (stub)\n"
+                 "  --trace           Print module enter/leave events to stderr\n"
                  "  --repl, -i        Interactive REPL\n"
                  "  --help, -h        Show this help message\n";
 }
@@ -406,8 +407,13 @@ int main(int argc, char* argv[]) {
         if (ret == -2) {
             const proto::ProtoObject* exc = env.takePendingException();
             if (exc && exc != PROTO_NONE) {
-                std::cerr << "protopy: unhandled exception in -c execution:\n";
-                env.handleException(exc, nullptr, std::cerr);
+                // SystemExit writes nothing here and sets the exit status,
+                // as in script execution (PythonEnvironment::executeModule).
+                std::ostringstream excOut;
+                env.handleException(exc, nullptr, excOut);
+                if (excOut.str().empty())
+                    return env.getExitRequested();
+                std::cerr << "protopy: unhandled exception in -c execution:\n" << excOut.str();
             }
             return EXIT_RUNTIME;
         }

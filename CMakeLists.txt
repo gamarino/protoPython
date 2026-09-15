@@ -289,6 +289,23 @@ foreach(exit_case IN ITEMS raise_int:3 raise_from_main:5 sys_exit_int:4 raise_st
         TIMEOUT 120
         LABELS "regression_gate")
 endforeach()
+# The same exit status rules apply to `protopy -c`; any other uncaught
+# exception still exits with 70.
+function(add_system_exit_c_test case_name expected_status source)
+    add_test(NAME protopy_system_exit_c_${case_name}
+        COMMAND ${CMAKE_SOURCE_DIR}/test/regression/assert_exit.sh ${expected_status}
+                $<TARGET_FILE:protopy> -c ${source})
+    set_tests_properties(protopy_system_exit_c_${case_name} PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        TIMEOUT 120
+        LABELS "regression_gate")
+endfunction()
+add_system_exit_c_test(raise_int 3 "raise SystemExit(3)")
+add_system_exit_c_test(sys_exit_int 4 "__import__('sys').exit(4)")
+add_system_exit_c_test(raise_bare 0 "raise SystemExit")
+add_system_exit_c_test(sys_exit_str 1 "__import__('sys').exit('bye')")
+add_system_exit_c_test(no_exception 0 "print(1)")
+add_system_exit_c_test(other_exception 70 "raise ValueError('x')")
 # Class statements accept *bases and **keywords.
 add_test(NAME protopy_class_star_bases
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/class_star_bases.py)
