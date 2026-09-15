@@ -124,6 +124,6 @@ Full suite (protoCore + protoPython): `ctest` from the build directory (71 tests
 
 ## 8. References
 
-- [GIL_FREE_AUDIT.md](GIL_FREE_AUDIT.md) — Current concurrency and locking in protoPython.
-- [MODULE_DISCOVERY.md](../../protoCore/docs/MODULE_DISCOVERY.md) — Module cache and thread safety.
+- [L_SHAPE_ARCHITECTURE.md](L_SHAPE_ARCHITECTURE.md) — Lock-free mandate and remaining synchronization in protoPython.
+- [MODULE_DISCOVERY.md](https://github.com/numaes/protoCore/blob/master/docs/MODULE_DISCOVERY.md) (protoCore) — Module cache and thread safety.
 - protoCore `ProtoSpace`, `ProtoThread`, `ProtoContext` — Current allocation and threading model.

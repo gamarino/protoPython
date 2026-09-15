@@ -56,11 +56,12 @@ This document consolidates the main architectural decisions for onboarding new c
 
 ## HPy for C Extensions
 
-**Decision:** Use [HPy](https://hpyproject.org/) for C extension modules instead of the CPython C API. HPy is portable and avoids GIL assumptions; extensions load via `HPyModuleProvider` and run without a global lock.
+**Decision:** Use an [HPy](https://hpyproject.org/)-style handle API for native extension modules instead of the CPython C API. protoPython implements a C++ subset of that API (`include/protoPython/HPyContext.h`) and a loader, `HPyModuleProvider`; the loader is not yet registered in module resolution (see [HPY_USER_GUIDE.md](HPY_USER_GUIDE.md)).
 
-**Rationale:** CPython's C API exposes refcounting and GIL. HPy provides handles, type/attr/call operations, and number/sequence protocols in a GIL-agnostic way. Enables ecosystem compatibility without compromising the GIL-less runtime.
+**Rationale:** CPython's C API exposes reference counting and assumes a GIL. HPy provides handles, type/attribute/call operations, and number/sequence protocols without those assumptions, so extensions can fit the GIL-less runtime.
 
 **Reference:** [HPY_INTEGRATION_PLAN.md](HPY_INTEGRATION_PLAN.md)
+
 ---
 
 ## Type Representations and Metadata
@@ -69,4 +70,4 @@ This document consolidates the main architectural decisions for onboarding new c
 
 **Rationale:** Improves REPL UX and diagnostic clarity. `co_name` allows generators and functions to report their actual names in tracebacks and `repr()`. Standardizing dunder lookups ensures consistency across builtin and user-defined types.
 
-**Reference:** [architecture/core_object_model.md](architecture/core_object_model.md)
+**Reference:** [INTERNALS_DEEP_DIVE.md](INTERNALS_DEEP_DIVE.md#5-metadata-and-prototyping)

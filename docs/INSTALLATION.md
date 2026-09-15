@@ -1,129 +1,133 @@
 # Installing protoPython
 
-This guide describes how to build and install `protoPython` from source on Linux, macOS, and Windows.
+This guide describes how to build protoPython from source, run it from the build tree
+and install it.
+
+## Platform support
+
+protoPython is developed and tested on Linux. The build requires a POSIX system: the
+runtime uses POSIX interfaces such as `unistd.h` and `dlopen`, and the CMake files add
+GCC/Clang compiler options (`-fno-delete-null-pointer-checks`,
+`-ftls-model=initial-exec`). Windows and MSVC are not supported. The sources and CMake
+files contain macOS-specific branches (executable path lookup, `@loader_path` RPATH),
+but macOS is not a tested platform.
 
 ## Prerequisites
 
-- **protoCore** — Required. You can either build protoCore as a sibling directory (development) or use a previously installed protoCore (packaging). See [protoCore](https://github.com/numaes/protoCore).
-- **CMake** (3.20 or higher)
-- **C++ Compiler** with C++20 support (GCC 11+, Clang 13+, or MSVC 2022+)
-- **Git**
+- **protoCore** ([github.com/numaes/protoCore](https://github.com/numaes/protoCore)):
+  either checked out next to protoPython as `../protoCore` (built together with
+  protoPython) or already installed (see [Using an installed protoCore](#using-an-installed-protocore)).
+- **CMake** 3.20 or newer.
+- **A C++20 compiler**: GCC or Clang.
+- **Git**.
+- **Python 3** (optional): some tests are registered only when CMake finds a Python 3
+  interpreter.
 
-## Building from Source
+## Building from source
 
-### 1. Clone the repository and protoCore (for development)
-
-For development, protoCore is often placed next to protoPython so CMake can build it via `add_subdirectory(../protoCore)`:
+### 1. Clone protoPython and protoCore side by side
 
 ```bash
-git clone https://github.com/numaes/protoPython.git
+git clone https://github.com/numaes/protoCore.git
+git clone https://github.com/gamarino/protoPython.git
 cd protoPython
-git clone https://github.com/numaes/protoCore.git ../protoCore
-# Optionally build protoCore first (protoPython will build it if missing):
-# cmake -B ../protoCore/build -S ../protoCore
-# cmake --build ../protoCore/build --target protoCore
 ```
 
-**Using an installed protoCore (packaging / product shipping):**  
-Set `PROTO_CORE_PREFIX` to the install prefix where protoCore is installed (e.g. `/usr/local` or `$HOME/.local`). CMake will use that library and headers and will not build protoCore from source.
+### 2. Configure and build
 
 ```bash
-cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DPROTO_CORE_PREFIX=/usr/local
+cmake -S . -B build_release -DCMAKE_BUILD_TYPE=Release
+cmake --build build_release
 ```
 
-When `PROTO_CORE_PREFIX` is set, only protoPython is built; protoCore must be installed separately. The protoCore installation must include all headers that protoPython expects (e.g. `protoCore.h` and, if used by your protoCore build, `proto_internal.h`).
+When `PROTO_CORE_PREFIX` is not set, CMake adds `../protoCore` as a subdirectory and
+builds it into `build_release/protoCore` as part of this build; no separate protoCore
+build is needed.
 
-### 2. Configure the build
-
-Use CMake to generate the build files. It is recommended to use a separate build directory.
+### 3. Run the tests
 
 ```bash
-cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+ctest --test-dir build_release --output-on-failure
 ```
 
-#### Installation prefix (where files go)
+On 2026-09-15 the suite has 318 tests.
 
-By default, `make install` (or `cmake --build build --target install`) installs under **`/usr/local`**: executables in `bin/`, libraries in `lib/`, headers in `include/`. That is the traditional Unix location for locally built software.
+### Using an installed protoCore
 
-To install elsewhere, set `CMAKE_INSTALL_PREFIX` at configure time:
+Set `PROTO_CORE_PREFIX` to the prefix where protoCore is installed. CMake then looks
+for `libprotoCore` under `lib` or `lib64` and for `protoCore.h` under `include` in that
+prefix, uses them, and does not build protoCore from source. Configuration fails if
+either is missing.
 
 ```bash
-# System-wide (default; often requires sudo for install)
-cmake -B build -S . -DCMAKE_INSTALL_PREFIX=/usr/local
-
-# User-local (no sudo; FHS-style under your home directory)
-cmake -B build -S . -DCMAKE_INSTALL_PREFIX=$HOME/.local
-
-# Install into the build tree (development; no system directories)
-cmake -B build -S . -DCMAKE_INSTALL_PREFIX="$(pwd)/build/install"
+cmake -S . -B build_release -DCMAKE_BUILD_TYPE=Release -DPROTO_CORE_PREFIX=/usr/local
 ```
-
-See [Where to install: executables, headers, libraries](#where-to-install-executables-headers-libraries) below for standard layout and packaging.
-
-### 3. Build and Install
-
-```bash
-cmake --build build
-# Install (writes to CMAKE_INSTALL_PREFIX; optional for development)
-cmake --build build --target install
-```
-
-Install places:
-- **Executables** → `{prefix}/bin/` (e.g. `protopy`, `protopyc`)
-- **Libraries** → `{prefix}/lib/` (e.g. `libprotoPython.so`, and protoCore if built with protoPython)
-- **Headers** → `{prefix}/include/`
-- **Standard library** → `{prefix}/lib/protoPython/python3.14/`
 
 ## Running from the build tree
 
-If you do **not** run `install`, you can run the interpreter from the build directory. The binaries are under `build/src/runtime/protopy` and `build/src/compiler/protopyc`.
-
-When protoCore is built in-tree (default), **RPATH is set** so these executables find `libprotoCore` and `libprotoPython` without setting `LD_LIBRARY_PATH` or `DYLD_LIBRARY_PATH`. Just run:
+The executables are `build_release/src/runtime/protopy` and
+`build_release/src/compiler/protopyc`. When protoCore is built in-tree, the build RPATH
+includes `build_release/src/library` and `build_release/protoCore`, so the executables
+find `libprotoPython` and `libprotoCore` without `LD_LIBRARY_PATH`:
 
 ```bash
-./build/src/runtime/protopy example.py
+./build_release/src/runtime/protopy example.py
 ```
 
-If you use a custom layout or an older build and the loader cannot find the libraries, set the library path manually:
+From the build tree, protopy finds the repository's `lib/python3.14` standard library
+by searching the parent directories of the executable. If the loader cannot find a
+library (for example with a protoCore installed in a non-standard prefix), add its
+directory to `LD_LIBRARY_PATH`.
 
-**Linux:** `export LD_LIBRARY_PATH="$(pwd)/build/src/library:$(pwd)/build/protoCore:$LD_LIBRARY_PATH"`  
-**macOS:** `export DYLD_LIBRARY_PATH="$(pwd)/build/protoCore:$(pwd)/build/src/library:$DYLD_LIBRARY_PATH"`
+## Installing
 
-## Where to install: executables, headers, libraries
-
-Standard practice follows the **Filesystem Hierarchy Standard (FHS)** and CMake’s `GNUInstallDirs`:
-
-| Content     | Typical path under prefix   | Purpose |
-|------------|-----------------------------|--------|
-| Executables| `bin/`                      | User-facing programs (`protopy`, `protopyc`) |
-| Libraries  | `lib/` (or `lib64/` on some distros) | Shared/static libs (`libprotoPython`, `libprotoCore`) |
-| Headers    | `include/`                  | For compiling C++ code that uses protoPython/protoCore |
-
-- **Default prefix `/usr/local`**: Common for “install from source” on a single machine. System packagers (Debian, Homebrew, etc.) usually use their own prefix (e.g. `/usr`, or a Cellar path) and handle `bin`, `lib`, and `include` under that.
-- **User install (no root)**: Use a prefix inside your home directory, e.g. `$HOME/.local` (Linux) or `$HOME/local`. Then add `$HOME/.local/bin` to `PATH` and, if needed, `$HOME/.local/lib` to `LD_LIBRARY_PATH` (Linux) or `DYLD_LIBRARY_PATH` (macOS).
-- **Packaging**: For distro packages or “real product shipping”, install protoCore as its own package, then configure protoPython with `-DPROTO_CORE_PREFIX=<prefix>`. Install only protoPython’s executables, library, headers, and stdlib under the chosen prefix.
-
-So: **the right way** is prefix-based and FHS-style under that prefix; the exact prefix is up to you (system `/usr/local`, user `$HOME/.local`, or a custom path). Avoid installing into system directories by default if your goal is a non-root or development install; use `-DCMAKE_INSTALL_PREFIX` accordingly.
-
-## Post-Installation
-
-The `protopy` executable finds its standard library relative to its own location. **Installed binaries and libraries use RPATH**, so you do not need to set `LD_LIBRARY_PATH` or `DYLD_LIBRARY_PATH` for normal use. After install, ensure the prefix `bin` directory is in your `PATH`:
+The install prefix defaults to CMake's `CMAKE_INSTALL_PREFIX` (`/usr/local` on Linux).
+Set it at configure time to install elsewhere:
 
 ```bash
-# If you used the default /usr/local
-export PATH=/usr/local/bin:$PATH
+# User-local install (no root privileges needed)
+cmake -S . -B build_release -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$HOME/.local
+cmake --build build_release
+cmake --install build_release
+```
 
-# If you used $HOME/.local
+The install rules place, under the prefix (`<libdir>` is CMake's
+`CMAKE_INSTALL_LIBDIR`, usually `lib` or `lib64`):
+
+| Content | Location |
+|---------|----------|
+| `protopy`, `protopyc` | `bin/` |
+| `libprotoPython` | `<libdir>/` |
+| protoPython headers | `include/protoPython/` |
+| Standard library | `<libdir>/protoPython/python3.14/` |
+
+When protoCore is built in-tree, protoCore's own install rules also install its
+library. Installed executables use the RPATH `$ORIGIN/../<libdir>` and
+`libprotoPython` uses `$ORIGIN`, so `LD_LIBRARY_PATH` is not needed. Add the prefix's
+`bin` directory to `PATH`:
+
+```bash
 export PATH=$HOME/.local/bin:$PATH
 ```
 
-### Windows
+### Standard library location after installation
 
-The installation layout on Windows follows standard conventions, with the `protoPython` DLL and `protopy.exe` in the same directory.
+By default protopy is compiled with the relative standard library path
+`../<libdir>/python3.14`, which does not match the installed location
+`<libdir>/protoPython/python3.14`; an installed protopy then fails to import
+standard library modules. Either configure the build with the installed path:
 
-## Next Steps
+```bash
+cmake -S . -B build_release -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=$HOME/.local \
+  -DSTDLIB_INSTALL_PATH=$HOME/.local/lib/protoPython/python3.14
+```
 
-Once installed, we recommend exploring:
-- [**User Guide**](USER_GUIDE.md) — Learn how to use the `protopy` CLI.
-- [**Examples**](../examples/) — Explore illustrative scripts and embedding samples.
-- [**C++ API Reference**](CPP_API_REFERENCE.md) — Integrate ProtoPython into your host application.
+(replace `lib` with your `<libdir>` if it differs), or pass the directory at run time
+with `protopy --stdlib <prefix>/<libdir>/protoPython/python3.14`.
+
+## Next steps
+
+- [User Guide](USER_GUIDE.md): the `protopy` command line.
+- [Examples](../examples/): example scripts.
+- [C++ API Reference](CPP_API_REFERENCE.md): embedding protoPython in a C++ program.

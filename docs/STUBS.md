@@ -2,6 +2,11 @@
 
 This document catalogs stub implementations and their completion status.
 
+> **Note (2026-09-15):** this catalogue was kept during early development; the `vNN`
+> labels are internal iteration numbers of that period. It is not kept current, and
+> entries may not match the code. Current divergences from CPython are listed in
+> [CPYTHON_CONFORMANCE.md](CPYTHON_CONFORMANCE.md#known-divergences-pending).
+
 ## Native (C++) Stubs — Completed
 
 | Component | Item | Status |
@@ -297,8 +302,8 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 
 ## HPy and packaging (v55, Next 100 Steps v63–v67)
 
-- **HPy Phase 1 (v63 done)**: [HPyContext.h](include/protoPython/HPyContext.h), [HPyContext.cpp](src/library/HPyContext.cpp) — handle table (ref-counted), HPyContext, core ABI: HPy_FromPyObject, HPy_AsPyObject, HPy_Dup, HPy_Close, HPy_GetAttr, HPy_SetAttr, HPy_Call, HPy_Type. Design in [HPY_INTEGRATION_PLAN.md](HPY_INTEGRATION_PLAN.md).
-- **HPy implementation**: [NEXT_100_STEPS_HPY.md](NEXT_100_STEPS_HPY.md) — 100 steps (1185–1284), 5 blocks of 20; each block document and commit. v64–v67: module load, universal ABI, API coverage, ecosystem.
+- **HPy Phase 1 (v63 done)**: [HPyContext.h](../include/protoPython/HPyContext.h), [HPyContext.cpp](../src/library/HPyContext.cpp) — handle table (ref-counted), HPyContext, core ABI: HPy_FromPyObject, HPy_AsPyObject, HPy_Dup, HPy_Close, HPy_GetAttr, HPy_SetAttr, HPy_Call, HPy_Type. Design in [HPY_INTEGRATION_PLAN.md](HPY_INTEGRATION_PLAN.md).
+- **HPy implementation**: a 100-step plan (steps 1185–1284, 5 blocks of 20; not part of the repository). v64–v67: module load, universal ABI, API coverage, ecosystem.
 - **Packaging**: Install layout and wheel design in [archive/PACKAGING_ROADMAP.md](archive/PACKAGING_ROADMAP.md).
 
 ## Venv and drop-in replacement (v57)
@@ -308,7 +313,7 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 
 ## Strings as ProtoTuple and inline (v58–v59)
 
-- **protoCore**: ProtoString implemented as ProtoTuple only (concat = tuple of 2 strings, leaf = tuple of chars). Inline string: up to 7 UTF-32 code units in tagged pointer (EMBEDDED_TYPE_INLINE_STRING); zero cell allocation for short strings. O(1) concatenation via `tupleConcat`. Indexing: getAt traverses tuple tree by length (O(depth) then O(1) at leaf). Iterator O(1) amortized per character. See [protoCore/docs/ROPES_AS_PROTOTUPLE.md](../../protoCore/docs/ROPES_AS_PROTOTUPLE.md) and [STRING_SUPPORT.md](STRING_SUPPORT.md).
+- **protoCore**: ProtoString implemented as ProtoTuple only (concat = tuple of 2 strings, leaf = tuple of chars). Inline string: up to 7 UTF-32 code units in tagged pointer (EMBEDDED_TYPE_INLINE_STRING); zero cell allocation for short strings. O(1) concatenation via `tupleConcat`. Indexing: getAt traverses tuple tree by length (O(depth) then O(1) at leaf). Iterator O(1) amortized per character. See protoCore's [docs/ROPES_AS_PROTOTUPLE.md](https://github.com/numaes/protoCore/blob/master/docs/ROPES_AS_PROTOTUPLE.md).
 
 ## Foundation tests (v48–v55)
 

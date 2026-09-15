@@ -2,6 +2,13 @@
 
 This document outlines the scope and approach for integrating [HPy](https://hpyproject.org/) (a portable API for Python C extensions) with protoPython.
 
+> **Status (2026-09-15):** this is the original plan. The handle table and a C++ subset
+> of the API exist (`include/protoPython/HPyContext.h`, `src/library/HPyContext.cpp`),
+> and a module loader (`HPyModuleProvider`) is implemented but not registered in module
+> resolution, so extension modules cannot be imported yet. The API is not binary
+> compatible with the HPy universal ABI. See [HPY_DEVELOPER_GUIDE.md](HPY_DEVELOPER_GUIDE.md)
+> and [HPY_USER_GUIDE.md](HPY_USER_GUIDE.md).
+
 ## Goal
 
 Allow HPy-compiled extension modules (`.so` / `.hpy.so`) to load and run under protoPython, so that the ecosystem of HPy extensions can be used without a GIL.
@@ -59,11 +66,10 @@ Allow HPy-compiled extension modules (`.so` / `.hpy.so`) to load and run under p
 
 ## Implementation: Next 100 Steps
 
-HPy is implemented in 5 blocks of 20 steps (1185–1284). Each block is documented and committed separately. See [NEXT_100_STEPS_HPY.md](NEXT_100_STEPS_HPY.md). v63 (1185–1204): Phase 1 foundation (context, handle table, core ABI). v64–v67: Phase 1 completion, universal ABI, API coverage, ecosystem.
+HPy was planned in 5 blocks of 20 steps (1185–1284); the step plan is not part of the repository. v63 (1185–1204): Phase 1 foundation (context, handle table, core ABI). v64–v67: Phase 1 completion, universal ABI, API coverage, ecosystem.
 
 ## References
 
 - [HPy Documentation](https://docs.hpyproject.org/)
 - [archive/IMPLEMENTATION_PLAN.md](archive/IMPLEMENTATION_PLAN.md) — Section 2 HPy Support
-- [NEXT_100_STEPS_HPY.md](NEXT_100_STEPS_HPY.md) — 100-step implementation plan
 - [C_MODULES_TO_REPLACE.md](C_MODULES_TO_REPLACE.md)

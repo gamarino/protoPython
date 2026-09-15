@@ -1,54 +1,44 @@
-# HPy User Guide: Module Loading in protoPython
+# Loading HPy-Style Extension Modules
 
-This guide explains how to load and use HPy extension modules in `protoPython`.
+> **Status (2026-09-15).** `HPyModuleProvider` is implemented and compiled into
+> libprotoPython, but `PythonEnvironment` does not register it in the module resolution
+> chain. `import` therefore does not load extension modules through it at present. This
+> page describes the loader as implemented. The extension API itself is described in
+> [HPY_DEVELOPER_GUIDE.md](HPY_DEVELOPER_GUIDE.md).
 
-## Module Loading Flow
+## Module resolution today
 
-When you execute `import my_module`, `protoPython` follows this resolution sequence:
+`PythonEnvironment` registers three module providers with protoCore's provider
+registry:
 
-1.  **Built-in Modules**: Checks if it's a hardcoded native module.
-2.  **HPy Extensions**: Searches for `my_module.hpy.so` or `my_module.so` in the search paths.
-3.  **Python Modules**: Searches for `my_module.py`.
+- `NativeModuleProvider`: modules implemented in C++ in `src/library/`;
+- `PythonModuleProvider`: `.py` source modules;
+- `CompiledModuleProvider`: shared libraries produced by `protopyc`, which export
+  `proto_module_init` (see [PROTOPYC_SPECIFICATION.md](PROTOPYC_SPECIFICATION.md)).
 
-## Configuring Search Paths
+The directories they search come from the command line and the environment; see
+[USER_GUIDE.md](USER_GUIDE.md#module-search-path).
 
-`protoPython` searches for modules in the directories specified during initialization.
+## What `HPyModuleProvider` does
 
-### From CLI
+For a module name, `HPyModuleProvider` (`src/library/HPyModuleProvider.cpp`):
 
-Search paths come from `--path`, `--stdlib`, and `sys.path`. Use `--path` to add directories:
+1. replaces dots in the name with `/` and, in each search directory, looks for
+   `<name>.hpy.so` and then `<name>.so`;
+2. opens the file with `dlopen(path, RTLD_NOW | RTLD_GLOBAL)`;
+3. looks up the symbol `HPyInit_<name>` with `dlsym`, where `<name>` is the last
+   component of a dotted module name;
+4. calls it with a temporary `HPyContext` created for the current `ProtoContext`;
+5. sets `__file__`, `__name__` and `__loader__` on the returned module object.
 
-```bash
-./protopy --path ./extensions my_script.py
-```
+If any step fails the provider returns no module and prints no diagnostics. The
+`PROTO_HPY_DEBUG` variable does not change this: it is compiled out of Release builds,
+and even in diagnostic builds the loader emits no messages.
 
-### From Python (sys.path)
+## Troubleshooting a module that fails to load
 
-You can append paths to `sys.path` (if the `sys` module is fully integrated) or ensure they are present in the environment's search paths at startup.
-
-## Internal Mechanism
-
-The `HPyModuleProvider` handles the heavy lifting:
-1.  **Locate**: Finds the shared library on disk.
-2.  **Load**: Uses `dlopen(path, RTLD_NOW | RTLD_GLOBAL)`.
-3.  **Resolve**: Finds the symbol `HPyInit_<name>` using `dlsym`.
-4.  **Init**: Calls the init function, passing an `HPyContext` initialized for the current `ProtoContext`.
-5.  **Wire**: Injects the resulting module object into the internal module map and sets metadata like `__file__` and `__name__`.
-
-## Troubleshooting
-
-### `HPyModuleProvider: Failed to load ...`
-- **Missing File**: Ensure the `.so` is in a recognized search path.
-- **Dependencies**: The `.so` might be missing a system dependency (check with `ldd`).
-- **Permissions**: Ensure the file is readable and executable.
-
-### `HPyModuleProvider: Failed to find symbol HPyInit_...`
-- **Naming Mismatch**: The filename must match the suffix of the `HPyInit_` function.
-- **C++ Mangling**: If writing in C++, ensure the init function is wrapped in `extern "C"`.
-
-### Debugging
-Run `protopy` with the environment variable `PROTO_HPY_DEBUG=1` to see detailed loading logs:
-
-```bash
-PROTO_HPY_DEBUG=1 ./protopy my_script.py
-```
+- The file name must match the init function: `foo.hpy.so` or `foo.so` must export
+  `HPyInit_foo`.
+- In C++ sources, declare the init function `extern "C"` so that its name is not
+  mangled.
+- Check for missing shared-library dependencies with `ldd`.

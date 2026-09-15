@@ -1,68 +1,89 @@
-# HPy Developer Guide for protoPython
+# HPy-Style Extension API
 
-This guide explains how to write and build HPy extension modules for `protoPython`.
+protoPython contains a C++ extension API modelled on [HPy](https://hpyproject.org/).
+This guide describes the API as it exists in the source tree and how an extension
+module is written against it.
 
-## Overview
+> **Status (2026-09-15).** The API is a protoPython-specific C++ subset, not the HPy
+> universal ABI: modules built with the HPy SDK are not compatible with it. The module
+> loader, `HPyModuleProvider`, is compiled into libprotoPython but is not registered in
+> module resolution, so `import` does not load extension modules yet (see
+> [HPY_USER_GUIDE.md](HPY_USER_GUIDE.md)). The API is exercised by the
+> `test_hpy_context` unit test.
 
-`protoPython` supports HPy **Universal ABI** modules. This means you can compile your extension once into a `.hpy.so` (or `.so`) file, and it will run on `protoPython` without recompilation, provided it uses the supported HPy API subset.
+## API overview
 
-## Writing a Module
+The API is declared in `include/protoPython/HPyContext.h` and
+`include/protoPython/HPyABI.h`, in namespace `protoPython`, and implemented in
+`src/library/HPyContext.cpp`.
 
-A minimal HPy module consists of an initialization function and a module definition.
+- `HPy` is an opaque handle (`unsigned long`); `HPy_NULL` (0) is the invalid handle.
+- `HPyContext` is a C++ struct holding a `proto::ProtoContext*` and a table that maps
+  handles to `ProtoObject*`.
+- `HPyCFunction` is `HPy (*)(HPyContext* ctx, HPy self, const HPy* args, size_t nargs)`.
+- `HPyMethodDef` has the fields `ml_name`, `ml_meth`, `ml_flags` and `ml_doc`;
+  `HPyModuleDef` has `m_name`, `m_doc`, `m_size` and `m_methods`.
 
-### 1. Include the HPy ABI
-Include `<protoPython/HPyABI.h>` (or the standard `hpy.h` if building with the HPy SDK).
+Functions declared in `HPyContext.h`:
 
-### 2. Define your Functions
-```c
-static HPy hello(HPyContext *ctx, HPy self, const HPy *args, size_t nargs) {
-    return HPy_FromUTF8(ctx, "Hello from HPy on protoPython!");
+| Area | Functions |
+|------|-----------|
+| Handles | `HPy_FromPyObject`, `HPy_AsPyObject`, `HPy_Dup`, `HPy_Close` (`HPy_Incref` and `HPy_Decref` are no-ops) |
+| Attributes | `HPy_GetAttr`, `HPy_SetAttr`, `HPy_GetAttr_s`, `HPy_SetAttr_s` |
+| Calls | `HPy_Call`, `HPy_CallMethod` |
+| Types and objects | `HPy_Type`, `HPy_New`, `HPyType_FromSpec` |
+| Values | `HPy_FromLong`, `HPy_FromDouble`, `HPy_FromUTF8`, `HPy_AsLong`, `HPy_AsDouble`, `HPy_AsUTF8`, `HPy_IsTrue` |
+| Protocols | `HPy_Add`, `HPy_Sub`, `HPy_Mul`, `HPy_Div`, `HPy_And`, `HPy_Or`, `HPy_Xor`, `HPy_LShift`, `HPy_RShift`, `HPy_RichCompare`, `HPy_GetItem`, `HPy_SetItem`, `HPy_Length`, `HPy_Contains`, `HPy_GetIter`, `HPy_Next` |
+| Collections | `HPyList_New`, `HPyList_Append`, `HPyDict_New`, `HPyDict_SetItem`, `HPyDict_GetItem`, `HPyTuple_New`, `HPyTuple_Pack`, `HPySlice_New` |
+| Modules | `HPyModule_Create`, `HPyModule_AddObject`, `HPyModule_AddStringConstant`, `HPyModule_AddIntConstant` |
+| Errors | `HPyErr_SetString`, `HPyErr_NewException`, `HPyErr_Occurred`, `HPyErr_Clear` |
+| Debugging | `HPy_Dump` |
+
+## Writing a module
+
+The repository's example is `examples/hpy/math_hpy.cpp`:
+
+```cpp
+#include <protoPython/HPyABI.h>
+#include <stdio.h>
+
+using namespace protoPython;
+
+static HPy add_values(HPyContext* ctx, HPy self, const HPy* args, size_t nargs) {
+    if (nargs < 2) return HPy_NULL;
+    return HPy_Add(ctx, args[0], args[1]);
 }
-```
 
-### 3. Define Methods
-```c
-static HPyMethodDef MyMethods[] = {
-    {"hello", hello, HPy_METH_O, "Say hello"},
+static HPyMethodDef MathMethods[] = {
+    {"add", add_values, 0, "Adds two values"},
     {NULL, NULL, 0, NULL}
 };
-```
 
-### 4. Define the Module
-```c
 static HPyModuleDef moduledef = {
-    .m_name = "my_hpy_module",
-    .m_doc = "A minimal HPy module",
-    .m_size = -1,
-    .m_methods = MyMethods
+    "math_hpy",
+    "Math extension for HPy",
+    -1,
+    MathMethods
 };
-```
 
-### 5. Initialization Function
-The entry point must be named `HPyInit_<modulename>`.
-```c
-HPy HPyInit_my_hpy_module(HPyContext *ctx) {
+extern "C" HPy HPyInit_math_hpy(HPyContext* ctx) {
     return HPyModule_Create(ctx, &moduledef);
 }
 ```
 
-## Supported API Subset
+The init function must be named `HPyInit_<name>`, where `<name>` is the last component
+of the module name, and must have C linkage.
 
-`protoPython` currently implements a significant subset of the HPy API:
-- **Handles**: `HPy_Dup`, `HPy_Close`.
-- **Objects**: `HPy_New`, `HPy_FromLong`, `HPy_FromDouble`, `HPy_FromUTF8`.
-- **Attributes**: `HPy_GetAttr`, `HPy_SetAttr`, `HPy_GetAttr_s`, `HPy_SetAttr_s`.
-- **Calling**: `HPy_Call`, `HPy_CallMethod`.
-- **Types**: `HPy_Type`, `HPyType_FromSpec`.
-- **Protocols**: `HPy_Add`, `HPy_Sub`, `HPy_Mul`, `HPy_Div`, `HPy_GetItem`, `HPy_SetItem`, `HPy_Length`, `HPy_Contains`.
-- **Exceptions**: `HPyErr_SetString`, `HPyErr_Occurred`, `HPyErr_Clear`.
+## Building
 
-## Building the Module
-
-Use `gcc` to compile your C code into a shared library.
+Modules are C++20 source. The headers include `protoCore.h`, so both header directories
+are needed:
 
 ```bash
-gcc -shared -fPIC -I/path/to/protoPython/include -o my_hpy_module.hpy.so my_module.c
+g++ -std=c++20 -shared -fPIC \
+  -I<protoPython>/include -I<protoCore>/headers \
+  -o math_hpy.hpy.so examples/hpy/math_hpy.cpp
 ```
 
-Notice that you don't need to link against `protoPython` itself; the `HPyContext` provided at runtime contains all the necessary function pointers for the ABI.
+The API functions are defined in libprotoPython (`src/library/HPyContext.cpp`). The
+example is not built by the project's CMake files.

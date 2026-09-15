@@ -5,12 +5,9 @@ protoPython is a GIL-free Python 3.14 runtime built on
 the repository.
 
 **Status:** version 1.0.0; not production ready.
-[CPYTHON_CONFORMANCE.md](CPYTHON_CONFORMANCE.md) records the current work, "a sequence of
-fix rounds driven by CPython probes (the same script run under `python3` and `protopy`,
-outputs diffed)". Its landed fixes include `import asyncio` and `nonlocal` rebinding,
-"which made `asyncio.run` with `gather` hang"; its
-[known divergences](CPYTHON_CONFORMANCE.md#known-divergences-pending) list what is still
-pending, including the asyncio support stubs.
+[CPYTHON_CONFORMANCE.md](CPYTHON_CONFORMANCE.md) records the current conformance status,
+and its [known divergences](CPYTHON_CONFORMANCE.md#known-divergences-pending) list what
+is still pending.
 
 ---
 
@@ -19,42 +16,42 @@ pending, including the asyncio support stubs.
 | Document | Description |
 |----------|-------------|
 | [README.md](../README.md) | Project overview, status, benchmarks, quick start and architecture. |
-| [INSTALLATION.md](INSTALLATION.md) | Building and installing protoPython and protoCore from source. |
-| [USER_GUIDE.md](USER_GUIDE.md) | `protopy` command-line usage, language compatibility, threads without a GIL, troubleshooting. |
+| [INSTALLATION.md](INSTALLATION.md) | Building, testing and installing protoPython (Linux), with protoCore built alongside or installed. |
+| [USER_GUIDE.md](USER_GUIDE.md) | `protopy` command line, exit statuses, module search path, REPL, threads, troubleshooting. |
 | [PYTHON_COMPATIBILITY.md](PYTHON_COMPATIBILITY.md) | Supported syntax, built-in types and modules, and notable differences from CPython. |
 | [CPYTHON_CONFORMANCE.md](CPYTHON_CONFORMANCE.md) | Current conformance status and known divergences from CPython. |
-| [COMPATIBILITY_DASHBOARD.md](COMPATIBILITY_DASHBOARD.md) | Running the CPython regression tests with `test/regression/run_and_report.py` and tracking the pass rate. |
-| [HPY_USER_GUIDE.md](HPY_USER_GUIDE.md) | How HPy extension modules are found and loaded. |
+| [COMPATIBILITY_DASHBOARD.md](COMPATIBILITY_DASHBOARD.md) | Running CPython regression tests with `test/regression/run_and_report.py` and tracking the pass rate. |
 
 ## Architecture and design
 
 | Document | Description |
 |----------|-------------|
-| [DESIGN.md](../DESIGN.md) | Technical architecture overview. |
+| [DESIGN.md](../DESIGN.md) | Technical design: components, type representation, bytecode, concurrency. |
 | [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) | Summary of the main architectural decisions, with links to the detailed documents. |
-| [PROTOPY_SCOPE.md](PROTOPY_SCOPE.md) | Why `protopy` is a bytecode executor inside protoPython rather than a CPython fork. |
+| [PROTOPY_SCOPE.md](PROTOPY_SCOPE.md) | Why `protopy` is a bytecode executor inside protoPython rather than a CPython fork; its command-line contract. |
 | [INTERNALS_DEEP_DIVE.md](INTERNALS_DEEP_DIVE.md) | Memory model, execution engine, structural sharing and the zero-copy principle. |
 | [L_SHAPE_ARCHITECTURE.md](L_SHAPE_ARCHITECTURE.md) | Single `ProtoSpace`, M:N threads, explicit context stack and lock-free hot paths. |
 | [REARCHITECTURE_PROTOCORE.md](REARCHITECTURE_PROTOCORE.md) | Target architecture and gap analysis for running natively on protoCore. |
 | [DESIGN_PROTOCORE_DELEGATION.md](DESIGN_PROTOCORE_DELEGATION.md) | Design (2026-04-28) for delegating Python attribute access to protoCore. |
-| [CLAUDE.md](../CLAUDE.md) | Rules for keeping `ProtoObject` references alive across boundaries the protoCore GC cannot see, and GC root discipline in native functions. |
+| [GC_BRIDGING.md](GC_BRIDGING.md) | Keeping `ProtoObject` references alive across boundaries the protoCore garbage collector cannot see, and GC root discipline in native functions. |
 
 ## Developer reference
 
 | Document | Description |
 |----------|-------------|
-| [CPP_API_REFERENCE.md](CPP_API_REFERENCE.md) | Embedding API: `PythonEnvironment`, contexts, type conversion and error handling. |
-| [PROTOPYC_SPECIFICATION.md](PROTOPYC_SPECIFICATION.md) | Specification of the `protopyc` compiler: command line, module resolution, generated code. |
-| [EXECUTION_ENGINE_OPCODES.md](EXECUTION_ENGINE_OPCODES.md) | Opcode coverage matrix from the Phase 3 execution engine audit. |
-| [HPY_DEVELOPER_GUIDE.md](HPY_DEVELOPER_GUIDE.md) | Writing and building HPy Universal ABI modules for protoPython. |
-| [HPY_INTEGRATION_PLAN.md](HPY_INTEGRATION_PLAN.md) | Scope and phases of the HPy integration. |
-| [HPY_REPL_INTEGRATION.md](HPY_REPL_INTEGRATION.md) | How HPy modules interact with the `protopy` REPL. |
-| [STUBS.md](STUBS.md) | Catalogue of native and standard-library stub implementations and their status. |
-| [C_MODULES_TO_REPLACE.md](C_MODULES_TO_REPLACE.md) | Standard-library modules traditionally written in C that protoPython replaces with C++ implementations, by priority. |
-| [EXCEPTIONS.md](EXCEPTIONS.md) | Notes on the `exceptions` module scaffolding. |
-| [SET_SUPPORT.md](SET_SUPPORT.md) | Notes on the `set` prototype backed by `ProtoSet`. |
+| [CPP_API_REFERENCE.md](CPP_API_REFERENCE.md) | Embedding API: `PythonEnvironment` construction, execution, errors, object access, and protoCore value conversions. |
+| [PROTOPYC_SPECIFICATION.md](PROTOPYC_SPECIFICATION.md) | The `protopyc` compiler: command line, loading generated modules, generated code, unimplemented features. |
+| [EXECUTION_ENGINE_OPCODES.md](EXECUTION_ENGINE_OPCODES.md) | Reference of all opcodes defined in `ExecutionEngine.h`: instruction format, fused opcodes, meaning of each opcode. |
+| [HPY_DEVELOPER_GUIDE.md](HPY_DEVELOPER_GUIDE.md) | The HPy-style C++ extension API and how to write a module against it (loader not yet registered). |
+| [HPY_USER_GUIDE.md](HPY_USER_GUIDE.md) | How the HPy extension loader works and its current status. |
+| [HPY_REPL_INTEGRATION.md](HPY_REPL_INTEGRATION.md) | Status of HPy support in the `protopy` REPL. |
+| [HPY_INTEGRATION_PLAN.md](HPY_INTEGRATION_PLAN.md) | Original scope and phases of the HPy integration, with a status note. |
+| [C_MODULES_TO_REPLACE.md](C_MODULES_TO_REPLACE.md) | Standard library modules CPython implements in C, and how protoPython provides each one. |
+| [STUBS.md](STUBS.md) | Catalogue of native and standard library stub implementations kept during early development. |
+| [EXCEPTIONS.md](EXCEPTIONS.md) | The native `exceptions` module and how native code reports exceptions. |
+| [SET_SUPPORT.md](SET_SUPPORT.md) | `set` objects backed by `ProtoSet`. |
 | [tests/conformity/README.md](../tests/conformity/README.md) | Layout and usage of the conformity test suite. |
-| [CONTRIBUTING.md](../CONTRIBUTING.md) | Repository file-organisation rules for contributors. |
+| [CONTRIBUTING.md](../CONTRIBUTING.md) | Prerequisites, building, running and adding tests, file placement, documentation, commits and pull requests. |
 | [CHANGELOG.md](../CHANGELOG.md) | Notable changes by release. |
 
 ## Dated analyses

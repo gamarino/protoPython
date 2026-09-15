@@ -1,40 +1,46 @@
-# C Modules to Replace for protoPython StdLib
+# C Modules to Replace for the protoPython Standard Library
 
-This document lists Python standard library modules traditionally implemented in C (or with C accelerators) that protoPython aims to replace with GIL-less C++ implementations. See [archive/IMPLEMENTATION_PLAN.md](archive/IMPLEMENTATION_PLAN.md) and [PROTOPY_SCOPE.md](PROTOPY_SCOPE.md).
+CPython implements several standard library modules, or accelerators for them, in C.
+protoPython cannot load CPython C extensions, so it either re-implements these modules
+in C++ (in `src/library/`, registered as native modules in
+`src/library/PythonEnvironment.cpp`) or relies on pure-Python code in `lib/python3.14`.
+See also [PROTOPY_SCOPE.md](PROTOPY_SCOPE.md).
 
-## Priority for early regrtest
+## Priority
 
-- **High**: Required for basic imports and many regression tests.
-- **Medium**: Needed for a substantial subset of tests or common stdlib.
-- **Low**: Can be deferred; pure-Python fallbacks or stubs may suffice initially.
+- **High**: required for basic imports and many regression tests.
+- **Medium**: needed by a substantial part of the tests or of common standard library use.
+- **Low**: can be deferred; pure-Python fallbacks or stubs may be enough.
 
 ## Module list
 
-| Module       | Priority | Status    | GIL-less note                          |
-| ------------ | -------- | --------- | -------------------------------------- |
-| `_collections` | High    | Replaced  | deque and helpers in CollectionsModule |
-| `_functools`   | High    | Partial   | partial, reduce, wraps done; lru_cache stub (v54) |
-| `_operator`    | High    | Replaced  | Native OperatorModule; add, sub, invert, etc.     |
-| `_io`          | High    | Replaced  | Basic open/file in IOModule            |
-| `_socket`      | Medium  | Deferred  | Thread-safe APIs from the start        |
-| `_ssl`         | Medium  | Deferred  | Build on _socket                       |
-| `_json`        | Medium  | Replaced  | JsonModule in C++; no GIL              |
-| `_pickle`      | Medium  | Deferred  | Accelerator; pure-Python fallback      |
-| `_struct`      | Medium  | Pure-Python | struct.py: pack, unpack, calcsize (v41) |
-| `_array`       | Medium  | Deferred  | Typed arrays                           |
-| `_heapq`       | Medium  | Deferred  | Heap operations                        |
-| `_random`      | Low     | Deferred  | Thread-local RNG                       |
-| `_datetime`    | Low     | Deferred  | Date/time logic                        |
-| `_hashlib`     | Low     | Deferred  | Hashing; use system/OpenSSL             |
+The status column was checked on 2026-09-15 by importing each module with `protopy`.
 
-## Status key
+| Module | Priority | Status |
+|--------|----------|--------|
+| `_collections` | High | Native C++ module (`CollectionsModule.cpp`). |
+| `_functools` | High | Native C++ module (`FunctoolsModule.cpp`). |
+| `_operator` | High | Native C++ module (`OperatorModule.cpp`). |
+| `_io` | High | Native C++ module (`IOModule.cpp`). |
+| `_socket` | Medium | Pure-Python module `lib/python3.14/_socket.py`. |
+| `_ssl` | Medium | Pure-Python module `lib/python3.14/_ssl.py`. |
+| `_json` | Medium | Not available; `json` uses its pure-Python implementation. `JsonModule.cpp` is compiled but not registered. |
+| `_pickle` | Medium | Not available; `pickle` uses its pure-Python implementation. |
+| `_struct` | Medium | Native C++ module (`StructModule.cpp`). |
+| `array` | Medium | Pure-Python module `lib/python3.14/array.py`. |
+| `_heapq` | Medium | Not available: `HeapqModule.cpp` exists but its registration is commented out; `heapq` uses its pure-Python implementation. |
+| `_random` | Low | Pure-Python module `lib/python3.14/_random.py`. |
+| `_datetime` | Low | Native C++ module (`DatetimeModule.cpp`). |
+| `_hashlib` | Low | Not available. |
 
-- **Replaced**: Implemented in protoPython C++ (e.g. in `src/library/`).
-- **Partial**: Some functions replaced; others stubbed or deferred.
-- **Planned**: Scheduled for replacement; scope and order may be refined.
-- **Deferred**: Not required for early regrtest; will be GIL-less when implemented.
+Other native modules registered by `PythonEnvironment` include `sys`, `builtins`,
+`_thread`, `_signal`, `_weakref`, `_codecs`, `_ast`, `_imp`, `_warnings`, `_string`,
+`_stat`, `_opcode`, `_posixsubprocess`, `math`, `time`, `itertools`, `re`, `errno`,
+`marshal`, `binascii`, `fcntl`, `select`, `faulthandler`, `atexit`, `pathlib` and
+`exceptions`.
 
 ## References
 
-- [archive/IMPLEMENTATION_PLAN.md](archive/IMPLEMENTATION_PLAN.md) — Section 2 Standard Library Integration
-- [PROTOPY_SCOPE.md](PROTOPY_SCOPE.md) — Runtime and execution scope
+- [archive/IMPLEMENTATION_PLAN.md](archive/IMPLEMENTATION_PLAN.md): the original plan
+  (section 2, standard library integration).
+- [STUBS.md](STUBS.md): catalogue of stub implementations.

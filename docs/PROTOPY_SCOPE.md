@@ -1,30 +1,56 @@
 # protopy Scope and Architecture Decision
 
-## Decision: Minimal bytecode executor inside protoPython (option B)
+## Decision: a bytecode executor inside protoPython
 
-**protopy** will be implemented as a **minimal bytecode executor inside protoPython** that uses the existing `PythonEnvironment` and `ProtoContext`, rather than forking CPython 3.14 and swapping its eval loop.
+`protopy` is a bytecode executor implemented inside protoPython. It uses
+`PythonEnvironment` and protoCore's `ProtoContext` directly. The alternative, forking
+CPython 3.14 and replacing its evaluation loop, was not taken.
 
 ## Rationale
 
-- **Code location**: All runtime code stays in [src/runtime](../src/runtime/); no external CPython fork to maintain or sync.
-- **Dependencies**: Build depends only on protoCore and the protoPython library; no CPython build tree required.
-- **Incremental delivery**: We can ship a stub binary that creates `PythonEnvironment`, resolves modules, and runs a minimal execution path (e.g. load script path, then interpret bytecode) without implementing the full CPython bytecode set upfront.
-- **GIL-less by design**: The executor is written for protoCore from the start; no need to remove GIL from CPython’s codebase.
+- **Code location**: all runtime code lives in this repository
+  ([src/runtime](../src/runtime/) and [src/library](../src/library/)); there is no
+  CPython fork to maintain or keep in sync.
+- **Dependencies**: the build depends only on protoCore and the protoPython library,
+  not on a CPython build tree. At run time protopy uses the pure-Python standard
+  library in `lib/python3.14`.
+- **No GIL to remove**: the executor is written for protoCore's concurrency model from
+  the start, instead of removing the GIL from CPython's code base.
 
-## Implications
+## Consequences
 
-- **Frontend**: Parsing and compilation (source → bytecode) are out of scope for the first milestone. Options for a later phase: (a) embed or link a copy of CPython’s parser/compiler, or (b) implement a minimal parser/compiler in protoPython.
-- **Bytecode format**: For minimal executor we can either adopt a subset of CPython 3.14 bytecode (and document which opcodes are supported) or define a minimal custom bytecode that we translate to from Python (e.g. via an external tool or a later-integrated frontend).
-- **Execution**: The protopy binary will:
-  1. Create `PythonEnvironment` with stdlib path and search paths.
-  2. Accept a script path or module name.
-  3. Resolve the module or load the file and execute its body as `__main__`; as in CPython, a `main` function runs only if the script calls it. Once the full execution engine exists, bytecode will be run via `ProtoContext` and the protoPython object model.
-- **CLI contract**: `protopy` now exposes `--module`, `--script`, `--path`, and `--stdlib` flags plus distinct exit codes (0 success, 65 resolve error, 70 runtime failure, 64 usage). This allows tooling to consume protopy deterministically.
+- **Frontend**: protoPython has its own tokenizer, parser and compiler
+  (`include/protoPython/Tokenizer.h`, `Parser.h`, `Compiler.h`), which compile Python
+  source into protoPython bytecode.
+- **Bytecode format**: the opcode names follow CPython, but the numbering, argument
+  encoding and semantics are protoPython's own, and some opcodes have no CPython
+  counterpart (raw-list and fused opcodes). CPython bytecode files and tools such as
+  `dis` do not apply. The opcodes are listed in
+  [EXECUTION_ENGINE_OPCODES.md](EXECUTION_ENGINE_OPCODES.md).
+- **Execution**: protopy
+  1. creates a `PythonEnvironment` with the standard library path, the module search
+     paths and `sys.argv`;
+  2. takes a script path, a module name, a `-c` string or the REPL flag;
+  3. compiles the source and executes the module body as `__main__`. As in CPython, a
+     `main` function runs only if the script calls it.
 
-## Current Status
+## Command-line contract
 
-The bytecode format and execution engine are implemented (Phase 3 complete). The parser and compiler are integrated in protoPython; protopy executes `.py` scripts via tokenizer, parser, compiler, and `executeMinimalBytecode`. See [archive/IMPLEMENTATION_PLAN.md](archive/IMPLEMENTATION_PLAN.md) and [EXECUTION_ENGINE_OPCODES.md](EXECUTION_ENGINE_OPCODES.md).
+`protopy` accepts `-c`, `-m`/`--module`, `--script`, `-p`/`--path`, `--stdlib`,
+`-i`/`--repl`, `--dry-run`, `--bytecode-only`, `--trace` and `-h`/`--help`, and reports
+distinct exit statuses so that tools can rely on them:
 
-## Revision
+| Status | Meaning |
+|--------|---------|
+| 0 | Success. |
+| 64 | Usage error, including running without a target. |
+| 65 | The script or module could not be found. |
+| 70 | Unhandled exception. |
+| *n* | `SystemExit(n)` or `sys.exit(n)` with an integer *n*. |
 
-This document may be updated as Phase 6 (full stubs, threading, networking) progresses. The choice of CPython bytecode subset and frontend is documented in [archive/IMPLEMENTATION_PLAN.md](archive/IMPLEMENTATION_PLAN.md).
+The full description is in [USER_GUIDE.md](USER_GUIDE.md#exit-status).
+
+## History
+
+The step plan that led to this design, including the original choice of a minimal
+executor, is kept in [archive/IMPLEMENTATION_PLAN.md](archive/IMPLEMENTATION_PLAN.md).

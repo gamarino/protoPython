@@ -1,34 +1,39 @@
 # Compatibility Dashboard
 
-Track protoPython regression test pass rate over time.
+Tracks the pass rate of CPython regression tests run under protoPython over time.
 
-## What This Tracks
+## What it tracks
 
-The dashboard shows the regrtest (CPython regression test suite) pass rate over time. Use `test/regression/run_and_report.py` to run the suite against the `protopy` binary and persist results to JSON. The dashboard visualizes pass/fail counts, compatibility percentage, and trends.
+`test/regression/run_and_report.py` runs CPython regression tests against a `protopy`
+binary and writes the results to JSON; `test/regression/dashboard.py` summarises a
+history file: pass and fail counts, compatibility percentage and trend.
 
 ## Usage
 
-Set `PROTOPY_BIN` to the path of the built `protopy` executable. Then:
+`run_and_report.py` takes the `protopy` binary as its first argument, or from the
+`PROTOPY_BIN` environment variable when the argument is omitted. The output file is
+given with `--output <path>` or with `REGRTEST_RESULTS`.
 
-1. Run regression tests and persist results:
+1. Run the regression tests and save the results:
    ```bash
-   PROTOPY_BIN=./build/protopy REGRTEST_RESULTS=test/regression/results/latest.json \
-     python test/regression/run_and_report.py --output test/regression/results/latest.json
+   PROTOPY_BIN=build_release/src/runtime/protopy \
+     python3 test/regression/run_and_report.py --output test/regression/results/latest.json
    ```
 
-2. Append to history (optional):
+2. Also append the run to a history file (optional):
    ```bash
-   REGRTEST_HISTORY=test/regression/results/history.json PROTOPY_BIN=... \
-     run_and_report.py --output results/latest.json
+   REGRTEST_HISTORY=test/regression/results/history.json \
+   PROTOPY_BIN=build_release/src/runtime/protopy \
+     python3 test/regression/run_and_report.py --output test/regression/results/latest.json
    ```
 
-3. View dashboard:
+3. Show the dashboard (the history path can also come from `REGRTEST_HISTORY`):
    ```bash
-   python test/regression/dashboard.py test/regression/results/history.json
+   python3 test/regression/dashboard.py test/regression/results/history.json
    ```
 
 ## Output
 
 - `passed`, `failed`, `total`, `compatibility_pct`
-- Latest timestamp
-- Delta since first run (when history exists)
+- Timestamp of the latest run
+- Change since the first run (when a history exists)
