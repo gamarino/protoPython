@@ -1,4 +1,0 @@
-[protopy-debug] Starting main...
-Traceback (most recent call last):
-TypeError: object is not callable (nullptr)
-protopy: module 'test_unpack' exited with runtime error

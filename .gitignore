@@ -1,4 +1,4 @@
-# Evitar que los diagnósticos de ejecución entren al repo
+# Keep runtime diagnostic output out of the repository
 *.log
 exec_diag_*
 verify*.txt
@@ -35,3 +35,25 @@ repro_output.txt
 *.deb
 *.rpm
 *.tar.gz
+
+# Local build trees, profiling data and debugging leftovers
+/wsl-build/
+/gmon.out
+/run_debug.gdb
+/build_damage.diff
+/test/compiler/run_module
+
+# Captured debug output, gdb command files and compiled binaries in tests/
+# (anchored to the top level of tests/; test sources and tests/conformity/ stay tracked)
+/tests/*.txt
+/tests/*.out
+/tests/*.o
+/tests/*.so
+/tests/*.log*
+/tests/perf.data*
+/tests/gdb_cmds
+/tests/gdb_script
+/tests/diagnostic_output_txt
+/tests/run
+/tests/test_hasattr
+/tests/test_interning

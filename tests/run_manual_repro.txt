@@ -1,5 +1,0 @@
-abc imported
-Starting manual_abc_repro.py
-Simulating namespace iteration...
-Items type: <class 'list'>
-Iteration valid.

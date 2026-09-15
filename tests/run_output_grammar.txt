@@ -1,1 +1,0 @@
-DEBUG: ast.py loading with __name__='ast'
