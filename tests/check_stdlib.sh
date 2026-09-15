@@ -1,5 +1,5 @@
 #!/bin/bash
-cd /home/gamarino/Documentos/proyectos/protoPython/build
+cd "$(dirname "$0")/../build_release"
 ./src/runtime/protopy -c 'import tokenize'
 ./src/runtime/protopy -c 'import annotationlib'
 ./src/runtime/protopy -c 'import codecs'
