@@ -212,6 +212,9 @@ onwards. Commit hashes are given for reference.
   of tuple subclasses holding the same NaN; `list.__contains__` and
   `tuple.__contains__` matched only identical objects, ints and strings, so
   `[2.5].__contains__(float('2.5'))` was False.
+- **NaN in float subclasses:** an instance of a float subclass holding NaN
+  compared equal to itself, and `<=`/`>=` between two such instances were True;
+  they now follow IEEE 754 like a plain float.
 
 ### Performance
 

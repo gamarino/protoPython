@@ -200,6 +200,13 @@ set_tests_properties(protopy_nan_containment PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# A float subclass instance holding NaN is unequal to itself.
+add_test(NAME protopy_float_subclass_nan
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/float_subclass_nan.py)
+set_tests_properties(protopy_float_subclass_nan PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # Equal ints and floats compare, hash and key dicts as one value beyond long long.
 add_test(NAME protopy_numeric_keys
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/numeric_keys.py)

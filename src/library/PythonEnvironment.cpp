@@ -27591,7 +27591,14 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
                 ownsEq = true;
             }
         }
-        if (!ownsEq) {
+        // An instance of a float subclass holding NaN is not equal to
+        // itself either; the NaN guard above only sees plain floats.
+        bool nanPayload = false;
+        if (!ownsEq && (op == 0 || op == 1) && !a->isFloat(ctx) && !a->isInteger(ctx) && !a->isString(ctx)) {
+            const proto::ProtoObject* payload = a->getAttribute(ctx, getDataString());
+            nanPayload = payload && payload->isFloat(ctx) && std::isnan(payload->asDouble(ctx));
+        }
+        if (!ownsEq && !nanPayload) {
             if (op == 0) return PROTO_TRUE;
             if (op == 1) return PROTO_FALSE;
         }
@@ -27862,6 +27869,15 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
     };
     a = unwrapNumeric(a);
     b = unwrapNumeric(b);
+    // The comparison dunders of int and float subclass instances are not
+    // found on their protoCore parent chain, so their comparisons end here.
+    // A NaN payload is unordered and unequal, as the guard at the top makes
+    // plain floats; without this the double comparison below reported 0.
+    if (op >= 0 && op <= 5
+        && ((a->isFloat(ctx) && std::isnan(a->asDouble(ctx)))
+            || (b->isFloat(ctx) && std::isnan(b->asDouble(ctx))))) {
+        return (op == 1) ? PROTO_TRUE : PROTO_FALSE;
+    }
     // bool is a subclass of int in Python semantics — `False == 0` and
     // `True == 1` must hold.  protoPython tags bool and int distinctly, so
     // ProtoObject::compare's `isInteger()` check returns false for bool
