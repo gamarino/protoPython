@@ -24364,6 +24364,24 @@ static bool attributeExistsCompat(PythonEnvironment* env,
     return false;
 }
 
+// The __mro__ tuple of a class for the MRO walks in getAttribute. py_type
+// stores the tuple as an own attribute of every class, so it is read
+// directly instead of through a recursive getAttribute on the class,
+// which runs the whole slow path (tryFastGetAttribute excludes __mro__).
+// Objects without an own tuple, such as a class whose metaclass mro() is
+// still running (its __mro__ is None), take the full lookup.
+static const proto::ProtoTuple* classMroForLookup(PythonEnvironment* env,
+                                                  proto::ProtoContext* ctx,
+                                                  const proto::ProtoObject* cls) {
+    const proto::ProtoString* mroS = env->getMroString();
+    const proto::ProtoObject* own = cls->getOwnAttributeDirect(ctx, mroS);
+    if (own && own != PROTO_NONE) {
+        if (const proto::ProtoTuple* t = own->asTuple(ctx)) return t;
+    }
+    const proto::ProtoObject* mroAttr = env->getAttribute(ctx, cls, mroS, false);
+    return mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+}
+
 static const proto::ProtoObject* tryFastGetAttribute(
         PythonEnvironment* env,
         proto::ProtoContext* ctx,
@@ -24920,8 +24938,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     // objects, which skip this block, and the depth > 50 guard above still
     // bounds re-entry.
     if (!isClass && objClass && objClass != PROTO_NONE) {
-        const proto::ProtoObject* mroAttr2 = getAttribute(ctx, objClass, mroString, false);
-        const proto::ProtoTuple* mroT2 = mroAttr2 ? mroAttr2->asTuple(ctx) : nullptr;
+        const proto::ProtoTuple* mroT2 = classMroForLookup(this, ctx, objClass);
         if (mroT2) {
             for (unsigned long mi = 0; mi < mroT2->getSize(ctx); ++mi) {
                 const proto::ProtoObject* base = mroT2->getAt(ctx, mi);

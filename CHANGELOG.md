@@ -300,6 +300,12 @@ measured on the development machine at the time. Full reports are in
   self-recursive calls (`ab8d673c`), and C++ `return` instead of exceptions
   for function returns, which took `fib(25)` from about 1.80 s to about
   0.24 s (`7d02dfcc`).
+- The data-descriptor check of attribute lookups reads a class's `__mro__`
+  tuple directly instead of through a nested lookup. The check has run at
+  every nesting depth since the pathlib fix (`0073e0d5`), which cost 2.4 %
+  more instructions on a property and `__slots__` micro-benchmark; with the
+  direct read the same workload runs 6.3 % fewer instructions than before
+  that fix, and the pyperformance subset and `attr_lookup` are unchanged.
 
 ### Repository and documentation
 
