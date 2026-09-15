@@ -3,6 +3,8 @@
 
 #include <protoCore.h>
 #include <protoPython/HPyContext.h>
+#include <map>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -26,7 +28,9 @@ private:
     std::string guid_;
     std::string alias_;
 
-    // Prevent multiple loads of same module in same provider
+    // One dlopen reference per loaded library, keyed by path and released in
+    // the destructor. Guarded by mutex_: module resolution is not serialised.
+    std::mutex mutex_;
     std::map<std::string, void*> loadedHandles_;
 };
 

@@ -136,5 +136,5 @@ in [GC_BRIDGING.md](GC_BRIDGING.md); the known sites are listed in
 
 ## Native extensions
 
-protoPython contains an HPy-style C++ extension API; its loader is not yet part of
-module resolution. See [HPY_DEVELOPER_GUIDE.md](HPY_DEVELOPER_GUIDE.md).
+protoPython contains an HPy-style C++ extension API; `import` loads modules written
+against it through `HPyModuleProvider`. See [HPY_DEVELOPER_GUIDE.md](HPY_DEVELOPER_GUIDE.md).

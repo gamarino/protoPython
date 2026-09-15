@@ -4,8 +4,8 @@ This document outlines the scope and approach for integrating [HPy](https://hpyp
 
 > **Status (2026-09-15):** this is the original plan. The handle table and a C++ subset
 > of the API exist (`include/protoPython/HPyContext.h`, `src/library/HPyContext.cpp`),
-> and a module loader (`HPyModuleProvider`) is implemented but not registered in module
-> resolution, so extension modules cannot be imported yet. The API is not binary
+> and the module loader (`HPyModuleProvider`) is registered in module resolution, so
+> extension modules written against that subset can be imported. The API is not binary
 > compatible with the HPy universal ABI. See [HPY_DEVELOPER_GUIDE.md](HPY_DEVELOPER_GUIDE.md)
 > and [HPY_USER_GUIDE.md](HPY_USER_GUIDE.md).
 

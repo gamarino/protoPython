@@ -22100,6 +22100,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // 6. Initialize StdLib Module Provider (already have allPaths from above)
     proto::ProviderRegistry::instance().registerProvider(std::make_unique<PythonModuleProvider>(allPaths));
     proto::ProviderRegistry::instance().registerProvider(std::make_unique<CompiledModuleProvider>(allPaths));
+    // HPy extension modules (<name>.hpy.so or <name>.so exporting HPyInit_<name>);
+    // resolved after compiled modules ("provider:hpy" in the resolution chain).
+    proto::ProviderRegistry::instance().registerProvider(std::make_unique<HPyModuleProvider>(allPaths));
     // Register native methods for dict AGAIN (to ensure they are on the final prototype)
     // dict enrichment moved early
     // Back-fill dictionary storage for all core prototypes so they have a valid __dict__ (CPython parity) at the VERY END

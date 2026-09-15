@@ -29,7 +29,7 @@ protoPython provides three components:
 
 - **Version:** 1.0.0 (`CMakeLists.txt`, tag `v1.0.0`).
 - **Maturity:** not production ready. The project is open for community review.
-- **Tests:** the CTest suite has 318 tests; all pass in a Release build (2026-09-15).
+- **Tests:** the CTest suite has 331 tests; all pass in a Release build (2026-09-15).
 - **protopy:** under active conformance work (see below).
 - **protopyc:** experimental, with known limitations. Several correctness bugs in
   generated code were fixed in 2026 (for example, loop-target scoping and thread
@@ -69,9 +69,9 @@ Earlier conformance reports, including the `test_descr.py` work, are kept in
   publish their new state atomically across threads (commit `1614224f`).
 - **Two execution modes, one runtime.** `protopy` interprets bytecode; `protopyc`
   compiles modules to C++ ahead of time. Both call the same `libprotoPython` runtime.
-- **HPy bridge (not yet enabled).** An HPy bridge is compiled into `libprotoPython`,
-  but its module loader is not registered, so HPy extension modules cannot be imported
-  yet; see [docs/HPY_USER_GUIDE.md](docs/HPY_USER_GUIDE.md).
+- **HPy-style extensions.** `import` loads extension modules written against
+  protoPython's HPy-style C++ API (a subset, not the HPy universal ABI); see
+  [docs/HPY_USER_GUIDE.md](docs/HPY_USER_GUIDE.md).
 - **Embedding.** `PythonEnvironment` exposes the runtime to C++ applications; see
   [docs/CPP_API_REFERENCE.md](docs/CPP_API_REFERENCE.md).
 
@@ -303,7 +303,7 @@ graph TD
     H --> I[Compiled shared library]
     D --> E[PythonEnvironment and native modules]
     I --> E
-    J[HPy bridge: loader not registered] -.-> E
+    J[HPy extension modules] --> E
     E --> F[protoCore: objects, GC, threads]
 ```
 

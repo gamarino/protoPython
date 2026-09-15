@@ -38,6 +38,15 @@ onwards. Commit hashes are given for reference.
 - **Command line:** CPython interpreter flags such as `-I`, `-E`, `-S`, `-O`,
   `-B`, `-u`, `-X opt` and `-W filter` are accepted as no-ops, and
   `sys.executable` is read from `/proc/self/exe` (`294b3316`).
+- **HPy-style extension modules:** `HPyModuleProvider` is registered, so
+  `import foo` loads `foo.hpy.so` (or `foo.so`) exporting `HPyInit_foo`.
+  Modules keep their attributes and functions (module objects and function
+  wrappers were immutable, so every attribute write was lost), functions
+  receive the module as `self`, libraries are opened with `RTLD_LOCAL` and
+  closed again when the entry point is missing, and the loaders' handle maps
+  are locked. `examples/hpy/math_hpy.cpp` is built and imported by CTest. The
+  API remains a C++ subset, not the HPy universal ABI; limits are listed in
+  `docs/HPY_USER_GUIDE.md`.
 - **Benchmarks:** the harness rejects runs that time out, exit with an error or
   do not print the expected result line (`e0d96c9b`); benchmarks print a
   `BENCH_RESULT` line with their inner timing, and

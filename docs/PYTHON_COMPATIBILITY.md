@@ -53,5 +53,5 @@ The most fundamental difference from CPython is the **absence of the Global Inte
 ## Notable Differences from CPython
 
 1. **Memory Management**: Uses `protoCore`'s hybrid GC and context-based promotion rather than simple reference counting. `sys.getrefcount` is not supported.
-2. **C API**: The CPython C API is not supported. protoPython contains an HPy-style C++ extension API whose module loader is not yet part of module resolution; see [HPY_DEVELOPER_GUIDE.md](HPY_DEVELOPER_GUIDE.md).
+2. **C API**: The CPython C API is not supported. protoPython contains an HPy-style C++ extension API, not binary compatible with the HPy universal ABI, whose modules `import` loads; see [HPY_DEVELOPER_GUIDE.md](HPY_DEVELOPER_GUIDE.md).
 3. **Known semantic gaps**: frozen dataclasses, some introspection (`types.FunctionType` with a closure, `inspect.getclosurevars`), a few error messages and reprs, and `gc.collect()` being a no-op. The maintained list is in [CPYTHON_CONFORMANCE.md](CPYTHON_CONFORMANCE.md#known-divergences-pending).

@@ -1,8 +1,7 @@
-/**
- * stress_test_hpy.py
- * Rapidly imports a module multiple times to test handle recycling and stability.
- * Step 1291.
- */
+# stress_test_hpy.py
+# Imports an HPy extension module and calls one of its functions 1000 times,
+# exercising module lookup, the method wrapper and HPy handle recycling.
+# Run with the directory holding math_hpy.hpy.so on the module search path.
 
 import math_hpy
 import sys

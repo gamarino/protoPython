@@ -1,8 +1,10 @@
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/HPyModuleProvider.h>
+#include <protoPython/HPyABI.h>
+#include <algorithm>
 #include <dlfcn.h>
 #include <filesystem>
-#include <iostream>
+#include <system_error>
 
 namespace protoPython {
 
@@ -10,119 +12,76 @@ HPyModuleProvider::HPyModuleProvider(std::vector<std::string> basePaths)
     : basePaths_(std::move(basePaths)), guid_("protoPython.hpy"), alias_("hpy") {}
 
 HPyModuleProvider::~HPyModuleProvider() {
+    std::lock_guard<std::mutex> lock(mutex_);
     for (auto& entry : loadedHandles_) {
-        if (entry.second) {
-            dlclose(entry.second);
-        }
+        if (entry.second) dlclose(entry.second);
     }
 }
 
 const proto::ProtoObject* HPyModuleProvider::tryLoad(const std::string& logicalPath, proto::ProtoContext* ctx) {
-    if (loadedHandles_.count(logicalPath)) {
-        // Module already loaded at the library level. 
-        // In a more complex system, we'd need to re-invoke init if the context is different,
-        // but for now we follow the 1-load-per-provider rule.
-        // Actually, we should probably return the cached module object if we had it.
-    }
-
+    // Step 1205: find <name>.hpy.so, then <name>.so, in each search directory;
+    // dots in the module name map to directory separators.
     std::string filename = logicalPath;
-    // Replace dots with slashes for nested modules if applicable
-    for (size_t i = 0; i < filename.length(); ++i) {
-        if (filename[i] == '.') filename[i] = '/';
-    }
+    std::replace(filename.begin(), filename.end(), '.', '/');
 
     std::string foundPath;
+    std::error_code ec;
     for (const auto& basePath : basePaths_) {
-        std::string p1 = (std::filesystem::path(basePath) / (filename + ".hpy.so")).string();
-        std::string p2 = (std::filesystem::path(basePath) / (filename + ".so")).string();
-
-        if (std::filesystem::exists(p1)) {
-            foundPath = p1;
-            break;
+        for (const char* suffix : {".hpy.so", ".so"}) {
+            std::string candidate = (std::filesystem::path(basePath) / (filename + suffix)).string();
+            if (std::filesystem::exists(candidate, ec)) {
+                foundPath = std::move(candidate);
+                break;
+            }
         }
-        if (std::filesystem::exists(p2)) {
-            foundPath = p2;
-            break;
-        }
+        if (!foundPath.empty()) break;
     }
+    if (foundPath.empty()) return PROTO_NONE;
 
-    if (foundPath.empty()) {
-        return PROTO_NONE;
-    }
+    // Step 1206: the entry point of module "a.b.foo" is HPyInit_foo.
+    const size_t lastDot = logicalPath.find_last_of('.');
+    const std::string initName =
+        "HPyInit_" + (lastDot == std::string::npos ? logicalPath : logicalPath.substr(lastDot + 1));
 
-    // Step 1220: CLI Flags for HPy (Debug)
-    bool debug = protoPython::diagHpyEnabled();
-    if (debug) {
-        // log removed
-    }
-
-    // Step 1205: Implement logic to load .so and .hpy.so files
-    void* handle = dlopen(foundPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
-    if (!handle) {
-        if (debug) {
-            // log removed
-        }
-        return PROTO_NONE;
-    }
-
-    loadedHandles_[logicalPath] = handle;
-
-    // Step 1206: HPyModuleDef Resolution (actually HPyInit symbol)
-    // The entry point for an HPy module named 'foo' is 'HPyInit_foo'
-    std::string initName = "HPyInit_" + logicalPath;
-    // Handle nested names by taking the last part if logicalPath has dots
-    size_t lastDot = logicalPath.find_last_of('.');
-    if (lastDot != std::string::npos) {
-        initName = "HPyInit_" + logicalPath.substr(lastDot + 1);
-    }
+    // RTLD_LOCAL: an extension's symbols must not interpose on those of other
+    // libraries loaded later.
+    void* handle = dlopen(foundPath.c_str(), RTLD_NOW | RTLD_LOCAL);
+    if (!handle) return PROTO_NONE;
 
     using HPyInitFunc = HPy (*)(HPyContext*);
-    HPyInitFunc initFunc = (HPyInitFunc)dlsym(handle, initName.c_str());
-
-    // Step 1216: ABI Version Check (Simplified)
-    // In a real scenario, we might check for a 'HPy_ABI_VERSION' symbol
-    int* abiVersion = (int*)dlsym(handle, "HPy_ABI_VERSION");
-    if (abiVersion && *abiVersion > 0) {
-        if (debug) {
-        }
-    }
-
+    const HPyInitFunc initFunc = reinterpret_cast<HPyInitFunc>(dlsym(handle, initName.c_str()));
     if (!initFunc) {
-        // log removed
+        // Not an HPy extension module: do not keep the library loaded.
+        dlclose(handle);
         return PROTO_NONE;
     }
-
-    // Step 1207: HPy Init Invocation
-    HPyContext hctx(ctx);
-    HPy hMod = initFunc(&hctx);
-
-    if (hMod == HPy_NULL) {
-        // log removed
-        return PROTO_NONE;
+    {
+        // dlopen reference-counts a library that is already open; keep one
+        // reference per library for the provider's lifetime. Module resolution
+        // is not serialised by a lock, so the map is guarded here.
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto inserted = loadedHandles_.emplace(foundPath, handle);
+        if (!inserted.second) dlclose(handle);  // the first reference stays
     }
 
-    // Convert handle back to ProtoObject*
-    const proto::ProtoObject* mod = hctx.asProtoObject(hMod);
-    if (!mod || mod == PROTO_NONE) {
-        return PROTO_NONE;
+    // Step 1207: run the entry point. Handles it creates stay pinned while hctx
+    // lives, so the module is wired before hctx is destroyed.
+    const proto::ProtoObject* mod = nullptr;
+    {
+        HPyContext hctx(ctx);
+        const HPy hMod = initFunc(&hctx);
+        mod = (hMod == HPy_NULL) ? nullptr : hctx.asProtoObject(hMod);
+        if (!mod || mod == PROTO_NONE) return PROTO_NONE;
+
+        // Step 1210: module metadata. setAttribute returns the updated object
+        // (a copy when the extension returned an immutable one), so keep it.
+        // __executed__ tells module resolution the module is already initialised.
+        auto key = [ctx](const std::string& name) { return PythonEnvironment::getInternedString(ctx, name); };
+        mod = mod->setAttribute(ctx, key("__file__"), key(foundPath)->asObject(ctx));
+        mod = mod->setAttribute(ctx, key("__name__"), key(logicalPath)->asObject(ctx));
+        mod = mod->setAttribute(ctx, key("__loader__"), key("HPyModuleProvider")->asObject(ctx));
+        mod = mod->setAttribute(ctx, key("__executed__"), PROTO_TRUE);
     }
-
-    // Step 1210: Module Wiring
-    // Set __file__, __name__, and other metadata
-    const proto::ProtoString* py_file = proto::ProtoString::createSymbol(ctx, "__file__");
-    const proto::ProtoString* py_name = proto::ProtoString::createSymbol(ctx, "__name__");
-    const proto::ProtoString* py_loader = proto::ProtoString::createSymbol(ctx, "__loader__");
-
-    mod->setAttribute(ctx, py_file, PythonEnvironment::getInternedString(ctx, foundPath.c_str())->asObject(ctx));
-    mod->setAttribute(ctx, py_name, PythonEnvironment::getInternedString(ctx, logicalPath.c_str())->asObject(ctx));
-    // For now, we don't have a specialized loader object, so we just set a string or None
-    mod->setAttribute(ctx, py_loader, PythonEnvironment::getInternedString(ctx, "HPyModuleProvider")->asObject(ctx));
-
-    // Step 1300: Refine sys.modules wiring
-    // In protoPython, the PythonEnvironment usually manages sys.modules. 
-    // Here we ensure that if it's available, we populate it to avoid redundant loads.
-    // (Note: This is a best-effort refinement; typically the resolution chain handles this).
-
     return mod;
 }
 

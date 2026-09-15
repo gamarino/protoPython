@@ -5,11 +5,11 @@ This guide describes the API as it exists in the source tree and how an extensio
 module is written against it.
 
 > **Status (2026-09-15).** The API is a protoPython-specific C++ subset, not the HPy
-> universal ABI: modules built with the HPy SDK are not compatible with it. The module
-> loader, `HPyModuleProvider`, is compiled into libprotoPython but is not registered in
-> module resolution, so `import` does not load extension modules yet (see
-> [HPY_USER_GUIDE.md](HPY_USER_GUIDE.md)). The API is exercised by the
-> `test_hpy_context` unit test.
+> universal ABI: modules built with the HPy SDK are not compatible with it. Modules
+> written against it are imported through `HPyModuleProvider`; see
+> [HPY_USER_GUIDE.md](HPY_USER_GUIDE.md), which also lists the API's limitations. The
+> API is exercised by the `test_hpy_context` unit test and by the `math_hpy` example
+> module (`protopy_hpy_module_basics`, `protopy_hpy_stress`).
 
 ## API overview
 
@@ -19,7 +19,9 @@ The API is declared in `include/protoPython/HPyContext.h` and
 
 - `HPy` is an opaque handle (`unsigned long`); `HPy_NULL` (0) is the invalid handle.
 - `HPyContext` is a C++ struct holding a `proto::ProtoContext*` and a table that maps
-  handles to `ProtoObject*`.
+  handles to `ProtoObject*`; every open handle is pinned as a GC root until `HPy_Close`
+  or the end of the call.
+- Module functions created by `HPyModule_Create` receive the module as `self`.
 - `HPyCFunction` is `HPy (*)(HPyContext* ctx, HPy self, const HPy* args, size_t nargs)`.
 - `HPyMethodDef` has the fields `ml_name`, `ml_meth`, `ml_flags` and `ml_doc`;
   `HPyModuleDef` has `m_name`, `m_doc`, `m_size` and `m_methods`.
@@ -86,4 +88,5 @@ g++ -std=c++20 -shared -fPIC \
 ```
 
 The API functions are defined in libprotoPython (`src/library/HPyContext.cpp`). The
-example is not built by the project's CMake files.
+project's CMake files build the example as `build_release/test/hpy/math_hpy.hpy.so`,
+which the HPy tests import with `protopy -p build_release/test/hpy`.

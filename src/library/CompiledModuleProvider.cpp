@@ -11,6 +11,7 @@ CompiledModuleProvider::CompiledModuleProvider(std::vector<std::string> basePath
     : basePaths_(std::move(basePaths)), guid_("protoPython.compiled"), alias_("compiled") {}
 
 CompiledModuleProvider::~CompiledModuleProvider() {
+    std::lock_guard<std::mutex> lock(mutex_);
     for (auto& entry : loadedHandles_) {
         if (entry.second) dlclose(entry.second);
     }
@@ -46,7 +47,18 @@ const proto::ProtoObject* CompiledModuleProvider::tryLoad(const std::string& log
         return PROTO_NONE;
     }
 
-    loadedHandles_[logicalPath] = handle;
+    {
+        // dlopen reference-counts a library that is already open: keep one
+        // reference per module name for the provider's lifetime.
+        std::lock_guard<std::mutex> lock(mutex_);
+        // A different library loaded later under the same name stays open
+        // but untracked: code that existing module objects may still run is
+        // never unloaded.
+        const auto inserted = loadedHandles_.emplace(logicalPath, handle);
+        if (!inserted.second && inserted.first->second == handle) {
+            dlclose(handle);  // same library: the recorded reference stays
+        }
+    }
 
     // Create the module object. It must be mutable: the generated code binds
     // module-level names with PythonEnvironment::storeName, and setAttribute

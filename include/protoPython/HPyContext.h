@@ -188,9 +188,11 @@ static inline void HPy_Decref(HPyContext* hctx, HPy h) {}
 
 typedef HPy (*HPyCFunction)(HPyContext* ctx, HPy self, const HPy* args, size_t nargs);
 
-/** 
- * Create a ProtoObject that acts as a wrapper for an HPyCFunction.
- * The function pointer is stored in an attribute (e.g. __hpy_meth__).
+/**
+ * Returns a Python callable for an HPyCFunction, or nullptr on invalid input.
+ * The callable is a native method whose self is a wrapper object holding the
+ * function pointer (__hpy_meth__). The function receives None as `self`;
+ * HPyModule_Create builds module functions that receive the module instead.
  */
 const proto::ProtoObject* HPy_WrapMethod(HPyContext* hctx, const char* name, HPyCFunction meth);
 

@@ -2,6 +2,7 @@
 #define PROTOPYTHON_COMPILEDMODULEPROVIDER_H
 
 #include <protoCore.h>
+#include <mutex>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -21,6 +22,8 @@ private:
     std::vector<std::string> basePaths_;
     std::string guid_;
     std::string alias_;
+    // Guarded by mutex_: module resolution is not serialised by a lock.
+    std::mutex mutex_;
     std::unordered_map<std::string, void*> loadedHandles_;
 };
 

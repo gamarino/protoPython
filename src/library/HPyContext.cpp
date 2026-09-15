@@ -8,6 +8,8 @@
 #include <protoPython/PythonEnvironment.h>
 #include <iostream>
 #include <cstring>
+#include <utility>
+#include <vector>
 
 namespace protoPython {
 
@@ -105,10 +107,14 @@ int HPy_SetAttr(HPyContext* hctx, HPy obj, const char* name, HPy value) {
     const proto::ProtoObject* o = hctx->asProtoObject(obj);
     const proto::ProtoObject* v = hctx->asProtoObject(value);
     if (!o) return -1;
+    if (!v) return -1;
     const proto::ProtoString* nameStr = PythonEnvironment::getInternedString(hctx->ctx, name);
     if (!nameStr) return -1;
-    const proto::ProtoObject* result = o->setAttribute(hctx->ctx, nameStr, v ? v : nullptr);
-    return (result != nullptr && result != PROTO_NONE) ? 0 : -1;
+    // A mutable object is updated in place and setAttribute returns it. On an
+    // immutable object it returns a modified copy and the object behind the
+    // handle is unchanged, which is reported as a failure.
+    const proto::ProtoObject* result = o->setAttribute(hctx->ctx, nameStr, v);
+    return result == o ? 0 : -1;
 }
 
 HPy HPy_Call(HPyContext* hctx, HPy callable, const HPy* args, size_t nargs) {
@@ -140,84 +146,106 @@ HPy HPy_Type(HPyContext* hctx, HPy obj) {
 
 // --- Method Wrapper (Step 1213) ---
 
-static const proto::ProtoObject* hpy_method_wrapper(
-    proto::ProtoContext* context,
-    const proto::ProtoObject* self,
-    const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
-    
-    // Extract function pointer
-    const proto::ProtoString* methKey = proto::ProtoString::createSymbol(context, "__hpy_meth__");
-    const proto::ProtoObject* methObj = self->getAttribute(context, methKey);
-    if (!methObj || !methObj->isInteger(context)) return PROTO_NONE;
-    
-    HPyCFunction meth = reinterpret_cast<HPyCFunction>(methObj->asLong(context));
-    
-    // Setup HPy context for this call
-    HPyContext hctx(context);
-    
-    // Resolve 'self' if bound (in protoCore, if it's a method call, self is the instance)
-    // Actually, in our case 'self' passed here IS the function object if it's called directly,
-    // or the instance if it's a method. We need to distinguish.
-    // For now, assume it's a module function where 'self' is the module?
-    // In Python, module functions get the module as self.
-    
-    HPy hSelf = hctx.fromProtoObject(self); 
-    
-    // Convert arguments
-    size_t nargs = positionalParameters ? positionalParameters->getSize(context) : 0;
-    std::vector<HPy> hArgs(nargs);
-    for (size_t i = 0; i < nargs; ++i) {
-        hArgs[i] = hctx.fromProtoObject(positionalParameters->getAt(context, i));
-    }
-    
-    // Call HPy function
-    HPy hResult = meth(&hctx, hSelf, hArgs.data(), nargs);
-    
-    if (hResult == HPy_NULL) return PROTO_NONE;
-    
-    return hctx.asProtoObject(hResult);
+namespace {
+
+const proto::ProtoString* internedKey(proto::ProtoContext* ctx, const char* name) {
+    return PythonEnvironment::getInternedString(ctx, name);
 }
 
+// Native entry point of every HPy function. `self` is the wrapper object built
+// by makeHPyFunction: it holds the HPyCFunction pointer (__hpy_meth__) and the
+// object passed to the extension as `self` (__hpy_self__: the module for module
+// functions, None otherwise). The argument list is pinned by the caller for the
+// duration of the call.
+const proto::ProtoObject* hpy_method_wrapper(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* /*keywordParameters*/) {
+    const proto::ProtoObject* methObj = self ? self->getAttribute(context, internedKey(context, "__hpy_meth__")) : nullptr;
+    const proto::ProtoExternalPointer* ext =
+        (methObj && methObj != PROTO_NONE) ? methObj->asExternalPointer(context) : nullptr;
+    if (!ext || !ext->getPointer(context)) return PROTO_NONE;
+    const HPyCFunction meth = reinterpret_cast<HPyCFunction>(ext->getPointer(context));
+
+    const proto::ProtoObject* hpySelf = self->getAttribute(context, internedKey(context, "__hpy_self__"));
+    if (!hpySelf) hpySelf = PROTO_NONE;
+
+    // Handles opened for this call stay pinned until hctx is destroyed on return;
+    // the result is resolved to a ProtoObject* before that.
+    HPyContext hctx(context);
+    const HPy hSelf = hctx.fromProtoObject(hpySelf);
+    const size_t nargs = positionalParameters ? positionalParameters->getSize(context) : 0;
+    std::vector<HPy> hArgs(nargs);
+    for (size_t i = 0; i < nargs; ++i) {
+        hArgs[i] = hctx.fromProtoObject(positionalParameters->getAt(context, static_cast<int>(i)));
+    }
+    const HPy hResult = meth(&hctx, hSelf, hArgs.data(), nargs);
+    if (hResult == HPy_NULL) return PROTO_NONE;
+    const proto::ProtoObject* result = hctx.asProtoObject(hResult);
+    return result ? result : PROTO_NONE;
+}
+
+// Builds the callable for an HPyCFunction: a method cell whose self is a wrapper
+// object holding the function pointer and `hpySelf`. The collector traces a
+// method cell's self, so the callable keeps the wrapper alive. The wrapper is
+// pinned through a handle while it is being built.
+const proto::ProtoObject* makeHPyFunction(HPyContext* hctx, const char* name, HPyCFunction meth,
+                                          const proto::ProtoObject* hpySelf) {
+    proto::ProtoContext* ctx = hctx->ctx;
+    const proto::ProtoObject* wrap = ctx->newObject(true);
+    const HPy hWrap = hctx->fromProtoObject(wrap);
+    wrap = wrap->setAttribute(ctx, internedKey(ctx, "__name__"), internedKey(ctx, name)->asObject(ctx));
+    wrap = wrap->setAttribute(ctx, internedKey(ctx, "__hpy_meth__"),
+                              ctx->fromExternalPointer(reinterpret_cast<void*>(meth)));
+    wrap = wrap->setAttribute(ctx, internedKey(ctx, "__hpy_self__"), hpySelf ? hpySelf : PROTO_NONE);
+    const proto::ProtoObject* callable = ctx->fromMethod(const_cast<proto::ProtoObject*>(wrap), hpy_method_wrapper);
+    hctx->close(hWrap);
+    return callable;
+}
+
+}  // namespace
+
 const proto::ProtoObject* HPy_WrapMethod(HPyContext* hctx, const char* name, HPyCFunction meth) {
-    if (!hctx || !hctx->ctx || !meth) return nullptr;
-    
-    const proto::ProtoObject* wrap = hctx->ctx->newObject(false);
-    const proto::ProtoString* py_name = proto::ProtoString::createSymbol(hctx->ctx, "__name__");
-    const proto::ProtoString* py_call = proto::ProtoString::createSymbol(hctx->ctx, "__call__");
-    const proto::ProtoString* py_meth = proto::ProtoString::createSymbol(hctx->ctx, "__hpy_meth__");
-    
-    wrap->setAttribute(hctx->ctx, py_name, PythonEnvironment::getInternedString(hctx->ctx, name)->asObject(hctx->ctx));
-    wrap->setAttribute(hctx->ctx, py_meth, hctx->ctx->fromInteger(reinterpret_cast<long long>(meth)));
-    wrap->setAttribute(hctx->ctx, py_call, hctx->ctx->fromMethod(const_cast<proto::ProtoObject*>(wrap), hpy_method_wrapper));
-    
-    return wrap;
+    if (!hctx || !hctx->ctx || !name || !meth) return nullptr;
+    return makeHPyFunction(hctx, name, meth, nullptr);
 }
 
 HPy HPyModule_Create(HPyContext* hctx, HPyModuleDef* def) {
-    if (!hctx || !hctx->ctx || !def) return 0;
-    
-    // 1. Create a basic ProtoObject for the module
-    const proto::ProtoObject* mod = hctx->ctx->newObject(false);
-    
-    // 2. Set module name
-    const proto::ProtoString* py_name = proto::ProtoString::createSymbol(hctx->ctx, "__name__");
-    mod->setAttribute(hctx->ctx, py_name, PythonEnvironment::getInternedString(hctx->ctx, def->m_name)->asObject(hctx->ctx));
-    
-    // 3. Populate methods from HPyMethodDef array (Step 1215)
-    if (def->m_methods) {
-        HPyMethodDef* methods = reinterpret_cast<HPyMethodDef*>(def->m_methods);
-        for (int i = 0; methods[i].ml_name != nullptr; ++i) {
-            const proto::ProtoObject* methWrap = HPy_WrapMethod(hctx, methods[i].ml_name, methods[i].ml_meth);
-            if (methWrap) {
-                const proto::ProtoString* methName = proto::ProtoString::createSymbol(hctx->ctx, methods[i].ml_name);
-                mod->setAttribute(hctx->ctx, methName, methWrap);
-            }
+    if (!hctx || !hctx->ctx || !def || !def->m_name) return 0;
+    proto::ProtoContext* ctx = hctx->ctx;
+
+    // The module is mutable, so attribute writes (HPyModule_AddObject, the
+    // loader's __file__ and __name__) update it in place. Inside a
+    // PythonEnvironment it also gets the module type, like modules loaded from
+    // Python source.
+    const proto::ProtoObject* mod = ctx->newObject(true);
+    if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx)) {
+        if (const proto::ProtoObject* moduleType = env->getModulePrototype()) {
+            mod = mod->addParent(ctx, moduleType);
+            if (env->getClassString()) mod = mod->setAttribute(ctx, env->getClassString(), moduleType);
         }
     }
-    
-    return hctx->fromProtoObject(mod);
+    const HPy hMod = hctx->fromProtoObject(mod);  // pinned while the module is built
+    if (hMod == HPy_NULL) return 0;
+
+    mod = mod->setAttribute(ctx, internedKey(ctx, "__name__"), internedKey(ctx, def->m_name)->asObject(ctx));
+    if (def->m_doc) {
+        mod = mod->setAttribute(ctx, internedKey(ctx, "__doc__"), internedKey(ctx, def->m_doc)->asObject(ctx));
+    }
+
+    // Populate functions from the HPyMethodDef array (Step 1215); each receives
+    // the module as `self`.
+    if (def->m_methods) {
+        const auto* methods = static_cast<const HPyMethodDef*>(def->m_methods);
+        for (int i = 0; methods[i].ml_name != nullptr; ++i) {
+            if (!methods[i].ml_meth) continue;
+            const proto::ProtoObject* fn = makeHPyFunction(hctx, methods[i].ml_name, methods[i].ml_meth, mod);
+            mod = mod->setAttribute(ctx, internedKey(ctx, methods[i].ml_name), fn);
+        }
+    }
+    return hMod;
 }
 
 // --- Phase 3: API Coverage (v65) ---
@@ -409,7 +437,7 @@ HPy HPyErr_NewException(HPyContext* hctx, const char* name, HPy base, HPy dict) 
     }
     const proto::ProtoObject* exc = baseObj->newChild(hctx->ctx, true);
     const proto::ProtoString* py_name = proto::ProtoString::createSymbol(hctx->ctx, "__name__");
-    exc->setAttribute(hctx->ctx, py_name, PythonEnvironment::getInternedString(hctx->ctx, name)->asObject(hctx->ctx));
+    exc = exc->setAttribute(hctx->ctx, py_name, PythonEnvironment::getInternedString(hctx->ctx, name)->asObject(hctx->ctx));
     
     if (dict) {
         const proto::ProtoObject* d = hctx->asProtoObject(dict);
@@ -547,19 +575,22 @@ HPy HPy_Next(HPyContext* hctx, HPy iter) {
 
 HPy HPySlice_New(HPyContext* hctx, HPy start, HPy stop, HPy step) {
     if (!hctx || !hctx->ctx) return 0;
-    // Mock slice object
-    const proto::ProtoObject* slice = hctx->ctx->newObject(false);
-    HPy_SetAttr_s(hctx, hctx->fromProtoObject(slice), "start", start);
-    HPy_SetAttr_s(hctx, hctx->fromProtoObject(slice), "stop", stop);
-    HPy_SetAttr_s(hctx, hctx->fromProtoObject(slice), "step", step);
-    return hctx->fromProtoObject(slice);
+    // Mock slice object with start, stop and step attributes.
+    proto::ProtoContext* ctx = hctx->ctx;
+    const proto::ProtoObject* slice = ctx->newObject(true);
+    const HPy hSlice = hctx->fromProtoObject(slice);
+    for (const auto& field : {std::make_pair("start", start), std::make_pair("stop", stop), std::make_pair("step", step)}) {
+        const proto::ProtoObject* v = hctx->asProtoObject(field.second);
+        slice = slice->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, field.first), v ? v : PROTO_NONE);
+    }
+    return hSlice;
 }
 
 HPy HPyType_FromSpec(HPyContext* hctx, HPyType_Spec* spec) {
     if (!hctx || !hctx->ctx || !spec) return 0;
-    const proto::ProtoObject* typeObj = hctx->ctx->newObject(false);
+    const proto::ProtoObject* typeObj = hctx->ctx->newObject(true);
     const proto::ProtoString* py_name = proto::ProtoString::createSymbol(hctx->ctx, "__name__");
-    typeObj->setAttribute(hctx->ctx, py_name, PythonEnvironment::getInternedString(hctx->ctx, spec->name)->asObject(hctx->ctx));
+    typeObj = typeObj->setAttribute(hctx->ctx, py_name, PythonEnvironment::getInternedString(hctx->ctx, spec->name)->asObject(hctx->ctx));
     // Implementation of slots would go here (Step 1256)
     return hctx->fromProtoObject(typeObj);
 }
@@ -578,7 +609,8 @@ HPy HPy_CallMethod(HPyContext* hctx, HPy obj, const char* name, const HPy* args,
     const proto::ProtoString* attrName = proto::ProtoString::createSymbol(hctx->ctx, name);
     const proto::ProtoList* pyArgs = hctx->ctx->newList();
     for (size_t i = 0; i < nargs; ++i) {
-        pyArgs->appendLast(hctx->ctx, hctx->asProtoObject(args[i]));
+        const proto::ProtoObject* a = hctx->asProtoObject(args[i]);
+        pyArgs = pyArgs->appendLast(hctx->ctx, a ? a : PROTO_NONE);
     }
     return hctx->fromProtoObject(o->call(hctx->ctx, nullptr, attrName, o, pyArgs, nullptr));
 }

@@ -689,6 +689,39 @@ endif()
 
 add_subdirectory(src/compiler)
 
+# HPy extension modules used by the HPy loader tests: the math_hpy example and a
+# library without an HPyInit_ entry point. Both are written to test/hpy in the
+# build tree, which the tests put on the module search path.
+foreach(hpy_module IN ITEMS math_hpy hpy_no_init)
+    if(hpy_module STREQUAL "math_hpy")
+        add_library(${hpy_module} MODULE examples/hpy/math_hpy.cpp)
+        target_link_libraries(${hpy_module} PRIVATE protoPython protoCore)
+    else()
+        add_library(${hpy_module} MODULE test/hpy/hpy_no_init.cpp)
+    endif()
+    set_target_properties(${hpy_module} PROPERTIES
+        PREFIX ""
+        SUFFIX ".hpy.so"
+        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/test/hpy)
+endforeach()
+# `import math_hpy` loads the extension: name, file, functions, ImportError for a
+# library without an entry point.
+add_test(NAME protopy_hpy_module_basics
+    COMMAND $<TARGET_FILE:protopy> -p ${CMAKE_BINARY_DIR}/test/hpy
+            ${CMAKE_SOURCE_DIR}/test/hpy/hpy_module_basics.py)
+set_tests_properties(protopy_hpy_module_basics PROPERTIES
+    TIMEOUT 60
+    LABELS "regression_gate")
+# 1000 imports and calls of math_hpy.add, with a small GC allocation budget
+# (PROTOCORE_GC_MIN_BUDGET_CELLS) so the collector's trigger is armed early.
+add_test(NAME protopy_hpy_stress
+    COMMAND $<TARGET_FILE:protopy> -p ${CMAKE_BINARY_DIR}/test/hpy
+            ${CMAKE_SOURCE_DIR}/test/hpy/stress_test_hpy.py)
+set_tests_properties(protopy_hpy_stress PROPERTIES
+    ENVIRONMENT "PROTOCORE_GC_MIN_BUDGET_CELLS=20000"
+    TIMEOUT 120
+    LABELS "regression_gate")
+
 # C++ embedding example: built by default and run by CTest so it keeps
 # compiling against the current PythonEnvironment API. Its exit status is the
 # check (it verifies the value it reads back from Python).
