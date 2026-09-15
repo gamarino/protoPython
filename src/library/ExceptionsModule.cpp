@@ -1,6 +1,10 @@
 #include <protoPython/PythonEnvironment.h>
+#include <protoPython/BuiltinsModule.h>
 #include <protoPython/DiagUtils.h>
 #include <protoPython/ExceptionsModule.h>
+
+#include <cerrno>
+#include <string>
 
 namespace protoPython {
 namespace exceptions {
@@ -196,6 +200,163 @@ static const proto::ProtoObject* exception_str(
     }
     if (env && env->getStrPrototype()) return env->callObject(env->getStrPrototype(), {args->asObject(context)});
     return args->asObject(context);
+}
+
+// The OSError subclass CPython selects for an errno value
+// (Objects/exceptions.c, _PyExc_InitState); nullptr for plain OSError.
+static const char* oserrorSubclassName(long err) {
+    switch (err) {
+        case EAGAIN:
+#if EWOULDBLOCK != EAGAIN
+        case EWOULDBLOCK:
+#endif
+        case EALREADY:
+        case EINPROGRESS:  return "BlockingIOError";
+        case ECHILD:       return "ChildProcessError";
+        case EPIPE:
+        case ESHUTDOWN:    return "BrokenPipeError";
+        case ECONNABORTED: return "ConnectionAbortedError";
+        case ECONNREFUSED: return "ConnectionRefusedError";
+        case ECONNRESET:   return "ConnectionResetError";
+        case EEXIST:       return "FileExistsError";
+        case ENOENT:       return "FileNotFoundError";
+        case EISDIR:       return "IsADirectoryError";
+        case ENOTDIR:      return "NotADirectoryError";
+        case EINTR:        return "InterruptedError";
+        case EACCES:
+        case EPERM:        return "PermissionError";
+        case ESRCH:        return "ProcessLookupError";
+        case ETIMEDOUT:    return "TimeoutError";
+        default:           return nullptr;
+    }
+}
+
+static bool isNoneValue(PythonEnvironment* env, const proto::ProtoObject* v) {
+    return !v || v == PROTO_NONE || (env && v == env->getNonePrototype());
+}
+
+// OSError.__new__(cls, *args): when cls is OSError itself and the
+// arguments are (errno, strerror[, filename[, winerror[, filename2]]]),
+// the instance is built from the subclass that matches errno, so
+// OSError(errno.ENOENT, ...) is a FileNotFoundError. Subclasses of OSError
+// are built as they are.
+static const proto::ProtoObject* oserror_new(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (!positionalParameters || positionalParameters->getSize(context) < 1) {
+        return builtins::py_object_new(context, self, parentLink, positionalParameters, keywordParameters);
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* target = cls;
+    const unsigned long nargs = positionalParameters->getSize(context) - 1;
+    const proto::ProtoObject* builtinsMod = env ? env->getBuiltinsModule() : nullptr;
+    if (builtinsMod && nargs >= 2 && nargs <= 5) {
+        const proto::ProtoObject* osError = builtinsMod->getAttribute(context,
+            PythonEnvironment::getInternedString(context, "OSError"));
+        const proto::ProtoObject* err = positionalParameters->getAt(context, 1);
+        if (cls == osError && err && err->isInteger(context)) {
+            if (const char* sub = oserrorSubclassName(err->asLong(context))) {
+                const proto::ProtoObject* subType = builtinsMod->getAttribute(context,
+                    PythonEnvironment::getInternedString(context, sub));
+                if (subType && subType != PROTO_NONE) target = subType;
+            }
+        }
+    }
+    return builtins::py_object_new(context, self, parentLink,
+        context->newList()->appendLast(context, target), nullptr);
+}
+
+// OSError.__init__: BaseException's args, plus errno and strerror for two
+// to five arguments, and filename (third) and filename2 (fifth) when they
+// are not None. With a filename, args keeps only (errno, strerror).
+static const proto::ProtoObject* oserror_init(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    exception_init(context, self, parentLink, positionalParameters, keywordParameters);
+    const proto::ProtoObject* instance = self;
+    if (!instance || instance == PROTO_NONE) {
+        if (!positionalParameters || positionalParameters->getSize(context) == 0) return PROTO_NONE;
+        instance = positionalParameters->getAt(context, 0);
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoString* argsName = PythonEnvironment::getInternedString(context, "args");
+    const proto::ProtoObject* argsObj = instance->getAttribute(context, argsName);
+    const proto::ProtoTuple* args = (argsObj && argsObj->isTuple(context)) ? argsObj->asTuple(context) : nullptr;
+    const unsigned long n = args ? args->getSize(context) : 0;
+    if (n < 2 || n > 5) return PROTO_NONE;
+    auto set = [&](const char* name, const proto::ProtoObject* value) {
+        instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context,
+            PythonEnvironment::getInternedString(context, name), value);
+    };
+    set("errno", args->getAt(context, 0));
+    set("strerror", args->getAt(context, 1));
+    if (n >= 3 && !isNoneValue(env, args->getAt(context, 2))) {
+        set("filename", args->getAt(context, 2));
+        if (n == 5 && !isNoneValue(env, args->getAt(context, 4))) {
+            set("filename2", args->getAt(context, 4));
+        }
+        const proto::ProtoList* kept = context->newList()
+            ->appendLast(context, args->getAt(context, 0))
+            ->appendLast(context, args->getAt(context, 1));
+        set("args", context->newTupleFromList(kept)->asObject(context));
+    }
+    return PROTO_NONE;
+}
+
+// OSError.__str__: "[Errno N] strerror: 'filename'" (with " -> 'filename2'"
+// when set), "[Errno N] strerror" without a filename, and BaseException's
+// str otherwise.
+static const proto::ProtoObject* oserror_str(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoObject* instance = self;
+    if (!instance || instance == PROTO_NONE) {
+        if (!positionalParameters || positionalParameters->getSize(context) == 0) {
+            return exception_str(context, self, parentLink, positionalParameters, keywordParameters);
+        }
+        instance = positionalParameters->getAt(context, 0);
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    auto attr = [&](const char* name) -> const proto::ProtoObject* {
+        const proto::ProtoObject* v = instance->getAttribute(context,
+            PythonEnvironment::getInternedString(context, name));
+        return isNoneValue(env, v) ? nullptr : v;
+    };
+    auto strOf = [&](const proto::ProtoObject* v) -> std::string {
+        std::string out;
+        if (!v) return "None";
+        if (!v->isString(context) && env && env->getStrPrototype()) {
+            v = env->callObject(env->getStrPrototype(), {v});
+        }
+        if (v && v->isString(context)) v->asString(context)->toUTF8String(context, out);
+        return out;
+    };
+    const proto::ProtoObject* errnoV = attr("errno");
+    const proto::ProtoObject* strerrorV = attr("strerror");
+    const proto::ProtoObject* filenameV = attr("filename");
+    std::string text;
+    if (filenameV) {
+        text = "[Errno " + strOf(errnoV) + "] " + strOf(strerrorV) + ": "
+            + PythonEnvironment::reprObject(context, filenameV);
+        if (const proto::ProtoObject* filename2V = attr("filename2")) {
+            text += " -> " + PythonEnvironment::reprObject(context, filename2V);
+        }
+    } else if (errnoV && strerrorV) {
+        text = "[Errno " + strOf(errnoV) + "] " + strOf(strerrorV);
+    } else {
+        return exception_str(context, self, parentLink, positionalParameters, keywordParameters);
+    }
+    return proto::ProtoString::fromUTF8(context, text.c_str())->asObject(context);
 }
 
 // KeyError.__str__: repr of a single argument, so a missing key reads as it
@@ -551,6 +712,32 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoObject* childProcessErrorType = make_exception_type(ctx, objectProto, typeProto, "ChildProcessError", osErrorType);
     const proto::ProtoObject* connectionErrorType = make_exception_type(ctx, objectProto, typeProto, "ConnectionError", osErrorType);
     const proto::ProtoObject* brokenPipeErrorType = make_exception_type(ctx, objectProto, typeProto, "BrokenPipeError", connectionErrorType);
+    const proto::ProtoObject* connectionAbortedErrorType = make_exception_type(ctx, objectProto, typeProto, "ConnectionAbortedError", connectionErrorType);
+    const proto::ProtoObject* connectionRefusedErrorType = make_exception_type(ctx, objectProto, typeProto, "ConnectionRefusedError", connectionErrorType);
+    const proto::ProtoObject* connectionResetErrorType = make_exception_type(ctx, objectProto, typeProto, "ConnectionResetError", connectionErrorType);
+    const proto::ProtoObject* processLookupErrorType = make_exception_type(ctx, objectProto, typeProto, "ProcessLookupError", osErrorType);
+    {
+        // make_exception_type gives every type BaseException's __init__ and
+        // __str__ as own attributes, so the OSError versions go on each type
+        // of the family; user subclasses inherit them. __new__ is looked up
+        // through the MRO and lives on OSError only.
+        const proto::ProtoString* initS = PythonEnvironment::getInternedString(ctx, "__init__");
+        const proto::ProtoString* strS = PythonEnvironment::getInternedString(ctx, "__str__");
+        for (const proto::ProtoObject* t : {osErrorType, blockingIOErrorType, fileNotFoundErrorType,
+                 permissionErrorType, fileExistsErrorType, notADirectoryErrorType,
+                 isADirectoryErrorType, timeoutErrorType, interruptedErrorType,
+                 childProcessErrorType, connectionErrorType, brokenPipeErrorType,
+                 connectionAbortedErrorType, connectionRefusedErrorType,
+                 connectionResetErrorType, processLookupErrorType}) {
+            t->setAttribute(ctx, initS, ctx->fromMethod(nullptr, oserror_init));
+            t->setAttribute(ctx, strS, ctx->fromMethod(nullptr, oserror_str));
+        }
+        osErrorType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__new__"),
+                                  ctx->fromMethod(nullptr, oserror_new));
+        for (const char* attr : {"errno", "strerror", "filename", "filename2"}) {
+            osErrorType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, attr), PROTO_NONE);
+        }
+    }
 
     const proto::ProtoObject* unicodeErrorType = make_exception_type(ctx, objectProto, typeProto, "UnicodeError", valueErrorType);
     const proto::ProtoObject* unicodeEncodeErrorType = make_exception_type(ctx, objectProto, typeProto, "UnicodeEncodeError", unicodeErrorType);
@@ -613,6 +800,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     mod = mod->setAttribute(ctx, py_childprocesserror, childProcessErrorType);
     mod = mod->setAttribute(ctx, py_connectionerror, connectionErrorType);
     mod = mod->setAttribute(ctx, py_brokenpipeerror, brokenPipeErrorType);
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "ConnectionAbortedError"), connectionAbortedErrorType);
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "ConnectionRefusedError"), connectionRefusedErrorType);
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "ConnectionResetError"), connectionResetErrorType);
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "ProcessLookupError"), processLookupErrorType);
     mod = mod->setAttribute(ctx, py_modulenotfounderror, moduleNotFoundErrorType);
     mod = mod->setAttribute(ctx, py_unicodetranslateerror, unicodeTranslateErrorType);
     mod = mod->setAttribute(ctx, py_unicodeerror, unicodeErrorType);

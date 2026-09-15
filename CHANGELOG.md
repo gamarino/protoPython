@@ -275,6 +275,19 @@ onwards. Commit hashes are given for reference.
   operand types through their MRO, not on the instances; a subclass right
   operand gets priority even when it inherits its reflected method, and an
   exception raised by a comparison method propagates.
+- **OSError subclasses:** native OS calls (`os.stat`, `open`, `os.mkdir`,
+  `os.remove` and the rest) raised a plain `OSError` whose only argument was
+  the formatted message, without `strerror`, where CPython raises the
+  subclass for the errno (`FileNotFoundError`, `PermissionError`,
+  `IsADirectoryError`, ...). `OSError(errno, strerror[, filename])` now
+  builds that subclass and sets `errno`, `strerror`, `filename` and
+  `filename2`, with CPython's `args` and `str()`; native errors are raised
+  through it. `ConnectionAbortedError`, `ConnectionRefusedError`,
+  `ConnectionResetError` and `ProcessLookupError` were missing and are
+  defined. `open()` for reading reports the real errno (it always reported
+  ENOENT) and `IsADirectoryError` for a directory, `os.listdir` and
+  `os.scandir` raise instead of returning an empty result, and uncaught
+  exceptions print `str(exc)`.
 
 ### Performance
 

@@ -270,6 +270,13 @@ set_tests_properties(protopy_compare_inherited_dunders PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# OS errors and OSError(errno, ...) give the errno-specific OSError subclass.
+add_test(NAME protopy_oserror_errno_subclass
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/oserror_errno_subclass.py)
+set_tests_properties(protopy_oserror_errno_subclass PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # Equal ints and floats compare, hash and key dicts as one value beyond long long.
 add_test(NAME protopy_numeric_keys
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/numeric_keys.py)

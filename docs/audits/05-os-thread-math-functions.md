@@ -45,8 +45,8 @@ ThreadModule policy stubs.
 | getcwd | REAL | — | getcwd() with 4 KiB buffer. |
 | readlink | PARTIAL | MEDIUM | on failure returns the input path (not an error); silently wrong for callers that probe `is_symlink`. |
 | chdir | PARTIAL | HIGH | always returns None even on failure; CPython raises FileNotFoundError. Common in test suites that chdir to scratch dirs. |
-| listdir | REAL | — | opendir/readdir loop, skips `.`/`..`. |
-| scandir | PARTIAL | MEDIUM | returns PROTO_NONE on opendir failure instead of raising FileNotFoundError; iterators that expect raise will silently halt. |
+| listdir | REAL | — | opendir/readdir loop, skips `.`/`..`; raises the errno-specific OSError subclass when opendir fails. |
+| scandir | REAL | — | raises the errno-specific OSError subclass when opendir fails. |
 | stat | REAL | — | raises OSError on failure via env->raiseOSError. |
 | lstat | REAL | — | as stat. |
 | remove | PARTIAL | HIGH | calls unlink() but ignores result; silent success on missing files breaks `tempfile`/test cleanup expecting FileNotFoundError. |

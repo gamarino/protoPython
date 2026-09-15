@@ -312,7 +312,10 @@ static const proto::ProtoObject* py_listdir(
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     const proto::ProtoList* result = ctx->newList();
     DIR* d = opendir(path.c_str());
-    if (!d) return env ? env->wrapList(ctx, result) : result->asObject(ctx);
+    if (!d) {
+        if (env) env->raiseOSError(ctx, errno, std::strerror(errno), path);
+        return nullptr;
+    }
     for (;;) {
         struct dirent* e = readdir(d);
         if (!e) break;
@@ -345,7 +348,13 @@ static const proto::ProtoObject* py_scandir(
     }
 
     DIR* d = opendir(path.c_str());
-    if (!d) return PROTO_NONE;
+    if (!d) {
+        int err = errno;
+        if (PythonEnvironment* scanEnv = PythonEnvironment::fromContext(ctx)) {
+            scanEnv->raiseOSError(ctx, err, std::strerror(err), path);
+        }
+        return nullptr;
+    }
 
     ScandirState* state = new ScandirState(d, path);
     const proto::ProtoObject* iter = ctx->newObject(false);

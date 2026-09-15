@@ -9,6 +9,8 @@
 #include <iostream>
 #include <fstream>
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -491,11 +493,21 @@ static const proto::ProtoObject* py_io_open(
                   && (mode.find('a') == std::string::npos)
                   && (mode.find('x') == std::string::npos);
     if (isRead) {
-        std::ifstream probe(filename);
-        if (!probe.is_open()) {
+        // Report the error open(2) gives, and EISDIR for a directory, which
+        // Linux opens read-only without error (CPython checks with fstat).
+        int err = 0;
+        int probeFd = ::open(filename.c_str(), O_RDONLY | O_CLOEXEC);
+        if (probeFd < 0) {
+            err = errno;
+        } else {
+            struct stat st;
+            if (::fstat(probeFd, &st) == 0 && S_ISDIR(st.st_mode)) err = EISDIR;
+            ::close(probeFd);
+        }
+        if (err != 0) {
             PythonEnvironment* env = PythonEnvironment::fromContext(context);
             if (env) {
-                env->raiseOSError(context, 2, "No such file or directory", filename);
+                env->raiseOSError(context, err, std::strerror(err), filename);
                 return nullptr;
             }
             return PROTO_NONE;

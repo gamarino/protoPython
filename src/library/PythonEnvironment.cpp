@@ -16826,21 +16826,18 @@ void PythonEnvironment::raiseOSError(proto::ProtoContext* ctx, int errnum, const
         raiseRuntimeError(ctx, strerr);
         return;
     }
-    // Build the message in CPython format: "[Errno N] strerr: 'filename'"
-    std::string msg = std::string("[Errno ") + std::to_string(errnum) + "] " + strerr;
-    if (!filename.empty()) msg += ": '" + filename + "'";
-    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx));
-    const proto::ProtoObject* exc = invokePythonCallable(ctx, osErrorType, args, nullptr);
-    if (exc && exc != PROTO_NONE) {
-        // Tag the exception with errno for isinstance(e, OSError) and e.errno checks
-        exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "errno"),
-                                ctx->fromInteger(errnum));
-        if (!filename.empty()) {
-            exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "filename"),
-                                    PythonEnvironment::getInternedString(ctx, filename.c_str())->asObject(ctx));
-        }
-        setPendingException(exc);
+    // OSError(errno, strerror[, filename]), as CPython's
+    // PyErr_SetFromErrnoWithFilename builds it: OSError.__new__ selects the
+    // subclass for errno (FileNotFoundError, PermissionError, ...) and
+    // OSError.__init__ sets errno, strerror and filename.
+    const proto::ProtoList* args = ctx->newList()
+        ->appendLast(ctx, ctx->fromInteger(errnum))
+        ->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, strerr.c_str())->asObject(ctx));
+    if (!filename.empty()) {
+        args = args->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, filename.c_str())->asObject(ctx));
     }
+    const proto::ProtoObject* exc = invokePythonCallable(ctx, osErrorType, args, nullptr);
+    if (exc && exc != PROTO_NONE) setPendingException(exc);
 }
 
 void PythonEnvironment::raiseImportError(proto::ProtoContext* ctx, const std::string& msg, const std::string& name) {
@@ -23432,14 +23429,23 @@ std::string PythonEnvironment::formatException(const proto::ProtoObject* exc, co
         py_name->asString(context)->toUTF8String(context, typeName);
     }
 
+    // The message is str(exc), as CPython prints it: OSError's str is
+    // "[Errno N] strerror: 'filename'" while its args are (errno, strerror).
+    // When str() fails, fall back to a string first argument.
     std::string msg;
-    const proto::ProtoObject* argsObj = exc->getAttribute(context, PythonEnvironment::getInternedString(context, "args"));
-    if (argsObj && argsObj->isTuple(context)) {
-        const proto::ProtoTuple* args = argsObj->asTuple(context);
-        if (args->getSize(context) > 0) {
-            const proto::ProtoObject* first = args->getAt(context, 0);
-            if (first && first->isString(context)) {
-                first->asString(context)->toUTF8String(context, msg);
+    const proto::ProtoObject* strObj = strPrototype ? callObject(strPrototype, {exc}) : nullptr;
+    if (strObj && strObj->isString(context)) {
+        strObj->asString(context)->toUTF8String(context, msg);
+    } else {
+        if (hasPendingException()) clearPendingException();
+        const proto::ProtoObject* argsObj = exc->getAttribute(context, PythonEnvironment::getInternedString(context, "args"));
+        if (argsObj && argsObj->isTuple(context)) {
+            const proto::ProtoTuple* args = argsObj->asTuple(context);
+            if (args->getSize(context) > 0) {
+                const proto::ProtoObject* first = args->getAt(context, 0);
+                if (first && first->isString(context)) {
+                    first->asString(context)->toUTF8String(context, msg);
+                }
             }
         }
     }
