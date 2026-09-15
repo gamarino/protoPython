@@ -1,2 +1,0 @@
-"/usr/bin/gcc-ar-13" cr ../../../lib/libgmock_main.a CMakeFiles/gmock_main.dir/src/gmock_main.cc.o
-"/usr/bin/gcc-ranlib-13" ../../../lib/libgmock_main.a
