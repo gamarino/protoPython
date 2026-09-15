@@ -169,6 +169,22 @@ onwards. Commit hashes are given for reference.
   described them as roots. Each context now pins its handles in its own
   `ProtoRootSet`; `HPy_Close` releases the pin and destroying the context
   releases the rest.
+- **Struct sequences:** `sys.version_info` and `sys.implementation.version`
+  were bare lists (`sys.version_info[:2]` printed `list[slice(None, 2, None)]`,
+  `len()` was 0, `.major` and comparison with tuples failed); `sys.flags`,
+  `sys.hash_info`, `sys.int_info`, `sys.thread_info` and `sys.float_info` were
+  plain objects that returned `None` for any index; `os.stat_result` raised a
+  C++ exception when sliced, and `tuple(os.stat(...))` never terminated because
+  indexes past the end returned `None`. All of them, and `time.struct_time`,
+  are now built by one helper (`newStructSequence`) as tuples of their visible
+  fields with every field also available as an attribute, with CPython 3.14's
+  field names and order: `version_info` has five fields, `sys.flags` 18 visible
+  fields (`dev_mode` and `safe_path` are booleans), and `os.stat_result` ten
+  visible fields whose indexes 7-9 are integer timestamps, plus the float
+  `st_atime`/`st_mtime`/`st_ctime`, the `*_ns` timestamps, `st_blksize`,
+  `st_blocks` and `st_rdev`. `os.fstat` returns the same object instead of a
+  plain tuple. Unlike CPython, `type()` of these objects is `tuple` and their
+  repr is a plain tuple repr.
 
 ### Performance
 

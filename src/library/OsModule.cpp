@@ -1,6 +1,7 @@
 #include <protoPython/OsModule.h>
 #include <protoPython/DiagUtils.h>
 #include <protoPython/PythonEnvironment.h>
+#include <protoPython/StructSequence.h>
 #include <protoCore.h>
 #include <cstdlib>
 #include <cstring>
@@ -144,41 +145,47 @@ static const proto::ProtoObject* py_scandir_iter(
     return self;
 }
 
-static const proto::ProtoObject* py_stat_result_getitem(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* self,
-    const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
-    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
-    long long idx = posArgs->getAt(ctx, 0)->asLong(ctx);
-    const char* keys[] = {
-        "st_mode", "st_ino", "st_dev", "st_nlink", "st_uid", "st_gid", "st_size", "st_atime", "st_mtime", "st_ctime"
-    };
-    if (idx >= 0 && idx < 10) {
-        return self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, keys[idx]));
-    }
-    return PROTO_NONE;
-}
-
+// os.stat_result as a struct sequence with CPython's layout: ten visible
+// fields, where indexes 7-9 are unnamed integer timestamps, followed by the
+// attribute-only float timestamps, nanosecond timestamps, st_blksize,
+// st_blocks and st_rdev.
 static const proto::ProtoObject* make_stat_result(proto::ProtoContext* ctx, const struct stat& st) {
-    const proto::ProtoObject* res = ctx->newObject(false);
-    res = res->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "st_mode"), ctx->fromInteger(st.st_mode));
-    res = res->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "st_ino"), ctx->fromInteger(st.st_ino));
-    res = res->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "st_dev"), ctx->fromInteger(st.st_dev));
-    res = res->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "st_nlink"), ctx->fromInteger(st.st_nlink));
-    res = res->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "st_uid"), ctx->fromInteger(st.st_uid));
-    res = res->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "st_gid"), ctx->fromInteger(st.st_gid));
-    res = res->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "st_size"), ctx->fromInteger(st.st_size));
-    res = res->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "st_atime"), ctx->fromInteger(st.st_atime));
-    res = res->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "st_mtime"), ctx->fromInteger(st.st_mtime));
-    res = res->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "st_ctime"), ctx->fromInteger(st.st_ctime));
-    
-    // Add __getitem__ for indexing support
-    res = res->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__getitem__"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(res), py_stat_result_getitem));
-    
-    return res;
+#if defined(__APPLE__)
+    const struct timespec& atim = st.st_atimespec;
+    const struct timespec& mtim = st.st_mtimespec;
+    const struct timespec& ctim = st.st_ctimespec;
+#else
+    const struct timespec& atim = st.st_atim;
+    const struct timespec& mtim = st.st_mtim;
+    const struct timespec& ctim = st.st_ctim;
+#endif
+    auto seconds = [](const struct timespec& ts) {
+        return static_cast<double>(ts.tv_sec) + static_cast<double>(ts.tv_nsec) * 1e-9;
+    };
+    auto nanoseconds = [](const struct timespec& ts) {
+        return static_cast<long long>(ts.tv_sec) * 1000000000LL + static_cast<long long>(ts.tv_nsec);
+    };
+    return newStructSequence(ctx, {
+        {"st_mode",     ctx->fromInteger(static_cast<long long>(st.st_mode))},
+        {"st_ino",      ctx->fromInteger(static_cast<long long>(st.st_ino))},
+        {"st_dev",      ctx->fromInteger(static_cast<long long>(st.st_dev))},
+        {"st_nlink",    ctx->fromInteger(static_cast<long long>(st.st_nlink))},
+        {"st_uid",      ctx->fromInteger(static_cast<long long>(st.st_uid))},
+        {"st_gid",      ctx->fromInteger(static_cast<long long>(st.st_gid))},
+        {"st_size",     ctx->fromInteger(static_cast<long long>(st.st_size))},
+        {nullptr,       ctx->fromInteger(static_cast<long long>(atim.tv_sec))},
+        {nullptr,       ctx->fromInteger(static_cast<long long>(mtim.tv_sec))},
+        {nullptr,       ctx->fromInteger(static_cast<long long>(ctim.tv_sec))},
+        {"st_atime",    ctx->fromDouble(seconds(atim))},
+        {"st_mtime",    ctx->fromDouble(seconds(mtim))},
+        {"st_ctime",    ctx->fromDouble(seconds(ctim))},
+        {"st_atime_ns", ctx->fromInteger(nanoseconds(atim))},
+        {"st_mtime_ns", ctx->fromInteger(nanoseconds(mtim))},
+        {"st_ctime_ns", ctx->fromInteger(nanoseconds(ctim))},
+        {"st_blksize",  ctx->fromInteger(static_cast<long long>(st.st_blksize))},
+        {"st_blocks",   ctx->fromInteger(static_cast<long long>(st.st_blocks))},
+        {"st_rdev",     ctx->fromInteger(static_cast<long long>(st.st_rdev))},
+    }, 10);
 }
 
 static const proto::ProtoObject* py_direntry_stat(
@@ -2152,10 +2159,7 @@ static const proto::ProtoObject* py_os_times(
 #endif
 }
 
-// os.fstat(fd) -> stat_result.  Returns a tuple-like with the same
-// 10 fields CPython exposes: st_mode, st_ino, st_dev, st_nlink,
-// st_uid, st_gid, st_size, st_atime, st_mtime, st_ctime.  We
-// piggyback on the existing stat_result type set up in initialize().
+// os.fstat(fd) -> stat_result, the same struct sequence os.stat returns.
 static const proto::ProtoObject* py_os_fstat(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs,
@@ -2169,18 +2173,7 @@ static const proto::ProtoObject* py_os_fstat(
         if (env) env->raiseOSError(ctx, errno, std::strerror(errno), "");
         return nullptr;
     }
-    const proto::ProtoList* fields = ctx->newList();
-    fields = fields->appendLast(ctx, ctx->fromInteger(static_cast<long long>(st.st_mode)));
-    fields = fields->appendLast(ctx, ctx->fromInteger(static_cast<long long>(st.st_ino)));
-    fields = fields->appendLast(ctx, ctx->fromInteger(static_cast<long long>(st.st_dev)));
-    fields = fields->appendLast(ctx, ctx->fromInteger(static_cast<long long>(st.st_nlink)));
-    fields = fields->appendLast(ctx, ctx->fromInteger(static_cast<long long>(st.st_uid)));
-    fields = fields->appendLast(ctx, ctx->fromInteger(static_cast<long long>(st.st_gid)));
-    fields = fields->appendLast(ctx, ctx->fromInteger(static_cast<long long>(st.st_size)));
-    fields = fields->appendLast(ctx, ctx->fromInteger(static_cast<long long>(st.st_atime)));
-    fields = fields->appendLast(ctx, ctx->fromInteger(static_cast<long long>(st.st_mtime)));
-    fields = fields->appendLast(ctx, ctx->fromInteger(static_cast<long long>(st.st_ctime)));
-    return ctx->newTupleFromList(fields)->asObject(ctx);
+    return make_stat_result(ctx, st);
 #else
     return PROTO_NONE;
 #endif

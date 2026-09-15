@@ -134,7 +134,16 @@ TEST_F(FoundationTest, SysModule) {
 
     const proto::ProtoObject* versionInfo = sys->getAttribute(context, proto::ProtoString::fromUTF8String(context, "version_info"));
     ASSERT_NE(versionInfo, nullptr);
-    ASSERT_TRUE(versionInfo->asList(context) != nullptr);
+    // A struct sequence: a tuple of (major, minor, micro, releaselevel,
+    // serial) in __data__, with every field also available as an attribute.
+    const proto::ProtoObject* viData = versionInfo->getAttribute(context, env.getDataString());
+    ASSERT_NE(viData, nullptr);
+    const proto::ProtoTuple* viTuple = viData->asTuple(context);
+    ASSERT_NE(viTuple, nullptr);
+    EXPECT_EQ(viTuple->getSize(context), 5u);
+    const proto::ProtoObject* major = versionInfo->getAttribute(context, proto::ProtoString::createSymbol(context, "major"));
+    ASSERT_NE(major, nullptr);
+    EXPECT_EQ(major->asLong(context), 3);
 }
 
 TEST_F(FoundationTest, ExecuteModule) {

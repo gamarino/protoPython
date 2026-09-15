@@ -38,6 +38,7 @@ add_library(protoPython SHARED
     ErrnoModule.cpp
     StatModule.cpp
     StructModule.cpp
+    StructSequence.cpp
     MarshalModule.cpp
     ImpModule.cpp
     WarningsModule.cpp

@@ -88,6 +88,14 @@ add_test(NAME protopy_stdlib_layout
 set_tests_properties(protopy_stdlib_layout PROPERTIES
     TIMEOUT 60
     LABELS "regression_gate")
+# sys.version_info, sys.flags, sys.*_info, os.stat_result and time.struct_time
+# are struct sequences: tuples of their visible fields with named attributes.
+add_test(NAME protopy_struct_sequences
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/struct_sequences.py)
+set_tests_properties(protopy_struct_sequences PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
 # The const_cast review report runs and exits 0 (--strict would fail on any match).
 add_test(NAME conformity_const_cast_report
     COMMAND ${CMAKE_SOURCE_DIR}/tests/conformity/scripts/check_const_cast.sh)

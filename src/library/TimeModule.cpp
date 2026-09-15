@@ -1,5 +1,6 @@
 #include <protoPython/TimeModule.h>
 #include <protoPython/PythonEnvironment.h>
+#include <protoPython/StructSequence.h>
 #include <protoPython/DiagUtils.h>
 #include <chrono>
 #include <thread>
@@ -114,51 +115,24 @@ static const proto::ProtoObject* py_thread_time(
     return ctx->fromDouble(0.0);
 }
 
-// Build a struct_time-shaped object that supports BOTH indexing
-// (st[0] == st.tm_year) and attribute access (st.tm_year).  CPython's
-// `time.struct_time` is a namedtuple-derived sequence; consumers in the
-// stdlib (_strptime, datetime, calendar) read both forms.
-// protoCore's tuple-shape pointers can't carry user-stamped attributes
-// through getType (the tuple shortcut wins), so wrap the 9-element
-// tuple in an Object that stores it in __data__ (so subscript / iter /
-// len work via tuple-protocol fallback) and attaches the named field
-// values directly as own attributes.
+// Build time.struct_time as a struct sequence: indexing (st[0]) and
+// attribute access (st.tm_year) both work, as the stdlib (_strptime,
+// datetime, calendar) expects.
 static const proto::ProtoObject* build_struct_time(
     proto::ProtoContext* ctx,
     int year, int mon, int mday, int hour, int min_, int sec,
     int wday, int yday, int isdst) {
-    const proto::ProtoList* result = ctx->newList();
-    result = result->appendLast(ctx, ctx->fromInteger(year));
-    result = result->appendLast(ctx, ctx->fromInteger(mon));
-    result = result->appendLast(ctx, ctx->fromInteger(mday));
-    result = result->appendLast(ctx, ctx->fromInteger(hour));
-    result = result->appendLast(ctx, ctx->fromInteger(min_));
-    result = result->appendLast(ctx, ctx->fromInteger(sec));
-    result = result->appendLast(ctx, ctx->fromInteger(wday));
-    result = result->appendLast(ctx, ctx->fromInteger(yday));
-    result = result->appendLast(ctx, ctx->fromInteger(isdst));
-
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    const proto::ProtoTuple* tup = ctx->newTupleFromList(result);
-
-    const proto::ProtoObject* obj = ctx->newObject(true);
-    if (env && env->getTuplePrototype()) {
-        obj = obj->addParent(ctx, env->getTuplePrototype());
-        obj = obj->setAttribute(ctx, env->getClassString(), env->getTuplePrototype());
-    }
-    obj = obj->setAttribute(ctx,
-        env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "__data__"),
-        tup ? tup->asObject(ctx) : result->asObject(ctx));
-    obj = obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tm_year"), ctx->fromInteger(year));
-    obj = obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tm_mon"),  ctx->fromInteger(mon));
-    obj = obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tm_mday"), ctx->fromInteger(mday));
-    obj = obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tm_hour"), ctx->fromInteger(hour));
-    obj = obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tm_min"),  ctx->fromInteger(min_));
-    obj = obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tm_sec"),  ctx->fromInteger(sec));
-    obj = obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tm_wday"), ctx->fromInteger(wday));
-    obj = obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tm_yday"), ctx->fromInteger(yday));
-    obj = obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tm_isdst"),ctx->fromInteger(isdst));
-    return obj;
+    return newStructSequence(ctx, {
+        {"tm_year",  ctx->fromInteger(year)},
+        {"tm_mon",   ctx->fromInteger(mon)},
+        {"tm_mday",  ctx->fromInteger(mday)},
+        {"tm_hour",  ctx->fromInteger(hour)},
+        {"tm_min",   ctx->fromInteger(min_)},
+        {"tm_sec",   ctx->fromInteger(sec)},
+        {"tm_wday",  ctx->fromInteger(wday)},
+        {"tm_yday",  ctx->fromInteger(yday)},
+        {"tm_isdst", ctx->fromInteger(isdst)},
+    });
 }
 
 static const proto::ProtoObject* make_struct_time(proto::ProtoContext* ctx, struct tm* tm_ptr) {

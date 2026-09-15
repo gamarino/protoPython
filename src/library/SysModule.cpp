@@ -1,6 +1,7 @@
 #include <protoPython/SysModule.h>
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/ExecutionEngine.h>
+#include <protoPython/StructSequence.h>
 #include <atomic>
 #include <iostream>
 #include <memory>
@@ -855,12 +856,16 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     warnWrapper = warnWrapper->setAttribute(ctx, env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "__data__"), warnList->asObject(ctx));
     sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "warnoptions"), warnWrapper);
 
-    // sys.version_info (3, 14, 0)
-    const proto::ProtoList* vi = ctx->newList();
-    vi = vi->appendLast(ctx, ctx->fromInteger(3));
-    vi = vi->appendLast(ctx, ctx->fromInteger(14));
-    vi = vi->appendLast(ctx, ctx->fromInteger(0));
-    sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "version_info"), vi->asObject(ctx));
+    // sys.version_info: struct sequence (major, minor, micro, releaselevel, serial)
+    const proto::ProtoObject* finalLevel = PythonEnvironment::getInternedString(ctx, "final")->asObject(ctx);
+    const proto::ProtoObject* vi = newStructSequence(ctx, {
+        {"major", ctx->fromInteger(3)},
+        {"minor", ctx->fromInteger(14)},
+        {"micro", ctx->fromInteger(0)},
+        {"releaselevel", finalLevel},
+        {"serial", ctx->fromInteger(0)},
+    });
+    sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "version_info"), vi);
 
     const proto::ProtoObject* stats = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, false) : ctx->newObject(false);
     stats = stats->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "calls"), ctx->fromInteger(0));
@@ -964,77 +969,77 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     // sys.implementation
     const proto::ProtoObject* impl = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(false);
     impl = impl->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "name"), PythonEnvironment::getInternedString(ctx, "protopython")->asObject(ctx));
-    const proto::ProtoList* impl_version = ctx->newList();
-    impl_version = impl_version->appendLast(ctx, ctx->fromInteger(1));
-    impl_version = impl_version->appendLast(ctx, ctx->fromInteger(0));
-    impl_version = impl_version->appendLast(ctx, ctx->fromInteger(0));
-    impl = impl->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "version"), impl_version->asObject(ctx));
+    const proto::ProtoObject* impl_version = newStructSequence(ctx, {
+        {"major", ctx->fromInteger(1)},
+        {"minor", ctx->fromInteger(0)},
+        {"micro", ctx->fromInteger(0)},
+        {"releaselevel", PythonEnvironment::getInternedString(ctx, "final")->asObject(ctx)},
+        {"serial", ctx->fromInteger(0)},
+    });
+    impl = impl->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "version"), impl_version);
     impl = impl->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "cache_tag"), PythonEnvironment::getInternedString(ctx, "protopython-314")->asObject(ctx));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "implementation"), impl);
 
-    // sys.flags
-    const proto::ProtoObject* flags = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(false);
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "debug"),                   ctx->fromInteger(0));
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "inspect"),                 ctx->fromInteger(0));
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "interactive"),             ctx->fromInteger(0));
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "optimize"),                ctx->fromInteger(0));
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "dont_write_bytecode"),     ctx->fromInteger(1));
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "no_user_site"),            ctx->fromInteger(0));
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "no_site"),                 ctx->fromInteger(0));
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ignore_environment"),      ctx->fromInteger(0));
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "verbose"),                 ctx->fromInteger(0));
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "bytes_warning"),           ctx->fromInteger(0));
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "quiet"),                   ctx->fromInteger(0));
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "hash_randomization"),      ctx->fromInteger(1));
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "isolated"),                ctx->fromInteger(0));
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "dev_mode"),                ctx->fromInteger(0));
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "utf8_mode"),               ctx->fromInteger(0));
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "warn_default_encoding"),   ctx->fromInteger(0));
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "safe_path"),               ctx->fromInteger(0));
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "int_max_str_digits"),      ctx->fromInteger(4300));
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "context_aware_warnings"),   ctx->fromInteger(0));
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "thread_inherit_context"),   ctx->fromInteger(0));
+    // sys.flags: struct sequence with CPython 3.14's 18 visible fields;
+    // context_aware_warnings and thread_inherit_context are attribute-only.
+    // dev_mode and safe_path are booleans, as in CPython.
+    const proto::ProtoObject* flags = newStructSequence(ctx, {
+        {"debug",                  ctx->fromInteger(0)},
+        {"inspect",                ctx->fromInteger(0)},
+        {"interactive",            ctx->fromInteger(0)},
+        {"optimize",               ctx->fromInteger(0)},
+        {"dont_write_bytecode",    ctx->fromInteger(1)},
+        {"no_user_site",           ctx->fromInteger(0)},
+        {"no_site",                ctx->fromInteger(0)},
+        {"ignore_environment",     ctx->fromInteger(0)},
+        {"verbose",                ctx->fromInteger(0)},
+        {"bytes_warning",          ctx->fromInteger(0)},
+        {"quiet",                  ctx->fromInteger(0)},
+        {"hash_randomization",     ctx->fromInteger(1)},
+        {"isolated",               ctx->fromInteger(0)},
+        {"dev_mode",               PROTO_FALSE},
+        {"utf8_mode",              ctx->fromInteger(0)},
+        {"warn_default_encoding",  ctx->fromInteger(0)},
+        {"safe_path",              PROTO_FALSE},
+        {"int_max_str_digits",     ctx->fromInteger(4300)},
+        {"context_aware_warnings", ctx->fromInteger(0)},
+        {"thread_inherit_context", ctx->fromInteger(0)},
+    }, 18);
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "flags"), flags);
 
     // sys.maxsize (64-bit signed max)
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "maxsize"), ctx->fromInteger(9223372036854775807LL));
 
     // sys.hash_info — CPython-compatible hash parameters
-    const proto::ProtoObject* hash_info = env && env->getObjectPrototype()
-        ? env->getObjectPrototype()->newChild(ctx, true)
-        : ctx->newObject(false);
-    hash_info = hash_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "width"),    ctx->fromInteger(64));
-    hash_info = hash_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "modulus"),  ctx->fromInteger(2305843009213693951LL));
-    hash_info = hash_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "inf"),      ctx->fromInteger(314159));
-    hash_info = hash_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "nan"),      ctx->fromInteger(0));
-    hash_info = hash_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "imag"),     ctx->fromInteger(1000003));
-    hash_info = hash_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "algorithm"), proto::ProtoString::createSymbol(ctx, "siphash24")->asObject(ctx));
-    hash_info = hash_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "hash_bits"),  ctx->fromInteger(64));
-    hash_info = hash_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "seed_bits"),  ctx->fromInteger(128));
-    hash_info = hash_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "cutoff"),     ctx->fromInteger(0));
+    const proto::ProtoObject* hash_info = newStructSequence(ctx, {
+        {"width",     ctx->fromInteger(64)},
+        {"modulus",   ctx->fromInteger(2305843009213693951LL)},
+        {"inf",       ctx->fromInteger(314159)},
+        {"nan",       ctx->fromInteger(0)},
+        {"imag",      ctx->fromInteger(1000003)},
+        {"algorithm", proto::ProtoString::createSymbol(ctx, "siphash24")->asObject(ctx)},
+        {"hash_bits", ctx->fromInteger(64)},
+        {"seed_bits", ctx->fromInteger(128)},
+        {"cutoff",    ctx->fromInteger(0)},
+    });
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "hash_info"), hash_info);
 
     // sys.int_info — CPython-compatible int internal details
-    const proto::ProtoObject* int_info = env && env->getObjectPrototype()
-        ? env->getObjectPrototype()->newChild(ctx, true)
-        : ctx->newObject(false);
-    int_info = int_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "bits_per_digit"),     ctx->fromInteger(30));
-    int_info = int_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "sizeof_digit"),       ctx->fromInteger(4));
-    int_info = int_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "default_max_str_digits"), ctx->fromInteger(4300));
-    int_info = int_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "str_digits_check_threshold"), ctx->fromInteger(640));
+    const proto::ProtoObject* int_info = newStructSequence(ctx, {
+        {"bits_per_digit",             ctx->fromInteger(30)},
+        {"sizeof_digit",               ctx->fromInteger(4)},
+        {"default_max_str_digits",     ctx->fromInteger(4300)},
+        {"str_digits_check_threshold", ctx->fromInteger(640)},
+    });
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "int_info"), int_info);
 
     // sys.thread_info — CPython exposes (name, lock, version).
     // protoPython uses native pthreads (NPTL on Linux); report that.
-    const proto::ProtoObject* thread_info = env && env->getObjectPrototype()
-        ? env->getObjectPrototype()->newChild(ctx, true)
-        : ctx->newObject(false);
-    thread_info = thread_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "name"),
-        PythonEnvironment::getInternedString(ctx, "pthread")->asObject(ctx));
-    thread_info = thread_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "lock"),
-        PythonEnvironment::getInternedString(ctx, "mutex+cond")->asObject(ctx));
-    thread_info = thread_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "version"),
-        PythonEnvironment::getInternedString(ctx, "NPTL")->asObject(ctx));
+    const proto::ProtoObject* thread_info = newStructSequence(ctx, {
+        {"name",    PythonEnvironment::getInternedString(ctx, "pthread")->asObject(ctx)},
+        {"lock",    PythonEnvironment::getInternedString(ctx, "mutex+cond")->asObject(ctx)},
+        {"version", PythonEnvironment::getInternedString(ctx, "NPTL")->asObject(ctx)},
+    });
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "thread_info"), thread_info);
 
     // STRUCT-316: unraisablehook and breakpointhook stubs.
@@ -1062,20 +1067,19 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         PythonEnvironment::wrapList(ctx, origArgvRaw));
 
     // sys.float_info — IEEE 754 double info
-    const proto::ProtoObject* float_info = env && env->getObjectPrototype()
-        ? env->getObjectPrototype()->newChild(ctx, true)
-        : ctx->newObject(false);
-    float_info = float_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "max"),       ctx->fromDouble(1.7976931348623157e+308));
-    float_info = float_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "max_exp"),   ctx->fromInteger(1024));
-    float_info = float_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "max_10_exp"), ctx->fromInteger(308));
-    float_info = float_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "min"),       ctx->fromDouble(2.2250738585072014e-308));
-    float_info = float_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "min_exp"),   ctx->fromInteger(-1021));
-    float_info = float_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "min_10_exp"), ctx->fromInteger(-307));
-    float_info = float_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "dig"),       ctx->fromInteger(15));
-    float_info = float_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "mant_dig"),  ctx->fromInteger(53));
-    float_info = float_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "epsilon"),   ctx->fromDouble(2.220446049250313e-16));
-    float_info = float_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "radix"),     ctx->fromInteger(2));
-    float_info = float_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "rounds"),    ctx->fromInteger(1));
+    const proto::ProtoObject* float_info = newStructSequence(ctx, {
+        {"max",        ctx->fromDouble(1.7976931348623157e+308)},
+        {"max_exp",    ctx->fromInteger(1024)},
+        {"max_10_exp", ctx->fromInteger(308)},
+        {"min",        ctx->fromDouble(2.2250738585072014e-308)},
+        {"min_exp",    ctx->fromInteger(-1021)},
+        {"min_10_exp", ctx->fromInteger(-307)},
+        {"dig",        ctx->fromInteger(15)},
+        {"mant_dig",   ctx->fromInteger(53)},
+        {"epsilon",    ctx->fromDouble(2.220446049250313e-16)},
+        {"radix",      ctx->fromInteger(2)},
+        {"rounds",     ctx->fromInteger(1)},
+    });
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "float_info"), float_info);
 
     // sys._jit — stub for Python 3.14 JIT API (protoPython has no JIT)

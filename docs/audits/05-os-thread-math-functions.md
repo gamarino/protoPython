@@ -25,7 +25,7 @@ ThreadModule policy stubs.
 | DirEntry.inode | REAL | — | calls lstat(); raises OSError on failure. |
 | DirEntry.__fspath__ | PARTIAL | LOW | returns PROTO_NONE if `path` attr missing (rare). |
 | scandir __next__ / __iter__ | REAL | — | proper readdir state machine; pinned with finalizer. |
-| stat_result.__getitem__ | REAL | — | indexes the 10-tuple of fields. |
+| stat_result.__getitem__ | REAL | — | indexes the 10-tuple of fields. **Resolved 2026-09-15:** this was not correct (slices raised a C++ exception and indexes past the end returned None, so `tuple(os.stat(...))` never terminated). The function is removed; `os.stat_result` is now a struct sequence built by `newStructSequence` and uses the tuple methods. |
 
 ### `os.environ` (delegates to getenv/setenv)
 
