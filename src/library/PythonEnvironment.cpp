@@ -10381,6 +10381,95 @@ static const proto::ProtoObject* py_tuple_count(
     return context->fromInteger(count);
 }
 
+// __getnewargs__() of the built-in immutable types: (value,), where value is a
+// plain instance of the base type holding self's value. object.__reduce_ex__
+// (copyreg._reduce_ex) passes these arguments to cls.__new__ when copying or
+// pickling. The types did not define the method, so an instance of a tuple,
+// str, bytes, int or float subclass was rebuilt from no arguments:
+// copy.copy(T((1, 2))) returned (). The unbound form, such as
+// tuple.__getnewargs__(t), passes the instance as the first argument.
+static const proto::ProtoObject* getnewargs_receiver(proto::ProtoContext* context,
+                                                      const proto::ProtoObject* self,
+                                                      const proto::ProtoList* args,
+                                                      const proto::ProtoObject* typePrototype) {
+    if ((!self || self == typePrototype) && args && args->getSize(context) >= 1) return args->getAt(context, 0);
+    return self;
+}
+
+static const proto::ProtoObject* getnewargs_result(proto::ProtoContext* context, const proto::ProtoObject* value) {
+    return context->newTupleFromList(context->newList()->appendLast(context, value))->asObject(context);
+}
+
+static const proto::ProtoObject* py_tuple_getnewargs(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* receiver = getnewargs_receiver(context, self, args, env ? env->getTuplePrototype() : nullptr);
+    // asTuple covers a raw tuple and the payload of a subclass instance.
+    const proto::ProtoTuple* t = receiver ? receiver->asTuple(context) : nullptr;
+    if (!t) return PROTO_NONE;
+    return getnewargs_result(context, context->newTupleFromList(t->asList(context))->asObject(context));
+}
+
+static const proto::ProtoObject* py_str_getnewargs(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* receiver = getnewargs_receiver(context, self, args, env ? env->getStrPrototype() : nullptr);
+    if (!receiver) return PROTO_NONE;
+    // The argument must be a plain str: deepcopy copies the arguments, and a
+    // subclass instance there recurses until RecursionError.
+    const proto::ProtoObject* data = receiver->getAttribute(context,
+        env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__"));
+    if (data && data != PROTO_NONE && data->isString(context)) return getnewargs_result(context, data);
+    if (!receiver->isString(context)) return PROTO_NONE;
+    if (env && env->getType(context, receiver) != env->getStrPrototype()) {
+        std::string utf8;
+        receiver->asString(context)->toUTF8String(context, utf8);
+        return getnewargs_result(context, proto::ProtoString::fromStdString(context, utf8)->asObject(context));
+    }
+    return getnewargs_result(context, receiver);
+}
+
+static const proto::ProtoObject* py_bytes_getnewargs(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* receiver = getnewargs_receiver(context, self, args, env ? env->getBytesPrototype() : nullptr);
+    std::string raw;
+    if (!receiver || !bytes_data_view(context, receiver, raw)) return PROTO_NONE;
+    return getnewargs_result(context, bytes_make_object(context, raw.data(), raw.size()));
+}
+
+// int.__getnewargs__ and float.__getnewargs__.
+static const proto::ProtoObject* py_number_getnewargs(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* receiver = self;
+    if ((!receiver || (env && (receiver == env->getIntPrototype() || receiver == env->getFloatPrototype())))
+        && args && args->getSize(context) >= 1) {
+        receiver = args->getAt(context, 0);
+    }
+    if (!receiver) return PROTO_NONE;
+    auto plain = [&](const proto::ProtoObject* v) -> const proto::ProtoObject* {
+        if (v == PROTO_TRUE) return context->fromInteger(1);
+        if (v == PROTO_FALSE) return context->fromInteger(0);
+        return (v->isInteger(context) || v->isFloat(context)) ? v : nullptr;
+    };
+    // A subclass instance keeps its value in __data__; read that first so the
+    // argument is a plain int or float, never the instance itself.
+    const proto::ProtoObject* value = nullptr;
+    if (receiver != PROTO_TRUE && receiver != PROTO_FALSE && !receiver->isInteger(context) && !receiver->isFloat(context)) {
+        const proto::ProtoObject* data = receiver->getAttribute(context,
+            env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__"));
+        value = (data && data != PROTO_NONE) ? plain(data) : nullptr;
+    } else {
+        value = plain(receiver);
+    }
+    return value ? getnewargs_result(context, value) : PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_str_encode(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -19986,6 +20075,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         intPrototype = intPrototype->setAttribute(rootContext_, newString,         rootContext_->fromMethod(nullptr, py_int_call));
         intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternalString(rootContext_, "__init__"), rootContext_->fromMethod(nullptr, protoPython::builtins::py_python_ignore_init));
         intPrototype = intPrototype->setAttribute(rootContext_, py_hash,          rootContext_->fromMethod(nullptr, py_int_hash));
+        intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__getnewargs__"), rootContext_->fromMethod(nullptr, py_number_getnewargs));
         intPrototype = intPrototype->setAttribute(rootContext_, py_bool,          rootContext_->fromMethod(nullptr, py_int_bool));
         intPrototype = intPrototype->setAttribute(rootContext_, py_format_dunder, rootContext_->fromMethod(nullptr, py_int_format));
         // __repr__ / __str__ — earlier block registered these on the
@@ -20178,6 +20268,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(rootContext_, py_format, rootContext_->fromMethod(nullptr, py_str_format));
     strPrototype = strPrototype->setAttribute(rootContext_, py_format_dunder, rootContext_->fromMethod(nullptr, py_str_format_dunder));
     strPrototype = strPrototype->setAttribute(rootContext_, py_hash, rootContext_->fromMethod(nullptr, py_str_hash));
+    strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__getnewargs__"), rootContext_->fromMethod(nullptr, py_str_getnewargs));
     // Concatenation / repetition dunders so user code can call
     // str.__add__(self, other) / str.__mul__(self, n) — same pattern as
     // int's arithmetic dunders for subclass overrides.
@@ -20400,6 +20491,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ge__"), rootContext_->fromMethod(nullptr, py_tuple_ge));
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_tuple_bool));
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_hash, rootContext_->fromMethod(nullptr, py_tuple_hash));
+    tuplePrototype = tuplePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__getnewargs__"), rootContext_->fromMethod(nullptr, py_tuple_getnewargs));
     const proto::ProtoString* py_tuple_index_name = PythonEnvironment::getInternedString(rootContext_, "index");
     const proto::ProtoString* py_tuple_count_name = PythonEnvironment::getInternedString(rootContext_, "count");
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_tuple_index_name, rootContext_->fromMethod(nullptr, py_tuple_index));
@@ -20535,6 +20627,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_class, typePrototype);
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "bytes")->asObject(rootContext_));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "bytes")->asObject(rootContext_));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__getnewargs__"), rootContext_->fromMethod(nullptr, py_bytes_getnewargs));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(nullptr, py_bytes_len));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_bytes_repr));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_getitem, rootContext_->fromMethod(nullptr, py_bytes_getitem));
@@ -20878,6 +20971,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // (they use the runtime's numeric fast path); this only repairs
     // the explicit-dunder route.
     floatPrototype = floatPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__hash__"), rootContext_->fromMethod(nullptr, py_float_hash));
+    floatPrototype = floatPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__getnewargs__"), rootContext_->fromMethod(nullptr, py_number_getnewargs));
     floatPrototype = floatPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__lt__"), rootContext_->fromMethod(nullptr, py_int_lt));
     floatPrototype = floatPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__le__"), rootContext_->fromMethod(nullptr, py_int_le));
     floatPrototype = floatPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__gt__"), rootContext_->fromMethod(nullptr, py_int_gt));

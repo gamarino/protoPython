@@ -262,6 +262,11 @@ onwards. Commit hashes are given for reference.
   `chdir`, `open`, `utime`, `readlink`) and `io.open` accepted only str paths,
   ignoring `os.PathLike` arguments (`os.stat(Path(...))` returned None, so
   `Path.exists()` was always True). Both are fixed.
+- **copy of built-in subclass instances:** `copy.copy()` and `copy.deepcopy()`
+  of an instance of a `tuple`, `str`, `bytes`, `int` or `float` subclass
+  returned an empty or zero value (`()` for a tuple subclass). These types
+  had no `__getnewargs__`, so the reduce protocol rebuilt the instance from
+  no arguments; they now define it as CPython does.
 
 ### Performance
 

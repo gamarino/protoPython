@@ -256,6 +256,13 @@ set_tests_properties(protopy_pathlib_package PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# copy.copy of tuple/str/bytes/int/float subclass instances keeps the value.
+add_test(NAME protopy_copy_builtin_subclass
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/copy_builtin_subclass.py)
+set_tests_properties(protopy_copy_builtin_subclass PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # Equal ints and floats compare, hash and key dicts as one value beyond long long.
 add_test(NAME protopy_numeric_keys
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/numeric_keys.py)
