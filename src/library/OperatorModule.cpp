@@ -60,58 +60,57 @@ static const proto::ProtoObject* py_truediv(
     return ctx->fromDouble(a / b);
 }
 
+// operator.eq, ne, lt, le, gt and ge: `a <op> b`, with the comparison
+// operators' semantics (rich comparison methods, NotImplemented, TypeError
+// for unorderable operands). They used to convert both operands with
+// asLong, which throws a C++ exception for anything but an int.
+static const proto::ProtoObject* richCompare(proto::ProtoContext* ctx,
+                                             const proto::ProtoList* posArgs, int op,
+                                             const char* name) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!posArgs || posArgs->getSize(ctx) != 2) {
+        if (env) env->raiseTypeError(ctx, std::string(name) + " expected 2 arguments, got "
+            + std::to_string(posArgs ? posArgs->getSize(ctx) : 0));
+        return nullptr;
+    }
+    if (!env) return PROTO_NONE;
+    return env->compareObjects(ctx, posArgs->getAt(ctx, 0), posArgs->getAt(ctx, 1), op, /*richResult=*/true);
+}
+
 static const proto::ProtoObject* py_eq(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
-    long long a = posArgs->getAt(ctx, 0)->asLong(ctx);
-    long long b = posArgs->getAt(ctx, 1)->asLong(ctx);
-    return (a == b) ? PROTO_TRUE : PROTO_FALSE;
+    return richCompare(ctx, posArgs, 0, "eq");
 }
 
 static const proto::ProtoObject* py_lt(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
-    long long a = posArgs->getAt(ctx, 0)->asLong(ctx);
-    long long b = posArgs->getAt(ctx, 1)->asLong(ctx);
-    return (a < b) ? PROTO_TRUE : PROTO_FALSE;
+    return richCompare(ctx, posArgs, 2, "lt");
 }
 
 static const proto::ProtoObject* py_le(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
-    long long a = posArgs->getAt(ctx, 0)->asLong(ctx);
-    long long b = posArgs->getAt(ctx, 1)->asLong(ctx);
-    return (a <= b) ? PROTO_TRUE : PROTO_FALSE;
+    return richCompare(ctx, posArgs, 3, "le");
 }
 
 static const proto::ProtoObject* py_gt(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
-    long long a = posArgs->getAt(ctx, 0)->asLong(ctx);
-    long long b = posArgs->getAt(ctx, 1)->asLong(ctx);
-    return (a > b) ? PROTO_TRUE : PROTO_FALSE;
+    return richCompare(ctx, posArgs, 4, "gt");
 }
 
 static const proto::ProtoObject* py_ge(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
-    long long a = posArgs->getAt(ctx, 0)->asLong(ctx);
-    long long b = posArgs->getAt(ctx, 1)->asLong(ctx);
-    return (a >= b) ? PROTO_TRUE : PROTO_FALSE;
+    return richCompare(ctx, posArgs, 5, "ge");
 }
 
 static const proto::ProtoObject* py_ne(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
-    long long a = posArgs->getAt(ctx, 0)->asLong(ctx);
-    long long b = posArgs->getAt(ctx, 1)->asLong(ctx);
-    return (a != b) ? PROTO_TRUE : PROTO_FALSE;
+    return richCompare(ctx, posArgs, 1, "ne");
 }
 
 static const proto::ProtoObject* py_pow(

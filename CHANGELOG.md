@@ -314,6 +314,12 @@ onwards. Commit hashes are given for reference.
   `TypeError`). `set` and
   `frozenset` now define `__reduce__` as CPython does, returning the class,
   the elements as a list and the instance state.
+- **operator comparisons:** `operator.eq`, `ne`, `lt`, `le`, `gt` and `ge`
+  converted both operands to C++ integers: with floats or strings they
+  compared truncated or meaningless values, and with a float subclass
+  instance they raised `RuntimeError: internal C++ exception`. They now
+  compare as the operators do, including rich results and `TypeError` for
+  unorderable operands.
 
 ### Performance
 
