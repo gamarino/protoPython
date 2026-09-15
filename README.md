@@ -69,8 +69,9 @@ Earlier conformance reports, including the `test_descr.py` work, are kept in
   publish their new state atomically across threads (commit `1614224f`).
 - **Two execution modes, one runtime.** `protopy` interprets bytecode; `protopyc`
   compiles modules to C++ ahead of time. Both call the same `libprotoPython` runtime.
-- **HPy extension loading.** HPy modules are found and loaded through the module
-  search path; see [docs/HPY_USER_GUIDE.md](docs/HPY_USER_GUIDE.md).
+- **HPy bridge (not yet enabled).** An HPy bridge is compiled into `libprotoPython`,
+  but its module loader is not registered, so HPy extension modules cannot be imported
+  yet; see [docs/HPY_USER_GUIDE.md](docs/HPY_USER_GUIDE.md).
 - **Embedding.** `PythonEnvironment` exposes the runtime to C++ applications; see
   [docs/CPP_API_REFERENCE.md](docs/CPP_API_REFERENCE.md).
 
@@ -302,7 +303,7 @@ graph TD
     H --> I[Compiled shared library]
     D --> E[PythonEnvironment and native modules]
     I --> E
-    J[HPy extensions] --> E
+    J[HPy bridge: loader not registered] -.-> E
     E --> F[protoCore: objects, GC, threads]
 ```
 
@@ -327,7 +328,8 @@ describe the design in detail.
 - [**C++ API Reference**](docs/CPP_API_REFERENCE.md) — embedding and native extensions.
 - [**protopyc Specification**](docs/PROTOPYC_SPECIFICATION.md) — the ahead-of-time
   compiler.
-- [**HPy User Guide**](docs/HPY_USER_GUIDE.md) — loading HPy extensions.
+- [**HPy User Guide**](docs/HPY_USER_GUIDE.md) — the HPy bridge and its current
+  limitations.
 - [**GC Bridging**](docs/GC_BRIDGING.md) — keeping protoCore objects alive across
   boundaries the garbage collector cannot see.
 - [**Changelog**](CHANGELOG.md) — notable changes by release.
