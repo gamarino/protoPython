@@ -2508,9 +2508,21 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
         // enough to trigger GC, the args list and any iterables it
         // contains would be reclaimed under the running mutator.
         PythonEnvironment::TransientPin pinArgs(env, args ? args->asObject(ctx) : nullptr);
-        return callable->asMethod(ctx)(
-            ctx, const_cast<proto::ProtoObject*>(callable->asMethodSelf(ctx)),
-            nullptr, args, kwargs);
+        const proto::ProtoMethod method = callable->asMethod(ctx);
+        const proto::ProtoObject* self = callable->asMethodSelf(ctx);
+        const proto::ProtoObject* result = method(
+            ctx, const_cast<proto::ProtoObject*>(self), nullptr, args, kwargs);
+        // Native iterators signal exhaustion from __next__ by returning
+        // nullptr without an exception; env->next, FOR_ITER and next() rely
+        // on that and never pay for a StopIteration object. Python code that
+        // calls the method itself (`it.__next__()`, as heapq.merge does) must
+        // see StopIteration, as CPython's __next__ slot wrapper raises it;
+        // it received None instead.
+        if (!result && env && self && !env->hasPendingException()) {
+            const proto::ProtoObject* nextAttr = self->getAttribute(ctx, env->getNextString());
+            if (nextAttr && nextAttr->asMethod(ctx) == method) env->raiseStopIteration(ctx);
+        }
+        return result;
     }
 
     // Fast path for user-defined Python functions: they always have __code__ as an own attribute

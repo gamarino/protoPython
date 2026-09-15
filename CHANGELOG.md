@@ -231,6 +231,12 @@ onwards. Commit hashes are given for reference.
   characters; `sub` and `subn` accept replacement functions, expand `\1` and
   `\g<name>` templates and honour `count`; `Pattern.subn` exists; and
   `re.escape` leaves non-ASCII characters intact.
+- **`__next__` of built-in iterators and heapq.merge:** calling `__next__`
+  directly on an exhausted list, tuple, str, dict, set, range, zip, map,
+  filter, enumerate or reversed iterator returned None instead of raising
+  `StopIteration`, so `list(heapq.merge([1, 3], [2, 4]))` raised `TypeError`
+  and loops that stop on the exception never ended. Such calls now raise
+  `StopIteration`; `for` loops and `next()` still stop without creating one.
 
 ### Performance
 
