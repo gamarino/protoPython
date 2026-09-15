@@ -50,7 +50,7 @@ build is needed.
 ctest --test-dir build_release --output-on-failure
 ```
 
-On 2026-09-15 the suite has 338 tests.
+On 2026-09-15 the suite has 339 tests.
 
 ### Using an installed protoCore
 

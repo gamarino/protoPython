@@ -1,8 +1,10 @@
 // src/library/ReModule.cpp
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/ReModule.h>
+#include <cctype>
 #include <regex>
 #include <string>
+#include <vector>
 
 namespace protoPython {
 
@@ -16,19 +18,95 @@ extern const proto::ProtoObject* invokePythonCallable(
 namespace re {
 
 // ---------------------------------------------------------------------------
-// Helper: build a match object from an std::smatch result.
+// Code points.
+// A Python str is a sequence of code points. Matching std::regex over the
+// UTF-8 bytes of a str made a character class see each byte of a multibyte
+// character on its own, reported match positions in bytes and split
+// characters in group strings. Subjects and patterns are therefore matched as
+// UTF-32 strings with std::wregex (wchar_t is 32 bits on Linux).
+// ---------------------------------------------------------------------------
+static_assert(sizeof(wchar_t) == 4, "re matches str values as UTF-32 wchar_t strings");
+
+static std::wstring toWide(const std::string& s) {
+    std::wstring out;
+    out.reserve(s.size());
+    for (size_t i = 0; i < s.size();) {
+        const unsigned char c = static_cast<unsigned char>(s[i]);
+        unsigned cp = 0;
+        size_t n = 0;
+        if (c < 0x80) { cp = c; n = 1; }
+        else if ((c >> 5) == 0x6) { cp = c & 0x1f; n = 2; }
+        else if ((c >> 4) == 0xe) { cp = c & 0x0f; n = 3; }
+        else if ((c >> 3) == 0x1e) { cp = c & 0x07; n = 4; }
+        bool ok = n > 0 && i + n <= s.size();
+        for (size_t k = 1; ok && k < n; ++k) {
+            const unsigned char cc = static_cast<unsigned char>(s[i + k]);
+            if ((cc >> 6) != 0x2) ok = false;
+            else cp = (cp << 6) | (cc & 0x3f);
+        }
+        if (!ok) {
+            // Not valid UTF-8: keep the byte value rather than dropping it.
+            out += static_cast<wchar_t>(c);
+            ++i;
+            continue;
+        }
+        out += static_cast<wchar_t>(cp);
+        i += n;
+    }
+    return out;
+}
+
+static std::string toUtf8(const std::wstring& w) {
+    std::string out;
+    out.reserve(w.size());
+    for (wchar_t wc : w) {
+        const unsigned long cp = static_cast<unsigned long>(wc);
+        if (cp < 0x80) {
+            out += static_cast<char>(cp);
+        } else if (cp < 0x800) {
+            out += static_cast<char>(0xc0 | (cp >> 6));
+            out += static_cast<char>(0x80 | (cp & 0x3f));
+        } else if (cp < 0x10000) {
+            out += static_cast<char>(0xe0 | (cp >> 12));
+            out += static_cast<char>(0x80 | ((cp >> 6) & 0x3f));
+            out += static_cast<char>(0x80 | (cp & 0x3f));
+        } else {
+            out += static_cast<char>(0xf0 | (cp >> 18));
+            out += static_cast<char>(0x80 | ((cp >> 12) & 0x3f));
+            out += static_cast<char>(0x80 | ((cp >> 6) & 0x3f));
+            out += static_cast<char>(0x80 | (cp & 0x3f));
+        }
+    }
+    return out;
+}
+
+// The code points of a str argument; false when obj is not a str.
+static bool wideArg(proto::ProtoContext* ctx, const proto::ProtoObject* obj, std::wstring& out) {
+    if (!obj || !obj->isString(ctx)) return false;
+    std::string utf8;
+    obj->asString(ctx)->toUTF8String(ctx, utf8);
+    out = toWide(utf8);
+    return true;
+}
+
+static const proto::ProtoObject* newStr(proto::ProtoContext* ctx, const std::wstring& w) {
+    return PythonEnvironment::getInternedString(ctx, toUtf8(w).c_str())->asObject(ctx);
+}
+
+// ---------------------------------------------------------------------------
+// Helper: build a match object from an std::wsmatch result.
 // Stores:
 //   __re_match_str__  — full match string (group 0)
-//   __re_pos__        — start position in the subject string
-//   __re_end__        — end position in the subject string
+//   __re_pos__        — start position in the subject string (code points)
+//   __re_end__        — end position in the subject string (code points)
 //   __re_groups__     — ProtoList of captured-group strings (groups 1..n), or PROTO_NONE for unmatched
 //   __re_string__     — subject string
 // ---------------------------------------------------------------------------
 static const proto::ProtoObject* makeMatchObject(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* matchProto,
-    const std::smatch& m,
-    const std::string& subject,
+    const std::wsmatch& m,
+    const std::wstring& subject,
     size_t posOffset = 0,
     const proto::ProtoObject* patObj = nullptr)
 {
@@ -36,9 +114,9 @@ static const proto::ProtoObject* makeMatchObject(
     const proto::ProtoObject* mo = matchProto->newChild(ctx, true);
 
     mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_match_str__"),
-        PythonEnvironment::getInternedString(ctx, m.str(0).c_str())->asObject(ctx));
+        newStr(ctx, m.str(0)));
     mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_string__"),
-        PythonEnvironment::getInternedString(ctx, subject.c_str())->asObject(ctx));
+        newStr(ctx, subject));
     mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_pos__"),
         ctx->fromInteger(static_cast<long long>(m.position(0)) + (long long)posOffset));
     mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_end__"),
@@ -48,8 +126,7 @@ static const proto::ProtoObject* makeMatchObject(
     const proto::ProtoList* groups = ctx->newList();
     for (size_t i = 1; i < m.size(); ++i) {
         if (m[i].matched) {
-            groups = groups->appendLast(ctx,
-                PythonEnvironment::getInternedString(ctx, m.str(i).c_str())->asObject(ctx));
+            groups = groups->appendLast(ctx, newStr(ctx, m.str(i)));
         } else {
             groups = groups->appendLast(ctx, PROTO_NONE);
         }
@@ -301,7 +378,9 @@ static std::regex_constants::syntax_option_type pyFlagsToStdFlags(long long pyFl
 // conditional groups, `(?>...)` atomic groups, recursive `(?R)` /
 // `(?P>name)`, named back-references where the index doesn't fit a single
 // decimal digit).  The translator preserves character-class contents
-// verbatim and treats backslash escapes as opaque pairs.
+// verbatim and treats backslash escapes as opaque pairs.  It works on the
+// UTF-8 source: every construct it rewrites is ASCII, and the bytes of a
+// multibyte character are copied through unchanged.
 struct TranslatedRegex {
     std::string pattern;                                       // ECMAScript-compatible source
     std::vector<std::pair<std::string, int>> groupIndex;       // name -> 1-based group index
@@ -409,22 +488,35 @@ static long long extractFlags(proto::ProtoContext* ctx,
     return flags;
 }
 
+// An optional integer argument given at position `idx` or as keyword `name`.
+static long long intArg(proto::ProtoContext* ctx, const proto::ProtoList* posArgs, unsigned long idx,
+                        const proto::ProtoSparseList* kwArgs, const char* name, long long dflt) {
+    const proto::ProtoObject* v = nullptr;
+    if (posArgs && posArgs->getSize(ctx) > idx) {
+        v = posArgs->getAt(ctx, static_cast<int>(idx));
+    } else if (kwArgs) {
+        const unsigned long h = PythonEnvironment::getInternedString(ctx, name)->getHash(ctx);
+        if (kwArgs->has(ctx, h)) v = kwArgs->getAt(ctx, h);
+    }
+    return (v && v->isInteger(ctx)) ? v->asLong(ctx) : dflt;
+}
+
 // A regex that never matches anything.  Used by makeRegex() as a safe
 // sentinel when the user-provided pattern fails to compile so the caller
 // can continue (its regex_search will return false) while the Python-level
 // re.error we set propagates back up.  Built once and cached so that the
 // fallback path itself never throws.  CPython behaviour: re.error / PatternError.
-static const std::regex& neverMatchesRegex() {
-    static const std::regex kNever(R"(\b\B)");  // word-boundary AND non-boundary -> never true
+static const std::wregex& neverMatchesRegex() {
+    static const std::wregex kNever(LR"(\b\B)");  // word-boundary AND non-boundary -> never true
     return kNever;
 }
 
-static std::regex makeRegex(proto::ProtoContext* ctx,
-                            const std::string& pat,
-                            long long pyFlags) {
+static std::wregex makeRegex(proto::ProtoContext* ctx,
+                             const std::string& pat,
+                             long long pyFlags) {
     try {
         const std::string translated = translatePyRegex(pat, pyFlags);
-        return std::regex(translated, pyFlagsToStdFlags(pyFlags));
+        return std::wregex(toWide(translated), pyFlagsToStdFlags(pyFlags));
     } catch (const std::regex_error& e) {
         // std::regex (the C++ stdlib) rejects several constructs the
         // Python `re` module accepts — most commonly named groups
@@ -449,17 +541,176 @@ static std::regex makeRegex(proto::ProtoContext* ctx,
     }
 }
 
-// Backward-compatible wrapper for sites that don't have ctx handy yet.
-static std::regex makeRegex(const std::string& pat, long long pyFlags) {
-    return makeRegex(nullptr, pat, pyFlags);
-}
-
 static const proto::ProtoObject* getMatchProto(proto::ProtoContext* ctx,
     const proto::ProtoObject* self)
 {
     const proto::ProtoObject* mp = self->getAttribute(ctx,
         proto::ProtoString::createSymbol(ctx, "__match_proto__"));
     return mp;
+}
+
+// ---------------------------------------------------------------------------
+// Substitution
+// ---------------------------------------------------------------------------
+
+// Appends the expansion of a Python replacement template for match `m`, as
+// re._parser.parse_template defines it: group references \1 to \99,
+// \g<number> and \g<name>, octal escapes (\0, \0oo and \ooo), the escapes
+// \a \b \f \n \r \t \v \\, and any other escaped non-letter kept as written.
+// Returns false with an exception pending for a bad reference or escape.
+static bool expandTemplate(proto::ProtoContext* ctx, const std::wstring& tmpl,
+                           const std::wsmatch& m, const TranslatedRegex& tr, std::wstring& out) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    auto fail = [&](const std::string& msg) {
+        if (env) env->raiseRuntimeError(ctx, msg);
+        return false;
+    };
+    auto appendGroup = [&](size_t g) {
+        if (g >= m.size()) return fail("invalid group reference " + std::to_string(g));
+        if (m[g].matched) out += m.str(g);  // an unmatched group expands to ''
+        return true;
+    };
+    auto isDigit = [](wchar_t d) { return d >= L'0' && d <= L'9'; };
+    auto isOctal = [](wchar_t d) { return d >= L'0' && d <= L'7'; };
+    for (size_t i = 0; i < tmpl.size(); ++i) {
+        const wchar_t c = tmpl[i];
+        if (c != L'\\' || i + 1 == tmpl.size()) {
+            out += c;
+            continue;
+        }
+        const wchar_t n = tmpl[++i];
+        if (n == L'g') {
+            if (i + 1 >= tmpl.size() || tmpl[i + 1] != L'<') return fail("missing <");
+            const size_t close = tmpl.find(L'>', i + 2);
+            if (close == std::wstring::npos) return fail("missing >, unterminated name");
+            const std::wstring name = tmpl.substr(i + 2, close - (i + 2));
+            i = close;
+            if (name.empty()) return fail("missing group name");
+            bool numeric = true;
+            for (wchar_t d : name) numeric = numeric && isDigit(d);
+            if (numeric) {
+                if (name.size() > 9) return fail("invalid group reference " + toUtf8(name));
+                if (!appendGroup(std::stoul(toUtf8(name)))) return false;
+                continue;
+            }
+            const std::string key = toUtf8(name);
+            int idx = -1;
+            for (const auto& p : tr.groupIndex) {
+                if (p.first == key) { idx = p.second; break; }
+            }
+            if (idx < 0) return fail("unknown group name '" + key + "'");
+            if (!appendGroup(static_cast<size_t>(idx))) return false;
+            continue;
+        }
+        if (n == L'0') {
+            unsigned v = 0;
+            size_t j = i + 1;
+            for (int k = 0; k < 2 && j < tmpl.size() && isOctal(tmpl[j]); ++k, ++j) v = v * 8 + (tmpl[j] - L'0');
+            out += static_cast<wchar_t>(v);
+            i = j - 1;
+            continue;
+        }
+        if (isDigit(n)) {
+            if (i + 2 < tmpl.size() && isOctal(n) && isOctal(tmpl[i + 1]) && isOctal(tmpl[i + 2])) {
+                const unsigned v = (n - L'0') * 64 + (tmpl[i + 1] - L'0') * 8 + (tmpl[i + 2] - L'0');
+                if (v > 0377) return fail("octal escape value outside of range 0-0o377");
+                out += static_cast<wchar_t>(v);
+                i += 2;
+                continue;
+            }
+            size_t g = static_cast<size_t>(n - L'0');
+            if (i + 1 < tmpl.size() && isDigit(tmpl[i + 1])) g = g * 10 + static_cast<size_t>(tmpl[++i] - L'0');
+            if (!appendGroup(g)) return false;
+            continue;
+        }
+        switch (n) {
+            case L'a': out += L'\a'; break;
+            case L'b': out += L'\b'; break;
+            case L'f': out += L'\f'; break;
+            case L'n': out += L'\n'; break;
+            case L'r': out += L'\r'; break;
+            case L't': out += L'\t'; break;
+            case L'v': out += L'\v'; break;
+            case L'\\': out += L'\\'; break;
+            default:
+                if ((n >= L'a' && n <= L'z') || (n >= L'A' && n <= L'Z')) {
+                    return fail(std::string("bad escape \\") + static_cast<char>(n));
+                }
+                out += L'\\';
+                out += n;
+        }
+    }
+    return true;
+}
+
+// pattern.sub / subn and re.sub / subn: replaces the first `count` matches
+// (all when count is 0) of the pattern in `strObj`. `replObj` is a replacement
+// template or a callable that receives each match object and returns the
+// replacement (None inserts nothing). Returns false with an exception pending
+// on error; otherwise stores the new string and the number of replacements.
+static bool substitute(proto::ProtoContext* ctx, const proto::ProtoObject* patObj,
+                       const proto::ProtoObject* matchProto, const proto::ProtoObject* replObj,
+                       const proto::ProtoObject* strObj, long long count, long long flags,
+                       const proto::ProtoObject*& resultOut, long long& replacedOut) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return false;
+    std::string pat;
+    if (!patObj || !getPattern(ctx, patObj, pat)) {
+        env->raiseTypeError(ctx, "first argument must be string or compiled pattern");
+        return false;
+    }
+    std::wstring s;
+    if (!wideArg(ctx, strObj, s)) {
+        env->raiseTypeError(ctx, "expected string or bytes-like object");
+        return false;
+    }
+    std::wstring tmpl;
+    const bool replIsTemplate = wideArg(ctx, replObj, tmpl);
+    const TranslatedRegex tr = translatePyRegexEx(pat, flags);
+    const std::wregex re = makeRegex(ctx, pat, flags);
+    if (env->hasPendingException()) return false;
+
+    std::wstring out;
+    long long replaced = 0;
+    size_t last = 0;
+    for (auto it = std::wsregex_iterator(s.begin(), s.end(), re), end = std::wsregex_iterator(); it != end; ++it) {
+        if (count > 0 && replaced >= count) break;
+        const std::wsmatch& m = *it;
+        const size_t start = static_cast<size_t>(m.position(0));
+        out.append(s, last, start - last);
+        if (replIsTemplate) {
+            if (!expandTemplate(ctx, tmpl, m, tr, out)) return false;
+        } else {
+            const proto::ProtoObject* mo = makeMatchObject(ctx, matchProto, m, s, 0, patObj);
+            PythonEnvironment::TransientPin pinMatch(env, mo);
+            const proto::ProtoObject* r = env->callObject(replObj, { mo });
+            if (!r) {
+                if (env->hasPendingException()) return false;
+            } else if (r->isString(ctx)) {
+                std::wstring piece;
+                wideArg(ctx, r, piece);
+                out += piece;
+            } else if (r != PROTO_NONE && r != env->getNonePrototype()) {
+                std::string typeName = "object";
+                const proto::ProtoObject* cls = env->getType(ctx, r);
+                const proto::ProtoObject* nm = cls ? cls->getAttribute(ctx, env->getNameString()) : nullptr;
+                if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, typeName);
+                env->raiseTypeError(ctx, "expected str instance, " + typeName + " found");
+                return false;
+            }
+        }
+        last = start + static_cast<size_t>(m.length(0));
+        ++replaced;
+    }
+    out.append(s, last, std::wstring::npos);
+    resultOut = newStr(ctx, out);
+    replacedOut = replaced;
+    return true;
+}
+
+static const proto::ProtoObject* newPair(proto::ProtoContext* ctx,
+                                         const proto::ProtoObject* a, const proto::ProtoObject* b) {
+    return ctx->newTupleFromList(ctx->newList()->appendLast(ctx, a)->appendLast(ctx, b))->asObject(ctx);
 }
 
 // ---------------------------------------------------------------------------
@@ -542,14 +793,14 @@ static const proto::ProtoObject* py_match(
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
 {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
-    std::string pat, s;
+    std::string pat;
+    std::wstring s;
     const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
     if (!getPattern(ctx, patObj, pat)) return PROTO_NONE;
-    if (!posArgs->getAt(ctx, 1)->isString(ctx)) return PROTO_NONE;
-    posArgs->getAt(ctx, 1)->asString(ctx)->toUTF8String(ctx, s);
+    if (!wideArg(ctx, posArgs->getAt(ctx, 1), s)) return PROTO_NONE;
     long long flags = extractFlags(ctx, patObj, posArgs, 2);
-    std::regex re = makeRegex(ctx, pat, flags);
-    std::smatch m;
+    std::wregex re = makeRegex(ctx, pat, flags);
+    std::wsmatch m;
     if (!std::regex_search(s, m, re) || m.position() != 0) return PROTO_NONE;
     return makeMatchObject(ctx, getMatchProto(ctx, self), m, s, 0, patObj);
 }
@@ -559,14 +810,14 @@ static const proto::ProtoObject* py_search(
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
 {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
-    std::string pat, s;
+    std::string pat;
+    std::wstring s;
     const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
     if (!getPattern(ctx, patObj, pat)) return PROTO_NONE;
-    if (!posArgs->getAt(ctx, 1)->isString(ctx)) return PROTO_NONE;
-    posArgs->getAt(ctx, 1)->asString(ctx)->toUTF8String(ctx, s);
+    if (!wideArg(ctx, posArgs->getAt(ctx, 1), s)) return PROTO_NONE;
     long long flags = extractFlags(ctx, patObj, posArgs, 2);
-    std::regex re = makeRegex(ctx, pat, flags);
-    std::smatch m;
+    std::wregex re = makeRegex(ctx, pat, flags);
+    std::wsmatch m;
     if (!std::regex_search(s, m, re)) return PROTO_NONE;
     return makeMatchObject(ctx, getMatchProto(ctx, self), m, s, 0, patObj);
 }
@@ -577,38 +828,33 @@ static const proto::ProtoObject* py_escape(
 {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
-    if (!patObj->isString(ctx)) return patObj;
-    std::string s;
-    patObj->asString(ctx)->toUTF8String(ctx, s);
-    std::string escaped;
-    for (char c : s) {
-        if (!isalnum((unsigned char)c) && c != '_') escaped += '\\';
+    std::wstring s;
+    if (!wideArg(ctx, patObj, s)) return patObj;
+    std::wstring escaped;
+    for (wchar_t c : s) {
+        // Escaping the bytes of a multibyte character broke it; like CPython,
+        // non-ASCII characters are never escaped.
+        if (c < 0x80 && !isalnum(static_cast<unsigned char>(c)) && c != L'_') escaped += L'\\';
         escaped += c;
     }
-    return PythonEnvironment::getInternedString(ctx, escaped.c_str())->asObject(ctx);
+    return newStr(ctx, escaped);
 }
 
 // ---------------------------------------------------------------------------
 // Pattern-object methods
 // ---------------------------------------------------------------------------
 
-static const proto::ProtoObject* py_pattern_match(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
-{
-    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
-    std::string pat, s;
-    if (!getPattern(ctx, self, pat)) return PROTO_NONE;
-    if (!posArgs->getAt(ctx, 0)->isString(ctx)) return PROTO_NONE;
-    posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, s);
-
-    size_t pos = 0, endpos = s.size();
+// The [pos, endpos) window of pattern.match / pattern.search, in code points.
+static void matchWindow(proto::ProtoContext* ctx, const proto::ProtoList* posArgs,
+                        size_t size, size_t& pos, size_t& endpos) {
+    pos = 0;
+    endpos = size;
     if (posArgs->getSize(ctx) >= 2) {
         const auto* posArg = posArgs->getAt(ctx, 1);
         if (posArg && posArg->isInteger(ctx)) {
             long long p = posArg->asLong(ctx);
             if (p < 0) p = 0;
-            if ((size_t)p > s.size()) p = (long long)s.size();
+            if ((size_t)p > size) p = (long long)size;
             pos = (size_t)p;
         }
     }
@@ -617,15 +863,29 @@ static const proto::ProtoObject* py_pattern_match(
         if (epArg && epArg->isInteger(ctx)) {
             long long ep = epArg->asLong(ctx);
             if (ep < 0) ep = 0;
-            if ((size_t)ep > s.size()) ep = (long long)s.size();
+            if ((size_t)ep > size) ep = (long long)size;
             endpos = (size_t)ep;
         }
     }
+}
 
-    std::string sub = (pos < endpos) ? s.substr(pos, endpos - pos) : std::string();
+static const proto::ProtoObject* py_pattern_match(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
+{
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    std::string pat;
+    std::wstring s;
+    if (!getPattern(ctx, self, pat)) return PROTO_NONE;
+    if (!wideArg(ctx, posArgs->getAt(ctx, 0), s)) return PROTO_NONE;
+
+    size_t pos = 0, endpos = s.size();
+    matchWindow(ctx, posArgs, s.size(), pos, endpos);
+
+    std::wstring sub = (pos < endpos) ? s.substr(pos, endpos - pos) : std::wstring();
     long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::regex re = makeRegex(ctx, pat, flags);
-    std::smatch m;
+    std::wregex re = makeRegex(ctx, pat, flags);
+    std::wsmatch m;
     if (!std::regex_search(sub, m, re) || m.position() != 0) return PROTO_NONE;
     return makeMatchObject(ctx, getMatchProto(ctx, self), m, s, pos, self);
 }
@@ -635,13 +895,13 @@ static const proto::ProtoObject* py_pattern_fullmatch(
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
 {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
-    std::string pat, s;
+    std::string pat;
+    std::wstring s;
     if (!getPattern(ctx, self, pat)) return PROTO_NONE;
-    if (!posArgs->getAt(ctx, 0)->isString(ctx)) return PROTO_NONE;
-    posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, s);
+    if (!wideArg(ctx, posArgs->getAt(ctx, 0), s)) return PROTO_NONE;
     long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::regex re = makeRegex(ctx, pat, flags);
-    std::smatch m;
+    std::wregex re = makeRegex(ctx, pat, flags);
+    std::wsmatch m;
     if (!std::regex_match(s, m, re)) return PROTO_NONE;
     return makeMatchObject(ctx, getMatchProto(ctx, self), m, s, 0, self);
 }
@@ -651,62 +911,60 @@ static const proto::ProtoObject* py_pattern_search(
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
 {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
-    std::string pat, s;
+    std::string pat;
+    std::wstring s;
     if (!getPattern(ctx, self, pat)) return PROTO_NONE;
-    if (!posArgs->getAt(ctx, 0)->isString(ctx)) return PROTO_NONE;
-    posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, s);
+    if (!wideArg(ctx, posArgs->getAt(ctx, 0), s)) return PROTO_NONE;
 
     size_t pos = 0, endpos = s.size();
-    if (posArgs->getSize(ctx) >= 2) {
-        const auto* posArg = posArgs->getAt(ctx, 1);
-        if (posArg && posArg->isInteger(ctx)) {
-            long long p = posArg->asLong(ctx);
-            if (p < 0) p = 0;
-            if ((size_t)p > s.size()) p = (long long)s.size();
-            pos = (size_t)p;
-        }
-    }
-    if (posArgs->getSize(ctx) >= 3) {
-        const auto* epArg = posArgs->getAt(ctx, 2);
-        if (epArg && epArg->isInteger(ctx)) {
-            long long ep = epArg->asLong(ctx);
-            if (ep < 0) ep = 0;
-            if ((size_t)ep > s.size()) ep = (long long)s.size();
-            endpos = (size_t)ep;
-        }
-    }
+    matchWindow(ctx, posArgs, s.size(), pos, endpos);
 
-    std::string sub = (pos < endpos) ? s.substr(pos, endpos - pos) : std::string();
+    std::wstring sub = (pos < endpos) ? s.substr(pos, endpos - pos) : std::wstring();
     long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::regex re = makeRegex(ctx, pat, flags);
-    std::smatch m;
+    std::wregex re = makeRegex(ctx, pat, flags);
+    std::wsmatch m;
     if (!std::regex_search(sub, m, re)) return PROTO_NONE;
     return makeMatchObject(ctx, getMatchProto(ctx, self), m, s, pos, self);
 }
 
+// pattern.sub(repl, string, count=0)
 static const proto::ProtoObject* py_pattern_sub(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwArgs)
 {
-    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
-    const proto::ProtoObject* replObj = posArgs->getAt(ctx, 0);
-    const proto::ProtoObject* strObj = posArgs->getAt(ctx, 1);
-    std::string pat;
-    if (!getPattern(ctx, self, pat)) return PROTO_NONE;
-    std::string replStr;
-    if (replObj->isString(ctx)) {
-        replObj->asString(ctx)->toUTF8String(ctx, replStr);
-    } else {
-        return strObj;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!posArgs || posArgs->getSize(ctx) < 2) {
+        if (env) env->raiseTypeError(ctx, "sub() missing required argument 'repl' or 'string'");
+        return nullptr;
     }
-    std::string s;
-    if (!strObj->isString(ctx)) return PROTO_NONE;
-    strObj->asString(ctx)->toUTF8String(ctx, s);
-    long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::regex re = makeRegex(ctx, pat, flags);
-    std::string res;
-    try { res = std::regex_replace(s, re, replStr); } catch (...) { return strObj; }
-    return PythonEnvironment::getInternedString(ctx, res.c_str())->asObject(ctx);
+    const proto::ProtoObject* result = nullptr;
+    long long replaced = 0;
+    if (!substitute(ctx, self, getMatchProto(ctx, self), posArgs->getAt(ctx, 0), posArgs->getAt(ctx, 1),
+                    intArg(ctx, posArgs, 2, kwArgs, "count", 0), extractFlags(ctx, self, nullptr, -1),
+                    result, replaced)) {
+        return nullptr;
+    }
+    return result;
+}
+
+// pattern.subn(repl, string, count=0) -> (new_string, number_of_subs)
+static const proto::ProtoObject* py_pattern_subn(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwArgs)
+{
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!posArgs || posArgs->getSize(ctx) < 2) {
+        if (env) env->raiseTypeError(ctx, "subn() missing required argument 'repl' or 'string'");
+        return nullptr;
+    }
+    const proto::ProtoObject* result = nullptr;
+    long long replaced = 0;
+    if (!substitute(ctx, self, getMatchProto(ctx, self), posArgs->getAt(ctx, 0), posArgs->getAt(ctx, 1),
+                    intArg(ctx, posArgs, 2, kwArgs, "count", 0), extractFlags(ctx, self, nullptr, -1),
+                    result, replaced)) {
+        return nullptr;
+    }
+    return newPair(ctx, result, ctx->fromInteger(replaced));
 }
 
 static const proto::ProtoObject* py_pattern_findall(
@@ -714,34 +972,31 @@ static const proto::ProtoObject* py_pattern_findall(
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
 {
     if (posArgs->getSize(ctx) < 1) return PythonEnvironment::wrapList(ctx, ctx->newList());
-    std::string pat, s;
+    std::string pat;
+    std::wstring s;
     if (!getPattern(ctx, self, pat)) return PythonEnvironment::wrapList(ctx, ctx->newList());
-    if (!posArgs->getAt(ctx, 0)->isString(ctx)) return PythonEnvironment::wrapList(ctx, ctx->newList());
-    posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, s);
+    if (!wideArg(ctx, posArgs->getAt(ctx, 0), s)) return PythonEnvironment::wrapList(ctx, ctx->newList());
     long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::regex re = makeRegex(ctx, pat, flags);
+    std::wregex re = makeRegex(ctx, pat, flags);
     const proto::ProtoList* results = ctx->newList();
-    auto begin = std::sregex_iterator(s.begin(), s.end(), re);
-    auto end2 = std::sregex_iterator();
+    auto begin = std::wsregex_iterator(s.begin(), s.end(), re);
+    auto end2 = std::wsregex_iterator();
     for (auto it = begin; it != end2; ++it) {
-        const std::smatch& sm = *it;
+        const std::wsmatch& sm = *it;
         if (sm.size() > 2) {
             // 2+ capturing groups: return list of tuples (CPython behavior)
             const proto::ProtoList* grps = ctx->newList();
             for (size_t i = 1; i < sm.size(); ++i) {
-                grps = grps->appendLast(ctx,
-                    PythonEnvironment::getInternedString(ctx, sm.str(i).c_str())->asObject(ctx));
+                grps = grps->appendLast(ctx, newStr(ctx, sm.str(i)));
             }
             const proto::ProtoTuple* tup = ctx->newTupleFromList(grps);
             results = results->appendLast(ctx, tup ? tup->asObject(ctx) : grps->asObject(ctx));
         } else if (sm.size() == 2) {
             // Exactly 1 capturing group: return the group string (CPython behavior)
-            results = results->appendLast(ctx,
-                PythonEnvironment::getInternedString(ctx, sm.str(1).c_str())->asObject(ctx));
+            results = results->appendLast(ctx, newStr(ctx, sm.str(1)));
         } else {
             // No capturing groups: return full match string
-            results = results->appendLast(ctx,
-                PythonEnvironment::getInternedString(ctx, sm.str(0).c_str())->asObject(ctx));
+            results = results->appendLast(ctx, newStr(ctx, sm.str(0)));
         }
     }
 
@@ -765,17 +1020,17 @@ static const proto::ProtoObject* py_pattern_finditer(
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
 {
     if (posArgs->getSize(ctx) < 1) return PythonEnvironment::wrapList(ctx, ctx->newList());
-    std::string pat, s;
+    std::string pat;
+    std::wstring s;
     if (!getPattern(ctx, self, pat)) return PythonEnvironment::wrapList(ctx, ctx->newList());
-    if (!posArgs->getAt(ctx, 0)->isString(ctx)) return PythonEnvironment::wrapList(ctx, ctx->newList());
-    posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, s);
+    if (!wideArg(ctx, posArgs->getAt(ctx, 0), s)) return PythonEnvironment::wrapList(ctx, ctx->newList());
     long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::regex re = makeRegex(ctx, pat, flags);
+    std::wregex re = makeRegex(ctx, pat, flags);
     const proto::ProtoObject* matchProto = self->getAttribute(ctx,
         proto::ProtoString::createSymbol(ctx, "__match_proto__"));
     const proto::ProtoList* results = ctx->newList();
-    auto begin = std::sregex_iterator(s.begin(), s.end(), re);
-    auto end2 = std::sregex_iterator();
+    auto begin = std::wsregex_iterator(s.begin(), s.end(), re);
+    auto end2 = std::wsregex_iterator();
     for (auto it = begin; it != end2; ++it) {
         results = results->appendLast(ctx, makeMatchObject(ctx, matchProto, *it, s, 0, self));
     }
@@ -795,18 +1050,17 @@ static const proto::ProtoObject* py_pattern_split(
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
 {
     if (posArgs->getSize(ctx) < 1) return PythonEnvironment::wrapList(ctx, ctx->newList());
-    std::string pat, s;
+    std::string pat;
+    std::wstring s;
     if (!getPattern(ctx, self, pat)) return PythonEnvironment::wrapList(ctx, ctx->newList());
-    if (!posArgs->getAt(ctx, 0)->isString(ctx)) return PythonEnvironment::wrapList(ctx, ctx->newList());
-    posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, s);
+    if (!wideArg(ctx, posArgs->getAt(ctx, 0), s)) return PythonEnvironment::wrapList(ctx, ctx->newList());
     long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::regex re = makeRegex(ctx, pat, flags);
+    std::wregex re = makeRegex(ctx, pat, flags);
     const proto::ProtoList* results = ctx->newList();
-    std::sregex_token_iterator it(s.begin(), s.end(), re, -1);
-    std::sregex_token_iterator end2;
+    std::wsregex_token_iterator it(s.begin(), s.end(), re, -1);
+    std::wsregex_token_iterator end2;
     for (; it != end2; ++it) {
-        results = results->appendLast(ctx,
-            PythonEnvironment::getInternedString(ctx, it->str().c_str())->asObject(ctx));
+        results = results->appendLast(ctx, newStr(ctx, it->str()));
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoObject* listProto = env ? env->getListPrototype() : nullptr;
@@ -825,14 +1079,14 @@ static const proto::ProtoObject* py_fullmatch(
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
 {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
-    std::string pat, s;
+    std::string pat;
+    std::wstring s;
     const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
     if (!getPattern(ctx, patObj, pat)) return PROTO_NONE;
-    if (!posArgs->getAt(ctx, 1)->isString(ctx)) return PROTO_NONE;
-    posArgs->getAt(ctx, 1)->asString(ctx)->toUTF8String(ctx, s);
+    if (!wideArg(ctx, posArgs->getAt(ctx, 1), s)) return PROTO_NONE;
     long long flags = extractFlags(ctx, patObj, posArgs, 2);
-    std::regex re = makeRegex(ctx, pat, flags);
-    std::smatch m;
+    std::wregex re = makeRegex(ctx, pat, flags);
+    std::wsmatch m;
     if (!std::regex_match(s, m, re)) return PROTO_NONE;
     return makeMatchObject(ctx, getMatchProto(ctx, self), m, s, 0, patObj);
 }
@@ -850,57 +1104,46 @@ static const proto::ProtoObject* py_findall(
     return py_pattern_findall(ctx, patObj, nullptr, args, kwargs);
 }
 
+// re.sub(pattern, repl, string, count=0, flags=0)
 static const proto::ProtoObject* py_sub(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwargs)
 {
-    // re.sub(pattern, repl, string, ...)
-    if (posArgs->getSize(ctx) < 3) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!posArgs || posArgs->getSize(ctx) < 3) {
+        if (env) env->raiseTypeError(ctx, "sub() missing required argument 'pattern', 'repl' or 'string'");
+        return nullptr;
+    }
     const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
-    const proto::ProtoObject* replObj = posArgs->getAt(ctx, 1);
-    const proto::ProtoObject* strObj = posArgs->getAt(ctx, 2);
-    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, replObj)->appendLast(ctx, strObj);
-    return py_pattern_sub(ctx, patObj, nullptr, args, kwargs);
+    const proto::ProtoObject* result = nullptr;
+    long long replaced = 0;
+    const long long flags = extractFlags(ctx, patObj, nullptr, -1) | intArg(ctx, posArgs, 4, kwargs, "flags", 0);
+    if (!substitute(ctx, patObj, getMatchProto(ctx, self), posArgs->getAt(ctx, 1), posArgs->getAt(ctx, 2),
+                    intArg(ctx, posArgs, 3, kwargs, "count", 0), flags, result, replaced)) {
+        return nullptr;
+    }
+    return result;
 }
 
+// re.subn(pattern, repl, string, count=0, flags=0) -> (new_string, number_of_subs)
 static const proto::ProtoObject* py_subn(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwargs)
 {
-    // re.subn(pattern, repl, string) → (new_string, count)
-    if (posArgs->getSize(ctx) < 3) return PROTO_NONE;
-    const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
-    const proto::ProtoObject* replObj = posArgs->getAt(ctx, 1);
-    const proto::ProtoObject* strObj = posArgs->getAt(ctx, 2);
-    std::string pat;
-    if (!getPattern(ctx, patObj, pat)) return PROTO_NONE;
-    std::string replStr;
-    if (!replObj->isString(ctx)) return PROTO_NONE;
-    replObj->asString(ctx)->toUTF8String(ctx, replStr);
-    std::string s;
-    if (!strObj->isString(ctx)) return PROTO_NONE;
-    strObj->asString(ctx)->toUTF8String(ctx, s);
-    long long flags = extractFlags(ctx, patObj, posArgs, 3);
-    std::regex re = makeRegex(ctx, pat, flags);
-
-    int count = 0;
-    std::string result;
-    auto begin = std::sregex_iterator(s.begin(), s.end(), re);
-    auto end2 = std::sregex_iterator();
-    size_t lastPos = 0;
-    for (auto it = begin; it != end2; ++it) {
-        const std::smatch& m = *it;
-        result += s.substr(lastPos, m.position(0) - lastPos);
-        result += m.format(replStr);
-        lastPos = m.position(0) + m.length(0);
-        ++count;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!posArgs || posArgs->getSize(ctx) < 3) {
+        if (env) env->raiseTypeError(ctx, "subn() missing required argument 'pattern', 'repl' or 'string'");
+        return nullptr;
     }
-    result += s.substr(lastPos);
-
-    const proto::ProtoObject* resultStr = PythonEnvironment::getInternedString(ctx, result.c_str())->asObject(ctx);
-    const proto::ProtoObject* countObj = ctx->fromInteger(count);
-    const proto::ProtoList* tList = ctx->newList()->appendLast(ctx, resultStr)->appendLast(ctx, countObj);
-    return ctx->newTupleFromList(tList)->asObject(ctx);
+    const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* result = nullptr;
+    long long replaced = 0;
+    const long long flags = extractFlags(ctx, patObj, nullptr, -1) | intArg(ctx, posArgs, 4, kwargs, "flags", 0);
+    if (!substitute(ctx, patObj, getMatchProto(ctx, self), posArgs->getAt(ctx, 1), posArgs->getAt(ctx, 2),
+                    intArg(ctx, posArgs, 3, kwargs, "count", 0), flags, result, replaced)) {
+        return nullptr;
+    }
+    return newPair(ctx, result, ctx->fromInteger(replaced));
 }
 
 static const proto::ProtoObject* py_finditer(
@@ -911,16 +1154,16 @@ static const proto::ProtoObject* py_finditer(
     if (posArgs->getSize(ctx) < 2) return PythonEnvironment::wrapList(ctx, ctx->newList());
     const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* strObj = posArgs->getAt(ctx, 1);
-    std::string pat, s;
+    std::string pat;
+    std::wstring s;
     if (!getPattern(ctx, patObj, pat)) return PythonEnvironment::wrapList(ctx, ctx->newList());
-    if (!strObj->isString(ctx)) return PythonEnvironment::wrapList(ctx, ctx->newList());
-    strObj->asString(ctx)->toUTF8String(ctx, s);
+    if (!wideArg(ctx, strObj, s)) return PythonEnvironment::wrapList(ctx, ctx->newList());
     long long flags = extractFlags(ctx, patObj, posArgs, 2);
-    std::regex re = makeRegex(ctx, pat, flags);
+    std::wregex re = makeRegex(ctx, pat, flags);
     const proto::ProtoObject* matchProto = getMatchProto(ctx, self);
     const proto::ProtoList* results = ctx->newList();
-    auto begin = std::sregex_iterator(s.begin(), s.end(), re);
-    auto end2 = std::sregex_iterator();
+    auto begin = std::wsregex_iterator(s.begin(), s.end(), re);
+    auto end2 = std::wsregex_iterator();
     for (auto it = begin; it != end2; ++it) {
         results = results->appendLast(ctx, makeMatchObject(ctx, matchProto, *it, s, 0, patObj));
     }
@@ -965,8 +1208,9 @@ static const proto::ProtoObject* py_scanner_iter_match(
     if (!strObj || !strObj->isString(ctx)) return PROTO_NONE;
     if (!patAttr || !patAttr->isString(ctx)) return PROTO_NONE;
 
-    std::string s, pat;
-    strObj->asString(ctx)->toUTF8String(ctx, s);
+    std::wstring s;
+    std::string pat;
+    wideArg(ctx, strObj, s);
     patAttr->asString(ctx)->toUTF8String(ctx, pat);
 
     long long pos = 0;
@@ -974,10 +1218,10 @@ static const proto::ProtoObject* py_scanner_iter_match(
     if (pos >= (long long)s.size()) return PROTO_NONE;
 
     long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::regex re = makeRegex(ctx, pat, flags);
+    std::wregex re = makeRegex(ctx, pat, flags);
 
-    std::string sub = s.substr(static_cast<size_t>(pos));
-    std::smatch m;
+    std::wstring sub = s.substr(static_cast<size_t>(pos));
+    std::wsmatch m;
     if (!std::regex_search(sub, m, re) || m.position(0) != 0) return PROTO_NONE;
 
     // Advance position.
@@ -1109,8 +1353,8 @@ static const proto::ProtoObject* py_scanner_scan(
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     if (!posArgs->getAt(ctx, 0)->isString(ctx)) return PROTO_NONE;
 
-    std::string s;
-    posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, s);
+    std::wstring s;
+    wideArg(ctx, posArgs->getAt(ctx, 0), s);
 
     const proto::ProtoObject* patObj = self->getAttribute(ctx,
         proto::ProtoString::createSymbol(ctx, "__scan_pattern__"));
@@ -1118,21 +1362,22 @@ static const proto::ProtoObject* py_scanner_scan(
         proto::ProtoString::createSymbol(ctx, "__scan_lexicon__"));
     const proto::ProtoObject* mpAttr = self->getAttribute(ctx,
         proto::ProtoString::createSymbol(ctx, "__match_proto__"));
+    (void)mpAttr;
 
     std::string pat;
     if (patObj && patObj->isString(ctx)) patObj->asString(ctx)->toUTF8String(ctx, pat);
     else return PROTO_NONE;
 
     long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::regex re = makeRegex(ctx, pat, flags);
+    std::wregex re = makeRegex(ctx, pat, flags);
 
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoList* results = ctx->newList();
     size_t i = 0;
 
     while (i < s.size()) {
-        std::string sub = s.substr(i);
-        std::smatch m;
+        std::wstring sub = s.substr(i);
+        std::wsmatch m;
         if (!std::regex_search(sub, m, re) || m.position(0) != 0) break;
         size_t j = i + m.length(0);
         if (j == i) break;  // zero-length match guard
@@ -1150,8 +1395,7 @@ static const proto::ProtoObject* py_scanner_scan(
                 const proto::ProtoObject* action = lx->getAt(ctx, actionIdx);
                 if (action && action != PROTO_NONE) {
                     // action(scanner, token) → result
-                    const proto::ProtoObject* tokenStr =
-                        PythonEnvironment::getInternedString(ctx, m.str(0).c_str())->asObject(ctx);
+                    const proto::ProtoObject* tokenStr = newStr(ctx, m.str(0));
                     const proto::ProtoList* callArgs = ctx->newList()
                         ->appendLast(ctx, self)
                         ->appendLast(ctx, tokenStr);
@@ -1179,8 +1423,7 @@ static const proto::ProtoObject* py_scanner_scan(
     } else {
         resultsObj = results->asObject(ctx);
     }
-    const proto::ProtoObject* remaining =
-        PythonEnvironment::getInternedString(ctx, s.substr(i).c_str())->asObject(ctx);
+    const proto::ProtoObject* remaining = newStr(ctx, s.substr(i));
     const proto::ProtoList* pair = ctx->newList()
         ->appendLast(ctx, resultsObj)
         ->appendLast(ctx, remaining);
@@ -1223,6 +1466,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_search));
     patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "sub"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_sub));
+    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "subn"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_subn));
     patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "findall"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_findall));
     patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "finditer"),

@@ -68,7 +68,7 @@ This document catalogs stub implementations and their completion status.
 
 | Module | Item | Behavior |
 |--------|------|----------|
-| re | compile, match, search, findall, sub | Native ReModule (C++); lib/python3.14/re.py stub fallback returns None/[]/string. Native resolves first; lib used when native not available. |
+| re | compile, match, search, fullmatch, findall, finditer, split, sub, subn, escape | Native ReModule (C++) on `std::wregex`: matches code points; `sub`/`subn` take a template or a replacement function. The native module resolves before the `lib/python3.14/re` package. Limits are listed in docs/CPYTHON_CONFORMANCE.md. |
 | atexit | register, unregister, _run_exitfuncs | Implemented (v37): register stores callbacks; _run_exitfuncs invoked at shutdown. |
 | heapq | heappush, heappop, heapify | Implemented: list as min-heap; heappush, heappop, heapify in-place. |
 | io | StringIO | Minimal: getvalue, read, write. |

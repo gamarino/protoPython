@@ -223,6 +223,14 @@ onwards. Commit hashes are given for reference.
   and negative tolerances were accepted. It now follows CPython: NaN is close
   to nothing, the tolerances are keyword-only and a negative one raises
   `ValueError`.
+- **json.dumps escaping and re:** `json.dumps("é\n")` returned the string
+  unescaped, and so did `json.dumps('a"b')`: the native `re` module ignored a
+  replacement function in `sub` (the pure-Python json encoder uses one) and
+  matched the UTF-8 bytes of a str. `re` now matches code points, so match
+  positions, groups and character classes such as `[^\ -~]` see whole
+  characters; `sub` and `subn` accept replacement functions, expand `\1` and
+  `\g<name>` templates and honour `count`; `Pattern.subn` exists; and
+  `re.escape` leaves non-ASCII characters intact.
 
 ### Performance
 
