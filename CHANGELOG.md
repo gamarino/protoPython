@@ -215,6 +215,9 @@ onwards. Commit hashes are given for reference.
 - **NaN in float subclasses:** an instance of a float subclass holding NaN
   compared equal to itself, and `<=`/`>=` between two such instances were True;
   they now follow IEEE 754 like a plain float.
+- **NaN as a dict or set key:** NaN was hashed by its bit pattern, so every NaN
+  was the same key (`len({float('nan'), float('nan')})` was 1). NaN now hashes
+  by object identity, as in CPython 3.10 and later.
 
 ### Performance
 

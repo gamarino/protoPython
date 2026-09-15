@@ -4290,6 +4290,15 @@ static const proto::ProtoSet* set_underlying(proto::ProtoContext* context, const
 
 static bool keyHash(proto::ProtoContext* context, const proto::ProtoObject* key, bool raiseUnhashable, unsigned long& out);
 
+// The hash of a NaN float object: CPython 3.10+ hashes NaN by identity, so
+// distinct NaN objects are distinct dict and set keys while the same object is
+// found again. protoCore does not move objects, so the address is stable; cells
+// are 64-byte aligned, and dropping the always-zero low bits keeps the value in
+// the SmallInteger range.
+static unsigned long nanIdentityHash(const proto::ProtoObject* obj) {
+    return static_cast<unsigned long>(reinterpret_cast<std::uintptr_t>(obj) >> 6);
+}
+
 // hash((1, 2)) == hash((1.0, 2)): the elements are keyed like dict keys and
 // mixed the way ProtoTupleImplementation::getHash mixes element hashes, so a
 // tuple of ints and strings keeps the hash protoCore gives it.
@@ -4335,6 +4344,12 @@ static bool keyHash(proto::ProtoContext* context, const proto::ProtoObject* key,
             out = integralDoubleToInt(context, v)->getHash(context);
             return true;
         }
+        // protoCore hashes a double by its bits, which made every NaN the
+        // same key: {float('nan'), float('nan')} had one element.
+        if (std::isnan(v)) {
+            out = nanIdentityHash(key);
+            return true;
+        }
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (env) {
@@ -4374,7 +4389,15 @@ static bool keyHash(proto::ProtoContext* context, const proto::ProtoObject* key,
                     // A subclass of int, float, str or tuple that keeps the
                     // built-in __hash__ is keyed by its value: MyInt(3) finds 3.
                     const proto::ProtoObject* data = key->getAttribute(context, env->getDataString());
-                    if (data && data != key) return keyHash(context, data, raiseUnhashable, out);
+                    if (data && data != key) {
+                        // A NaN payload is keyed by the instance itself, as
+                        // hash() does, not by a payload instances may share.
+                        if (data->isFloat(context) && std::isnan(data->asDouble(context))) {
+                            out = nanIdentityHash(key);
+                            return true;
+                        }
+                        return keyHash(context, data, raiseUnhashable, out);
+                    }
                 }
                 const proto::ProtoObject* res = nullptr;
                 if (m) {
@@ -9442,6 +9465,8 @@ static const proto::ProtoObject* py_float_hash(
         }
     }
     if (!got) return context->fromInteger(0);
+    // CPython 3.10+: NaN hashes by object identity (see nanIdentityHash).
+    if (std::isnan(v)) return context->fromInteger(static_cast<long long>(nanIdentityHash(self)));
     // CPython: integer-valued floats hash the same as the int, including
     // floats beyond the long long range (the `(long long)v` cast used here
     // before was undefined there, so hash(2.0**70) != hash(2**70)).
