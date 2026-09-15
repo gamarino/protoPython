@@ -3874,12 +3874,18 @@ static const proto::ProtoObject* py_list_iter(
             // ProtoStringIterator::next both returns the code point and moves
             // the iterator forward; calling advance as well skipped every
             // other character.
+            // The iterator and the list being built live only in C++ locals
+            // while appendLast allocates; the critical section keeps the
+            // collector from scanning (and freeing them) mid-construction.
             const proto::ProtoList* charList = context->newList();
-            proto::ProtoStringIterator* it = const_cast<proto::ProtoStringIterator*>(str->getIterator(context));
-            while (it && it->hasNext(context)) {
-                const proto::ProtoObject* ch = it->next(context);
-                if (!ch) break;
-                charList = charList->appendLast(context, ch);
+            {
+                proto::ProtoContext::CriticalSection cs(context);
+                proto::ProtoStringIterator* it = const_cast<proto::ProtoStringIterator*>(str->getIterator(context));
+                while (it && it->hasNext(context)) {
+                    const proto::ProtoObject* ch = it->next(context);
+                    if (!ch) break;
+                    charList = charList->appendLast(context, ch);
+                }
             }
             list = charList;
             data = charList->asObject(context);
@@ -3890,6 +3896,8 @@ static const proto::ProtoObject* py_list_iter(
         return PROTO_NONE;
     }
 
+    // `data` may be a list built above and reachable only from this frame.
+    PythonEnvironment::TransientPin pinData(env, data);
     const proto::ProtoListIterator* it = list->getIterator(context);
 
     const proto::ProtoObject* iterObj = iterProto->newChild(context, true);
@@ -12357,6 +12365,8 @@ static const proto::ProtoObject* py_str_getitem(
             if (sb.start >= sb.stop) return proto::ProtoString::fromUTF8(context, "")->asObject(context);
             return str->getSlice(context, static_cast<int>(sb.start), static_cast<int>(sb.stop))->asObject(context);
         }
+        // The character list lives only in a local until create() consumes it.
+        proto::ProtoContext::CriticalSection cs(context);
         const proto::ProtoList* chars = context->newList();
         for (long long i = sb.start; (sb.step > 0 ? i < sb.stop : i > sb.stop); i += sb.step) {
             chars = chars->appendLast(context, str->getAt(context, static_cast<int>(i)));
@@ -20429,9 +20439,16 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             // walk; getSlice is O(log n) per character. Reversing the UTF-8
             // bytes broke every non-ASCII character.
             const proto::ProtoList* lst = ctx->newList();
-            for (long long i = static_cast<long long>(str->getSize(ctx)) - 1; i >= 0; --i) {
-                lst = lst->appendLast(ctx, str->getSlice(ctx, static_cast<int>(i), static_cast<int>(i) + 1)->asObject(ctx));
+            {
+                // lst and each slice live only in locals while getSlice and
+                // appendLast allocate.
+                proto::ProtoContext::CriticalSection cs(ctx);
+                for (long long i = static_cast<long long>(str->getSize(ctx)) - 1; i >= 0; --i) {
+                    lst = lst->appendLast(ctx, str->getSlice(ctx, static_cast<int>(i), static_cast<int>(i) + 1)->asObject(ctx));
+                }
             }
+            // env->iter allocates the iterator; keep the list alive through it.
+            PythonEnvironment::TransientPin pinLst(env, lst->asObject(ctx));
             if (env) return env->iter(lst->asObject(ctx));
             return lst->asObject(ctx);
         }));
