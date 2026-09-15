@@ -333,6 +333,11 @@ onwards. Commit hashes are given for reference.
   `Apr 2026`. CMake now generates the build date into `Version.h` when it
   configures the build (`Sep 15 2026`, CPython's format); it uses
   `SOURCE_DATE_EPOCH` when set, so builds can be reproducible.
+- **ImportError messages:** every `ImportError` raised by the import system
+  had `"\nSearch path: [...]"` appended, so `str(exc)` differed from
+  CPython (`cannot import name 'y' from 'x' (<file>)`, `No module named 'x'`).
+  The suffix is gone, and the error from `from x import y` also sets `path`
+  to the module's file.
 
 ### Performance
 

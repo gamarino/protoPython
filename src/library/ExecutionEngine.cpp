@@ -5533,14 +5533,16 @@ const proto::ProtoObject* executeBytecodeRange(
                                 mName->asString(ctx)->toUTF8String(ctx, mn);
                                 msg += " from '" + mn + "'";
                             }
-                             const proto::ProtoObject* fileAttr = mod->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__file__"));
-                             if (fileAttr && fileAttr->isString(ctx)) {
-                                 std::string fn;
-                                 fileAttr->asString(ctx)->toUTF8String(ctx, fn);
-                                 msg += " (" + fn + ")";
-                             }
+                            // CPython: "cannot import name 'y' from 'x' (<file>)", with
+                            // name and path set on the exception.
+                            std::string fn;
+                            const proto::ProtoObject* fileAttr = mod->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__file__"));
+                            if (fileAttr && fileAttr->isString(ctx)) {
+                                fileAttr->asString(ctx)->toUTF8String(ctx, fn);
+                                msg += " (" + fn + ")";
+                            }
 
-                            env->raiseImportError(ctx, msg, mn);
+                            env->raiseImportError(ctx, msg, mn, fn);
                         }
                         i = next_i;
                         continue;

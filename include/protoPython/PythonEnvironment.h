@@ -915,7 +915,10 @@ public:
     void raiseRuntimeError(proto::ProtoContext* context, const std::string& msg);
     void raiseOSError(proto::ProtoContext* context, int errnum, const std::string& strerr, const std::string& filename = "");
     void raiseTypeError(proto::ProtoContext* context, const std::string& msg);
-    void raiseImportError(proto::ProtoContext* context, const std::string& msg, const std::string& name = "");
+    /** Raise ImportError (ModuleNotFoundError for "No module named" messages)
+     *  with CPython's message, and the name and path attributes when given. */
+    void raiseImportError(proto::ProtoContext* context, const std::string& msg,
+                          const std::string& name = "", const std::string& path = "");
     void raiseKeyboardInterrupt(proto::ProtoContext* context);
     void raiseSyntaxError(proto::ProtoContext* context, const std::string& msg, int lineno, int offset, const std::string& text);
     /**

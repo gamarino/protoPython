@@ -16878,30 +16878,14 @@ void PythonEnvironment::raiseOSError(proto::ProtoContext* ctx, int errnum, const
     if (exc && exc != PROTO_NONE) setPendingException(exc);
 }
 
-void PythonEnvironment::raiseImportError(proto::ProtoContext* ctx, const std::string& msg, const std::string& name) {
+void PythonEnvironment::raiseImportError(proto::ProtoContext* ctx, const std::string& msg, const std::string& name,
+                                         const std::string& path) {
     if (!importErrorType) return;
-    std::string hintMsg = msg;
-    
-    // Step 1337: ImportError Hints (search path)
-    if (sysModule) {
-        const proto::ProtoObject* pathObj = sysModule->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "path"));
-        if (pathObj && pathObj->asList(ctx)) {
-            hintMsg += "\nSearch path: [";
-            const proto::ProtoList* pathList = pathObj->asList(ctx);
-            for (unsigned long i = 0; i < pathList->getSize(ctx); ++i) {
-                if (i > 0) hintMsg += ", ";
-                std::string p;
-                const proto::ProtoObject* item = pathList->getAt(ctx, static_cast<int>(i));
-                if (item && item->isString(ctx)) {
-                    item->asString(ctx)->toUTF8String(ctx, p);
-                    hintMsg += "'" + p + "'";
-                }
-            }
-            hintMsg += "]";
-        }
-    }
-
-    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, hintMsg.c_str())->asObject(ctx));
+    // The message is CPython's, with nothing appended: the "Search path: [...]"
+    // suffix added here made `str(exc)` differ from CPython for every import
+    // failure.
+    const proto::ProtoList* args = ctx->newList()->appendLast(ctx,
+        proto::ProtoString::fromStdString(ctx, msg)->asObject(ctx));
     // Raise ModuleNotFoundError (subclass of ImportError) for "No module named" messages;
     // fall back to ImportError for other import failures.
     bool isNotFound = (msg.find("No module named") != std::string::npos);
@@ -16912,6 +16896,10 @@ void PythonEnvironment::raiseImportError(proto::ProtoContext* ctx, const std::st
         if (!name.empty()) {
             exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "name"),
                 PythonEnvironment::getInternedString(ctx, name.c_str())->asObject(ctx));
+        }
+        if (!path.empty()) {
+            exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "path"),
+                proto::ProtoString::fromStdString(ctx, path)->asObject(ctx));
         }
         setPendingException(exc);
     }
