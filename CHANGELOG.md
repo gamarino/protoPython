@@ -178,6 +178,11 @@ measured on the development machine at the time. Full reports are in
   history and obsolete plans moved to `docs/archive/`, `docs/README.md`
   rewritten as an index, and the conformance and debug scripts default to
   `build_release` (`2183208d`, `3f461d3c`).
+- Conformity tooling: `tests/conformity/run_conformity.py` finds protopy in
+  `build_release/`, `build/` or on `PATH` and passes the import directory
+  through `PROTO_PYTHONPATH`; CTest runs the suite (`conformity_suite`) and the
+  runner's self-test. `check_const_cast.sh` reports counts and exits 0 unless
+  `--strict` is given.
 
 ## [0.3.0] - 2026-05-11
 

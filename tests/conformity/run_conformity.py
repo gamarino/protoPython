@@ -1,30 +1,77 @@
 #!/usr/bin/env python3
 """
-Run Phase 1 conformity tests for protoPython.
-Reads bootstrap manifest or runs all tests under tests/conformity/builtins and tests/conformity/import.
-Set PROTO_PYTHON to the protoPython binary path; else uses first-found protoPython or fails.
+Run the protoPython conformity tests.
+
+The scripts to run are read from bootstrap/cpython_bootstrap.txt (one path per
+line, relative to the repository root). When the manifest is missing or empty,
+every test under tests/conformity/builtins and tests/conformity/import is run.
+
+The protopy binary is taken from the first of:
+  1. the PROTO_PYTHON environment variable;
+  2. build_release/src/runtime/protopy in the repository;
+  3. build/src/runtime/protopy in the repository;
+  4. protopy on PATH.
+
+Each script runs from the repository root with tests/conformity/import
+prepended to PROTO_PYTHONPATH, the module search path protopy reads
+(protopy does not read PYTHONPATH).
+
+Exit status: 0 when every script passes, 1 when any fails, 2 when no protopy
+binary is found.
 """
 from __future__ import print_function
 
 import os
-import sys
+import shutil
 import subprocess
+import sys
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 CONFORMITY_DIR = os.path.join(REPO_ROOT, "tests", "conformity")
 BOOTSTRAP = os.path.join(CONFORMITY_DIR, "bootstrap", "cpython_bootstrap.txt")
+IMPORT_DIR = os.path.join(CONFORMITY_DIR, "import")
+
+# Build directories searched for protopy, relative to the repository root.
+BUILD_DIRS = ("build_release", "build")
 
 
-def get_proto_python():
-    exe = os.environ.get("PROTO_PYTHON")
+def _is_executable(path):
+    return os.path.isfile(path) and os.access(path, os.X_OK)
+
+
+def get_proto_python(environ=None, repo_root=REPO_ROOT):
+    """Return the protopy binary to test, or None if none is found."""
+    if environ is None:
+        environ = os.environ
+    exe = environ.get("PROTO_PYTHON")
     if exe:
         return exe
-    for name in ("protoPython", "proto python"):
-        for d in (REPO_ROOT, os.path.join(REPO_ROOT, "build"), os.path.curdir):
-            p = os.path.join(d, name)
-            if os.path.isfile(p) and os.access(p, os.X_OK):
-                return p
-    return None
+    for build_dir in BUILD_DIRS:
+        candidate = os.path.join(repo_root, build_dir, "src", "runtime", "protopy")
+        if _is_executable(candidate):
+            return candidate
+    return shutil.which("protopy", path=environ.get("PATH", os.defpath))
+
+
+def build_env(environ=None, import_dir=IMPORT_DIR):
+    """Return the environment for one test script.
+
+    import_dir is prepended to PROTO_PYTHONPATH. An inherited value of "1"
+    is dropped: it is the marker protopy exports to signal that code runs
+    under protoPython, not a directory.
+    """
+    if environ is None:
+        environ = os.environ
+    env = dict(environ)
+    entries = [p for p in env.get("PROTO_PYTHONPATH", "").split(os.pathsep)
+               if p and p != "1"]
+    if os.path.isdir(import_dir):
+        entries.insert(0, import_dir)
+    if entries:
+        env["PROTO_PYTHONPATH"] = os.pathsep.join(entries)
+    else:
+        env.pop("PROTO_PYTHONPATH", None)
+    return env
 
 
 def run_script(prog, script_path):
@@ -33,21 +80,18 @@ def run_script(prog, script_path):
         script_path = os.path.join(REPO_ROOT, script_path)
     if not os.path.isfile(script_path):
         return False, "file not found: %s" % script_path
-    env = dict(os.environ)
-    import_dir = os.path.join(CONFORMITY_DIR, "import")
-    if os.path.isdir(import_dir):
-        env["PYTHONPATH"] = import_dir + os.pathsep + env.get("PYTHONPATH", "")
     try:
         result = subprocess.run(
             [prog, script_path],
             cwd=REPO_ROOT,
             capture_output=True,
             timeout=30,
-            env=env,
+            env=build_env(),
         )
+        output = (result.stdout or b"").decode("utf-8", "replace")
         if result.returncode != 0:
-            return False, (result.stdout or b"").decode("utf-8", "replace") + (result.stderr or b"").decode("utf-8", "replace")
-        return True, (result.stdout or b"").decode("utf-8", "replace")
+            return False, output + (result.stderr or b"").decode("utf-8", "replace")
+        return True, output
     except subprocess.TimeoutExpired:
         return False, "timeout"
     except Exception as e:
@@ -57,8 +101,12 @@ def run_script(prog, script_path):
 def main():
     proto = get_proto_python()
     if not proto:
-        print("ERROR: PROTO_PYTHON not set and protoPython binary not found", file=sys.stderr)
+        print("ERROR: PROTO_PYTHON is not set and no protopy binary was found "
+              "(looked in %s and on PATH)"
+              % ", ".join(os.path.join(d, "src", "runtime", "protopy") for d in BUILD_DIRS),
+              file=sys.stderr)
         sys.exit(2)
+    print("Using", proto)
 
     # Run from bootstrap manifest if present
     tests = []
@@ -69,7 +117,7 @@ def main():
                 if not line or line.startswith("#"):
                     continue
                 # first token is path
-                path = line.split()[0] if line.split() else line
+                path = line.split()[0]
                 if path.endswith(".py"):
                     tests.append(path)
 

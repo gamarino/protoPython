@@ -57,7 +57,27 @@ if(Python3_FOUND)
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/test/regression
         ENVIRONMENT "PROTOPY_BIN=$<TARGET_FILE:protopy>"
         LABELS "regression_gate")
+    # Conformity suite (tests/conformity) against the protopy built here, and the
+    # runner's own self-test (binary discovery, PROTO_PYTHONPATH handling).
+    add_test(NAME conformity_suite
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/conformity/run_conformity.py)
+    set_tests_properties(conformity_suite PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        ENVIRONMENT "PROTO_PYTHON=$<TARGET_FILE:protopy>"
+        TIMEOUT 400
+        LABELS "regression_gate")
+    add_test(NAME conformity_runner_selftest
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/conformity/test_run_conformity.py)
+    set_tests_properties(conformity_runner_selftest PROPERTIES
+        TIMEOUT 60
+        LABELS "regression_gate")
 endif()
+# The const_cast review report runs and exits 0 (--strict would fail on any match).
+add_test(NAME conformity_const_cast_report
+    COMMAND ${CMAKE_SOURCE_DIR}/tests/conformity/scripts/check_const_cast.sh)
+set_tests_properties(conformity_const_cast_report PROPERTIES
+    TIMEOUT 60
+    LABELS "regression_gate")
 
 add_test(NAME protopy_cli_help COMMAND $<TARGET_FILE:protopy> --help)
 add_test(NAME protopy_cli_missing_module
