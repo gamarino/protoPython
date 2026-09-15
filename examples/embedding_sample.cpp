@@ -1,65 +1,60 @@
 /**
  * examples/embedding_sample.cpp
- * 
- * This example demonstrates how to embed the protoPython runtime into a C++ application.
- * It initializes the PythonEnvironment, sets up a context, and executes a script.
+ *
+ * Embeds the protoPython runtime in a C++ program: runs Python source in the
+ * __main__ module, reports a Python exception the way `protopy -c` does, and
+ * reads a global variable back into C++.
+ *
+ * Built by default (CMake option PROTOPYTHON_BUILD_EXAMPLES) and run by CTest
+ * as the `embedding_sample` test; the exit status is 0 only when the value read
+ * back is the expected one.
  */
 
 #include <protoPython/PythonEnvironment.h>
-#include <protoPython/ExecutionEngine.h>
 #include <protoCore.h>
+
 #include <iostream>
-#include <vector>
+#include <sstream>
+#include <string>
 
 int main() {
-    // 1. Initialize the protoCore Space
-    // A Space is the root of memory and execution for the process.
-    proto::ProtoSpace space;
+    // The environment uses the process-wide ProtoSpace. Arguments: standard
+    // library directory (empty: the environment's defaults), module search
+    // paths, and sys.argv.
+    protoPython::PythonEnvironment env("", {"."}, {"embedding_sample"});
 
-    // 2. Initialize the PythonEnvironment
-    // The environment manages the Python runtime state, builtins, and modules.
-    protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::initialize(&space);
-
-    // 3. Obtain a Context for the current thread
-    // All protoCore operations must occur within a active Context.
-    proto::ProtoContext* ctx = space.getContext();
-
-    // 4. Create a Root Scope for execution
-    // This allows us to share objects between the C++ host and Python.
-    const proto::ProtoObject* globals = ctx->newObject(true);
-    if (env->getObjectPrototype()) {
-        globals = globals->addParent(ctx, env->getObjectPrototype());
-    }
-
-    // 5. Prepare a Python Script
-    std::string code = 
+    const std::string code =
         "def greet(name):\n"
         "    return f'Hello, {name} from protoPython!'\n"
         "\n"
         "result = greet('C++ Developer')\n"
         "print(result)\n";
 
-    std::cout << "--- Executing Embedded Python ---" << std::endl;
-
-    try {
-        // 6. Execute the code
-        // We use the PythonEnvironment's executeModule or executeBytecodeRange.
-        env->executeModule(ctx, "main", code, globals);
-
-        // 7. Retrieve results from globals
-        const proto::ProtoString* resultKey = proto::ProtoString::fromUTF8String(ctx, "result");
-        const proto::ProtoObject* resultObj = globals->getAttribute(ctx, resultKey);
-
-        if (resultObj && resultObj->isString(ctx)) {
-            std::cout << "Retrieved Result: " << resultObj->asString(ctx)->toUTF8String() << std::endl;
+    // Python exceptions are not C++ exceptions: a failing run returns -2 and
+    // leaves the exception pending for this thread.
+    if (env.executeString(code, "<embedded>") == -2) {
+        const proto::ProtoObject* exc = env.takePendingException();
+        if (exc && exc != PROTO_NONE) {
+            std::ostringstream text;
+            env.handleException(exc, nullptr, text);
+            if (text.str().empty()) return env.getExitRequested();  // SystemExit
+            std::cerr << text.str();
         }
+        return 70;
+    }
 
-    } catch (const std::exception& e) {
-        std::cerr << "Execution failed: " << e.what() << std::endl;
+    // executeString ran the code in __main__; read the global `result` back.
+    proto::ProtoContext* ctx = env.getContext();
+    const proto::ProtoObject* mainModule = env.resolve("__main__", ctx);
+    const proto::ProtoObject* result =
+        (mainModule && mainModule != PROTO_NONE) ? env.getAttr(mainModule, "result") : nullptr;
+    if (!result || !proto::ProtoObject::isStringTagFast(result)) {
+        std::cerr << "embedding_sample: __main__.result is missing or not a str\n";
         return 1;
     }
 
-    std::cout << "--- Execution Completed ---" << std::endl;
-
-    return 0;
+    std::string text;
+    result->asString(ctx)->toUTF8String(ctx, text);
+    std::cout << "Retrieved result: " << text << std::endl;
+    return text == "Hello, C++ Developer from protoPython!" ? 0 : 1;
 }

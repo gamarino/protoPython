@@ -140,5 +140,6 @@ To compile in a different installed location, configure with
 ## Next steps
 
 - [User Guide](USER_GUIDE.md): the `protopy` command line.
-- [Examples](../examples/): example scripts.
+- [Examples](../examples/): example scripts and `embedding_sample.cpp`, a C++ program
+  that embeds protoPython (built as `build_release/embedding_sample`).
 - [C++ API Reference](CPP_API_REFERENCE.md): embedding protoPython in a C++ program.

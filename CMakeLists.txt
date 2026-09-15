@@ -689,6 +689,20 @@ endif()
 
 add_subdirectory(src/compiler)
 
+# C++ embedding example: built by default and run by CTest so it keeps
+# compiling against the current PythonEnvironment API. Its exit status is the
+# check (it verifies the value it reads back from Python).
+option(PROTOPYTHON_BUILD_EXAMPLES "Build and test the C++ embedding example" ON)
+if(PROTOPYTHON_BUILD_EXAMPLES)
+    add_executable(embedding_sample examples/embedding_sample.cpp)
+    target_link_libraries(embedding_sample PRIVATE protoPython protoCore)
+    add_test(NAME embedding_sample COMMAND embedding_sample)
+    set_tests_properties(embedding_sample PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        TIMEOUT 60
+        LABELS "regression_gate")
+endif()
+
 # --- Install RPATH: installed binaries and libs find each other without LD_LIBRARY_PATH ---
 if(UNIX)
     if(APPLE)

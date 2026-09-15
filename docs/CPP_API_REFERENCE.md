@@ -5,7 +5,9 @@ declarations are in `include/protoPython/PythonEnvironment.h`; values are protoC
 objects declared in protoCore's
 [`headers/protoCore.h`](https://github.com/numaes/protoCore/blob/master/headers/protoCore.h).
 `src/runtime/main.cpp` (the `protopy` executable) is a complete, working example of the
-calls described here.
+calls described here. `examples/embedding_sample.cpp` is a smaller one: it runs source
+code in `__main__` and reads a global back. It is built by default (CMake option
+`PROTOPYTHON_BUILD_EXAMPLES`) and run by CTest as the `embedding_sample` test.
 
 ```cpp
 #include <protoPython/PythonEnvironment.h>

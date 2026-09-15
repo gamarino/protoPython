@@ -150,6 +150,11 @@ onwards. Commit hashes are given for reference.
   the working directory or searches parent directories (which could select
   CPython's `/usr/local/lib/python3.14`), and no longer exports
   `PROTO_PYTHONPATH=1`, which it then read back as a search directory `1`.
+- **Embedding example:** `examples/embedding_sample.cpp` used functions that do
+  not exist (`PythonEnvironment::initialize`, `ProtoSpace::getContext`, a
+  four-argument `executeModule`). It is rewritten against the real
+  `PythonEnvironment` API, built by default (`PROTOPYTHON_BUILD_EXAMPLES`) and
+  run by CTest.
 
 ### Performance
 
