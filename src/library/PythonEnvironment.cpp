@@ -3867,11 +3867,19 @@ static const proto::ProtoObject* py_list_iter(
         const proto::ProtoString* str = self->isString(context) ? self->asString(context) : nullptr;
         if (!str && data && data->isString(context)) str = data->asString(context);
         if (str) {
-            std::string utf8;
-            str->toUTF8String(context, utf8);
+            // The characters of the string are its code points, which
+            // protoCore's iterator yields; py_str_iter_next turns each one
+            // into a one-character str. Iterating the UTF-8 bytes split every
+            // non-ASCII character into several invalid ones.
+            // ProtoStringIterator::next both returns the code point and moves
+            // the iterator forward; calling advance as well skipped every
+            // other character.
             const proto::ProtoList* charList = context->newList();
-            for (unsigned char c : utf8) {
-                charList = charList->appendLast(context, context->fromInteger(static_cast<long>(c)));
+            proto::ProtoStringIterator* it = const_cast<proto::ProtoStringIterator*>(str->getIterator(context));
+            while (it && it->hasNext(context)) {
+                const proto::ProtoObject* ch = it->next(context);
+                if (!ch) break;
+                charList = charList->appendLast(context, ch);
             }
             list = charList;
             data = charList->asObject(context);
@@ -4880,6 +4888,90 @@ static const proto::ProtoObject* py_dict_ge(
     return dict_ordering_typeerror(context, self, positionalParameters, ">=");
 }
 
+// Decodes the UTF-8 sequence at utf8[i]; returns its length (1 for an
+// invalid byte, whose value is then returned as the code point).
+static size_t utf8_decode_at(const std::string& utf8, size_t i, uint32_t& cp) {
+    const unsigned char c = static_cast<unsigned char>(utf8[i]);
+    size_t len = 1;
+    if (c < 0x80) { cp = c; return 1; }
+    if ((c & 0xE0) == 0xC0) { cp = c & 0x1F; len = 2; }
+    else if ((c & 0xF0) == 0xE0) { cp = c & 0x0F; len = 3; }
+    else if ((c & 0xF8) == 0xF0) { cp = c & 0x07; len = 4; }
+    else { cp = c; return 1; }
+    if (i + len > utf8.size()) { cp = c; return 1; }
+    for (size_t k = 1; k < len; ++k) {
+        const unsigned char cc = static_cast<unsigned char>(utf8[i + k]);
+        if ((cc & 0xC0) != 0x80) { cp = c; return 1; }
+        cp = (cp << 6) | (cc & 0x3F);
+    }
+    return len;
+}
+
+// Whether repr() keeps a code point as is. An approximation of CPython's
+// Py_UNICODE_ISPRINTABLE without the Unicode database: control characters
+// (Cc), separators other than the ASCII space (Zs, Zl, Zp), the common
+// format characters (Cf), surrogates, private use and non-characters are
+// escaped; every other code point is printable.
+static bool repr_is_printable(uint32_t cp) {
+    if (cp < 0x20 || (cp >= 0x7F && cp <= 0xA0) || cp == 0xAD) return false;
+    if (cp < 0x7F) return true;
+    if (cp == 0x1680 || (cp >= 0x2000 && cp <= 0x200F) || (cp >= 0x2028 && cp <= 0x202F)
+        || (cp >= 0x205F && cp <= 0x206F) || cp == 0x3000 || cp == 0xFEFF
+        || (cp >= 0x600 && cp <= 0x605) || cp == 0x61C || cp == 0x6DD || cp == 0x70F
+        || cp == 0x180E || (cp >= 0xFFF9 && cp <= 0xFFFB)) return false;
+    if (cp >= 0xD800 && cp <= 0xDFFF) return false;
+    if ((cp >= 0xE000 && cp <= 0xF8FF) || cp >= 0xF0000) return false;
+    if ((cp & 0xFFFE) == 0xFFFE) return false;
+    return cp <= 0x10FFFF;
+}
+
+static void append_code_point_escape(std::string& out, uint32_t cp) {
+    char buf[12];
+    if (cp <= 0xFF) std::snprintf(buf, sizeof(buf), "\\x%02x", cp);
+    else if (cp <= 0xFFFF) std::snprintf(buf, sizeof(buf), "\\u%04x", cp);
+    else std::snprintf(buf, sizeof(buf), "\\U%08x", cp);
+    out += buf;
+}
+
+std::string PythonEnvironment::reprStr(const std::string& utf8) {
+    // CPython's unicode_repr: single quotes, or double quotes when the text
+    // contains a single quote and no double quote.
+    bool hasSingle = false, hasDouble = false;
+    for (char c : utf8) { if (c == '\'') hasSingle = true; else if (c == '"') hasDouble = true; }
+    const char quote = (hasSingle && !hasDouble) ? '"' : '\'';
+    std::string out;
+    out.reserve(utf8.size() + 2);
+    out += quote;
+    for (size_t i = 0; i < utf8.size();) {
+        uint32_t cp = 0;
+        const size_t len = utf8_decode_at(utf8, i, cp);
+        if (cp == '\\') out += "\\\\";
+        else if (cp == static_cast<uint32_t>(quote)) { out += '\\'; out += quote; }
+        else if (cp == '\n') out += "\\n";
+        else if (cp == '\r') out += "\\r";
+        else if (cp == '\t') out += "\\t";
+        else if (len == 1 && cp >= 0x80) append_code_point_escape(out, cp);  // invalid UTF-8 byte
+        else if (!repr_is_printable(cp)) append_code_point_escape(out, cp);
+        else out.append(utf8, i, len);
+        i += len;
+    }
+    out += quote;
+    return out;
+}
+
+std::string PythonEnvironment::asciiEscape(const std::string& utf8) {
+    std::string out;
+    out.reserve(utf8.size());
+    for (size_t i = 0; i < utf8.size();) {
+        uint32_t cp = 0;
+        const size_t len = utf8_decode_at(utf8, i, cp);
+        if (cp < 0x80 && len == 1) out += static_cast<char>(cp);
+        else append_code_point_escape(out, cp);
+        i += len;
+    }
+    return out;
+}
+
 std::string PythonEnvironment::reprObject(proto::ProtoContext* context, const proto::ProtoObject* obj) {
     if (!obj || obj == PROTO_NONE) {
         return "None";
@@ -4911,25 +5003,7 @@ std::string PythonEnvironment::reprObject(proto::ProtoContext* context, const pr
         // Escape backslash, the chosen quote, and standard control
         // characters (\n / \r / \t).  Used by container reprs (dict,
         // list, tuple, set) to produce CPython-compatible output.
-        bool hasSingle = false, hasDouble = false;
-        for (char c : s) { if (c == '\'') hasSingle = true; else if (c == '"') hasDouble = true; }
-        char quote = (hasSingle && !hasDouble) ? '"' : '\'';
-        std::string out;
-        out.reserve(s.size() + 2);
-        out += quote;
-        for (char c : s) {
-            if (c == '\\') { out += "\\\\"; continue; }
-            if (c == quote) { out += '\\'; out += c; continue; }
-            switch (c) {
-                case '\n': out += "\\n"; continue;
-                case '\r': out += "\\r"; continue;
-                case '\t': out += "\\t"; continue;
-                default: break;
-            }
-            out += c;
-        }
-        out += quote;
-        return out;
+        return reprStr(s);
     }
     if (obj->isNone(context)) {
         return "None";
@@ -11841,25 +11915,7 @@ static const proto::ProtoObject* py_str_repr(
     if (!str) return PROTO_NONE;
     std::string s;
     str->toUTF8String(context, s);
-    std::string out = "'";
-    for (unsigned char c : s) {
-        if (c == '\'') out += "\\'";
-        else if (c == '\\') out += "\\\\";
-        else if (c == '\n') out += "\\n";
-        else if (c == '\r') out += "\\r";
-        else if (c == '\t') out += "\\t";
-        else if (c < 32 || c >= 127) {
-            // Mirror the builtin repr() fast path byte-for-byte so
-            // `repr(s)` and `s.__repr__()` agree for str and subclasses.
-            char buf[8];
-            std::snprintf(buf, sizeof(buf), "\\x%02x", c);
-            out += buf;
-        } else {
-            out += static_cast<char>(c);
-        }
-    }
-    out += "'";
-    return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
+    return proto::ProtoString::fromStdString(context, PythonEnvironment::reprStr(s))->asObject(context);
 }
 
 // Helper: extract str from receiver in bound and unbound forms.  When
@@ -12043,6 +12099,41 @@ static bool char_in_chars(unsigned char c, const std::string& ch) {
     return ch.find(c) != std::string::npos;
 }
 
+// Code point indexes and UTF-8 byte offsets of a str flattened with
+// toUTF8String, for the search methods: protoCore's rope has no substring
+// search, so they search the UTF-8 bytes and convert their start/end
+// arguments and results at the boundary. `ascii` (byte count == code point
+// count, i.e. str->getSize() == utf8.size()) makes both conversions the
+// identity.
+static long long utf8_index_to_byte(const std::string& utf8, bool ascii, long long index) {
+    if (ascii || index <= 0) return index <= 0 ? 0 : index;
+    long long seen = 0;
+    for (size_t i = 0; i < utf8.size(); ++i) {
+        if ((static_cast<unsigned char>(utf8[i]) & 0xC0) != 0x80) {
+            if (seen == index) return static_cast<long long>(i);
+            ++seen;
+        }
+    }
+    return static_cast<long long>(utf8.size());
+}
+
+static long long utf8_byte_to_index(const std::string& utf8, bool ascii, long long byteOffset) {
+    if (ascii) return byteOffset;
+    long long index = 0;
+    for (long long i = 0; i < byteOffset && i < static_cast<long long>(utf8.size()); ++i) {
+        if ((static_cast<unsigned char>(utf8[static_cast<size_t>(i)]) & 0xC0) != 0x80) ++index;
+    }
+    return index;
+}
+
+// Clamps Python start/end arguments (code points, negatives from the end)
+// to [0, size] as CPython's ADJUST_INDICES does.
+static void str_adjust_indices(long long size, long long& start, long long& end) {
+    if (end > size) end = size;
+    else if (end < 0) { end += size; if (end < 0) end = 0; }
+    if (start < 0) { start += size; if (start < 0) start = 0; }
+}
+
 static const proto::ProtoObject* py_str_find(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -12074,31 +12165,28 @@ static const proto::ProtoObject* py_str_find(
     std::string needle;
     subObj->asString(context)->toUTF8String(context, needle);
 
+    // start, end and the result are code point indexes.
+    const long long size = static_cast<long long>(str->getSize(context));
+    const bool ascii = size == static_cast<long long>(haystack.size());
     long long start = 0;
-    long long end = static_cast<long long>(haystack.size());
+    long long end = size;
     if (positionalParameters->getSize(context) >= 2) {
         const proto::ProtoObject* sObj = positionalParameters->getAt(context, 1);
-        if (sObj->isInteger(context)) {
-            start = sObj->asLong(context);
-            if (start < 0) start += static_cast<long long>(haystack.size());
-            if (start < 0) start = 0;
-        }
+        if (sObj->isInteger(context)) start = sObj->asLong(context);
     }
     if (positionalParameters->getSize(context) >= 3) {
         const proto::ProtoObject* eObj = positionalParameters->getAt(context, 2);
-        if (eObj->isInteger(context)) {
-            end = eObj->asLong(context);
-            if (end < 0) end += static_cast<long long>(haystack.size());
-            if (end > static_cast<long long>(haystack.size())) end = static_cast<long long>(haystack.size());
-        }
+        if (eObj->isInteger(context)) end = eObj->asLong(context);
     }
+    str_adjust_indices(size, start, end);
+    if (start > size || end < start) return context->fromInteger(-1);
 
-    if (start > static_cast<long long>(haystack.size())) return context->fromInteger(-1);
-    if (end < start) return context->fromInteger(-1);
-
-    std::string searchSpace = haystack.substr(static_cast<size_t>(start), static_cast<size_t>(end - start));
+    const long long byteStart = utf8_index_to_byte(haystack, ascii, start);
+    const long long byteEnd = utf8_index_to_byte(haystack, ascii, end);
+    std::string searchSpace = haystack.substr(static_cast<size_t>(byteStart), static_cast<size_t>(byteEnd - byteStart));
     size_t pos = searchSpace.find(needle);
-    return context->fromInteger(pos == std::string::npos ? -1 : static_cast<long long>(pos + start));
+    if (pos == std::string::npos) return context->fromInteger(-1);
+    return context->fromInteger(utf8_byte_to_index(haystack, ascii, static_cast<long long>(pos) + byteStart));
 }
 
 static const proto::ProtoObject* py_str_index(
@@ -12136,18 +12224,22 @@ static const proto::ProtoObject* py_str_rfind(
     }
     std::string needle;
     subObj->asString(context)->toUTF8String(context, needle);
-    long long start = 0, end = static_cast<long long>(haystack.size());
+    // start, end and the result are code point indexes.
+    const long long size = static_cast<long long>(str->getSize(context));
+    const bool ascii = size == static_cast<long long>(haystack.size());
+    long long start = 0, end = size;
     if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isInteger(context))
         start = posArgs->getAt(context, 1)->asLong(context);
     if (posArgs->getSize(context) >= 3 && posArgs->getAt(context, 2)->isInteger(context))
         end = posArgs->getAt(context, 2)->asLong(context);
-    if (start < 0) start = 0;
-    if (end > static_cast<long long>(haystack.size())) end = static_cast<long long>(haystack.size());
-    if (start >= end) return context->fromInteger(-1);
-    std::string slice = haystack.substr(static_cast<size_t>(start), static_cast<size_t>(end - start));
+    str_adjust_indices(size, start, end);
+    if (start > end || start > size) return context->fromInteger(-1);
+    const long long byteStart = utf8_index_to_byte(haystack, ascii, start);
+    const long long byteEnd = utf8_index_to_byte(haystack, ascii, end);
+    std::string slice = haystack.substr(static_cast<size_t>(byteStart), static_cast<size_t>(byteEnd - byteStart));
     size_t found = slice.rfind(needle);
     if (found == std::string::npos) return context->fromInteger(-1);
-    return context->fromInteger(static_cast<long long>(start) + static_cast<long long>(found));
+    return context->fromInteger(utf8_byte_to_index(haystack, ascii, byteStart + static_cast<long long>(found)));
 }
 
 static const proto::ProtoObject* py_str_rindex(
@@ -12201,21 +12293,21 @@ static const proto::ProtoObject* py_str_count(
     }
     std::string needle;
     subObj->asString(context)->toUTF8String(context, needle);
-    if (needle.empty()) return context->fromInteger(static_cast<long long>(haystack.size()) + 1);
+    // start and end are code point indexes.
+    const long long size = static_cast<long long>(str->getSize(context));
+    const bool ascii = size == static_cast<long long>(haystack.size());
     long long start = 0;
-    long long end = static_cast<long long>(haystack.size());
-    if (positionalParameters->getSize(context) >= 2 && positionalParameters->getAt(context, 1) != PROTO_NONE)
+    long long end = size;
+    if (positionalParameters->getSize(context) >= 2 && positionalParameters->getAt(context, 1)->isInteger(context))
         start = positionalParameters->getAt(context, 1)->asLong(context);
-    if (positionalParameters->getSize(context) >= 3 && positionalParameters->getAt(context, 2) != PROTO_NONE)
+    if (positionalParameters->getSize(context) >= 3 && positionalParameters->getAt(context, 2)->isInteger(context))
         end = positionalParameters->getAt(context, 2)->asLong(context);
-    if (start < 0) start += static_cast<long long>(haystack.size());
-    if (end < 0) end += static_cast<long long>(haystack.size());
-    if (start < 0) start = 0;
-    if (end > static_cast<long long>(haystack.size())) end = static_cast<long long>(haystack.size());
+    str_adjust_indices(size, start, end);
+    if (needle.empty()) return context->fromInteger(start > size ? 0 : (end >= start ? end - start + 1 : 0));
     if (start >= end) return context->fromInteger(0);
     size_t count = 0;
-    size_t pos = static_cast<size_t>(start);
-    const size_t endPos = static_cast<size_t>(end);
+    size_t pos = static_cast<size_t>(utf8_index_to_byte(haystack, ascii, start));
+    const size_t endPos = static_cast<size_t>(utf8_index_to_byte(haystack, ascii, end));
     while (pos < endPos) {
         size_t found = haystack.find(needle, pos);
         if (found == std::string::npos || found >= endPos) break;
@@ -12253,21 +12345,23 @@ static const proto::ProtoObject* py_str_getitem(
         if (str) indexArgOff = 1;
     }
     if (!str || positionalParameters->getSize(context) < static_cast<unsigned long>(indexArgOff + 1)) return PROTO_NONE;
-    std::string s;
-    str->toUTF8String(context, s);
-    long long size = static_cast<long long>(s.size());
+    // Indexes and lengths are code points, as len() counts them: protoCore's
+    // string is a rope of code points with O(log n) getAt and getSlice.
+    // Indexing the UTF-8 bytes returned partial characters ("é"[0] == '').
+    const long long size = static_cast<long long>(str->getSize(context));
     const proto::ProtoObject* indexObj = positionalParameters->getAt(context, indexArgOff);
 
     SliceBounds sb = get_slice_bounds(context, indexObj, size);
     if (sb.isSlice) {
-        std::string sub;
-        for (long long i = sb.start; (sb.step > 0 ? i < sb.stop : i > sb.stop); i += sb.step) {
-            sub += s[static_cast<size_t>(i)];
+        if (sb.step == 1) {
+            if (sb.start >= sb.stop) return proto::ProtoString::fromUTF8(context, "")->asObject(context);
+            return str->getSlice(context, static_cast<int>(sb.start), static_cast<int>(sb.stop))->asObject(context);
         }
-        uint8_t rem_[4]; uint8_t remN_ = 0;
-        const proto::ProtoString* res_ = proto::ProtoString::fromUTF8Buffer(
-            context, reinterpret_cast<const uint8_t*>(sub.data()), sub.size(),
-            nullptr, 0, rem_, &remN_);
+        const proto::ProtoList* chars = context->newList();
+        for (long long i = sb.start; (sb.step > 0 ? i < sb.stop : i > sb.stop); i += sb.step) {
+            chars = chars->appendLast(context, str->getAt(context, static_cast<int>(i)));
+        }
+        const proto::ProtoString* res_ = proto::ProtoString::create(context, chars);
         return res_ ? res_->asObject(context) : PROTO_NONE;
     }
 
@@ -12282,11 +12376,7 @@ static const proto::ProtoObject* py_str_getitem(
             if (env) env->raiseIndexError(context, "string index out of range");
             return PROTO_NONE;
         }
-        unsigned char cb_ = static_cast<unsigned char>(s[static_cast<size_t>(idx)]);
-        uint8_t rem_[4]; uint8_t remN_ = 0;
-        const proto::ProtoString* res_ = proto::ProtoString::fromUTF8Buffer(
-            context, &cb_, 1, nullptr, 0, rem_, &remN_);
-        return res_ ? res_->asObject(context) : PROTO_NONE;
+        return str->getSlice(context, idx, idx + 1)->asObject(context);
     }
 
     // CPython __index__ protocol — same fix as list / tuple subscript.
@@ -12313,11 +12403,7 @@ static const proto::ProtoObject* py_str_getitem(
                         envE->raiseIndexError(context, "string index out of range");
                         return PROTO_NONE;
                     }
-                    unsigned char cb_ = static_cast<unsigned char>(s[static_cast<size_t>(idx)]);
-                    uint8_t rem_[4]; uint8_t remN_ = 0;
-                    const proto::ProtoString* res_ = proto::ProtoString::fromUTF8Buffer(
-                        context, &cb_, 1, nullptr, 0, rem_, &remN_);
-                    return res_ ? res_->asObject(context) : PROTO_NONE;
+                    return str->getSlice(context, idx, idx + 1)->asObject(context);
                 }
             }
         }
@@ -13113,17 +13199,7 @@ static const proto::ProtoObject* py_str_mod(
                 if (arg && arg->isString(context)) {
                     std::string raw;
                     arg->asString(context)->toUTF8String(context, raw);
-                    s += '\'';
-                    for (unsigned char c : raw) {
-                        if (c == '\'') { s += '\\'; s += '\''; }
-                        else if (c == '\\') { s += "\\\\"; }
-                        else if (c == '\n') { s += "\\n"; }
-                        else if (c == '\r') { s += "\\r"; }
-                        else if (c == '\t') { s += "\\t"; }
-                        else if (c < 32 || c >= 127) { char buf[8]; snprintf(buf, sizeof(buf), "\\x%02x", c); s += buf; }
-                        else s += c;
-                    }
-                    s += '\'';
+                    s = PythonEnvironment::reprStr(raw);
                 } else {
                     s = PythonEnvironment::reprObject(context, arg);
                 }
@@ -13669,21 +13745,24 @@ static const proto::ProtoObject* py_str_startswith(
     std::string s;
     str->toUTF8String(context, s);
 
+    // start and end are code point indexes.
+    const long long size = static_cast<long long>(str->getSize(context));
+    const bool ascii = size == static_cast<long long>(s.size());
     long long start = 0;
-    long long end = static_cast<long long>(s.size());
-    if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isInteger(context)) {
+    long long end = size;
+    if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isInteger(context))
         start = posArgs->getAt(context, 1)->asLong(context);
-        if (start < 0) start += static_cast<long long>(s.size());
-        if (start < 0) start = 0;
-    }
-    if (posArgs->getSize(context) >= 3 && posArgs->getAt(context, 2)->isInteger(context)) {
+    if (posArgs->getSize(context) >= 3 && posArgs->getAt(context, 2)->isInteger(context))
         end = posArgs->getAt(context, 2)->asLong(context);
-        if (end < 0) end += static_cast<long long>(s.size());
-        if (end > static_cast<long long>(s.size())) end = static_cast<long long>(s.size());
-    }
-    if (start >= static_cast<long long>(s.size()) || start >= end) return PROTO_FALSE;
+    str_adjust_indices(size, start, end);
+    // CPython: an empty prefix matches at start when start <= len (even at
+    // the end of the string); a start beyond the slice fails.
+    if (start > size) return PROTO_FALSE;
+    if (end < start) end = start;
 
-    std::string sub = s.substr(static_cast<size_t>(start), static_cast<size_t>(end - start));
+    const long long byteStart = utf8_index_to_byte(s, ascii, start);
+    const long long byteEnd = utf8_index_to_byte(s, ascii, end);
+    std::string sub = s.substr(static_cast<size_t>(byteStart), static_cast<size_t>(byteEnd - byteStart));
     const proto::ProtoObject* prefixObj = posArgs->getAt(context, 0);
 
     auto check_prefix = [&](const proto::ProtoObject* pObj) -> bool {
@@ -13738,21 +13817,24 @@ static const proto::ProtoObject* py_str_endswith(
     std::string s;
     str->toUTF8String(context, s);
 
+    // start and end are code point indexes.
+    const long long size = static_cast<long long>(str->getSize(context));
+    const bool ascii = size == static_cast<long long>(s.size());
     long long start = 0;
-    long long end = static_cast<long long>(s.size());
-    if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isInteger(context)) {
+    long long end = size;
+    if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isInteger(context))
         start = posArgs->getAt(context, 1)->asLong(context);
-        if (start < 0) start += static_cast<long long>(s.size());
-        if (start < 0) start = 0;
-    }
-    if (posArgs->getSize(context) >= 3 && posArgs->getAt(context, 2)->isInteger(context)) {
+    if (posArgs->getSize(context) >= 3 && posArgs->getAt(context, 2)->isInteger(context))
         end = posArgs->getAt(context, 2)->asLong(context);
-        if (end < 0) end += static_cast<long long>(s.size());
-        if (end > static_cast<long long>(s.size())) end = static_cast<long long>(s.size());
-    }
-    if (start >= static_cast<long long>(s.size()) || start >= end) return PROTO_FALSE;
+    str_adjust_indices(size, start, end);
+    // CPython: an empty suffix matches at start when start <= len (even at
+    // the end of the string); a start beyond the slice fails.
+    if (start > size) return PROTO_FALSE;
+    if (end < start) end = start;
 
-    std::string sub = s.substr(static_cast<size_t>(start), static_cast<size_t>(end - start));
+    const long long byteStart = utf8_index_to_byte(s, ascii, start);
+    const long long byteEnd = utf8_index_to_byte(s, ascii, end);
+    std::string sub = s.substr(static_cast<size_t>(byteStart), static_cast<size_t>(byteEnd - byteStart));
     const proto::ProtoObject* suffixObj = posArgs->getAt(context, 0);
 
     auto check_suffix = [&](const proto::ProtoObject* pObj) -> bool {
@@ -14144,10 +14226,19 @@ static const proto::ProtoObject* py_str_isidentifier(
 // or multi-char / empty str all raise TypeError.  Returns true and sets
 // *out to the chosen char; returns false (with a pending TypeError) on
 // failure.  width validation is shared too: non-int raises TypeError.
+// `count` copies of a fill character given as UTF-8.
+static std::string str_repeat_fill(const std::string& fill, int count) {
+    std::string out;
+    if (count <= 0) return out;
+    out.reserve(fill.size() * static_cast<size_t>(count));
+    for (int i = 0; i < count; ++i) out += fill;
+    return out;
+}
+
 static bool str_pad_extract(proto::ProtoContext* context,
                             const proto::ProtoList* posArgs,
                             int posOff, const char* methodName,
-                            int* width_out, char* fill_out) {
+                            int* width_out, std::string* fill_out) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* widthObj = posArgs->getAt(context, posOff);
     if (!widthObj->isInteger(context) && !widthObj->isBoolean(context)) {
@@ -14161,22 +14252,17 @@ static bool str_pad_extract(proto::ProtoContext* context,
     *width_out = static_cast<int>(widthObj == PROTO_TRUE ? 1
                                 : widthObj == PROTO_FALSE ? 0
                                 : widthObj->asLong(context));
-    *fill_out = ' ';
+    // The fill character is one code point, returned as its UTF-8 bytes.
+    *fill_out = " ";
     if (posArgs->getSize(context) >= static_cast<unsigned long>(2 + posOff)) {
         const proto::ProtoObject* fcObj = posArgs->getAt(context, 1 + posOff);
-        if (!fcObj->isString(context)) {
+        if (!fcObj->isString(context) || fcObj->asString(context)->getSize(context) != 1) {
             if (env) env->raiseTypeError(context,
                 std::string("The fill character must be exactly one character long"));
             return false;
         }
-        std::string fc;
-        fcObj->asString(context)->toUTF8String(context, fc);
-        if (fc.size() != 1) {
-            if (env) env->raiseTypeError(context,
-                std::string("The fill character must be exactly one character long"));
-            return false;
-        }
-        *fill_out = fc[0];
+        fill_out->clear();
+        fcObj->asString(context)->toUTF8String(context, *fill_out);
     }
     (void)methodName;
     return true;
@@ -14196,15 +14282,19 @@ static const proto::ProtoObject* py_str_center(
     std::string s;
     str->toUTF8String(context, s);
     int width;
-    char fillchar;
+    std::string fillchar;
     if (!str_pad_extract(context, posArgs, posOff, "center", &width, &fillchar)) return nullptr;
-    if (width <= static_cast<int>(s.size())) return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
-    int pad = width - static_cast<int>(s.size());
-    int left = pad / 2, right = pad - left;
-    std::string result(left, fillchar);
+    // Widths are code points.
+    const int length = static_cast<int>(str->getSize(context));
+    if (width <= length) return str->asObject(context);
+    int pad = width - length;
+    // CPython's pad(): the extra character goes left when both pad and
+    // width are odd.
+    int left = pad / 2 + (pad & width & 1), right = pad - left;
+    std::string result = str_repeat_fill(fillchar, left);
     result += s;
-    result.append(right, fillchar);
-    return PythonEnvironment::getInternedString(context, result.c_str())->asObject(context);
+    result += str_repeat_fill(fillchar, right);
+    return proto::ProtoString::fromStdString(context, result)->asObject(context);
 }
 
 static const proto::ProtoObject* py_str_ljust(
@@ -14221,11 +14311,12 @@ static const proto::ProtoObject* py_str_ljust(
     std::string s;
     str->toUTF8String(context, s);
     int width;
-    char fillchar;
+    std::string fillchar;
     if (!str_pad_extract(context, posArgs, posOff, "ljust", &width, &fillchar)) return nullptr;
-    if (width <= static_cast<int>(s.size())) return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
-    s.append(width - static_cast<int>(s.size()), fillchar);
-    return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
+    const int length = static_cast<int>(str->getSize(context));
+    if (width <= length) return str->asObject(context);
+    s += str_repeat_fill(fillchar, width - length);
+    return proto::ProtoString::fromStdString(context, s)->asObject(context);
 }
 
 static const proto::ProtoObject* py_str_rjust(
@@ -14242,12 +14333,13 @@ static const proto::ProtoObject* py_str_rjust(
     std::string s;
     str->toUTF8String(context, s);
     int width;
-    char fillchar;
+    std::string fillchar;
     if (!str_pad_extract(context, posArgs, posOff, "rjust", &width, &fillchar)) return nullptr;
-    if (width <= static_cast<int>(s.size())) return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
-    std::string result(width - static_cast<int>(s.size()), fillchar);
+    const int length = static_cast<int>(str->getSize(context));
+    if (width <= length) return str->asObject(context);
+    std::string result = str_repeat_fill(fillchar, width - length);
     result += s;
-    return PythonEnvironment::getInternedString(context, result.c_str())->asObject(context);
+    return proto::ProtoString::fromStdString(context, result)->asObject(context);
 }
 
 static const proto::ProtoObject* py_str_expandtabs(
@@ -14271,8 +14363,8 @@ static const proto::ProtoObject* py_str_expandtabs(
             col += spaces;
         } else {
             result += c;
-            if (c == '\n') col = 0;
-            else col++;
+            if (c == '\n' || c == '\r') col = 0;
+            else if ((c & 0xC0) != 0x80) col++;  // a column per code point
         }
     }
     return PythonEnvironment::getInternedString(context, result.c_str())->asObject(context);
@@ -14308,13 +14400,14 @@ static const proto::ProtoObject* py_str_zfill(
     int width = widthObj == PROTO_TRUE ? 1
               : widthObj == PROTO_FALSE ? 0
               : static_cast<int>(widthObj->asLong(context));
-    if (width <= static_cast<int>(s.size())) return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
+    const int length = static_cast<int>(str->getSize(context));  // code points
+    if (width <= length) return str->asObject(context);
     size_t sign = 0;
     if (!s.empty() && (s[0] == '+' || s[0] == '-')) sign = 1;
-    std::string result(sign, s[0]);
-    result.append(width - static_cast<int>(s.size()), '0');
+    std::string result(sign, sign ? s[0] : '0');
+    result.append(width - length, '0');
     result += s.substr(sign);
-    return PythonEnvironment::getInternedString(context, result.c_str())->asObject(context);
+    return proto::ProtoString::fromStdString(context, result)->asObject(context);
 }
 
 static const proto::ProtoObject* py_str_partition(
@@ -20331,16 +20424,13 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                 if (d) str = d->asString(ctx);
             }
             if (!str) return PROTO_NONE;
-            std::string s;
-            str->toUTF8String(ctx, s);
-            // Build a list of one-char strings in reverse and iter
-            // it.  Mirrors `list(reversed("abc"))` returning the
-            // chars in reverse — protoCore's StringIterator does
-            // not expose a reverse-walk primitive.
+            // Build the one-character strings in reverse code point order
+            // and iterate them. protoCore's StringIterator has no reverse
+            // walk; getSlice is O(log n) per character. Reversing the UTF-8
+            // bytes broke every non-ASCII character.
             const proto::ProtoList* lst = ctx->newList();
-            for (auto it = s.rbegin(); it != s.rend(); ++it) {
-                char buf[2] = {*it, 0};
-                lst = lst->appendLast(ctx, PythonEnvironment::getInternedString(ctx, buf)->asObject(ctx));
+            for (long long i = static_cast<long long>(str->getSize(ctx)) - 1; i >= 0; --i) {
+                lst = lst->appendLast(ctx, str->getSlice(ctx, static_cast<int>(i), static_cast<int>(i) + 1)->asObject(ctx));
             }
             if (env) return env->iter(lst->asObject(ctx));
             return lst->asObject(ctx);

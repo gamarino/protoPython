@@ -88,11 +88,11 @@ defect and adds a `test/regression/*.py` test registered in
 - **Runtime:** `gc.collect()` is a no-op (protoCore collects under heap
   pressure only); sets and dicts treat two distinct keys with equal
   hashes as the same key (accepted limitation).
-- **Strings with non-ASCII characters:** `len()` and `ord()` count code
-  points, but indexing, slicing, `find`/`index`, iteration and `repr()` work
-  on UTF-8 bytes: `"é"[0]` is `''`, `list("é")` has two elements and
-  `repr("é")` is `'\xc3\xa9'`. `json.loads` therefore fails on raw non-ASCII
-  text followed by more JSON (`json.loads('["é", 1]')`).
+- **Case of non-ASCII characters:** `upper()`, `lower()`, `title()`,
+  `capitalize()`, `swapcase()`, `casefold()` and the `isupper()`, `islower()`,
+  `isalpha()` family change and classify ASCII letters only, since the
+  runtime has no Unicode database: `"é".upper()` is `'é'` and
+  `"é".isalpha()` is False.
 - **re:** the native module translates patterns to `std::wregex` (ECMAScript);
   `\w`, `\d`, `\s` and `re.IGNORECASE` are ASCII-only, `re.error` does not
   exist (compile errors raise `RuntimeError`), and conditional, atomic and

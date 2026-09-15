@@ -897,7 +897,10 @@ static const proto::ProtoObject* py_next(
     if (obj->asStringIterator(context)) {
         proto::ProtoStringIterator* it = const_cast<proto::ProtoStringIterator*>(obj->asStringIterator(context));
         if (!it || !it->hasNext(context)) return defaultVal ? defaultVal : PROTO_NONE;
-        return it->next(context);
+        // The iterator yields code points; next() returns one-character str.
+        const proto::ProtoString* ch = proto::ProtoString::create(context,
+            context->newList()->appendLast(context, it->next(context)));
+        return ch ? ch->asObject(context) : PROTO_NONE;
     }
 
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
@@ -1467,23 +1470,7 @@ static const proto::ProtoObject* py_repr(
         }
         std::string s;
         obj->asString(context)->toUTF8String(context, s);
-        std::string out = "'";
-        for (unsigned char c : s) {
-            if (c == '\'') out += "\\'";
-            else if (c == '\\') out += "\\\\";
-            else if (c == '\n') out += "\\n";
-            else if (c == '\r') out += "\\r";
-            else if (c == '\t') out += "\\t";
-            else if (c < 32 || c >= 127) {
-                char buf[8];
-                snprintf(buf, sizeof(buf), "\\x%02x", c);
-                out += buf;
-            } else {
-                out += c;
-            }
-        }
-        out += "'";
-        return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
+        return proto::ProtoString::fromStdString(context, PythonEnvironment::reprStr(s))->asObject(context);
     }
 
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
@@ -8768,21 +8755,8 @@ static const proto::ProtoObject* py_ascii(
     // (<class 'str'>) instead of the value repr.  reprObject already
     // routes through the same MRO walk repr() uses.
     std::string s = PythonEnvironment::reprObject(context, obj);
-    
-    std::string out;
-    for (unsigned char c : s) {
-        if (c >= 32 && c < 127) {
-            out += c;
-        } else if (c == '\n') out += "\\n";
-        else if (c == '\r') out += "\\r";
-        else if (c == '\t') out += "\\t";
-        else {
-            char buf[8];
-            snprintf(buf, sizeof(buf), "\\x%02x", c);
-            out += buf;
-        }
-    }
-    return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
+    // ascii() is repr() with every non-ASCII code point escaped.
+    return proto::ProtoString::fromStdString(context, PythonEnvironment::asciiEscape(s))->asObject(context);
 }
 
 static const proto::ProtoObject* py_ord(

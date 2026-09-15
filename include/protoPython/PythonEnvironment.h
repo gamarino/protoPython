@@ -944,6 +944,12 @@ public:
      * @brief Returns the string representation of an object (Step 1120).
      */
     static std::string reprObject(proto::ProtoContext* context, const proto::ProtoObject* obj);
+    /** repr() of a str given as UTF-8: CPython's quoting and escapes, applied
+     *  per code point (printable non-ASCII characters are kept). */
+    static std::string reprStr(const std::string& utf8);
+    /** The ascii() form of a repr: every non-ASCII code point escaped as
+     *  \xNN, \uNNNN or \UNNNNNNNN. */
+    static std::string asciiEscape(const std::string& utf8);
 
     /**
      * @brief The hash dicts and sets store `value` under (1, 1.0 and True are one key, tuples hash

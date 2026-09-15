@@ -338,6 +338,17 @@ onwards. Commit hashes are given for reference.
   CPython (`cannot import name 'y' from 'x' (<file>)`, `No module named 'x'`).
   The suffix is gone, and the error from `from x import y` also sets `path`
   to the module's file.
+- **Non-ASCII strings:** `len()` and `ord()` counted code points, but
+  indexing, slicing, iteration, `reversed()`, `find`/`index`/`rfind`/`rindex`/
+  `count` and `startswith`/`endswith` offsets, `center`/`ljust`/`rjust`/
+  `zfill`/`expandtabs` widths, and `repr()`/`ascii()` worked on UTF-8 bytes:
+  `"é"[0]` was `''`, `list("é")` had two elements, `repr("é")` was
+  `'\xc3\xa9'` and `json.loads('["é", 1]')` failed. They now use code points,
+  through protoCore's code point string API where it provides one (indexing,
+  slicing and iteration); searches still scan UTF-8 and convert offsets, with
+  no conversion for ASCII strings. `repr()` keeps printable non-ASCII
+  characters and escapes the rest, and the fill character of the padding
+  methods may be any single character.
 
 ### Performance
 
