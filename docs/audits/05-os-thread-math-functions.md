@@ -138,7 +138,7 @@ nextafter, frexp, modf, etc.) with per-function domain guards. No stubs found.
 |---|---|---|---|
 | sqrt sin cos tan asin acos atan atan2 | REAL | — | std::* trig. |
 | degrees radians floor ceil fabs trunc copysign | REAL | — | direct delegation. |
-| isclose isinf isfinite isnan | REAL | — | full IEEE-754 semantics. |
+| isclose isinf isfinite isnan | REAL | — | IEEE-754 semantics. (Update 2026-09-15: `isclose` returned True for two NaNs and ignored the `rel_tol`/`abs_tol` keywords; fixed.) |
 | log log10 log2 log1p | REAL | — | with domain guards. |
 | hypot fmod remainder erf erfc gamma lgamma exp | REAL | — | direct std::* delegation. |
 | dist | REAL | — | unwraps `__data__` Lists, sums squared diffs. |

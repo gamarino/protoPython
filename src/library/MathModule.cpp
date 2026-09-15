@@ -203,19 +203,36 @@ static const proto::ProtoObject* py_copysign(
 
 static const proto::ProtoObject* py_isclose(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (posArgs->getSize(ctx) < 2) return PROTO_FALSE;
-    double a = toDouble(ctx, posArgs->getAt(ctx, 0));
-    double b = toDouble(ctx, posArgs->getAt(ctx, 1));
-    double rel_tol = 1e-09, abs_tol = 0.0;
-    if (posArgs->getSize(ctx) >= 3) rel_tol = toDouble(ctx, posArgs->getAt(ctx, 2));
-    if (posArgs->getSize(ctx) >= 4) abs_tol = toDouble(ctx, posArgs->getAt(ctx, 3));
-    if (std::isnan(a) && std::isnan(b)) return PROTO_TRUE;
-    if (std::isnan(a) || std::isnan(b)) return PROTO_FALSE;
-    if (std::isinf(a) && std::isinf(b)) return (a > 0) == (b > 0) ? PROTO_TRUE : PROTO_FALSE;
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwArgs) {
+    // math.isclose(a, b, *, rel_tol=1e-09, abs_tol=0.0), following CPython's
+    // math_isclose_impl. The tolerances are keyword-only; they used to be
+    // read from positions 3 and 4 and passing them by keyword had no effect.
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const unsigned long nargs = posArgs ? posArgs->getSize(ctx) : 0;
+    if (nargs != 2) {
+        if (env) env->raiseTypeError(ctx,
+            "isclose() takes exactly 2 positional arguments (" + std::to_string(nargs) + " given)");
+        return nullptr;
+    }
+    const double a = toDouble(ctx, posArgs->getAt(ctx, 0));
+    const double b = toDouble(ctx, posArgs->getAt(ctx, 1));
+    double rel_tol = 1e-09;
+    double abs_tol = 0.0;
+    if (kwArgs) {
+        const unsigned long relH = PythonEnvironment::getInternedString(ctx, "rel_tol")->getHash(ctx);
+        const unsigned long absH = PythonEnvironment::getInternedString(ctx, "abs_tol")->getHash(ctx);
+        if (kwArgs->has(ctx, relH)) rel_tol = toDouble(ctx, kwArgs->getAt(ctx, relH));
+        if (kwArgs->has(ctx, absH)) abs_tol = toDouble(ctx, kwArgs->getAt(ctx, absH));
+    }
+    if (rel_tol < 0.0 || abs_tol < 0.0) return raise_math_domain(ctx, "tolerances must be non-negative");
+    // Exactly equal, which also covers two infinities of the same sign.
+    if (a == b) return PROTO_TRUE;
+    // An infinity is close only to itself. NaN is close to nothing, itself
+    // included: every comparison below is false when diff is NaN.
     if (std::isinf(a) || std::isinf(b)) return PROTO_FALSE;
-    double diff = std::abs(a - b);
-    return (diff <= rel_tol * std::max(std::abs(a), std::abs(b)) || diff <= abs_tol) ? PROTO_TRUE : PROTO_FALSE;
+    const double diff = std::fabs(b - a);
+    return (diff <= std::fabs(rel_tol * b) || diff <= std::fabs(rel_tol * a) || diff <= abs_tol)
+        ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_isinf(

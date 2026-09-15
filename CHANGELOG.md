@@ -218,6 +218,11 @@ onwards. Commit hashes are given for reference.
 - **NaN as a dict or set key:** NaN was hashed by its bit pattern, so every NaN
   was the same key (`len({float('nan'), float('nan')})` was 1). NaN now hashes
   by object identity, as in CPython 3.10 and later.
+- **math.isclose:** `math.isclose(nan, nan)` was True, the `rel_tol` and
+  `abs_tol` keywords were ignored (only extra positional arguments were read),
+  and negative tolerances were accepted. It now follows CPython: NaN is close
+  to nothing, the tolerances are keyword-only and a negative one raises
+  `ValueError`.
 
 ### Performance
 

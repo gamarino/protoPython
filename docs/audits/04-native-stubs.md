@@ -107,7 +107,7 @@ Largest native module (1590 lines, 116 methods exposed). Most common functions c
 
 #### `MathModule` (`math`)
 
-751 lines, 60 methods exposed, 69 PROTO_NONE returns. The PROTO_NONE count is high relative to method count, suggesting many stubs. The functions that work probably cover trig/log/exp basics; rarer functions (gamma, lgamma, comb, perm, isclose with kwargs) may be missing.
+751 lines, 60 methods exposed, 69 PROTO_NONE returns. The PROTO_NONE count is high relative to method count, suggesting many stubs. The functions that work probably cover trig/log/exp basics; rarer functions (gamma, lgamma, comb, perm, isclose with kwargs) may be missing. (Update 2026-09-15: `isclose` now honours its `rel_tol` and `abs_tol` keywords.)
 
 **Severity: MEDIUM.** Numeric code that uses common functions works; less common ones silently return None (causing TypeError downstream).
 
