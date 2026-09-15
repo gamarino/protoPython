@@ -186,7 +186,7 @@ For each fix:
        2>&1 | tail -5
   5. If delta(PASS) >= 0 AND delta(CRASH) <= 0:
        update docs/CPYTHON_CONFORMANCE.md (stats line)
-       update tasks/lessons.md (only if a new pattern is exposed)
+       update tasks/lessons.md (internal working notes, not in the repository; only if a new pattern is exposed)
        commit
      Else:
        rollback the change and rethink the fix
@@ -211,7 +211,7 @@ Synthetic: tests/test_grammar_F<n>_synthetic.py — A/B -> C/D
 - Source files in `src/library/`, `src/compiler/`, or `protoCore/`
 - The synthetic test file (when applicable)
 - `docs/CPYTHON_CONFORMANCE.md` stats line
-- `tasks/lessons.md` (only when a new pattern is identified)
+- `tasks/lessons.md` (internal working notes, not in the repository; only when a new pattern is identified)
 
 ### 7.3 Excluded from commits
 
@@ -238,7 +238,7 @@ Synthetic: tests/test_grammar_F<n>_synthetic.py — A/B -> C/D
 ### 8.1 Mandatory renegotiation gates
 
 - After F0, before F1: confirm the public API extension as merged.
-- If R5 or R6 materializes: halt; write a note in `tasks/todo.md`; await user decision.
+- If R5 or R6 materializes: halt; write a note in `tasks/todo.md` (internal working notes, not in the repository); await user decision.
 - If a phase exceeds 1.5x its commit budget without unblocking the last 20% of its tests: halt; report; ask whether to continue, escalate, or reduce scope.
 
 ---
@@ -279,8 +279,8 @@ Each file follows the pattern of the existing `tests/test_generators_synthetic.p
 | File | Cadence |
 | :--- | :--- |
 | `docs/CPYTHON_CONFORMANCE.md` | Stats line updated on every commit. New `### V<n> Changes` section at the close of each phase. |
-| `tasks/lessons.md` | Only when a fix exposes a new general pattern. |
-| `tasks/todo.md` | Phase boundary updates (mark Fn complete). |
+| `tasks/lessons.md` (internal working notes, not in the repository) | Only when a fix exposes a new general pattern. |
+| `tasks/todo.md` (internal working notes, not in the repository) | Phase boundary updates (mark Fn complete). |
 | `CHANGELOG.md` | One entry per phase (not per commit). |
 
 ### 9.5 Not versioned
@@ -308,14 +308,14 @@ The work is complete when **all** of the following hold:
 ### 10.1 Definition of done — single-shot verification
 
 ```bash
-cd /home/gamarino/Documentos/proyectos/protoPython/build
+cd build
 ./src/runtime/protopy ../lib/python3.14/test/test_grammar.py 2>&1 | tail -3
 # Expected:
 #   ----------------------------------------------------------------------
 #   Ran 75 tests in <T>s
 #   OK (skipped=5)
 
-grep -rn "proto_internal.h" /home/gamarino/Documentos/proyectos/protoPython/src/
+grep -rn "proto_internal.h" ../src/
 # Expected: empty.
 ```
 

@@ -1,5 +1,9 @@
 # protoPython 4-way interleaved benchmark (sprint-9)
 
+> **Note (2026-09-15):** "(sprint-9)" in the title is the heading hard-coded in `benchmarks/run_4way_interleaved.py`, not the measurement round. As the file name says, this report measures the sprint-8 build: commit e0d96c9b added it as sample output of the harness validation, after the sprint-9 change had been reverted in b4aec0bf.
+
+> **Note (2026-09-15):** the protopyc `multithread_cpu` figure below, and the protopyc geomean that includes it, are invalid (the protopyc build of this period skipped `main()` in scripts that import `_thread`, so the figure measures module initialisation, not the workload; see [2026-06-15-sprint8-4way-honest.md](2026-06-15-sprint8-4way-honest.md)). The report is otherwise unchanged.
+
 Each bench runs the four binaries interleaved (warmup x2 each, then N=5 interleaved rounds), so any system load shift hits every column equally — directly comparable wall-clocks.
 
 Columns:

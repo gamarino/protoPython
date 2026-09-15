@@ -106,7 +106,7 @@ Bootstrap row is the only one that stands.
 
 ### Essential / test_grammar.py
 
-- **Path:** `/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_grammar.py`
+- **Path:** `lib/python3.14/test/test_grammar.py`
 - **Claimed status:** PARTIAL - 54/75 pass, 11 fail, 10 err, 0 crash (V154.8, 2026-04-25)
 - **Actual status:** `CRASH`
 - **Exit code:** 70
@@ -120,12 +120,12 @@ DUMP type.__init__: <object object at 0x744cf18657cc>
 Last 10 stderr lines:
 ```
 Traceback (most recent call last):
-  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/typinganndata/ann_module.py", line 7, in <module>
+  File "lib/python3.14/test/typinganndata/ann_module.py", line 7, in <module>
   File "<unknown>", in <module>
 type: No module named 'typing'
 protopy: unhandled exception in module execution (test_grammar):
 Traceback (most recent call last):
-  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_grammar.py", line 1, in <module>
+  File "lib/python3.14/test/test_grammar.py", line 1, in <module>
   File "<unknown>", in <module>
 type: No module named 'test.typinganndata.ann_module'
 protopy: module 'test_grammar' exited with runtime error
@@ -133,7 +133,7 @@ protopy: module 'test_grammar' exited with runtime error
 
 ### Essential / test_types.py
 
-- **Path:** `/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_types.py`
+- **Path:** `lib/python3.14/test/test_types.py`
 - **Claimed status:** PARTIAL - 6/131 pass, runs to completion (V124, 2026-04-24)
 - **Actual status:** `CRASH`
 - **Exit code:** 70
@@ -147,12 +147,12 @@ Last 5 stdout lines:
 Last 10 stderr lines:
 ```
 Traceback (most recent call last):
-  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/unittest/mock.py", line 7, in <module>
+  File "lib/python3.14/unittest/mock.py", line 7, in <module>
   File "<unknown>", in <module>
 type: No module named 'asyncio'
 protopy: unhandled exception in module execution (test_types):
 Traceback (most recent call last):
-  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_types.py", line 3, in <module>
+  File "lib/python3.14/test/test_types.py", line 3, in <module>
   File "<unknown>", in <module>
 type: No module named 'unittest.mock'
 protopy: module 'test_types' exited with runtime error
@@ -160,7 +160,7 @@ protopy: module 'test_types' exited with runtime error
 
 ### Essential / test_descr.py
 
-- **Path:** `/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_descr.py`
+- **Path:** `lib/python3.14/test/test_descr.py`
 - **Claimed status:** TIMEOUT - runs >5 min; type() descriptor tests expose slow paths
 - **Actual status:** `CRASH`
 - **Exit code:** 70
@@ -175,8 +175,8 @@ Last 10 stderr lines:
 ```
   File "<unknown>", in <module>
   File "<unknown>", in <module>
-  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/argparse.py", line 1899, in __init__
-  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/argparse.py", line 1899, in __init__
+  File "lib/python3.14/argparse.py", line 1899, in __init__
+  File "lib/python3.14/argparse.py", line 1899, in __init__
   File "<unknown>", in <module>
   File "<unknown>", in <module>
   File "<unknown>", in <module>
@@ -187,7 +187,7 @@ protopy: module 'test_descr' exited with runtime error
 
 ### Essential / test_generators.py
 
-- **Path:** `/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_generators.py`
+- **Path:** `lib/python3.14/test/test_generators.py`
 - **Claimed status:** PARTIAL - 0/1 pass (doctest runner fails); import chain runs
 - **Actual status:** `CRASH`
 - **Exit code:** 70
@@ -201,12 +201,12 @@ Last 5 stdout lines:
 Last 10 stderr lines:
 ```
 Traceback (most recent call last):
-  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/doctest.py", line 47, in <module>
+  File "lib/python3.14/doctest.py", line 47, in <module>
   File "<unknown>", in <module>
 type: No module named 'pdb'
 protopy: unhandled exception in module execution (test_generators):
 Traceback (most recent call last):
-  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_generators.py", line 2, in <module>
+  File "lib/python3.14/test/test_generators.py", line 2, in <module>
   File "<unknown>", in <module>
 type: No module named 'doctest'
 protopy: module 'test_generators' exited with runtime error
@@ -214,7 +214,7 @@ protopy: module 'test_generators' exited with runtime error
 
 ### Essential / test_asyncgen.py
 
-- **Path:** `/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_asyncgen.py`
+- **Path:** `lib/python3.14/test/test_asyncgen.py`
 - **Claimed status:** PARTIAL - 85 tests now run (0/85 pass, 80 errors, 5 failures); unblocked (V116)
 - **Actual status:** `CRASH`
 - **Exit code:** 70
@@ -229,7 +229,7 @@ Last 10 stderr lines:
 ```
 protopy: unhandled exception in module execution (test_asyncgen):
 Traceback (most recent call last):
-  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_asyncgen.py", line 2, in <module>
+  File "lib/python3.14/test/test_asyncgen.py", line 2, in <module>
   File "<unknown>", in <module>
   File "<unknown>", in <module>
   File "<unknown>", in <module>
@@ -240,7 +240,7 @@ protopy: module 'test_asyncgen' exited with runtime error
 
 ### Essential / test_base64.py
 
-- **Path:** `/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_base64.py`
+- **Path:** `lib/python3.14/test/test_base64.py`
 - **Claimed status:** PARTIAL - runs to completion, many failures (V110, 2026-04-23)
 - **Actual status:** `CRASH`
 - **Exit code:** 70
@@ -259,7 +259,7 @@ Last 10 stderr lines:
 type: reraise outside of except block
 protopy: unhandled exception in module execution (test_base64):
 Traceback (most recent call last):
-  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_base64.py", line 2, in <module>
+  File "lib/python3.14/test/test_base64.py", line 2, in <module>
   File "<unknown>", in <module>
 type: No module named 'test.support'
 protopy: module 'test_base64' exited with runtime error
@@ -267,7 +267,7 @@ protopy: module 'test_base64' exited with runtime error
 
 ### Essential / test_json (package)
 
-- **Path:** `/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_json/__main__.py`
+- **Path:** `lib/python3.14/test/test_json/__main__.py`
 - **Claimed status:** PASS - 9/9 tests pass (V124, 2026-04-24)
 - **Actual status:** `CRASH`
 - **Exit code:** 70
@@ -281,12 +281,12 @@ Last 5 stdout lines:
 Last 10 stderr lines:
 ```
 Traceback (most recent call last):
-  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_json/__init__.py", line 2, in <module>
+  File "lib/python3.14/test/test_json/__init__.py", line 2, in <module>
   File "<unknown>", in <module>
 type: No module named 'doctest'
 protopy: unhandled exception in module execution (__main__):
 Traceback (most recent call last):
-  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_json/__main__.py", line 2, in <module>
+  File "lib/python3.14/test/test_json/__main__.py", line 2, in <module>
   File "<unknown>", in <module>
 type: No module named 'test.test_json'
 protopy: module '__main__' exited with runtime error
@@ -294,7 +294,7 @@ protopy: module '__main__' exited with runtime error
 
 ### Important / test_sys.py
 
-- **Path:** `/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_sys.py`
+- **Path:** `lib/python3.14/test/test_sys.py`
 - **Claimed status:** UNBLOCKED (V106)
 - **Actual status:** `CRASH`
 - **Exit code:** 70
@@ -313,7 +313,7 @@ Last 10 stderr lines:
 type: 'socket' object has no attribute 'property has no setter'
 protopy: unhandled exception in module execution (test_sys):
 Traceback (most recent call last):
-  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_sys.py", line 2, in <module>
+  File "lib/python3.14/test/test_sys.py", line 2, in <module>
   File "<unknown>", in <module>
 type: No module named 'test.support.socket_helper'
 protopy: module 'test_sys' exited with runtime error
@@ -321,7 +321,7 @@ protopy: module 'test_sys' exited with runtime error
 
 ### Important / test_os.py
 
-- **Path:** `/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_os.py`
+- **Path:** `lib/python3.14/test/test_os.py`
 - **Claimed status:** UNBLOCKED (V106)
 - **Actual status:** `CRASH`
 - **Exit code:** 70
@@ -335,12 +335,12 @@ Last 5 stdout lines:
 Last 10 stderr lines:
 ```
 Traceback (most recent call last):
-  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/asyncio/__init__.py", line 2, in <module>
+  File "lib/python3.14/asyncio/__init__.py", line 2, in <module>
   File "<unknown>", in <module>
 type: No module named 'asyncio.graph'
 protopy: unhandled exception in module execution (test_os):
 Traceback (most recent call last):
-  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_os.py", line 6, in <module>
+  File "lib/python3.14/test/test_os.py", line 6, in <module>
   File "<unknown>", in <module>
 type: No module named 'asyncio'
 protopy: module 'test_os' exited with runtime error
@@ -348,7 +348,7 @@ protopy: module 'test_os' exited with runtime error
 
 ### Important / test_re.py
 
-- **Path:** `/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_re.py`
+- **Path:** `lib/python3.14/test/test_re.py`
 - **Claimed status:** UNBLOCKED (V106)
 - **Actual status:** `CRASH`
 - **Exit code:** 70
@@ -363,8 +363,8 @@ Last 10 stderr lines:
 ```
   File "<unknown>", in <module>
   File "<unknown>", in <module>
-  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/argparse.py", line 1899, in __init__
-  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/argparse.py", line 1899, in __init__
+  File "lib/python3.14/argparse.py", line 1899, in __init__
+  File "lib/python3.14/argparse.py", line 1899, in __init__
   File "<unknown>", in <module>
   File "<unknown>", in <module>
   File "<unknown>", in <module>
@@ -375,7 +375,7 @@ protopy: module 'test_re' exited with runtime error
 
 ### Important / test_datetime.py
 
-- **Path:** `/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_datetime.py`
+- **Path:** `lib/python3.14/test/test_datetime.py`
 - **Claimed status:** UNBLOCKED (V106, requires frame introspection hardening)
 - **Actual status:** `CRASH`
 - **Exit code:** 70
@@ -389,12 +389,12 @@ Last 5 stdout lines:
 Last 10 stderr lines:
 ```
 Traceback (most recent call last):
-  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/support/import_helper.py", line 2, in <module>
+  File "lib/python3.14/test/support/import_helper.py", line 2, in <module>
   File "<unknown>", in <module>
 type: No module named 'test.support.os_helper'
 protopy: unhandled exception in module execution (test_datetime):
 Traceback (most recent call last):
-  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_datetime.py", line 2, in <module>
+  File "lib/python3.14/test/test_datetime.py", line 2, in <module>
   File "<unknown>", in <module>
 type: No module named 'test.support.import_helper'
 protopy: module 'test_datetime' exited with runtime error
@@ -402,7 +402,7 @@ protopy: module 'test_datetime' exited with runtime error
 
 ### Important / test_collections.py
 
-- **Path:** `/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_collections.py`
+- **Path:** `lib/python3.14/test/test_collections.py`
 - **Claimed status:** UNBLOCKED (V106)
 - **Actual status:** `CRASH`
 - **Exit code:** 70
@@ -416,12 +416,12 @@ Last 5 stdout lines:
 Last 10 stderr lines:
 ```
 Traceback (most recent call last):
-  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/doctest.py", line 47, in <module>
+  File "lib/python3.14/doctest.py", line 47, in <module>
   File "<unknown>", in <module>
 type: No module named 'pdb'
 protopy: unhandled exception in module execution (test_collections):
 Traceback (most recent call last):
-  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_collections.py", line 2, in <module>
+  File "lib/python3.14/test/test_collections.py", line 2, in <module>
   File "<unknown>", in <module>
 type: No module named 'doctest'
 protopy: module 'test_collections' exited with runtime error
@@ -429,7 +429,7 @@ protopy: module 'test_collections' exited with runtime error
 
 ### Important / test_functools.py
 
-- **Path:** `/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_functools.py`
+- **Path:** `lib/python3.14/test/test_functools.py`
 - **Claimed status:** UNBLOCKED (V106)
 - **Actual status:** `CRASH`
 - **Exit code:** 70
@@ -442,13 +442,13 @@ Last 5 stdout lines:
 
 Last 10 stderr lines:
 ```
-  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/typing.py", line 20, in <module>
+  File "lib/python3.14/typing.py", line 20, in <module>
   File "<unknown>", in <module>
   File "<unknown>", in <module>
 type: 'NoneType' object is not callable
 protopy: unhandled exception in module execution (test_functools):
 Traceback (most recent call last):
-  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/test/test_functools.py", line 2, in <module>
+  File "lib/python3.14/test/test_functools.py", line 2, in <module>
   File "<unknown>", in <module>
 type: No module named 'typing'
 protopy: module 'test_functools' exited with runtime error
@@ -456,7 +456,7 @@ protopy: module 'test_functools' exited with runtime error
 
 ### Necessary / test_decorator.py
 
-- **Path:** `/home/gamarino/Documentos/proyectos/protoPython/tests/test_decorator.py`
+- **Path:** `tests/test_decorator.py`
 - **Claimed status:** PASS (custom protoPython test - tests/test_decorator.py)
 - **Actual status:** `SILENT_HALT`
 - **Exit code:** 0
@@ -475,7 +475,7 @@ Last 10 stderr lines:
 
 ### Necessary / test_abc.py
 
-- **Path:** `/home/gamarino/Documentos/proyectos/protoPython/tests/test_abc.py`
+- **Path:** `tests/test_abc.py`
 - **Claimed status:** PASS (custom protoPython test - tests/test_abc.py)
 - **Actual status:** `SILENT_HALT`
 - **Exit code:** 0
@@ -493,7 +493,7 @@ Last 10 stderr lines:
 
 ### Necessary / test_contextlib.py
 
-- **Path:** `/home/gamarino/Documentos/proyectos/protoPython/tests/test_contextlib.py`
+- **Path:** `tests/test_contextlib.py`
 - **Claimed status:** PASS (custom protoPython test - tests/test_contextlib.py)
 - **Actual status:** `CRASH`
 - **Exit code:** 70
@@ -508,7 +508,7 @@ Last 10 stderr lines:
 ```
 protopy: unhandled exception in module execution (test_contextlib):
 Traceback (most recent call last):
-  File "/home/gamarino/Documentos/proyectos/protoPython/tests/test_contextlib.py", line 2, in <module>
+  File "tests/test_contextlib.py", line 2, in <module>
   File "<unknown>", in <module>
   File "<unknown>", in <module>
   File "<unknown>", in <module>
@@ -518,7 +518,7 @@ protopy: module 'test_contextlib' exited with runtime error
 
 ### Necessary / test_dataclasses.py
 
-- **Path:** `/home/gamarino/Documentos/proyectos/protoPython/tests/test_dataclasses.py`
+- **Path:** `tests/test_dataclasses.py`
 - **Claimed status:** PASS (custom protoPython test - tests/test_dataclasses.py)
 - **Actual status:** `CRASH`
 - **Exit code:** 70
@@ -533,7 +533,7 @@ Last 10 stderr lines:
 ```
 protopy: unhandled exception in module execution (test_dataclasses):
 Traceback (most recent call last):
-  File "/home/gamarino/Documentos/proyectos/protoPython/tests/test_dataclasses.py", line 2, in <module>
+  File "tests/test_dataclasses.py", line 2, in <module>
   File "<unknown>", in <module>
 type: 'Point' object has no attribute 'x'
 protopy: module 'test_dataclasses' exited with runtime error

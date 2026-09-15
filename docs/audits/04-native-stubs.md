@@ -4,7 +4,7 @@
 
 protoPython ships ~40 native C++ modules under `src/library/*Module.cpp`. Most provide a *minimal subset* of the CPython module's API — enough to make common stdlib code import-and-run, but with significant gaps that break user code silently.
 
-The pattern that surfaced in this session: `_collections_abc.MutableMapping.update` was a no-op (`py_abc_call` returned `self.newChild()`), so `UserDict({'a':1})` left `data` empty. The shadowed `.py` file was never executed because the native module is registered with the same name and wins the import lookup.
+The pattern that surfaced in the debugging work that led to this audit: `_collections_abc.MutableMapping.update` was a no-op (`py_abc_call` returned `self.newChild()`), so `UserDict({'a':1})` left `data` empty. The shadowed `.py` file was never executed because the native module is registered with the same name and wins the import lookup.
 
 This audit characterizes the gap per module so the future maintainer knows where the silent failures live.
 
@@ -25,7 +25,7 @@ The audit favours **breadth over depth** — calling out the riskiest modules wi
 
 The module is a stub that creates dummy `Mapping` / `MutableMapping` / `Iterable` / etc. classes whose methods are mostly no-ops (`py_abc_call` returns `self.newChild()`).
 
-**Recently fixed** (this session, task #87/#90):
+**Recently fixed** (alongside this audit, task #87/#90):
 - `MutableMapping.update` — now propagates correctly.
 - `Mapping.__contains__` — now consults `__getitem__`.
 
@@ -146,7 +146,7 @@ Largest native module (1590 lines, 116 methods exposed). Most common functions c
 
 ### F4.1 — `CollectionsAbcModule` has 15+ ABC methods that are still no-ops
 
-After fixing `update` and `__contains__` this session, dozens of `MutableMapping`/`MutableSequence`/`Set`/`MutableSet` methods remain stubbed. Any class that subclasses one of these ABCs and relies on inherited `pop`/`clear`/`setdefault`/`append`/`extend`/etc. will silently misbehave.
+After the `update` and `__contains__` fixes made alongside this audit, dozens of `MutableMapping`/`MutableSequence`/`Set`/`MutableSet` methods remain stubbed. Any class that subclasses one of these ABCs and relies on inherited `pop`/`clear`/`setdefault`/`append`/`extend`/etc. will silently misbehave.
 
 **Severity: HIGH.** Affects `UserList`, `UserDict`, `OrderedDict`, `deque`, `Counter`, set abstractions in `_collections_abc`.
 

@@ -11,7 +11,7 @@ The audit produced **24 distinct findings across 4 axes**, organised below. Most
 
 2. **Fast paths gate on "is it a built-in" instead of "is it exactly the built-in"**. Subclasses sneak through and bypass overrides. Cause of #89, #90, F2.1, F2.2, F2.4.
 
-3. **No formal policy for GC root coverage of `ProtoObject*` in C++ locals**. Some sites pin via operand stack (works), some via `ProtoRootSet` (works after this session's fix), most rely on coincidence. Cause of #92's hang, F3.1, F3.4, F3.5.
+3. **No formal policy for GC root coverage of `ProtoObject*` in C++ locals**. Some sites pin via operand stack (works), some via `ProtoRootSet` (works after the fix made alongside this audit), most rely on coincidence. Cause of #92's hang, F3.1, F3.4, F3.5.
 
 A 4th axis (native module stubs vs CPython) compounds the others by hiding bugs behind silent success.
 
@@ -49,7 +49,7 @@ The cheapest, highest-leverage wins, ordered by ratio of (severity × likelihood
 
 ### Sprint 1 — quick architectural wins (1 day total)
 
-These are mostly mechanical, with templates already established this session:
+These are mostly mechanical, with templates already established alongside this audit:
 
 1. **F3.2** — introduce `TransientPin` RAII helper. *30 min.* Unblocks F3.1 / F3.4 / F3.5 work.
 2. **F2.1** — apply `binaryAdd`-style guard to the other 7 arithmetic ops. *1-2h.*
@@ -147,7 +147,7 @@ Three architectural rules emerged. They should be adopted as durable guidance:
 
 ## Closing
 
-The audit confirms the user's intuition was correct: the bugs we'd been hitting are **not random**. They cluster into three architectural patterns. Each pattern has a fix template, but until those templates were articulated, every recurrence had to be debugged from scratch — paying ~3-5 hours per incident (as we saw across this session).
+The audit confirms the user's intuition was correct: the bugs we'd been hitting are **not random**. They cluster into three architectural patterns. Each pattern has a fix template, but until those templates were articulated, every recurrence had to be debugged from scratch — paying ~3-5 hours per incident (as seen in the debugging work that led to this audit).
 
 Going forward:
 

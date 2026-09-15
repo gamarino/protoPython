@@ -80,7 +80,7 @@ For every IMPL class, every field that holds a Cell-derived pointer was inspecte
 | Class | Field | Declared type | Layer | Status |
 |---|---|---|---|---|
 | `ProtoObjectCell` | `parent` | `const ParentLinkImplementation*` | IMPL raw | ✅ correct |
-| `ProtoObjectCell` | `attributes` | `const ProtoSparseListImplementation*` | IMPL raw | ✅ **fixed in the current session** (was API tagged → #92) |
+| `ProtoObjectCell` | `attributes` | `const ProtoSparseListImplementation*` | IMPL raw | ✅ **fixed alongside this audit** (was API tagged → #92) |
 | `ParentLinkImplementation` | `parent` | `const ParentLinkImplementation*` | IMPL raw | ✅ correct |
 | `ParentLinkImplementation` | `object` | `const ProtoObject*` | API tagged | ✅ correct (the linked object can be any tagged value, not just a cell) |
 | `ProtoListImplementation` | `value` | `const ProtoObject*` | API tagged | ✅ correct (stores arbitrary user values) |
@@ -163,7 +163,7 @@ The layering convention is real and mostly observed, but **not formalised**. Fiv
 
 Top action items, ranked:
 
-1. **F1.1**: retype 5 fields. Mechanical change, high payoff. (Should match the work pattern of the `attributes` fix from this session.)
+1. **F1.1**: retype 5 fields. Mechanical change, high payoff. (Should match the work pattern of the `attributes` fix made alongside this audit.)
 2. **F1.4**: pick one discipline for `toImpl<ProtoObjectCell>` and apply it uniformly.
 3. **F1.3**: document the tag-0 invariant.
 4. **F1.2**: refactor `avl_root` to a typed sum (lower priority).

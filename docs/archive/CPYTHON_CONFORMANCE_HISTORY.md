@@ -34,7 +34,7 @@
 
 | Suite | Result |
 |-------|--------|
-| **`test/cpython/test_descr.py`** | **145 / 155 non-skipped pass (94 %)** — 9 F + 1 E + 10 skipped, ctest 183/183 verde.  Round 37 closed `test_tp_subclasses_cycle_error_return_path`; cumulative rounds 26–37: 27F + 7E = 34 → 9F + 1E = 10 (24 flips, no regressions). |
+| **`test/cpython/test_descr.py`** | **145 / 155 non-skipped pass (94 %)** — 9 F + 1 E + 10 skipped, ctest 183/183 passing.  Round 37 closed `test_tp_subclasses_cycle_error_return_path`; cumulative rounds 26–37: 27F + 7E = 34 → 9F + 1E = 10 (24 flips, no regressions). |
 | **CPython conformance categories** | 17 / 17 (100 %) — Essential, Important, Necessary all pass. |
 
 ### Performance summary (2026-05-13, three modes, n=14 workloads)
@@ -107,7 +107,7 @@ previously failed at import time on a missing attribute.
 - `test_match.py`: 22/22 ✓
 - `test_json.py`: 9/9 ✓
 - `test_hex.py`: ✓ (runs without unittest framework)
-- `ctest`: 199/199 verde.
+- `ctest`: 199/199 passing.
 
 ### Why no further test_descr.py flips
 
@@ -131,7 +131,7 @@ unchanged at **9F + 1E = 10**, but the remaining blocker for
 subprocess invocation now runs through, and what's left is a
 runtime correctness gap (dict `__eq__` tiebreak on hash collision
 when the user provides a custom `__hash__` returning a primitive-key
-collision).  ctest 199/199 verde.
+collision).  ctest 199/199 passing.
 
 ### Landed changes
 
@@ -310,7 +310,7 @@ count is unchanged at **9F + 1E = 10**: the next-blocker test
 `test_type_lookup_mro_reference` requires additional unimplemented
 machinery (subprocess `os.write`/`os.read` + dict `__eq__`
 tiebreak) that is beyond a single round's scope.  ctest 183/183
-verde.
+passing.
 
 ### Root-cause fixed this round
 
@@ -382,7 +382,7 @@ implementation does not currently expose).
 
 ### Build
 
-ctest 183/183 verde en cada commit.  Round 26–38 cumulative:
+ctest 183/183 passing on every commit.  Round 26–38 cumulative:
 27F + 7E = 34 → **9F + 1E = 10** (24 test flips overall, no
 regressions).  No new test_descr flip this round, but the
 closure-capture fix is a fundamental compiler correctness
@@ -397,7 +397,7 @@ Round 37 lands a single commit (STRUCT-300) that restructures the
 user `mro()`, mirroring CPython's type_set_bases protocol.  Test
 count drops from **9F + 2E = 11** to **9F + 1E = 10** (one flip:
 `test_tp_subclasses_cycle_error_return_path`).  ctest 183/183
-verde.
+passing.
 
 ### Round 37 commit
 
@@ -459,7 +459,7 @@ co-architectural)
 
 ### Build
 
-ctest 183/183 verde en cada commit.  Round 26–37 cumulative:
+ctest 183/183 passing on every commit.  Round 26–37 cumulative:
 27F + 7E = 34 → **9F + 1E = 10** (24 test flips overall, no
 regressions).
 
@@ -471,7 +471,7 @@ Round 36 lands three coordinated commits (STRUCT-295/296/297 +
 STRUCT-298 follow-up) that close `test_reduce_copying` by fixing
 the pickle protocol on native builtins.  Test count drops from
 **9F + 4E = 13** to **9F + 2E = 11** (one flip:
-`test_reduce_copying`).  ctest 183/183 verde.
+`test_reduce_copying`).  ctest 183/183 passing.
 
 ### Round 36 commits
 
@@ -544,7 +544,7 @@ co-architectural)
 
 ### Build
 
-ctest 183/183 verde en cada commit.  Round 26–36 cumulative:
+ctest 183/183 passing on every commit.  Round 26–36 cumulative:
 27F + 7E = 34 → **9F + 2E = 11** (23 test flips overall, no
 regressions).
 
@@ -555,7 +555,7 @@ regressions).
 Round 35 lands one re-entrancy fix in the `__bases__` setter and
 removes a long-standing broken `_functools.partial` native shim.
 Test count drops from **9F + 5E = 14** to **9F + 4E = 13** (one
-flip).  ctest 183/183 verde.
+flip).  ctest 183/183 passing.
 
 ### Round 35 commit
 
@@ -614,7 +614,7 @@ flip).  ctest 183/183 verde.
 
 ### Build
 
-ctest 183/183 verde en cada commit.  Round 26–35 cumulative:
+ctest 183/183 passing on every commit.  Round 26–35 cumulative:
 27F + 7E = 34 → **9F + 4E = 13** (21 test flips overall, no
 regressions).
 
@@ -693,7 +693,7 @@ re-entrancy cluster (flips 1-2 ERRORs).
 
 ### Build
 
-ctest 183/183 verde en cada commit.  Round 26–33 cumulative:
+ctest 183/183 passing on every commit.  Round 26–33 cumulative:
 27F + 7E = 34 → **12F + 5E = 17** (17 test flips overall,
 no regressions).
 
@@ -746,7 +746,7 @@ co-test that now surfaces a different inner failure).
 
 ### Build
 
-ctest 183/183 verde en cada commit.  Round 26–32 cumulative:
+ctest 183/183 passing on every commit.  Round 26–32 cumulative:
 27F + 7E = 34 → **12F + 5E = 17** (17 test flips overall).
 
 ---
@@ -816,7 +816,7 @@ Round 31 lands three flips, including the long-deferred Cluster B
 
 ### Build
 
-ctest 183/183 verde en cada commit.  Round 26–31 cumulative:
+ctest 183/183 passing on every commit.  Round 26–31 cumulative:
 27F + 7E = 34 → **15F + 4E = 19** (15 test flips overall).
 
 ---
@@ -869,7 +869,7 @@ drops from **22F + 5E = 27** to **18F + 4E = 22** (net -5).
 
 ### Build
 
-ctest 183/183 verde en cada commit.  Round 26–30 cumulative:
+ctest 183/183 passing on every commit.  Round 26–30 cumulative:
 27F + 7E = 34 → **18F + 4E = 22** (12 test flips overall).
 
 ---
@@ -920,7 +920,7 @@ test flip (`test_file_fault`).  Test count drops from
 
 ### Build
 
-ctest 183/183 verde en cada commit.
+ctest 183/183 passing on every commit.
 
 ---
 
@@ -1003,7 +1003,7 @@ two test_descr flips (`test_classmethod_staticmethod_annotations`,
 
 ### Build
 
-ctest 183/183 verde en cada commit.
+ctest 183/183 passing on every commit.
 
 ---
 
@@ -1077,7 +1077,7 @@ Net: 1 test flipped (test_metaclass).  ctest 183/183 on every commit.
 
 ### Build
 
-ctest 183/183 verde en cada commit.
+ctest 183/183 passing on every commit.
 
 ---
 
@@ -1183,7 +1183,7 @@ refcounting contract is not portable to this model.
 
 ### Build
 
-ctest 183/183 verde en cada commit.  Binary at
+ctest 183/183 passing on every commit.  Binary at
 `build_release/src/runtime/protopy`.
 
 ---
@@ -1267,7 +1267,7 @@ in isolation, which unblocks future fixes that depend on them.
 
 ### Build
 
-ctest 183/183 verde en cada commit.  Binary at
+ctest 183/183 passing on every commit.  Binary at
 `build_release/src/runtime/protopy`.
 
 ---
@@ -1360,7 +1360,7 @@ delta: **40 → 34 raw F+E** (15% reduction).
 
 ### Build
 
-ctest 183/183 verde en cada commit.  Binary at
+ctest 183/183 passing on every commit.  Binary at
 `build_release/src/runtime/protopy`.
 
 ---
@@ -1428,7 +1428,7 @@ a `dir()`-inside-function subtest internally but the surrounding
 
 ### Build
 
-ctest 183/183 verde en cada commit.  Binary at
+ctest 183/183 passing on every commit.  Binary at
 `build_release/src/runtime/protopy`.
 
 ---
@@ -1526,7 +1526,7 @@ delta: 40 → 36 (10% reduction).
 
 ### Build
 
-ctest 183/183 verde en cada commit.  Binary at
+ctest 183/183 passing on every commit.  Binary at
 `build_release/src/runtime/protopy`.
 
 ---
@@ -1616,7 +1616,7 @@ flip-rich pickling / dunder additions.
 
 ### Build
 
-ctest 183/183 verde en cada commit.  Binary at
+ctest 183/183 passing on every commit.  Binary at
 `build_release/src/runtime/protopy`.
 
 ---
@@ -1702,7 +1702,7 @@ the **~34 actionable F+E** baseline.
 
 ### Build
 
-ctest 183/183 verde en cada commit.  Binary at
+ctest 183/183 passing on every commit.  Binary at
 `build_release/src/runtime/protopy`.
 
 ---
@@ -2150,7 +2150,7 @@ on every landed round-16 commit; test_descr baseline 32F+47E.
 ## Current Status (2026-05-16) — post-twenty-third-sweep (round 16, root-cause)
 
 Round 16 was a targeted root-cause round.  User directive:
-"resolver la raiz" — fix the LOAD_DEREF closure-cell bug that has
+"resolve the root cause" (translated from Spanish) — fix the LOAD_DEREF closure-cell bug that has
 blocked tests across rounds 8 → 15 (STRUCT-63 / STRUCT-100 / multiple
 deferrals from rounds 13–15).
 
@@ -3988,7 +3988,7 @@ those barriers fell with the Sprint 4 module-stub work.
 
 ```bash
 # Build (idempotent if already built):
-cmake --build /home/gamarino/Documentos/proyectos/protoPython/build_release -j$(nproc)
+cmake --build build_release -j$(nproc)
 
 # Re-run audit:
 PROTOPY=$(pwd)/build_release/src/runtime/protopy \
@@ -6651,7 +6651,7 @@ With 17/17 conformance tests passing, the benchmark scripts now execute to compl
 
 ## Benchmarking with PyPerformance
 
-Progress in running the `PyPerformance` suite is tracked separately in the [Performance Analysis](file:///home/gamarino/Documentos/proyectos/protoPython/docs/PERFORMANCE_ANALYSIS.md) (if exists).
+Progress in running the `PyPerformance` suite is tracked separately in the Performance Analysis (`docs/PERFORMANCE_ANALYSIS.md`, if exists).
 
 ## Recent Achievements (V87 - Stabilization)
 

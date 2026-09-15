@@ -1,5 +1,7 @@
 # protoPython long-loop honest comparison (post sprint-10)
 
+> **Note (2026-09-15):** the protopyc `multithread_cpu` figure below, and the protopyc geomean that includes it, are invalid (the protopyc build of this period skipped `main()` in scripts that import `_thread`, so the figure measures module initialisation, not the workload; see [2026-06-15-sprint8-4way-honest.md](2026-06-15-sprint8-4way-honest.md)). The report is otherwise unchanged.
+
 Each bench scaled so CPython 3.14t wall lands in the 1-3 s range so startup overhead (~30 ms) is <2 % of total wall.
 Baseline is CPython 3.14t (free-threading, GIL off) — apples-to-apples concurrency-wise vs protoPython, which is GIL-free by construction.  The `cp/cpt` column shows the lock cost of PEP 703 on each workload (>1.0 = GIL build is faster).
 

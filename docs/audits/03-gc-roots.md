@@ -39,10 +39,10 @@ These are the most exposed: they iterate, each `next` call runs Python code, GC 
 
 | Function | File:line | Holds in C++ stack | Pinning | Status |
 |---|---|---|---|---|
-| `py_str_join` | `PythonEnvironment.cpp:8085` | `posArgs`, `iterable`, `it` (the iterator) | `posArgs` pinned by `invokeCallable`; `it` explicitly pinned (added in this session) | ✅ |
+| `py_str_join` | `PythonEnvironment.cpp:8085` | `posArgs`, `iterable`, `it` (the iterator) | `posArgs` pinned by `invokeCallable`; `it` explicitly pinned (added alongside this audit) | ✅ |
 | `py_functools_reduce` | `FunctoolsModule.cpp:73` | `iterable`, `it`, `res` (accumulator), `func` | `posArgs` pinned by `invokeCallable`; **`it`, `res`, `func` not pinned** | ❌ HIGH |
 | `py_collections_*` deque/Counter init | `CollectionsModule.cpp:426` | `iterable`, `it`, `item` | only `posArgs` pinned via invokeCallable; **the locals are not** | ❌ HIGH |
-| `py_mutable_mapping_update` | `CollectionsAbcModule.cpp` (added this session) | `other`, iterator from `keys()`, etc. | `posArgs` pinned; **derived iterators not** | ❌ MEDIUM |
+| `py_mutable_mapping_update` | `CollectionsAbcModule.cpp` (added alongside this audit) | `other`, iterator from `keys()`, etc. | `posArgs` pinned; **derived iterators not** | ❌ MEDIUM |
 | `py_mapping_contains` | `CollectionsAbcModule.cpp` | self, key, val from `__getitem__` call | `posArgs` pinned; intermediate val from invokeDunder may fall through GC | ❌ MEDIUM |
 | `py_repr` (`BuiltinsModule.cpp:854`) → `reprObject` | indirect | obj, items in tuple/list/dict iter | `obj` is in args; iteration is via `getIterator` which keeps `lst` alive on C++ stack only during iteration loop | ❌ MEDIUM |
 | `py_dict_repr` / `py_list_repr` / `py_set_repr` etc. | `PythonEnvironment.cpp` | iterators over dict items, list elements | likely C++ stack only | ❌ MEDIUM |
@@ -90,7 +90,7 @@ At least 6 native trampolines (`functools.reduce`, multiple `py_*_repr`, several
 
 **Severity: HIGH** (collective). Individual incidents may be hard to reproduce because GC pressure has to align with the iteration, but they are real regressions waiting to happen.
 
-**Fix template** (mirror the `py_str_join` pin from this session):
+**Fix template** (mirror the `py_str_join` pin added alongside this audit):
 
 ```cpp
 proto::ProtoRootSet* roots = env ? env->getTransientArgsRoots() : nullptr;
@@ -135,7 +135,7 @@ TransientPin pinIt(env, it);  // one line, RAII, panic-safe
 
 ### F3.3 — `invokeCallable` pin already covers args; doesn't cover derived locals
 
-The fix from this session pins `args` in `invokeCallable` for native asMethod calls. This anchors the args list and everything reachable via it. But many native trampolines DERIVE values from args:
+The fix made alongside this audit pins `args` in `invokeCallable` for native asMethod calls. This anchors the args list and everything reachable via it. But many native trampolines DERIVE values from args:
 
 - `iterable = posArgs->getAt(0)` → reachable via args ✓
 - `it = env->iter(iterable)` → for generators it == iterable ✓; for lists/dicts it's a NEW iterator NOT in args ❌
@@ -189,7 +189,7 @@ The native function layer of protoPython has **systematic GC root discipline gap
 - 6+ iteration trampolines (F3.1) — HIGH
 - 8+ callback sites without pin (F3.4) — MEDIUM-HIGH
 - 4+ bytecode opcode handlers with internal iterators (F3.5) — MEDIUM
-- The pin discipline established this session covers ~3 sites (`invokeCallable` asMethod, `py_str_join`, the `transientArgsRoots_` infrastructure). 15+ sites still need it.
+- The pin discipline established alongside this audit covers ~3 sites (`invokeCallable` asMethod, `py_str_join`, the `transientArgsRoots_` infrastructure). 15+ sites still need it.
 
 **The shared root cause**: there is no policy stating "every `ProtoObject*` you hold in a C++ local across a callback must be pinned". The pattern emerged once (`py_str_join` fix) and was treated as a localised bug rather than a systemic property.
 

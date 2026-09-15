@@ -9,8 +9,8 @@ The harness's small-bench inversion (where python3.14t appeared faster
 than python3.14 because its startup is ~15 ms cheaper) disappears at
 this scale.
 
-Each bench runs all 4 binaries interleaved (warmup ×2 then 5 inter-
-leaved rounds).  Ratios use **CPython 3.14t (free-threading, GIL off)
+Each bench runs all 4 binaries interleaved (warmup ×1 then 3 inter-
+leaved rounds, per WARMUP_RUNS and N_RUNS below).  Ratios use **CPython 3.14t (free-threading, GIL off)
 as the baseline** — apples-to-apples concurrency-wise vs protoPython,
 which is GIL-free by construction.  CPython 3.14 with GIL is reported
 in its own column so the lock cost (cp/cpt) is visible, but it is not

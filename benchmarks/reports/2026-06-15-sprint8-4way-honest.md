@@ -1,5 +1,7 @@
 # protoPython 4-way interleaved benchmark (sprint-8, honest CPython baselines)
 
+> **Note (2026-09-15):** the protopyc `multithread_cpu` figure below, and the protopyc geomean that includes it, are invalid (the protopyc build skipped `main()` in scripts that import `_thread`, so the figure measures module initialisation, not the workload, as the caveat below explains). The report is otherwise unchanged.
+
 > **Caveat on the protopyc column.**  Cross-checking after the run, the
 > `protopyc` build silently skips `main()` when `_thread` is imported
 > (the `__name__ == "__main__"` check evaluated under `run_module`

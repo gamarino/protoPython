@@ -14,7 +14,7 @@ counts in the V70-V154 entries cannot be reproduced.
 
 ## Current Status (2026-09-14) — runtime semantics sweep
 
-A sequence of fix rounds driven by CPython probes (the same script run
+A sequence of fixes driven by CPython probes (the same script run
 under `python3` and `protopy`, outputs diffed).  Every commit fixes one
 defect and adds a `test/regression/*.py` test registered in
 `CMakeLists.txt`; every commit was built on its own and passes its test.
@@ -50,6 +50,12 @@ defect and adds a `test/regression/*.py` test registered in
 ### Verification
 
 - ctest 304/304 at fb3d00d9.
+- ctest 318/318 on 2026-09-15 (`build_release`, at b8f36d11). Fixes landed
+  since fb3d00d9 with their own regression tests: 92971f9e (fused
+  fast-local opcodes raise UnboundLocalError), bd6bd4f0 (a script's
+  `main()` is no longer called implicitly), 27bd35f9 (`SystemExit.code`
+  and the process exit status follow CPython) and b8f36d11 (`-c` honours
+  the `SystemExit` exit status).
 - ASAN (RelWithDebInfo, `detect_leaks=0`): 44 regression tests × 3 runs
   clean at fb3d00d9.
 

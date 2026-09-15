@@ -1,5 +1,7 @@
 # protoPython performance audit — 2026-06-15
 
+> **Note (2026-09-15):** the protopyc `multithread_cpu` figure below, and the protopyc geomean that includes it, are invalid (the protopyc build of this period skipped `main()` in scripts that import `_thread`, so the figure measures module initialisation, not the workload; see [2026-06-15-sprint8-4way-honest.md](2026-06-15-sprint8-4way-honest.md)). The report is otherwise unchanged.
+
 Platform: Linux x86_64, median of 5 runs (timeouts excluded).
 
 Three execution modes per workload:

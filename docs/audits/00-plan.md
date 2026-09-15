@@ -30,7 +30,7 @@ Each phase below produces a single Markdown document under `docs/audits/` with a
 3. **Aggregated findings** — patterns that emerged from the inventory.
 4. **Action items** — concrete tasks, ranked.
 
-Output is meant to survive this session. The next developer reading these documents should be able to pick up any individual finding without rereading everything else.
+Output is meant to remain useful after the audit. The next developer reading these documents should be able to pick up any individual finding without rereading everything else.
 
 ## Phases
 

@@ -1,5 +1,7 @@
 # Full-stack honest comparison (cpp / protoCore / protoPython / CPython)
 
+> **Note (2026-09-15):** the protopyc figures below, including the protopyc geomean, are invalid (two protopyc bugs, fixed later in commit eab663bd, made three of the six protopyc benchmarks fail silently and the rest unreliable; commit 3d425957, which added this report, already called the column unreliable). The report is otherwise unchanged.
+
 Inner-only timing for Python variants (parsed from each bench's
 `BENCH_RESULT ms=` marker — excludes startup + GC tail).  Wall-clock
 for protoCpp binaries (startup is ~1 ms there).  Same workload size

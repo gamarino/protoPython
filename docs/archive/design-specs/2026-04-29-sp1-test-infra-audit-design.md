@@ -82,7 +82,7 @@ For each `FAIL` entry across the five probe outputs, classify and decide:
 1. Identify which Essential test(s) — `test_grammar.py`, `test_types.py`, `test_descr.py`, `test_generators.py`, `test_asyncgen.py`, `test_base64.py`, `test_json.py` — depend on the broken API. Search via `grep` and reading the test source.
 2. If at least one Essential test depends on it → **ENTERS the backlog** at priority P0 (≥3 tests) / P1 (1-2 tests).
 3. If no Essential test depends but the API is **load-bearing** (criterion: used by ≥3 helpers downstream, or documented as a prominent public API) → **ENTERS the backlog** at P2 with written justification.
-4. Otherwise → **ARCHIVED** in `docs/superpowers/specs/2026-04-29-sp1-archived.md`.
+4. Otherwise → **ARCHIVED** in `docs/superpowers/specs/2026-04-29-sp1-archived.md` (an internal working note, not in the repository).
 
 **Backlog entry format:**
 
@@ -98,7 +98,7 @@ For each `FAIL` entry across the five probe outputs, classify and decide:
 - **Status**: backlog | in_progress | done (commit SHA) | blocked
 ```
 
-Backlog is written to `docs/superpowers/specs/2026-04-29-sp1-audit-backlog.md`.
+Backlog is written to `docs/superpowers/specs/2026-04-29-sp1-audit-backlog.md` (an internal working note, not in the repository).
 
 **Volume expectation:** five probes likely surface 50-80 FAILs. The Z filter should leave 15-25 in the backlog. If filtered count exceeds 30, the controller pauses and asks the user whether to recap.
 
@@ -132,8 +132,8 @@ If the cap is reached with backlog remaining, the unresolved entries become inpu
 |---|---|---|
 | `tests/audits/probe_*.py` (5 files) | Self-probes | Yes — kept as regression tests |
 | `tests/audits/<module>.json` (5 files, per run) | Phase 1 output | No — regenerated per audit |
-| `docs/superpowers/specs/2026-04-29-sp1-audit-backlog.md` | Phase 2 output, updated through Phase 3 | Yes |
-| `docs/superpowers/specs/2026-04-29-sp1-archived.md` | Filtered-out FAILs (with rationale) | Yes |
+| `docs/superpowers/specs/2026-04-29-sp1-audit-backlog.md` (an internal working note, not in the repository) | Phase 2 output, updated through Phase 3 | Yes |
+| `docs/superpowers/specs/2026-04-29-sp1-archived.md` (an internal working note, not in the repository) | Filtered-out FAILs (with rationale) | Yes |
 | `docs/CPYTHON_CONFORMANCE.md` (Essential table) | Updated row for each Essential test that moved | Yes |
 | Git commits in `master` | One per gap | Yes |
 
