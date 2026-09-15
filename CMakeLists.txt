@@ -263,6 +263,13 @@ set_tests_properties(protopy_copy_builtin_subclass PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# Comparison operators find rich comparison methods defined on a base class.
+add_test(NAME protopy_compare_inherited_dunders
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/compare_inherited_dunders.py)
+set_tests_properties(protopy_compare_inherited_dunders PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # Equal ints and floats compare, hash and key dicts as one value beyond long long.
 add_test(NAME protopy_numeric_keys
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/numeric_keys.py)

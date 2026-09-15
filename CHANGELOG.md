@@ -267,6 +267,14 @@ onwards. Commit hashes are given for reference.
   returned an empty or zero value (`()` for a tuple subclass). These types
   had no `__getnewargs__`, so the reduce protocol rebuilt the instance from
   no arguments; they now define it as CPython does.
+- **Inherited comparison methods:** the comparison operators ignored
+  `__eq__`, `__lt__` and the other rich comparison methods defined on a base
+  class (`S() == S()` was False and `S() < S()` raised `TypeError` when only a
+  base of `S` defined the method), so `pathlib.Path("a", "b") ==
+  pathlib.Path("a/b")` was False. The methods are now looked up on the
+  operand types through their MRO, not on the instances; a subclass right
+  operand gets priority even when it inherits its reflected method, and an
+  exception raised by a comparison method propagates.
 
 ### Performance
 

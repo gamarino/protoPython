@@ -24382,6 +24382,37 @@ static const proto::ProtoTuple* classMroForLookup(PythonEnvironment* env,
     return mroAttr ? mroAttr->asTuple(ctx) : nullptr;
 }
 
+// A special method of obj, looked up on its type as CPython's
+// _PyType_Lookup does: an attribute of the instance itself is not a
+// special method. The protoCore chain of a class is its MRO followed by
+// its metaclass (py_type, STRUCT-82), so the type's own getAttribute
+// performs the MRO lookup; a method found only on the metaclass belongs
+// to the class object, not to its instances, and is ignored. The
+// instance's chain cannot be used instead: it ends at the class, because
+// protoCore's newChild copies the parent link the class had before
+// py_type installed its MRO. nullptr when the type has no such method.
+static const proto::ProtoObject* lookupSpecialMethod(PythonEnvironment* env,
+                                                     proto::ProtoContext* ctx,
+                                                     const proto::ProtoObject* obj,
+                                                     const proto::ProtoString* name) {
+    const proto::ProtoObject* type = env->getType(ctx, obj);
+    if (!type || type == PROTO_NONE) return nullptr;
+    const proto::ProtoObject* method = type->getAttribute(ctx, name);
+    if (!method || method == PROTO_NONE) return nullptr;
+    if (type->hasOwnAttribute(ctx, name) != PROTO_TRUE) {
+        const proto::ProtoObject* meta = env->getType(ctx, type);
+        if (meta && meta != PROTO_NONE && meta != type
+            && meta->getAttribute(ctx, name) == method) {
+            // Also reachable from the metaclass. Every MRO ends with
+            // object, which precedes the metaclass in the chain, so the
+            // method still applies when object provides it.
+            const proto::ProtoObject* objectProto = env->getObjectPrototype();
+            if (!objectProto || objectProto->getAttribute(ctx, name) != method) return nullptr;
+        }
+    }
+    return method;
+}
+
 static const proto::ProtoObject* tryFastGetAttribute(
         PythonEnvironment* env,
         proto::ProtoContext* ctx,
@@ -27790,204 +27821,101 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
         else if (op == 5) dunder = py_ge_s;
 
         if (dunder) {
-            // CPython "subclass operand wins" rule: when type(b) is a
-            // strict subclass of type(a) AND b's type defines the
-            // dunder (overriding the base), call b's reflected dunder
-            // BEFORE a's.  Without this, `'aBc' == cistr('ABC')` calls
-            // str.__eq__ first, gets False, and never sees cistr's
-            // case-insensitive override.
-            {
-                const proto::ProtoObject* aType = getType(ctx, a);
-                const proto::ProtoObject* bType = getType(ctx, b);
-                if (aType && bType && aType != bType && aType != PROTO_NONE && bType != PROTO_NONE) {
-                    // Check b's type subclasses a's type via __mro__.
-                    bool bIsSubclassOfA = false;
-                    const proto::ProtoObject* mroAttr = getAttribute(ctx, bType, getMroString(), false);
-                    const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
-                    if (mroT) {
-                        for (unsigned long i = 1; i < mroT->getSize(ctx); ++i) {
-                            if (mroT->getAt(ctx, static_cast<int>(i)) == aType) {
-                                bIsSubclassOfA = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (bIsSubclassOfA) {
-                        // Reflected dunder for the op.
-                        const proto::ProtoString* refl = nullptr;
-                        if (op == 0) refl = py_eq_s;
-                        else if (op == 1) refl = py_ne_s;
-                        else if (op == 2) refl = py_gt_s;     // a < b -> b > a
-                        else if (op == 3) refl = py_ge_s;
-                        else if (op == 4) refl = py_lt_s;
-                        else if (op == 5) refl = py_le_s;
-                        // Check b's type owns the reflected dunder
-                        // (i.e. overrides — not the inherited default).
-                        bool overrides = refl && bType->hasOwnAttribute(ctx, refl) == PROTO_TRUE;
-                        if (overrides) {
-                            const proto::ProtoObject* rmethod = b->getAttribute(ctx, refl);
-                            const proto::ProtoObject* res = nullptr;
-                            if (rmethod && rmethod->asMethod(ctx)) {
-                                const proto::ProtoList* args = ctx->newList()->appendLast(ctx, a);
-                                res = rmethod->asMethod(ctx)(ctx, b, nullptr, args, getEmptySparseList());
-                            } else if (rmethod && rmethod != PROTO_NONE && !isActuallyAClass(ctx, b)) {
-                                const proto::ProtoString* codeS = getCodeString();
-                                if (codeS && rmethod->hasOwnAttribute(ctx, codeS) == PROTO_TRUE) {
-                                    const proto::ProtoList* sp = ctx->newList()->appendLast(ctx, b)->appendLast(ctx, a);
-                                    res = invokePythonCallable(ctx, rmethod, sp, nullptr);
-                                }
-                            }
-                            const proto::ProtoObject* notImpl = getNotImplementedPrototype();
-                            if (res == notImpl) sawNotImplemented = true;
-                            if (res && res != PROTO_NONE && res != notImpl) {
-                                if (richResult || res == PROTO_TRUE || res == PROTO_FALSE || res->isBoolean(ctx)) {
-                                    return res;
-                                }
-                                bool truthy = false;
-                                if (res->isBoolean(ctx)) truthy = res->asBoolean(ctx);
-                                else if (res->isInteger(ctx)) truthy = (res->asLong(ctx) != 0);
-                                else if (res->isString(ctx)) truthy = (res->asString(ctx)->getSize(ctx) > 0);
-                                else truthy = true;
-                                return truthy ? PROTO_TRUE : PROTO_FALSE;
-                            }
-                        }
-                    }
-                }
-            }
-            // For `!=`, Python's default object.__ne__ delegates to __eq__ and
-            // negates the result.  The protoPython default `__ne__` returns a
-            // raw pointer comparison, which disagrees with any `__eq__` the
-            // type defines (e.g. dict/list).  Always consult __eq__ first for
-            // op == 1 and only fall back to a type-specific `__ne__` (or the
-            // raw comparison below) when __eq__ declines to answer.
-            // A Python-level __ne__ answers `!=` itself: CPython derives
-            // != from __eq__ only in the default object.__ne__.
-            bool userNe = false;
-            if (op == 1 && !isActuallyAClass(ctx, a)) {
-                const proto::ProtoObject* neMethod = a->getAttribute(ctx, py_ne_s);
-                const proto::ProtoString* neCodeS = getCodeString();
-                userNe = neMethod && neMethod != PROTO_NONE && !neMethod->asMethod(ctx)
-                    && neCodeS && neMethod->hasOwnAttribute(ctx, neCodeS) == PROTO_TRUE;
-            }
-            if (op == 1 && !userNe) {
-                const proto::ProtoObject* eqMethod = a->getAttribute(ctx, py_eq_s);
-                if (eqMethod && eqMethod != PROTO_NONE) {
-                    const proto::ProtoObject* res = nullptr;
-                    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, b);
-                    if (eqMethod->asMethod(ctx)) {
-                        res = eqMethod->asMethod(ctx)(ctx, a, nullptr, args, getEmptySparseList());
-                    } else if (!isActuallyAClass(ctx, a)) {
-                        // Python user-defined __eq__ (function with __code__).
-                        // Same guard as the standard dispatch path below: skip
-                        // when `a` is a class (would invoke metaclass __eq__
-                        // with the class as self) or when the attr is an
-                        // opaque ProtoObject placeholder without __code__.
-                        const proto::ProtoString* codeS = getCodeString();
-                        if (codeS && eqMethod->hasOwnAttribute(ctx, codeS) == PROTO_TRUE) {
-                            const proto::ProtoList* selfArgs =
-                                ctx->newList()->appendLast(ctx, a)->appendLast(ctx, b);
-                            res = invokePythonCallable(ctx, eqMethod, selfArgs, nullptr);
-                        }
-                    }
-                    const proto::ProtoObject* notImpl = getNotImplementedPrototype();
-                    if (res && res != PROTO_NONE && res != notImpl) {
-                        // CPython: default object.__ne__ returns not __eq__,
-                        // accepting any truthy/falsy result — not just bools.
-                        bool truthy;
-                        if (res == PROTO_TRUE) truthy = true;
-                        else if (res == PROTO_FALSE) truthy = false;
-                        else if (res->isBoolean(ctx)) truthy = res->asBoolean(ctx);
-                        else if (res->isInteger(ctx)) truthy = (res->asLong(ctx) != 0);
-                        else truthy = isTrue(res);
-                        return truthy ? PROTO_FALSE : PROTO_TRUE;
-                    }
-                }
-            }
-            const proto::ProtoObject* method = a->getAttribute(ctx, dunder);
+            // CPython's do_richcompare. The methods come from the operands'
+            // types, through their full MRO (lookupSpecialMethod).
+            const proto::ProtoString* reflected = nullptr;
+            if (op == 0) reflected = py_eq_s;          // a == b -> b.__eq__(a)
+            else if (op == 1) reflected = py_ne_s;     // a != b -> b.__ne__(a)
+            else if (op == 2) reflected = py_gt_s;     // a <  b -> b.__gt__(a)
+            else if (op == 3) reflected = py_ge_s;     // a <= b -> b.__ge__(a)
+            else if (op == 4) reflected = py_lt_s;     // a >  b -> b.__lt__(a)
+            else if (op == 5) reflected = py_le_s;     // a >= b -> b.__le__(a)
             const proto::ProtoObject* notImpl = getNotImplementedPrototype();
-            const proto::ProtoObject* res = nullptr;
-            if (method && method->asMethod(ctx)) {
-                const proto::ProtoList* args = ctx->newList();
-                args = args->appendLast(ctx, b);
-                res = method->asMethod(ctx)(ctx, a, nullptr, args, getEmptySparseList());
-            } else if (method && method != PROTO_NONE && !isActuallyAClass(ctx, a)) {
-                // Python user dunder (POINTER_TAG_OBJECT with own __code__):
-                // asMethod is null, the inline path used to drop it. Route
-                // through invokePythonCallable with `self` prepended so
-                // `def __eq__(self, o)` binds correctly. Strict guards:
-                //   - `a` must NOT be a class — when `cls == cls2`, the
-                //     class-level dunder lookup can resolve to the metaclass'
-                //     `__eq__` shim and we'd dispatch with the *class* as
-                //     self, breaking unittest.main's loader (`'type' object
-                //     has no attribute '_testMethodName'`).
-                //   - method must have OWN `__code__` — otherwise it's an
-                //     opaque ProtoObject placeholder (`object.__eq__` is the
-                //     classic example) that isn't actually callable.
-                const proto::ProtoString* codeS = getCodeString();
-                if (codeS && method->hasOwnAttribute(ctx, codeS) == PROTO_TRUE) {
-                    const proto::ProtoList* selfPrepended =
-                        ctx->newList()->appendLast(ctx, a)->appendLast(ctx, b);
-                    res = invokePythonCallable(ctx, method, selfPrepended, nullptr);
+            const proto::ProtoString* codeS = getCodeString();
+            // Set when a comparison method raised; the exception propagates.
+            bool raised = false;
+
+            // type(self).name(self, other); nullptr when the type has no
+            // method to call. Native methods and Python functions (own
+            // __code__) are called; other objects found under a comparison
+            // name are placeholders, not callables.
+            auto callMethod = [&](const proto::ProtoObject* self, const proto::ProtoString* name,
+                                  const proto::ProtoObject* other) -> const proto::ProtoObject* {
+                const proto::ProtoObject* method = lookupSpecialMethod(this, ctx, self, name);
+                if (!method) return nullptr;
+                const proto::ProtoObject* res = nullptr;
+                if (method->asMethod(ctx)) {
+                    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, other);
+                    res = method->asMethod(ctx)(ctx, self, nullptr, args, getEmptySparseList());
+                } else if (codeS && method->hasOwnAttribute(ctx, codeS) == PROTO_TRUE) {
+                    const proto::ProtoList* args =
+                        ctx->newList()->appendLast(ctx, self)->appendLast(ctx, other);
+                    res = invokePythonCallable(ctx, method, args, nullptr);
+                } else {
+                    return nullptr;
+                }
+                if (!res && hasPendingException()) raised = true;
+                return res;
+            };
+            // self's answer to `self <op> other`. A Python-level __ne__
+            // answers != itself; otherwise != is the negated __eq__, as
+            // CPython's default object.__ne__ computes it (a native __ne__
+            // is not consulted: protoPython's defaults compare pointers).
+            auto operandAnswer = [&](const proto::ProtoObject* self, const proto::ProtoString* name,
+                                     const proto::ProtoObject* other) -> const proto::ProtoObject* {
+                if (op == 1) {
+                    const proto::ProtoObject* ne = lookupSpecialMethod(this, ctx, self, py_ne_s);
+                    const bool userNe = ne && !ne->asMethod(ctx) && codeS
+                        && ne->hasOwnAttribute(ctx, codeS) == PROTO_TRUE;
+                    if (!userNe) {
+                        const proto::ProtoObject* eq = callMethod(self, py_eq_s, other);
+                        if (!eq || eq == PROTO_NONE || eq == notImpl) return eq;
+                        return isTrue(eq) ? PROTO_FALSE : PROTO_TRUE;
+                    }
+                }
+                return callMethod(self, name, other);
+            };
+            // The comparison's value for a method result other than
+            // NotImplemented: returned as is for the operators, coerced
+            // to True/False for internal callers.
+            auto result = [&](const proto::ProtoObject* res) -> const proto::ProtoObject* {
+                if (richResult || res->isBoolean(ctx)) return res;
+                return isTrue(res) ? PROTO_TRUE : PROTO_FALSE;
+            };
+
+            const proto::ProtoObject* aType = getType(ctx, a);
+            const proto::ProtoObject* bType = getType(ctx, b);
+            bool checkedReverse = false;
+            // When type(b) is a strict subclass of type(a), b's reflected
+            // method runs first, inherited or not: `'aBc' == cistr('ABC')`
+            // must reach cistr's case-insensitive __eq__ before str's.
+            if (aType && bType && aType != bType && aType != PROTO_NONE && bType != PROTO_NONE) {
+                const proto::ProtoTuple* mroT = classMroForLookup(this, ctx, bType);
+                bool bIsSubclassOfA = false;
+                const unsigned long mroSize = mroT ? mroT->getSize(ctx) : 0;
+                for (unsigned long i = 1; i < mroSize; ++i) {
+                    if (mroT->getAt(ctx, static_cast<int>(i)) == aType) {
+                        bIsSubclassOfA = true;
+                        break;
+                    }
+                }
+                if (bIsSubclassOfA) {
+                    checkedReverse = true;
+                    const proto::ProtoObject* res = operandAnswer(b, reflected, a);
+                    if (raised) return nullptr;
+                    if (res == notImpl) sawNotImplemented = true;
+                    else if (res && res != PROTO_NONE) return result(res);
                 }
             }
+            const proto::ProtoObject* res = operandAnswer(a, dunder, b);
+            if (raised) return nullptr;
             if (res == notImpl) sawNotImplemented = true;
-            if (res && res != PROTO_NONE && res != notImpl) {
-                if (richResult || res == PROTO_TRUE || res == PROTO_FALSE || res->isBoolean(ctx)) {
-                    return res;
-                }
-                // Non-bool result from a user dunder: bool-coerce via the
-                // standard truthiness contract. CPython's `if a == b` does
-                // exactly this, so callers expecting a strict True/False
-                // (sort, isinstance, dict lookup) get a meaningful answer
-                // instead of falling through to identity comparison.
-                bool truthy = false;
-                if (res == PROTO_NONE) truthy = false;
-                else if (res->isBoolean(ctx)) truthy = res->asBoolean(ctx);
-                else if (res->isInteger(ctx)) truthy = (res->asLong(ctx) != 0);
-                else if (res->isString(ctx)) truthy = (res->asString(ctx)->getSize(ctx) > 0);
-                else truthy = true;  // any other non-empty object is truthy
-                return truthy ? PROTO_TRUE : PROTO_FALSE;
-            }
-            // Reflected dispatch: if a.__dunder__(b) returned
-            // NotImplemented (or there was no usable method), try
-            // b.__rdunder__(a).  For ==/!= the reflection is the same
-            // dunder; for <,>,<=,>= the pairs are __lt__/__gt__,
-            // __le__/__ge__.  Matches CPython's PyObject_RichCompare.
-            if (res == notImpl || !res) {
-                const proto::ProtoString* refl = nullptr;
-                if (op == 0) refl = py_eq_s;          // a == b → b.__eq__(a)
-                else if (op == 1) refl = py_ne_s;     // a != b → b.__ne__(a)
-                else if (op == 2) refl = py_gt_s;     // a <  b → b.__gt__(a)
-                else if (op == 3) refl = py_ge_s;     // a <= b → b.__ge__(a)
-                else if (op == 4) refl = py_lt_s;     // a >  b → b.__lt__(a)
-                else if (op == 5) refl = py_le_s;     // a >= b → b.__le__(a)
-                if (refl && b) {
-                    const proto::ProtoObject* rmethod = b->getAttribute(ctx, refl);
-                    const proto::ProtoObject* res2 = nullptr;
-                    if (rmethod && rmethod->asMethod(ctx)) {
-                        const proto::ProtoList* args2 = ctx->newList()->appendLast(ctx, a);
-                        res2 = rmethod->asMethod(ctx)(ctx, b, nullptr, args2, getEmptySparseList());
-                    } else if (rmethod && rmethod != PROTO_NONE && !isActuallyAClass(ctx, b)) {
-                        const proto::ProtoString* codeS = getCodeString();
-                        if (codeS && rmethod->hasOwnAttribute(ctx, codeS) == PROTO_TRUE) {
-                            const proto::ProtoList* sp =
-                                ctx->newList()->appendLast(ctx, b)->appendLast(ctx, a);
-                            res2 = invokePythonCallable(ctx, rmethod, sp, nullptr);
-                        }
-                    }
-                    if (res2 == notImpl) sawNotImplemented = true;
-                    if (res2 && res2 != PROTO_NONE && res2 != notImpl) {
-                        if (richResult || res2 == PROTO_TRUE || res2 == PROTO_FALSE || res2->isBoolean(ctx)) {
-                            return res2;
-                        }
-                        bool truthy2 = false;
-                        if (res2->isBoolean(ctx)) truthy2 = res2->asBoolean(ctx);
-                        else if (res2->isInteger(ctx)) truthy2 = (res2->asLong(ctx) != 0);
-                        else if (res2->isString(ctx)) truthy2 = (res2->asString(ctx)->getSize(ctx) > 0);
-                        else truthy2 = true;
-                        return truthy2 ? PROTO_TRUE : PROTO_FALSE;
-                    }
-                }
+            else if (res && res != PROTO_NONE) return result(res);
+            if (!checkedReverse) {
+                const proto::ProtoObject* res2 = operandAnswer(b, reflected, a);
+                if (raised) return nullptr;
+                if (res2 == notImpl) sawNotImplemented = true;
+                else if (res2 && res2 != PROTO_NONE) return result(res2);
             }
         }
     }
