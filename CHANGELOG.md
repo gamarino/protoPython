@@ -136,6 +136,13 @@ onwards. Commit hashes are given for reference.
   `is not`, string literal escaping and SmallInt bitwise operators
   (`da79a3e7`); conditional expressions (`d6900b3d`); default arguments and
   closures (`c857fea2`); a GC safepoint on every loop iteration (`b159c48e`).
+  The `Makefile` written by `--emit-make` no longer contains the original
+  developer's paths: its include and library directories come from the build
+  tree or the installation that runs `protopyc`, can be overridden with
+  `PROTOPYC_INCLUDE_DIRS`, `PROTOPYC_LIBRARY_DIRS` and `PROTOPYC_CXX`, and are
+  also passed as an RPATH; `make` honours `CXX`. Modules built this way can be
+  imported by protopy: module-level names are now bound on the imported module
+  instead of being lost.
 
 ### Performance
 

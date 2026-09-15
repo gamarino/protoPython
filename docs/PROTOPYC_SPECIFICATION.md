@@ -28,18 +28,36 @@ assumed.
   corresponding relative position. The `Makefile` is written to `./out/`, and
   `--build-so` runs `make` there.
 
-The generated `Makefile` compiles with `g++ -O3 -fPIC -std=c++20`, links
-`-lprotoPython -lprotoCore` and names its target `module.so`. Its include and library
-directories (`INCLUDES`, `LDFLAGS`) are fixed paths from the original development
-layout rather than values derived from the build, so they must be edited before the
-`Makefile` is used on another machine.
+The generated `Makefile` compiles with `-O3 -fPIC -std=c++20`, links
+`-lprotoPython -lprotoCore` and names its target `module.so`. Its compiler, include
+directories (`INCLUDES`) and library directories (`LDFLAGS`) are written as follows:
+
+- **Build tree.** When `protopyc` runs from the directory it was built in, the
+  directories are those of that build: `include/` in the protoPython source tree,
+  protoCore's `headers/` directory, and the directories holding `libprotoPython` and
+  `libprotoCore`.
+- **Installation.** Any other `protopyc` uses the installation layout, resolved
+  relative to its own directory: `<prefix>/include` and `<prefix>/<libdir>`, plus
+  protoCore's include and library directories when protoPython was configured with
+  `PROTO_CORE_PREFIX`. A relocated prefix therefore keeps working. If protoCore's
+  headers or library are elsewhere, set the overrides below.
+- **Overrides.** `PROTOPYC_INCLUDE_DIRS` and `PROTOPYC_LIBRARY_DIRS` (`:`-separated)
+  replace the include and library directories, and `PROTOPYC_CXX` replaces the
+  compiler.
+- **Compiler.** `make` uses `CXX` from the environment or its command line when set;
+  otherwise the compiler protoPython was built with (or `PROTOPYC_CXX`).
+- **Run-time search path.** Every library directory is also passed as
+  `-Wl,-rpath,<dir>`, so `module.so` loads without `LD_LIBRARY_PATH`.
+
+`make` cannot handle whitespace in paths, so `protopyc` exits with status 1 when a
+directory or the compiler path contains whitespace.
 
 Parse errors are reported as `file:line:column: message`, and `protopyc` stops at the
 first one.
 
 Exit status: 0 on success; 1 when no arguments are given (the usage text is printed),
 the source path does not exist, an option is unknown, parsing or code generation fails,
-or `make` fails.
+a `Makefile` path contains whitespace, or `make` fails.
 
 ## 2. Loading generated modules
 
@@ -52,8 +70,9 @@ libraries. It is one of the module providers that `PythonEnvironment` registers 
 protoCore's provider registry (Unified Module Discovery, UMD). For a module name it
 replaces dots with `/`, looks for `<name>.so` in the search directories, opens the
 library with `dlopen(RTLD_NOW | RTLD_GLOBAL)`, looks up `proto_module_init`, creates
-the module object (`__name__`, `__file__`, `__loader__`) and calls the initializer with
-that module as its globals.
+a mutable module object (`__name__`, `__file__`, `__loader__`) and calls the initializer
+with that module as the current frame and globals, so the module-level names the
+initializer binds become attributes of the imported module.
 
 The `Makefile` always names its target `module.so`, so rename the library to
 `<module>.so` (for example `foo.so` for `import foo`) before placing it on the search

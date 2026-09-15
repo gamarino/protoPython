@@ -48,27 +48,43 @@ const proto::ProtoObject* CompiledModuleProvider::tryLoad(const std::string& log
 
     loadedHandles_[logicalPath] = handle;
 
-    // Create module object
-    const proto::ProtoObject* mod = ctx->newObject(false);
+    // Create the module object. It must be mutable: the generated code binds
+    // module-level names with PythonEnvironment::storeName, and setAttribute
+    // updates only a mutable object in place. On an immutable object every
+    // binding would produce a new object that the module returned below never
+    // sees.
+    const proto::ProtoObject* mod = ctx->newObject(true);
     if (ctx->space->objectPrototype) mod = mod->addParent(ctx, ctx->space->objectPrototype);
     
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, logicalPath.c_str())->asObject(ctx));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__file__"), PythonEnvironment::getInternedString(ctx, foundPath.c_str())->asObject(ctx));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__loader__"), PythonEnvironment::getInternedString(ctx, "CompiledModuleProvider")->asObject(ctx));
 
-    // To allow proto_module_init to work, we need to set the current globals to this module.
-    // In protoPython, resolve() depends on s_currentGlobals.
-    const proto::ProtoObject* oldGlobals = PythonEnvironment::getCurrentGlobals();
-    PythonEnvironment::setCurrentGlobals(mod);
-    
-    // Also, we might need a way to mark it as executed
+    // Mark the module executed before running it, as for Python modules.
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__executed__"), PROTO_TRUE);
 
-    PythonEnvironment::pushScopeGlobals(mod);
-    initFunc();
-    PythonEnvironment::popScopeGlobals();
-
-    PythonEnvironment::setCurrentGlobals(oldGlobals);
+    // The generated code resolves and binds names through the current frame
+    // and the current globals (PythonEnvironment::lookupName / storeName), so
+    // both must be this module while proto_module_init runs, not the importer's
+    // namespace. The previous values are restored on every exit path.
+    struct ModuleScope {
+        const proto::ProtoObject* oldGlobals = PythonEnvironment::getCurrentGlobals();
+        const proto::ProtoObject* oldFrame = PythonEnvironment::getCurrentFrame();
+        explicit ModuleScope(const proto::ProtoObject* module) {
+            PythonEnvironment::setCurrentGlobals(module);
+            PythonEnvironment::setCurrentFrame(module);
+            PythonEnvironment::pushScopeGlobals(module);
+        }
+        ~ModuleScope() {
+            PythonEnvironment::popScopeGlobals();
+            PythonEnvironment::setCurrentFrame(oldFrame);
+            PythonEnvironment::setCurrentGlobals(oldGlobals);
+        }
+    };
+    {
+        ModuleScope scope(mod);
+        initFunc();
+    }
 
     return mod;
 }

@@ -16,3 +16,14 @@ target_link_libraries(run_module PRIVATE
     protoCore
     dl
 )
+
+# The Makefile from `protopyc --emit-make` uses this build's include and library
+# directories (with an RPATH and PROTOPYC_* overrides) and builds a module that
+# protopy imports.
+add_test(NAME protopyc_makefile_paths
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/protopyc_makefile_paths.sh
+            $<TARGET_FILE:protopyc> $<TARGET_FILE:protopy>
+            ${PROJECT_SOURCE_DIR}/include $<TARGET_FILE_DIR:protoPython>)
+set_tests_properties(protopyc_makefile_paths PROPERTIES
+    TIMEOUT 120
+    LABELS "regression_gate")

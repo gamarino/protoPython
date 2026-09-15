@@ -21,6 +21,7 @@ if(DEFINED PROTO_CORE_PREFIX)
             IMPORTED_LOCATION "${PROTO_CORE_LIBRARY}"
             INTERFACE_INCLUDE_DIRECTORIES "${PROTO_CORE_INCLUDE_DIR}")
         message(STATUS "Using installed protoCore: ${PROTO_CORE_LIBRARY}")
+        set(PROTOPYTHON_PROTOCORE_INCLUDE_DIR "${PROTO_CORE_INCLUDE_DIR}")
     else()
         message(FATAL_ERROR "PROTO_CORE_PREFIX=${PROTO_CORE_PREFIX} set but protoCore not found. "
             "Need libprotoCore and include/protoCore.h under that prefix.")
@@ -29,6 +30,8 @@ else()
     if(NOT TARGET protoCore)
         add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../protoCore ${CMAKE_CURRENT_BINARY_DIR}/protoCore)
     endif()
+    get_filename_component(PROTOPYTHON_PROTOCORE_INCLUDE_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/../protoCore/headers" ABSOLUTE)
     # Build-tree RPATH so executables and libs find each other without LD_LIBRARY_PATH/DYLD_LIBRARY_PATH
     set(CMAKE_BUILD_RPATH "${CMAKE_BINARY_DIR}/src/library" "${CMAKE_BINARY_DIR}/protoCore")
     set(CMAKE_BUILD_RPATH_USE_LINK_PATH TRUE)
