@@ -3840,6 +3840,23 @@ static void updateContextLocation(proto::ProtoContext* ctx, proto::ProtoObject* 
     ctx->currentLineNumber = lineno;
 }
 
+// Raises UnboundLocalError for fast-local slot `idx`, naming the variable
+// from the running code object's co_varnames.
+static void raiseUnboundFastLocal(proto::ProtoContext* ctx, PythonEnvironment* env, int idx) {
+    std::string nStr = "?";
+    const proto::ProtoObject* codeObj = PythonEnvironment::getCurrentCodeObject();
+    const proto::ProtoObject* varnamesObj = codeObj ? codeObj->getAttribute(ctx, env->getCoVarnamesString()) : nullptr;
+    const proto::ProtoTuple* vt = varnamesObj ? varnamesObj->asTuple(ctx) : nullptr;
+    if (vt && idx >= 0 && static_cast<unsigned long>(idx) < vt->getSize(ctx)) {
+        const proto::ProtoObject* nameObj = vt->getAt(ctx, idx);
+        if (nameObj && proto::ProtoObject::isStringTagFast(nameObj)) {
+            nameObj->asString(ctx)->toUTF8String(ctx, nStr);
+        }
+    }
+    env->raiseUnboundLocalError(ctx,
+        "cannot access local variable '" + nStr + "' where it is not associated with a value");
+}
+
 const proto::ProtoObject* executeBytecodeRange(
     proto::ProtoContext* ctx,
     const proto::ProtoTuple* constants,
@@ -4521,21 +4538,7 @@ const proto::ProtoObject* executeBytecodeRange(
             // compiler at function entry for annotation-only locals.
             // Reading them raises UnboundLocalError per PEP 526.
             if (env && val && val == env->getUnboundSentinel()) {
-                std::string nStr = "?";
-                const proto::ProtoObject* codeObj = PythonEnvironment::getCurrentCodeObject();
-                if (codeObj) {
-                    const proto::ProtoObject* varnamesObj = codeObj->getAttribute(ctx, env->getCoVarnamesString());
-                    const proto::ProtoTuple* vt = varnamesObj ? varnamesObj->asTuple(ctx) : nullptr;
-                    if (vt && static_cast<unsigned long>(arg) < vt->getSize(ctx)) {
-                        const proto::ProtoObject* nameObj = vt->getAt(ctx, arg);
-                        if (nameObj && proto::ProtoObject::isStringTagFast(nameObj)) {
-                            nameObj->asString(ctx)->toUTF8String(ctx, nStr);
-                        }
-                    }
-                }
-                std::string msg = "cannot access local variable '" + nStr +
-                    "' where it is not associated with a value";
-                env->raiseUnboundLocalError(ctx, msg);
+                raiseUnboundFastLocal(ctx, env, arg);
                 i = next_i;
                 continue;
             }
@@ -9539,18 +9542,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 // raise UnboundLocalError.
                 const proto::ProtoObject* unbound = env ? env->getUnboundSentinel() : nullptr;
                 if (env && unbound && (slots[arg] == nullptr || slots[arg] == unbound)) {
-                    std::string nStr = "?";
-                    const proto::ProtoObject* codeObj = PythonEnvironment::getCurrentCodeObject();
-                    const proto::ProtoObject* varnamesObj = codeObj ? codeObj->getAttribute(ctx, env->getCoVarnamesString()) : nullptr;
-                    const proto::ProtoTuple* vt = varnamesObj ? varnamesObj->asTuple(ctx) : nullptr;
-                    if (vt && static_cast<unsigned long>(arg) < vt->getSize(ctx)) {
-                        const proto::ProtoObject* nameObj = vt->getAt(ctx, arg);
-                        if (nameObj && proto::ProtoObject::isStringTagFast(nameObj)) {
-                            nameObj->asString(ctx)->toUTF8String(ctx, nStr);
-                        }
-                    }
-                    env->raiseUnboundLocalError(ctx,
-                        "cannot access local variable '" + nStr + "' where it is not associated with a value");
+                    raiseUnboundFastLocal(ctx, env, arg);
                     i = next_i;
                     continue;
                 }
@@ -10016,6 +10008,13 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
                 }
                 // Slow path — emulate the four-op sequence via binaryAdd.
+                // The LOAD_FASTs it replaces reject an unbound local first.
+                const proto::ProtoObject* unbound = env ? env->getUnboundSentinel() : nullptr;
+                if (unbound && (a == unbound || b == unbound)) {
+                    raiseUnboundFastLocal(ctx, env, a == unbound ? idxA : idxB);
+                    i = next_i;
+                    continue;
+                }
                 const proto::ProtoObject* r = binaryAdd(ctx, a, b);
                 slots[idxA] = r;
             }
@@ -10045,6 +10044,11 @@ const proto::ProtoObject* executeBytecodeRange(
                         i = i + 8;
                         continue;
                     }
+                }
+                if (env && a && a == env->getUnboundSentinel()) {
+                    raiseUnboundFastLocal(ctx, env, idx);
+                    i = next_i;
+                    continue;
                 }
                 const proto::ProtoObject* r = binaryAdd(ctx, a, k);
                 slots[idx] = r;
@@ -10090,6 +10094,12 @@ const proto::ProtoObject* executeBytecodeRange(
             if (!tookFastPath) {
                 const proto::ProtoObject* a = (slots && idxA < (int)nSlots) ? slots[idxA] : PROTO_NONE;
                 const proto::ProtoObject* b = (slots && idxB < (int)nSlots) ? slots[idxB] : PROTO_NONE;
+                const proto::ProtoObject* unbound = env ? env->getUnboundSentinel() : nullptr;
+                if (unbound && (a == unbound || b == unbound)) {
+                    raiseUnboundFastLocal(ctx, env, a == unbound ? idxA : idxB);
+                    i = next_i;
+                    continue;
+                }
                 const proto::ProtoObject* r = compareOp(ctx, a, b, /*arg=*/2);
                 predicate = (r == PROTO_TRUE);
             }

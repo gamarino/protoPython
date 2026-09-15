@@ -62,6 +62,31 @@ check("loop variable of an empty loop", unbound_message(empty_loop), msg("i"))
 check("branch not taken", unbound_message(conditional, False), msg("v"))
 check("branch taken", conditional(True), 1)
 check("augmented assignment before binding", unbound_message(augmented), msg("n"))
+
+
+# The peephole specialiser fuses `a += b` (both locals) and `while a < b:`
+# into single opcodes that read the slots directly; they must raise the
+# same error as the LOAD_FAST sequence they replace.
+def augmented_by_local():
+    step = 1
+    total += step
+    total = 0
+
+
+def compare_before_binding(limit):
+    while i < limit:
+        i = limit
+
+
+def compare_against_unbound(start):
+    while start < bound:
+        start = bound
+    bound = 0
+
+
+check("augmented by a local before binding", unbound_message(augmented_by_local), msg("total"))
+check("loop guard on an unbound local", unbound_message(compare_before_binding, 3), msg("i"))
+check("loop guard against an unbound local", unbound_message(compare_against_unbound, 0), msg("bound"))
 check("UnboundLocalError is a NameError", issubclass(UnboundLocalError, NameError), True)
 
 
