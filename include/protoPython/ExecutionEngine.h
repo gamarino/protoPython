@@ -370,6 +370,12 @@ const proto::ProtoObject* invokePythonCallable(
     const proto::ProtoList* args,
     const proto::ProtoSparseList* kwargs = nullptr);
 
+/** `item in container` with the semantics of the `in` operator (__contains__,
+ *  then iteration or the old sequence protocol; TypeError for a container
+ *  that supports neither). True/False, or nullptr with an exception pending. */
+const proto::ProtoObject* containsOperator(proto::ProtoContext* ctx,
+    const proto::ProtoObject* container, const proto::ProtoObject* item);
+
 const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,

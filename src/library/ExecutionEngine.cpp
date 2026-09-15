@@ -2387,6 +2387,16 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
     return result ? PROTO_TRUE : PROTO_FALSE;
 }
 
+} // namespace
+
+// Declared in ExecutionEngine.h, so defined outside the anonymous namespace.
+const proto::ProtoObject* containsOperator(proto::ProtoContext* ctx,
+    const proto::ProtoObject* container, const proto::ProtoObject* item) {
+    return compareOp(ctx, item, container, 6);
+}
+
+namespace {
+
 static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     if (!obj || obj == PROTO_NONE) return false;
     if (obj == PROTO_FALSE) return false;

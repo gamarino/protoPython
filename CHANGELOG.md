@@ -320,6 +320,8 @@ onwards. Commit hashes are given for reference.
   instance they raised `RuntimeError: internal C++ exception`. They now
   compare as the operators do, including rich results and `TypeError` for
   unorderable operands.
+- **operator.contains:** the function (and its alias `operator.__contains__`)
+  was missing. It evaluates `b in a` with the `in` operator's semantics.
 
 ### Performance
 

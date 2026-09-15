@@ -1,5 +1,6 @@
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/OperatorModule.h>
+#include <protoPython/ExecutionEngine.h>
 #include <cmath>
 #include <string>
 
@@ -111,6 +112,20 @@ static const proto::ProtoObject* py_ne(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     return richCompare(ctx, posArgs, 1, "ne");
+}
+
+// operator.contains(a, b): `b in a`.
+static const proto::ProtoObject* py_contains(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (!posArgs || posArgs->getSize(ctx) != 2) {
+        if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx)) {
+            env->raiseTypeError(ctx, "contains expected 2 arguments, got "
+                + std::to_string(posArgs ? posArgs->getSize(ctx) : 0));
+        }
+        return nullptr;
+    }
+    return containsOperator(ctx, posArgs->getAt(ctx, 0), posArgs->getAt(ctx, 1));
 }
 
 static const proto::ProtoObject* py_pow(
@@ -439,6 +454,11 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_ge));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ne"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_ne));
+    {
+        const proto::ProtoObject* containsFn = ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_contains);
+        mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "contains"), containsFn);
+        mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__contains__"), containsFn);
+    }
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "truediv"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_truediv));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "pow"),
