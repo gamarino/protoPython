@@ -541,6 +541,34 @@ bool CppGenerator::generateBinOp(BinOpNode* n) {
         return true;
     }
 
+    // Short-circuit boolean operators.  The parser puts `and` / `or`
+    // into a BinOpNode (rather than a separate BoolOpNode), so the
+    // switch above leaves arithOp / cmpOp null for them.  Without this
+    // branch the generator fell through to env->binaryOp with a
+    // synthesised `Plus` token (`/* Unsupported op */`), so
+    // `x and y` was lowered to `x + y` — `True and 0` evaluated as
+    // `True + 0 = 1` → True.  multithread_cpu's spin-wait
+    // `_done[0] != 0 and _done[1] != 0` therefore broke on a partial
+    // result, which masqueraded as a setItem race; the real fix is
+    // here, not in the runtime.
+    if (n->op == TokenType::And || n->op == TokenType::Or) {
+        const bool isAnd = (n->op == TokenType::And);
+        *out_ << "([&]() -> const proto::ProtoObject* {\n";
+        *out_ << "        const proto::ProtoObject* __a = ";
+        if (!generateNode(n->left.get())) return false;
+        *out_ << ";\n";
+        // `and`: short-circuit on falsy left → return left.
+        // `or` : short-circuit on truthy left → return left.
+        // Otherwise evaluate and return the right-hand side.
+        *out_ << "        if (" << (isAnd ? "!" : "")
+              << "env->isTrue(__a)) return __a;\n";
+        *out_ << "        return ";
+        if (!generateNode(n->right.get())) return false;
+        *out_ << ";\n";
+        *out_ << "    })()";
+        return true;
+    }
+
     auto emitFallback = [&]() -> bool {
         *out_ << "env->binaryOp(__a, ";
         switch (n->op) {
