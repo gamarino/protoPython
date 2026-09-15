@@ -268,6 +268,27 @@ set_tests_properties(protopy_main_not_auto_invoked PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# SystemExit.code follows CPython (None / args[0] / args), including sys.exit().
+add_test(NAME protopy_system_exit_code
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/system_exit_code.py)
+set_tests_properties(protopy_system_exit_code PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
+# An uncaught SystemExit sets the process exit status: an int is the status,
+# None is 0, anything else is printed to stderr and exits with 1.
+foreach(exit_case IN ITEMS raise_int:3 raise_from_main:5 sys_exit_int:4 raise_str:1 sys_exit_str:1 raise_bare:0)
+    string(REPLACE ":" ";" exit_case_parts ${exit_case})
+    list(GET exit_case_parts 0 exit_case_name)
+    list(GET exit_case_parts 1 exit_case_status)
+    add_test(NAME protopy_system_exit_${exit_case_name}
+        COMMAND ${CMAKE_SOURCE_DIR}/test/regression/assert_exit.sh ${exit_case_status}
+                $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/system_exit/${exit_case_name}.py)
+    set_tests_properties(protopy_system_exit_${exit_case_name} PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        TIMEOUT 120
+        LABELS "regression_gate")
+endforeach()
 # Class statements accept *bases and **keywords.
 add_test(NAME protopy_class_star_bases
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/class_star_bases.py)

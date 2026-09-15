@@ -129,6 +129,34 @@ static const proto::ProtoObject* syntaxerror_init(
     return PROTO_NONE;
 }
 
+// SystemExit.__init__: CPython derives `code` from the arguments — None
+// without arguments, args[0] with one, and the args tuple otherwise.  The
+// top-level handler reads it to choose the process exit status.
+static const proto::ProtoObject* systemexit_init(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    exception_init(context, self, parentLink, positionalParameters, keywordParameters);
+    const proto::ProtoObject* instance = self;
+    if ((!instance || instance == PROTO_NONE) && positionalParameters && positionalParameters->getSize(context) > 0) {
+        instance = positionalParameters->getAt(context, 0);
+    }
+    if (!instance || instance == PROTO_NONE) return PROTO_NONE;
+    const proto::ProtoObject* args = instance->getAttribute(context,
+        PythonEnvironment::getInternedString(context, "args"));
+    const proto::ProtoObject* code = PROTO_NONE;
+    if (args && args->isTuple(context)) {
+        const unsigned long argc = args->asTuple(context)->getSize(context);
+        if (argc == 1) code = args->asTuple(context)->getAt(context, 0);
+        else if (argc > 1) code = args;
+    }
+    const_cast<proto::ProtoObject*>(instance)->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "code"), code);
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* exception_str(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -462,6 +490,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoObject* moduleNotFoundErrorType = make_exception_type(ctx, objectProto, typeProto, "ModuleNotFoundError", importErrorType);
     const proto::ProtoObject* keyboardInterruptType = make_exception_type(ctx, objectProto, typeProto, "KeyboardInterrupt", baseExceptionType);
     const proto::ProtoObject* systemExitType = make_exception_type(ctx, objectProto, typeProto, "SystemExit", baseExceptionType);
+    systemExitType = const_cast<proto::ProtoObject*>(systemExitType)->setAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__init__"),
+        ctx->fromMethod(nullptr, systemexit_init));
     const proto::ProtoObject* recursionErrorType = make_exception_type(ctx, objectProto, typeProto, "RecursionError", exceptionType);
     const proto::ProtoObject* zeroDivisionErrorType = make_exception_type(ctx, objectProto, typeProto, "ZeroDivisionError", arithmeticErrorType);
     const proto::ProtoObject* indexErrorType = make_exception_type(ctx, objectProto, typeProto, "IndexError", lookupErrorType);

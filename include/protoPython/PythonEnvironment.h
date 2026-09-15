@@ -918,7 +918,8 @@ public:
      * stop further compilation), false otherwise.
      */
     bool emitSyntaxWarning(proto::ProtoContext* context, const std::string& msg, const std::string& filename, int lineno);
-    void raiseSystemExit(proto::ProtoContext* context, int code);
+    /** Raises SystemExit(code); a null \c code raises SystemExit() with no arguments. */
+    void raiseSystemExit(proto::ProtoContext* context, const proto::ProtoObject* code);
     void raiseEOFError(proto::ProtoContext* ctx);
     void raiseRecursionError(proto::ProtoContext* context);
     void raiseAssertionError(proto::ProtoContext* ctx, const proto::ProtoObject* msg = nullptr);

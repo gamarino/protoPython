@@ -16817,14 +16817,14 @@ void PythonEnvironment::raiseEOFError(proto::ProtoContext* ctx) {
     }
 }
 
-void PythonEnvironment::raiseSystemExit(proto::ProtoContext* ctx, int code) {
+void PythonEnvironment::raiseSystemExit(proto::ProtoContext* ctx, const proto::ProtoObject* code) {
     if (!systemExitType) return;
-    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, ctx->fromInteger(code));
+    // SystemExit.__init__ derives `code` from the arguments; nullptr means
+    // "no argument", as in sys.exit().
+    const proto::ProtoList* args = ctx->newList();
+    if (code) args = args->appendLast(ctx, code);
     const proto::ProtoObject* exc = invokePythonCallable(ctx, systemExitType, args, nullptr);
-    if (exc) {
-        exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "code"), ctx->fromInteger(code));
-        setPendingException(exc);
-    }
+    if (exc) setPendingException(exc);
 }
 
 void PythonEnvironment::raiseRecursionError(proto::ProtoContext* ctx) {
@@ -23195,8 +23195,24 @@ void PythonEnvironment::handleException(const proto::ProtoObject* exc, const pro
     }
 
     if (typeName == "SystemExit") {
+        // CPython: a None code exits with 0, an integer is the exit status,
+        // and any other code is printed to stderr and exits with 1.
         const proto::ProtoObject* codeObj = exc->getAttribute(context, PythonEnvironment::getInternedString(context, "code"));
-        int code = (codeObj && codeObj->isInteger(context)) ? static_cast<int>(codeObj->asLong(context)) : 0;
+        int code = 0;
+        if (codeObj == PROTO_TRUE || codeObj == PROTO_FALSE) {
+            code = codeObj == PROTO_TRUE ? 1 : 0;
+        } else if (codeObj && codeObj->isInteger(context)) {
+            code = static_cast<int>(codeObj->asLong(context));
+        } else if (codeObj && codeObj != PROTO_NONE) {
+            std::string message;
+            const proto::ProtoObject* strObj = codeObj->isString(context)
+                ? codeObj
+                : (getStrPrototype() ? callObject(getStrPrototype(), {codeObj}) : nullptr);
+            if (strObj && strObj->isString(context)) strObj->asString(context)->toUTF8String(context, message);
+            else message = reprObject(context, codeObj);
+            std::cerr << message << std::endl;
+            code = 1;
+        }
         setExitRequested(code);
         return;
     }

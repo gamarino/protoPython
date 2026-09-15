@@ -20,11 +20,11 @@ static const proto::ProtoObject* sys_exit(
     const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__env_ptr__"));
     if (envPtr && envPtr->asExternalPointer(context)) {
         auto* env = static_cast<PythonEnvironment*>(envPtr->asExternalPointer(context)->getPointer(context));
-        int code = 0;
-        if (positionalParameters->getSize(context) > 0) {
-            const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
-            if (arg->isInteger(context)) code = static_cast<int>(arg->asLong(context));
-        }
+        // sys.exit(arg) raises SystemExit(arg) whatever the argument's type;
+        // the top-level handler turns its code into the exit status.
+        const proto::ProtoObject* code = positionalParameters->getSize(context) > 0
+            ? positionalParameters->getAt(context, 0)
+            : nullptr;
         if (env) env->raiseSystemExit(context, code);
     }
     return PROTO_NONE;
