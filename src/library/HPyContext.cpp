@@ -11,21 +11,37 @@
 
 namespace protoPython {
 
+HPyContext::HPyContext(proto::ProtoContext* c)
+    : ctx(c), space(c ? c->space : nullptr) {
+    if (space) roots = space->createRootSet("hpy-handles");
+    /** Step 1301: reserve handles to avoid early reallocations. */
+    handles.reserve(1024);
+}
+
+HPyContext::~HPyContext() {
+    // Destroying the root set releases every handle still open.
+    if (space && roots) space->destroyRootSet(roots);
+}
+
 HPy HPyContext::fromProtoObject(const proto::ProtoObject* obj) {
-    if (!obj || !ctx) return 0;
+    if (!obj || !ctx || !roots) return 0;
+    const proto::ProtoRootSet::Handle pin = roots->add(obj);
+    if (pin == proto::ProtoRootSet::kNullHandle) return 0;
     if (!freeList.empty()) {
         size_t idx = freeList.back();
         freeList.pop_back();
-        handles[idx] = obj;
+        handles[idx] = pin;
         return static_cast<HPy>(idx + 1);
     }
-    handles.push_back(obj);
+    handles.push_back(pin);
     return static_cast<HPy>(handles.size());
 }
 
 const proto::ProtoObject* HPyContext::asProtoObject(HPy h) const {
-    if (h == 0 || h > handles.size()) return nullptr;
-    return handles[h - 1];
+    if (h == 0 || h > handles.size() || !roots) return nullptr;
+    const proto::ProtoRootSet::Handle pin = handles[h - 1];
+    if (pin == proto::ProtoRootSet::kNullHandle) return nullptr;
+    return roots->resolve(pin);
 }
 
 HPy HPyContext::dup(HPy h) {
@@ -35,8 +51,11 @@ HPy HPyContext::dup(HPy h) {
 }
 
 void HPyContext::close(HPy h) {
-    if (h == 0 || h > handles.size()) return;
-    handles[h - 1] = nullptr;
+    if (h == 0 || h > handles.size() || !roots) return;
+    proto::ProtoRootSet::Handle& pin = handles[h - 1];
+    if (pin == proto::ProtoRootSet::kNullHandle) return;  // already closed
+    roots->remove(pin);
+    pin = proto::ProtoRootSet::kNullHandle;
     freeList.push_back(h - 1);
 }
 

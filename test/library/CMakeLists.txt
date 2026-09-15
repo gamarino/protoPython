@@ -31,6 +31,7 @@ add_test(NAME test_basic_block_analysis COMMAND test_basic_block_analysis)
 add_executable(test_hpy_context TestHPyContext.cpp)
 target_link_libraries(test_hpy_context PRIVATE protoPython protoCore gtest_main)
 add_test(NAME test_hpy_context COMMAND test_hpy_context)
+set_tests_properties(test_hpy_context PROPERTIES TIMEOUT 60 LABELS "regression_gate")
 
 # Compiler unit tests (parse → compile → execute; covers all major language features)
 add_executable(test_compiler TestCompiler.cpp)

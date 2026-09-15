@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <map>
 #include <string>
+#include <vector>
 
 namespace protoPython {
 
@@ -18,32 +19,52 @@ namespace protoPython {
 typedef unsigned long HPy;
 static const HPy HPy_NULL = 0;
 
-/** Context: handle table + ProtoContext for attribute/call. */
+/**
+ * Context: handle table + ProtoContext for attribute/call.
+ *
+ * Handle lifetime and garbage collection:
+ * - Every open handle pins its object in a proto::ProtoRootSet owned by this
+ *   context (created with ProtoSpace::createRootSet("hpy-handles")), so the
+ *   collector keeps the object alive from handle creation until HPy_Close or
+ *   until the context is destroyed. The destructor destroys the root set, which
+ *   releases the handles still open.
+ * - The loader creates one context per HPyInit_<name> call and the method
+ *   wrapper one per HPy method call. A native function must resolve the handle
+ *   it returns to a ProtoObject* before its context is destroyed; the caller
+ *   then keeps the value reachable (operand stack, module attribute).
+ * - Objects that must outlive the call (for example, handed to a thread or a
+ *   callback) must be pinned by the extension in its own ProtoRootSet;
+ *   HPyField and HPyGlobal are not implemented.
+ * - A context is used by one thread at a time. Handle numbers are recycled
+ *   after HPy_Close; closing an already closed handle has no effect.
+ */
 struct HPyContext {
     proto::ProtoContext* ctx{nullptr};
-    std::vector<const proto::ProtoObject*> handles;
+    /** Space that owns `roots`; captured at construction. */
+    proto::ProtoSpace* space{nullptr};
+    /** Pins the objects of all open handles; nullptr only without a context. */
+    proto::ProtoRootSet* roots{nullptr};
+    /** Slot i holds the root-set handle of HPy i + 1; kNullHandle marks a free slot. */
+    std::vector<proto::ProtoRootSet::Handle> handles;
     std::vector<size_t> freeList; // Step 1211: recycling for scalability
+    /** Interned attribute names; interned strings are process-perpetual, so they need no pin. */
     std::map<std::string, const proto::ProtoString*> stringCache; // Step 1289: interning
 
-    explicit HPyContext(proto::ProtoContext* c) : ctx(c) {
-        /** 
-         * Step 1301: Optimization - reserve handles to avoid early reallocations. 
-         * protoCore objects are garbage collected; HPy handles act as roots 
-         * while they are in the 'handles' vector (Step 1290).
-         */
-        handles.reserve(1024);
-    }
+    explicit HPyContext(proto::ProtoContext* c);
+    ~HPyContext();
+    HPyContext(const HPyContext&) = delete;
+    HPyContext& operator=(const HPyContext&) = delete;
 
-    /** Allocate a new handle for obj; returns 0 on failure. */
+    /** Allocate a new handle for obj and pin obj; returns 0 on failure. */
     HPy fromProtoObject(const proto::ProtoObject* obj);
 
-    /** Resolve handle to ProtoObject*; returns nullptr if invalid. */
+    /** Resolve handle to ProtoObject*; returns nullptr if invalid or closed. */
     const proto::ProtoObject* asProtoObject(HPy h) const;
 
-    /** Duplicate handle (new slot pointing to same object). */
+    /** Duplicate handle (new slot and new pin for the same object). */
     HPy dup(HPy h);
 
-    /** Release handle slot. */
+    /** Release the handle's pin and recycle its slot. */
     void close(HPy h);
 };
 

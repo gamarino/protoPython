@@ -131,18 +131,22 @@ instead.
 
 ## HPy extensions
 
-The HPy bridge keeps its handles in `HPyContext::handles`, a
-`std::vector<const proto::ProtoObject*>` (see
-`include/protoPython/HPyContext.h`). Although the comment in that header
-describes handles as roots, the vector is not registered with a `ProtoRootSet`,
-so do not rely on a handle to keep an object alive across a collection.
+Every `HPyContext` (see `include/protoPython/HPyContext.h`) owns a
+`ProtoRootSet` named `hpy-handles`, created in its constructor. Each open handle
+pins its object in that root set, so a handle keeps its object alive across
+collections until `HPy_Close` releases the pin or the context is destroyed; the
+destructor destroys the root set, which releases the handles still open. The
+loader creates one context per `HPyInit_<name>` call and the method wrapper one
+per HPy method call, so handles do not outlive those calls. A native function
+resolves the handle it returns to a `ProtoObject*` before its context goes away;
+from then on the caller keeps the value reachable.
 
-During a synchronous call, objects passed as arguments stay reachable through
-the argument list, which `invokeCallable` pins for the duration of every native
-call (see the next section). The rules above apply as soon as an extension lets
-an object escape that call: for example, by keeping a handle in a thread it
-spawns or registering it with an event loop that is not driven by protoCore. In
-that case, pin the object in a `ProtoRootSet`.
+Objects passed as arguments also stay reachable through the argument list, which
+`invokeCallable` pins for the duration of every native call (see the next
+section). The rules above apply as soon as an extension lets an object escape
+the call: for example, by keeping it for a thread it spawns or registering it
+with an event loop that is not driven by protoCore. In that case, pin the object
+in a `ProtoRootSet` of the extension's own.
 
 ## Verification for asynchronous captures
 

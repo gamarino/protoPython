@@ -155,6 +155,11 @@ onwards. Commit hashes are given for reference.
   four-argument `executeModule`). It is rewritten against the real
   `PythonEnvironment` API, built by default (`PROTOPYTHON_BUILD_EXAMPLES`) and
   run by CTest.
+- **HPy handles are GC roots:** `HPyContext` kept handles in a plain
+  `std::vector` that the collector does not scan, although its header
+  described them as roots. Each context now pins its handles in its own
+  `ProtoRootSet`; `HPy_Close` releases the pin and destroying the context
+  releases the rest.
 
 ### Performance
 

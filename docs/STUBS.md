@@ -302,7 +302,7 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 
 ## HPy and packaging (v55, Next 100 Steps v63–v67)
 
-- **HPy Phase 1 (v63 done)**: [HPyContext.h](../include/protoPython/HPyContext.h), [HPyContext.cpp](../src/library/HPyContext.cpp) — handle table (ref-counted), HPyContext, core ABI: HPy_FromPyObject, HPy_AsPyObject, HPy_Dup, HPy_Close, HPy_GetAttr, HPy_SetAttr, HPy_Call, HPy_Type. Design in [HPY_INTEGRATION_PLAN.md](HPY_INTEGRATION_PLAN.md).
+- **HPy Phase 1 (v63 done)**: [HPyContext.h](../include/protoPython/HPyContext.h), [HPyContext.cpp](../src/library/HPyContext.cpp) — handle table pinned in a `ProtoRootSet`, HPyContext, core ABI: HPy_FromPyObject, HPy_AsPyObject, HPy_Dup, HPy_Close, HPy_GetAttr, HPy_SetAttr, HPy_Call, HPy_Type. Design in [HPY_INTEGRATION_PLAN.md](HPY_INTEGRATION_PLAN.md).
 - **HPy implementation**: a 100-step plan (steps 1185–1284, 5 blocks of 20; not part of the repository). v64–v67: module load, universal ABI, API coverage, ecosystem.
 - **Packaging**: Install layout and wheel design in [archive/PACKAGING_ROADMAP.md](archive/PACKAGING_ROADMAP.md).
 
