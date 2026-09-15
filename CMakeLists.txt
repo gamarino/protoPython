@@ -43,6 +43,11 @@ endif()
 
 include_directories(include)
 
+# Version header generated from project(); included (not installed) by the
+# library and protopy for the REPL banner, help(), --help and sys.version.
+set(PROTOPYTHON_GENERATED_INCLUDE_DIR "${PROJECT_BINARY_DIR}/generated")
+configure_file(src/Version.h.in "${PROTOPYTHON_GENERATED_INCLUDE_DIR}/protoPython/Version.h" @ONLY)
+
 # Subdirectories
 add_subdirectory(src/library)
 
@@ -94,6 +99,15 @@ add_test(NAME protopy_struct_sequences
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/struct_sequences.py)
 set_tests_properties(protopy_struct_sequences PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
+# REPL statements run in __main__ (names persist between lines); the banner,
+# help(), --help and sys.version report the project version.
+add_test(NAME protopy_repl_names_persist
+    COMMAND ${CMAKE_SOURCE_DIR}/test/regression/repl_names_persist.sh
+            $<TARGET_FILE:protopy> ${PROJECT_VERSION}
+            ${CMAKE_BINARY_DIR}/test/regression/repl_home)
+set_tests_properties(protopy_repl_names_persist PROPERTIES
     TIMEOUT 60
     LABELS "regression_gate")
 # The const_cast review report runs and exits 0 (--strict would fail on any match).

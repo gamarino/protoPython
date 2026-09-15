@@ -1,5 +1,6 @@
 #include <protoPython/BuiltinsModule.h>
 #include <protoPython/DiagUtils.h>
+#include <protoPython/Version.h>
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/ExecutionEngine.h>
 #include <protoPython/Parser.h>
@@ -3595,7 +3596,7 @@ static const proto::ProtoObject* py_help(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
 
     if (positionalParameters->getSize(context) == 0) {
-        std::cout << "Welcome to protoPython 0.1.0 help!\n"
+        std::cout << "Welcome to protoPython " PROTOPYTHON_VERSION " help!\n"
                   << "If this is your first time using Python, you should definitely check out\n"
                   << "the tutorial on the Internet at https://docs.python.org/3/tutorial/.\n\n"
                   << "Enter the name of any module, keyword, or topic to get help on writing\n"

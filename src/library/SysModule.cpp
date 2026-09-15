@@ -2,6 +2,7 @@
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/ExecutionEngine.h>
 #include <protoPython/StructSequence.h>
+#include <protoPython/Version.h>
 #include <atomic>
 #include <iostream>
 #include <memory>
@@ -769,9 +770,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "base_prefix"), PythonEnvironment::getInternedString(ctx, "")->asObject(ctx));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "base_exec_prefix"), PythonEnvironment::getInternedString(ctx, "")->asObject(ctx));
     
-    // sys.version
-    // sys.version
-    sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "version"), PythonEnvironment::getInternedString(ctx, "3.14.0 (protoPython 1.0.0, Apr 2026)")->asObject(ctx));
+    // sys.version: the Python language version, then the protoPython version.
+    sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "version"), PythonEnvironment::getInternedString(ctx, "3.14.0 (protoPython " PROTOPYTHON_VERSION ", Apr 2026)")->asObject(ctx));
 
     // sys.base_prefix, sys.prefix, sys.exec_prefix, sys.base_exec_prefix
     if (env) {

@@ -1,5 +1,6 @@
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/DiagUtils.h>
+#include <protoPython/Version.h>
 #include <protoPython/Tokenizer.h>
 #include <protoPython/SignalModule.h>
 #include <protoPython/PythonModuleProvider.h>
@@ -22534,34 +22535,48 @@ const proto::ProtoObject* PythonEnvironment::getGlobals() const {
     return const_cast<PythonEnvironment*>(this)->resolve("__main__", ctx);
 }
 
-int PythonEnvironment::executeString(const std::string& source, const std::string& name) {
-    proto::ProtoContext* context = s_threadContext ? s_threadContext : rootContext_;
-    ContextScope scope(this, context);
-    const proto::ProtoObject* mod = resolve("__main__", context);
+// Returns the __main__ module that executeString and runRepl run code in.
+// When sys.modules has no __main__ yet, it is created as a mutable child of
+// builtins, named __main__, with __file__ = fileName, and registered in
+// sys.modules. It must be mutable: STORE_NAME and IMPORT_NAME update a mutable
+// namespace in place, whereas setAttribute on an immutable object returns a
+// new object and the binding would be lost after each statement.
+static const proto::ProtoObject* ensureMainModule(PythonEnvironment* env,
+                                                  proto::ProtoContext* context,
+                                                  const std::string& fileName) {
+    const proto::ProtoObject* builtinsModule = env->getBuiltinsModule();
+    const proto::ProtoObject* sysModule = env->getSysModule();
+    const proto::ProtoObject* mod = env->resolve("__main__", context);
     if (mod == nullptr || mod == PROTO_NONE) {
         // Create a dummy __main__ if it doesn't exist
         const proto::ProtoString* mainName = PythonEnvironment::getInternedString(context, "__main__");
         mod = builtinsModule->newChild(context, true);
         mod = mod->setAttribute(context, PythonEnvironment::getInternedString(context, "__name__"), mainName->asObject(context));
-        mod = mod->setAttribute(context, PythonEnvironment::getInternedString(context, "__file__"), PythonEnvironment::getInternedString(context, name.c_str())->asObject(context));
+        mod = mod->setAttribute(context, PythonEnvironment::getInternedString(context, "__file__"), PythonEnvironment::getInternedString(context, fileName.c_str())->asObject(context));
 
         // Add to sys.modules (attribute lookup + dict __data__ for Python-side access)
         const proto::ProtoObject* modules = sysModule->getAttribute(context, PythonEnvironment::getInternedString(context, "modules"));
         if (modules) {
             const_cast<proto::ProtoObject*>(modules)->setAttribute(context, mainName, mod);
-            const proto::ProtoObject* dataAttr = modules->getAttribute(context, getDataString());
+            const proto::ProtoObject* dataAttr = modules->getAttribute(context, env->getDataString());
             if (dataAttr && dataAttr != PROTO_NONE) {
                 const proto::ProtoSparseList* dictData = dataAttr->asSparseList(context);
                 if (dictData) {
                     dictData = dictData->setAt(context, mainName->getHash(context), mod);
-                    const_cast<proto::ProtoObject*>(modules)->setAttribute(context, getDataString(), dictData->asObject(context));
+                    const_cast<proto::ProtoObject*>(modules)->setAttribute(context, env->getDataString(), dictData->asObject(context));
                 }
             }
         }
     }
 
     // Always ensure __builtins__ is available in __main__ globals
-    mod = mod->setAttribute(context, PythonEnvironment::getInternedString(context, "__builtins__"), builtinsModule);
+    return mod->setAttribute(context, PythonEnvironment::getInternedString(context, "__builtins__"), builtinsModule);
+}
+
+int PythonEnvironment::executeString(const std::string& source, const std::string& name) {
+    proto::ProtoContext* context = s_threadContext ? s_threadContext : rootContext_;
+    ContextScope scope(this, context);
+    const proto::ProtoObject* mod = ensureMainModule(this, context, name);
 
     int result = 0;
     if (builtinsModule) {
@@ -23368,8 +23383,9 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
         sysModule->setAttribute(context, PythonEnvironment::getInternedString(context, "ps2"), PythonEnvironment::getInternedString(context, secondaryPrompt_.c_str())->asObject(context));
     }
     
-    proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(context->newObject(false));
-    out << "protoPython 0.1.0 (" << __DATE__ << ") [HPy Integrated]\n"
+    // Statements run in __main__, like `protopy -c`; see ensureMainModule.
+    proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(ensureMainModule(this, context, "<stdin>"));
+    out << "protoPython " PROTOPYTHON_VERSION " (Python 3.14 compatible)\n"
         << "Type \"help\", \"copyright\", \"credits\" or \"license\" for more information.\n";
         
     // Step 1429: History persistence. HOME cached as function-local static so

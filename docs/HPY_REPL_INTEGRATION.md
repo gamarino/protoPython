@@ -2,8 +2,7 @@
 
 > **Status (2026-09-15).** There is no HPy-specific integration in the `protopy` REPL.
 > HPy-style extension modules are imported in the REPL like in scripts (see
-> [HPY_USER_GUIDE.md](HPY_USER_GUIDE.md)). The REPL banner still ends with "[HPy Integrated]"; that text
-> does not reflect this status.
+> [HPY_USER_GUIDE.md](HPY_USER_GUIDE.md)).
 
 Earlier versions of this page described a single `HPyContext` shared by the whole
 environment, automatic closing of handles created during each REPL command and a

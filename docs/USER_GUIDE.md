@@ -88,10 +88,9 @@ directories; see [INSTALLATION.md](INSTALLATION.md#standard-library-location).
 ## Interactive REPL
 
 `protopy -i` reads statements from standard input, executes them and prints the value
-of expression statements.
-
-Known limitation: with input piped to `protopy -i`, a name bound on one line is not
-visible on later lines. For example, `x = 5` followed by `print(x)` raises `NameError`.
+of expression statements. Statements run in the `__main__` module, the same namespace
+`protopy -c` uses, so names bound by assignments, `def` and `import` stay visible on
+later lines, from a terminal or from piped input.
 
 ## Language compatibility
 

@@ -5,6 +5,7 @@
 
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/DiagUtils.h>
+#include <protoPython/Version.h>
 #include <protoCore.h>
 #include <algorithm>
 #include <filesystem>
@@ -139,7 +140,7 @@ static std::string resolveStdLibPath(const std::string& cliPath, const std::stri
 }
 
 static void printUsage(const char* prog) {
-    std::cout << "protopy 1.0.0 - protoPython runtime\n"
+    std::cout << "protopy " PROTOPYTHON_VERSION " - protoPython runtime\n"
                  "Usage:\n"
                  "  " << prog << " [-m <name> | --module <name>] [-p <path> | --path <path>]...\n"
                  "  " << prog << " [-c <cmd>] [-p <path> | --path <path>]...\n"

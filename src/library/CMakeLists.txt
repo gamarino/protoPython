@@ -58,6 +58,8 @@ target_include_directories(protoPython PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
+# Generated protoPython/Version.h (see the top-level CMakeLists.txt).
+target_include_directories(protoPython PRIVATE ${PROTOPYTHON_GENERATED_INCLUDE_DIR})
 
 # Target the parent directory for protoCore headers
 # (The root CMakeLists.txt already handles basic include dirs, but let's be explicit if needed)

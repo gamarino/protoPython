@@ -185,6 +185,16 @@ onwards. Commit hashes are given for reference.
   `st_blocks` and `st_rdev`. `os.fstat` returns the same object instead of a
   plain tuple. Unlike CPython, `type()` of these objects is `tuple` and their
   repr is a plain tuple repr.
+- **REPL namespace and version strings:** `protopy -i` ran each statement in a
+  new immutable object, so names bound by assignments, `def` and `import` were
+  lost after the statement (from a terminal as well as from piped input) and
+  `__name__` resolved to `builtins`. Statements now run in `__main__`, the same
+  module `protopy -c` uses, and `PROTOPYSTARTUP` shares it. The REPL banner and
+  `help()` reported version 0.1.0 and the banner ended with "[HPy Integrated]";
+  the banner, `help()`, `protopy --help` and `sys.version` now take the version
+  from a header generated from `project()` in `CMakeLists.txt`. The banner reads
+  `protoPython 1.0.0 (Python 3.14 compatible)` and no longer includes the build
+  date.
 
 ### Performance
 

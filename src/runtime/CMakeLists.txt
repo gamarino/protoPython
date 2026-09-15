@@ -23,4 +23,5 @@ target_compile_definitions(protopy PRIVATE
 target_include_directories(protopy PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    ${PROTOPYTHON_GENERATED_INCLUDE_DIR}
 )
