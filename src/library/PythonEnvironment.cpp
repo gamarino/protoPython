@@ -7906,7 +7906,6 @@ static const proto::ProtoObject* new_set_like(proto::ProtoContext* context, cons
         fs = const_cast<proto::ProtoObject*>(fs->addParent(context, frozen));
         fs = const_cast<proto::ProtoObject*>(fs->setAttribute(context, env->getClassString(), frozen));
         fs = const_cast<proto::ProtoObject*>(fs->setAttribute(context, env->getDataString(), data->asObject(context)));
-        fs = const_cast<proto::ProtoObject*>(fs->setAttribute(context, PythonEnvironment::getInternedString(context, "__is_python_class__"), PROTO_TRUE));
         return fs;
     }
     const proto::ProtoObject* parent = env->getSetPrototype();
@@ -8538,9 +8537,10 @@ static const proto::ProtoObject* py_frozenset_call(
     if (cls != env->getFrozensetPrototype()) fs->addParent(context, cls);
     fs->setAttribute(context, env->getClassString(), cls);
     fs->setAttribute(context, env->getDataString(), acc->asObject(context));
-    // Step V77: marker to ensure getType identifies it as an instance of its __class__
-    fs->setAttribute(context, PythonEnvironment::getInternedString(context, "__is_python_class__"), PROTO_TRUE);
-    
+    // No __is_python_class__ on the instance: that attribute marks classes
+    // (isActuallyAClass), and with it getAttribute returned the frozenset's
+    // methods unbound, so f.__contains__(x) ran without its receiver.
+
     if (get_env_diag()) {
         if (fs->hasAttribute(context, env->getClassString())) {
         } else {

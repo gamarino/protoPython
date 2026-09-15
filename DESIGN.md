@@ -135,7 +135,7 @@ keeps its jump target in the argument slot of the last replaced instruction. Set
 ## 3. Testing
 
 - `ctest` runs the C++ unit tests under `test/library` and `test/compiler` and the
-  Python regression scripts under `test/regression`; the suite has 349 tests on
+  Python regression scripts under `test/regression`; the suite has 350 tests on
   2026-09-15.
 - `test/regression/run_and_report.py` runs CPython regression tests against `protopy`
   and records pass rates; see

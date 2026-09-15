@@ -303,6 +303,11 @@ onwards. Commit hashes are given for reference.
 - **os.DirEntry.is_junction:** the method was missing, so `os.walk`,
   `shutil.rmtree` and the cleanup of `tempfile.TemporaryDirectory` raised
   `AttributeError`. It returns False, as CPython does outside Windows.
+- **frozenset methods:** a method read from a frozenset instance was not
+  bound to it: `frozenset([7]).__contains__(7)` returned False, `__len__()`
+  0 and `__iter__()` None. Every frozenset carried the `__is_python_class__`
+  class marker, so attribute lookup treated it as a class; the marker is no
+  longer set on instances.
 
 ### Performance
 
