@@ -97,6 +97,3 @@ defect and adds a `test/regression/*.py` test registered in
   `\w`, `\d`, `\s` and `re.IGNORECASE` are ASCII-only, `re.error` does not
   exist (compile errors raise `RuntimeError`), and conditional, atomic and
   recursive groups are unsupported.
-- **os:** `os.DirEntry` has no `is_junction()`, so `os.walk`,
-  `shutil.rmtree` and `tempfile.TemporaryDirectory` cleanup raise
-  `AttributeError`.

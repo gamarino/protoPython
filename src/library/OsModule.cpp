@@ -100,6 +100,18 @@ static const proto::ProtoObject* py_direntry_is_symlink(
     return PROTO_FALSE;
 }
 
+// DirEntry.is_junction(): junctions exist only on Windows, so CPython
+// returns False on every other platform. os.walk, shutil.rmtree and
+// tempfile.TemporaryDirectory cleanup call it for each entry.
+static const proto::ProtoObject* py_direntry_is_junction(
+    proto::ProtoContext* /*ctx*/,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    return PROTO_FALSE;
+}
+
 static const proto::ProtoObject* py_direntry_fspath(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
@@ -2287,6 +2299,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         ctx->fromMethod(nullptr, py_direntry_is_file));
     direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "is_symlink"),
         ctx->fromMethod(nullptr, py_direntry_is_symlink));
+    direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "is_junction"),
+        ctx->fromMethod(nullptr, py_direntry_is_junction));
     direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "stat"),
         ctx->fromMethod(nullptr, py_direntry_stat));
     direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "inode"),

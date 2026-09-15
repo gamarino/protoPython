@@ -300,6 +300,9 @@ onwards. Commit hashes are given for reference.
   `TypeError` and `pathlib.Path.read_text` and `write_text` failed. It now
   returns an explicit encoding unchanged and, for None, `"locale"` (or
   `"utf-8"` in UTF-8 mode), as CPython does.
+- **os.DirEntry.is_junction:** the method was missing, so `os.walk`,
+  `shutil.rmtree` and the cleanup of `tempfile.TemporaryDirectory` raised
+  `AttributeError`. It returns False, as CPython does outside Windows.
 
 ### Performance
 

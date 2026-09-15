@@ -291,6 +291,13 @@ set_tests_properties(protopy_io_text_encoding PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# os.DirEntry.is_junction exists; os.walk, shutil.rmtree and TemporaryDirectory work.
+add_test(NAME protopy_direntry_is_junction
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/direntry_is_junction.py)
+set_tests_properties(protopy_direntry_is_junction PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # Equal ints and floats compare, hash and key dicts as one value beyond long long.
 add_test(NAME protopy_numeric_keys
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/numeric_keys.py)
