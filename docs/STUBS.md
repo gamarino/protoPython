@@ -297,7 +297,7 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 
 ## Stdlib coverage (v56)
 
-- **json**: Native JsonModule (C++) — dumps, loads; supports null, bool, number, string, array, object. Basic JSON subset; no custom encoders/decoders.
+- **json**: Pure-Python `lib/python3.14/json` package; there is no native `json` or `_json` module.
 - **re**: Native ReModule (C++); lib fallback. See Python stdlib stubs table for re row.
 
 ## HPy and packaging (v55, Next 100 Steps v63–v67)

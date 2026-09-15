@@ -83,6 +83,17 @@ onwards. Commit hashes are given for reference.
 - **Benchmarks:** `memory_pressure` is reported but excluded from the geometric
   mean, because protoCore's collector defers reclamation by design
   (`0515365b`).
+- **Removed `JsonModule` and `HeapqModule`:** both native modules were
+  compiled but never registered, and both were incorrect (`JsonModule` copied
+  escape sequences literally, rejected exponents and integers of 20 or more
+  digits and dumped floats with six significant digits; `HeapqModule`'s
+  `heappush` and `heappop` did not modify the caller's list). Registering
+  either would have shadowed the working pure-Python `json` and `heapq`, which
+  remain in use; `_json` and `_heapq` are not provided. The comments of
+  `ROT_THREE`, `ROT_FOUR`, `WITH_CLEANUP` and `COMPARE_OP` in
+  `ExecutionEngine.h` now describe what the engine does, and opcodes 197-201
+  (`GEN_START`, `GET_LEN`, `MATCH_MAPPING`, `MATCH_SEQUENCE`, `EXTENDED_ARG`)
+  are marked as reserved: never emitted and not handled.
 
 ### Fixed
 

@@ -110,6 +110,13 @@ add_test(NAME protopy_repl_names_persist
 set_tests_properties(protopy_repl_names_persist PROPERTIES
     TIMEOUT 60
     LABELS "regression_gate")
+# json and heapq work through their pure-Python modules; _json and _heapq do not exist.
+add_test(NAME protopy_json_heapq_pure_python
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/json_heapq_pure_python.py)
+set_tests_properties(protopy_json_heapq_pure_python PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
 # The const_cast review report runs and exits 0 (--strict would fail on any match).
 add_test(NAME conformity_const_cast_report
     COMMAND ${CMAKE_SOURCE_DIR}/tests/conformity/scripts/check_const_cast.sh)

@@ -26,7 +26,6 @@
 #include <protoPython/OperatorModule.h>
 #include <protoPython/FunctoolsModule.h>
 #include <protoPython/ItertoolsModule.h>
-#include <protoPython/JsonModule.h>
 #include <protoPython/CodecsModule.h>
 #include <protoPython/ReModule.h>
 #include <protoPython/OsModule.h>
@@ -42,7 +41,6 @@
 #include <protoPython/FcntlModule.h>
 #include <protoPython/SelectModule.h>
 #include <protoPython/BisectModule.h>
-#include <protoPython/HeapqModule.h>
 #include <protoPython/FaulthandlerModule.h>
 #include <protoPython/ExecutionEngine.h>
 #include <protoPython/Parser.h>
@@ -21941,14 +21939,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // this registration the import fails and the Python impls win.
     // See docs/audits/04-native-stubs.md F4.2.
     // registerNativeModule(nativeProviderPtr, "_bisect", [](proto::ProtoContext* c) { return bisect::initialize(c); });
-    // _heapq native module disabled: HeapqModule's heappush/heappop are
-    // broken (don't actually mutate the user's list — see
-    // docs/audits/04-native-stubs.md F4.2) and 6 of 8 functions are missing.
-    // lib/python3.14/heapq.py has the full pure-Python implementation
-    // and protects the C delegation behind `try: from _heapq import *
-    // except ImportError: pass`. Without this registration the import
-    // fails and the Python implementations win, matching CPython spec.
-    // registerNativeModule(nativeProviderPtr, "_heapq", [](proto::ProtoContext* c) { return heapq::initialize(c); });
+    // heapq and json have no native modules: they use their pure-Python implementations.
     registerNativeModule(nativeProviderPtr, "faulthandler", [](proto::ProtoContext* c) { return faulthandler::initialize(c); });
 
     exceptionType = exceptionsModule->getAttribute(rootContext_, exceptionS);

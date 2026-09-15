@@ -35,7 +35,9 @@ constexpr int OP_CALL_FUNCTION = 106;
 constexpr int OP_BINARY_MULTIPLY = 107;
 /** BINARY_TRUE_DIVIDE: pop two values, push left / right. */
 constexpr int OP_BINARY_TRUE_DIVIDE = 108;
-/** COMPARE_OP: arg=0 eq, 1 ne, 2 lt, 3 le, 4 gt, 5 ge. Pop two, push bool. */
+/** COMPARE_OP: arg = 0 ==, 1 !=, 2 <, 3 <=, 4 >, 5 >=, 6 in, 7 not in, 8 is, 9 is not
+ *  (10 = legacy exception match, accepted by the engine but not emitted; the compiler
+ *  uses OP_EXCEPTION_MATCH). Pop two, push the result. */
 constexpr int OP_COMPARE_OP = 109;
 /** POP_JUMP_IF_FALSE: if top is falsy, jump to arg (bytecode index). */
 constexpr int OP_POP_JUMP_IF_FALSE = 110;
@@ -123,9 +125,9 @@ constexpr int OP_INPLACE_AND = 150;
 constexpr int OP_INPLACE_OR = 151;
 /** INPLACE_XOR: a ^= b; use __ixor__ if present else same as BINARY_XOR. */
 constexpr int OP_INPLACE_XOR = 152;
-/** ROT_THREE: lift third stack item to top. … C B A → … B A C (A becomes new TOS). */
+/** ROT_THREE: move TOS down to the third position. … C B A → … A C B. */
 constexpr int OP_ROT_THREE = 153;
-/** ROT_FOUR: lift fourth stack item to top. … D C B A → … C B A D (D becomes new TOS). */
+/** ROT_FOUR: move TOS down to the fourth position. … D C B A → … A D C B. Not emitted by the compiler. */
 constexpr int OP_ROT_FOUR = 154;
 /** DUP_TOP_TWO: duplicate the two top stack items. … A B → … A B A B. */
 constexpr int OP_DUP_TOP_TWO = 155;
@@ -167,7 +169,9 @@ constexpr int OP_BUILD_SET = 171;
 constexpr int OP_YIELD_VALUE = 172;
 /** SETUP_WITH: pop context manager, push __exit__, call __enter__, push __enter__ result. Jump to arg on exception. */
 constexpr int OP_SETUP_WITH = 173;
-/** WITH_CLEANUP: pop __exit__ result, discard it. */
+/** WITH_CLEANUP: pop the exception (or None) and the __exit__ method, call __exit__ with the
+ *  exception's type, the exception and None (or three Nones), push the result as the
+ *  suppression flag. */
 constexpr int OP_WITH_CLEANUP = 174;
 /** GET_YIELD_FROM_ITER: replace TOS with iter(TOS); optimized for generator delegation. */
 constexpr int OP_GET_YIELD_FROM_ITER = 175;
@@ -206,6 +210,8 @@ constexpr int OP_INPLACE_MATRIX_MULTIPLY = 193;
 constexpr int OP_RERAISE = 194;
 constexpr int OP_JUMP_FORWARD = 195;
 constexpr int OP_FORMAT_VALUE = 196;
+/** Reserved (197-201): defined for opcode-number stability and the _opcode name map; not
+ *  emitted by the compiler and not handled by the engine. */
 constexpr int OP_GEN_START = 197;
 constexpr int OP_GET_LEN = 198;
 constexpr int OP_MATCH_MAPPING = 199;

@@ -24,11 +24,11 @@ The status column was checked on 2026-09-15 by importing each module with `proto
 | `_io` | High | Native C++ module (`IOModule.cpp`). |
 | `_socket` | Medium | Pure-Python module `lib/python3.14/_socket.py`. |
 | `_ssl` | Medium | Pure-Python module `lib/python3.14/_ssl.py`. |
-| `_json` | Medium | Not available; `json` uses its pure-Python implementation. `JsonModule.cpp` is compiled but not registered. |
+| `_json` | Medium | Not available; no native implementation. `json` uses its pure-Python implementation. |
 | `_pickle` | Medium | Not available; `pickle` uses its pure-Python implementation. |
 | `_struct` | Medium | Native C++ module (`StructModule.cpp`). |
 | `array` | Medium | Pure-Python module `lib/python3.14/array.py`. |
-| `_heapq` | Medium | Not available: `HeapqModule.cpp` exists but its registration is commented out; `heapq` uses its pure-Python implementation. |
+| `_heapq` | Medium | Not available; no native implementation. `heapq` uses its pure-Python implementation. |
 | `_random` | Low | Pure-Python module `lib/python3.14/_random.py`. |
 | `_datetime` | Low | Native C++ module (`DatetimeModule.cpp`). |
 | `_hashlib` | Low | Not available. |

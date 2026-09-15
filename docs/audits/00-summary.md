@@ -23,7 +23,7 @@ Sorted by severity × frequency. "Pattern" indicates which root cause family the
 |---|---|---|---|---|---|
 | F2.1 | 7 binary arithmetic ops bypass dunder for subclasses | HIGH | fast-path | 7 | 1-2h |
 | F4.1 | `CollectionsAbcModule` ABC methods 15+ no-ops | HIGH | stub | 15+ | 4-8h |
-| F4.2 | `HeapqModule` is broken; `BisectModule` incomplete | HIGH | stub | 2 modules | 3h (replace) |
+| F4.2 | `HeapqModule` is broken; `BisectModule` incomplete (2026-09-15: `HeapqModule` and `JsonModule` removed; see 04-native-stubs.md) | HIGH | stub | 2 modules | 3h (replace) |
 | F4.3 | `SignalModule` doesn't deliver signals | HIGH | stub | 1 | 4h |
 | F4.4 | `IOModule` file objects can't iterate | HIGH | stub | 1 | 3-4h |
 | F1.1 | 5 IMPL classes hold API tagged in private fields | HIGH | layer | 5 | 2-4h |

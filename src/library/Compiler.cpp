@@ -164,7 +164,7 @@ static int stackEffect(int op, int arg) {
         case OP_UNARY_NEGATIVE: case OP_UNARY_POSITIVE:
         case OP_UNARY_NOT:      case OP_UNARY_INVERT:
         case OP_GET_ITER:       case OP_LIST_TO_TUPLE:
-        case OP_GET_LEN:        // actually +1 (pushes len w/o popping), count as 0 → safe
+        case OP_GET_LEN:        // reserved: never emitted
         case OP_BUILD_FUNCTION:
         case OP_GET_AWAITABLE:  case OP_GET_AITER:
         case OP_GET_YIELD_FROM_ITER:

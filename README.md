@@ -29,7 +29,7 @@ protoPython provides three components:
 
 - **Version:** 1.0.0 (`CMakeLists.txt`, tag `v1.0.0`).
 - **Maturity:** not production ready. The project is open for community review.
-- **Tests:** the CTest suite has 333 tests; all pass in a Release build (2026-09-15).
+- **Tests:** the CTest suite has 334 tests; all pass in a Release build (2026-09-15).
 - **protopy:** under active conformance work (see below).
 - **protopyc:** experimental, with known limitations. Several correctness bugs in
   generated code were fixed in 2026 (for example, loop-target scoping and thread

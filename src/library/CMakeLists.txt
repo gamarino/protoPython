@@ -9,7 +9,6 @@ add_library(protoPython SHARED
     Tokenizer.cpp
     FunctoolsModule.cpp
     ItertoolsModule.cpp
-    JsonModule.cpp
     LoggingModule.cpp
     MathModule.cpp
     OperatorModule.cpp
@@ -50,7 +49,6 @@ add_library(protoPython SHARED
     FcntlModule.cpp
     SelectModule.cpp
     BisectModule.cpp
-    HeapqModule.cpp
     FaulthandlerModule.cpp
 )
 

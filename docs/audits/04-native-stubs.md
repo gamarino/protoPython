@@ -152,6 +152,10 @@ After the `update` and `__contains__` fixes made alongside this audit, dozens of
 
 ### F4.2 — `HeapqModule` and `BisectModule` are broken/incomplete
 
+> **Resolution (2026-09-15, heapq part):** `HeapqModule` and `JsonModule` were removed from the
+> build and the sources deleted. `heapq` and `json` use their pure-Python implementations, and
+> neither `_heapq` nor `_json` is provided. `BisectModule` is unchanged.
+
 - HeapqModule's `heappush`/`heappop` don't actually mutate the user's list (they build a new one and discard it).
 - HeapqModule is missing 6 of 8 functions.
 - BisectModule is missing all 3 `insort` variants.
