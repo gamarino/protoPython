@@ -40,7 +40,7 @@ The execution engine for Python scripts.
         - The internal operand stack of the `ExecutionEngine` is tracked as a root by the **protoCore** garbage collector.
         - **Rooting Policy**: All opcodes must ensure that inputs (operands) and intermediate results remain on the stack until the operation is complete. Popping operands should be the final step before pushing the result.
         - **In-place Mutation**: To optimize performance and reduce allocation churn, opcodes favor in-place modification of stack slots when possible.
-- **Module main**: When running a script or module, protopy resolves it and, if the module has a callable `main` attribute, invokes it (stub execution path until full bytecode is in place).
+- **Script entry point**: As in CPython, protopy executes a script's module body once as `__main__` and never calls a `main` function on its own; a script runs it explicitly, typically under `if __name__ == "__main__":`.
 - **Threading**: Native mapping of Python `threading` to `protoCore` threads.
 
 ### 2.3. protopyc Compiler

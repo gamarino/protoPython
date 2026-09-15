@@ -9,3 +9,7 @@ def main():
         # Try to log via C if we have it later
         return 1
     return 0
+
+
+if __name__ == "__main__":
+    main()

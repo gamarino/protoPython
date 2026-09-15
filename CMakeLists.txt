@@ -261,6 +261,13 @@ set_tests_properties(protopy_unbound_fast_locals PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# A script's main() runs only when the script calls it, as in CPython.
+add_test(NAME protopy_main_not_auto_invoked
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/main_not_auto_invoked.py)
+set_tests_properties(protopy_main_not_auto_invoked PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # Class statements accept *bases and **keywords.
 add_test(NAME protopy_class_star_bases
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/class_star_bases.py)

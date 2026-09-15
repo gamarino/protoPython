@@ -2,3 +2,7 @@
 def main():
     import _thread
     _thread.log_thread_ident("after_import")
+
+
+if __name__ == "__main__":
+    main()

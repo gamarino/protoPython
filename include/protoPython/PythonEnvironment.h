@@ -580,13 +580,6 @@ public:
                               const proto::ProtoObject* value);
 
     /**
-     * @brief Resolves the module by name, then invokes its \c main attribute if it is callable.
-     * @param moduleName Module name (as used by resolve).
-     * @return 0 on success (including when module has no \c main or it is not callable); non-zero on resolve failure.
-     */
-    int runModuleMain(const std::string& moduleName);
-
-    /**
      * @brief High-level execution entry: resolve module, invoke pre/post hooks, run main.
      * @param moduleName Module name (as used by resolve).
      * @return 0 on success, -1 on resolve failure, -2 on runtime failure.

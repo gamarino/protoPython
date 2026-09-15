@@ -22531,30 +22531,6 @@ const proto::ProtoObject* PythonEnvironment::getGlobals() const {
     return const_cast<PythonEnvironment*>(this)->resolve("__main__", ctx);
 }
 
-int PythonEnvironment::runModuleMain(const std::string& moduleName) {
-    proto::ProtoContext* context = s_threadContext ? s_threadContext : rootContext_;
-    const proto::ProtoObject* m = resolve(moduleName, context);
-    if (m == nullptr || m == PROTO_NONE)
-        return -1;
-    const proto::ProtoString* mainName = PythonEnvironment::getInternedString(context, "main");
-    const proto::ProtoObject* mainAttr = m->getAttribute(context, mainName);
-    if (mainAttr == nullptr || mainAttr == PROTO_NONE)
-        return 0;
-    const proto::ProtoList* emptyArgs = context->newList();
-    if (mainAttr->isMethod(context)) {
-        mainAttr->asMethod(context)(context, const_cast<proto::ProtoObject*>(m), nullptr, emptyArgs, nullptr);
-        return 0;
-    }
-    /* User-defined function: call via __call__ (self = function object). */
-    const proto::ProtoString* callName = PythonEnvironment::getInternedString(context, "__call__");
-    const proto::ProtoObject* callAttr = mainAttr->getAttribute(context, callName);
-    if (callAttr && callAttr->asMethod(context)) {
-        callAttr->asMethod(context)(context, const_cast<proto::ProtoObject*>(mainAttr), nullptr, emptyArgs, nullptr);
-        return 0;
-    }
-    return 0;
-}
-
 int PythonEnvironment::executeString(const std::string& source, const std::string& name) {
     proto::ProtoContext* context = s_threadContext ? s_threadContext : rootContext_;
     ContextScope scope(this, context);
@@ -23017,14 +22993,6 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                     ->appendLast(ctx, PROTO_NONE);
                 callAttr->asMethod(ctx)(ctx, tf, nullptr, args, nullptr);
             }
-        }
-    }
-
-    if (asMain) {
-        int ret = runModuleMain(moduleName);
-        if (ret != 0) {
-            if (executionHook) executionHook(moduleName, 1);
-            return ret == -1 ? -1 : -2;
         }
     }
 
