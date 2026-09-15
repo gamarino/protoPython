@@ -340,7 +340,8 @@ public:
     const proto::ProtoObject* next(const proto::ProtoObject* obj);
     void raiseException(const proto::ProtoObject* exc);
     void addTraceback(const proto::ProtoObject* exc, const proto::ProtoObject* frame, int lasti, int lineno);
-    void raiseImportError(const std::string& msg);
+    // name: the module the import failed for, stored as ImportError.name.
+    void raiseImportError(const std::string& msg, const std::string& name = "");
     bool isException(const proto::ProtoObject* exc, const proto::ProtoObject* type);
     const proto::ProtoObject* lookupName(const std::string& name);
     void storeName(const std::string& name, const proto::ProtoObject* val);
@@ -909,7 +910,7 @@ public:
     void raiseRuntimeError(proto::ProtoContext* context, const std::string& msg);
     void raiseOSError(proto::ProtoContext* context, int errnum, const std::string& strerr, const std::string& filename = "");
     void raiseTypeError(proto::ProtoContext* context, const std::string& msg);
-    void raiseImportError(proto::ProtoContext* context, const std::string& msg);
+    void raiseImportError(proto::ProtoContext* context, const std::string& msg, const std::string& name = "");
     void raiseKeyboardInterrupt(proto::ProtoContext* context);
     void raiseSyntaxError(proto::ProtoContext* context, const std::string& msg, int lineno, int offset, const std::string& text);
     /**

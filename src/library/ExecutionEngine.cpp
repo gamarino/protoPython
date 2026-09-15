@@ -5517,9 +5517,9 @@ const proto::ProtoObject* executeBytecodeRange(
                             std::string n;
                             nameS->toUTF8String(ctx, n);
                             std::string msg = "cannot import name '" + n + "'";
+                            std::string mn;
                             const proto::ProtoObject* mName = mod->getAttribute(ctx, env->getNameString());
                             if (mName && mName->isString(ctx)) {
-                                std::string mn;
                                 mName->asString(ctx)->toUTF8String(ctx, mn);
                                 msg += " from '" + mn + "'";
                             }
@@ -5530,7 +5530,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                  msg += " (" + fn + ")";
                              }
 
-                            env->raiseImportError(ctx, msg);
+                            env->raiseImportError(ctx, msg, mn);
                         }
                         i = next_i;
                         continue;

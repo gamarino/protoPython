@@ -278,6 +278,31 @@ static const proto::ProtoObject* exception_repr(
     return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
 }
 
+// ImportError.__init__(*args, name=None, path=None, name_from=None). The
+// attributes were never set, so `exc.name` raised AttributeError; site.py
+// reads it to tell a missing sitecustomize from an error inside one.
+static const proto::ProtoObject* importerror_init(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    exception_init(context, self, parentLink, positionalParameters, keywordParameters);
+    const proto::ProtoObject* instance = self;
+    if (!instance || instance == PROTO_NONE) {
+        if (!positionalParameters || positionalParameters->getSize(context) == 0) return PROTO_NONE;
+        instance = positionalParameters->getAt(context, 0);
+    }
+    for (const char* attr : {"name", "path", "name_from"}) {
+        const proto::ProtoString* key = PythonEnvironment::getInternedString(context, attr);
+        const unsigned long h = key->getHash(context);
+        const proto::ProtoObject* value = (keywordParameters && keywordParameters->has(context, h))
+            ? keywordParameters->getAt(context, h) : PROTO_NONE;
+        instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context, key, value);
+    }
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
                                                 const proto::ProtoObject* objectProto,
                                                 const proto::ProtoObject* typeProto,
@@ -487,7 +512,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
         ctx->fromMethod(nullptr, syntaxerror_init));
     const proto::ProtoObject* typeErrorType = make_exception_type(ctx, objectProto, typeProto, "TypeError", exceptionType);
     const proto::ProtoObject* importErrorType = make_exception_type(ctx, objectProto, typeProto, "ImportError", exceptionType);
+    importErrorType = const_cast<proto::ProtoObject*>(importErrorType)->setAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__init__"),
+        ctx->fromMethod(nullptr, importerror_init));
     const proto::ProtoObject* moduleNotFoundErrorType = make_exception_type(ctx, objectProto, typeProto, "ModuleNotFoundError", importErrorType);
+    // make_exception_type gives every type the base __init__; keep ImportError's.
+    moduleNotFoundErrorType = const_cast<proto::ProtoObject*>(moduleNotFoundErrorType)->setAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__init__"),
+        ctx->fromMethod(nullptr, importerror_init));
     const proto::ProtoObject* keyboardInterruptType = make_exception_type(ctx, objectProto, typeProto, "KeyboardInterrupt", baseExceptionType);
     const proto::ProtoObject* systemExitType = make_exception_type(ctx, objectProto, typeProto, "SystemExit", baseExceptionType);
     systemExitType = const_cast<proto::ProtoObject*>(systemExitType)->setAttribute(ctx,

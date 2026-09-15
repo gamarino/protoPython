@@ -770,6 +770,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "base_prefix"), PythonEnvironment::getInternedString(ctx, "")->asObject(ctx));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "base_exec_prefix"), PythonEnvironment::getInternedString(ctx, "")->asObject(ctx));
     
+    // sys.copyright: site.py installs builtins.copyright from it unconditionally.
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "copyright"), PythonEnvironment::getInternedString(ctx,
+        "Copyright (c) 2023-2026 Gustavo Marino.\nprotoPython is released under the MIT License.")->asObject(ctx));
+
     // sys.version: the Python language version, then the protoPython version.
     sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "version"), PythonEnvironment::getInternedString(ctx, "3.14.0 (protoPython " PROTOPYTHON_VERSION ", Apr 2026)")->asObject(ctx));
 

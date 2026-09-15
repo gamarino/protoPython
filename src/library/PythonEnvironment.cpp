@@ -16591,7 +16591,7 @@ static std::string suggestSimilarName(proto::ProtoContext* ctx, const std::strin
     return bestMatch;
 }
 
-void PythonEnvironment::raiseImportError(const std::string& msg) {
+void PythonEnvironment::raiseImportError(const std::string& msg, const std::string& name) {
     if (!importErrorType) return;
     proto::ProtoContext* ctx = s_threadContext ? s_threadContext : rootContext_;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx));
@@ -16601,6 +16601,10 @@ void PythonEnvironment::raiseImportError(const std::string& msg) {
         ? moduleNotFoundErrorType : importErrorType;
     const proto::ProtoObject* exc = invokePythonCallable(ctx, errType, args, nullptr);
     if (exc && exc != PROTO_NONE) {
+        if (!name.empty()) {
+            exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "name"),
+                PythonEnvironment::getInternedString(ctx, name.c_str())->asObject(ctx));
+        }
         setPendingException(exc);
     }
 }
@@ -16726,7 +16730,7 @@ void PythonEnvironment::raiseOSError(proto::ProtoContext* ctx, int errnum, const
     }
 }
 
-void PythonEnvironment::raiseImportError(proto::ProtoContext* ctx, const std::string& msg) {
+void PythonEnvironment::raiseImportError(proto::ProtoContext* ctx, const std::string& msg, const std::string& name) {
     if (!importErrorType) return;
     std::string hintMsg = msg;
     
@@ -16757,6 +16761,10 @@ void PythonEnvironment::raiseImportError(proto::ProtoContext* ctx, const std::st
         ? moduleNotFoundErrorType : importErrorType;
     const proto::ProtoObject* exc = invokePythonCallable(ctx, errType, args, nullptr);
     if (exc && exc != PROTO_NONE) {
+        if (!name.empty()) {
+            exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "name"),
+                PythonEnvironment::getInternedString(ctx, name.c_str())->asObject(ctx));
+        }
         setPendingException(exc);
     }
 }

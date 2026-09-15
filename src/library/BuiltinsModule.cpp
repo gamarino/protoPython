@@ -194,7 +194,7 @@ static const proto::ProtoObject* py_import(
     
     if (!leaf || leaf == PROTO_NONE) {
         if (env->hasPendingException()) return nullptr;
-        env->raiseImportError("No module named '" + moduleName + "'");
+        env->raiseImportError("No module named '" + moduleName + "'", moduleName);
         return nullptr;
     }
 
@@ -904,19 +904,41 @@ static const proto::ProtoObject* py_next(
     const proto::ProtoString* nextS = env ? env->getNextString() : PythonEnvironment::getInternedString(context, "__next__");
 
     const proto::ProtoObject* nextMethod = env ? env->getAttribute(context, obj, nextS, false) : (obj->hasOwnAttribute(context, nextS) == PROTO_TRUE ? obj->getAttribute(context, nextS) : nullptr);
-    if (nextMethod && nextMethod->asMethod(context)) {
+    if (env && env->hasPendingException()) return nullptr;
+    // A __next__ defined in Python is looked up on the receiver's prototype
+    // chain and called with the receiver prepended, as env->next does. Only
+    // native __next__ methods were called before, so next() raised
+    // "object is not an iterator" for every Python-level iterator class.
+    const proto::ProtoString* codeS = env ? env->getCodeString() : nullptr;
+    if ((!nextMethod || !nextMethod->asMethod(context)) && env && codeS) {
+        const proto::ProtoObject* raw = obj->getAttribute(context, nextS);
+        if (raw && raw != PROTO_NONE && raw->hasOwnAttribute(context, codeS) == PROTO_TRUE) nextMethod = raw;
+    }
+    const bool nativeNext = nextMethod && nextMethod->asMethod(context);
+    const bool pythonNext = !nativeNext && nextMethod && codeS
+        && nextMethod->hasOwnAttribute(context, codeS) == PROTO_TRUE;
+    if (nativeNext || pythonNext) {
         const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
-        const proto::ProtoObject* result = nextMethod->asMethod(context)(context, obj, nullptr, emptyL, nullptr);
+        const proto::ProtoObject* result = nativeNext
+            ? nextMethod->asMethod(context)(context, obj, nullptr, emptyL, nullptr)
+            : ::protoPython::invokePythonCallable(context, nextMethod,
+                  context->newList()->appendLast(context, obj), nullptr);
+        if (env && env->hasPendingException()) {
+            // next(it, default) returns the default when __next__ raises
+            // StopIteration; the exception used to propagate, which broke
+            // `next(<generator expression>, None)` (site.venv) and every
+            // generator given a default. Other exceptions propagate.
+            if (defaultVal && env->isStopIteration(context, env->peekPendingException())) {
+                env->clearPendingException();
+                return defaultVal;
+            }
+            return nullptr;
+        }
         if (!result) {
-            if (env && env->hasPendingException()) return nullptr;
+            // Native iterators return nullptr without an exception when exhausted.
             if (defaultVal) return defaultVal;
             if (env) env->raiseStopIteration(context);
             return nullptr;
-        }
-        if (result == (env ? env->getNonePrototype() : nullptr)) {
-            // In Python, __next__ returning None is NOT StopIteration.
-             // But we should check if an exception was raised and returned None (unlikely but possible)
-            if (env && env->hasPendingException()) return nullptr;
         }
         return result;
     }

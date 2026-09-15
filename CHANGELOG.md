@@ -237,6 +237,15 @@ onwards. Commit hashes are given for reference.
   `StopIteration`, so `list(heapq.merge([1, 3], [2, 4]))` raised `TypeError`
   and loops that stop on the exception never ended. Such calls now raise
   `StopIteration`; `for` loops and `next()` still stop without creating one.
+- **`import site`:** it raised `StopIteration`. `next(iterator, default)`
+  let a `StopIteration` raised by `__next__` escape instead of returning the
+  default (every generator given a default, including the one in
+  `site.venv()`), and `next()` rejected iterators whose `__next__` is a Python
+  method as "not an iterator". Behind that, `sys.copyright` was missing, and
+  `ImportError` had no `name`, `path` or `name_from` attributes: the
+  constructor ignored those keywords and the import system did not set `name`,
+  so `site` printed errors for the absent `sitecustomize` and `usercustomize`
+  modules. All three are fixed and `import site` completes silently.
 
 ### Performance
 
