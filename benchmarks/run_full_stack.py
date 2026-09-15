@@ -35,7 +35,10 @@ from run_benchmarks import (  # noqa: E402
     SCRIPT_DIR, PROJECT_ROOT, compile_protopyc,
 )
 BENCH_DIR = SCRIPT_DIR
-PROTOCPP_BUILD = Path("/home/gamarino/Documentos/proyectos/protoCpp/build_release")
+# protoCpp is expected as a sibling checkout; PROTOCPP_BUILD overrides its build directory.
+PROTOCPP_BUILD = Path(os.environ.get(
+    "PROTOCPP_BUILD",
+    Path(__file__).resolve().parents[2] / "protoCpp" / "build_release"))
 
 N_RUNS = 3
 WARMUP_RUNS = 1
