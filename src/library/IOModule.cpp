@@ -390,6 +390,10 @@ static const proto::ProtoObject* py_io_write(
             if (env) env->raiseOSError(context, err, std::strerror(err), "");
             return nullptr;
         }
+        // A text write returns the number of characters, as TextIOWrapper does.
+        if (data->isString(context) && static_cast<size_t>(written) == s.size()) {
+            return context->fromInteger(static_cast<long long>(data->asString(context)->getSize(context)));
+        }
         return context->fromInteger(static_cast<long long>(written));
 #else
         return context->fromInteger(0);
@@ -406,6 +410,58 @@ static const proto::ProtoObject* py_io_write(
     return context->fromInteger(static_cast<long long>(s.size()));
 }
 
+// The prototype of file objects over an OS descriptor. Their methods live
+// here, not on each instance, so that special-method lookups that ignore
+// instance attributes (the `with` statement) find __enter__ and __exit__:
+// `with open(path, "w") as f:` used to leave the descriptor open.
+static const proto::ProtoObject* io_make_fd_file_prototype(proto::ProtoContext* context) {
+    const proto::ProtoObject* proto = context->newObject(true);
+    auto method = [&](const char* name, proto::ProtoMethod fn) {
+        proto->setAttribute(context, proto::ProtoString::createSymbol(context, name),
+            context->fromMethod(nullptr, fn));
+    };
+    method("read", py_io_read);
+    method("readline", py_io_readline);
+    method("readlines", py_io_readlines);
+    method("write", py_io_write);
+    method("close", py_io_close);
+    method("__enter__", py_io_enter);
+    method("__exit__", py_io_exit);
+    method("__iter__", py_io_iter);
+    method("__next__", py_io_next);
+    method("flush", py_io_flush);
+    method("fileno", py_io_fileno);
+    method("readable", py_io_readable);
+    method("writable", py_io_writable);
+    method("seekable", py_io_seekable);
+    method("isatty", py_io_isatty);
+    return proto;
+}
+
+// A file object over an open OS descriptor: read, write and close go to
+// ::read, ::write and ::close. It is mutable so that close() records
+// `closed` and the released descriptor on it.
+static const proto::ProtoObject* io_make_fd_file(proto::ProtoContext* context,
+                                                 const proto::ProtoObject* ioModule, int fd,
+                                                 const std::string& mode,
+                                                 const proto::ProtoObject* nameObj) {
+    const proto::ProtoObject* proto = ioModule ? ioModule->getAttribute(context,
+        proto::ProtoString::createSymbol(context, "__fd_file_prototype__")) : nullptr;
+    const proto::ProtoObject* fileObj = (proto && proto != PROTO_NONE)
+        ? proto->newChild(context, true)
+        : context->newObject(true);
+    fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "__file_fd__"),
+        context->fromInteger(fd));
+    fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "mode"),
+        PythonEnvironment::getInternedString(context, mode.c_str())->asObject(context));
+    fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "name"), nameObj);
+    // buffering: -1 (default).
+    fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "buffering"),
+        context->fromInteger(-1));
+    fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "closed"), PROTO_FALSE);
+    return fileObj;
+}
+
 static const proto::ProtoObject* py_io_open(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -415,60 +471,17 @@ static const proto::ProtoObject* py_io_open(
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
 
     const proto::ProtoObject* fileArg = positionalParameters->getAt(context, 0);
+    std::string mode = "r";
+    if (positionalParameters->getSize(context) >= 2 && positionalParameters->getAt(context, 1)->isString(context)) {
+        positionalParameters->getAt(context, 1)->asString(context)->toUTF8String(context, mode);
+    }
 
     // PEP 446 / CPython compat: io.open(fd: int, mode, ...) wraps an
     // existing OS fd into a file-like that delegates read/write/close
     // to ::read / ::write / ::close.  subprocess.Popen routes
     // captured stdout/stderr through this path.
     if (fileArg && fileArg->isInteger(context)) {
-        int fd = static_cast<int>(fileArg->asLong(context));
-        std::string mode = "r";
-        if (positionalParameters->getSize(context) >= 2 && positionalParameters->getAt(context, 1)->isString(context)) {
-            positionalParameters->getAt(context, 1)->asString(context)->toUTF8String(context, mode);
-        }
-        const proto::ProtoObject* fileObj = context->newObject(false);
-        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "__file_fd__"),
-            context->fromInteger(fd));
-        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "mode"),
-            PythonEnvironment::getInternedString(context, mode.c_str())->asObject(context));
-        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "name"),
-            context->fromInteger(fd));
-        // buffering: -1 (default).
-        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "buffering"),
-            context->fromInteger(-1));
-        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "read"),
-            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_read));
-        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "readline"),
-            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_readline));
-        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "readlines"),
-            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_readlines));
-        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "write"),
-            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_write));
-        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "close"),
-            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_close));
-        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "__enter__"),
-            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_enter));
-        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "__exit__"),
-            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_exit));
-        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "__iter__"),
-            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_iter));
-        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "__next__"),
-            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_next));
-        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "flush"),
-            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_flush));
-        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "fileno"),
-            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_fileno));
-        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "readable"),
-            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_readable));
-        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "writable"),
-            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_writable));
-        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "seekable"),
-            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_seekable));
-        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "isatty"),
-            context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_isatty));
-        fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "closed"),
-            PROTO_FALSE);
-        return fileObj;
+        return io_make_fd_file(context, self, static_cast<int>(fileArg->asLong(context)), mode, fileArg);
     }
 
     // A str or an os.PathLike (such as pathlib.Path), as CPython accepts.
@@ -478,10 +491,30 @@ static const proto::ProtoObject* py_io_open(
         return (pathEnv && pathEnv->hasPendingException()) ? nullptr : PROTO_NONE;
     }
 
-    std::string mode = "r";
-    if (positionalParameters->getSize(context) >= 2 && positionalParameters->getAt(context, 1)->isString(context)) {
-        positionalParameters->getAt(context, 1)->asString(context)->toUTF8String(context, mode);
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    // Write-only modes ("w", "a", "x", text or binary) open the file and
+    // write through the descriptor. The buffer-backed object below only
+    // holds data in memory, so writes made through it never reached the
+    // file. Read and "+" modes keep that object.
+    if (mode.find('+') == std::string::npos
+        && (mode.find('w') != std::string::npos || mode.find('a') != std::string::npos
+            || mode.find('x') != std::string::npos)) {
+        int flags = O_WRONLY | O_CREAT | O_CLOEXEC;
+        if (mode.find('w') != std::string::npos) flags |= O_TRUNC;
+        else if (mode.find('a') != std::string::npos) flags |= O_APPEND;
+        else flags |= O_EXCL;
+        int fd = ::open(filename.c_str(), flags, 0666);
+        if (fd < 0) {
+            int err = errno;
+            if (PythonEnvironment* env = PythonEnvironment::fromContext(context)) {
+                env->raiseOSError(context, err, std::strerror(err), filename);
+                return nullptr;
+            }
+            return PROTO_NONE;
+        }
+        return io_make_fd_file(context, self, fd, mode, fileArg);
     }
+#endif
 
     // Pre-flight: when opening for read, fail with FileNotFoundError if
     // the file is missing. Previously a missing file silently produced
@@ -1124,6 +1157,8 @@ static const proto::ProtoObject* py_sio_new(
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* ioMod = ctx->newObject(false);
     
+    ioMod = ioMod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__fd_file_prototype__"),
+        io_make_fd_file_prototype(ctx));
     ioMod = ioMod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "open"), ctx->fromMethod(const_cast<proto::ProtoObject*>(ioMod), py_io_open));
     ioMod = ioMod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "open_code"), ctx->fromMethod(const_cast<proto::ProtoObject*>(ioMod), py_io_open));
     ioMod = ioMod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "DEFAULT_BUFFER_SIZE"), ctx->fromInteger(8192));

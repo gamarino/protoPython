@@ -288,6 +288,14 @@ onwards. Commit hashes are given for reference.
   ENOENT) and `IsADirectoryError` for a directory, `os.listdir` and
   `os.scandir` raise instead of returning an empty result, and uncaught
   exceptions print `str(exc)`.
+- **Writing files:** `open(path, "w")` (and `"a"`, `"x"`, text or binary)
+  returned an object that kept the written data in memory and discarded it
+  on close, so nothing reached the file. These modes now open the file and
+  write through its descriptor; `"x"` fails on an existing file and a text
+  `write()` returns the number of characters. Descriptor-backed file
+  objects (also `io.open(fd)`, used by `subprocess`) take their methods
+  from a shared prototype, so `with` finds `__exit__` and closes them; it
+  used to leave the descriptor open.
 
 ### Performance
 
