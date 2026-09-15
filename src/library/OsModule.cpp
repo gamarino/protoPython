@@ -39,6 +39,16 @@ static void scandir_finalizer(void* ptr) {
     delete static_cast<ScandirState*>(ptr);
 }
 
+// What a path function returns when PythonEnvironment::fsPathArgument
+// rejects its argument: nullptr when __fspath__ raised, otherwise None (the
+// behaviour these functions already had for a non-str argument). They used
+// to accept only str, so an os.PathLike such as pathlib.Path was ignored:
+// os.stat(Path) returned None and os.path.exists(Path) was always True.
+static const proto::ProtoObject* notAPath(proto::ProtoContext* ctx) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    return (env && env->hasPendingException()) ? nullptr : PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_direntry_is_dir(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
@@ -272,9 +282,8 @@ static const proto::ProtoObject* py_chdir(
     const proto::ProtoSparseList* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
-    if (!pathObj->isString(ctx)) return PROTO_NONE;
     std::string path;
-    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    if (!PythonEnvironment::fsPathArgument(ctx, pathObj, path)) return notAPath(ctx);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     if (chdir(path.c_str()) == 0) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -294,8 +303,10 @@ static const proto::ProtoObject* py_listdir(
     std::string path = ".";
     if (posArgs->getSize(ctx) >= 1) {
         const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
-        if (pathObj->isString(ctx))
-            pathObj->asString(ctx)->toUTF8String(ctx, path);
+        if (pathObj != PROTO_NONE && !PythonEnvironment::fsPathArgument(ctx, pathObj, path)) {
+            PythonEnvironment* pathEnv = PythonEnvironment::fromContext(ctx);
+            if (pathEnv && pathEnv->hasPendingException()) return nullptr;
+        }
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
@@ -327,8 +338,10 @@ static const proto::ProtoObject* py_scandir(
     std::string path = ".";
     if (posArgs->getSize(ctx) >= 1) {
         const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
-        if (pathObj->isString(ctx))
-            pathObj->asString(ctx)->toUTF8String(ctx, path);
+        if (pathObj != PROTO_NONE && !PythonEnvironment::fsPathArgument(ctx, pathObj, path)) {
+            PythonEnvironment* pathEnv = PythonEnvironment::fromContext(ctx);
+            if (pathEnv && pathEnv->hasPendingException()) return nullptr;
+        }
     }
 
     DIR* d = opendir(path.c_str());
@@ -360,9 +373,8 @@ static const proto::ProtoObject* py_stat(
     const proto::ProtoSparseList* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
-    if (!pathObj->isString(ctx)) return PROTO_NONE;
     std::string path;
-    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    if (!PythonEnvironment::fsPathArgument(ctx, pathObj, path)) return notAPath(ctx);
     struct stat st;
     if (stat(path.c_str(), &st) == 0) {
         return make_stat_result(ctx, st);
@@ -382,9 +394,8 @@ static const proto::ProtoObject* py_lstat(
     const proto::ProtoSparseList* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
-    if (!pathObj->isString(ctx)) return PROTO_NONE;
     std::string path;
-    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    if (!PythonEnvironment::fsPathArgument(ctx, pathObj, path)) return notAPath(ctx);
     struct stat st;
     if (lstat(path.c_str(), &st) == 0) {
         return make_stat_result(ctx, st);
@@ -404,9 +415,8 @@ static const proto::ProtoObject* py_remove(
     const proto::ProtoSparseList* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
-    if (!pathObj->isString(ctx)) return PROTO_NONE;
     std::string path;
-    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    if (!PythonEnvironment::fsPathArgument(ctx, pathObj, path)) return notAPath(ctx);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     if (unlink(path.c_str()) != 0) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -434,9 +444,8 @@ static const proto::ProtoObject* py_mkdir(
     const proto::ProtoSparseList* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
-    if (!pathObj->isString(ctx)) return PROTO_NONE;
     std::string path;
-    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    if (!PythonEnvironment::fsPathArgument(ctx, pathObj, path)) return notAPath(ctx);
     int mode = 0777;
     if (posArgs->getSize(ctx) >= 2) mode = static_cast<int>(posArgs->getAt(ctx, 1)->asLong(ctx));
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
@@ -457,8 +466,10 @@ static const proto::ProtoObject* py_rename(
     const proto::ProtoSparseList* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     std::string oldPath, newPath;
-    posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, oldPath);
-    posArgs->getAt(ctx, 1)->asString(ctx)->toUTF8String(ctx, newPath);
+    if (!PythonEnvironment::fsPathArgument(ctx, posArgs->getAt(ctx, 0), oldPath)
+        || !PythonEnvironment::fsPathArgument(ctx, posArgs->getAt(ctx, 1), newPath)) {
+        return notAPath(ctx);
+    }
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     if (rename(oldPath.c_str(), newPath.c_str()) != 0) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -486,7 +497,9 @@ static const proto::ProtoObject* py_access(
     const proto::ProtoSparseList* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 2) return PROTO_FALSE;
     std::string path;
-    posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, path);
+    if (!PythonEnvironment::fsPathArgument(ctx, posArgs->getAt(ctx, 0), path)) {
+        return notAPath(ctx) ? PROTO_FALSE : nullptr;
+    }
     int mode = static_cast<int>(posArgs->getAt(ctx, 1)->asLong(ctx));
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     return access(path.c_str(), mode) == 0 ? PROTO_TRUE : PROTO_FALSE;
@@ -503,9 +516,8 @@ static const proto::ProtoObject* py_rmdir(
     const proto::ProtoSparseList* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
-    if (!pathObj->isString(ctx)) return PROTO_NONE;
     std::string path;
-    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    if (!PythonEnvironment::fsPathArgument(ctx, pathObj, path)) return notAPath(ctx);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     if (rmdir(path.c_str()) != 0) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -823,10 +835,9 @@ static const proto::ProtoObject* py_open(
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* flagsObj = posArgs->getAt(ctx, 1);
-    if (!pathObj->isString(ctx) || !flagsObj->isInteger(ctx)) return PROTO_NONE;
-    
+    if (!flagsObj->isInteger(ctx)) return PROTO_NONE;
     std::string path;
-    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    if (!PythonEnvironment::fsPathArgument(ctx, pathObj, path)) return notAPath(ctx);
     int flags = static_cast<int>(flagsObj->asLong(ctx));
     
     int mode = 0777;
@@ -907,9 +918,8 @@ static const proto::ProtoObject* py_utime(
     const proto::ProtoSparseList* kwargs) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
-    if (!pathObj || !pathObj->isString(ctx)) return PROTO_NONE;
     std::string path;
-    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    if (!PythonEnvironment::fsPathArgument(ctx, pathObj, path)) return notAPath(ctx);
 
     // Resolve `times` (positional[1] or kwargs['times']) and `ns` (kwargs only).
     const proto::ProtoObject* timesObj = nullptr;
@@ -1243,9 +1253,8 @@ static const proto::ProtoObject* py_path_splitroot_ex(
     const proto::ProtoSparseList* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
-    if (!pathObj->isString(ctx)) return PROTO_NONE;
     std::string path;
-    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    if (!PythonEnvironment::fsPathArgument(ctx, pathObj, path)) return notAPath(ctx);
 
     std::string drive = "";
     std::string root = "";
@@ -1336,9 +1345,8 @@ static const proto::ProtoObject* py_create_environ_method(
 static const proto::ProtoObject* py_os_readlink(proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
     if (args->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* pathObj = args->getAt(ctx, 0);
-    if (!pathObj->isString(ctx)) return PROTO_NONE;
     std::string path;
-    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    if (!PythonEnvironment::fsPathArgument(ctx, pathObj, path)) return notAPath(ctx);
     char buf[1024];
     ssize_t len = readlink(path.c_str(), buf, sizeof(buf)-1);
     if (len < 0) return pathObj; // Return path as dummy if failed

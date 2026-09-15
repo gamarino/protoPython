@@ -97,3 +97,12 @@ defect and adds a `test/regression/*.py` test registered in
   `\w`, `\d`, `\s` and `re.IGNORECASE` are ASCII-only, `re.error` does not
   exist (compile errors raise `RuntimeError`), and conditional, atomic and
   recursive groups are unsupported.
+- **Inherited comparison methods:** the comparison operators do not find
+  `__eq__`, `__lt__` and the other rich comparison methods when a base class
+  defines them (`S() == S()` is False and `S() < S()` raises `TypeError`
+  when only a base of `S` defines the method); calling the method directly
+  works. `pathlib.Path("a", "b") == pathlib.Path("a/b")` is therefore False.
+- **pathlib and os:** `Path.read_text` and `Path.write_text` fail because
+  `io.text_encoding` is a stub class; `os.DirEntry` has no `is_junction()`,
+  so `os.walk`, `shutil.rmtree` and `tempfile.TemporaryDirectory` cleanup
+  raise `AttributeError`.

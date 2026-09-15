@@ -36,8 +36,9 @@ The status column was checked on 2026-09-15 by importing each module with `proto
 Other native modules registered by `PythonEnvironment` include `sys`, `builtins`,
 `_thread`, `_signal`, `_weakref`, `_codecs`, `_ast`, `_imp`, `_warnings`, `_string`,
 `_stat`, `_opcode`, `_posixsubprocess`, `math`, `time`, `itertools`, `re`, `errno`,
-`marshal`, `binascii`, `fcntl`, `select`, `faulthandler`, `atexit`, `pathlib` and
-`exceptions`.
+`marshal`, `binascii`, `fcntl`, `select`, `faulthandler`, `atexit` and
+`exceptions`. `pathlib` is the standard library package in `lib/python3.14/pathlib`;
+the native stub that shadowed it was removed.
 
 ## References
 

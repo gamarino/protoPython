@@ -242,7 +242,7 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 
 | Module | Item | Behavior |
 |--------|------|----------|
-| pathlib.Path | exists, is_dir, is_file, mkdir | Native: stat-based exists/isdir/isfile; mkdir via mkdir(2). |
+| pathlib.Path | exists, is_dir, is_file, mkdir | Removed: `pathlib` is the standard library package (the native `Path` could not be called). |
 | decimal | Decimal | __mul__, __truediv__ added (v43). |
 | fractions | Fraction | __mul__ added (v43). |
 | io | BytesIO | Minimal: getvalue, read, write (bytes buffer). |
@@ -251,7 +251,7 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 
 | Module | Item | Behavior |
 |--------|------|----------|
-| pathlib.Path | read_text, write_text | Native: fstream-based file I/O. |
+| pathlib.Path | read_text, write_text | Removed with the native stub; the standard library versions fail while `io.text_encoding` is a stub (docs/CPYTHON_CONFORMANCE.md). |
 | os.path | isfile | Implemented: stat-based S_ISREG. |
 | functools | partial | Pre-existing: func, *args, **kwargs; __call__ merges. |
 | datetime | date, timedelta | date(year, month, day); timedelta(days, seconds, microseconds). |

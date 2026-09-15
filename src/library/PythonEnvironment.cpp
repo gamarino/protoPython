@@ -30,7 +30,6 @@
 #include <protoPython/ReModule.h>
 #include <protoPython/OsModule.h>
 #include <protoPython/OsPathModule.h>
-#include <protoPython/PathlibModule.h>
 #include <protoPython/CollectionsAbcModule.h>
 #include <protoPython/OpcodeModule.h>
 #include <protoPython/MarshalModule.h>
@@ -16609,6 +16608,31 @@ void PythonEnvironment::raiseImportError(const std::string& msg, const std::stri
     }
 }
 
+bool PythonEnvironment::fsPathArgument(proto::ProtoContext* ctx, const proto::ProtoObject* obj, std::string& out) {
+    if (!obj || obj == PROTO_NONE) return false;
+    if (obj->isString(ctx)) {
+        obj->asString(ctx)->toUTF8String(ctx, out);
+        return true;
+    }
+    if (obj->isInteger(ctx) || obj->isFloat(ctx) || obj->isBoolean(ctx)) return false;
+    PythonEnvironment* env = fromContext(ctx);
+    if (!env) return false;
+    // os.PathLike: call obj.__fspath__(), as os.fspath() does.
+    const proto::ProtoObject* method = env->getAttribute(ctx, obj, getInternedString(ctx, "__fspath__"), false);
+    if (!method || method == PROTO_NONE) {
+        if (env->hasPendingException()) env->clearPendingException();
+        return false;
+    }
+    const proto::ProtoObject* result = env->callObject(method, {});
+    if (!result) return false;
+    if (!result->isString(ctx)) {
+        env->raiseTypeError(ctx, "expected __fspath__() to return str or bytes");
+        return false;
+    }
+    result->asString(ctx)->toUTF8String(ctx, out);
+    return true;
+}
+
 void PythonEnvironment::raiseNameError(proto::ProtoContext* ctx, const std::string& name) {
     if (!nameErrorType) return;
     std::string msg = "name '" + name + "' is not defined";
@@ -21957,7 +21981,6 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     registerNativeModule(nativeProviderPtr, "_functools", [](proto::ProtoContext* ctx) { return functools::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "itertools", [](proto::ProtoContext* ctx) { return itertools::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "re", [](proto::ProtoContext* ctx) { return re::initialize(ctx); });
-    registerNativeModule(nativeProviderPtr, "pathlib", [](proto::ProtoContext* ctx) { return pathlib::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "atexit", [](proto::ProtoContext* ctx) { return atexit_module::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "_weakref", [](proto::ProtoContext* ctx) { return weakref::initialize(ctx); });
     exceptionsModule = exceptions::initialize(rootContext_, objectPrototype, typePrototype);
@@ -24794,7 +24817,15 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     // if found, invoke its __get__ regardless of what's in the instance
     // dict.  Mirrors CPython's MRO-then-instance-dict resolution order
     // for data descriptors.
-    if (!isClass && objClass && objClass != PROTO_NONE && getAttrDepth <= 1) {
+    // This applies at every nesting depth. It used to be limited to the
+    // outermost lookup (getAttrDepth <= 1), but the depth also counts
+    // lookups made by Python code running inside an outer lookup, such as
+    // a property getter: `self._drv` inside pathlib's PurePath.drive then
+    // skipped the __slots__ member descriptor and read None instead of
+    // raising AttributeError. The lookups below only recurse into class
+    // objects, which skip this block, and the depth > 50 guard above still
+    // bounds re-entry.
+    if (!isClass && objClass && objClass != PROTO_NONE) {
         const proto::ProtoObject* mroAttr2 = getAttribute(ctx, objClass, mroString, false);
         const proto::ProtoTuple* mroT2 = mroAttr2 ? mroAttr2->asTuple(ctx) : nullptr;
         if (mroT2) {

@@ -251,6 +251,17 @@ onwards. Commit hashes are given for reference.
   `3.14.0 (protoPython 1.0.0, Apr 2026) [GCC 13.3.0]`, with the compiler that
   built the runtime in brackets, so `platform.python_version()`,
   `python_build()` and `python_compiler()` work.
+- **pathlib:** `pathlib.Path` could not be called. A native `pathlib` module
+  with a non-callable `Path` object was registered ahead of the standard
+  library package; it is removed. Two runtime defects kept the package from
+  working once it loaded: attribute lookups made inside another lookup (such
+  as `self._drv` inside the `PurePath.drive` property) skipped data
+  descriptors, so an unset `__slots__` attribute read as None instead of
+  raising `AttributeError`; and native `os` functions (`stat`, `lstat`,
+  `listdir`, `scandir`, `mkdir`, `rmdir`, `remove`, `rename`, `access`,
+  `chdir`, `open`, `utime`, `readlink`) and `io.open` accepted only str paths,
+  ignoring `os.PathLike` arguments (`os.stat(Path(...))` returned None, so
+  `Path.exists()` was always True). Both are fixed.
 
 ### Performance
 

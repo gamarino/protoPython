@@ -342,6 +342,11 @@ public:
     void addTraceback(const proto::ProtoObject* exc, const proto::ProtoObject* frame, int lasti, int lineno);
     // name: the module the import failed for, stored as ImportError.name.
     void raiseImportError(const std::string& msg, const std::string& name = "");
+    /** CPython's path converter for native path arguments: stores the path
+     *  in `out` when `obj` is a str or an os.PathLike whose __fspath__
+     *  returns a str. Returns false otherwise, with an exception pending when
+     *  __fspath__ raised or returned something else. */
+    static bool fsPathArgument(proto::ProtoContext* ctx, const proto::ProtoObject* obj, std::string& out);
     bool isException(const proto::ProtoObject* exc, const proto::ProtoObject* type);
     const proto::ProtoObject* lookupName(const std::string& name);
     void storeName(const std::string& name, const proto::ProtoObject* val);

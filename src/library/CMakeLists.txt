@@ -15,7 +15,6 @@ add_library(protoPython SHARED
     ReModule.cpp
     OsModule.cpp
     OsPathModule.cpp
-    PathlibModule.cpp
     CollectionsAbcModule.cpp
     AtexitModule.cpp
     PythonEnvironment.cpp

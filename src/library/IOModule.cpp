@@ -469,10 +469,12 @@ static const proto::ProtoObject* py_io_open(
         return fileObj;
     }
 
-    if (!fileArg->isString(context)) return PROTO_NONE;
-
+    // A str or an os.PathLike (such as pathlib.Path), as CPython accepts.
     std::string filename;
-    fileArg->asString(context)->toUTF8String(context, filename);
+    if (!PythonEnvironment::fsPathArgument(context, fileArg, filename)) {
+        PythonEnvironment* pathEnv = PythonEnvironment::fromContext(context);
+        return (pathEnv && pathEnv->hasPendingException()) ? nullptr : PROTO_NONE;
+    }
 
     std::string mode = "r";
     if (positionalParameters->getSize(context) >= 2 && positionalParameters->getAt(context, 1)->isString(context)) {
