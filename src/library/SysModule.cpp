@@ -774,8 +774,20 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "copyright"), PythonEnvironment::getInternedString(ctx,
         "Copyright (c) 2023-2026 Gustavo Marino.\nprotoPython is released under the MIT License.")->asObject(ctx));
 
-    // sys.version: the Python language version, then the protoPython version.
-    sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "version"), PythonEnvironment::getInternedString(ctx, "3.14.0 (protoPython " PROTOPYTHON_VERSION ", Apr 2026)")->asObject(ctx));
+    // sys.version: the Python language version, then "(build, date) [compiler]"
+    // as CPython lays it out, with the protoPython version as the build.
+    // platform._sys_version() requires the "[compiler]" part; without it
+    // platform.python_version() raised ValueError.
+#if defined(__clang__)
+#define PROTOPY_SYS_VERSION_COMPILER "Clang " __clang_version__
+#elif defined(__GNUC__)
+#define PROTOPY_SYS_VERSION_COMPILER "GCC " __VERSION__
+#else
+#define PROTOPY_SYS_VERSION_COMPILER "unknown compiler"
+#endif
+    sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "version"), PythonEnvironment::getInternedString(ctx,
+        "3.14.0 (protoPython " PROTOPYTHON_VERSION ", Apr 2026) [" PROTOPY_SYS_VERSION_COMPILER "]")->asObject(ctx));
+#undef PROTOPY_SYS_VERSION_COMPILER
 
     // sys.base_prefix, sys.prefix, sys.exec_prefix, sys.base_exec_prefix
     if (env) {

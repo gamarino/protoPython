@@ -246,6 +246,11 @@ onwards. Commit hashes are given for reference.
   constructor ignored those keywords and the import system did not set `name`,
   so `site` printed errors for the absent `sitecustomize` and `usercustomize`
   modules. All three are fixed and `import site` completes silently.
+- **platform.python_version():** it raised `ValueError: failed to parse
+  CPython sys.version`. `sys.version` now has CPython's layout,
+  `3.14.0 (protoPython 1.0.0, Apr 2026) [GCC 13.3.0]`, with the compiler that
+  built the runtime in brackets, so `platform.python_version()`,
+  `python_build()` and `python_compiler()` work.
 
 ### Performance
 
