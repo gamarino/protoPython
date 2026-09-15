@@ -5,24 +5,198 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Changes on `main` since the 0.3.0 entry, from commit `038eb6ea` (2026-05-12)
+onwards. Commit hashes are given for reference.
+
+> **Version numbering.** `CMakeLists.txt` declares version 1.0.0. The version
+> was raised from 0.2.0 to 1.0.0 in `fd29013c` (2026-04-20), the commit tagged
+> `v1.0.0`; the only other tag is `v0.2.0` (2026-02-13). This file has no
+> `[1.0.0]` entry. The `[0.3.0]` entry below was added on 2026-05-10
+> (`9fa74ad1`), after the `v1.0.0` tag, and has no matching tag or CMake
+> version.
+
+### Added
+
+- **Language:** PEP 695 type parameters on classes and functions, and `type`
+  aliases (`d2cc4ffb`, `3f8ee9f5`); PEP 560 `__mro_entries__` and
+  `__orig_bases__` in class creation (`58a7c25f`); starred expressions in
+  subscripts, PEP 646 (`06b841a6`); `class C(*bases, **kw)` (`861c4307`).
+- **Standard library:** `import typing` completes, with `Generic[T]`
+  subclasses, `Protocol` and aliases (`63945ff9`, `e160bc86`); `import asyncio`
+  works (`461d3e6b`), and `asyncio.run()` with `gather` no longer hangs
+  (`311e21fa`); `sys.setswitchinterval` and `sys.getswitchinterval`
+  (`198fa281`); `itertools.batched` (`6f7b6549`); `collections.defaultdict`
+  implemented on `dict.__missing__` (`fba4b8e4`).
+- **Operating system interfaces:** a POSIX subset of `os` (`read`, `write`,
+  `dup`, `dup2`, `fork`, the `exec*` family and more), a new `fcntl` module and
+  `_posixsubprocess` fixes, so `subprocess.run(..., capture_output=True)` works
+  (`c863ccb5`); further `os`, `time`, `signal`, `sys` and `fcntl` functions
+  and constants (`6554b512`, `ea12e3db`, `775ec6b2`, `c514eb69`, `1c54f1f9`,
+  `cc1c0efa`, `2eef3141`, `7f01b16a`, `52764c2f`, `237e2a6b`).
+- **Command line:** CPython interpreter flags such as `-I`, `-E`, `-S`, `-O`,
+  `-B`, `-u`, `-X opt` and `-W filter` are accepted as no-ops, and
+  `sys.executable` is read from `/proc/self/exe` (`294b3316`).
+- **Benchmarks:** the harness rejects runs that time out, exit with an error or
+  do not print the expected result line (`e0d96c9b`); benchmarks print a
+  `BENCH_RESULT` line with their inner timing, and
+  `benchmarks/run_full_stack.py` compares protoPython with protoCpp and CPython
+  at the same workload sizes (`3d425957`); a subset of pyperformance workloads
+  (`5cf365ce`).
+
+### Changed
+
+- **Scripts no longer call `main()` implicitly.** protopy used to call a
+  module-level `main()` after running a script, so a script that called
+  `main()` itself ran it twice. Scripts now behave as in CPython. Wall-clock
+  and RSS figures recorded for protopy before this change include that extra
+  run; inner timings are unaffected (`bd6bd4f0`).
+- **`vars(obj)` and `obj.__dict__` of plain instances iterate in hash order**,
+  not insertion order, because instance attribute writes no longer maintain a
+  separate key list. Dicts built with `{...}`, `dict(...)` and item assignment
+  keep insertion order (`6368ec16`).
+- **Blocking calls no longer stall garbage collection.** `time.sleep`,
+  `os.read`, `os.write`, `os.waitpid`, `select.select`, `signal.pause`,
+  `input()`, lock acquisition and thread joins run inside protoCore's
+  unmanaged regions, so a thread blocked in the kernel does not hold up
+  collection for the other threads (`d1f126b6`).
+- **Packaging:** the DEB and RPM packages depend on the `protocore` package
+  instead of bundling libprotoCore (`ca6b47d7`).
+- **Build:** `libprotoPython` is compiled with `-ftls-model=initial-exec`, so
+  it must be loaded at program start rather than with a later `dlopen`
+  (`4ceb8694`). Diagnostic accessors are compile-time false in release builds;
+  compile with `-DPROTOPY_DIAG_ENABLED=1` to re-enable them (`82a5dd08`).
+- **protoCore requirements:** several changes use recent protoCore features,
+  for example the unmanaged-region API (protoCore `79a725c9`, used by
+  `d1f126b6`) and exact numeric comparison (protoCore `0335411b`, used by
+  `2cfb1e22`). Build against a current protoCore.
+- **Benchmarks:** `memory_pressure` is reported but excluded from the geometric
+  mean, because protoCore's collector defers reclamation by design
+  (`0515365b`).
+
+### Fixed
+
+- **Exit status:** `SystemExit.code` follows CPython (`None`, `args[0]`, or the
+  arguments tuple); an uncaught `SystemExit` exits with 0 for `None`, with the
+  value for an int, and with 1 after printing any other value (`27bd35f9`).
+  The same rules apply to `protopy -c`, which previously exited with 70; its
+  usage text now reports version 1.0.0 (`b8f36d11`).
+- **Local variables:** fast locals start unbound, so reading or deleting one
+  before assignment raises `UnboundLocalError` (`1e96e596`), also in the fused
+  loop opcodes (`92971f9e`). Names assigned inside `while` bodies are compiled
+  as function locals instead of globals (`d7dfec38`).
+- **Thread safety without a GIL:**
+  - list, set, dict and deque mutators publish their new contents atomically
+    and retry on conflict, so concurrent `append`, `pop`, `add`, `d[k] = v` and
+    similar operations no longer lose or duplicate items (`1614224f`,
+    `bacdd8ca`, `1cc408a4`, `08911529`, `7e363525`); deque items are now traced
+    by the GC (`7e363525`).
+  - the keyword-names stack and the native coroutine queue are per thread,
+    runtime helpers use the calling thread's context, and the exception
+    filename cache is thread-local (`a776cccb`, `2ade50ac`, `9df4969b`,
+    `e731474d`).
+  - address-keyed caches (the type cache and the `LOAD_METHOD` inline cache)
+    are invalidated on every GC cycle, fixing crashes when freed addresses are
+    reused (`72ec5b35`); the `LOAD_METHOD` inline cache no longer binds calls
+    to the first receiver it saw (`9338190a`).
+  - `threading.Thread.join()` waits for the thread (`24bd0930`); `with lock:`
+    acquires and releases native locks (`55bff9c6`); `Lock` and `RLock`
+    acquisition cannot stall a stop-the-world pause (`a2a7fdb7`).
+- **GC roots:** six native functions now pin transient objects they hold across
+  calls that may trigger garbage collection (`df58d298`).
+- **Dicts and numbers:** dict keys are looked up by hash alone, with the same
+  key hash on every construction and lookup path (`3bf97555`, `12ce26cb`);
+  unhashable keys raise `TypeError` (`641819d1`); equal ints and floats
+  compare, hash and act as dict keys as one value beyond the `long long` range
+  (`2cfb1e22`).
+- **CPython semantics, 2026-09-13 and 2026-09-14 rounds** (summarised with the
+  known remaining divergences in `docs/CPYTHON_CONFORMANCE.md`, `f800e14c`):
+  `del name`; `exec` and `eval` of code objects; `__init_subclass__` for
+  `type()`, `types.new_class()` and metaclasses; `reversed()`, `sorted()` and
+  `map(strict=True)`; `OrderedDict`, `deque` and `defaultdict`; zero-argument
+  `__class__`; rich comparison results and `TypeError` for unsupported
+  orderings; `globals()` and `vars(module)` as mappings; `str()` of exceptions
+  and of `KeyError`; duplicate call keywords; bytes and str comparisons;
+  `delattr()`; submodule imports; `@dataclass(slots=True)`;
+  `function.__closure__` and `types.CellType`; `type(module)`.
+- **CPython semantics, 2026-05-13 to 2026-05-18 rounds**, driven by
+  `test/cpython/test_descr.py`: `__mro__` derived from the protoCore parent
+  chain in C3 order (`21d13bff`, `8410c1ba`); validated `__bases__` and
+  `__class__` assignment; `__slots__` descriptors and name mangling; `super`
+  as a real type (`c92e4ea8`); metaclass calculation and `ABCMeta.register`
+  (`eef3b7fa`, `998712f2`); getset and member descriptors; the copyreg and
+  pickle reduce protocol; `dir()` filtering; module objects. The commit that
+  closed these rounds reports `test_descr.py` at 148 of 155 non-skipped tests
+  passing, with the 7 remaining failures depending on synchronous garbage
+  collection (`861b77b0`).
+- **protopyc:** for-loop targets inside functions and globals in spawned
+  threads (`eab663bd`); `and` and `or` as short-circuit expressions
+  (`1084f969`); rebinding of module-level names (`aeb0e969`); `is` and
+  `is not`, string literal escaping and SmallInt bitwise operators
+  (`da79a3e7`); conditional expressions (`d6900b3d`); default arguments and
+  closures (`c857fea2`); a GC safepoint on every loop iteration (`b159c48e`).
+
+### Performance
+
+Figures are quoted from the commit messages that report them; they were
+measured on the development machine at the time. Full reports are in
+`benchmarks/reports/`.
+
+- A peephole pass fuses three accumulator and loop-test bytecode sequences
+  into single opcodes (`OP_ACC_FAST_FAST`, `OP_INC_FAST_K`,
+  `OP_LT_FAST_FAST_JF`, numbered 212 to 214). The commit reports a geometric
+  mean of 6.62x → 4.72x the CPython 3.14t time; set `PROTOPY_NO_PEEPHOLE=1`
+  to disable the pass (`48d81bbd`).
+- Compiling names assigned in `while` bodies as locals: `nqueens` with N=9 went
+  from 9.4 s to 1.56 s (`d7dfec38`).
+- Removing per-call `getenv` from the interpreter hot path: `binary_trees`
+  6640 ms → 2005 ms (`45a25c41`); every remaining runtime `getenv` is read once
+  (`0515365b`).
+- Release diagnostics compiled out, the initial-exec TLS model, and a 256-slot
+  stack buffer for call-frame locals (`82a5dd08`, `4ceb8694`, `c011dee9`);
+  together `call_recursion` went from 2704.40 ms to 98.70 ms (`c011dee9`).
+- A per-thread type cache for `LOAD_ATTR` (`10ae9596`, `8e50cbe4`, `9c4f1578`);
+  an inline cache for `LOAD_METHOD` (`cb6bb965`); string concatenation through
+  protoCore rope append, `str_concat_loop` −39 % (`0d06e617`);
+  single-allocation argument lists (`f1ac4149`, `ac4a2505`); name resolution
+  without string conversion (`5bc4d228`).
+- Instance attribute writes no longer maintain a key list: `binary_trees`
+  −30 % (`6368ec16`).
+- Dict construction is no longer quadratic: 2000 keys took 4.4 s before, 20000
+  keys now take a few milliseconds (`3bf97555`).
+- protopyc: inline SmallInt arithmetic and comparisons (`abe3aa30`), direct
+  self-recursive calls (`ab8d673c`), and C++ `return` instead of exceptions
+  for function returns, which took `fib(25)` from about 1.80 s to about
+  0.24 s (`7d02dfcc`).
+
+### Repository and documentation
+
+- Build trees, profiler output and debug logs are no longer tracked
+  (`52bd70c8`, `bc032b22`, `b3aefbcf`).
+- Documentation restructured: audits moved to `docs/audits/`, the conformance
+  history and obsolete plans moved to `docs/archive/`, `docs/README.md`
+  rewritten as an index, and the conformance and debug scripts default to
+  `build_release` (`2183208d`, `3f461d3c`).
+
 ## [0.3.0] - 2026-05-11
 
 ### CPython conformance sweep (test_descr.py)
 
-Brought `test/cpython/test_descr.py` from **104 failing tests** (early in the
-session) down to **73 issues** (54 failures + 19 errors out of 165 tests)
-in three work sessions of intensive, root-cause-only fixes.  Every change
+Brought `test/cpython/test_descr.py` from **104 failing tests** (at the start
+of the sweep) down to **73 issues** (54 failures + 19 errors out of 165 tests)
+in three rounds of root-cause-only fixes.  Every change
 was paired with `ctest --test-dir build-release`; ctest stayed at
 **199/199** throughout.
 
-Across sessions the test_descr.py count improved from 104 → 73 via
+Across those rounds the test_descr.py count improved from 104 → 73 via
 ~20 root-cause fixes spread across str unbound dispatch, dict()
 strictness, bound-method ordering, complex hashing, type()
 validation, py_object_new rules, OP_STORE_SUBSCR MRO walk, deque
 trampolines, raiseIndexError, and more — every one paired with
 ctest green.
 
-### Fixed: str unbound dispatch sweep (session 3, May 2026)
+### Fixed: str unbound dispatch sweep (May 2026)
 
 A second wave of unbound built-in dunder fixes landed for `str` methods
 that returned `None` / `False` when invoked as `str.method(receiver, …)`:
@@ -195,7 +369,7 @@ matching CPython's unoverridden-dunder semantics.
 
 ### Fixed: 20-commit sweep — user __iter__ / __next__ + dispatch fixes + format minilanguage + datetime repr + mapping protocol
 
-Seventh twenty-commit sweep this session.  Theme: get user-class
+Seventh twenty-commit sweep of the 0.3.0 cycle.  Theme: get user-class
 iterators and Python-level dunders to flow end-to-end through
 the builtins.  Most of the round is wiring the same env->iter /
 env->next + invokePythonCallable dispatch that the previous
@@ -287,7 +461,7 @@ Highlights:
 
 ### Fixed: 20-commit sweep — range / slice protocol + f-string format spec + int/float parsing + py_print kwargs + bytes.hex/fromhex
 
-Sixth twenty-commit sweep this session.  Theme: the sequence
+Sixth twenty-commit sweep of the 0.3.0 cycle.  Theme: the sequence
 protocol on `range` and `slice`, f-string format spec dispatch,
 PEP 515 underscore parsing in `int()` / `float()`, missing
 `print()` kwargs, and round-trip-correct `bytes.hex` /
@@ -392,7 +566,7 @@ Highlights:
 
 ### Fixed: 21-commit sweep — format minilanguage + __index__ protocol + iter validation + dict.update iterables + bool spelling
 
-Fifth twenty-commit sweep this session (21 commits in this round).
+Fifth twenty-commit sweep of the 0.3.0 cycle (21 commits in this round).
 Theme: the PEP 3101 format minilanguage, the `__index__` protocol on
 all four sequence subscripts, tighter error fidelity on bytes
 methods, and one regression cleanup for dict.update against
@@ -473,7 +647,7 @@ Highlights:
 
 ### Fixed: 20-commit sweep — bytes-aware constructors + bool subclass parity + None-key dict + complex parser
 
-Fourth twenty-commit sweep this session.  Theme: round out the
+Fourth twenty-commit sweep of the 0.3.0 cycle.  Theme: round out the
 int/bool subclass story, add missing parser branches, and close
 a handful of correctness gaps around hash-keyed lookups.
 
@@ -529,7 +703,7 @@ Highlights:
 
 ### Fixed: 20-commit sweep — operator strictness + correctness gaps
 
-Third twenty-commit sweep this session.  Targets operator-form
+Third twenty-commit sweep of the 0.3.0 cycle.  Targets operator-form
 strictness for built-in types (where the named method accepts loose
 inputs but `+` / `*` / `|` / `&` / etc. should require matching
 types) and a couple of deeper correctness bugs (floor div/mod
