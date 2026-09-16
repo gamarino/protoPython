@@ -97,6 +97,13 @@ onwards. Commit hashes are given for reference.
 
 ### Fixed
 
+- **`sys.path`:** a directory inserted into `sys.path` at runtime is searched by
+  `import` again. The Python module provider walked only the search paths
+  captured when the environment was created, so `sys.path.insert(0, d)` before
+  an import had no effect and the import raised `ModuleNotFoundError`. The
+  provider now reads the live `sys.path` on every load, falling back to the
+  paths it was built with so the standard library stays importable if a program
+  reassigns or clears `sys.path`.
 - **Ordering comparisons:** `object() < object()` returned `True` instead of
   raising `TypeError: '<' not supported between instances of 'object' and
   'object'`. `compareObjects` refused to raise when either operand's type was

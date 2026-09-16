@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <algorithm>
 #include <iostream>
+#include <vector>
 
 namespace protoPython {
 
@@ -30,6 +31,61 @@ bool fileExists(const std::string& path) {
 PythonModuleProvider::PythonModuleProvider(std::vector<std::string> basePaths)
     : basePaths_(std::move(basePaths)), guid_("protoPython.stdlib"), alias_("python_stdlib") {}
 
+/**
+ * The directories to search, in order: the live `sys.path` first, then the
+ * base paths this provider was built with.
+ *
+ * `sys.path` is read on every load because a program may extend it at runtime
+ * (`sys.path.insert(0, d)` before an import, the documented way to import from
+ * a directory decided while running). The provider used to walk only the base
+ * paths captured when the environment was created, so such an entry was
+ * ignored and the import failed with ModuleNotFoundError.
+ *
+ * The base paths stay as a fallback: they are also appended to `sys.path` at
+ * startup, but a program is free to reassign or clear `sys.path`, and the
+ * standard library must remain importable when it does.
+ */
+static std::vector<std::string> searchDirectories(const std::vector<std::string>& basePaths,
+                                                  proto::ProtoContext* ctx) {
+    std::vector<std::string> paths;
+
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoObject* sysModule = env ? env->getSysModule() : nullptr;
+    if (env && sysModule && sysModule != PROTO_NONE) {
+        const proto::ProtoObject* pathObj =
+            sysModule->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "path"));
+        const proto::ProtoList* entries = nullptr;
+        if (pathObj && pathObj != PROTO_NONE) {
+            // sys.path is a Python list: the elements live in its __data__
+            // payload. A bare ProtoList is accepted too.
+            const proto::ProtoObject* data = pathObj->getAttribute(ctx, env->getDataString());
+            if (data && data->asList(ctx)) entries = data->asList(ctx);
+            else if (pathObj->asList(ctx)) entries = pathObj->asList(ctx);
+        }
+        for (unsigned long i = 0; entries && i < entries->getSize(ctx); ++i) {
+            const proto::ProtoObject* entry = entries->getAt(ctx, static_cast<int>(i));
+            if (!entry || entry == PROTO_NONE) continue;
+            // A str subclass keeps its text in __data__, like every wrapped
+            // built-in; a plain str is the string itself.
+            if (!entry->isString(ctx)) {
+                const proto::ProtoObject* d = entry->getAttribute(ctx, env->getDataString());
+                entry = (d && d->isString(ctx)) ? d : nullptr;
+            }
+            if (!entry) continue;
+            std::string text;
+            entry->asString(ctx)->toUTF8String(ctx, text);
+            if (!text.empty()) paths.push_back(text);
+        }
+    }
+
+    for (const auto& basePath : basePaths) {
+        if (std::find(paths.begin(), paths.end(), basePath) == paths.end()) {
+            paths.push_back(basePath);
+        }
+    }
+    return paths;
+}
+
 const proto::ProtoObject* PythonModuleProvider::tryLoad(const std::string& logicalPath, proto::ProtoContext* ctx) {
     // 1. Convert dotted path to slash path
     std::string relPath = logicalPath;
@@ -39,7 +95,7 @@ const proto::ProtoObject* PythonModuleProvider::tryLoad(const std::string& logic
     const proto::ProtoString* fileKey = proto::ProtoString::createSymbol(ctx, "__file__");
     const proto::ProtoString* pathKey = proto::ProtoString::createSymbol(ctx, "__path__");
 
-    for (const auto& basePath : basePaths_) {
+    for (const auto& basePath : searchDirectories(basePaths_, ctx)) {
         // 2. Try <base>/<path>.py
         std::string pyPath = joinPath(basePath, relPath + ".py");
         if (protoPython::diagResolveEnabled()) {

@@ -317,6 +317,13 @@ set_tests_properties(protopy_random_seed_reproducible PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# A directory added to sys.path at runtime is searched by import.
+add_test(NAME protopy_sys_path_runtime_insert
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/sys_path_runtime_insert.py)
+set_tests_properties(protopy_sys_path_runtime_insert PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # Ordering comparisons on plain objects raise TypeError, as in CPython.
 add_test(NAME protopy_object_ordering_typeerror
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/object_ordering_typeerror.py)
