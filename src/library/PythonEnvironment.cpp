@@ -28610,6 +28610,17 @@ static const proto::ProtoObject* buildTraceback(proto::ProtoContext* ctx, const 
     return exc->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__traceback__"));
 }
 
+// A new, collectable str for computed text — the counterpart of
+// getInternedString, which is for vocabulary only (see the header).  Nothing is
+// added to the intern pool, so equal values are distinct objects and the
+// collector reclaims them once they are unreachable.
+const proto::ProtoObject* PythonEnvironment::newStr(proto::ProtoContext* ctx, const std::string& str) {
+    if (!ctx) ctx = s_threadContext;
+    if (!ctx) return PROTO_NONE;
+    const proto::ProtoString* s = proto::ProtoString::fromStdString(ctx, str);
+    return s ? s->asObject(ctx) : PROTO_NONE;
+}
+
 const proto::ProtoString* PythonEnvironment::getInternedString(proto::ProtoContext* ctx, const std::string& str) {
     // Phase 0: thread-local cache.  Truly lock-free (not even an
     // atomic load): the same thread that interns a string sees the

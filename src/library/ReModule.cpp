@@ -89,8 +89,14 @@ static bool wideArg(proto::ProtoContext* ctx, const proto::ProtoObject* obj, std
     return true;
 }
 
+// Every string `re` hands back — matches, groups, sub / split / findall
+// results, escape output — is computed from the subject, so it is data, not
+// vocabulary: an ordinary collectable str, never an interned symbol. Interning
+// these made each distinct result permanent, so `re` over varying input grew
+// the heap without bound. See PythonEnvironment::getInternedString in the
+// header for the rule.
 static const proto::ProtoObject* newStr(proto::ProtoContext* ctx, const std::wstring& w) {
-    return PythonEnvironment::getInternedString(ctx, toUtf8(w).c_str())->asObject(ctx);
+    return PythonEnvironment::newStr(ctx, toUtf8(w));
 }
 
 // ---------------------------------------------------------------------------
@@ -733,7 +739,8 @@ static const proto::ProtoObject* py_compile(
         proto::ProtoString::createSymbol(ctx, "__pattern_proto__"));
     if (!proto) return PROTO_NONE;
     const proto::ProtoObject* p = proto->newChild(ctx, true);
-    const proto::ProtoObject* patObj = PythonEnvironment::getInternedString(ctx, pat.c_str())->asObject(ctx);
+    // The pattern source is user text, not vocabulary.
+    const proto::ProtoObject* patObj = PythonEnvironment::newStr(ctx, pat);
     p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_pattern__"), patObj);
     p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_flags__"),
         ctx->fromInteger(flags));
@@ -1251,14 +1258,16 @@ static const proto::ProtoObject* py_pattern_scanner_method(
     const proto::ProtoObject* mp = getMatchProto(ctx, self);
 
     const proto::ProtoObject* iterObj = ctx->newObject(false);
+    // The scanned subject and the pattern are data: interning them kept whole
+    // input texts alive for the life of the process.
     iterObj = iterObj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__scan_str__"),
-        PythonEnvironment::getInternedString(ctx, strVal.c_str())->asObject(ctx));
+        PythonEnvironment::newStr(ctx, strVal));
     iterObj = iterObj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__scan_pat__"),
-        PythonEnvironment::getInternedString(ctx, pat.c_str())->asObject(ctx));
+        PythonEnvironment::newStr(ctx, pat));
     iterObj = iterObj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__scan_pos__"),
         ctx->fromInteger(0));
     iterObj = iterObj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "pattern"),
-        PythonEnvironment::getInternedString(ctx, pat.c_str())->asObject(ctx));
+        PythonEnvironment::newStr(ctx, pat));
     if (mp) iterObj = iterObj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__match_proto__"), mp);
     iterObj = iterObj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "match"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(iterObj), py_scanner_iter_match));
@@ -1329,9 +1338,9 @@ static const proto::ProtoObject* py_scanner_new(
 
     const proto::ProtoObject* compiledPat = ppAttr ? ppAttr->newChild(ctx, true) : ctx->newObject(false);
     compiledPat = compiledPat->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_pattern__"),
-        PythonEnvironment::getInternedString(ctx, combined.c_str())->asObject(ctx));
+        PythonEnvironment::newStr(ctx, combined));
     compiledPat = compiledPat->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "pattern"),
-        PythonEnvironment::getInternedString(ctx, combined.c_str())->asObject(ctx));
+        PythonEnvironment::newStr(ctx, combined));
     if (mpAttr) compiledPat = compiledPat->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__match_proto__"), mpAttr);
     compiledPat = compiledPat->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "scanner"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(compiledPat), py_pattern_scanner_method));
@@ -1339,7 +1348,7 @@ static const proto::ProtoObject* py_scanner_new(
     scanObj = scanObj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "scanner"), compiledPat);
     scanObj = scanObj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__scan_lexicon__"), actionList->asObject(ctx));
     scanObj = scanObj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__scan_pattern__"),
-        PythonEnvironment::getInternedString(ctx, combined.c_str())->asObject(ctx));
+        PythonEnvironment::newStr(ctx, combined));
     if (mpAttr) scanObj = scanObj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__match_proto__"), mpAttr);
 
     return scanObj;

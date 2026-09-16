@@ -310,6 +310,16 @@ set_tests_properties(protopy_with_return_in_loop PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# Strings computed by `re` are collectable objects, not interned symbols.
+# Run under a heap limit so the collector actually runs and the RSS bound in
+# the test means something: without a limit protoCore never starts a cycle.
+add_test(NAME protopy_re_results_not_interned
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/re_results_not_interned.py)
+set_tests_properties(protopy_re_results_not_interned PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    ENVIRONMENT "PROTOCORE_HEAP_LIMIT_CELLS=500000"
+    TIMEOUT 120
+    LABELS "regression_gate")
 # bool(), `if` / `while` and the native truth test agree on every shape.
 add_test(NAME protopy_truth_tests
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/truth_tests.py)

@@ -29,8 +29,35 @@ public:
                      const std::vector<std::string>& argv = {});
     ~PythonEnvironment();
 
-    // Global string interning for resolving cross-module identity matches
+    /**
+     * @brief Interns @p str and returns the process-wide canonical symbol.
+     *
+     * For **vocabulary only**: attribute and method names, builtin names,
+     * keyword and dunder strings — text drawn from a set that is bounded by the
+     * program, not by its input.
+     *
+     * An interned string is a `ProtoString::createSymbol` symbol. Symbols are
+     * never collected, and the string is also added to a process-wide pool and
+     * a thread-local cache, so every distinct string passed here stays in
+     * memory for the life of the process and makes later lookups slower.
+     *
+     * Never use it for *data*: text computed from user input — a regexp match,
+     * a formatted string, a path read from the file system, the result of a str
+     * method. Those are unbounded in number, so interning them is an unbounded
+     * leak. Use newStr() instead. Attribute keys are safe either way:
+     * setAttribute / getAttribute intern the name themselves.
+     */
     static const proto::ProtoString* getInternedString(proto::ProtoContext* ctx, const std::string& str);
+
+    /**
+     * @brief A new, collectable `str` object holding @p str.
+     *
+     * The counterpart of getInternedString() for computed data strings: the
+     * result is an ordinary garbage-collected string with no entry in the
+     * intern pool, so equal values are distinct objects and are reclaimed once
+     * unreachable.
+     */
+    static const proto::ProtoObject* newStr(proto::ProtoContext* ctx, const std::string& str);
     
     /**
      * @brief Returns a canonical dunder string for the given name.

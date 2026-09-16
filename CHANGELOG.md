@@ -97,6 +97,17 @@ onwards. Commit hashes are given for reference.
 
 ### Fixed
 
+- **`re` no longer interns its results:** every match, group, `sub`, `split`,
+  `findall` and `escape` result, and the pattern source and scanned subject,
+  were created with `getInternedString`, which returns a symbol protoCore never
+  collects and records in a process-wide pool. Each distinct result was
+  therefore permanent, so `re` over varying input grew the heap without bound.
+  They are ordinary collectable strings now. Over 50000 calls producing
+  distinct results, under a heap limit so the collector runs, RSS growth falls
+  from 114948 KB to 49804 KB. The cost is 21.5% more instructions on code whose
+  results repeat, which interning used to serve from a thread-local cache
+  without allocating. `PythonEnvironment::newStr` is the helper for computed
+  text; the header now states that `getInternedString` is for vocabulary only.
 - **Native truth test:** `PythonEnvironment::isTrue` answered `False` for every
   user-defined object. It tried the container fast paths before the dunder
   lookups, and `asSparseList()` matches the own-attribute storage of an
