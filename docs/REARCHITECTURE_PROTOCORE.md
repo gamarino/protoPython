@@ -118,7 +118,7 @@ No mutexes were added in the ThreadingStrategy or ExecutionEngine paths. PythonE
 
 Run re-architecture tests: `ctest -R "test_execution_engine|test_threading_strategy|test_basic_block"` from the build directory.
 
-Full suite (protoCore + protoPython): `ctest` from the build directory (71 tests; all must pass before commit).
+Full suite (protoCore + protoPython): `ctest` from the build directory (392 tests on 2026-09-15; all must pass before commit).
 
 ---
 
