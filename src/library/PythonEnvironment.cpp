@@ -29312,23 +29312,79 @@ bool PythonEnvironment::isTrue(const proto::ProtoObject* obj) {
     if (!obj || obj == PROTO_NONE || obj == PROTO_FALSE) return false;
     if (obj == PROTO_TRUE) return true;
     proto::ProtoContext* ctx = s_threadContext ? s_threadContext : rootContext_;
-    if (obj->isInteger(ctx)) return obj->asLong(ctx) != 0;
+    // Only a SmallInteger may be converted with asLong: a LargeInteger does not
+    // fit in 64 bits and asLong rejects it ("LargeInteger value exceeds long
+    // long range"), which made `while big_int:` raise.  A value wide enough to
+    // need a LargeInteger is never zero, so it is always true.
+    if (proto::isSmallInt(obj)) return obj->asLong(ctx) != 0;
+    if (obj->isInteger(ctx)) return true;
     if (obj->isDouble(ctx)) return obj->asDouble(ctx) != 0.0;
-    if (obj->asList(ctx)) return obj->asList(ctx)->getSize(ctx) > 0;
-    if (obj->asSparseList(ctx)) return obj->asSparseList(ctx)->getSize(ctx) > 0;
-    if (obj->isTuple(ctx)) return obj->asTuple(ctx)->getSize(ctx) > 0;
+    // Strings before asList: asList() answers true for a string, so a str used
+    // to be measured through the list path.  The tag-only test is the cheap one
+    // and, unlike isString(), it also recognises the interned symbols that
+    // every Python string literal becomes.
+    if (proto::ProtoObject::isStringTagFast(obj)) return obj->asString(ctx)->getSize(ctx) > 0;
 
-    // Check for __bool__ or __len__
-    const proto::ProtoObject* boolMethod = obj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__bool__"));
-    if (boolMethod && boolMethod->asMethod(ctx)) {
-        const proto::ProtoObject* res = boolMethod->asMethod(ctx)(ctx, obj, nullptr, getEmptyList(), nullptr);
-        return res && res->isBoolean(ctx) && res->asBoolean(ctx);
+    // __bool__, then __len__, BEFORE the raw-container fast paths below.
+    //
+    // The container checks used to come first, and asSparseList() matches the
+    // own-attribute storage of an ordinary Python instance, not just a mapping.
+    // An instance with no own attributes therefore measured as size 0 and every
+    // user-defined object tested false — `if obj:` was false for an object whose
+    // class defines __len__ returning 3, and for one that defines nothing at all.
+    // Ordering the dunders first is also what CPython does.
+    //
+    // The built-in containers are unaffected: list, dict, set, frozenset and
+    // tuple instances all carry native __bool__ and __len__ on their
+    // prototypes, so they answer here, and the raw checks below remain for raw
+    // protoCore values that carry no dunders at all.
+    //
+    // The dunder names are the environment's cached symbols: getInternedString()
+    // is a thread-local hash lookup, and this runs on every truth test that
+    // reaches a non-primitive object.
+    // A dunder may be a native method or a Python function; both must run. The
+    // native gate alone ignored every Python-defined __bool__ / __len__.
+    auto truthFromLength = [&](const proto::ProtoObject* res) -> bool {
+        if (!res) return false;
+        if (proto::isSmallInt(res)) return res->asLong(ctx) > 0;
+        return res->isInteger(ctx);  // a LargeInteger length is never zero
+    };
+
+    const proto::ProtoString* boolS = boolString ? boolString : PythonEnvironment::getInternedString(ctx, "__bool__");
+    const proto::ProtoObject* boolMethod = obj->getAttribute(ctx, boolS);
+    if (boolMethod && boolMethod != PROTO_NONE) {
+        const proto::ProtoObject* res = boolMethod->asMethod(ctx)
+            ? boolMethod->asMethod(ctx)(ctx, obj, nullptr, getEmptyList(), nullptr)
+            : callObject(boolMethod, {});
+        if (res) return res == PROTO_TRUE || (res->isBoolean(ctx) && res->asBoolean(ctx));
     }
-    const proto::ProtoObject* lenMethod = obj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__len__"));
-    if (lenMethod && lenMethod->asMethod(ctx)) {
-        const proto::ProtoObject* res = lenMethod->asMethod(ctx)(ctx, obj, nullptr, getEmptyList(), nullptr);
-        return res && res->isInteger(ctx) && res->asLong(ctx) > 0;
+    const proto::ProtoString* lenS = lenString ? lenString : PythonEnvironment::getInternedString(ctx, "__len__");
+    const proto::ProtoObject* lenMethod = obj->getAttribute(ctx, lenS);
+    if (lenMethod && lenMethod != PROTO_NONE) {
+        const proto::ProtoObject* res = lenMethod->asMethod(ctx)
+            ? lenMethod->asMethod(ctx)(ctx, obj, nullptr, getEmptyList(), nullptr)
+            : callObject(lenMethod, {});
+        if (res) return truthFromLength(res);
     }
+
+    // Raw protoCore containers, which reach here only without dunders.
+    //
+    // Each check demands pointer identity between the container and the object:
+    // asList / asSparseList / asSet also answer for a *wrapped* instance, by
+    // following its __data__ payload, and asSparseList answers for the
+    // own-attribute storage of any ordinary Python instance. Without the
+    // identity test an object with no own attributes measured as size 0, so
+    // every user-defined object without a native dunder tested false.
+    const proto::ProtoList* rawList = obj->asList(ctx);
+    if (rawList && reinterpret_cast<const proto::ProtoObject*>(rawList) == obj)
+        return rawList->getSize(ctx) > 0;
+    if (obj->isTuple(ctx)) return obj->asTuple(ctx)->getSize(ctx) > 0;
+    const proto::ProtoSet* rawSet = obj->asSet(ctx);
+    if (rawSet && reinterpret_cast<const proto::ProtoObject*>(rawSet) == obj)
+        return rawSet->getSize(ctx) > 0;
+    const proto::ProtoSparseList* rawMap = obj->asSparseList(ctx);
+    if (rawMap && reinterpret_cast<const proto::ProtoObject*>(rawMap) == obj)
+        return rawMap->getSize(ctx) > 0;
 
     return true; // Any non-empty object is true
 }

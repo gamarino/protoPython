@@ -2402,7 +2402,12 @@ static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     if (obj == PROTO_FALSE) return false;
     if (obj == PROTO_TRUE) return true;
 
-    if (obj->isInteger(ctx)) return (obj->asLong(ctx) != 0);
+    // Only a SmallInteger may be converted with asLong: a LargeInteger does not
+    // fit in 64 bits and asLong rejects it, so `while big_int:` and `if
+    // big_int:` raised "LargeInteger value exceeds long long range".  A value
+    // wide enough to need a LargeInteger is never zero, so it is always true.
+    if (proto::isSmallInt(obj)) return (obj->asLong(ctx) != 0);
+    if (obj->isInteger(ctx)) return true;
     if (obj->isDouble(ctx)) return (obj->asDouble(ctx) != 0.0);
     if (obj->isString(ctx)) return (obj->asString(ctx)->getSize(ctx) > 0);
 

@@ -310,6 +310,13 @@ set_tests_properties(protopy_with_return_in_loop PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# bool(), `if` / `while` and the native truth test agree on every shape.
+add_test(NAME protopy_truth_tests
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/truth_tests.py)
+set_tests_properties(protopy_truth_tests PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # random.Random(seed) replays the same sequence.
 add_test(NAME protopy_random_seed_reproducible
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/random_seed_reproducible.py)

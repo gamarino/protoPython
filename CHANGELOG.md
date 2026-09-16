@@ -97,6 +97,19 @@ onwards. Commit hashes are given for reference.
 
 ### Fixed
 
+- **Native truth test:** `PythonEnvironment::isTrue` answered `False` for every
+  user-defined object. It tried the container fast paths before the dunder
+  lookups, and `asSparseList()` matches the own-attribute storage of an
+  ordinary instance, so an object with no own attributes measured as size 0:
+  `if obj:` was false for an object whose class defines `__len__` returning 3,
+  and for one that defines nothing at all. A Python-defined `__bool__` or
+  `__len__` was ignored as well, because only native methods were invoked. The
+  dunders now run first, Python-defined ones included, and the raw-container
+  checks that remain demand pointer identity so they cannot match a wrapped
+  instance or an attribute map. Large integers are no longer converted with
+  `asLong`, which raised "LargeInteger value exceeds long long range"; the
+  interpreter's own truth test (`if` / `while`) had the same defect, so
+  `while big_int:` raised.
 - **`frozenset`:** the non-mutating set methods are available on frozenset —
   `union`, `intersection`, `difference`, `symmetric_difference`, `issubset`,
   `issuperset`, `isdisjoint` and `copy`. Only the operator forms (`|`, `&`,
