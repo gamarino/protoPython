@@ -914,13 +914,22 @@ add_test(NAME protopy_hpy_module_basics
 set_tests_properties(protopy_hpy_module_basics PROPERTIES
     TIMEOUT 60
     LABELS "regression_gate")
-# 1000 imports and calls of math_hpy.add, with a small GC allocation budget
-# (PROTOCORE_GC_MIN_BUDGET_CELLS) so the collector's trigger is armed early.
+# 20000 imports and calls of math_hpy.add under a hard heap limit, so the
+# collector really runs while HPy handles are being created and recycled.
+#
+# PROTOCORE_HEAP_LIMIT_CELLS is the only way to make protoCore collect: with no
+# limit it never starts a cycle by itself, it just grows the heap. The limit
+# alone is not enough either — a cycle starts when a thread needs cells the
+# heap cannot supply below the ceiling, so a run that allocates less than the
+# heap it already holds never collects, whatever the ceiling is. At the
+# previous 1000 iterations no ceiling down to 1000 cells produced a single
+# cycle; at 20000 iterations a 100000-cell ceiling (about 6 MiB) produces five,
+# in 0.23 s, with 20 of 20 runs passing.
 add_test(NAME protopy_hpy_stress
     COMMAND $<TARGET_FILE:protopy> -p ${CMAKE_BINARY_DIR}/test/hpy
             ${CMAKE_SOURCE_DIR}/test/hpy/stress_test_hpy.py)
 set_tests_properties(protopy_hpy_stress PROPERTIES
-    ENVIRONMENT "PROTOCORE_GC_MIN_BUDGET_CELLS=20000"
+    ENVIRONMENT "PROTOCORE_HEAP_LIMIT_CELLS=100000"
     TIMEOUT 120
     LABELS "regression_gate")
 
