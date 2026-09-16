@@ -97,6 +97,15 @@ onwards. Commit hashes are given for reference.
 
 ### Fixed
 
+- **`frozenset`:** the non-mutating set methods are available on frozenset —
+  `union`, `intersection`, `difference`, `symmetric_difference`, `issubset`,
+  `issuperset`, `isdisjoint` and `copy`. Only the operator forms (`|`, `&`,
+  `-`, `^`) had been installed, so the named methods raised `AttributeError`.
+  The set implementations are receiver-generic and already return a frozenset
+  for a frozenset receiver. `frozenset.copy()` also returns a frozenset now; it
+  used to return a `set`, because the copy was rebuilt from the receiver's
+  first parent without its `__class__`. The mutating half (`add`, `remove`,
+  `discard`, `pop`, `clear`, `update`) stays absent, as it must.
 - **`sys.path`:** a directory inserted into `sys.path` at runtime is searched by
   `import` again. The Python module provider walked only the search paths
   captured when the environment was created, so `sys.path.insert(0, d)` before

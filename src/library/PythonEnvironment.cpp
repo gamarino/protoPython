@@ -7844,6 +7844,12 @@ static const proto::ProtoObject* py_set_discard(
     }
 }
 
+// Builds a set or a frozenset, matching the kind of `receiver`; defined below,
+// next to the binary set operations that share it.
+static const proto::ProtoObject* new_set_like(proto::ProtoContext* context,
+                                              const proto::ProtoObject* receiver,
+                                              const proto::ProtoSet* data);
+
 static const proto::ProtoObject* py_set_copy(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -7856,13 +7862,11 @@ static const proto::ProtoObject* py_set_copy(
         s = d ? d->asSet(context) : nullptr;
     }
     if (!s || !receiver) return PROTO_NONE;
-    const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoList* parents = receiver->getParents(context);
-    const proto::ProtoObject* parent = parents && parents->getSize(context) > 0 ? parents->getAt(context, 0) : nullptr;
-    const proto::ProtoObject* copyObj = context->newObject(false);
-    if (parent) copyObj = copyObj->addParent(context, parent);
-    copyObj = copyObj->setAttribute(context, dataName, s->asObject(context));
-    return copyObj;
+    // new_set_like reproduces the receiver's kind — a frozenset copy stays a
+    // frozenset, including its __class__.  Rebuilding from parents[0] alone
+    // left the copy without a __class__, so type(frozenset(...).copy()) was
+    // set.
+    return new_set_like(context, receiver, s);
 }
 
 static const proto::ProtoObject* py_set_clear(
@@ -20742,6 +20746,19 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__lt__"), rootContext_->fromMethod(nullptr, py_set_lt));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ge__"), rootContext_->fromMethod(nullptr, py_set_ge));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__gt__"), rootContext_->fromMethod(nullptr, py_set_gt));
+    // The non-mutating set methods.  They read the receiver's payload through
+    // set_self_or_arg and build their result with new_set_like, which returns a
+    // frozenset when the receiver is one, so the set implementations serve
+    // frozenset unchanged.  Only the mutating half (add, remove, discard, pop,
+    // clear, update and the *_update family) stays off frozenset.
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "copy"), rootContext_->fromMethod(nullptr, py_set_copy));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "union"), rootContext_->fromMethod(nullptr, py_set_union));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "intersection"), rootContext_->fromMethod(nullptr, py_set_intersection));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "difference"), rootContext_->fromMethod(nullptr, py_set_difference));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "symmetric_difference"), rootContext_->fromMethod(nullptr, py_set_symmetric_difference));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "issubset"), rootContext_->fromMethod(nullptr, py_set_issubset));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "issuperset"), rootContext_->fromMethod(nullptr, py_set_issuperset));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "isdisjoint"), rootContext_->fromMethod(nullptr, py_set_isdisjoint));
     // Set operator dunders — these are used by typing.py's
     // `EXCLUDED_ATTRIBUTES = _TYPING_INTERNALS | _SPECIAL_NAMES | {...}`
     // and by any other code that relies on `frozenset | frozenset` etc.

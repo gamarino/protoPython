@@ -331,6 +331,13 @@ set_tests_properties(protopy_object_ordering_typeerror PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# frozenset carries the non-mutating set methods (union, issubset, isdisjoint...).
+add_test(NAME protopy_frozenset_set_methods
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/frozenset_set_methods.py)
+set_tests_properties(protopy_frozenset_set_methods PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # Methods read from a frozenset instance are bound to it.
 add_test(NAME protopy_frozenset_methods_bound
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/frozenset_methods_bound.py)
