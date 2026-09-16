@@ -317,6 +317,13 @@ set_tests_properties(protopy_random_seed_reproducible PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# Ordering comparisons on plain objects raise TypeError, as in CPython.
+add_test(NAME protopy_object_ordering_typeerror
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/object_ordering_typeerror.py)
+set_tests_properties(protopy_object_ordering_typeerror PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # Methods read from a frozenset instance are bound to it.
 add_test(NAME protopy_frozenset_methods_bound
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/frozenset_methods_bound.py)

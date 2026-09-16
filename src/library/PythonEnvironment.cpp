@@ -28239,6 +28239,12 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
             }
             const proto::ProtoObject* aType = getType(ctx, a);
             const proto::ProtoObject* bType = getType(ctx, b);
+            // `object` is deliberately NOT in the exclusion list: a plain
+            // object() defines no ordering dunder, and CPython raises
+            // TypeError for `object() < object()` exactly as it does for a
+            // user class without __lt__.  The built-in containers below keep
+            // the legacy pointer-based ordering until they grow proper rich
+            // comparison methods.
             auto isUserClass = [&](const proto::ProtoObject* t) -> bool {
                 if (!t || t == PROTO_NONE) return false;
                 if (t == getStrPrototype() || t == getIntPrototype()
@@ -28246,7 +28252,7 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
                     || t == getBytesPrototype() || t == getListPrototype()
                     || t == getDictPrototype() || t == getSetPrototype()
                     || t == getTuplePrototype() || t == getFrozensetPrototype()
-                    || t == getComplexPrototype() || t == getObjectPrototype()
+                    || t == getComplexPrototype()
                     || t == getTypePrototype()
                     || t == getMethodPrototype()
                     || t == getNonePrototype()) return false;

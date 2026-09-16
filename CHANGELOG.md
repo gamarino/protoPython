@@ -97,6 +97,13 @@ onwards. Commit hashes are given for reference.
 
 ### Fixed
 
+- **Ordering comparisons:** `object() < object()` returned `True` instead of
+  raising `TypeError: '<' not supported between instances of 'object' and
+  'object'`. `compareObjects` refused to raise when either operand's type was
+  `object`, so a pair of plain objects fell through to a pointer comparison and
+  answered an arbitrary boolean. `object` is no longer treated as a type that
+  orders natively; `sorted()` over plain objects raises too, and the built-in
+  containers keep their existing behaviour.
 - **`random`:** `random.Random(seed)` is reproducible again. `_random.Random`
   was a stub that ignored the seed and drew every value from `os.urandom()`, so
   two generators built from the same seed produced different sequences and
