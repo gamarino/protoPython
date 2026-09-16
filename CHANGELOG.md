@@ -97,6 +97,16 @@ onwards. Commit hashes are given for reference.
 
 ### Fixed
 
+- **`random`:** `random.Random(seed)` is reproducible again. `_random.Random`
+  was a stub that ignored the seed and drew every value from `os.urandom()`, so
+  two generators built from the same seed produced different sequences and
+  `random.seed(n)` did not make the module sequence repeatable.
+  `lib/python3.14/_random.py` now implements MT19937 with CPython's seeding
+  (`init_by_array` over the 32-bit words of `abs(seed)`), so an integer seed
+  replays CPython's own stream: `random.Random(42).random()` is
+  0.6394267984578837. The state is allocated in `seed()`, not `__init__`,
+  because `random.Random` subclasses this class and never calls our `__init__`
+  (CPython builds the state in `tp_new`).
 - **`with` blocks:** `return` from inside a loop that runs inside a `with`
   block raised `TypeError: 'object' object is not callable`. The loop's
   iterator sits on the operand stack above the context manager's `__exit__`,

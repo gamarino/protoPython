@@ -54,7 +54,7 @@ This document catalogs stub implementations and their completion status.
 | argparse | ArgumentParser | Stub retained. add_argument/parse_args return defaults. Full parser deferred. |
 | warnings | warn | Implemented: prints message (and category name if given) to sys.stderr when available. |
 | time | time, sleep | Native TimeModule: time() returns seconds since epoch (std::chrono); sleep(seconds) blocks. |
-| random | random, choice, randint, getrandbits, seed | Implemented: LCG PRNG in lib/python3.14/random.py; deterministic when seeded. |
+| random | random, choice, randint, getrandbits, seed, shuffle, getstate/setstate | Implemented: MT19937 in lib/python3.14/_random.py, seeded as CPython seeds it, with CPython's stdlib random.py on top. Reproducible: the same integer seed replays the same stream, and it is the stream CPython produces (`random.Random(42).random()` is 0.6394267984578837). An unseeded generator draws its seed from os.urandom. |
 | datetime | datetime | Stub class |
 | uuid | uuid4 | Return fixed string |
 | secrets | token_hex, token_urlsafe | Return placeholder |
