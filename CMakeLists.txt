@@ -302,6 +302,14 @@ set_tests_properties(protopy_direntry_is_junction PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# `return` from inside a loop that runs inside a `with` block drops the loop's
+# iterator before the with-block cleanup runs.
+add_test(NAME protopy_with_return_in_loop
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/with_return_in_loop.py)
+set_tests_properties(protopy_with_return_in_loop PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # Methods read from a frozenset instance are bound to it.
 add_test(NAME protopy_frozenset_methods_bound
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/frozenset_methods_bound.py)

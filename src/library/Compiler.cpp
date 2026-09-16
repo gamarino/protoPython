@@ -5438,6 +5438,10 @@ bool Compiler::unwindBlocks(bool isLoopExit, bool hasValueOnStack) {
     if (isLoopExit && !loopStack_.empty()) {
         targetDepth = loopStack_.back().blockDepth;
     }
+    // Loops opened inside the blocks being unwound, innermost first.  Each one
+    // that owns an iterator has left it on the operand stack, above the
+    // __exit__ of any with-block that encloses it; see the With case below.
+    size_t loopIdx = loopStack_.size();
 
     for (size_t i = blockEnvStack_.size(); i > targetDepth; --i) {
         // Access via index, NOT a stored reference: compileNode below may
@@ -5472,6 +5476,26 @@ bool Compiler::unwindBlocks(bool isLoopExit, bool hasValueOnStack) {
                 if (!ok) return false;
             }
         } else if (type == BlockType::With) {
+            // A loop opened inside this with-block still owns an iterator on
+            // the operand stack, sitting above __exit__:
+            //   [..., __exit__, iter, retval]
+            // OP_WITH_CLEANUP consumes the two topmost entries, so the
+            // iterators have to be dropped first — otherwise the cleanup takes
+            // the iterator for __exit__ and calls it, which is where `return`
+            // inside `for line in f:` inside `with open(...)` failed with
+            // "'object' object is not callable".  break and continue pop their
+            // own iterator in compileBreak / the loop epilogue, so only the
+            // `return` path (isLoopExit == false) is handled here.
+            if (!isLoopExit) {
+                while (loopIdx > 0 && loopStack_[loopIdx - 1].blockDepth > idx) {
+                    if (loopStack_[loopIdx - 1].hasIterator) {
+                        // [..., iter, retval] -> [..., retval, iter] -> [..., retval]
+                        if (hasValueOnStack) emit(OP_ROT_TWO);
+                        emit(OP_POP_TOP, 0);
+                    }
+                    --loopIdx;
+                }
+            }
             // Stack at this point:
             //   hasValueOnStack=false: [..., __exit__]
             //   hasValueOnStack=true:  [..., __exit__, retval]

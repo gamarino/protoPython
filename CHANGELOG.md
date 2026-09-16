@@ -97,6 +97,13 @@ onwards. Commit hashes are given for reference.
 
 ### Fixed
 
+- **`with` blocks:** `return` from inside a loop that runs inside a `with`
+  block raised `TypeError: 'object' object is not callable`. The loop's
+  iterator sits on the operand stack above the context manager's `__exit__`,
+  and `OP_WITH_CLEANUP` consumes the two topmost entries, so it took the
+  iterator for `__exit__` and called it. The unwind now drops the iterators of
+  any loops opened inside the with-block before the cleanup runs. `return
+  f.read()` was unaffected; `for line in f: return line` was not.
 - **Exit status:** `SystemExit.code` follows CPython (`None`, `args[0]`, or the
   arguments tuple); an uncaught `SystemExit` exits with 0 for `None`, with the
   value for an int, and with 1 after printing any other value (`27bd35f9`).
