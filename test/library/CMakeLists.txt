@@ -1,16 +1,39 @@
+# Tests that need no GoogleTest.
+
+# Minimal reproducer without GTest (for debugging hangs)
+add_executable(test_minimal TestMinimal.cpp)
+target_link_libraries(test_minimal PRIVATE protoPython)
+target_compile_definitions(test_minimal PRIVATE STDLIB_PATH="${CMAKE_SOURCE_DIR}/lib/python3.14")
+
+# ProtoCore-only minimal test (no protoPython)
+add_executable(test_protocore_minimal TestProtoCoreMinimal.cpp)
+target_link_libraries(test_protocore_minimal PRIVATE protoCore)
+
+# GoogleTest-based tests.
+#
+# protoPython has no GoogleTest of its own: gtest_main comes from the
+# FetchContent call in protoCore's test/ directory, which is only processed when
+# protoCore is added as a subdirectory (the developer fallback). With an
+# installed protoCore found through find_package the target does not exist, and
+# without this guard CMake passed "gtest_main" through to the linker as a bare
+# -lgtest_main and the build of the `all` target failed. That made `cpack`
+# impossible in exactly the mode a distributable package must be built in,
+# because CPack builds `all` through its preinstall target first.
+if(NOT TARGET gtest_main)
+    message(STATUS
+        "protoPython: gtest_main is not available (protoCore was not added as a "
+        "subdirectory) -- the GoogleTest-based tests are not built. Configure "
+        "without -DPROTOCORE_REQUIRE_PACKAGE=ON, in a tree with ../protoCore, "
+        "to build and run the full suite.")
+    return()
+endif()
+
 add_executable(test_foundation TestFoundation.cpp)
 target_link_libraries(test_foundation PRIVATE protoPython gtest_main)
 target_compile_definitions(test_foundation PRIVATE STDLIB_PATH="${CMAKE_SOURCE_DIR}/lib/python3.14")
 # Run stable foundation tests. Filter: gate subset. Full suite: run test_foundation without filter.
 add_test(NAME test_foundation COMMAND test_foundation --gtest_filter="FoundationTest.BasicTypesExist:FoundationTest.ResolveBuiltins:FoundationTest.ModuleImport:FoundationTest.BuiltinsModule:FoundationTest.SysModule:FoundationTest.ExecuteModule:FoundationTest.IOModule:FoundationTest.FilterBuiltin")
 set_tests_properties(test_foundation PROPERTIES TIMEOUT 30)
-
-# Minimal reproducer without GTest (for debugging hangs)
-add_executable(test_minimal TestMinimal.cpp)
-target_link_libraries(test_minimal PRIVATE protoPython)
-target_compile_definitions(test_minimal PRIVATE STDLIB_PATH="${CMAKE_SOURCE_DIR}/lib/python3.14")# ProtoCore-only minimal test (no protoPython)
-add_executable(test_protocore_minimal TestProtoCoreMinimal.cpp)
-target_link_libraries(test_protocore_minimal PRIVATE protoCore)
 
 # Execution engine (minimal bytecode)
 add_executable(test_execution_engine TestExecutionEngine.cpp)

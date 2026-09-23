@@ -13,8 +13,11 @@ file(RELATIVE_PATH _protopyc_install_include "${CMAKE_INSTALL_FULL_BINDIR}" "${C
 file(RELATIVE_PATH _protopyc_install_lib "${CMAKE_INSTALL_FULL_BINDIR}" "${CMAKE_INSTALL_FULL_LIBDIR}")
 set(_protopyc_install_include_dirs "${_protopyc_install_include}")
 set(_protopyc_install_library_dirs "${_protopyc_install_lib}")
-if(DEFINED PROTO_CORE_PREFIX)
-    # protoCore is installed separately: add its own directories.
+if(PROTOPYTHON_PROTOCORE_EXTERNAL)
+    # protoCore is installed separately: add its own directories. The condition
+    # is PROTOPYTHON_PROTOCORE_EXTERNAL rather than DEFINED PROTO_CORE_PREFIX
+    # because an installed protoCore package can now be found in a default
+    # prefix, with PROTO_CORE_PREFIX unset.
     string(APPEND _protopyc_install_include_dirs ":${PROTOPYTHON_PROTOCORE_INCLUDE_DIR}")
     string(APPEND _protopyc_install_library_dirs ":$<TARGET_FILE_DIR:protoCore>")
 endif()

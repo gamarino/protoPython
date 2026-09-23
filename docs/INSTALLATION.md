@@ -54,14 +54,45 @@ On 2026-09-16 the suite has 410 tests.
 
 ### Using an installed protoCore
 
-Set `PROTO_CORE_PREFIX` to the prefix where protoCore is installed. CMake then looks
-for `libprotoCore` under `lib` or `lib64` and for `protoCore.h` under `include` in that
-prefix, uses them, and does not build protoCore from source. Configuration fails if
-either is missing.
+protoPython prefers an **installed protoCore CMake package** and falls back to the
+sibling source tree only when no package is found and no prefix was named:
 
 ```bash
-cmake -S . -B build_release -DCMAKE_BUILD_TYPE=Release -DPROTO_CORE_PREFIX=/usr/local
+# protoCore installed in a default prefix: nothing to pass.
+cmake -S . -B build_release -DCMAKE_BUILD_TYPE=Release
+
+# protoCore installed elsewhere.
+cmake -S . -B build_release -DCMAKE_BUILD_TYPE=Release -DPROTO_CORE_PREFIX=$HOME/.local
+# equivalently
+cmake -S . -B build_release -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=$HOME/.local
 ```
+
+The discovery is `find_package(protoCore 2.0 CONFIG)`, so the prefix must hold
+`lib/cmake/protoCore/protoCoreConfig.cmake` — protoCore emits it from its own install
+rules. **A prefix holding only `libprotoCore` and `protoCore.h` is no longer
+accepted**: without the package configuration there is no way to tell protoCore 1.x
+from 2.x, and linking the wrong major version is silent.
+
+The version floor is `2.0` and the ceiling is the next major version: protoPython uses
+no protoCore API newer than 2.0.0, and protoCore's major version and its soname move
+together. protoPython additionally asserts that the package's `SOVERSION` is `2`.
+
+Pass `-DPROTOCORE_REQUIRE_PACKAGE=ON` to forbid the developer fallback. **Every
+packaging build must set it**: the fallback performs no version check and warns that it
+must not be used to produce a distributable package.
+
+Switching a build directory between the two modes leaves a stale
+`PROTOCORE_REQUIRE_PACKAGE`/`protoCore_DIR` cache; delete the build directory instead
+of reconfiguring in place.
+
+> The test suite is only buildable in developer mode. protoPython has no GoogleTest of
+> its own: `gtest_main` comes from the `FetchContent` call in protoCore's `test/`
+> directory, which is only processed when protoCore is added as a subdirectory. In
+> package mode, build the packaged targets explicitly:
+>
+> ```bash
+> cmake --build build_pkg --target protopy protopyc protoPython
+> ```
 
 ## Running from the build tree
 
@@ -116,6 +147,36 @@ Add the prefix's `bin` directory to `PATH`:
 ```bash
 export PATH=$HOME/.local/bin:$PATH
 ```
+
+## Packages (CPack)
+
+```bash
+cmake -S . -B build_pkg -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_PREFIX_PATH=<protocore-prefix> -DPROTOCORE_REQUIRE_PACKAGE=ON
+cmake --build build_pkg --target protopy protopyc protoPython
+cd build_pkg && cpack -G DEB
+```
+
+The generators are chosen at configure time, and the DEB and RPM generators are enabled
+only when `dpkg` and `rpmbuild` are found — `cpack` aborts the whole run when a
+generator's tool is missing, which would take the TGZ down with it. Each configure
+prints whether a generator was enabled or disabled and why.
+
+Package names are pinned rather than left to each generator's default casing:
+`protopython` for DEB, `protoPython` for RPM. Both declare a bounded dependency on
+protoCore's own package (`protocore (>= 2.0.0), protocore (<< 3.0.0)` for DEB;
+`protoCore >= 2.0.0, protoCore < 3.0.0` for RPM). protoCore is never bundled.
+
+### Platform verification status
+
+| Platform | Packaging | Status |
+|----------|-----------|--------|
+| Linux | TGZ, DEB (needs `dpkg`), RPM (needs `rpmbuild`) | Built, installed to a scratch prefix and smoke-tested, including the installed `<libdir>/protoPython/python3.14` standard library and the extracted `.deb` payload |
+| macOS | DragNDrop | Configured and reviewed, **never built** — no macOS host |
+| Windows | NSIS, ZIP | Configured and reviewed, **never built** — no Windows host |
+
+RPM packaging is configured and reviewed but **never executed**: `rpmbuild` is not
+installed on the host this was verified on.
 
 ### Standard library location
 

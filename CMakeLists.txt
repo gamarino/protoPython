@@ -11,31 +11,99 @@ include(GNUInstallDirs)
 # The install rule below and the path compiled into protopy (src/runtime) both use it.
 set(PROTOPYTHON_STDLIB_INSTALL_PARENT "${CMAKE_INSTALL_LIBDIR}/protoPython")
 
-# --- protoCore: use installed package or build from sibling directory ---
-# For packaging: set PROTO_CORE_PREFIX to the install prefix of protoCore (e.g. /usr/local or $HOME/.local).
-# For development: leave unset to build protoCore from ../protoCore.
+# --- protoCore -----------------------------------------------------------------
+# Resolution order (Phase I, decision D-I1):
+#   1. An installed protoCore CMake package: find_package(protoCore 2.0 CONFIG).
+#      This is the only mode that checks protoCore's version and ABI, so it is
+#      the only mode a distributable package may be built in. Point at a prefix
+#      outside the default search path with -DPROTO_CORE_PREFIX=<prefix> or
+#      -DCMAKE_PREFIX_PATH=<prefix>.
+#   2. Developer fallback: build protoCore from the sibling source tree
+#      ../protoCore with add_subdirectory(). Used only when no installed package
+#      was found and no prefix was named; refused by -DPROTOCORE_REQUIRE_PACKAGE=ON.
+#
+# The version floor is 2.0: protoPython uses no protoCore API newer than 2.0.0
+# (it references neither ProtoMPSCQueue nor any other 2.1 addition). The ceiling
+# is the next major, because protoCore's major version and its soname move
+# together.
+set(PROTOCORE_MIN_VERSION      "2.0")
+set(PROTOCORE_MIN_VERSION_FULL "2.0.0")
+set(PROTOCORE_NEXT_MAJOR       "3.0.0")
+set(PROTOCORE_ABI_SOVERSION    "2")
+option(PROTOCORE_REQUIRE_PACKAGE
+    "Require an installed protoCore CMake package; never fall back to ../protoCore" OFF)
+
 if(DEFINED PROTO_CORE_PREFIX)
-    find_library(PROTO_CORE_LIBRARY protoCore
-        HINTS "${PROTO_CORE_PREFIX}" PATH_SUFFIXES lib lib64)
-    find_path(PROTO_CORE_INCLUDE_DIR NAMES protoCore.h
-        HINTS "${PROTO_CORE_PREFIX}" PATH_SUFFIXES include)
-    if(PROTO_CORE_LIBRARY AND PROTO_CORE_INCLUDE_DIR)
-        add_library(protoCore SHARED IMPORTED GLOBAL)
-        set_target_properties(protoCore PROPERTIES
-            IMPORTED_LOCATION "${PROTO_CORE_LIBRARY}"
-            INTERFACE_INCLUDE_DIRECTORIES "${PROTO_CORE_INCLUDE_DIR}")
-        message(STATUS "Using installed protoCore: ${PROTO_CORE_LIBRARY}")
-        set(PROTOPYTHON_PROTOCORE_INCLUDE_DIR "${PROTO_CORE_INCLUDE_DIR}")
-    else()
-        message(FATAL_ERROR "PROTO_CORE_PREFIX=${PROTO_CORE_PREFIX} set but protoCore not found. "
-            "Need libprotoCore and include/protoCore.h under that prefix.")
+    list(APPEND CMAKE_PREFIX_PATH "${PROTO_CORE_PREFIX}")
+endif()
+
+find_package(protoCore ${PROTOCORE_MIN_VERSION} QUIET CONFIG)
+
+if(protoCore_FOUND)
+    if(NOT protoCore_SOVERSION STREQUAL PROTOCORE_ABI_SOVERSION)
+        message(FATAL_ERROR
+            "protoCore package at ${protoCore_DIR} declares SOVERSION "
+            "${protoCore_SOVERSION}; protoPython is built against SOVERSION "
+            "${PROTOCORE_ABI_SOVERSION}. Install a matching protoCore.")
     endif()
-else()
+    # This project links the unqualified target name `protoCore` and uses
+    # $<TARGET_FILE_DIR:protoCore> (src/library/CMakeLists.txt, src/compiler/
+    # CMakeLists.txt, test/library/CMakeLists.txt). Promote the imported target
+    # to global scope and alias it, so none of those references has to change.
     if(NOT TARGET protoCore)
-        add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../protoCore ${CMAKE_CURRENT_BINARY_DIR}/protoCore)
+        set_target_properties(protoCore::protoCore PROPERTIES IMPORTED_GLOBAL TRUE)
+        add_library(protoCore ALIAS protoCore::protoCore)
     endif()
+    set(PROTOPYTHON_PROTOCORE_INCLUDE_DIR "${protoCore_INCLUDE_DIR}")
+    set(PROTOPYTHON_PROTOCORE_EXTERNAL TRUE)
+    message(STATUS "protoPython: installed protoCore ${protoCore_VERSION} "
+                   "(SOVERSION ${protoCore_SOVERSION}) from ${protoCore_DIR}")
+elseif(DEFINED PROTO_CORE_PREFIX OR PROTOCORE_REQUIRE_PACKAGE)
+    set(_protoCore_where "")
+    if(DEFINED PROTO_CORE_PREFIX)
+        set(_protoCore_where " under ${PROTO_CORE_PREFIX}")
+    endif()
+    message(FATAL_ERROR
+        "No protoCore >= ${PROTOCORE_MIN_VERSION_FULL} CMake package was found"
+        "${_protoCore_where}.\n"
+        "  A prefix holding only libprotoCore and protoCore.h is no longer "
+        "accepted: without lib/cmake/protoCore/protoCoreConfig.cmake there is "
+        "no way to tell protoCore 1.x from 2.x, and linking the wrong one is "
+        "silent. Build and install protoCore ${PROTOCORE_MIN_VERSION_FULL} or "
+        "later:\n"
+        "    cmake -S ../protoCore -B ../protoCore/build_release "
+        "-DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=<prefix>\n"
+        "    cmake --build ../protoCore/build_release --target protoCore\n"
+        "    cmake --install ../protoCore/build_release --component protoCore")
+else()
+    set(PROTOCORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../protoCore")
+    if(NOT EXISTS "${PROTOCORE_DIR}/CMakeLists.txt")
+        message(FATAL_ERROR
+            "No installed protoCore package and no sibling source tree at "
+            "${PROTOCORE_DIR}. Install protoCore ${PROTOCORE_MIN_VERSION_FULL} "
+            "or pass -DPROTO_CORE_PREFIX=<prefix>.")
+    endif()
+    message(WARNING
+        "protoPython: no installed protoCore package found; building protoCore "
+        "from ${PROTOCORE_DIR}. This developer mode performs no package version "
+        "check and must not be used to produce a distributable package "
+        "(configure with -DPROTOCORE_REQUIRE_PACKAGE=ON to forbid it).")
+    if(NOT TARGET protoCore)
+        add_subdirectory("${PROTOCORE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/protoCore")
+    endif()
+    # project() sets protoCore_VERSION in the subdirectory's scope, not here;
+    # the SOVERSION target property is readable from the parent.
+    get_target_property(_protoCore_sibling_soversion protoCore SOVERSION)
+    if(NOT _protoCore_sibling_soversion STREQUAL PROTOCORE_ABI_SOVERSION)
+        message(FATAL_ERROR
+            "The sibling protoCore at ${PROTOCORE_DIR} has SOVERSION "
+            "${_protoCore_sibling_soversion}; protoPython is built against "
+            "SOVERSION ${PROTOCORE_ABI_SOVERSION}.")
+    endif()
+    unset(_protoCore_sibling_soversion)
     get_filename_component(PROTOPYTHON_PROTOCORE_INCLUDE_DIR
-        "${CMAKE_CURRENT_SOURCE_DIR}/../protoCore/headers" ABSOLUTE)
+        "${PROTOCORE_DIR}/headers" ABSOLUTE)
+    set(PROTOPYTHON_PROTOCORE_EXTERNAL FALSE)
     # Build-tree RPATH so executables and libs find each other without LD_LIBRARY_PATH/DYLD_LIBRARY_PATH
     set(CMAKE_BUILD_RPATH "${CMAKE_BINARY_DIR}/src/library" "${CMAKE_BINARY_DIR}/protoCore")
     set(CMAKE_BUILD_RPATH_USE_LINK_PATH TRUE)
@@ -1022,13 +1090,22 @@ if(UNIX)
 endif()
 
 # --- Install rules ---
-set(CMAKE_INSTALL_COMPONENT "protoPython")
+# CMAKE_INSTALL_DEFAULT_COMPONENT_NAME, not CMAKE_INSTALL_COMPONENT: the latter
+# is a variable the *generated* cmake_install.cmake sets from --component, and
+# assigning it here had no effect at all.
+set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME "protoPython")
 
+# COMPONENT is repeated for every artifact group. In install(TARGETS), once an
+# artifact kind (RUNTIME/LIBRARY/ARCHIVE) is named, the keywords that follow
+# bind to that group alone -- a single trailing COMPONENT applied to ARCHIVE
+# only, which left protopy (RUNTIME) and libprotoPython (LIBRARY) in the
+# default "Unspecified" component. `cmake --install --component protoPython`
+# and every CPack package therefore shipped protopyc, the headers and the
+# standard library, but neither the interpreter nor its shared library.
 install(TARGETS protopy protoPython protopyc
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    COMPONENT protoPython
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT protoPython
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT protoPython
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT protoPython
 )
 
 install(DIRECTORY include/protoPython
@@ -1052,25 +1129,51 @@ set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
 set(CPACK_COMPONENTS_ALL protoPython)
 
-# Platform-specific configurations
-if(UNIX)
-    if(APPLE)
-        set(CPACK_GENERATOR "DragNDrop")
+# Platform-specific configurations.
+if(APPLE)
+    # macOS drag-and-drop .dmg. UNVERIFIED: no macOS build host (D-I6).
+    set(CPACK_GENERATOR "DragNDrop")
+elseif(UNIX)
+    # Enable only the generators whose tools are present: cpack aborts the whole
+    # run when one of them is missing, which would take the TGZ down with it.
+    # Same pattern as protoCore's own CPack block.
+    set(CPACK_GENERATOR "TGZ")
+    find_program(PROTOPYTHON_DPKG_EXECUTABLE dpkg)
+    find_program(PROTOPYTHON_RPMBUILD_EXECUTABLE rpmbuild)
+    if(PROTOPYTHON_DPKG_EXECUTABLE)
+        list(APPEND CPACK_GENERATOR "DEB")
+        message(STATUS "CPack: DEB generator enabled (dpkg found)")
     else()
-        set(CPACK_GENERATOR "DEB;RPM;TGZ")
-        set(CPACK_DEBIAN_PACKAGE_MAINTAINER "gamarino@gmail.com")
-        set(CPACK_DEBIAN_PACKAGE_SECTION "interpreters")
-        # protopy / libprotoPython link libprotoCore — declare the dependency
-        # on protoCore's package (which provides libprotoCore), the same
-        # strategy protoJS and protoST use. protoCore is no longer bundled.
-        set(CPACK_DEBIAN_PACKAGE_DEPENDS "protocore")
-        set(CPACK_RPM_PACKAGE_LICENSE "MIT")
-        set(CPACK_RPM_PACKAGE_GROUP "Development/Languages")
-        set(CPACK_RPM_PACKAGE_REQUIRES "protoCore")
+        message(STATUS "CPack: DEB generator disabled (dpkg not found)")
     endif()
+    if(PROTOPYTHON_RPMBUILD_EXECUTABLE)
+        list(APPEND CPACK_GENERATOR "RPM")
+        message(STATUS "CPack: RPM generator enabled (rpmbuild found)")
+    else()
+        message(STATUS "CPack: RPM generator disabled (rpmbuild not found)")
+    endif()
+    # Pinned rather than left to each generator's default casing: the DEB
+    # generator lower-cases CPACK_PACKAGE_NAME and the RPM generator does not.
+    set(CPACK_DEBIAN_PACKAGE_NAME "protopython")
+    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "gamarino@gmail.com")
+    set(CPACK_DEBIAN_PACKAGE_SECTION "interpreters")
+    # protopy / libprotoPython link libprotoCore — declare the dependency on
+    # protoCore's package (which provides libprotoCore), the same strategy
+    # protoJS and protoST use. protoCore is never bundled. protoCore's major
+    # version and its soname move together, so the dependency is bounded on
+    # both sides: a 3.x protoCore would be ABI-incompatible with this build.
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS
+        "protocore (>= ${PROTOCORE_MIN_VERSION_FULL}), protocore (<< ${PROTOCORE_NEXT_MAJOR})")
+    set(CPACK_RPM_PACKAGE_NAME "protoPython")
+    set(CPACK_RPM_PACKAGE_LICENSE "MIT")
+    set(CPACK_RPM_PACKAGE_GROUP "Development/Languages")
+    set(CPACK_RPM_PACKAGE_REQUIRES
+        "protoCore >= ${PROTOCORE_MIN_VERSION_FULL}, protoCore < ${PROTOCORE_NEXT_MAJOR}")
 elseif(WIN32)
+    # UNVERIFIED: no Windows build host (D-I6).
     set(CPACK_GENERATOR "NSIS;ZIP")
     set(CPACK_NSIS_HELP_LINK "https://github.com/gamarino/protoPython")
+    set(CPACK_NSIS_PACKAGE_NAME "protoPython")
 endif()
 
 include(CPack)
