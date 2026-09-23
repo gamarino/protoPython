@@ -751,6 +751,14 @@ set_tests_properties(protopy_metaclass_getitem PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# A metaclass belongs to the class object: its instances neither are instances
+# of it nor see its attributes.
+add_test(NAME protopy_metaclass_not_inherited
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/metaclass_not_inherited.py)
+set_tests_properties(protopy_metaclass_not_inherited PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # print(), format() and str.format() use a __str__ / __format__ written in Python.
 add_test(NAME protopy_print_python_str
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/print_python_str.py)

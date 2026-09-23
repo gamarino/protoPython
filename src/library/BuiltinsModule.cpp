@@ -6709,13 +6709,21 @@ const proto::ProtoObject* py_type(
             PythonEnvironment::getInternedString(context, "__subclasses_list__"),
             context->newList()->asObject(context));
 
-        // Add metaclass first so that its attributes are searched after the class MRO bases
+        // Record the metaclass as `__class__` — `type(cls)` and the
+        // type-level attribute lookup read it from there.  STRUCT-330: the
+        // metaclass is deliberately NOT made a protoCore parent; a class's
+        // chain is its MRO and nothing else (see the setParents call below
+        // for why).  Seed the chain with `object` instead, which is the tail
+        // of every Python MRO, so the half-built class already behaves like
+        // one while the class body is copied in; the setParents call below
+        // then installs the full C3 linearisation.
         if (cls && cls != targetClass) {
-            targetClass = targetClass->addParent(context, cls);
             targetClass = targetClass->setAttribute(context, env ? env->getClassString() : PythonEnvironment::getInternedString(context, "__class__"), cls);
         } else if (env && env->getTypePrototype()) {
-            targetClass = targetClass->addParent(context, env->getTypePrototype());
             targetClass = targetClass->setAttribute(context, env->getClassString(), env->getTypePrototype());
+        }
+        if (env && env->getObjectPrototype() && env->getObjectPrototype() != targetClass) {
+            targetClass = targetClass->addParent(context, env->getObjectPrototype());
         }
         
         const proto::ProtoString* py_name_s = env ? env->getNameString() : PythonEnvironment::getInternedString(context, "__name__");
@@ -7173,43 +7181,36 @@ const proto::ProtoObject* py_type(
             // multi-inheritance.  Result: chain order == MRO[1:] exactly,
             // making chain-walk attribute lookups follow C3 by construction.
             //
-            // The metaclass is appended AFTER the MRO so that:
-            //   1. MRO-resolution (cls.attr where attr is on a base) finds
-            //      the closer match first (C3 order).
-            //   2. Metaclass-level methods (cls.meta_method where method
-            //      lives on type or a custom metaclass) are still
-            //      reachable via the chain walk as a fallback.
+            // STRUCT-330: the metaclass is NOT part of the chain.  A class's
+            // protoCore parent chain means exactly one thing — its Python
+            // MRO — so `chainList == MRO[1:]`, nothing else.
+            //
+            // Earlier rounds appended the metaclass and its ancestors at the
+            // tail so that `cls.meta_method` had a chain-walk fallback.  That
+            // was always only a fallback (type-level lookup is done properly
+            // by `PythonEnvironment::getAttribute` section 1.2, which walks
+            // `type(cls).__mro__`, and `type(x)` reads the own `__class__`),
+            // and protoCore 2.0.0 turned it into a correctness bug:
+            // `newChild` now captures the receiver's CURRENT chain, so every
+            // instance built by `cls->newChild(...)` inherited the metaclass
+            // tail as well.  `isinstance(inst, CustomMeta)` answered True
+            // (CPython: False) and metaclass-only attributes resolved from
+            // instances through getAttribute / hasAttribute (CPython raises
+            // AttributeError).
+            //
+            // With the tail gone the chain carries the MRO and only the MRO,
+            // so an instance's chain is `[cls] + MRO[1:]` == `cls.__mro__` —
+            // which is what instance-level lookup is supposed to see.
+            // `setParents` flattens in each listed parent's own ancestors,
+            // but every class built here (and every built-in prototype, which
+            // is `objectPrototype->newChild`) now has an MRO-only chain, so
+            // that step contributes nothing new and the chain installs
+            // verbatim in C3 order.
             const proto::ProtoList* chainList = context->newList();
             for (unsigned long i = 1; i < mroList->getSize(context); ++i) {
                 const proto::ProtoObject* p = mroList->getAt(context, i);
                 if (p && p != targetClass && p != PROTO_NONE) {
                     chainList = chainList->appendLast(context, p);
-                }
-            }
-            // Append metaclass + its ancestors at the tail.  Use `cls`
-            // (the metaclass argument to py_type, defaulted to typePrototype
-            // upstream when omitted) plus walk its own MRO.
-            const proto::ProtoObject* metacls = (cls && cls != targetClass) ? cls
-                : (env ? env->getTypePrototype() : nullptr);
-            if (metacls && metacls != PROTO_NONE) {
-                // Skip duplicates already in chainList.
-                auto already = [&](const proto::ProtoObject* o) -> bool {
-                    for (unsigned long i = 0; i < chainList->getSize(context); ++i) {
-                        if (chainList->getAt(context, static_cast<int>(i)) == o) return true;
-                    }
-                    return false;
-                };
-                if (!already(metacls)) {
-                    chainList = chainList->appendLast(context, metacls);
-                }
-                const proto::ProtoList* metaParents = metacls->getParents(context);
-                if (metaParents) {
-                    for (unsigned long i = 0; i < metaParents->getSize(context); ++i) {
-                        const proto::ProtoObject* mp = metaParents->getAt(context, static_cast<int>(i));
-                        if (mp && mp != PROTO_NONE && !already(mp)) {
-                            chainList = chainList->appendLast(context, mp);
-                        }
-                    }
                 }
             }
             const_cast<proto::ProtoObject*>(targetClass)->setParents(context, chainList);
@@ -7695,10 +7696,17 @@ static bool checkInterfaceInstanceOf(proto::ProtoContext* context, const proto::
 
     // V88: Fallback for Python-level subclasses where identity mismatch occurred during bootstrap (e.g. IntEnum inheriting from an older intPrototype)
     if (env) {
-        const proto::ProtoString* classS = env->getClassString();
-        const proto::ProtoObject* objClass = obj->getAttribute(context, classS);
-        if (!objClass) objClass = obj->getPrototype(context);
-        
+        // STRUCT-330: ask `getType` — i.e. exactly what `type(obj)` answers —
+        // instead of reading `__class__` off the parent chain.  An instance
+        // owns no `__class__`, so a chain read resolves to the CLASS's own
+        // `__class__`, which is the class's METACLASS: every instance of a
+        // class with `metaclass=M` then walked `M.__mro__` here and reported
+        // `isinstance(inst, M)` as True (CPython: False).  `getType` honours
+        // `__class__` only when the object owns it (SP-B/B1) and otherwise
+        // resolves through the first parent, which is the instance's class.
+        const proto::ProtoObject* objClass = env->getType(context, obj);
+        if (!objClass || objClass == PROTO_NONE) objClass = obj->getPrototype(context);
+
         if (objClass) {
             const proto::ProtoObject* mroObj = objClass->getAttribute(context, PythonEnvironment::getInternedString(context, "__mro__"));
             if (mroObj && mroObj->isTuple(context)) {
@@ -7955,9 +7963,15 @@ static const proto::ProtoObject* py_isinstance(
         return PROTO_TRUE;
     }
 
-    // Check __class__ attribute or prototype if native parent link failed
+    // Check __class__ attribute or prototype if native parent link failed.
+    // STRUCT-330: same reasoning as the V88 fallback in
+    // checkInterfaceInstanceOf — a chain read of `__class__` on an instance
+    // lands on its class's own `__class__`, i.e. the metaclass, so
+    // `isinstance(inst, SomeMeta)` came back True.  `getType` is the
+    // authoritative `type(obj)`.
     const proto::ProtoString* classStr = env ? env->getClassString() : PythonEnvironment::getInternedString(context, "__class__");
-    const proto::ProtoObject* objClass = obj->getAttribute(context, classStr);
+    const proto::ProtoObject* objClass = env ? env->getType(context, obj) : nullptr;
+    if (!objClass || objClass == PROTO_NONE) objClass = obj->getAttribute(context, classStr);
     if (!objClass) objClass = obj->getPrototype(context);
 
     if (objClass && objClass != obj) {
