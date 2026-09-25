@@ -1071,6 +1071,45 @@ private:
     proto::ProtoRootSet* activeExcsRoots_{nullptr};
 
     /**
+     * @brief GC root set that pins each OS thread's `py_thread` object for
+     *        exactly as long as that thread runs.
+     *
+     * A `py_thread` is the per-thread record that holds the pending
+     * exception and the trace function.  It must be a GC root while its
+     * thread lives (`s_currentPyThread` is a raw `thread_local` pointer;
+     * without a root the cells were swept between thread events and the
+     * next `getAttribute` read a recycled slot — the C1 crash), and it
+     * must STOP being one the moment that thread finishes.
+     *
+     * It used to be pinned by storing it as an attribute on a single
+     * process-global mutable object keyed `"thread_<std::thread::id>"`.
+     * That was a permanent leak per finished thread, for two independent
+     * reasons:
+     *
+     *   1. Nothing ever removed the entry, so every `py_thread` a
+     *      finished thread had built stayed reachable for the life of the
+     *      process — measured at ~300 MARKED cells per finished thread,
+     *      linear in threads and independent of the work they did.
+     *   2. `ProtoObject::setAttribute` STRONG-interns its key
+     *      (`core/ProtoObject.cpp`), so a key unique per thread put a
+     *      permanent Symbol in the kernel symbol table.  That one cannot
+     *      be released even by removing the attribute, which is why
+     *      "also erase the entry" would have been only half a fix.
+     *
+     * A `ProtoRootSet` needs no key at all: `add` returns a handle and
+     * `remove` releases it in O(1).  The handle lives in the same
+     * thread-local storage as the pointer it pins, and
+     * `releaseThreadState` — called at the end of `thread_bootstrap` —
+     * removes it.  `size()` is therefore the number of live Python
+     * threads plus the main thread, which is what
+     * `test_thread_state_released` asserts.
+     *
+     * Owned by this `PythonEnvironment`: created in the constructor,
+     * destroyed in the destructor (`space_->destroyRootSet`).
+     */
+    proto::ProtoRootSet* pyThreadRoots_{nullptr};
+
+    /**
      * @brief Per-environment root set for transient pins of native-call
      *        arguments.
      *
@@ -1132,6 +1171,35 @@ private:
 
 public:
     proto::ProtoRootSet* getTransientArgsRoots() const { return transientArgsRoots_; }
+
+    /**
+     * @brief The root set that pins one `py_thread` per live OS thread.
+     *
+     * Exposed so that a test can assert the invariant this set exists to
+     * make checkable: after every spawned thread has been joined, its
+     * `size()` is back to the number of threads still running.
+     */
+    proto::ProtoRootSet* getPyThreadRoots() const { return pyThreadRoots_; }
+
+
+    /**
+     * @brief Release everything this OS thread's thread-local state pins,
+     *        called once as a Python thread finishes.
+     *
+     * A finished thread must leave nothing reachable behind.  This drops
+     * the `py_thread` pin (see `pyThreadRoots_`), drains any
+     * active-exception pins the thread did not pop because an exception
+     * propagated out of its body, and clears every thread-local raw
+     * `ProtoObject*` mirror so a later reader on a recycled thread slot
+     * cannot see a stale pointer.
+     *
+     * MUST be called while the thread's `ProtoContext` and
+     * `PythonEnvironment` are still registered (inside `ContextScope`),
+     * because that is how it reaches the owning root sets.  Calling it on
+     * the main thread would discard that thread's own state, so only
+     * `thread_bootstrap` calls it.
+     */
+    static void releaseThreadState(proto::ProtoContext* ctx);
 
     /**
      * @brief Pin `obj` as a GC root for the lifetime of this environment.

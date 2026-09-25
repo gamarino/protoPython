@@ -16299,27 +16299,66 @@ thread_local const proto::ProtoObject* PythonEnvironment::s_currentCodeObject = 
 /** Thread-local trace function and pending exception have been moved to py_thread. */
 static thread_local const proto::ProtoObject* s_currentPyThread = nullptr;
 
-/** Global dictionary holding all py_threads to root them in GC. Mutated lock-free via setAttribute. */
-static const proto::ProtoObject* s_globalThreadRootsDict = nullptr;
+/**
+ * Handle of this thread's `py_thread` pin in `PythonEnvironment::pyThreadRoots_`.
+ *
+ * Lives in the same thread-local storage as the pointer it keeps alive, so the
+ * pin and the pointer cannot get out of step.  `releaseThreadState` removes it
+ * when the thread finishes.  See `pyThreadRoots_` in PythonEnvironment.h for
+ * what this replaced and why an attribute on a process-global object could not
+ * be made to work.
+ */
+static thread_local proto::ProtoRootSet::Handle s_currentPyThreadRoot =
+    proto::ProtoRootSet::kNullHandle;
 
 /** Per-thread resolve cache; generation check makes invalidation lock-free. */
 static thread_local std::unordered_map<std::string, const proto::ProtoObject*> s_threadResolveCache;
 static thread_local uint64_t s_threadResolveCacheGeneration = 0;
 
-static std::string getPyThreadIdStr() {
-    std::stringstream ss;
-    ss << "thread_" << std::this_thread::get_id();
-    return ss.str();
-}
-
 static const proto::ProtoObject* getPyThread(proto::ProtoContext* ctx) {
     if (s_currentPyThread) return s_currentPyThread;
-    s_currentPyThread = ctx->newObject(true); // mutable
-    if (s_globalThreadRootsDict) {
-        const proto::ProtoString* k = PythonEnvironment::getInternedString(ctx, getPyThreadIdStr().c_str());
-        const_cast<proto::ProtoObject*>(s_globalThreadRootsDict)->setAttribute(ctx, k, s_currentPyThread);
-    }
+    // Mutable: setAttribute on a mutable receiver returns the SAME handle
+    // (core/ProtoObject.cpp, "Return the same handle!"), so this one pin stays
+    // valid for every later write to the record and never needs replacing.
+    s_currentPyThread = ctx->newObject(true);
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    proto::ProtoRootSet* roots = env ? env->getPyThreadRoots() : nullptr;
+    if (roots) s_currentPyThreadRoot = roots->add(s_currentPyThread);
     return s_currentPyThread;
+}
+
+void PythonEnvironment::releaseThreadState(proto::ProtoContext* ctx) {
+    (void) ctx;
+    PythonEnvironment* env = s_threadEnv;
+
+    // An exception that propagated out of the thread body leaves pushes
+    // unmatched, and each one is a root.  Drain them newest-first so the
+    // set is empty whatever the body did.
+    while (!s_activeExcsHandles.empty()) {
+        const proto::ProtoRootSet::Handle h = s_activeExcsHandles.back();
+        s_activeExcsHandles.pop_back();
+        if (env && env->activeExcsRoots_ && h != proto::ProtoRootSet::kNullHandle)
+            env->activeExcsRoots_->remove(h);
+    }
+    s_activeExcs.clear();
+
+    if (env && env->pyThreadRoots_ &&
+        s_currentPyThreadRoot != proto::ProtoRootSet::kNullHandle) {
+        env->pyThreadRoots_->remove(s_currentPyThreadRoot);
+    }
+    s_currentPyThreadRoot = proto::ProtoRootSet::kNullHandle;
+    s_currentPyThread = nullptr;
+
+    // Every remaining thread-local ProtoObject* is a raw, unrooted mirror.
+    // Clearing them is not about reclamation — it is so that nothing can read
+    // a pointer belonging to a thread that no longer exists.
+    s_pendingExc = nullptr;
+    s_pendingExcFlag = false;
+    s_currentFrame = nullptr;
+    s_currentGlobals = nullptr;
+    s_currentCodeObject = nullptr;
+    s_threadResolveCache.clear();
+    s_threadResolveCacheGeneration = 0;
 }
 
 void PythonEnvironment::registerContext(proto::ProtoContext* ctx, PythonEnvironment* env) {
@@ -16584,6 +16623,9 @@ PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::v
     // `s_activeExcsHandles`).  Replaces the prior `_active_excs` attribute
     // anchor whose read path was vulnerable to mutable-shard cache desync.
     activeExcsRoots_ = space_->createRootSet("protopython-active-excs");
+    // GC anchor for one py_thread record per LIVE OS thread, released by
+    // releaseThreadState when the thread finishes.  See `pyThreadRoots_`.
+    pyThreadRoots_ = space_->createRootSet("protopython-py-threads");
     // GC anchor for native-call argument lists. See the field docs in
     // PythonEnvironment.h: native C methods receive args only via C++
     // stack locals; without this pin the args ProtoList and everything
@@ -16624,6 +16666,14 @@ PythonEnvironment::~PythonEnvironment() {
     if (activeExcsRoots_ && space_) {
         space_->destroyRootSet(activeExcsRoots_);
         activeExcsRoots_ = nullptr;
+    }
+    // The main thread's py_thread pin goes with the set; spawned threads
+    // released theirs in releaseThreadState as they finished.
+    if (pyThreadRoots_ && space_) {
+        space_->destroyRootSet(pyThreadRoots_);
+        pyThreadRoots_ = nullptr;
+        s_currentPyThreadRoot = proto::ProtoRootSet::kNullHandle;
+        s_currentPyThread = nullptr;
     }
     if (transientArgsRoots_ && space_) {
         space_->destroyRootSet(transientArgsRoots_);
@@ -17931,22 +17981,11 @@ namespace slot_member {
 
 void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, const std::vector<std::string>& searchPaths) {
     s_threadEnv = this;
-    // Mutable: every getPyThread() call does
-    //   s_globalThreadRootsDict->setAttribute(ctx, threadIdKey, s_currentPyThread)
-    // and discards the return value.  An immutable object would silently
-    // throw away each binding (setAttribute on immutable is copy-on-write
-    // and we don't assign the result back).  With mutable=true the
-    // setAttribute mutates the snapshot through the protoCore shard CAS
-    // so the binding survives — and so the per-thread PyThread object is
-    // reachable from this single GC root in gcRoots_ (P3 D12; it used to be
-    // ProtoSpace::moduleRoots).  Without this
-    // the PyThread cells were collected as garbage between thread events
-    // and `s_currentPyThread` (a thread_local raw pointer) became a stale
-    // pointer into reused memory: any later getAttribute() on it crashed
-    // with `Type mismatch in toImpl conversion ... found tag 4 (TUPLE)`
-    // when its old slot had been recycled for a tuple.  See C1.
-    s_globalThreadRootsDict = rootContext_->newObject(true);
-    if (gcRoots_) gcRoots_->add(s_globalThreadRootsDict);   // P3 D12
+    // The per-thread PyThread record is pinned by `pyThreadRoots_`, created in
+    // the constructor.  It used to be pinned by storing it as an attribute on a
+    // process-global mutable object created here, keyed by thread id; that kept
+    // every finished thread's record reachable for ever and strong-interned a
+    // Symbol per thread besides.  See `pyThreadRoots_` in PythonEnvironment.h.
     __code__ = PythonEnvironment::getInternedString(rootContext_, "__code__");
     __globals__ = PythonEnvironment::getInternedString(rootContext_, "__globals__");
     co_varnames = PythonEnvironment::getInternedString(rootContext_, "co_varnames");
