@@ -63,6 +63,19 @@ target_compile_definitions(test_compiler PRIVATE STDLIB_PATH="${CMAKE_SOURCE_DIR
 add_test(NAME test_compiler COMMAND test_compiler)
 set_tests_properties(test_compiler PROPERTIES TIMEOUT 60)
 
+# A finished thread, and a dropped function object, must leave nothing
+# reachable.  Measures marked cells, so it gets its own process: sharing one with
+# tests that allocate would let another test decide its verdict.
+add_executable(test_thread_state_released TestThreadStateReleased.cpp)
+target_link_libraries(test_thread_state_released
+    PRIVATE protoPython protoCore gtest_main)
+target_compile_definitions(test_thread_state_released
+    PRIVATE STDLIB_PATH="${CMAKE_SOURCE_DIR}/lib/python3.14")
+add_test(NAME test_thread_state_released COMMAND test_thread_state_released)
+set_tests_properties(test_thread_state_released
+                     PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE
+                     LABELS "regression_gate")
+
 # protoCore's embedder conformance suite (P4).
 #
 # protoPython consumes protoCore by add_subdirectory in developer mode, so the
