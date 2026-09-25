@@ -858,6 +858,26 @@ def _newname(name_template):
 # bpo-44422: Use a reentrant lock to allow reentrant calls to functions like
 # threading.enumerate().
 _active_limbo_lock = RLock()
+
+# protoPython DEVIATION: ONE shared `invoke_excepthook` closure, not one per
+# Thread.  Assigned once just after `_make_invoke_excepthook` is defined, below.
+#
+# CPython builds a fresh closure per Thread so that the names it needs survive
+# interpreter shutdown for daemon threads.  Under protoPython that closure is not
+# free: it captures free variables, so it keeps a reference to the frame that
+# built it while that frame binds the closure under its own name -- a reference
+# cycle between two MUTABLE protoCore objects, which the collector cannot reclaim
+# (a mutable's live state hangs off ProtoSpace::mutableRoot, which mark treats as
+# a root, and the entry is released only once the handle is finalized).  Measured
+# at ~117 permanently marked cells per Thread created.
+#
+# Sharing one instance is sound here because everything it captures is
+# module-global and identical for every Thread: `excepthook`, `_sys.excepthook`,
+# `print` and `_sys`.  The only observable difference is WHEN `old_excepthook` was
+# captured -- module import rather than Thread construction -- and
+# `invoke_excepthook` reads the live `excepthook` global first and falls back to
+# the captured one only when it is None.
+_invoke_excepthook_shared = None
 _active = {}    # maps thread id to Thread object
 _limbo = {}
 _dangling = WeakSet()
@@ -940,7 +960,10 @@ class Thread:
         self._initialized = True
         # Copy of sys.stderr used by self._invoke_excepthook()
         self._stderr = _sys.stderr
-        self._invoke_excepthook = _make_invoke_excepthook()
+        # See `_invoke_excepthook_shared`: one shared closure, not one per Thread.
+        hook = _invoke_excepthook_shared
+        self._invoke_excepthook = hook if hook is not None \
+            else _make_invoke_excepthook()
         # For debugging and _after_fork()
         _dangling.add(self)
 
@@ -1086,6 +1109,23 @@ class Thread:
 
     def _delete(self):
         "Remove current thread from the dict of currently running threads."
+        # protoPython DEVIATION: also leave `_dangling`.
+        #
+        # `_dangling` is a WeakSet, and in CPython a finished Thread drops out
+        # of it as soon as the application's last reference goes.  protoPython
+        # has no GC-level weak reference, so WeakSet membership is a STRONG
+        # reference that is released only by an explicit discard (see
+        # _weakrefset.py).  Without this line every Thread ever created stayed
+        # permanently reachable -- measured at ~150 marked cells per finished
+        # thread, and most of why the rule-8 embedder-conformance case reached
+        # its heap ceiling (docs/CONFORMANCE.md).
+        #
+        # This runs in `_bootstrap_inner`'s finally, so it fires exactly once
+        # per thread that actually ran, on that thread.  `_dangling` keeps its
+        # documented purposes for threads that are alive or were never started;
+        # a thread that has finished needs neither `_after_fork` reset nor
+        # debugging visibility.
+        _dangling.discard(self)
         with _active_limbo_lock:
             del _active[get_ident()]
             # There must not be any python code between the previous line
@@ -1356,6 +1396,11 @@ def _make_invoke_excepthook():
             args = None
 
     return invoke_excepthook
+
+
+# Build the one shared closure now, before the first Thread (`_MainThread`) is
+# instantiated at the bottom of this module.  See `_invoke_excepthook_shared`.
+_invoke_excepthook_shared = _make_invoke_excepthook()
 
 
 # The timer class was contributed by Itamar Shtull-Trauring
