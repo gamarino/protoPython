@@ -1229,7 +1229,86 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
             fn = fn->setAttribute(ctx, modS, PROTO_NONE);
         }
     }
-    if (closureFrame && env) {
+    // Does this function need to hold on to the frame it was created in?
+    //
+    // Only if its own body can READ a free variable (OP_LOAD_DEREF), or can
+    // define something that will (OP_BUILD_FUNCTION / OP_BUILD_CLASS, for a
+    // nested def / class that needs the chain).  For every other function the
+    // reference is dead weight -- and a permanent leak, because it closes a
+    // reference CYCLE BETWEEN TWO MUTABLE OBJECTS:
+    //
+    //     fn    --__closure_frames__-->  frame     (installed just below)
+    //     frame --co_name-------------->  fn       (OP_BUILD_FUNCTION binds the
+    //                                               new function's name in the
+    //                                               frame that defines it)
+    //
+    // protoCore keeps a mutable object's live state in
+    // `ProtoSpace::mutableRoot[mutable_ref % 256]`; the collector traces that
+    // table as a mark ROOT, and releases an entry only once the handle cell has
+    // been finalized (protoCore/docs/GarbageCollector.md, "Phase 5b").  In a
+    // cycle each handle stays marked through the other object's shard entry, so
+    // neither is ever finalized and neither entry is ever released.  Measured
+    // with a workload whose only variable is the number of function objects
+    // created: ~62 marked cells retained per function object, for ever, flat
+    // across 30 further collection cycles.  Dropping the edge where it cannot be
+    // used takes that to ~1 cell.
+    //
+    // This is also the graph agreeing with a decision the CALL path already
+    // takes: `runUserFunctionCall` skips the closure frame when the function has
+    // one but its bytecode holds no OP_LOAD_DEREF (`cacheNoLoadDeref`).
+    //
+    // When the native bytecode is not available the answer is "yes" -- a
+    // conservative extra reference costs memory, a missing one would break
+    // name resolution.
+    bool nbScanned = false, hasBuildOp = false, hasDerefOp = false;
+    const int* scannedNativeBc = nullptr;
+    if (env && codeObj && env->getCoNativeBytecodeString()) {
+        const proto::ProtoObject* nbObj =
+            codeObj->getAttribute(ctx, env->getCoNativeBytecodeString());
+        if (nbObj && nbObj != PROTO_NONE) {
+            char* nbData = nbObj->getDataIfByteBuffer(ctx);
+            if (nbData) {
+                scannedNativeBc = reinterpret_cast<const int*>(nbData);
+                const size_t nbLen =
+                    nbObj->asByteBuffer(ctx)->getSize(ctx) / sizeof(int);
+                for (size_t bi = 0; bi < nbLen; bi += 2) {
+                    const int op = scannedNativeBc[bi];
+                    if (op == OP_BUILD_FUNCTION || op == OP_BUILD_CLASS) hasBuildOp = true;
+                    if (op == OP_LOAD_DEREF) hasDerefOp = true;
+                }
+                nbScanned = true;
+            }
+        }
+    }
+    // THE CRITERION IS `co_freevars`, NOT THE OPCODE CENSUS, and the difference
+    // is not academic: `def f(): nonlocal a` has a free variable and emits no
+    // OP_LOAD_DEREF at all, because it never reads `a`.  Gating on the opcode
+    // dropped that function's frame, `f.__closure__` came back None, and
+    // `types.py`'s `_cell_factory` -- which is exactly that shape -- computed the
+    // wrong `types.CellType` (caught by `protopy_closure_cells`).
+    //
+    // The compiler stamps `co_freevars` with "the exact set of names this
+    // function AND ITS NESTED SCOPES close over from enclosing function scopes"
+    // (Compiler.cpp), so a non-empty tuple is the authoritative answer and
+    // covers reads, writes and nested definitions alike.  `hasBuildOp` stays as
+    // a conservative belt for a code object that carries no `co_freevars`, and
+    // an unavailable answer means yes.
+    bool freevarsKnown = false;
+    unsigned long nFreeVars = 0;
+    if (codeObj) {
+        const proto::ProtoObject* fvObj = codeObj->getAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "co_freevars"));
+        if (fvObj && fvObj != PROTO_NONE) {
+            if (const proto::ProtoTuple* fv = fvObj->asTuple(ctx)) {
+                nFreeVars = fv->getSize(ctx);
+                freevarsKnown = true;
+            }
+        }
+    }
+    const bool needsClosureFrame = !freevarsKnown || nFreeVars > 0
+                                || !nbScanned || hasBuildOp || hasDerefOp;
+
+    if (closureFrame && env && needsClosureFrame) {
         // Wrap as a proper Python list (with __data__ + __class__) so
         // Python-side `len(f.__closure__)`, indexing, and repr work.
         const proto::ProtoList* closureTuple = ctx->newList()->appendLast(ctx, closureFrame);
@@ -1249,10 +1328,42 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
     if (kwDefaults && env) {
         fn = fn->setAttribute(ctx, env->getKwdefaultsString(), kwDefaults);
     }
-    fn = fn->setAttribute(ctx, env ? env->getCallString() : PythonEnvironment::getInternedString(ctx, "__call__"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(fn), runUserFunctionCall));
-    fn = fn->setAttribute(ctx, env ? env->getGetDunderString() : PythonEnvironment::getInternedString(ctx, "__get__"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(fn), py_function_get));
+    // `__call__` and `__get__` come from the FUNCTION PROTOTYPE, which already
+    // carries both as `fromMethod(nullptr, ...)` cells (PythonEnvironment.cpp,
+    // where functionPrototype is built).  Installing a second, per-instance copy
+    // here bound to `fn` made every function object IMMORTAL, and that is not a
+    // figure of speech:
+    //
+    //   * a function object is mutable, so its live state lives in
+    //     `ProtoSpace::mutableRoot[mutable_ref % 256]`, which the collector
+    //     traces as a root;
+    //   * `ProtoMethodCell::processReferences` traces the cell's `self`;
+    //   * so `fn.__call__ = fromMethod(fn, ...)` made the handle reachable FROM
+    //     its own shard root, and protoCore releases a shard entry only when the
+    //     handle is finalized (`gcFinalizedMutableRefs`).  Reachable handle, no
+    //     finalize; no finalize, no release: a self-sustaining pair.
+    //
+    // Measured: ~100-150 marked cells retained per function object created at
+    // run time, for ever.  `threading.Thread.__init__` builds one closure per
+    // Thread (`_make_invoke_excepthook`), which is how this presented as
+    // "protoPython retains ~300 marked cells per finished thread" and is what
+    // drove the rule-8 conformance case into its heap ceiling.
+    //
+    // Dispatch does not need the binding.  `ProtoObject::call` and every
+    // protoPython call site pass the receiver explicitly, and invokeCallable's
+    // fast path for user functions does not read `__call__` at all — it
+    // recognises an own `__code__` and calls runUserFunctionCall directly.
+    //
+    // The bootstrap fallback below (no env, or no function prototype yet) has no
+    // prototype to inherit from, so it still installs its own pair.  Those
+    // objects are created once during bootstrap and are live for the session
+    // anyway.
+    if (!env || !env->getFunctionPrototype()) {
+        fn = fn->setAttribute(ctx, env ? env->getCallString() : PythonEnvironment::getInternedString(ctx, "__call__"),
+            ctx->fromMethod(const_cast<proto::ProtoObject*>(fn), runUserFunctionCall));
+        fn = fn->setAttribute(ctx, env ? env->getGetDunderString() : PythonEnvironment::getInternedString(ctx, "__get__"),
+            ctx->fromMethod(const_cast<proto::ProtoObject*>(fn), py_function_get));
+    }
 
     // Build FunctionMetaCache: pre-compute constant codeObj scalars once here so
     // runUserFunctionCall reads one ByteBuffer field instead of multiple separate getAttribute calls.
@@ -1291,37 +1402,19 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
             ? codeObj->getAttribute(ctx, env->getCoCodeString()) : nullptr;
         const proto::ProtoTuple* co_bytecode_val = codeObjTupleObj ? codeObjTupleObj->asTuple(ctx) : nullptr;
 
-        // Resolve native bytecode and scan for special opcodes.
-        const int* nativeBc_val = nullptr;
-        bool no_inner_functions_val = false;
-        bool no_load_deref_val = false;
-        if (env->getCoNativeBytecodeString()) {
-            const proto::ProtoObject* nbObj = codeObj->getAttribute(ctx, env->getCoNativeBytecodeString());
-            if (nbObj && nbObj != PROTO_NONE) {
-                char* nbData3 = nbObj->getDataIfByteBuffer(ctx);
-                if (nbData3) {
-                    nativeBc_val = reinterpret_cast<const int*>(nbData3);
-                    size_t nbLen = nbObj->asByteBuffer(ctx)->getSize(ctx) / sizeof(int);
-                    bool hasBuild = false, hasDeref = false;
-                    for (size_t bi = 0; bi < nbLen; bi += 2) {
-                        int op = nativeBc_val[bi];
-                        if (op == OP_BUILD_FUNCTION || op == OP_BUILD_CLASS) hasBuild = true;
-                        if (op == OP_LOAD_DEREF) hasDeref = true;
-                    }
-                    no_inner_functions_val = !hasBuild;
-                    no_load_deref_val = !hasDeref;
-                }
-            }
-        }
+        // Native bytecode and its opcode census were resolved once above, where
+        // they also decided whether this function keeps a closure-frame
+        // reference.  Reusing them keeps the two decisions from drifting apart
+        // and saves a second scan of the whole bytecode.
+        const int* nativeBc_val = scannedNativeBc;
+        const bool no_inner_functions_val = nbScanned && !hasBuildOp;
+        const bool no_load_deref_val = nbScanned && !hasDerefOp;
 
-        // Determine closure status at build time.
-        // An empty closure tuple/list means no captured variables — treat as no closure.
-        bool hasClosure_val = false;
-        if (closureFrame) {
-            // closureFrame is the closure frame passed in to createUserFunction —
-            // if it exists, the function has captured variables.
-            hasClosure_val = true;
-        }
+        // Closure status, as the object graph actually is: the call path reads
+        // this flag instead of looking the attribute up, so it must agree with
+        // whether `__closure_frames__` was installed and not merely with whether
+        // a frame was passed in.
+        const bool hasClosure_val = (closureFrame != nullptr) && needsClosureFrame;
 
         // Compute flat array sizes.
         uint32_t nConsts_val = co_consts_val ? static_cast<uint32_t>(co_consts_val->getSize(ctx)) : 0;
@@ -8046,7 +8139,16 @@ const proto::ProtoObject* executeBytecodeRange(
                         const proto::ProtoObject* updatedFrame =
                             const_cast<proto::ProtoObject*>(closureFrame)->setAttribute(
                                 ctx, nameAttr->asString(ctx), fn);
-                        if (updatedFrame != closureFrame) {
+                        // Refresh the function's closure reference only when it
+                        // HAS one.  createUserFunction omits it for a function
+                        // whose body can neither read a free variable nor define
+                        // anything that could, precisely to avoid the mutable
+                        // fn <-> frame cycle protoCore cannot reclaim; putting it
+                        // back here would reintroduce that cycle for every such
+                        // function defined inside another one.
+                        const bool fnKeepsClosure = env->getClosureString() &&
+                            fn->hasOwnAttribute(ctx, env->getClosureString()) == PROTO_TRUE;
+                        if (updatedFrame != closureFrame && fnKeepsClosure) {
                             // Not in-place: rebuild closure tuple so fn sees the updated frame.
                             // Wrap as Python list so len/repr/indexing work on f.__closure__.
                             const proto::ProtoList* newClosure =

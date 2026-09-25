@@ -925,6 +925,14 @@ set_tests_properties(protopy_bytes_str_compare PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# bytes.find / rfind / index / rindex / count reject a needle that is neither an
+# integer nor bytes-like, with CPython's TypeError (the dead `== nullptr` guard).
+add_test(NAME protopy_bytes_find_needle_type
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/bytes_find_needle_type.py)
+set_tests_properties(protopy_bytes_find_needle_type PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # A bare module name is a NameError until imported; prototype attributes are not names.
 add_test(NAME protopy_global_names_no_import
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/global_names_no_import.py)

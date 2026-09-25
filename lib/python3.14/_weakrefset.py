@@ -5,6 +5,29 @@
 from _weakref import ref
 GenericAlias = type(list[int])
 
+# protoPython DEVIATION, and the reason every method below that drops an element
+# also calls `_wr_evict`.
+#
+# protoPython has no GC-level weak reference.  `_weakref.ref(obj)` registers
+# `obj` in the `_weakref` module's `__active__` presence set and that membership
+# is a STRONG reference (see src/library/WeakrefModule.cpp); an entry leaves only
+# when `_weakref._evict(obj)` is called.  A WeakSet that never evicts is
+# therefore an unbounded leak rather than a weak container: `threading._dangling`
+# grew by one permanently-reachable Thread per Thread ever created, ~150 marked
+# cells each, which is most of what made the rule-8 embedder-conformance case
+# reach its heap ceiling (docs/CONFORMANCE.md).
+#
+# Membership in the set is what keeps the object alive, so leaving the set must
+# release it.  That makes this WeakSet as weak as protoPython can express:
+# deterministic on removal instead of automatic on collection.  It does NOT make
+# an element vanish when the last other reference to it goes away -- only an
+# explicit `discard` / `remove` / `pop` / `clear` releases it.
+try:
+    from _weakref import _evict as _wr_evict
+except ImportError:                     # a CPython-compatible _weakref
+    def _wr_evict(item):
+        pass
+
 __all__ = ['WeakSet']
 
 
@@ -46,6 +69,10 @@ class WeakSet:
         self.data.add(ref(item, self._remove))
 
     def clear(self):
+        for itemref in self.data:
+            item = itemref()
+            if item is not None:
+                _wr_evict(item)
         self.data.clear()
 
     def copy(self):
@@ -59,13 +86,17 @@ class WeakSet:
                 raise KeyError('pop from empty WeakSet') from None
             item = itemref()
             if item is not None:
+                _wr_evict(item)
                 return item
 
     def remove(self, item):
+        # ref(item) re-registers item in the presence set, so evict AFTER.
         self.data.remove(ref(item))
+        _wr_evict(item)
 
     def discard(self, item):
         self.data.discard(ref(item))
+        _wr_evict(item)
 
     def update(self, other):
         for element in other:

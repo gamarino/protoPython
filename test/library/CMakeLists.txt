@@ -62,3 +62,57 @@ target_link_libraries(test_compiler PRIVATE protoPython protoCore gtest_main)
 target_compile_definitions(test_compiler PRIVATE STDLIB_PATH="${CMAKE_SOURCE_DIR}/lib/python3.14")
 add_test(NAME test_compiler COMMAND test_compiler)
 set_tests_properties(test_compiler PROPERTIES TIMEOUT 60)
+
+# A finished thread, and a dropped function object, must leave nothing
+# reachable.  Measures marked cells, so it gets its own process: sharing one with
+# tests that allocate would let another test decide its verdict.
+add_executable(test_thread_state_released TestThreadStateReleased.cpp)
+target_link_libraries(test_thread_state_released
+    PRIVATE protoPython protoCore gtest_main)
+target_compile_definitions(test_thread_state_released
+    PRIVATE STDLIB_PATH="${CMAKE_SOURCE_DIR}/lib/python3.14")
+add_test(NAME test_thread_state_released COMMAND test_thread_state_released)
+set_tests_properties(test_thread_state_released
+                     PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE
+                     LABELS "regression_gate")
+
+# protoCore's embedder conformance suite (P4).
+#
+# protoPython consumes protoCore by add_subdirectory in developer mode, so the
+# conformance library is reached as the in-tree target `protoCoreConformance`;
+# in package mode it is `protoCore::conformance`.  Both are optional, so a
+# protoCore older than 2.3 simply does not build these targets.
+if(TARGET protoCoreConformance)
+    set(_protopy_conformance protoCoreConformance)
+elseif(TARGET protoCore::conformance)
+    set(_protopy_conformance protoCore::conformance)
+endif()
+
+if(_protopy_conformance)
+    # Its own executable: the GC cases measure heap state, so sharing a process
+    # with tests that allocate would let one test decide another's verdict.
+    add_executable(test_conformance ConformanceTests.cpp)
+    target_link_libraries(test_conformance
+        PRIVATE protoPython protoCore ${_protopy_conformance} gtest_main)
+    target_compile_definitions(test_conformance
+        PRIVATE STDLIB_PATH="${CMAKE_SOURCE_DIR}/lib/python3.14")
+    add_test(NAME test_conformance COMMAND test_conformance)
+    set_tests_properties(test_conformance PROPERTIES TIMEOUT 900 RUN_SERIAL TRUE)
+
+    # The three cases that cannot report their own failure in-process: one
+    # aborts, two deadlock the space.  The external TIMEOUT is the verdict.
+    add_executable(test_conformance_isolate ConformanceIsolate.cpp)
+    target_link_libraries(test_conformance_isolate
+        PRIVATE protoPython protoCore ${_protopy_conformance})
+    target_compile_definitions(test_conformance_isolate
+        PRIVATE STDLIB_PATH="${CMAKE_SOURCE_DIR}/lib/python3.14")
+    foreach(_case heap.ceiling_progress join.parks stw.quorum_completes)
+        add_test(NAME conformance_isolate.${_case}
+                 COMMAND test_conformance_isolate --case=${_case})
+        set_tests_properties(conformance_isolate.${_case}
+                             PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE)
+    endforeach()
+else()
+    message(STATUS "protoPython: protoCoreConformance not available; the "
+                   "embedder conformance suite is not built.")
+endif()

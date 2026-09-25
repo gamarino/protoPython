@@ -386,6 +386,15 @@ static const proto::ProtoObject* thread_bootstrap(
         if (spawnerGlobals) {
             protoPython::PythonEnvironment::setCurrentGlobals(oldGlobals);
         }
+        // This OS thread is finished: drop every GC root and every raw
+        // thread-local ProtoObject* it still holds, while its context and
+        // environment are still registered (releaseThreadState reaches the
+        // owning root sets through them, so it cannot run after ContextScope
+        // has been destroyed).  Without this, each finished thread left its
+        // py_thread record permanently reachable — ~300 marked cells per
+        // thread, which is what made the rule-8 conformance case reach its
+        // heap ceiling.  See docs/CONFORMANCE.md.
+        protoPython::PythonEnvironment::releaseThreadState(context);
     }
     return result;
 }
