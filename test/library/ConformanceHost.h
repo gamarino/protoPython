@@ -19,7 +19,7 @@ namespace conformance {
 
 class PythonConformanceHost final : public proto::conformance::Host {
 public:
-    PythonConformanceHost() : env_(stdlibPath()) {}
+    PythonConformanceHost() : env_(stdlibPath()) { warmRuntime(); }
 
     const char* name() const override { return "protoPython"; }
 
@@ -141,15 +141,46 @@ public:
     //
     // The release flag is not polled: Python cannot read a C++ flag, and adding
     // a builtin for the suite's benefit would make the adaptor test something
-    // protoPython does not do.  The worker instead does a few seconds of its own
-    // allocating work and finishes, which is what the case needs.
+    // protoPython does not do.  The worker instead allocates for a bounded
+    // stretch of its own and finishes, which is what the case needs.
+    //
+    // THE BOUND IS WALL CLOCK, NOT AN ITERATION COUNT, and that is the whole
+    // point of this shape.  Both cases that use this capability need one thing
+    // from it: that a registered, allocating protoPython thread is still up
+    // while the case demands a collection.  `stw.quorum_completes` waits up to
+    // 5 s to see the thread in the running set and then drives at most 2 cycles
+    // with a 15 s deadline; `join.parks` gives a collection 8 s to complete and
+    // releases after 10 s.  Neither cares how much arithmetic the worker got
+    // through.
+    //
+    // The previous version ran a fixed 400,000 iterations, which took 278.1 s and
+    // 278.4 s against ctest's 300 s budget -- a 22-second margin on an idle
+    // machine, and both cases were observed timing out when the machine was busy.
+    // A test that fails because another process is busy measures the other
+    // process.  Bounding the worker by the clock makes its duration independent
+    // of machine load and of protoPython's throughput: under load it completes
+    // fewer iterations and still stays up for exactly kSeconds, which is the
+    // property the cases need.  kSeconds is set to twice `join.parks`' 10 s
+    // release timer, so the worker outlives every deadline either case sets
+    // while the whole case finishes in ~20 s instead of ~278 s.
+    //
+    // The inner fixed-length loop keeps the clock read off the allocation path:
+    // the worker must allocate continuously so it reaches protoPython's
+    // every-64-opcodes safepoint, and a `time.monotonic()` call per allocation
+    // would make the syscall, not the allocation, the thing being measured.
     bool joinBlockingThread(volatile bool* /*releaseFlag*/) override {
+        const int kSeconds = 20;
         const std::string src =
             "import threading\n"
+            "import time\n"
             "def _conf_worker():\n"
             "    total = 0\n"
-            "    for i in range(400000):\n"
-            "        total += len('spin-%d' % i)\n"
+            "    i = 0\n"
+            "    deadline = time.monotonic() + " + std::to_string(kSeconds) + ".0\n"
+            "    while time.monotonic() < deadline:\n"
+            "        for _ in range(500):\n"
+            "            total += len('spin-%d' % i)\n"
+            "            i += 1\n"
             "    return total\n"
             "_conf_t = threading.Thread(target=_conf_worker)\n"
             "_conf_t.start()\n"
@@ -180,6 +211,46 @@ public:
     // trigger.
 
 private:
+    // Import, once at construction, every module the capabilities below use.
+    //
+    // This is not a convenience: it is what makes `heap.ceiling_progress`'s
+    // ceiling mean what the case says it means.  That case settles the space,
+    // reads "the live set the RUNTIME itself needs", and sets the hard ceiling
+    // 200,000 cells above it.  protoPython imports its stdlib lazily, so with a
+    // cold Host the settled figure was 49,152 cells -- the interpreter before it
+    // has ever seen `threading` -- and then `runProducerConsumer`'s own source
+    // did `import threading` and `from collections import deque` INSIDE the
+    // measured window.  Measured with the case's exact sequence: those two
+    // imports take `inUse` from 49,152 to 159,503, i.e. **110,351 of the
+    // 200,000-cell headroom, 55%, is the runtime's own threading stack** -- data
+    // that is permanently and legitimately live, not garbage the collector
+    // failed to reclaim.  The case was therefore comparing protoPython's live
+    // set against a ceiling set below it, which is the exact miscalibration its
+    // own comment warns about ("Too low and the abort says nothing about the
+    // runtime").
+    //
+    // The proof that the abort was calibration and not retention: with the item
+    // count, the bounded backlog and the ceiling all unchanged and the thread
+    // count set to ZERO -- items produced inline, no `threading.Thread` at all
+    // -- the case still aborted at a live set of 201,595 cells, against 201,600
+    // with its two threads per round.  Per-thread retention moved the number by
+    // five cells.
+    //
+    // Nothing about the case is weakened: the threshold is still
+    // settled + 200,000, the workload still produces 202,000 items through two
+    // threads per round, and the case still goes red when the runtime cannot
+    // make progress under the ceiling (see docs/CONFORMANCE.md for the mutation
+    // that reds it).  What changes is that "settled" now includes the runtime,
+    // which is what the case asked to measure.
+    void warmRuntime() {
+        if (env_.executeString("import threading\n"
+                               "import time\n"
+                               "from collections import deque\n",
+                               "<conformance:warm>") != 0) {
+            env_.takePendingException();
+        }
+    }
+
     static std::string stdlibPath() {
 #ifdef STDLIB_PATH
         return STDLIB_PATH;

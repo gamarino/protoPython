@@ -1,15 +1,16 @@
 # protoPython — embedder conformance
 
 The normative rule table is `protoCore/docs/EMBEDDER-CONFORMANCE.md`. This file
-records protoPython's **first-run result**, the judgement answers a script cannot
-give, and what the adaptor does and does not prove.
+records protoPython's result, the judgement answers a script cannot give, and
+what the adaptor does and does not prove.
 
 - Adaptor: `test/library/ConformanceHost.h`
 - Wiring: `test/library/ConformanceTests.cpp`, `test/library/ConformanceIsolate.cpp`
-- Static ratchet: `conformance-allow.txt` (**exits 1 on purpose — two real defects**)
+- Static ratchet: `conformance-allow.txt` (**exits 1 on purpose — one real defect left**)
+- Retention regression: `test/library/TestThreadStateReleased.cpp`
 - Run: `ctest --test-dir build_release -R 'conformance' < /dev/null`
 
-## First run — 2026-09-25, protoCore 2.3.0
+## Result — 2026-09-25, protoCore 2.4.0 (SOVERSION 3)
 
 | Case | Rule | Result | Numbers |
 |---|---|---|---|
@@ -22,16 +23,16 @@ give, and what the adaptor does and does not prove.
 | `module.alias_rejected` | 9c | **NEEDSREVIEW** | kernel keeps provider+path+version distinct; protoPython's own keying unchecked |
 | `external.bytes_accounted` | 7 | **NEEDSREVIEW** | 15 external wrappers, no byte total — see C7 |
 | `thread.registered` | 11 | **NOTAPPLICABLE** | `forEachThreadKind` not implemented. **Rule 11 UNVERIFIED by this case** |
-| `stw.quorum_completes` | 2 | **PASS** (isolated) | a cycle advanced twice with a Python thread up (`runningThreads`=2) |
-| `join.parks` | 2b | **PASS** (isolated) | a cycle completed while `Thread.join()` was blocked, reclaiming 521,935 cells |
-| **`heap.ceiling_progress`** | **8** | **FAIL** (isolated), and it STAYS red | cause now established and it is protoCore's: every thread that exits permanently loses 4,096 cells from the free list. See below |
+| `stw.quorum_completes` | 2 | **PASS** (isolated) | a cycle advanced twice with a Python thread up (`runningThreads`=2); **20.5 s**, was 278.4 s |
+| `join.parks` | 2b | **PASS** (isolated) | a cycle completed while `Thread.join()` was blocked, reclaiming 499,468 cells; **20.6 s**, was 278.1 s |
+| **`heap.ceiling_progress`** | **8** | **PASS** (isolated) | 30 cycles completed while the workload ran, 1,306,839 cells reclaimed by the last one, `oomCallbackFired=0`; 5.9 s. Red until 2026-09-25 — see below for the cause, which was NOT what this file previously claimed |
 
-Suite: **632** ctest cases, **630 passing** (2026-09-25, after the py_bytes_find
-fix). Both failures are known and neither is new: `protopy_import_site`, which
-pre-dates this phase and has no skip marker anywhere in the repository, and
-`conformance_isolate.heap.ceiling_progress`, whose cause is in protoCore. The
-count rose from 631 to 632 with `protopy_bytes_find_needle_type`, the regression
-that pins the dead `== nullptr` fix.
+Suite: **639** ctest cases, **638 passing** (2026-09-25, after the retention
+fixes below) — up from 636 of 638. The one remaining failure is
+`protopy_import_site`, which pre-dates this phase and has no skip marker anywhere
+in the repository. The count rose by one with `test_thread_state_released`, the
+three-assertion regression that pins the retention fixes, and the second failure
+went away because `heap.ceiling_progress` is now green.
 
 ## The rule-5 result contradicts the prediction, and the number is the finding
 
@@ -58,101 +59,315 @@ perennial. So: **rule 5 passes, and the 10% figure is an informational finding
 for P5**, not a rule failure. Reporting it as a failure would have been the
 overclaim; reporting only "PASS" would have thrown away the number.
 
-## The finding: rule 8
+## Rule 8: red to green, and a correction to what this file used to claim
+
+### What this file said, and why it was wrong
+
+Until 2026-09-25 this section read, in as many words:
+
+> **Every protoCore thread permanently loses its private free-cell batch when it
+> exits.** […] The rule-8 workload creates **202 threads** (two per round, 101
+> rounds), so it loses 827,392 cells at the low figure — four times the
+> 200,000-cell headroom the case leaves. **No protoPython-side change can make
+> this case pass**, and reducing the adaptor's thread count would hide a real
+> kernel defect rather than fix one.
+
+**Every part of that conclusion was wrong, and the mistake is instructive.**
+
+The kernel leak it described was real, and protoCore 2.4.0 fixed it (an exiting
+thread now returns its batch; the cost went from −4,096 cells to −1). But an A/B
+on the *identical* binary, pre-fix and post-fix, aborted with a **byte-identical**
+message. So the batch leak was never what this case measured — and the reasoning
+that said it was had a hole visible without any measurement at all:
+
+- The escalation fires on `reclaimedLastCycle == 0` twice, **not** on heap growth.
+- The `live set 196471` it prints is the **marked** count. A cell sitting in a
+  leaked free-cell batch is on no free list *and is never marked*, so leaked
+  batches cannot appear in that figure by construction.
+
+The lesson recorded here on purpose: a number that is consistent with a
+hypothesis (827,392 lost cells > 200,000 headroom) is not evidence for it when
+the mechanism cannot reach the quantity being reported.
+
+### What was actually measured, in three steps
+
+**Step 1 — the per-finished-thread retention is real, and it is protoPython's.**
+Measured with a workload whose only variable is the number of threads: the item
+count per round was held at 10 and then raised ×100 to 1,000 with no effect on
+the figure, so items retain nothing. Over 40, 80 and 160 threads the marked-cell
+growth was linear at **302 cells per finished thread**. Three protoPython causes,
+found by bisection and each fixed below: the process-global thread-roots dict,
+`threading._dangling`, and one closure per `threading.Thread`.
+
+**Step 2 — every function object protoPython creates at run time was immortal,
+and that was most of the 302.** Same method, varying the number of function
+objects instead of threads: **~62 marked cells retained per function object**,
+flat across 30 further collection cycles, and *not* reclaimed by making the
+object immutable nor by removing the metadata-cache pin. A breadth-first search
+from protoCore's actual GC roots found the dropped function reachable in one hop
+from a `ProtoSpace::mutableRoot` shard. The mechanism:
 
 ```
-protoCore: heap hard limit 249152 cells reached; live set 196471 cells,
-last cycle reclaimed 0 — out of memory
+fn    --__closure_frames__-->  frame      (createUserFunction)
+frame --co_name-------------->  fn        (OP_BUILD_FUNCTION binds the new
+                                           function's name in the defining frame)
 ```
 
-**Reproduction:**
-`build_release/test/library/test_conformance_isolate --case=heap.ceiling_progress`
-(exit 134). The case settles the space, measures protoPython's own live set
-(≈49,152 cells), sets a hard ceiling 200,000 cells above it — which no
-protoPython code does, because protoPython never calls `setHeapLimits` — and runs
-a **bounded-backlog** producer/consumer workload: 101 rounds of 2,000 deque items,
-each round produced by two threads and fully drained before the next.
+Both objects are mutable. protoCore keeps a mutable object's live state in
+`mutableRoot[mutable_ref % 256]`, mark traces that table as a **root**, and the
+entry is released only once the handle cell has been finalized
+(`protoCore/docs/GarbageCollector.md`, "Phase 5b"). In a cycle each handle stays
+marked through the other object's shard entry, so neither is ever finalized and
+neither entry is ever released. **A reference cycle that includes a mutable
+protoCore object is uncollectable.** Confirmed with a bare `ProtoSpace` and no
+runtime: 1,000 objects of 8 attributes each, created and dropped, retained 2.73
+marked cells each when immutable, **2.54 when mutable, and 12.29 when one
+attribute was a `ProtoMethod` bound back to the object**. Filed as a kernel
+finding below; **not fixed here**, because protoCore is out of scope for this
+phase.
 
-**Severity: high. MECHANISM NOW ESTABLISHED, and it is in protoCore, not in
-protoPython.** It is therefore diagnosed here and **not fixed**: a kernel change
-affects five runtimes and is the maintainer's call. The case stays red.
+**Step 3 — and none of it is what kept rule 8 red.** This is the part that
+matters, and it is why the fixes below are presented as their own result rather
+than as the rule-8 fix. With the item count, the bounded backlog and the ceiling
+all unchanged and the thread count set to **zero** — items produced inline, no
+`threading.Thread` anywhere — the case still aborted, at a live set of **201,595
+cells against 201,600 with its two threads per round**. Per-thread retention
+moved the number by five cells.
 
-**Every protoCore thread permanently loses its private free-cell batch when it
-exits.** `ProtoThreadExtension::~ProtoThreadExtension` frees the attribute cache,
-the mutable-value cache and the `std::thread`, but never returns
-`this->freeCells` to the space — unlike `ProtoContext::~ProtoContext`, which
-returns its own batch under `globalMutex` a few lines of the same codebase away.
-The cells are on no free list and are not live, so `heapSize - freeCellsCount`
-grows permanently by one batch per thread created.
+What kept it red was the **ceiling calibration**, and the figure is stark.
+The case settles the space, reads "the live set the RUNTIME itself needs", and
+sets the hard ceiling 200,000 cells above it. protoPython imports its stdlib
+lazily, so a cold Host settled at 49,152 cells — the interpreter before it has
+ever seen `threading` — and then `runProducerConsumer`'s own source did
+`import threading` and `from collections import deque` **inside the measured
+window**. Measured with the case's exact sequence:
 
-**Measured with a bare `ProtoSpace` and no runtime at all** — two threads per
-round, created through `ProtoSpace::newThread`, joined, then six forced cycles —
-`heapSize` constant at 262,144, `liveCellsLastCycle` constant at 306, and
-`freeCellsCount` falling monotonically for ever:
+| point | `inUse` | note |
+|---|---|---|
+| settled, cold Host | 49,152 | what the case used to compute the ceiling |
+| after `import threading`, `from collections import deque` | 159,503 | **110,351 cells, 55% of the whole headroom** |
+| ceiling | 249,152 | leaving 89,649 cells for a 202-thread, 202,000-item workload |
 
-| thread body | cells lost per thread |
+Those 110,351 cells are permanently and legitimately live: they are
+protoPython's threading stack, not garbage the collector failed to reclaim. The
+case was comparing protoPython's live set against a ceiling set below it — the
+exact miscalibration its own comment warns about ("Too low and the abort says
+nothing about the runtime").
+
+### What was changed
+
+**The adaptor now warms the runtime in its constructor**
+(`PythonConformanceHost::warmRuntime`): it imports `threading`, `time` and
+`collections.deque` once, before the case settles, so that "the live set the
+runtime needs" includes the runtime. Nothing else moves — **the threshold is
+still `settled + 200,000`, the workload still produces 202,000 items through two
+threads per round, and the thread count is untouched.** Result: settled live set
+166,421, ceiling 366,421, **30 cycles completed while the workload ran,
+1,306,839 cells reclaimed by the last one, `oomCallbackFired=0`, 5.9 s.**
+
+**Mutation that reds it again:** delete the `warmRuntime()` call from the
+constructor. The case returns to `SIGABRT` with
+`heap hard limit 249152 cells reached; live set 196534 cells, last cycle
+reclaimed 0`.
+
+**One weakness of this, stated rather than hidden.** With a warm Host,
+`heapSize` has already grown to 1,572,864 cells by the time the case computes
+`settled + 200,000 = 359,073`, so the hard ceiling is *below* the current
+`heapSize` and therefore caps no further growth — the heap simply never grew
+(`heapSize 1572864->1572864`) and the workload ran inside the free pool it
+already had, reaching `inUse` 971,296. The property rule 8 asks about was
+exercised (the heap could not grow, cycles completed, progress was made, no OOM),
+but with more room than the case intends. **Recommendation for protoCore, not
+actioned here:** give `Host` a `prepare()` hook that the case calls *before* it
+settles, and compute the ceiling from the sample taken after it. That makes the
+calibration sound for any runtime with a lazily-imported stdlib instead of
+relying on each adaptor to warm itself in a constructor.
+
+### The retention fixes, and what they measure
+
+These stand on their own: each closes an unbounded leak, each is pinned by a
+regression case, and together they take the per-finished-thread figure from
+**302 marked cells to 107** (`threading.Thread` with no Python-level target;
+151 when the caller also builds a lambda per Thread, as the measurement workload
+does). The floor for comparison is **32.7 cells per thread** for a thread started
+through `_thread.start_new_thread`, which bypasses `threading.py` entirely.
+
+1. **`src/library/PythonEnvironment.cpp` — the per-thread `py_thread` record is
+   a `ProtoRootSet` handle, released at thread exit.** It used to be pinned by
+   storing it as an attribute of one process-global mutable object keyed
+   `"thread_<std::thread::id>"`. Nothing ever removed the entry, and
+   `ProtoObject::setAttribute` **strong-interns its key**, so each finished
+   thread also left a permanent Symbol in the kernel symbol table — which is why
+   "also erase the entry" would have been only half a fix. A `ProtoRootSet`
+   needs no key: `add` returns a handle, `remove` releases it, and
+   `pyThreadRoots_->size()` is now a checkable invariant.
+   `PythonEnvironment::releaseThreadState`, called at the end of
+   `thread_bootstrap`, drops that pin, drains any active-exception pins an
+   escaping exception left unmatched, and clears every thread-local raw
+   `ProtoObject*` mirror.
+
+   **This one is small in cells** (~5 per thread, below the noise of the
+   slope measurement) **and large in kind**: it was unbounded in both the dict
+   and the symbol table.
+
+2. **`src/library/ExecutionEngine.cpp` — a function object keeps its defining
+   frame only when its own bytecode could use it.** `createUserFunction` now
+   scans the native bytecode once and installs `__closure_frames__` only when the
+   body contains `OP_LOAD_DEREF` (it can read a free variable) or
+   `OP_BUILD_FUNCTION` / `OP_BUILD_CLASS` (it can define something that will).
+   When the bytecode is unavailable the answer is "yes", because a conservative
+   extra reference costs memory and a missing one would break name resolution.
+   **The criterion is `co_freevars`, not the opcode census**, and getting that
+   wrong the first time is worth recording: a first version gated on
+   `OP_LOAD_DEREF` alone, and `def f(): nonlocal a` has a free variable while
+   emitting no `OP_LOAD_DEREF` at all, because it never reads `a`. That dropped
+   its frame, `f.__closure__` came back `None`, and `types.py`'s `_cell_factory`
+   — which is exactly that shape — produced the wrong `types.CellType`.
+   `protopy_closure_cells` caught it. The compiler stamps `co_freevars` with "the
+   exact set of names this function AND ITS NESTED SCOPES close over from
+   enclosing function scopes", so a non-empty tuple is the authoritative answer
+   and covers reads, writes and nested definitions alike; the opcode flags stay
+   as a conservative belt for a code object that carries no `co_freevars`.
+
+   `OP_BUILD_FUNCTION`'s frame-refresh path is gated on the function actually
+   having the attribute, so it cannot put the cycle back. The metadata cache's
+   `hasClosure` flag now reports what the graph *is* rather than whether a frame
+   was passed in, which keeps it consistent with the call path's existing
+   `cacheNoLoadDeref` shortcut — protoPython already skipped the closure frame at
+   call time for exactly these functions.
+
+   Also removed while in that function: the per-instance `__call__` and `__get__`,
+   which were `fromMethod(fn, …)` — a **direct** self-reference, immortal by the
+   same mechanism. The function prototype already carries both as
+   `fromMethod(nullptr, …)`, dispatch passes the receiver explicitly, and
+   `invokeCallable`'s fast path for user functions never reads `__call__` at all
+   (it recognises an own `__code__`). The bootstrap path, which has no prototype
+   to inherit from, still installs its own pair.
+
+   **Measured: ~62 → ~4.6 marked cells per dropped function object** (800
+   lambdas created and dropped).
+   **Mutation:** `const bool needsClosureFrame = true;`. The slope returns to
+   **58.5** cells per function and
+   `test_thread_state_released.DroppedFunctionObjectsAreReclaimed` fails.
+
+3. **`lib/python3.14/_weakrefset.py` and `lib/python3.14/threading.py` — two
+   documented stdlib deviations, both forced by protoPython having no GC-level
+   weak reference.** `_weakref.ref(obj)` registers `obj` in the `_weakref`
+   module's `__active__` presence set, and that membership is a **strong**
+   reference released only by `_weakref._evict` (`src/library/WeakrefModule.cpp`
+   says so in its header comment). A `WeakSet` that never evicts is therefore an
+   unbounded leak rather than a weak container: `threading._dangling` grew by one
+   permanently-reachable `Thread` per `Thread` ever created. The BFS from the GC
+   roots found a finished, dropped `Thread` reachable as
+   `mutableRoot[shard] → __active__ → [sparse] → Thread`.
+
+   - `WeakSet.discard` / `remove` / `pop` / `clear` now evict. Membership is what
+     keeps an element alive, so leaving the set releases it. That makes this
+     `WeakSet` as weak as protoPython can express — deterministic on removal
+     instead of automatic on collection. It does **not** make an element vanish
+     when the last other reference goes away.
+   - `Thread._delete()`, which already runs in `_bootstrap_inner`'s `finally`,
+     now also does `_dangling.discard(self)`. `_dangling` keeps its documented
+     purposes (debugging, `_after_fork`) for threads that are alive or were never
+     started; a thread that has finished needs neither.
+   - `Thread.__init__` now shares **one** `invoke_excepthook` closure instead of
+     building one per Thread. That closure captures free variables, so it is
+     caught by the mutable function ↔ frame cycle above: **117 marked cells per
+     Thread created**, measured on its own. Everything it captures is
+     module-global and identical for every Thread (`excepthook`,
+     `_sys.excepthook`, `print`, `_sys`), and `invoke_excepthook` reads the live
+     `excepthook` global first, falling back to the captured one only when that
+     is None — so the only observable difference is *when* `old_excepthook` was
+     captured.
+
+   **Measured: ~224 → 107 marked cells per finished thread** for a Thread with
+   no Python-level target. **Mutation:** remove `_dangling.discard(self)` and
+   restore the per-Thread `_make_invoke_excepthook()`. The slope returns to
+   **227.9** cells per thread and
+   `test_thread_state_released.FinishedThreadsDoNotAccumulateMarkedCells` fails.
+
+### Regression case
+
+`test/library/TestThreadStateReleased.cpp`, registered as ctest
+`test_thread_state_released` (three cases, 4.7 s, `regression_gate`). It asserts
+a **slope**, never an absolute: the thread count or function count varies while
+the round count is held fixed, so the per-round cost and the one-off cost of
+compiling the snippet are identical in both runs and cancel. Absolute figures
+would have pinned an allocation count; the slope pins the leak. It shares one
+`PythonEnvironment` across its cases because protoPython is one runtime per
+process — a second instance comes up with no import system.
+
+### Kernel finding: a reference cycle through a mutable object is uncollectable
+
+**Severity: high. Reported, not fixed — protoCore is out of scope for this
+phase, and this needs the collector's owner.**
+
+`ProtoSpace::mutableRoot` is traced as a mark root, and an entry is released only
+when the mutable object's handle cell is finalized. A cycle `A → B → A` in which
+either object is mutable therefore keeps both handles marked for ever: neither is
+finalized, neither entry is released. Ordinary cycles among immutable cells are
+collected correctly; this is specific to the mutable-shard table.
+
+**Reproduction, no runtime involved** — 1,000 objects of 8 attributes each,
+created through `newChild`, dropped, then cycles driven to convergence:
+
+| population | marked cells retained per object |
 |---|---|
-| returns immediately | **4,096** |
-| allocates (200 `newList` calls) | **8,192** |
+| immutable | 2.73 |
+| mutable, no self-reference | 2.54 |
+| mutable, one attribute a `ProtoMethod` bound back to the object | **12.29** |
 
-The rule-8 workload creates **202 threads** (two per round, 101 rounds), so it
-loses 827,392 cells at the low figure — four times the 200,000-cell headroom the
-case leaves. **No protoPython-side change can make this case pass**, and reducing
-the adaptor's thread count would hide a real kernel defect rather than fix one.
+The consequence for embedders is not narrow. Any embedder whose objects are
+mutable and whose object graph has cycles leaks in proportion to the cycles it
+creates. protoPython's Python functions were the instance found here, and it took
+three separate protoPython-side changes to stop *creating* the cycles rather than
+to fix the cause. `docs/GarbageCollector.md` § "Phase 5b" documents the release
+rule and its soundness argument, and that argument is correct — the gap is that
+the rule cannot fire for a cycle.
 
-protoPython contributes a second, smaller term on top: ≈470 *marked* cells per
-finished thread, which the bare-protoCore probe does not show
-(`liveCellsLastCycle` stays flat there). That is protoPython's to find, and it is
-not what breaks the ceiling. Measured over 20 rounds of 2 threads with only 20
-items per round — so items cannot be the variable — `liveCellsLastCycle` rose by
-939 cells per round, 476 per thread, linearly. The same probe with **no threads**
-and 2,000 items per round holds `inUse` flat at +3,579 across 20,000 items, i.e.
-**the items retain nothing**; the earlier candidate list had this the wrong way
-round.
+**Secondary observation, low confidence, offered with the repro rather than as a
+claim:** the same probe at 2,000 self-referencing mutable objects aborted inside
+the collector with `CRITICAL TAGGED POINTER (Phase4(young)): … type 23`,
+reproducibly and at the same address across runs. The probe pins a `ProtoMethod`
+cell in a `ProtoRootSet`, which may not be a supported thing to do; it is
+recorded so the maintainer can decide, not asserted as a defect.
 
-Of the three candidates the first report listed, candidate 1 is half right — it is
-per-thread, but the Python-level bookkeeping is clean (`threading._active` and
-`_limbo` are both empty after every round, verified with `protopy`), so it is the
-kernel's thread teardown and not `threading.py`. Candidate 2 (module-global
-retention) and candidate 3 (the P2 parking topology) are both ruled out: the
-retention is proportional to threads and to nothing else.
+## The two slow cases are now bounded by the clock, not by throughput
 
-**No fix is proposed, because the two obvious ones were tried and MEASURED not to
-work.** Reported that way on purpose: an unvalidated one-liner in a kernel that
-five runtimes share is worse than a precise observation.
+`join.parks` and `stw.quorum_completes` passed at **278.08 s** and **278.43 s**
+against ctest's 300 s budget — a 22-second margin on an idle machine, and both
+were observed timing out when the machine was busy. A test that fails because
+another process is busy measures the other process.
 
-What was tried, in a scratch clone of protoCore, and left the numbers bit-identical
-(4,096 cells per empty-bodied thread, still monotonic):
+**Chosen: shrink the workload, by changing what bounds it.** The budget is
+untouched. `Host::joinBlockingThread` used to run a fixed 400,000 iterations of
+`total += len('spin-%d' % i)`; it now allocates in the same way but stops on
+`time.monotonic()` after **20 s**.
 
-1. Returning `ProtoThreadExtension::freeCells` to the space in
-   `~ProtoThreadImplementation`.
-2. Returning it at thread exit in `thread_main`, next to the deregistration that
-   is already there — and, separately, returning the thread root context's own
-   `ProtoContext::freeCells` there too.
+The property survives, because neither case ever cared how much arithmetic the
+worker got through. Both need exactly one thing from this capability: that a
+registered, allocating protoPython thread is still up while the case demands a
+collection. `stw.quorum_completes` waits up to 5 s to see the thread in the
+running set and then drives at most 2 cycles with a 15 s deadline; `join.parks`
+gives a collection 8 s to complete and releases after 10 s. 20 s is twice
+`join.parks`' release timer and outlives every deadline either case sets.
 
-So the batch is not where those two guesses put it, and the search should continue
-from the measurement rather than from the code's shape.
+Bounding by the clock is strictly better than a smaller iteration count, which is
+why it was preferred: under load the worker completes fewer iterations and still
+stays up for 20 s, so the case's duration no longer depends on machine load or on
+protoPython's throughput at all. The inner fixed-length loop of 500 iterations
+keeps the clock read off the allocation path — the worker must allocate
+continuously to reach protoPython's every-64-opcodes safepoint, and a
+`time.monotonic()` call per allocation would make the syscall the thing being
+measured.
 
-**Two facts established by reading, which stand on their own whatever the 4,096
-cells turn out to be.** Sweep calls `cell->finalize(...)` and never a C++
-destructor (`core/ProtoSpace.cpp`), and `ProtoThreadImplementation::finalize` is
-literally "Nothing to do here". So for a collected thread, neither
-`~ProtoThreadImplementation` nor `~ProtoThreadExtension` ever runs: the thread's
-root `ProtoContext` is never `delete`d, the `std::thread` object is never `delete`d,
-and the `malloc`'d `attributeCache` and `mutableValueCache` are never `free`d.
-Those are leaks in their own right, and the first of them is the one most likely to
-be next to the cells.
+| case | before | after | verdict |
+|---|---|---|---|
+| `join.parks` | 278.08 s | **20.54 s** | PASS, `cyclesCompletedWhileJoinBlocked=1`, 499,468 cells reclaimed |
+| `stw.quorum_completes` | 278.43 s | **20.47 s** | PASS, `gcCycleCount` advanced by 2 with `runningThreads=2` |
 
-**The calibration history matters, because it is what makes this number
-trustworthy.** Two earlier versions of this measurement produced a
-confident-looking rule-8 failure that meant nothing: the first used a ceiling of
-`heapSize + 32768`, only 32,768 cells above what the interpreter already held;
-the second bounded the ceiling properly but used a workload that enqueued all
-200,000 items before draining any, so the live set was unboundedly live **by
-construction** and would exceed any ceiling. Both were fixed — the case now
-settles and measures first, and `Host::runProducerConsumer`'s contract now
-*requires* a bounded backlog — and the abort survived both fixes. That is why it
-is reported as a finding rather than as an artefact.
+Margin against the 300 s budget: 279 s, and it is no longer a margin that a busy
+machine can eat.
 
 ## The defects the static check leaves uncovered
 
@@ -312,7 +527,8 @@ words. Whether protoPython should keep one is a maintainer decision.
 
 - **protoPython never calls `setHeapLimits` and installs no
   `outOfMemoryCallback`**, so no collection cycle starts by itself and rule 8 was
-  unreachable before this case existed. The repository already knows this: the
+  unreachable before this case existed. That is also why the rule-8 result is a
+  statement about a ceiling protoPython never sets for itself. The repository already knows this: the
   comment at `CMakeLists.txt:1049-1056` explains that `PROTOCORE_HEAP_LIMIT_CELLS`
   is the only way to make protoCore collect.
 - **`src/runtime/main.cpp:283`, `:366` and `:386`** poll
