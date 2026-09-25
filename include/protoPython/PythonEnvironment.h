@@ -1091,8 +1091,61 @@ private:
      */
     proto::ProtoRootSet* transientArgsRoots_{nullptr};
 
+    /**
+     * @brief Per-environment root set for this runtime's permanent GC pins.
+     *
+     * P3 D12: protoPython's pins live in a `ProtoRootSet`, which is what
+     * protoCore provides for exactly this ("Lets a runtime built on
+     * protoCore pin ProtoObjects as GC roots without smuggling them into
+     * setAttribute-on-globals", protoCore.h).  They used to live in
+     * `ProtoSpace::moduleRoots`, a std::vector the collector iterated
+     * INSIDE the stop-the-world window, and which protoPython also
+     * erased from and slot-replaced by hand under `moduleRootsMutex`.
+     *
+     * Most of what is pinned here is not a module: the ~20 built-in
+     * prototypes and exception types, the global thread-roots dict, the
+     * unbound-local sentinel, compiled-bytecode ByteBuffers and the
+     * per-function metadata cache.  `ProtoSpace::addModuleRoot` is NOT a
+     * substitute: the process-global module table is append-only by
+     * design, because a loaded module never unloads, whereas this set
+     * must be released when the environment is destroyed — `space_` is a
+     * process singleton that outlives every `PythonEnvironment`.
+     *
+     * Owned by this `PythonEnvironment`: created in the constructor,
+     * destroyed in the destructor (`space_->destroyRootSet`), which
+     * releases every pin at once.
+     */
+    proto::ProtoRootSet* gcRoots_{nullptr};
+
+    /**
+     * @brief The builtins module's pin, replaced in place whenever the
+     *        module is rebuilt (`setBuiltinsAttribute`).
+     *
+     * setAttribute on an immutable object returns a new object, so every
+     * write to builtins produces a new version that must be rooted and
+     * whose predecessor must be released — otherwise each write adds a
+     * root for good.  Add BEFORE remove, never the reverse: a pause
+     * landing between a remove and an add would see neither version
+     * rooted.
+     */
+    proto::ProtoRootSet::Handle builtinsRoot_{proto::ProtoRootSet::kNullHandle};
+
 public:
     proto::ProtoRootSet* getTransientArgsRoots() const { return transientArgsRoots_; }
+
+    /**
+     * @brief Pin `obj` as a GC root for the lifetime of this environment.
+     *
+     * P3 D12.  For the sites that used to push straight into
+     * `ProtoSpace::moduleRoots` and never removed the entry: the
+     * compiled-bytecode ByteBuffer (Compiler.cpp) and the per-function
+     * metadata cache (ExecutionEngine.cpp).  The handle is discarded
+     * because those pins are never released individually; the whole set
+     * goes when the environment is destroyed.
+     */
+    void pinForever(const proto::ProtoObject* obj) {
+        if (gcRoots_ && obj) (void) gcRoots_->add(obj);
+    }
 
     /**
      * @brief RAII pin for a `ProtoObject*` held in a C++ local across a

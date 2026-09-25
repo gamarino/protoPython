@@ -5556,11 +5556,13 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
             }
             const proto::ProtoObject* nativeBcObj = ctx->fromBuffer(
                 bcSize * sizeof(int), reinterpret_cast<char*>(intBuf), true);
-            // Pin the ByteBuffer in moduleRoots so the GC never finalizes it while any
-            // function using this code object is alive. Same pattern as getInternedString.
-            if (ctx->space) {
-                ctx->space->moduleRoots.push_back(nativeBcObj);
-            }
+            // Pin the ByteBuffer so the GC never finalizes it while any function
+            // using this code object is alive.  P3 D12: the pin lives in this
+            // environment's ProtoRootSet, not in ProtoSpace::moduleRoots, which
+            // the collector used to iterate inside the stop-the-world window.
+            // It is never released individually — the whole set goes when the
+            // environment is destroyed.
+            env->pinForever(nativeBcObj);
             code = code->setAttribute(ctx, env->getCoNativeBytecodeString(), nativeBcObj);
         }
     }

@@ -1364,7 +1364,10 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
         const proto::ProtoObject* cacheObj = ctx->fromBuffer(
             totalBytes, buf, true);
         if (cacheObj) {
-            ctx->space->moduleRoots.push_back(cacheObj);
+            // P3 D12: pin the per-function metadata cache in the environment's
+            // ProtoRootSet rather than in ProtoSpace::moduleRoots, which the
+            // collector iterated inside the stop-the-world window.
+            env->pinForever(cacheObj);
             fn = fn->setAttribute(ctx, env->getFnMetaCacheString(), cacheObj);
         }
     }
