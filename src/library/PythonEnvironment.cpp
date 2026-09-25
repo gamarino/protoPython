@@ -92,7 +92,6 @@ namespace protoPython {
 // with the rare writer.
 static std::map<std::string, const proto::ProtoString*> g_internPool;
 static std::shared_mutex g_internMutex;
-static std::vector<const proto::ProtoObject*> g_internRoots;
 
 const proto::ProtoString* PythonEnvironment::getInternalString(proto::ProtoContext* ctx, const char* name) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -16549,187 +16548,31 @@ PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::v
     // reachable through it (iterables, iterators) get freed if the
     // native method allocates enough to trigger GC.
     transientArgsRoots_ = space_->createRootSet("protopython-transient-args");
+    // P3 D12: this runtime's permanent GC pins.  They used to live in
+    // ProtoSpace::moduleRoots, a std::vector the collector iterated inside the
+    // stop-the-world window and that protoPython erased from and slot-replaced
+    // by hand.  A ProtoRootSet is what protoCore provides for this, and
+    // destroyRootSet releases the whole set when this environment dies — which
+    // matters because space_ is a process singleton that outlives it.
+    gcRoots_ = space_->createRootSet("protopython-gc-roots");
     initializeRootObjects(stdLibPath, searchPaths);
 }
 
 PythonEnvironment::~PythonEnvironment() {
-    // Unregister roots from ProtoSpace to prevent dangling pointers in GC
-    if (space_) {
-        auto& roots = space_->moduleRoots;
-        
-        auto remove_if_match = [&](const proto::ProtoObject* obj) {
-            if (!obj) return;
-            roots.erase(std::remove(roots.begin(), roots.end(), obj), roots.end());
-        };
-
-        remove_if_match(objectPrototype);
-        remove_if_match(typePrototype);
-        remove_if_match(intPrototype);
-        remove_if_match(strPrototype);
-        remove_if_match(listPrototype);
-        remove_if_match(dictPrototype);
-        remove_if_match(tuplePrototype);
-        remove_if_match(setPrototype);
-        remove_if_match(bytesPrototype);
-        remove_if_match(nonePrototype);
-        remove_if_match(sliceType);
-        remove_if_match(frozensetPrototype);
-        remove_if_match(floatPrototype);
-        remove_if_match(boolPrototype);
-        remove_if_match(sysModule);
-        remove_if_match(builtinsModule);
-        
-        remove_if_match(keyErrorType);
-        remove_if_match(valueErrorType);
-        remove_if_match(nameErrorType);
-        remove_if_match(attributeErrorType);
-        remove_if_match(syntaxErrorType);
-        remove_if_match(typeErrorType);
-        remove_if_match(importErrorType);
-        remove_if_match(keyboardInterruptType);
-        remove_if_match(systemExitType);
-        remove_if_match(assertionErrorType);
-        remove_if_match(recursionErrorType);
-        remove_if_match(stopIterationType);
-        remove_if_match(zeroDivisionErrorType);
-        remove_if_match(indexErrorType);
-
-        remove_if_match((iterString)->asObject(rootContext_));
-        remove_if_match((nextString)->asObject(rootContext_));
-        remove_if_match((emptyList)->asObject(rootContext_));
-        remove_if_match((rangeCurString)->asObject(rootContext_));
-        remove_if_match((rangeStopString)->asObject(rootContext_));
-        remove_if_match((rangeStepString)->asObject(rootContext_));
-        remove_if_match((mapFuncString)->asObject(rootContext_));
-        remove_if_match((mapIterString)->asObject(rootContext_));
-        remove_if_match((enumIterString)->asObject(rootContext_));
-        remove_if_match((enumIdxString)->asObject(rootContext_));
-        remove_if_match((revObjString)->asObject(rootContext_));
-        remove_if_match((revIdxString)->asObject(rootContext_));
-        remove_if_match((zipItersString)->asObject(rootContext_));
-        remove_if_match((filterFuncString)->asObject(rootContext_));
-        remove_if_match((filterIterString)->asObject(rootContext_));
-        remove_if_match((classString)->asObject(rootContext_));
-        remove_if_match((nameString)->asObject(rootContext_));
-        remove_if_match((callString)->asObject(rootContext_));
-        remove_if_match((getItemString)->asObject(rootContext_));
-        remove_if_match((lenString)->asObject(rootContext_));
-        remove_if_match((boolString)->asObject(rootContext_));
-        remove_if_match((intString)->asObject(rootContext_));
-        remove_if_match((floatString)->asObject(rootContext_));
-        remove_if_match((strString)->asObject(rootContext_));
-        remove_if_match((reprString)->asObject(rootContext_));
-        remove_if_match((hashString)->asObject(rootContext_));
-        remove_if_match((powString)->asObject(rootContext_));
-        remove_if_match((containsString)->asObject(rootContext_));
-        remove_if_match((addString)->asObject(rootContext_));
-        remove_if_match((formatString)->asObject(rootContext_));
-        remove_if_match((dictString)->asObject(rootContext_));
-        remove_if_match((docString)->asObject(rootContext_));
-        remove_if_match((matMulString)->asObject(rootContext_));
-        remove_if_match((imatmulString)->asObject(rootContext_));
-        remove_if_match((rmatmulString)->asObject(rootContext_));
-        remove_if_match((reversedString)->asObject(rootContext_));
-        remove_if_match((enumProtoS)->asObject(rootContext_));
-        remove_if_match((revProtoS)->asObject(rootContext_));
-        remove_if_match((zipProtoS)->asObject(rootContext_));
-        remove_if_match((filterProtoS)->asObject(rootContext_));
-        remove_if_match((mapProtoS)->asObject(rootContext_));
-        remove_if_match((rangeProtoS)->asObject(rootContext_));
-        remove_if_match((boolTypeS)->asObject(rootContext_));
-        remove_if_match((filterBoolS)->asObject(rootContext_));
-        
-        remove_if_match((__code__)->asObject(rootContext_));
-        remove_if_match((__globals__)->asObject(rootContext_));
-        remove_if_match((co_varnames)->asObject(rootContext_));
-        remove_if_match((co_nparams)->asObject(rootContext_));
-        remove_if_match((co_automatic_count)->asObject(rootContext_));
-        remove_if_match((co_is_generator)->asObject(rootContext_));
-        remove_if_match((co_flags)->asObject(rootContext_));
-        remove_if_match((co_consts)->asObject(rootContext_));
-        remove_if_match((co_names)->asObject(rootContext_));
-        remove_if_match((co_code)->asObject(rootContext_));
-        remove_if_match((sendString)->asObject(rootContext_));
-        remove_if_match((throwString)->asObject(rootContext_));
-        remove_if_match((closeString)->asObject(rootContext_));
-        remove_if_match((f_back)->asObject(rootContext_));
-        remove_if_match((f_code)->asObject(rootContext_));
-        remove_if_match((f_globals)->asObject(rootContext_));
-        remove_if_match((f_locals)->asObject(rootContext_));
-        remove_if_match((__closure__)->asObject(rootContext_));
-        remove_if_match((gi_code)->asObject(rootContext_));
-        remove_if_match((gi_frame)->asObject(rootContext_));
-        remove_if_match((gi_running)->asObject(rootContext_));
-        remove_if_match((gi_yieldfrom)->asObject(rootContext_));
-        remove_if_match((gi_pc)->asObject(rootContext_));
-        remove_if_match((gi_stack)->asObject(rootContext_));
-        remove_if_match((gi_locals)->asObject(rootContext_));
-        remove_if_match((py_eq_s)->asObject(rootContext_));
-        remove_if_match((py_ne_s)->asObject(rootContext_));
-        remove_if_match((py_lt_s)->asObject(rootContext_));
-        remove_if_match((py_le_s)->asObject(rootContext_));
-        remove_if_match((py_gt_s)->asObject(rootContext_));
-        remove_if_match((py_ge_s)->asObject(rootContext_));
-        remove_if_match((getDunderString)->asObject(rootContext_));
-        remove_if_match((setDunderString)->asObject(rootContext_));
-        remove_if_match((delDunderString)->asObject(rootContext_));
-        
-        remove_if_match((__code__)->asObject(rootContext_));
-        remove_if_match((__globals__)->asObject(rootContext_));
-        remove_if_match((co_varnames)->asObject(rootContext_));
-        remove_if_match((co_nparams)->asObject(rootContext_));
-        remove_if_match((co_automatic_count)->asObject(rootContext_));
-        remove_if_match((co_is_generator)->asObject(rootContext_));
-        remove_if_match((co_flags)->asObject(rootContext_));
-        remove_if_match((__iadd__)->asObject(rootContext_));
-        remove_if_match((__isub__)->asObject(rootContext_));
-        remove_if_match((__imul__)->asObject(rootContext_));
-        remove_if_match((__itruediv__)->asObject(rootContext_));
-        remove_if_match((__ifloordiv__)->asObject(rootContext_));
-        remove_if_match((__imod__)->asObject(rootContext_));
-        remove_if_match((__ipow__)->asObject(rootContext_));
-        remove_if_match((__ilshift__)->asObject(rootContext_));
-        remove_if_match((__irshift__)->asObject(rootContext_));
-        remove_if_match((__iand__)->asObject(rootContext_));
-        remove_if_match((__ior__)->asObject(rootContext_));
-        remove_if_match((__ixor__)->asObject(rootContext_));
-        
-        remove_if_match((__and__)->asObject(rootContext_));
-        remove_if_match((__rand__)->asObject(rootContext_));
-        remove_if_match((__or__)->asObject(rootContext_));
-        remove_if_match((__ror__)->asObject(rootContext_));
-        remove_if_match((__xor__)->asObject(rootContext_));
-        remove_if_match((__rxor__)->asObject(rootContext_));
-        
-        remove_if_match((__invert__)->asObject(rootContext_));
-        remove_if_match((__pos__)->asObject(rootContext_));
-        
-        remove_if_match((setItemString)->asObject(rootContext_));
-        remove_if_match((delItemString)->asObject(rootContext_));
-        remove_if_match((dataString)->asObject(rootContext_));
-        remove_if_match((keysString)->asObject(rootContext_));
-        
-        remove_if_match((startString)->asObject(rootContext_));
-        remove_if_match((stopString)->asObject(rootContext_));
-        remove_if_match((stepString)->asObject(rootContext_));
-        
-        remove_if_match((ioModuleString)->asObject(rootContext_));
-        remove_if_match((openString)->asObject(rootContext_));
-
-        remove_if_match(zeroInteger);
-        remove_if_match(oneInteger);
-        
-        remove_if_match((listS)->asObject(rootContext_));
-        remove_if_match((dictS)->asObject(rootContext_));
-        remove_if_match((tupleS)->asObject(rootContext_));
-        remove_if_match((setS)->asObject(rootContext_));
-        remove_if_match((intS)->asObject(rootContext_));
-        remove_if_match((floatS)->asObject(rootContext_));
-        remove_if_match((strS)->asObject(rootContext_));
-        remove_if_match((boolS)->asObject(rootContext_));
-        remove_if_match((objectS)->asObject(rootContext_));
-        remove_if_match((typeS)->asObject(rootContext_));
-        remove_if_match((dictString)->asObject(rootContext_));
+    // P3 D12: release every permanent pin at once.
+    //
+    // This used to be ~150 hand-written `std::remove` calls on
+    // ProtoSpace::moduleRoots, one per rooted object, with no lock — while the
+    // collector iterated that same vector inside its stop-the-world window.  It
+    // also did not cover everything the constructor had added (the thread-roots
+    // dict, the unbound-local sentinel, every interned symbol, every builtins
+    // version), so each destroyed environment left roots behind in a space that
+    // outlives it.  ProtoSpace::destroyRootSet unregisters the set before any
+    // further GC cycle can iterate it, and takes all of them.
+    if (space_ && gcRoots_) {
+        space_->destroyRootSet(gcRoots_);
+        gcRoots_ = nullptr;
+        builtinsRoot_ = proto::ProtoRootSet::kNullHandle;
     }
 
     // Tear down the active-exception root set before the ProtoSpace
@@ -18053,14 +17896,15 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // and we don't assign the result back).  With mutable=true the
     // setAttribute mutates the snapshot through the protoCore shard CAS
     // so the binding survives — and so the per-thread PyThread object is
-    // reachable from this single GC root in moduleRoots.  Without this
+    // reachable from this single GC root in gcRoots_ (P3 D12; it used to be
+    // ProtoSpace::moduleRoots).  Without this
     // the PyThread cells were collected as garbage between thread events
     // and `s_currentPyThread` (a thread_local raw pointer) became a stale
     // pointer into reused memory: any later getAttribute() on it crashed
     // with `Type mismatch in toImpl conversion ... found tag 4 (TUPLE)`
     // when its old slot had been recycled for a tuple.  See C1.
     s_globalThreadRootsDict = rootContext_->newObject(true);
-    space_->moduleRoots.push_back(s_globalThreadRootsDict);
+    if (gcRoots_) gcRoots_->add(s_globalThreadRootsDict);   // P3 D12
     __code__ = PythonEnvironment::getInternedString(rootContext_, "__code__");
     __globals__ = PythonEnvironment::getInternedString(rootContext_, "__globals__");
     co_varnames = PythonEnvironment::getInternedString(rootContext_, "co_varnames");
@@ -22284,7 +22128,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             PythonEnvironment::getInternedString(rootContext_, "__name__"),
             PythonEnvironment::getInternedString(rootContext_, "<unbound>")->asObject(rootContext_));
         unboundSentinel_ = sent;
-        space_->moduleRoots.push_back(sent);
+        if (gcRoots_) gcRoots_->add(sent);   // P3 D12
     }
     eofErrorType = exceptionsModule->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "EOFError"));
     assertionErrorType = exceptionsModule->getAttribute(rootContext_, assertionErrorS);
@@ -22635,11 +22479,16 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         rootContext_->space->setResolutionChain(chain->asObject(rootContext_));
     }
 
-    // Register all root objects in ProtoSpace to prevent garbage collection
+    // Register all root objects as GC roots to prevent garbage collection.
+    //
+    // P3 D12: these go into this environment's ProtoRootSet, not into
+    // ProtoSpace::moduleRoots.  Most of them are not modules — they are the
+    // built-in prototypes, the exception types and a set of well-known
+    // strings — and the collector used to walk every one of them inside its
+    // stop-the-world window.
     {
-        auto& roots = space_->moduleRoots;
         auto addRoot = [&](const proto::ProtoObject* obj) {
-            if (obj) roots.push_back(obj);
+            if (obj && gcRoots_) (void) gcRoots_->add(obj);
         };
 
         addRoot(objectPrototype);
@@ -22694,15 +22543,13 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         if (classString) addRoot(classString->asObject(rootContext_));
         if (nameString) addRoot(nameString->asObject(rootContext_));
         
-        // Root all globally interned strings — read-only iteration
-        // can run under shared_lock so it doesn't block concurrent
-        // getInternedString lookups on other threads.
-        {
-            std::shared_lock<std::shared_mutex> rlock(g_internMutex);
-            for (const auto* root : g_internRoots) {
-                addRoot(root);
-            }
-        }
+        // P3 D12: the globally interned strings used to be rooted here, one
+        // root per spelling.  They need NO root at all: SymbolTable::intern
+        // allocates every symbol cell with a null ProtoContext, so the cell
+        // comes straight from posix_memalign, is enrolled in no freelist and no
+        // young chain, and is never a sweep candidate.  Rooting one was always a
+        // no-op that cost an iteration of the stop-the-world root loop.
+        // g_internRoots is gone with this loop.
         if (callString) addRoot(callString->asObject(rootContext_));
         if (getItemString) addRoot(getItemString->asObject(rootContext_));
         if (lenString) addRoot(lenString->asObject(rootContext_));
@@ -23957,15 +23804,19 @@ void PythonEnvironment::setBuiltinsAttribute(proto::ProtoContext* ctx, const pro
     const proto::ProtoObject* updated = old->setAttribute(ctx, name, value);
     if (!updated) return;
     if (updated != old) {
-        // Root the new version before publishing it, in the slot of the old
-        // one (every echoed value would otherwise add a root for good). The
-        // GC reads moduleRoots under moduleRootsMutex.
-        {
-            std::lock_guard<std::mutex> rootsLock(space_->moduleRootsMutex);
-            auto& roots = space_->moduleRoots;
-            auto slot = std::find(roots.begin(), roots.end(), old);
-            if (slot != roots.end()) *slot = updated;
-            else roots.push_back(updated);
+        // Root the new version and release the old one, so an echoed value does
+        // not add a root for good.  P3 D12: this is a ProtoRootSet, whose
+        // add/remove are safe from any thread, so the hand-rolled
+        // moduleRootsMutex critical section and the std::find slot replacement
+        // on a vector the collector was reading are both gone.
+        //
+        // ADD BEFORE REMOVE, never the reverse: a pause landing between a remove
+        // and an add would see neither version rooted.
+        if (gcRoots_) {
+            const proto::ProtoRootSet::Handle fresh = gcRoots_->add(updated);
+            if (builtinsRoot_ != proto::ProtoRootSet::kNullHandle)
+                gcRoots_->remove(builtinsRoot_);
+            builtinsRoot_ = fresh;
         }
         builtinsModule = updated;
         if (sysModule) {
@@ -28681,11 +28532,14 @@ const proto::ProtoString* PythonEnvironment::getInternedString(proto::ProtoConte
     const proto::ProtoString* s = proto::ProtoString::createSymbol(ctx, str.c_str());
     const proto::ProtoObject* sObj = const_cast<proto::ProtoString*>(s)->asObject(ctx);
     g_internPool[str] = s;
-    g_internRoots.push_back(sObj);
-
-    if (ctx->space) {
-        ctx->space->moduleRoots.push_back(sObj);
-    }
+    // P3 D12: no root is taken for a symbol.  ProtoString::createSymbol interns
+    // through SymbolTable, which builds every symbol cell with a null
+    // ProtoContext: the cell comes from posix_memalign, is never enrolled in a
+    // thread freelist or a context young chain, and is therefore never a sweep
+    // candidate.  A symbol is perennial by construction; rooting one was a
+    // no-op that cost an iteration of the stop-the-world root loop, and the
+    // g_internRoots vector that held them is gone.
+    (void) sObj;
 
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG GLOBAL INTERN: '%s' -> %p\n", str.c_str(), (void*)s);
