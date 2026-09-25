@@ -6,17 +6,21 @@
 # Run: python3 ../protoCore/scripts/conformance/check_static.py --repo .
 # Exit 0 clean, 1 an unjustified finding, 2 a stale entry.
 #
-# THIS FILE EXITS 1 ON PURPOSE.  Two real defects are left UNCOVERED so the check
-# keeps failing until they are fixed; laundering them into justifications is the
-# one thing a ratchet must never be used for.  They are:
+# THIS FILE EXITS 1 ON PURPOSE.  One real defect is left UNCOVERED so the check
+# keeps failing until it is fixed; laundering it into a justification is the one
+# thing a ratchet must never be used for.  It is:
 #
-#   src/library/PythonEnvironment.cpp:11426  a dead `getAttribute(...) == nullptr`
-#       in py_bytes_find.  CONFIRMED USER-VISIBLE: b"abc".find(<non-bytes-like>)
-#       returns 0 where CPython raises TypeError.  See docs/CONFORMANCE.md.
 #   src/library/PythonEnvironment.cpp:8668   `if (fs->hasAttribute(...))` with no
 #       comparison: hasAttribute returns a boolean OBJECT, both values non-null,
 #       so the condition is ALWAYS TRUE.
 #
+# FIXED 2026-09-25, and therefore no longer listed above: the dead
+# `getAttribute(...) == nullptr` in py_bytes_find.  The needle check moved into
+# bytes_needle_validate, is now complete rather than str-only, and raises
+# CPython's TypeError; the dead comparison is gone.  Pinned by
+# test/regression/bytes_find_needle_type.py, which also names the mutation that
+# turns it red again.  The uncovered count went 2 -> 1.
+
 external_finalizer src/library/ThreadModule.cpp:408 17c12e4db966 :: Legitimate. The wrapper carries the PythonEnvironment* into a new thread's argument list. The environment is a C++ object owned by whoever constructed it and outlives every Python thread, so protoCore must NOT free it; a finalizer here would be a double free. Checklist C7. Reviewed 2026-09-25, agent, pending maintainer review.
 external_finalizer src/library/ThreadModule.cpp:688 3b79494e77dd :: Legitimate, identical shape to ThreadModule.cpp:408 -- the environment pointer travelling into start_joinable_thread's arguments. Checklist C7. Reviewed 2026-09-25, agent, pending maintainer review.
 external_finalizer src/library/ThreadModule.cpp:704 a8a866ec2361 :: Legitimate. The wrapper carries the ProtoThread* so a Python thread handle can reach its protoCore thread. The thread is owned by the ProtoSpace, not by this wrapper. Checklist C7. Reviewed 2026-09-25, agent, pending maintainer review.

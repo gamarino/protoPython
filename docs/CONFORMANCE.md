@@ -24,7 +24,14 @@ give, and what the adaptor does and does not prove.
 | `thread.registered` | 11 | **NOTAPPLICABLE** | `forEachThreadKind` not implemented. **Rule 11 UNVERIFIED by this case** |
 | `stw.quorum_completes` | 2 | **PASS** (isolated) | a cycle advanced twice with a Python thread up (`runningThreads`=2) |
 | `join.parks` | 2b | **PASS** (isolated) | a cycle completed while `Thread.join()` was blocked, reclaiming 521,935 cells |
-| **`heap.ceiling_progress`** | **8** | **FAIL** (isolated) | see below |
+| **`heap.ceiling_progress`** | **8** | **FAIL** (isolated), and it STAYS red | cause now established and it is protoCore's: every thread that exits permanently loses 4,096 cells from the free list. See below |
+
+Suite: **632** ctest cases, **630 passing** (2026-09-25, after the py_bytes_find
+fix). Both failures are known and neither is new: `protopy_import_site`, which
+pre-dates this phase and has no skip marker anywhere in the repository, and
+`conformance_isolate.heap.ceiling_progress`, whose cause is in protoCore. The
+count rose from 631 to 632 with `protopy_bytes_find_needle_type`, the regression
+that pins the dead `== nullptr` fix.
 
 ## The rule-5 result contradicts the prediction, and the number is the finding
 
@@ -66,19 +73,75 @@ protoPython code does, because protoPython never calls `setHeapLimits` — and r
 a **bounded-backlog** producer/consumer workload: 101 rounds of 2,000 deque items,
 each round produced by two threads and fully drained before the next.
 
-**Severity: high. Mechanism not established.** What is established: with at most
-2,000 items in flight, the live set still grew by ≈147,000 cells above the
-settled baseline, and two consecutive cycles reclaimed nothing. Candidates, in
-the order worth checking:
+**Severity: high. MECHANISM NOW ESTABLISHED, and it is in protoCore, not in
+protoPython.** It is therefore diagnosed here and **not fixed**: a kernel change
+affects five runtimes and is the maintainer's call. The case stays red.
 
-1. **Per-round `threading.Thread` and `deque` objects accumulating.** 202 threads
-   and 101 deques over the run. `_thread._shutdown` joins every live thread and
-   protoPython does not yet track daemon vs non-daemon, which suggests thread
-   bookkeeping is retained; and each deque is an external pointer with a
-   finalizer, so its C++ state is only freed when the wrapper is swept.
-2. **Module-global retention.** `_conf_pc_result` and the nested `producer`
-   closure live in `__main__` for the whole run.
-3. The P2 topology — every thread parked in `waitForHeapHeadroom`.
+**Every protoCore thread permanently loses its private free-cell batch when it
+exits.** `ProtoThreadExtension::~ProtoThreadExtension` frees the attribute cache,
+the mutable-value cache and the `std::thread`, but never returns
+`this->freeCells` to the space — unlike `ProtoContext::~ProtoContext`, which
+returns its own batch under `globalMutex` a few lines of the same codebase away.
+The cells are on no free list and are not live, so `heapSize - freeCellsCount`
+grows permanently by one batch per thread created.
+
+**Measured with a bare `ProtoSpace` and no runtime at all** — two threads per
+round, created through `ProtoSpace::newThread`, joined, then six forced cycles —
+`heapSize` constant at 262,144, `liveCellsLastCycle` constant at 306, and
+`freeCellsCount` falling monotonically for ever:
+
+| thread body | cells lost per thread |
+|---|---|
+| returns immediately | **4,096** |
+| allocates (200 `newList` calls) | **8,192** |
+
+The rule-8 workload creates **202 threads** (two per round, 101 rounds), so it
+loses 827,392 cells at the low figure — four times the 200,000-cell headroom the
+case leaves. **No protoPython-side change can make this case pass**, and reducing
+the adaptor's thread count would hide a real kernel defect rather than fix one.
+
+protoPython contributes a second, smaller term on top: ≈470 *marked* cells per
+finished thread, which the bare-protoCore probe does not show
+(`liveCellsLastCycle` stays flat there). That is protoPython's to find, and it is
+not what breaks the ceiling. Measured over 20 rounds of 2 threads with only 20
+items per round — so items cannot be the variable — `liveCellsLastCycle` rose by
+939 cells per round, 476 per thread, linearly. The same probe with **no threads**
+and 2,000 items per round holds `inUse` flat at +3,579 across 20,000 items, i.e.
+**the items retain nothing**; the earlier candidate list had this the wrong way
+round.
+
+Of the three candidates the first report listed, candidate 1 is half right — it is
+per-thread, but the Python-level bookkeeping is clean (`threading._active` and
+`_limbo` are both empty after every round, verified with `protopy`), so it is the
+kernel's thread teardown and not `threading.py`. Candidate 2 (module-global
+retention) and candidate 3 (the P2 parking topology) are both ruled out: the
+retention is proportional to threads and to nothing else.
+
+**No fix is proposed, because the two obvious ones were tried and MEASURED not to
+work.** Reported that way on purpose: an unvalidated one-liner in a kernel that
+five runtimes share is worse than a precise observation.
+
+What was tried, in a scratch clone of protoCore, and left the numbers bit-identical
+(4,096 cells per empty-bodied thread, still monotonic):
+
+1. Returning `ProtoThreadExtension::freeCells` to the space in
+   `~ProtoThreadImplementation`.
+2. Returning it at thread exit in `thread_main`, next to the deregistration that
+   is already there — and, separately, returning the thread root context's own
+   `ProtoContext::freeCells` there too.
+
+So the batch is not where those two guesses put it, and the search should continue
+from the measurement rather than from the code's shape.
+
+**Two facts established by reading, which stand on their own whatever the 4,096
+cells turn out to be.** Sweep calls `cell->finalize(...)` and never a C++
+destructor (`core/ProtoSpace.cpp`), and `ProtoThreadImplementation::finalize` is
+literally "Nothing to do here". So for a collected thread, neither
+`~ProtoThreadImplementation` nor `~ProtoThreadExtension` ever runs: the thread's
+root `ProtoContext` is never `delete`d, the `std::thread` object is never `delete`d,
+and the `malloc`'d `attributeCache` and `mutableValueCache` are never `free`d.
+Those are leaks in their own right, and the first of them is the one most likely to
+be next to the cells.
 
 **The calibration history matters, because it is what makes this number
 trustworthy.** Two earlier versions of this measurement produced a
@@ -91,11 +154,12 @@ settles and measures first, and `Host::runProducerConsumer`'s contract now
 *requires* a bounded backlog — and the abort survived both fixes. That is why it
 is reported as a finding rather than as an artefact.
 
-## The two defects the static check leaves uncovered
+## The defects the static check leaves uncovered
 
-`conformance-allow.txt` **exits 1 on purpose.**
+`conformance-allow.txt` **exits 1 on purpose.** It listed two; one is now fixed,
+so the uncovered count is **1**.
 
-### 1. `src/library/PythonEnvironment.cpp:11426` — a dead `== nullptr`, with a user-visible consequence
+### 1. FIXED — `src/library/PythonEnvironment.cpp:11426`, a dead `== nullptr` with a user-visible consequence
 
 ```cpp
 if (needle.empty() && !sub->isInteger(context)
@@ -116,13 +180,45 @@ print(b"abc".find(W()))'
 0
 ```
 
-CPython raises `TypeError`. protoPython reports a match at index 0. The guard's
+CPython raises `TypeError`. protoPython reported a match at index 0. The guard's
 evident intent — "an empty needle from a non-bytes-like object means -1" — never
-runs, so the call falls through to `haystack.find("")`, which returns `start`.
-**Fix:** compare against `PROTO_NONE`. `py_bytes_count` immediately below shares
-the structure and should be checked with it.
+ran, so the call fell through to `haystack.find("")`, which returns `start`.
 
-### 2. `src/library/PythonEnvironment.cpp:8668` — an always-true condition
+**Fixed 2026-09-25, and not by repairing that comparison.** The guard's own intent
+(-1) is not CPython's behaviour either, so comparing against `PROTO_NONE` would
+have replaced a wrong answer with a different wrong answer. The needle check moved
+into `bytes_needle_validate`, which is now **complete** rather than `str`-only: it
+accepts an integer or a value `bytes_view` can read (bytes, bytearray, memoryview,
+`ProtoByteBuffer`, `array.array`) and raises
+`TypeError("argument should be integer or bytes-like object, not '<type>'")` for
+anything else. It also returns the needle it validated, so `bytes_view` — which
+may call the argument's `tobytes()` — runs once per lookup instead of twice. The
+dead comparison is deleted. `find`, `rfind`, `index`, `rindex` and `count` all go
+through it.
+
+```
+$ protopy -c 'class W: pass
+b"abc".find(W())'
+TypeError: argument should be integer or bytes-like object, not 'W'
+```
+
+**Case: red to green.** `test/regression/bytes_find_needle_type.py`, registered as
+ctest `protopy_bytes_find_needle_type`. **Mutation:** make
+`bytes_needle_validate` return true for a value `bytes_view` cannot read (`return
+true;` after the `bytes_view` branch, which is exactly what the dead comparison
+achieved). The case fails; restored, it passes. The static check's uncovered count
+goes 2 → 1.
+
+**Found while writing that test, filed and NOT fixed:** `b"abcabc".find(b"bc", 0, 2)`
+answers 1 where CPython answers −1. `py_bytes_find` compares the match *position*
+against `end` instead of the match's *end* against `end`, so a needle that starts
+inside the slice but runs past it counts as a match. The correct test is
+`pos + needle.size() > end`. `py_bytes_rfind` slices first and does not share the
+bug. It is a separate defect from the one this phase was asked to fix, and the
+regression file says in a comment why it deliberately does not assert today's
+answer.
+
+### 2. OPEN — `src/library/PythonEnvironment.cpp:8668`, an always-true condition
 
 ```cpp
 if (fs->hasAttribute(context, env->getClassString())) {

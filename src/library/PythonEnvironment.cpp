@@ -11390,21 +11390,68 @@ static const proto::ProtoObject* py_bytes_fromhex(
 // via bytes_view, returning the byte-offset of the str interpreted
 // as bytes — `b'abc'.find('b')` returned 1 instead of raising
 // TypeError("argument should be integer or bytes-like object, not 'str'").
-// Returns true iff the needle is OK; sets pending TypeError on str.
+//
+// The check is now COMPLETE, not just the `str` case, and it produces the
+// needle it validated so a caller never extracts it twice (`bytes_view` may
+// call the argument's `tobytes()`, which must not run twice per lookup).
+//
+// What was wrong before, and it was not dead code.  `py_bytes_find` carried
+// this guard for the remaining cases:
+//
+//     if (needle.empty() && !sub->isInteger(context)
+//         && sub->getAttribute(context, ..."__data__") == nullptr && ...)
+//         return context->fromInteger(-1);
+//
+// `ProtoObject::getAttribute` answers PROTO_NONE for an absent attribute and
+// nullptr only for invalid input, and `sub`, `context` and the key are all
+// non-null here, so that comparison was ALWAYS FALSE and the whole `&&` chain
+// unreachable.  `b"abc".find(W())` therefore fell through to
+// `haystack.find("")` and answered 0, where CPython raises TypeError.  The
+// guard's own intent (-1) was not CPython's behaviour either, so the fix is a
+// TypeError here rather than a repair of that condition, and the condition is
+// gone.
+//
+// Returns true iff the needle is acceptable, with `needle` filled; otherwise
+// sets a pending TypeError and returns false.
 static bool bytes_needle_validate(proto::ProtoContext* context,
-                                  const proto::ProtoObject* sub) {
+                                  const proto::ProtoObject* sub,
+                                  std::string& needle) {
+    needle.clear();
     if (!sub) return false;
-    if (sub->isInteger(context) || sub == PROTO_TRUE || sub == PROTO_FALSE) return true;
+    if (sub->isInteger(context) || sub == PROTO_TRUE || sub == PROTO_FALSE) {
+        // A single byte value.  An out-of-range int still yields an empty
+        // needle, exactly as before: CPython raises ValueError there, but that
+        // is a separate defect and changing it here is not this fix.
+        const long long v = sub->asLong(context);
+        if (v >= 0 && v <= 255) needle = static_cast<char>(static_cast<unsigned char>(v));
+        return true;
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (sub->isString(context)) {
         // Reject a raw ProtoString primitive.  Wrapped bytes / bytearray
         // are not raw strings — isString returns false for those carrier
         // shapes — so they keep working.
-        PythonEnvironment* env = PythonEnvironment::fromContext(context);
         if (env) env->raiseTypeError(context,
             "argument should be integer or bytes-like object, not 'str'");
         return false;
     }
-    return true;
+    // Everything else must really be bytes-like.  bytes_view is the same
+    // reader the lookup itself uses, so nothing that used to work stops
+    // working: bytes, bytearray, memoryview, ProtoByteBuffer and array.array
+    // all answer true here.
+    if (bytes_view(context, sub, needle)) return true;
+    needle.clear();
+    std::string kind = "object";
+    if (env) {
+        if (const proto::ProtoObject* t = env->getType(context, sub)) {
+            const proto::ProtoObject* n =
+                t->getAttribute(context, PythonEnvironment::getInternedString(context, "__name__"));
+            if (n && n->isString(context)) n->asString(context)->toUTF8String(context, kind);
+        }
+        env->raiseTypeError(context,
+            "argument should be integer or bytes-like object, not '" + kind + "'");
+    }
+    return false;
 }
 
 static const proto::ProtoObject* py_bytes_find(
@@ -11415,16 +11462,13 @@ static const proto::ProtoObject* py_bytes_find(
     if (!bytes_data_view(context, self, haystack) || posArgs->getSize(context) < 1)
         return context->fromInteger(-1);
     const proto::ProtoObject* sub = posArgs->getAt(context, 0);
-    if (!bytes_needle_validate(context, sub)) return nullptr;
+    std::string needle;
+    if (!bytes_needle_validate(context, sub, needle)) return nullptr;
     long long start = 0, end = static_cast<long long>(haystack.size());
     if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isInteger(context))
         start = posArgs->getAt(context, 1)->asLong(context);
     if (posArgs->getSize(context) >= 3 && posArgs->getAt(context, 2)->isInteger(context))
         end = posArgs->getAt(context, 2)->asLong(context);
-    std::string needle;
-    bytes_needle_from_arg(context, sub, needle);
-    if (needle.empty() && !sub->isInteger(context) && sub->getAttribute(context, PythonEnvironment::getInternalString(context, "__data__")) == nullptr && !sub->isString(context) && !sub->isByteBuffer(context))
-        return context->fromInteger(-1);
     size_t pos = haystack.find(needle, static_cast<size_t>(start));
     if (pos == std::string::npos || static_cast<long long>(pos) >= end)
         return context->fromInteger(-1);
@@ -11439,14 +11483,13 @@ static const proto::ProtoObject* py_bytes_count(
     if (!bytes_data_view(context, self, haystack) || posArgs->getSize(context) < 1)
         return context->fromInteger(0);
     const proto::ProtoObject* sub = posArgs->getAt(context, 0);
-    if (!bytes_needle_validate(context, sub)) return nullptr;
+    std::string needle;
+    if (!bytes_needle_validate(context, sub, needle)) return nullptr;
     long long start = 0, end = static_cast<long long>(haystack.size());
     if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isInteger(context))
         start = posArgs->getAt(context, 1)->asLong(context);
     if (posArgs->getSize(context) >= 3 && posArgs->getAt(context, 2)->isInteger(context))
         end = posArgs->getAt(context, 2)->asLong(context);
-    std::string needle;
-    bytes_needle_from_arg(context, sub, needle);
     size_t count = 0;
     size_t pos = static_cast<size_t>(start);
     while (pos < haystack.size() && static_cast<long long>(pos) < end) {
@@ -11590,14 +11633,13 @@ static const proto::ProtoObject* py_bytes_rfind(
     if (!bytes_data_view(context, self, haystack) || posArgs->getSize(context) < 1)
         return context->fromInteger(-1);
     const proto::ProtoObject* sub = posArgs->getAt(context, 0);
-    if (!bytes_needle_validate(context, sub)) return nullptr;
+    std::string needle;
+    if (!bytes_needle_validate(context, sub, needle)) return nullptr;
     long long start = 0, end = static_cast<long long>(haystack.size());
     if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isInteger(context))
         start = posArgs->getAt(context, 1)->asLong(context);
     if (posArgs->getSize(context) >= 3 && posArgs->getAt(context, 2)->isInteger(context))
         end = posArgs->getAt(context, 2)->asLong(context);
-    std::string needle;
-    bytes_needle_from_arg(context, sub, needle);
     if (start >= end || static_cast<size_t>(start) >= haystack.size())
         return context->fromInteger(-1);
     size_t len = static_cast<size_t>(std::min(end, static_cast<long long>(haystack.size())) - start);
