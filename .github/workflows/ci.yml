@@ -1,0 +1,209 @@
+name: CI
+
+# protoPython had no continuous integration until this file existed: every test
+# count this repository has published was produced by one person running one
+# command once.
+#
+# HOW protoCore IS OBTAINED, AND IN WHICH CONFIGURATION: checked out as a SIBLING
+# directory at ../protoCore and consumed with add_subdirectory().  That path is
+# hardcoded in CMakeLists.txt (PROTOCORE_DIR); there is no -D flag to move it.
+# This is not just a convenience here, it is the only configuration that has a
+# test suite at all: GoogleTest reaches this build through protoCore's own
+# test/CMakeLists.txt, so in installed-package mode (-DPROTO_CORE_PREFIX=...)
+# test/library/CMakeLists.txt returns early and every GoogleTest target, the
+# embedder conformance suite included, silently disappears.  A CI job that
+# configured this repository in package mode would be green and nearly empty.
+#
+# CI therefore runs the add_subdirectory configuration, and its ctest suite
+# contains protoCore's own cases as well as protoPython's -- 650 registered
+# cases measured on a clean checkout pair at protoCore df8406a3, against the
+# 639 that docs/CONFORMANCE.md recorded earlier.  The count is printed, never
+# asserted.
+#
+# WHICH protoCore REF: pinned for push and pull_request, `master` for the nightly
+# schedule.  A pinned ref makes a red pull request unambiguous.  The schedule
+# keeps the integration signal separate, and the summary records the commit used.
+#
+# WHAT IS EXCLUDED FROM THE GATE: only cases whose verdict is a measurement -- a
+# throughput figure, a pause time, an elapsed-time budget, or a timeout used as
+# the pass/fail signal.  They run in the `timing` job, which never gates.  A
+# runner is a shared machine; a flaky gate gets disabled, and a disabled suite is
+# how this family's worst bugs survived.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # 04:07 UTC daily: the integration run against protoCore master.
+    - cron: '7 4 * * *'
+  workflow_dispatch:
+
+# The workflow reads source and runs tests; it needs nothing else.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PROTOCORE_REPO: numaes/protoCore
+  # protoCore 2.5.0, SOVERSION 3 (master, 2026-09-25).  Bump deliberately.
+  PROTOCORE_REF: ${{ github.event_name == 'schedule' && 'master' || 'df8406a3f44f2a7c8505251bf6887e0ad6e60809' }}
+  # The clock-dependent cases in this combined suite.  protoPython's own:
+  #   protopy_dict_key_hash          assert elapsed < 20.0 for 20000 dict inserts
+  #                                  (test/regression/dict_key_hash.py:124)
+  #   conformance_isolate.*          three cases whose violation is a deadlock or
+  #                                  an abort, so the TIMEOUT 300 is the verdict
+  #                                  (test/library/CMakeLists.txt:109-114).  Two
+  #                                  of them sat at 278 s against a 300 s budget
+  #                                  until they were rebounded by a clock instead
+  #                                  of an iteration count.
+  # And protoCore's, which this configuration registers too:
+  #   SwarmTest.OneMillionConcats                   EXPECT_LT(ms, 120000)
+  #   ConcurrentMarkSafety.ThreadCacheSlotFlips...  a GC-cycle throughput floor;
+  #                                                 measured to fail under ASan
+  #                                                 with no defect involved
+  #   BulkListBuild.LargeBuildDoesNotBlock...       a stop-the-world pause time
+  #   MPSCQueueGC.LargeDrainDoesNotBlock...         a stop-the-world pause time
+  #   MPSCQueueConcurrency.EightProducers...        a 15-minute deadline
+  #   conformance.isolate.*                         protoCore's own three
+  CLOCK_DEPENDENT_TESTS: '^(protopy_dict_key_hash|conformance_isolate\..*|SwarmTest\.OneMillionConcats|ConcurrentMarkSafety\.ThreadCacheSlotFlipsDuringMark|BulkListBuild\.LargeBuildDoesNotBlockStopTheWorld|MPSCQueueGC\.LargeDrainDoesNotBlockStopTheWorld|MPSCQueueConcurrency\.EightProducersOneConsumerLoseNothingAndDuplicateNothing|conformance\.isolate\..*)$'
+
+jobs:
+  test:
+    name: Release build and test suite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out protoPython
+        uses: actions/checkout@v4
+        with:
+          path: protoPython
+
+      - name: Check out protoCore as a sibling
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.PROTOCORE_REPO }}
+          ref: ${{ env.PROTOCORE_REF }}
+          path: protoCore
+
+      - name: Record what is being built
+        run: |
+          cmake --version | head -1
+          g++ --version | head -1
+          {
+            echo "protoPython at \`$(git -C protoPython rev-parse HEAD)\`"
+            echo "protoCore ref \`$PROTOCORE_REF\` at \`$(git -C protoCore rev-parse HEAD)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Record the site-packages state
+        # A diagnostic, not a gate.  protopy_import_site asserts that `import
+        # site` writes nothing to stderr, and protoPython's io.open_code is an
+        # alias of io.open, so site.py's addpackage() decodes a str and raises --
+        # meaning ANY .pth file in a directory site.py scans makes that test fail.
+        # It fails on the maintainer's machine for exactly that reason (a .pth in
+        # the user site-packages), and it PASSED when measured on a clean
+        # checkout with an empty HOME.  If it ever fails here, this line says
+        # immediately whether the runner's HOME is the reason.
+        run: |
+          echo "HOME=$HOME"
+          find "$HOME/.local/lib" -name '*.pth' 2>/dev/null | head -20 || true
+          echo "(no output above means no user-site .pth files, which is the state protopy_import_site was measured green in)"
+
+      - name: Configure
+        # Developer/add_subdirectory mode: no PROTO_CORE_PREFIX, no
+        # PROTOCORE_REQUIRE_PACKAGE.  Either one would foreclose it -- see the
+        # header.  GoogleTest is fetched at configure time, so this step needs
+        # network access.  build_release, never build-release.
+        working-directory: protoPython
+        run: cmake -S . -B build_release -DCMAKE_BUILD_TYPE=Release
+
+      - name: Confirm the test suite was actually built
+        # The GoogleTest targets, and with them the embedder conformance suite,
+        # are wired with `if(TARGET ...)` and vanish without a word in package
+        # mode.  Fail loudly here rather than report a small green suite.
+        working-directory: protoPython
+        run: |
+          cmake --build build_release --target help 2>/dev/null | grep -q '\btest_conformance\b' \
+            || { echo "test_conformance was not configured: the embedder conformance suite would be missing"; exit 1; }
+
+      - name: Build
+        run: cmake --build protoPython/build_release --parallel "$(nproc)"
+
+      - name: Report the registered test count
+        # Printed, never asserted.  This count moved four times in three days,
+        # and it moves again with every protoCore commit, because this
+        # configuration registers protoCore's suite too.
+        working-directory: protoPython
+        run: |
+          COUNT=$(ctest --test-dir build_release -N | tail -1)
+          echo "$COUNT"
+          echo "protoPython ctest (add_subdirectory configuration): $COUNT" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Test suite
+        # stdin at EOF for every ctest invocation in this family: a test that
+        # reads standard input hangs for the whole job timeout and reports
+        # nothing (protoST bug S18 is exactly that).
+        # -j2 rather than -j$(nproc): the thread-stress and GC-pressure cases
+        # spawn their own threads, and saturating a 4-vCPU runner with ctest
+        # workers is the load this family has already been burned by.
+        working-directory: protoPython
+        run: ctest --test-dir build_release -j2 --output-on-failure -E "$CLOCK_DEPENDENT_TESTS" < /dev/null
+
+      - name: Static conformance ratchet (informational)
+        # NOT a gate, and not because it is unimportant: this repository's
+        # conformance-allow.txt says in its own header that it "EXITS 1 ON
+        # PURPOSE", leaving one real defect uncovered so the check keeps failing
+        # until it is fixed.  Measured here it exits 2 -- four uncovered findings
+        # plus three allowlist entries whose sites are gone
+        # (src/library/ThreadModule.cpp:408, :688, :704 -- delete those lines).
+        # Gating on a check that is designed to be red would make every build red
+        # and teach everyone to ignore it.  It runs, it reports, it does not gate.
+        continue-on-error: true
+        working-directory: protoPython
+        run: python3 ../protoCore/scripts/conformance/check_static.py --repo .
+
+  timing:
+    name: Clock-dependent cases (informational, never gates)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    # A failure here does not fail the run.  These cases are kept RUNNING rather
+    # than deleted, because a disabled suite proves nothing -- but on a shared
+    # runner their verdict is partly the machine's, not the code's.
+    continue-on-error: true
+    steps:
+      - name: Check out protoPython
+        uses: actions/checkout@v4
+        with:
+          path: protoPython
+
+      - name: Check out protoCore as a sibling
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.PROTOCORE_REPO }}
+          ref: ${{ env.PROTOCORE_REF }}
+          path: protoCore
+
+      - name: Build
+        working-directory: protoPython
+        run: |
+          cmake -S . -B build_release -DCMAKE_BUILD_TYPE=Release
+          cmake --build build_release --parallel "$(nproc)"
+
+      - name: Clock-dependent cases, serially
+        # Serial on purpose: these are the cases load hurts most, so they get the
+        # machine to themselves.
+        working-directory: protoPython
+        run: |
+          set +e
+          ctest --test-dir build_release --output-on-failure -R "$CLOCK_DEPENDENT_TESTS" < /dev/null
+          STATUS=$?
+          set -e
+          if [ "$STATUS" -eq 0 ]; then
+            echo "Clock-dependent cases: all passed" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Clock-dependent cases: FAILED (informational -- may be runner load, not a regression)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$STATUS"
