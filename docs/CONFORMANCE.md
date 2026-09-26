@@ -25,7 +25,7 @@ what the adaptor does and does not prove.
 | `thread.registered` | 11 | **NOTAPPLICABLE** | `forEachThreadKind` not implemented. **Rule 11 UNVERIFIED by this case** |
 | `stw.quorum_completes` | 2 | **PASS** (isolated) | a cycle advanced twice with a Python thread up (`runningThreads`=2); **20.5 s**, was 278.4 s |
 | `join.parks` | 2b | **PASS** (isolated) | a cycle completed while `Thread.join()` was blocked, reclaiming 499,468 cells; **20.6 s**, was 278.1 s |
-| **`heap.ceiling_progress`** | **8** | **PASS** (isolated) | 30 cycles completed while the workload ran, 1,306,839 cells reclaimed by the last one, `oomCallbackFired=0`; 5.9 s. Red until 2026-09-25 — see below for the cause, which was NOT what this file previously claimed |
+| **`heap.ceiling_progress`** | **8** | **PASS** (isolated) | 30 cycles completed while the workload ran, ~1.3 M cells reclaimed by the last one (run-variant: 1,306,839 / 1,293,491 / 1,303,077 across three runs — do not quote one as a constant), `oomCallbackFired=0`; 5.9 s. Red until 2026-09-25 — see below for the cause, which was NOT what this file previously claimed |
 
 Suite: **639** ctest cases, **638 passing** (2026-09-25, after the retention
 fixes below) — up from 636 of 638. The one remaining failure is
@@ -164,6 +164,11 @@ still `settled + 200,000`, the workload still produces 202,000 items through two
 threads per round, and the thread count is untouched.** Result: settled live set
 166,421, ceiling 366,421, **30 cycles completed while the workload ran,
 1,306,839 cells reclaimed by the last one, `oomCallbackFired=0`, 5.9 s.**
+
+**Both of those numbers are one run's, not constants.** Re-running gives
+1,293,491 and 1,303,077 cells reclaimed, and a settled live set of 158,520
+against the 166,421 above. Quote them as a range or re-measure; the verdict does
+not rest on the exact value (`protoCore/docs/FIELD-NOTES.md`, case 9).
 
 **Mutation that reds it again:** delete the `warmRuntime()` call from the
 constructor. The case returns to `SIGABRT` with
