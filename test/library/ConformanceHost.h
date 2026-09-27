@@ -193,6 +193,104 @@ public:
         return readIntGlobal("_conf_joined") == 1;
     }
 
+    // --- rule 13 -----------------------------------------------------------
+    //
+    // Until this override existed the case reported NotApplicable: the default
+    // `makeMutableGraph()` builds nothing, the mutables table does not grow, and
+    // the case then correctly refuses to read protoCore's bootstrap as a
+    // statement about protoPython.  So rule 13 said NOTHING about protoPython,
+    // while a `PROTOCORE_MUTABLE_CYCLE_CHECK` census of protoPython's own ctest
+    // run reported 22,433 cycles across 755 spaces.  The census was outside the
+    // suite; this brings it inside, so that every run reports the number instead
+    // of skipping the rule.
+    //
+    // The probe builds, through protoPython's own interpreter, one instance of
+    // each cycle shape that census found in quantity:
+    //
+    //   * two heap classes          -> `__mro__` self (a class is index 0 of its
+    //                                  own C3 linearisation, and py_type writes
+    //                                  the tuple back onto the class,
+    //                                  BuiltinsModule.cpp:7163-7166)
+    //   * two class bodies          -> `f_locals` self (the namespace object IS
+    //                                  the locals mapping, ExecutionEngine.cpp:8740)
+    //   * one zero-arg `super()`    -> `__getattr__ -> MethodCell` self (the proxy
+    //                                  binds py_super_getattr to itself,
+    //                                  BuiltinsModule.cpp:4283)
+    //   * one closure              -> `__closure_frames__` (fn -> frame -> fn,
+    //                                  ExecutionEngine.cpp:1311-1324)
+    //
+    // The return value is a DECLARATION of how many mutables the probe built, and
+    // it is read back out of the interpreter rather than hard-coded: a probe whose
+    // source failed to execute then returns 0, the mutables table does not grow,
+    // and the case reports NotApplicable -- which is the truth -- instead of
+    // claiming a graph nobody built.
+    //
+    // See TestMutableCycles.cpp for the shape-by-shape census with real bounds,
+    // and docs/CONFORMANCE.md for why declaredMutableCycles() is NOT overridden.
+    unsigned long makeMutableGraph() override {
+        if (env_.executeString(mutableProbeSource(), "<conformance:mutables>") != 0) {
+            env_.takePendingException();
+            return 0;
+        }
+        const long long built = readIntGlobal("_conf_mutables_built");
+        return built > 0 ? static_cast<unsigned long>(built) : 0;
+    }
+
+    // The probe, shared with TestMutableCycles.cpp so that the census test and
+    // the conformance case cannot drift apart.
+    static const char* mutableProbeSource() {
+        return
+            "class _ConfMroA:\n"
+            "    def tag(self):\n"
+            "        return 1\n"
+            "\n"
+            "class _ConfMroB(_ConfMroA):\n"
+            "    def tag(self):\n"
+            "        return 2 + super().tag()\n"
+            "\n"
+            "def _conf_capture():\n"
+            "    cell = [0]\n"
+            "    def _conf_closed():\n"
+            "        cell[0] += 1\n"
+            "        return cell[0]\n"
+            "    return _conf_closed\n"
+            "\n"
+            "_conf_closed = _conf_capture()\n"
+            "_conf_shapes = (_ConfMroB().tag(), _conf_closed(), _conf_closed())\n"
+            // Two class objects, two class-body namespaces, one super proxy and
+            // one closure frame: the six mutables whose cycles this probe exists
+            // to put in front of the detector.
+            "_conf_mutables_built = 6\n";
+    }
+
+    // declaredMutableCycles() is deliberately NOT overridden, so it stays -1 and
+    // the case reports NeedsReview with the cycles listed.  That is not
+    // indifference; it is the only honest answer available, and docs/CONFORMANCE.md
+    // records the shape-by-shape audit behind it.  A positive declaration is a
+    // claim that every cycle the scan finds is what the program MEANS.  Of
+    // protoPython's four dominant shapes, ONE is and three are not:
+    //
+    //   * `__closure_frames__` IS structural.  Verified by deleting the edge
+    //     (ExecutionEngine.cpp:1323): the smallest closure then fails outright with
+    //     `NameError: name 'nonlocal n not found' is not defined`.
+    //   * `__mro__` self (6,671 of 22,433) is a documented cache whose non-cycling
+    //     replacement already ships (py_type_get_mro behind a getset descriptor
+    //     bound to nullptr, PythonEnvironment.cpp:19216-19223); still stored only
+    //     because STRUCT-84 has unmapped readers.
+    //   * `f_locals` self (3,909) is removable the same way, blocked by one
+    //     `hasOwnAttribute(f_locals)` marker at BuiltinsModule.cpp:7549.
+    //   * the `super()` proxy's MethodCell (6,223) was believed structural and is
+    //     NOT.  Binding all three of make_super_proxy's self-bound cells to nullptr
+    //     leaves the 651-case suite passing except test_mutable_cycles, which reds
+    //     because the shape is gone.  The OBJ-level `__py_getattr_handler__` fast
+    //     path (PythonEnvironment.cpp:24785-24789) passes the proxy explicitly, so
+    //     asMethodSelf is never the channel.  See docs/CONFORMANCE.md rule 13.
+    //
+    // That is 16,803 of 22,433 avoidable.  Declaring a number large enough to cover
+    // them would assert they are necessary, which is worse than declaring nothing:
+    // it would turn the rule from a question into a rubber stamp, and it would go on
+    // passing on the day the blockers are cleared and the cycles are gone.
+
     // --- rules 2 and 11 ----------------------------------------------------
     //
     // forEachThreadKind is NOT implemented, so the case reports NotApplicable

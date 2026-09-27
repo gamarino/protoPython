@@ -99,6 +99,21 @@ if(_protopy_conformance)
     add_test(NAME test_conformance COMMAND test_conformance)
     set_tests_properties(test_conformance PROPERTIES TIMEOUT 900 RUN_SERIAL TRUE)
 
+    # Rule 13 by SHAPE, which the rule itself cannot check: its verdict is one
+    # comparison of counts and is blind to which cycles it found.  Shares the
+    # conformance Host's probe source so the two cannot drift, hence the
+    # dependency on the conformance library and the placement in this block.  Its
+    # own process: it measures the whole mutable graph of a fresh space, so a test
+    # that allocated alongside it would decide its verdict.
+    add_executable(test_mutable_cycles TestMutableCycles.cpp)
+    target_link_libraries(test_mutable_cycles
+        PRIVATE protoPython protoCore ${_protopy_conformance} gtest_main)
+    target_compile_definitions(test_mutable_cycles
+        PRIVATE STDLIB_PATH="${CMAKE_SOURCE_DIR}/lib/python3.14")
+    add_test(NAME test_mutable_cycles COMMAND test_mutable_cycles)
+    set_tests_properties(test_mutable_cycles
+                         PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE)
+
     # The three cases that cannot report their own failure in-process: one
     # aborts, two deadlock the space.  The external TIMEOUT is the verdict.
     add_executable(test_conformance_isolate ConformanceIsolate.cpp)

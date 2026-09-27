@@ -8664,11 +8664,6 @@ static const proto::ProtoObject* py_frozenset_call(
     // (isActuallyAClass), and with it getAttribute returned the frozenset's
     // methods unbound, so f.__contains__(x) ran without its receiver.
 
-    if (get_env_diag()) {
-        if (fs->hasAttribute(context, env->getClassString())) {
-        } else {
-        }
-    }
     return fs;
 }
 

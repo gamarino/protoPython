@@ -6,7 +6,7 @@ what the adaptor does and does not prove.
 
 - Adaptor: `test/library/ConformanceHost.h`
 - Wiring: `test/library/ConformanceTests.cpp`, `test/library/ConformanceIsolate.cpp`
-- Static ratchet: `conformance-allow.txt` (**exits 1 on purpose — one real defect left**)
+- Static ratchet: `conformance-allow.txt` — **exits 0 and GATES CI since 2026-09-26**
 - Retention regression: `test/library/TestThreadStateReleased.cpp`
 - Run: `ctest --test-dir build_release -R 'conformance' < /dev/null`
 
@@ -23,6 +23,7 @@ what the adaptor does and does not prove.
 | `module.alias_rejected` | 9c | **NEEDSREVIEW** | kernel keeps provider+path+version distinct; protoPython's own keying unchecked |
 | `external.bytes_accounted` | 7 | **NEEDSREVIEW** | 15 external wrappers, no byte total — see C7 |
 | `thread.registered` | 11 | **NOTAPPLICABLE** | `forEachThreadKind` not implemented. **Rule 11 UNVERIFIED by this case** |
+| `mutable.graph_cycles` | 13 | **NEEDSREVIEW** (was NOTAPPLICABLE) | `makeMutableGraph` now builds the four shapes, so the case measures protoPython instead of skipping; `declaredMutableCycles` is deliberately left at −1 — see *Rule 13* below for why a number would be a false claim |
 | `stw.quorum_completes` | 2 | **PASS** (isolated) | a cycle advanced twice with a Python thread up (`runningThreads`=2); **20.5 s**, was 278.4 s |
 | `join.parks` | 2b | **PASS** (isolated) | a cycle completed while `Thread.join()` was blocked, reclaiming 499,468 cells; **20.6 s**, was 278.1 s |
 | **`heap.ceiling_progress`** | **8** | **PASS** (isolated) | 30 cycles completed while the workload ran, ~1.3 M cells reclaimed by the last one (run-variant: 1,306,839 / 1,293,491 / 1,303,077 across three runs — do not quote one as a constant), `oomCallbackFired=0`; 5.9 s. Red until 2026-09-25 — see below for the cause, which was NOT what this file previously claimed |
@@ -33,6 +34,13 @@ fixes below) — up from 636 of 638. The one remaining failure is
 in the repository. The count rose by one with `test_thread_state_released`, the
 three-assertion regression that pins the retention fixes, and the second failure
 went away because `heap.ceiling_progress` is now green.
+
+**2026-09-26/27, against protoCore 2.5.0 in the `add_subdirectory` configuration:
+651 ctest cases, 650 passing.** The count rose by one with `test_mutable_cycles`
+(rule 13 by shape, below); the one failure is still `protopy_import_site`, and it is
+environmental — it passes on a clean CI runner in 0.10 s. Rule 13 moved from
+NotApplicable to **NeedsReview** in the same change, which is a rule that now
+measures this runtime rather than skipping.
 
 ## The rule-5 result contradicts the prediction, and the number is the finding
 
@@ -374,10 +382,172 @@ measured.
 Margin against the 300 s budget: 279 s, and it is no longer a margin that a busy
 machine can eat.
 
+## Rule 13: the case no longer skips, and a count is deliberately NOT declared
+
+Three findings. The second overturns what this repository believed about its own
+biggest cycle family, and it was settled by running the mutation rather than by
+reasoning about it.
+
+### 1. The case used to say nothing at all
+
+`Host::makeMutableGraph()` was not overridden, so it returned 0 and built nothing.
+`caseMutableGraphCycles` then saw a mutables table that had not grown and returned
+**NotApplicable** — correctly, because a scan over a table this runtime never wrote
+to is a statement about protoCore's bootstrap. So rule 13 was skipped on every run,
+while a `PROTOCORE_MUTABLE_CYCLE_CHECK` census of protoPython's own ctest run
+reported **22,433 cycles across 755 space reports**. The census was outside the
+suite; the suite's silence was not evidence about protoPython.
+
+`makeMutableGraph()` is now implemented (`test/library/ConformanceHost.h`). It runs a
+Python probe that builds one instance of each shape the census found in quantity:
+two heap classes, two class bodies, one zero-arg `super()` and one closure. The case
+therefore evaluates. Measured at this commit:
+
+> **NEEDSREVIEW rule 13 `mutable.graph_cycles`** — 137 cycles; mutables table
+> 5,424 → 5,467 entries; host declared 6 mutables built; 23,033 references to a
+> mutable handle; 137,318 cells walked.
+
+That is the distinction that matters, and it is the one this suite exists to keep:
+*NotApplicable means the situation was never entered; NeedsReview means it was
+entered, cycles were found, and this runtime has not accounted for them.*
+
+### 2. The measurement, by shape — and the cycle count is not monotone
+
+`test/library/TestMutableCycles.cpp` measures the same probe directly, in its own
+process, because rule 13's verdict is one comparison of counts and is blind to which
+cycles it found. On a bare `PythonEnvironment` (no stdlib imports), before and after
+the probe:
+
+| | mutables table | cycles | handles inside a cycle |
+|---|---|---|---|
+| before the probe | 175 | 105 | 125 |
+| after the probe | 219 | **17** | 175 |
+
+| shape | before | after | what creates it |
+|---|---|---|---|
+| `.__mro__` self | 97 | 10 | `py_type` writes the C3 tuple, whose index 0 is the class, back onto the class (`BuiltinsModule.cpp:7163-7166`); every bootstrap prototype does the same |
+| `.f_locals` self | 0 | 1 | the class-body namespace object IS the locals mapping (`ExecutionEngine.cpp:8740`) |
+| `.__getattr__` → `MethodCell` | 0 | 1 | `make_super_proxy` binds `py_super_getattr` to the proxy it installs it on (`BuiltinsModule.cpp:4283`) |
+| `.__closure_frames__` | 0 | 1 | `createUserFunction` installs the defining frame on the function (`ExecutionEngine.cpp:1311-1324`); `OP_STORE_NAME` binds the function back into that frame |
+
+**Read the cycle column again: it went DOWN, 105 to 17, while the table grew by 44
+entries.** That is not noise. The 97 one-handle `__mro__` self-loops of the bare
+runtime are 97 separate components; defining a subclass links them, and what the
+detector then reports is a single cycle spanning 155 handles. **More retention,
+fewer cycles.** So the cycle count is not monotone in retention and `found >
+declared` is not a monotone test of it. `TestMutableCycles.cpp` therefore asserts on
+the two quantities that do behave — which shapes are present, and how many mutable
+*handles* sit inside some cycle — and records the count only as a report. Worth
+knowing before anybody reads a declared number as a budget.
+
+### 3. The `super()` proxy's MethodCell cycle is INCIDENTAL, not structural
+
+An earlier analysis concluded it was structural, and the reasoning was good:
+`asMethodSelf` *is* protoPython's bound-method representation
+(`ExecutionEngine.cpp:2622-2625`, identity-compared at `:6737`); the `__getattr__`
+dispatcher passes **only the attribute name** when the handler is an own attribute
+(`ExecutionEngine.cpp:6810-6813`); and `py_super_getattr` reads `obj` and `type` off
+its `self` (`BuiltinsModule.cpp:3927`, `:3932-3933`). On that reading `nullptr` is a
+null dereference and a snapshot is impossible, so the ~6,223 cycles — **28 % of the
+22,433** — would have to be declared.
+
+**It is wrong, and the mutation says so.** `make_super_proxy` installs three
+self-bound cells (`BuiltinsModule.cpp:4283`, `:4284`, `:4287`). Binding **all three**
+to `nullptr` and rebuilding:
+
+* the whole 651-case ctest suite still passes, with exactly two failures:
+  `protopy_import_site` (pre-existing and environmental) and `test_mutable_cycles`
+  — which reds *because* the shape it pins is gone (`.__getattr__` 1 → 0). Nothing
+  else moved. The single-cell mutation (`:4283` alone) gives the identical result;
+* eight `super()` idioms probed directly all still answer correctly: `super().m()`,
+  `super().__init__()`, `super().v` (attribute, not call), `super(B, self).m()`, a
+  proxy held in a variable and called later, `type(s).__name__`,
+  `super().__setattr__(n, v)`, and `enum.Enum` member conversion — which is the one
+  real-world caller of `super().__setattr__` in the stdlib (STRUCT-323 records why).
+
+The mechanism the earlier reading missed: every `getAttribute` on the proxy is
+intercepted **before** dispatch by the OBJ-level `__py_getattr_handler__` fast path
+(`PythonEnvironment.cpp:24785-24789`), which calls
+`handler->asMethod(ctx)(ctx, obj, ...)` — passing the proxy explicitly. So
+`py_super_getattr` receives its receiver as an argument and never needs
+`asMethodSelf`, and it also shadows the proxy's own `__setattr__` cell, which is why
+`super().__setattr__` survives too. And the trap that made the family look
+structural is worth naming: the detector reports **one hop per component**, the
+lowest-numbered one, so all three cells on a proxy collapse into a single cycle
+*labelled* `.__getattr__`. The label named the wrong cell, and the analysis
+inherited the label.
+
+**Filed, measured, and NOT applied here.** Un-self-binding three cells is a change
+to `super()` dispatch, and it belongs in a change whose subject is that, with a test
+that exercises the slow `__getattr__` path directly rather than inferring its absence
+from a green suite. `TestMutableCycles.cpp` asserts `.__getattr__ == 1` today, and its
+comment says that this line becomes `0` when the retention fix lands — so the
+removal will be recorded rather than silent.
+
+### 4. What IS structural: `__closure_frames__`, and only it
+
+`OP_LOAD_DEREF` walks it (`ExecutionEngine.cpp:6361-6366`) to find the cell for a
+free variable. **Verified by mutation, not asserted:** deleting the edge
+(`ExecutionEngine.cpp:1323`) and rebuilding makes the smallest possible closure fail
+outright —
+
+```
+NameError: name 'nonlocal n not found' is not defined
+```
+
+— on `def counter(): n = 0; def bump(): nonlocal n; ...`. A snapshot is excluded by
+Python semantics rather than by convenience: the enclosing frame keeps being written
+after the inner function object exists (`nonlocal`, and the ordinary
+`def inner(): return x` before `x = 1`), so a frozen copy would freeze the captured
+variable at its creation-time value. It is protoScala's `var f = null; f = () => f()`
+argument, which `protoCore/conformance/CaseMutables.cpp:10-13` names as the canonical
+structural case. Already minimised: the edge is gated on `co_freevars`
+(`ExecutionEngine.cpp:1308`), so the bound is one per function that genuinely closes
+over something.
+
+The remaining two dominant shapes are **incidental with named, open blockers**:
+
+* **`__mro__` self, 6,671.** The stored own `__mro__` is a documented **cache** and
+  its non-cycling replacement already ships: `__mro__` is a getset descriptor whose
+  fget is bound to `nullptr` (`PythonEnvironment.cpp:19216-19223`) and
+  `py_type_get_mro` reconstructs the tuple from the protoCore parent chain, declared
+  as "the SINGLE source of truth for the MRO" (`PythonEnvironment.cpp:957-959`). The
+  cache is still written only because STRUCT-84 has unmapped readers — the code says
+  so itself (`BuiltinsModule.cpp:7168-7174`: "dropping the cache regresses
+  test_foundation") — and because STRUCT-276 uses the own attribute as an in-band
+  `None` marker while a user `mro()` runs. Two residues genuinely are structural, and
+  neither is 6,671 cycles: bootstrap prototypes have no parent chain, so
+  `py_type_get_mro` falls back to the stored value for them; and a perverse metaclass
+  `mro()` may return a tuple with the class at a position the chain cannot represent
+  (STRUCT-101).
+* **`f_locals` self, 3,909.** Removable the same way — a getset on `framePrototype`
+  returning the receiver, exactly the pattern `__mro__` already uses. Blocked by one
+  reader: `BuiltinsModule.cpp:7548-7550` uses `hasOwnAttribute(f_locals)` as the
+  marker that a dict is a class-body namespace, and a type-level descriptor does not
+  satisfy `hasOwnAttribute`. That marker needs a different discriminator first.
+
+### 5. Why `declaredMutableCycles()` stays at −1
+
+A positive declaration is a claim that every cycle the scan finds is what the program
+MEANS, "so that a snapshot would be the wrong answer"
+(`protoCoreConformance.h:201-219`). Of protoPython's four dominant shapes, **one is
+structural and three are not**: `__mro__` (6,671), `f_locals` (3,909) and the
+`super()` proxy's MethodCell (6,223) are avoidable, the last of them now
+demonstrably so. Together that is **16,803 of the 22,433**. A number large enough to
+make the case Pass would assert that all of them are necessary — and would go on
+passing on the day the blockers are cleared and the cycles are gone.
+
+−1 is one of the three answers the API documents, it reports **NeedsReview** with
+every cycle listed, and it is the true one here. The declaration becomes appropriate
+once the three avoidable shapes no longer store their self-edges; at that point what
+remains is countable and the count is a claim worth making. Recording a number before
+then would turn the rule from a question into a rubber stamp.
+
 ## The defects the static check leaves uncovered
 
-`conformance-allow.txt` **exits 1 on purpose.** It listed two; one is now fixed,
-so the uncovered count is **1**.
+`conformance-allow.txt` **exited 1 on purpose** while it listed real defects. It
+listed two; both are now fixed, the uncovered count is **0**, the stale count is
+**0**, and the check is a **CI gate** rather than an informational step.
 
 ### 1. FIXED — `src/library/PythonEnvironment.cpp:11426`, a dead `== nullptr` with a user-visible consequence
 
@@ -438,15 +608,54 @@ bug. It is a separate defect from the one this phase was asked to fix, and the
 regression file says in a comment why it deliberately does not assert today's
 answer.
 
-### 2. OPEN — `src/library/PythonEnvironment.cpp:8668`, an always-true condition
+### 2. FIXED — `src/library/PythonEnvironment.cpp:8668`, an always-true condition
 
 ```cpp
-if (fs->hasAttribute(context, env->getClassString())) {
+if (get_env_diag()) {
+    if (fs->hasAttribute(context, env->getClassString())) {
+    } else {
+    }
+}
 ```
 
 `hasAttribute` returns a boolean **object**: `PROTO_TRUE` is `1217UL` and
-`PROTO_FALSE` is `193UL`, both non-null. The condition is **always true**.
-**Fix:** `== PROTO_TRUE`.
+`PROTO_FALSE` is `193UL`, both non-null, so the condition is **always true**.
+
+**Fixed 2026-09-26, and not by adding `== PROTO_TRUE`.** Reading the whole
+statement rather than the flagged line shows why: this is the guard of a
+`get_env_diag()` diagnostic in `py_frozenset_new` whose **two branches are both
+empty**. There is nothing to diagnose and nothing the condition decides, so the
+always-true test had no observable consequence at all — and repairing the
+comparison would have left dead code behind a correct condition. The whole block
+is deleted.
+
+**Mutation:** restore the block. `check_static.py --repo .` then reports
+`error attr_sentinel src/library/PythonEnvironment.cpp:8668 ... ALWAYS TRUE`,
+`uncovered: 1`, and exits **1** — which is now a red build, because the step gates.
+Restored and re-run to confirm, then reverted.
+
+### 3. FIXED — three allowlist entries nine lines off their sites
+
+`external_finalizer src/library/ThreadModule.cpp:408`, `:688` and `:704` named lines
+that had moved. Their `sha1-12` hashes still matched the real lines — **417**, **697**
+and **713** — which is what made the drift invisible to a reader and expensive to the
+check: the entries were **stale** (exit 2) *and*, because `external_finalizer`
+findings are severity `error` and a `<path>:*` file-level entry may not cover an
+error, the three real sites counted as **uncovered** at the same time. Fixed by
+renumbering; no justification text changed, because the justifications were always
+about the right code.
+
+**Mutation:** put one entry back to `:408`. The check reports
+`stale: external_finalizer src/library/ThreadModule.cpp:408`, `uncovered: 1`, and
+exits **2**. Restored and re-run to confirm.
+
+### The ratchet now gates
+
+`python3 ../protoCore/scripts/conformance/check_static.py --repo .` reports
+`covered by allowlist: 247   uncovered: 0   stale entries: 0` and exits 0, so the
+CI step dropped its `continue-on-error: true`. Two `heap_policy` findings remain
+**informational** by the checker's own design and do not affect the exit code; they
+are recorded under *Informational* below.
 
 Two further sites the checker reported and that are **correct** —
 `BuiltinsModule.cpp:7102` and `PythonEnvironment.cpp:18447` — compare against

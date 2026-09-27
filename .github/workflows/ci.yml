@@ -152,16 +152,21 @@ jobs:
         working-directory: protoPython
         run: ctest --test-dir build_release -j2 --output-on-failure -E "$CLOCK_DEPENDENT_TESTS" < /dev/null
 
-      - name: Static conformance ratchet (informational)
-        # NOT a gate, and not because it is unimportant: this repository's
-        # conformance-allow.txt says in its own header that it "EXITS 1 ON
-        # PURPOSE", leaving one real defect uncovered so the check keeps failing
-        # until it is fixed.  Measured here it exits 2 -- four uncovered findings
-        # plus three allowlist entries whose sites are gone
-        # (src/library/ThreadModule.cpp:408, :688, :704 -- delete those lines).
-        # Gating on a check that is designed to be red would make every build red
-        # and teach everyone to ignore it.  It runs, it reports, it does not gate.
-        continue-on-error: true
+      - name: Static conformance ratchet
+        # A GATE since 2026-09-26.  It was informational while it could not pass:
+        # conformance-allow.txt said in its own header that it "EXITS 1 ON PURPOSE",
+        # holding one real defect uncovered, and three of its entries had drifted
+        # nine lines off the sites they justify, so the check exited 2 -- four
+        # uncovered findings plus three stale entries.  Gating on a check designed
+        # to be red would have made every build red and taught everyone to ignore
+        # it.  Both causes are fixed at the source rather than justified away:
+        # the always-true `hasAttribute` guard in py_frozenset_new is deleted (its
+        # two branches were both empty, so the block was dead), and the three
+        # entries now name lines 417, 697 and 713.  Measured locally at this
+        # commit: `covered by allowlist: 247   uncovered: 0   stale entries: 0`,
+        # exit 0.  Two mutations were run to confirm the gate can still close:
+        # restoring the dead block gives exit 1, and putting one entry's line
+        # number back to 408 gives exit 2.
         working-directory: protoPython
         run: python3 ../protoCore/scripts/conformance/check_static.py --repo .
 

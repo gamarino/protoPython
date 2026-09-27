@@ -6,25 +6,37 @@
 # Run: python3 ../protoCore/scripts/conformance/check_static.py --repo .
 # Exit 0 clean, 1 an unjustified finding, 2 a stale entry.
 #
-# THIS FILE EXITS 1 ON PURPOSE.  One real defect is left UNCOVERED so the check
-# keeps failing until it is fixed; laundering it into a justification is the one
-# thing a ratchet must never be used for.  It is:
+# THIS FILE NOW EXITS 0, and the check GATES protoPython's CI.  It reached 0 by
+# fixing the last two defects, never by justifying them: nothing in this file
+# covers a real defect, and a ratchet used that way is worth less than no ratchet.
 #
-#   src/library/PythonEnvironment.cpp:8668   `if (fs->hasAttribute(...))` with no
-#       comparison: hasAttribute returns a boolean OBJECT, both values non-null,
-#       so the condition is ALWAYS TRUE.
+# FIXED 2026-09-26, and therefore no longer listed here: the always-true
+# `if (fs->hasAttribute(...))` in `py_frozenset_new`
+# (src/library/PythonEnvironment.cpp).  It guarded a `get_env_diag()` diagnostic
+# whose two branches were BOTH EMPTY, so the whole block was dead: the condition's
+# defect -- hasAttribute returns a boolean OBJECT, PROTO_TRUE and PROTO_FALSE both
+# non-null, so it can never be false -- had no observable consequence, and there
+# was nothing left to diagnose.  The block is deleted rather than repaired.  The
+# mutation that turns the ratchet red again is to restore it; the check then
+# reports `attr_sentinel ... ALWAYS TRUE` and exits 1, which is now a red build.
 #
-# FIXED 2026-09-25, and therefore no longer listed above: the dead
-# `getAttribute(...) == nullptr` in py_bytes_find.  The needle check moved into
-# bytes_needle_validate, is now complete rather than str-only, and raises
-# CPython's TypeError; the dead comparison is gone.  Pinned by
-# test/regression/bytes_find_needle_type.py, which also names the mutation that
-# turns it red again.  The uncovered count went 2 -> 1.
+# FIXED 2026-09-25: the dead `getAttribute(...) == nullptr` in py_bytes_find.  The
+# needle check moved into bytes_needle_validate, is now complete rather than
+# str-only, and raises CPython's TypeError; the dead comparison is gone.  Pinned
+# by test/regression/bytes_find_needle_type.py, which also names the mutation that
+# turns it red again.  The uncovered count went 2 -> 1 -> 0.
+#
+# THE THREE ThreadModule.cpp ENTRIES BELOW carried line numbers 408, 688 and 704
+# until 2026-09-26, nine lines above the sites they justify.  Their sha1 hashes
+# still matched the real lines (417, 697, 713), so the drift cost twice over: the
+# stale entries made the check exit 2, and because `external_finalizer` findings
+# are severity `error` -- which a `<path>:*` file-level entry may not cover -- the
+# three real sites counted as uncovered at the same time.
 
-external_finalizer src/library/ThreadModule.cpp:408 17c12e4db966 :: Legitimate. The wrapper carries the PythonEnvironment* into a new thread's argument list. The environment is a C++ object owned by whoever constructed it and outlives every Python thread, so protoCore must NOT free it; a finalizer here would be a double free. Checklist C7. Reviewed 2026-09-25, agent, pending maintainer review.
-external_finalizer src/library/ThreadModule.cpp:688 3b79494e77dd :: Legitimate, identical shape to ThreadModule.cpp:408 -- the environment pointer travelling into start_joinable_thread's arguments. Checklist C7. Reviewed 2026-09-25, agent, pending maintainer review.
-external_finalizer src/library/ThreadModule.cpp:704 a8a866ec2361 :: Legitimate. The wrapper carries the ProtoThread* so a Python thread handle can reach its protoCore thread. The thread is owned by the ProtoSpace, not by this wrapper. Checklist C7. Reviewed 2026-09-25, agent, pending maintainer review.
-external_finalizer src/library/SysModule.cpp:715 d9e34d14f2b7 :: Legitimate. sys.__env_ptr__ carries the PythonEnvironment* so trace functions and exit can reach it. Same ownership as ThreadModule.cpp:408. Checklist C7. Reviewed 2026-09-25, agent, pending maintainer review.
+external_finalizer src/library/ThreadModule.cpp:417 17c12e4db966 :: Legitimate. The wrapper carries the PythonEnvironment* into a new thread's argument list. The environment is a C++ object owned by whoever constructed it and outlives every Python thread, so protoCore must NOT free it; a finalizer here would be a double free. Checklist C7. Reviewed 2026-09-25, agent, pending maintainer review.
+external_finalizer src/library/ThreadModule.cpp:697 3b79494e77dd :: Legitimate, identical shape to ThreadModule.cpp:417 -- the environment pointer travelling into start_joinable_thread's arguments. Checklist C7. Reviewed 2026-09-25, agent, pending maintainer review.
+external_finalizer src/library/ThreadModule.cpp:713 a8a866ec2361 :: Legitimate. The wrapper carries the ProtoThread* so a Python thread handle can reach its protoCore thread. The thread is owned by the ProtoSpace, not by this wrapper. Checklist C7. Reviewed 2026-09-25, agent, pending maintainer review.
+external_finalizer src/library/SysModule.cpp:715 d9e34d14f2b7 :: Legitimate. sys.__env_ptr__ carries the PythonEnvironment* so trace functions and exit can reach it. Same ownership as ThreadModule.cpp:417. Checklist C7. Reviewed 2026-09-25, agent, pending maintainer review.
 external_finalizer src/library/HPyContext.cpp:201 bd7f6e830775 :: Legitimate. The wrapper carries a C FUNCTION POINTER (an HPy method), not an allocation: there is nothing to free, and a finalizer would be a free() of a text-segment address. Checklist C7. Reviewed 2026-09-25, agent, pending maintainer review.
 attr_sentinel src/library/BuiltinsModule.cpp:* * :: File-level entry covering the attr_sentinel WARNINGS in this file. These are heuristic hits whose false-positive rate the check documents as unbounded from the text: a getAttribute result tested as a C++ boolean where the PROTO_NONE test is in a helper or further than four lines away, and uninterned strings reaching setAttribute/getAttribute, where both auto-intern or fall back to a content lookup and are therefore CORRECT but slow. A file-level entry is deliberate: 242 individual justifications would be a ritual, not a review. The ratchet still closes on a NEW FILE. Reviewed 2026-09-25, agent, pending maintainer review.
 attr_sentinel src/library/CollectionsAbcModule.cpp:* * :: File-level entry covering the attr_sentinel WARNINGS in this file. These are heuristic hits whose false-positive rate the check documents as unbounded from the text: a getAttribute result tested as a C++ boolean where the PROTO_NONE test is in a helper or further than four lines away, and uninterned strings reaching setAttribute/getAttribute, where both auto-intern or fall back to a content lookup and are therefore CORRECT but slow. A file-level entry is deliberate: 242 individual justifications would be a ritual, not a review. The ratchet still closes on a NEW FILE. Reviewed 2026-09-25, agent, pending maintainer review.
