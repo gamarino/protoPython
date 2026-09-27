@@ -3,6 +3,10 @@
 #include <protoPython/ExecutionEngine.h>
 #include <protoPython/PythonEnvironment.h>
 #include <protoCore.h>
+// <algorithm> for std::reverse (compileBinOp). GCC 13 happens to reach it
+// transitively through another header; GCC 14 does not, so a Fedora 41 build
+// fails without this include. Named explicitly rather than relied upon.
+#include <algorithm>
 #include <iostream>
 
 namespace protoPython {
