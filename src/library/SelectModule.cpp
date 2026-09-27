@@ -3,6 +3,10 @@
 #include <sys/select.h>
 #include <sys/time.h>
 #include <unistd.h>
+// <algorithm> for the std::max(initializer_list) overload used below. GCC 13
+// reaches it transitively through another header; GCC 14 does not, so a
+// Fedora 41 build fails without this include.
+#include <algorithm>
 #include <vector>
 #include <string>
 #include <string.h>
