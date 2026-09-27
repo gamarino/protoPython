@@ -169,14 +169,71 @@ protoCore's own package (`protocore (>= 2.0.0), protocore (<< 3.0.0)` for DEB;
 
 ### Platform verification status
 
+Last verified 2026-09-27 against protoPython 1.0.0 and protoCore 2.5.0
+(`PROTOCORE_ABI_SOVERSION 3`), built with `-DPROTOCORE_REQUIRE_PACKAGE=ON` so the
+sibling developer fallback was a hard error and the package was the only source
+of protoCore.
+
 | Platform | Packaging | Status |
 |----------|-----------|--------|
-| Linux | TGZ, DEB (needs `dpkg`), RPM (needs `rpmbuild`) | Built, installed to a scratch prefix and smoke-tested, including the installed `<libdir>/protoPython/python3.14` standard library and the extracted `.deb` payload |
-| macOS | DragNDrop | Configured and reviewed, **never built** — no macOS host |
-| Windows | NSIS, ZIP | Configured and reviewed, **never built** — no Windows host |
+| Linux / Debian-Ubuntu | TGZ, DEB | **VERIFIED.** Installed with `dpkg -i` as root in a throwaway `ubuntu:24.04` container and run there from `/usr/bin/protopy`, outside any repository, with no `LD_LIBRARY_PATH` and no `PROTO*` variable set. `import json` resolved out of the installed `<libdir>/protoPython/python3.14`. |
+| Linux / Fedora-RHEL | TGZ, RPM | **UNVERIFIED — blocked, and the reason is specific.** `cpack -G RPM` runs, but Fedora's `brp-mangle-shebangs` fails the build on the bundled CPython standard library: `ERROR: ambiguous python shebang in .../encodings/rot_13.py: #!/usr/bin/env python`. That is fatal, so no RPM is produced. The build itself is fine; only the RPM packaging step is blocked. It needs a maintainer decision (suppress `__brp_mangle_shebangs`, or correct the shebang in the shipped stdlib). |
+| macOS | DragNDrop | **UNVERIFIED.** Configured and reviewed only; there is no macOS host here. Review is not verification. |
+| Windows | NSIS, ZIP | **UNVERIFIED.** Configured and reviewed only; there is no Windows host here. |
 
-RPM packaging is configured and reviewed but **never executed**: `rpmbuild` is not
-installed on the host this was verified on.
+### Portability fixed while verifying
+
+Two translation units called `std::reverse` and the `std::max(initializer_list)`
+overload without including `<algorithm>`
+(`src/library/Compiler.cpp`, `src/library/SelectModule.cpp`). GCC 13 reaches
+`<algorithm>` transitively through another header and GCC 14 does not, so
+protoPython did not compile at all on Fedora 41. Both includes are now explicit.
+
+### Package size
+
+`libprotoPython.so.1.0.0` ships at 47,126,928 bytes with DWARF debug information,
+because `src/library/CMakeLists.txt` applies `-g` unconditionally by design.
+Stripped, the same library is 3,327,024 bytes — 14.2x smaller — and it is what
+makes the DEB 31.7 MB rather than roughly 3 MB. The trade is deliberate; the
+price is recorded here so it can be reconsidered knowingly.
+
+### Known defect: the DEB dependency floor does not encode the ABI
+
+The `Depends` field is a *version range*, and on its own that range is not an ABI
+check. `PROTOCORE_ABI_SOVERSION` went from `2` to `3` in protoCore **2.2.0**, so
+protoCore 2.0.0 and 2.1.0 carry `libprotoCore.so.2` while 2.2.0 and later carry
+`libprotoCore.so.3`. A floor of ``2.0.0`` therefore admits a protoCore whose
+SONAME this package was not linked against.
+
+This was demonstrated, not argued. A decoy `protocore` 2.1.0 package providing
+only `libprotoCore.so.2` was installed in a container; `dpkg -i` then accepted
+this package, and the installed binary failed to start with
+`libprotoCore.so.3: cannot open shared object file`. The install succeeded and
+the program did not run.
+
+Two things limit the damage, and one closes it:
+
+- At **build** time the failure is loud, not silent. `find_package(protoCore …)`
+  alone does accept a SOVERSION-2 protoCore, but `CMakeLists.txt` follows it with
+  an explicit `protoCore_SOVERSION` assertion against `PROTOCORE_ABI_SOVERSION`,
+  which stops configuration with a `FATAL_ERROR` naming both numbers. Verified by
+  configuring against a complete forged 2.1.0 / SOVERSION 2 prefix.
+- The **RPM** does not have this hole. `rpm` generates
+  `Requires: libprotoCore.so.3()(64bit)` automatically from the linked binary, and
+  that requirement is on the SONAME rather than the version. Verified: the decoy
+  protoCore 2.1.0 does not satisfy it and `rpm -i` refuses.
+- Raising the DEB floor to `2.2.0`, the first protoCore that shipped SOVERSION 3,
+  would make the DEB range agree with the ABI. That is a packaging change for the
+  maintainer to take, and it is not made here.
+
+### Known defect: the DEB does not refresh the shared-library cache
+
+Neither this package nor protoCore's carries a `postinst` or an `ldconfig`
+trigger, so `ldconfig -p` does not list `libprotoCore.so.3` after `dpkg -i`.
+Programs still start, because each binary carries
+`RUNPATH $ORIGIN/../${CMAKE_INSTALL_LIBDIR}` and because the library lands in a
+directory the dynamic loader searches by default, but the cache is misleading.
+Run `ldconfig` after installing. The RPM has no such defect.
 
 ### Standard library location
 
