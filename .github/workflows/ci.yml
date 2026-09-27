@@ -50,7 +50,7 @@ concurrency:
 env:
   PROTOCORE_REPO: numaes/protoCore
   # protoCore 2.5.0, SOVERSION 3 (master, 2026-09-25).  Bump deliberately.
-  PROTOCORE_REF: ${{ github.event_name == 'schedule' && 'master' || 'df8406a3f44f2a7c8505251bf6887e0ad6e60809' }}
+  PROTOCORE_REF: ${{ github.event_name == 'schedule' && 'master' || 'b72407e0753d91c4213326a910cefba582563476' }}
   # The clock-dependent cases in this combined suite.  protoPython's own:
   #   protopy_dict_key_hash          assert elapsed < 20.0 for 20000 dict inserts
   #                                  (test/regression/dict_key_hash.py:124)
