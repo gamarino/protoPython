@@ -349,6 +349,7 @@ examples are built on protoCore.
 | protoST | Smalltalk-inspired actor language on protoCore | https://github.com/gamarino/protoST |
 | protoClojure | Clojure dialect on protoCore (early stage) | https://github.com/gamarino/protoClojure |
 | protoCpp | Examples and benchmarks using protoCore directly from C++ | https://github.com/gamarino/protoCpp |
+| protoIO | Shared input and output for the runtimes: files, processes, TCP, UDP, TLS and HTTP/1.1 (used by protoST, protoScala and protoClojure) | https://github.com/gamarino/protoIO |
 
 ---
 
