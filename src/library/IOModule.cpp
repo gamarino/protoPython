@@ -64,6 +64,22 @@ static bool io_extract_bytes(proto::ProtoContext* ctx,
     return false;
 }
 
+// A buffer-backed file opened in binary mode ("rb", "r+b", ...) reads bytes,
+// as in CPython; a text-mode one reads str.
+static bool io_is_binary(proto::ProtoContext* context, const proto::ProtoObject* self) {
+    const proto::ProtoObject* m = self->getAttribute(context, proto::ProtoString::createSymbol(context, "mode"));
+    if (!m || m == PROTO_NONE || !m->isString(context)) return false;
+    std::string mode;
+    m->asString(context)->toUTF8String(context, mode);
+    return mode.find('b') != std::string::npos;
+}
+
+static const proto::ProtoObject* io_read_result(proto::ProtoContext* context, const proto::ProtoObject* self,
+                                                const std::string& data) {
+    if (io_is_binary(context, self)) return bio_make_bytes(context, data);
+    return PythonEnvironment::getInternedString(context, data.c_str())->asObject(context);
+}
+
 static const proto::ProtoObject* py_io_read(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -144,7 +160,7 @@ static const proto::ProtoObject* py_io_read(
         result = buffer->substr(0, take);
         buffer->erase(0, take);
     }
-    return PythonEnvironment::getInternedString(context, result.c_str())->asObject(context);
+    return io_read_result(context, self, result);
 }
 
 static const proto::ProtoObject* py_io_close(
@@ -226,7 +242,7 @@ static const proto::ProtoObject* py_io_readline(
     const proto::ProtoList*,
     const proto::ProtoSparseList*) {
     std::string line = io_consume_line(self, context);
-    return PythonEnvironment::getInternedString(context, line.c_str())->asObject(context);
+    return io_read_result(context, self, line);
 }
 
 static const proto::ProtoObject* py_io_iter(
@@ -254,7 +270,7 @@ static const proto::ProtoObject* py_io_next(
         if (env) env->raiseStopIteration(context);
         return nullptr;
     }
-    return PythonEnvironment::getInternedString(context, line.c_str())->asObject(context);
+    return io_read_result(context, self, line);
 }
 
 static const proto::ProtoObject* py_io_flush(
@@ -349,7 +365,7 @@ static const proto::ProtoObject* py_io_readlines(
             line = content.substr(pos, nl - pos + 1);
             pos = nl + 1;
         }
-        lines = lines->appendLast(context, PythonEnvironment::getInternedString(context, line.c_str())->asObject(context));
+        lines = lines->appendLast(context, io_read_result(context, self, line));
     }
     buffer->clear();
     return lines->asObject(context);
@@ -553,7 +569,7 @@ static const proto::ProtoObject* py_io_open(
     fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "buffering"), context->fromInteger(-1));
     std::string* buffer = new std::string();
     if (mode.find('r') != std::string::npos) {
-        std::ifstream f(filename);
+        std::ifstream f(filename, std::ios::binary);
         if (f) {
             std::stringstream ss;
             ss << f.rdbuf();
@@ -583,6 +599,21 @@ static const proto::ProtoObject* py_io_open(
     fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "flush"),
         context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_flush));
     return fileObj;
+}
+
+// io.open_code(path): open(path, "rb"), as in CPython. site.addpackage reads
+// each .pth file through it and decodes the bytes itself.
+static const proto::ProtoObject* py_io_open_code(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) != 1) return PROTO_NONE;
+    const proto::ProtoList* args = context->newList()
+        ->appendLast(context, positionalParameters->getAt(context, 0))
+        ->appendLast(context, context->fromUTF8String("rb"));
+    return py_io_open(context, self, parentLink, args, nullptr);
 }
 
 static const proto::ProtoObject* py_io_register(
@@ -1194,7 +1225,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     ioMod = ioMod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__fd_file_prototype__"),
         io_make_fd_file_prototype(ctx));
     ioMod = ioMod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "open"), ctx->fromMethod(const_cast<proto::ProtoObject*>(ioMod), py_io_open));
-    ioMod = ioMod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "open_code"), ctx->fromMethod(const_cast<proto::ProtoObject*>(ioMod), py_io_open));
+    ioMod = ioMod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "open_code"), ctx->fromMethod(const_cast<proto::ProtoObject*>(ioMod), py_io_open_code));
     ioMod = ioMod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "DEFAULT_BUFFER_SIZE"), ctx->fromInteger(8192));
     
     // Stubs for io.py requirements

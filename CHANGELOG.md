@@ -97,6 +97,14 @@ onwards. Commit hashes are given for reference.
 
 ### Fixed
 
+- **Files opened in binary mode read bytes.** `open(path, "rb").read()`,
+  `readline()`, `readlines()` and iteration answered `str`; they answer `bytes`
+  now, as in CPython. `io.open_code(path)` opens in binary, as `open(path,
+  "rb")`. `import site` failed with "'str' object has no attribute 'decode'"
+  whenever a `.pth` file was installed (an editable install in the user's
+  site-packages, for example), because `site.addpackage` decodes what
+  `open_code` reads. Test: `protopy_io_open_code`.
+
 - **`re` no longer interns its results:** every match, group, `sub`, `split`,
   `findall` and `escape` result, and the pattern source and scanned subject,
   were created with `getInternedString`, which returns a symbol protoCore never

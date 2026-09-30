@@ -314,6 +314,13 @@ set_tests_properties(protopy_import_site PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# io.open_code opens in binary, as site.addpackage expects of a .pth file.
+add_test(NAME protopy_io_open_code
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/io_open_code.py)
+set_tests_properties(protopy_io_open_code PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # platform.python_version() parses sys.version.
 add_test(NAME protopy_platform_version
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/platform_version.py)
