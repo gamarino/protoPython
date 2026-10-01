@@ -19,6 +19,18 @@ onwards. Commit hashes are given for reference.
 
 ### Added
 
+- **Windows (MSVC):** protopy builds, passes its test suite (152 of 152) and
+  runs scripts, `-c` programs and the REPL natively on Windows 11 with Visual
+  Studio 2022, against an installed protoCore (branch `windows-port`:
+  `73ea74b3`, `6816cd04`, `02dba2f5`, `36598a2d`). `os` is `nt` with `ntpath`, as in
+  CPython; the POSIX calls of the native modules go through
+  `src/library/PosixCompat.h` (UTF-16 paths, binary files, `os.stat` with file
+  index and nanoseconds), `select` polls pipes, `re` matches UTF-32, asyncio uses
+  the selector event loop, and the executables carry a UTF-8 manifest and a
+  32 MiB stack. protoCore's 64-bit integers are spelled
+  `proto::proto_long`/`proto_ulong` throughout (the same types as before on Linux
+  and macOS). Not yet on Windows: subprocesses, `winreg`/`msvcrt`, and
+  protopyc's module build. See `docs/INSTALLATION.md`, "Windows (MSVC)".
 - **Language:** PEP 695 type parameters on classes and functions, and `type`
   aliases (`d2cc4ffb`, `3f8ee9f5`); PEP 560 `__mro_entries__` and
   `__orig_bases__` in class creation (`58a7c25f`); starred expressions in
@@ -56,6 +68,9 @@ onwards. Commit hashes are given for reference.
 
 ### Changed
 
+- **protoCore 2.7.0 is required** (was 2.0): `proto::proto_long` first exists
+  there. The DEB/RPM dependency floor follows, and CI pins protoCore
+  `fc5d79db` (v2.7.0) instead of `752bdb2` (2.6.2) (`8c9e1b45`).
 - **Scripts no longer call `main()` implicitly.** protopy used to call a
   module-level `main()` after running a script, so a script that called
   `main()` itself ran it twice. Scripts now behave as in CPython. Wall-clock
@@ -97,6 +112,10 @@ onwards. Commit hashes are given for reference.
 
 ### Fixed
 
+- **macOS (by reading; no macOS host):** build-tree executables get an rpath
+  to an installed protoCore's lib directory; `<sys/sysmacros.h>` is included on
+  Linux only; `environ` comes from `_NSGetEnviron()` in the shared library
+  (`a3e255b9`).
 - **Files opened in binary mode read bytes.** `open(path, "rb").read()`,
   `readline()`, `readlines()` and iteration answered `str`; they answer `bytes`
   now, as in CPython. `io.open_code(path)` opens in binary, as `open(path,

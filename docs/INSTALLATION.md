@@ -5,10 +5,11 @@ and install it.
 
 ## Platform support
 
-protoPython is developed and tested on Linux. The build requires a POSIX system: the
-runtime uses POSIX interfaces such as `unistd.h` and `dlopen`, and the CMake files add
-GCC/Clang compiler options (`-fno-delete-null-pointer-checks`,
-`-ftls-model=initial-exec`). Windows and MSVC are not supported. The sources and CMake
+protoPython is developed and tested on Linux, where the runtime uses POSIX interfaces
+such as `unistd.h` and `dlopen` and the CMake files add GCC/Clang compiler options
+(`-fno-delete-null-pointer-checks`, `-ftls-model=initial-exec`). It also builds and
+runs natively on **Windows with MSVC** (Visual Studio 2022), where the same interfaces
+are mapped onto Win32; see [Windows (MSVC)](#windows-msvc). The sources and CMake
 files contain macOS-specific branches (executable path lookup, `@loader_path` RPATH),
 but macOS is not a tested platform.
 
@@ -67,15 +68,17 @@ cmake -S . -B build_release -DCMAKE_BUILD_TYPE=Release -DPROTO_CORE_PREFIX=$HOME
 cmake -S . -B build_release -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=$HOME/.local
 ```
 
-The discovery is `find_package(protoCore 2.0 CONFIG)`, so the prefix must hold
+The discovery is `find_package(protoCore 2.7 CONFIG)`, so the prefix must hold
 `lib/cmake/protoCore/protoCoreConfig.cmake` — protoCore emits it from its own install
 rules. **A prefix holding only `libprotoCore` and `protoCore.h` is no longer
 accepted**: without the package configuration there is no way to tell protoCore 1.x
 from 2.x, and linking the wrong major version is silent.
 
-The version floor is `2.0` and the ceiling is the next major version: protoPython uses
-no protoCore API newer than 2.0.0, and protoCore's major version and its soname move
-together. protoPython additionally asserts that the package's `SOVERSION` is `2`.
+The version floor is `2.7` and the ceiling is the next major version: protoPython
+spells protoCore's 64-bit integers `proto::proto_long` / `proto::proto_ulong`, which
+first exist in protoCore 2.7.0 (until 2026-10-01 the floor was `2.0`, the only other
+API in use), and protoCore's major version and its soname move together.
+protoPython additionally asserts that the package's `SOVERSION` is `3`.
 
 Pass `-DPROTOCORE_REQUIRE_PACKAGE=ON` to forbid the developer fallback. **Every
 packaging build must set it**: the fallback performs no version check and warns that it
@@ -164,8 +167,8 @@ prints whether a generator was enabled or disabled and why.
 
 Package names are pinned rather than left to each generator's default casing:
 `protopython` for DEB, `protoPython` for RPM. Both declare a bounded dependency on
-protoCore's own package (`protocore (>= 2.0.0), protocore (<< 3.0.0)` for DEB;
-`protoCore >= 2.0.0, protoCore < 3.0.0` for RPM). protoCore is never bundled.
+protoCore's own package (`protocore (>= 2.7.0), protocore (<< 3.0.0)` for DEB;
+`protoCore >= 2.7.0, protoCore < 3.0.0` for RPM). protoCore is never bundled.
 
 ### Platform verification status
 
@@ -179,7 +182,7 @@ of protoCore.
 | Linux / Debian-Ubuntu | TGZ, DEB | **VERIFIED.** Installed with `dpkg -i` as root in a throwaway `ubuntu:24.04` container and run there from `/usr/bin/protopy`, outside any repository, with no `LD_LIBRARY_PATH` and no `PROTO*` variable set. `import json` resolved out of the installed `<libdir>/protoPython/python3.14`. |
 | Linux / Fedora-RHEL | TGZ, RPM | **UNVERIFIED — blocked, and the reason is specific.** `cpack -G RPM` runs, but Fedora's `brp-mangle-shebangs` fails the build on the bundled CPython standard library: `ERROR: ambiguous python shebang in .../encodings/rot_13.py: #!/usr/bin/env python`. That is fatal, so no RPM is produced. The build itself is fine; only the RPM packaging step is blocked. It needs a maintainer decision (suppress `__brp_mangle_shebangs`, or correct the shebang in the shipped stdlib). |
 | macOS | DragNDrop | **UNVERIFIED.** Configured and reviewed only; there is no macOS host here. Review is not verification. |
-| Windows | NSIS, ZIP | **UNVERIFIED.** Configured and reviewed only; there is no Windows host here. |
+| Windows | NSIS, ZIP | **ZIP built, NSIS unverified.** On 2026-10-01 (Windows 11, MSVC 19.44, protoCore 2.6.2) `cpack -G ZIP` produced `protopython-1.0.0-win64.zip` with `bin/protopy.exe`, `bin/protopyc.exe`, `bin/protoPython.dll`, `lib/protoPython.lib`, the headers and the standard library; the same layout, installed with `cmake --install`, ran from `cmd.exe` (see [Windows (MSVC)](#windows-msvc)). NSIS (needs `makensis`) was not run. |
 
 ### Portability fixed while verifying
 
@@ -198,6 +201,11 @@ makes the DEB 31.7 MB rather than roughly 3 MB. The trade is deliberate; the
 price is recorded here so it can be reconsidered knowingly.
 
 ### Known defect: the DEB dependency floor does not encode the ABI
+
+> **Since 2026-10-01 the floor is 2.7.0** (the first protoCore with
+> `proto::proto_long`), above 2.2.0, so the range below no longer admits a
+> SOVERSION-2 protoCore. The section is kept for the record: the range is still
+> a version check, not an ABI check.
 
 The `Depends` field is a *version range*, and on its own that range is not an ABI
 check. `PROTOCORE_ABI_SOVERSION` went from `2` to `3` in protoCore **2.2.0**, so
@@ -254,6 +262,86 @@ as CPython's in `/usr/local/lib`).
 
 To compile in a different installed location, configure with
 `-DSTDLIB_INSTALL_PATH=<dir>` (absolute, or relative to the executable's directory).
+
+## Windows (MSVC)
+
+protoPython builds and runs natively on Windows with Visual Studio 2022 (MSVC
+19.44 verified, Windows 11), using the CMake and Ninja that ship with it. Build
+protoCore 2.7.0 or newer first (its `docs/INSTALLATION.md`, "Windows (MSVC)") and
+install it into a prefix; protoPython uses that installed package
+(`-DCMAKE_PREFIX_PATH`).
+From an "x64 Native Tools Command Prompt":
+
+```bat
+set PREFIX=%LOCALAPPDATA%\Programs\proto
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release ^
+      -DCMAKE_PREFIX_PATH=%PREFIX% -DCMAKE_INSTALL_PREFIX=%PREFIX%
+cmake --build build
+ctest --test-dir build -j8
+cmake --install build
+%PREFIX%\bin\protopy -c "import sys; print(sys.version)"
+```
+
+The build puts every executable and DLL in `build/bin/` and copies
+`protoCore.dll` there, so `protopy.exe` and the tests run in place. GoogleTest is
+fetched (`PROTOPYTHON_FETCH_GOOGLETEST`, on by default on Windows), so the C++
+tests are built against the installed protoCore too. The script tests run through
+Git for Windows' `bash` (`C:/Program Files/Git/bin`), which must be installed;
+Python 3 is needed for the conformity tests, as on Linux. `cmake --install` puts
+`protopy.exe`, `protopyc.exe` and `protoPython.dll` in `<prefix>/bin`, the import
+library in `<prefix>/lib` and the standard library in
+`<prefix>/lib/protoPython/python3.14`; protoCore's own install adds
+`protoCore.dll` to its prefix's `bin`. With those `bin` directories on `PATH`,
+`protopy` runs scripts, `-c` programs and the REPL from `cmd.exe` or PowerShell.
+`cpack -G ZIP` produces `protopython-<version>-win64.zip` (without protoCore,
+which is never bundled).
+
+All 152 tests pass on Windows (2026-10-01, protoCore 2.7.0).
+
+How Windows differs, by design:
+
+- **The platform is `nt`, as in CPython.** `sys.platform` is `win32`, `os.name`
+  is `nt`, `os.path` is `ntpath` (`os.sep` is `\`, `/` is accepted too), and
+  `pathlib.Path` is `WindowsPath`. `posix`, `fcntl` and `_posixsubprocess` do not
+  exist, nor do `os.fork`, the `exec*` and `wait*` families, `getuid` and the
+  other POSIX-only functions; `signal` has `SIGINT`, `SIGTERM`, `SIGBREAK`,
+  `SIGABRT`, `SIGFPE`, `SIGILL`, `SIGSEGV` and `CTRL_C_EVENT`/`CTRL_BREAK_EVENT`,
+  and no `alarm`, `pause` or `siginterrupt`. Opening or removing a directory as a
+  file raises `PermissionError`, as CPython does there.
+- **Same output bytes everywhere.** The standard streams are binary, so `print`
+  writes `\n` as on Linux, and the console is switched to UTF-8. Files are always
+  opened in binary mode underneath, as on POSIX.
+- **UTF-8 throughout.** `protopy.exe` and `protopyc.exe` carry a manifest that
+  makes UTF-8 the process code page (Windows 10 1903 or later), so arguments,
+  environment variables and file names with non-ASCII characters work as on
+  Linux; the `os` functions call the UTF-16 Windows APIs. A program that embeds
+  `protoPython.dll` should carry the same manifest (`src/windows/utf8.manifest`).
+- **Path lists use `;`** (`PROTO_PYTHONPATH`), as `PATH` does, since drive
+  letters contain `:`. HPy extension modules are `<name>.hpy.dll` (or `.dll`),
+  compiled modules `<name>.dll`.
+- **Stack.** The interpreter recurses on the native stack, and MSVC's frames are
+  larger than GCC's, so `protopy.exe` reserves 32 MiB of stack
+  (`PROTOPYTHON_WINDOWS_STACK_RESERVE`) instead of Windows' default 1 MiB, for
+  its main thread and for the threads it starts. Recursion past
+  `sys.getrecursionlimit()` raises `RecursionError` as on Linux. An embedding
+  program needs a similar reserve (`/STACK`).
+- **Regular expressions.** Strings are matched as UTF-32, so positions are code
+  points as on Linux, but MSVC's `std::regex` has no single-line mode: `^` and `$`
+  match at every line boundary, with or without `re.MULTILINE`.
+- **asyncio** runs on the selector event loop (there is no IOCP proactor:
+  `_overlapped` does not exist), and `select.select` waits on pipes as well as
+  sockets by polling them.
+
+Not available on Windows yet:
+
+- **Subprocesses.** `subprocess` imports, but `Popen` raises
+  `OSError(ENOTSUP)`: process creation (`_winapi.CreateProcess` and the pipe and
+  handle functions) is not implemented; `_winapi` has only what `shutil` and
+  `ntpath` import. Nor is there `winreg` or `msvcrt`.
+- **protopyc's module build.** `protopyc --emit-cpp` writes the C++ sources, but
+  `--emit-make` and `--build-so` drive a POSIX compiler and `make`; that pipeline
+  has not been ported to MSVC, and its tests (`test/compiler`) are not built on
+  Windows.
 
 ## Next steps
 

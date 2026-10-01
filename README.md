@@ -107,6 +107,24 @@ Use a Release build for any performance measurement.
 libraries from the build tree without `LD_LIBRARY_PATH`. See
 [Running from the build tree](docs/INSTALLATION.md#running-from-the-build-tree).
 
+#### Windows (MSVC)
+
+protoPython builds and runs natively on Windows with Visual Studio 2022, against
+an installed protoCore (2.7.0 or newer). From an "x64 Native Tools Command Prompt":
+
+```bat
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=<protocore-prefix>
+cmake --build build
+ctest --test-dir build -j8
+build\bin\protopy example.py
+```
+
+Executables and DLLs (including a copy of `protoCore.dll`) are in `build\bin`. The
+script tests need Git for Windows' `bash`. `os` is `nt` there, as in CPython;
+subprocesses and protopyc's module build are not available yet. See
+[Windows (MSVC)](docs/INSTALLATION.md#windows-msvc) for installing, the differences
+and what is not ported.
+
 ### Run a Python script
 
 ```python
