@@ -947,12 +947,12 @@ static const proto::ProtoObject* py_utime(
     const proto::ProtoObject* nsObj = nullptr;
     if (posArgs->getSize(ctx) >= 2) timesObj = posArgs->getAt(ctx, 1);
     if (kwargs) {
-        unsigned long timesH = PythonEnvironment::getInternedString(ctx, "times")->getHash(ctx);
+        proto::proto_ulong timesH = PythonEnvironment::getInternedString(ctx, "times")->getHash(ctx);
         if (kwargs->has(ctx, timesH)) {
             const proto::ProtoObject* v = kwargs->getAt(ctx, timesH);
             if (v && v != PROTO_NONE) timesObj = v;
         }
-        unsigned long nsH = PythonEnvironment::getInternedString(ctx, "ns")->getHash(ctx);
+        proto::proto_ulong nsH = PythonEnvironment::getInternedString(ctx, "ns")->getHash(ctx);
         if (kwargs->has(ctx, nsH)) {
             const proto::ProtoObject* v = kwargs->getAt(ctx, nsH);
             if (v && v != PROTO_NONE) nsObj = v;
@@ -1020,21 +1020,21 @@ static const proto::ProtoObject* py_utime(
         if (!extractPair(nsObj, &a, &b)) return PROTO_NONE;
         long long an = toLongLong(a), bn = toLongLong(b);
         ts[0].tv_sec  = static_cast<time_t>(an / 1000000000LL);
-        ts[0].tv_nsec = static_cast<long>(an % 1000000000LL);
-        if (ts[0].tv_nsec < 0) { ts[0].tv_nsec += 1000000000L; ts[0].tv_sec -= 1; }
+        ts[0].tv_nsec = static_cast<proto::proto_long>(an % 1000000000LL);
+        if (ts[0].tv_nsec < 0) { ts[0].tv_nsec += PROTO_L(1000000000); ts[0].tv_sec -= 1; }
         ts[1].tv_sec  = static_cast<time_t>(bn / 1000000000LL);
-        ts[1].tv_nsec = static_cast<long>(bn % 1000000000LL);
-        if (ts[1].tv_nsec < 0) { ts[1].tv_nsec += 1000000000L; ts[1].tv_sec -= 1; }
+        ts[1].tv_nsec = static_cast<proto::proto_long>(bn % 1000000000LL);
+        if (ts[1].tv_nsec < 0) { ts[1].tv_nsec += PROTO_L(1000000000); ts[1].tv_sec -= 1; }
     } else if (timesObj && timesObj != PROTO_NONE) {
         const proto::ProtoObject *a = nullptr, *b = nullptr;
         if (!extractPair(timesObj, &a, &b)) return PROTO_NONE;
         double as = toDouble(a), bs = toDouble(b);
         ts[0].tv_sec  = static_cast<time_t>(as);
-        ts[0].tv_nsec = static_cast<long>((as - static_cast<double>(ts[0].tv_sec)) * 1e9);
-        if (ts[0].tv_nsec < 0) { ts[0].tv_nsec += 1000000000L; ts[0].tv_sec -= 1; }
+        ts[0].tv_nsec = static_cast<proto::proto_long>((as - static_cast<double>(ts[0].tv_sec)) * 1e9);
+        if (ts[0].tv_nsec < 0) { ts[0].tv_nsec += PROTO_L(1000000000); ts[0].tv_sec -= 1; }
         ts[1].tv_sec  = static_cast<time_t>(bs);
-        ts[1].tv_nsec = static_cast<long>((bs - static_cast<double>(ts[1].tv_sec)) * 1e9);
-        if (ts[1].tv_nsec < 0) { ts[1].tv_nsec += 1000000000L; ts[1].tv_sec -= 1; }
+        ts[1].tv_nsec = static_cast<proto::proto_long>((bs - static_cast<double>(ts[1].tv_sec)) * 1e9);
+        if (ts[1].tv_nsec < 0) { ts[1].tv_nsec += PROTO_L(1000000000); ts[1].tv_sec -= 1; }
     } else {
         // Both members "now"
         ts[0].tv_sec = 0; ts[0].tv_nsec = UTIME_NOW;
@@ -1125,7 +1125,7 @@ static const proto::ProtoObject* py_urandom(
             PythonEnvironment::getInternedString(ctx, "__class__"), env->getBytesPrototype()));
     }
     const proto::ProtoByteBuffer* bb = ctx->newByteBuffer(
-        buf.data(), static_cast<unsigned long>(buf.size()));
+        buf.data(), static_cast<proto::proto_ulong>(buf.size()));
     b = const_cast<proto::ProtoObject*>(b->setAttribute(ctx,
         env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "__data__"),
         bb->asObject(ctx)));
@@ -1389,7 +1389,7 @@ static const proto::ProtoObject* makeBytesObject(
         b = const_cast<proto::ProtoObject*>(b->setAttribute(ctx,
             PythonEnvironment::getInternedString(ctx, "__class__"), env->getBytesPrototype()));
     }
-    const proto::ProtoByteBuffer* bb = ctx->newByteBuffer(data, static_cast<unsigned long>(n));
+    const proto::ProtoByteBuffer* bb = ctx->newByteBuffer(data, static_cast<proto::proto_ulong>(n));
     b = const_cast<proto::ProtoObject*>(b->setAttribute(ctx,
         env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "__data__"),
         bb->asObject(ctx)));
@@ -1550,7 +1550,7 @@ static const proto::ProtoObject* py_os_dup2(
         inheritable = (arg && env) ? env->isTrue(arg) : true;
     }
     if (kwargs) {
-        unsigned long inhH = PythonEnvironment::getInternedString(ctx, "inheritable")->getHash(ctx);
+        proto::proto_ulong inhH = PythonEnvironment::getInternedString(ctx, "inheritable")->getHash(ctx);
         if (kwargs->has(ctx, inhH)) {
             const proto::ProtoObject* v = kwargs->getAt(ctx, inhH);
             if (v && v != PROTO_NONE && env) inheritable = env->isTrue(v);
@@ -1665,17 +1665,17 @@ static char** buildArgv(proto::ProtoContext* ctx, const proto::ProtoObject* seq,
         lst = seq->asList(ctx);
     }
     if (!lst) return nullptr;
-    long n = static_cast<long>(lst->getSize(ctx));
+    proto::proto_long n = static_cast<proto::proto_long>(lst->getSize(ctx));
     char** argv = static_cast<char**>(std::calloc(static_cast<size_t>(n) + 1, sizeof(char*)));
     if (!argv) return nullptr;
-    for (long i = 0; i < n; ++i) {
+    for (proto::proto_long i = 0; i < n; ++i) {
         const proto::ProtoObject* item = lst->getAt(ctx, static_cast<int>(i));
         std::string s;
         if (item && item->isString(ctx)) {
             item->asString(ctx)->toUTF8String(ctx, s);
         } else if (!extractRawBytes(ctx, item, s)) {
             // unsupported element type — abort
-            for (long j = 0; j < i; ++j) std::free(argv[j]);
+            for (proto::proto_long j = 0; j < i; ++j) std::free(argv[j]);
             std::free(argv);
             return nullptr;
         }
@@ -2093,7 +2093,7 @@ static const proto::ProtoObject* py_os_sysconf(
     if (posArgs->getSize(ctx) < 1) return ctx->fromInteger(0);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     int name = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
-    long v = sysconf(name);
+    proto::proto_long v = sysconf(name);
     return ctx->fromInteger(v);
 #else
     return ctx->fromInteger(0);

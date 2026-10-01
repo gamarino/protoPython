@@ -185,7 +185,7 @@ static const proto::ProtoObject* ctx_run(proto::ProtoContext* ctx,
     const proto::ProtoObject* callable = pos->getAt(ctx, 0);
     std::vector<const proto::ProtoObject*> args;
     args.reserve(pos->getSize(ctx));
-    for (unsigned long i = 1; i < pos->getSize(ctx); ++i) {
+    for (proto::proto_ulong i = 1; i < pos->getSize(ctx); ++i) {
         args.push_back(pos->getAt(ctx, static_cast<int>(i)));
     }
     return env->callObject(callable, args);

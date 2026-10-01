@@ -92,7 +92,7 @@ static const proto::ProtoObject* py_filemode(
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(false);
 
-    auto setInt = [&](const char* name, long val) {
+    auto setInt = [&](const char* name, proto::proto_long val) {
         mod = mod->setAttribute(ctx,
             proto::ProtoString::createSymbol(ctx, name), ctx->fromInteger(val));
     };

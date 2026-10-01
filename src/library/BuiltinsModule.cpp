@@ -22,7 +22,7 @@ namespace protoPython {
 // BUILD_MAP.  STRUCT-305 reads the value of a non-string namespace
 // key from the namespace dict's __data__ SparseList; that data is
 // keyed by pyDictKeyHash, not by the bare pointer.
-unsigned long pyDictKeyHash(proto::ProtoContext* context, const proto::ProtoObject* key);
+proto::proto_ulong pyDictKeyHash(proto::ProtoContext* context, const proto::ProtoObject* key);
 
 namespace builtins {
 
@@ -200,8 +200,8 @@ static const proto::ProtoObject* py_import(
 
     if (fromListObj && fromListObj->asList(context) && leaf != PROTO_NONE) {
         const proto::ProtoList* fromList = fromListObj->asList(context);
-        unsigned long fromSize = fromList->getSize(context);
-        for (unsigned long i = 0; i < fromSize; ++i) {
+        proto::proto_ulong fromSize = fromList->getSize(context);
+        for (proto::proto_ulong i = 0; i < fromSize; ++i) {
             const proto::ProtoObject* itemObj = fromList->getAt(context, i);
             if (itemObj && itemObj->isString(context)) {
                 std::string itemName;
@@ -217,7 +217,7 @@ static const proto::ProtoObject* py_import(
                             fprintf(stderr, "DEBUG IMPORT: Module has %lu attributes:\n", attrs->getSize(context));
                             const proto::ProtoSparseListIterator* it = attrs->getIterator(context);
                             while (it && it->hasNext(context)) {
-                                unsigned long key = it->nextKey(context);
+                                proto::proto_ulong key = it->nextKey(context);
                                 const proto::ProtoObject* kObj = reinterpret_cast<const proto::ProtoObject*>(key);
                                 if (kObj && kObj->isString(context)) {
                                     std::string kn;
@@ -329,7 +329,7 @@ static const proto::ProtoObject* py_complete(
         if (attrs) {
             auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
             while (it && it->hasNext(context)) {
-                unsigned long key = it->nextKey(context);
+                proto::proto_ulong key = it->nextKey(context);
                 const proto::ProtoString* s = reinterpret_cast<const proto::ProtoObject*>(key)->asString(context);
                 std::string name;
                 if (s) s->toUTF8String(context, name);
@@ -506,9 +506,9 @@ static const proto::ProtoObject* py_print(
             const proto::ProtoString* sepKey = PythonEnvironment::getInternedString(context, "sep");
             const proto::ProtoString* endKey = PythonEnvironment::getInternedString(context, "end");
             const proto::ProtoString* fileKey = PythonEnvironment::getInternedString(context, "file");
-            unsigned long sh = sepKey->getHash(context);
-            unsigned long eh = endKey->getHash(context);
-            unsigned long fh = fileKey->getHash(context);
+            proto::proto_ulong sh = sepKey->getHash(context);
+            proto::proto_ulong eh = endKey->getHash(context);
+            proto::proto_ulong fh = fileKey->getHash(context);
             if (keywordParameters->has(context, sh)) {
                 const proto::ProtoObject* v = keywordParameters->getAt(context, sh);
                 if (v && v->isString(context)) {
@@ -552,8 +552,8 @@ static const proto::ProtoObject* py_print(
     // the print() kwargs.
     std::ostringstream buffered;
 
-    unsigned long size = positionalParameters->getSize(context);
-    for (unsigned long i = 0; i < size; ++i) {
+    proto::proto_ulong size = positionalParameters->getSize(context);
+    for (proto::proto_ulong i = 0; i < size; ++i) {
         const proto::ProtoObject* obj = positionalParameters->getAt(context, static_cast<int>(i));
         if (get_env_diag()) {
             fprintf(stderr, "DEBUG: py_print arg[%lu]=%p noneProto=%p\n", i, (void*)obj, (void*)(env ? env->getNonePrototype() : nullptr));
@@ -641,7 +641,7 @@ static const proto::ProtoObject* py_print(
                     const proto::ProtoObject* mroAttr = env->getAttribute(context, cls, env->getMroString(), false);
                     const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
                     if (mroT) {
-                        for (unsigned long mi = 0; mi < mroT->getSize(context); ++mi) {
+                        for (proto::proto_ulong mi = 0; mi < mroT->getSize(context); ++mi) {
                             const proto::ProtoObject* base = mroT->getAt(context, static_cast<int>(mi));
                             if (!base || base == PROTO_NONE) continue;
                             if (base == env->getObjectPrototype()) break;
@@ -973,7 +973,7 @@ static const proto::ProtoObject* py_contains(
 
     if (container->isString(context)) {
         const proto::ProtoString* str = container->asString(context);
-        unsigned long size = str->getSize(context);
+        proto::proto_ulong size = str->getSize(context);
         if (!item->isString(context)) return PROTO_FALSE;
         std::string sub;
         item->asString(context)->toUTF8String(context, sub);
@@ -1252,8 +1252,8 @@ const proto::ProtoObject* py_complex(
         // site received no kwargs).
         const proto::ProtoTuple* kwNames = env ? env->getCurrentKwNames() : nullptr;
         if (kwNames && env) {
-            unsigned long nk = kwNames->getSize(context);
-            for (unsigned long i = 0; i < nk; ++i) {
+            proto::proto_ulong nk = kwNames->getSize(context);
+            for (proto::proto_ulong i = 0; i < nk; ++i) {
                 const proto::ProtoObject* kn = kwNames->getAt(context, static_cast<int>(i));
                 if (!kn || !kn->isString(context)) continue;
                 if (kn == realS->asObject(context) || kn == imagS->asObject(context)) continue;
@@ -1809,7 +1809,7 @@ static const proto::ProtoObject* py_enumerate(
     // Also honor `start=` keyword (enumerate(iter, start=N) shape).
     if (keywordParameters) {
         const proto::ProtoString* startS = PythonEnvironment::getInternedString(context, "start");
-        unsigned long sh = startS->getHash(context);
+        proto::proto_ulong sh = startS->getHash(context);
         if (keywordParameters->has(context, sh)) {
             const proto::ProtoObject* sv = keywordParameters->getAt(context, sh);
             if (sv && sv->isInteger(context)) {
@@ -2378,7 +2378,7 @@ static const proto::ProtoObject* py_object_init(
                     const proto::ProtoObject* basesAttr = c->getAttribute(context, env->getBasesString());
                     const proto::ProtoTuple* basesT = basesAttr ? basesAttr->asTuple(context) : nullptr;
                     if (!basesT) return false;
-                    for (unsigned long bi = 0; bi < basesT->getSize(context); ++bi) {
+                    for (proto::proto_ulong bi = 0; bi < basesT->getSize(context); ++bi) {
                         const proto::ProtoObject* b = basesT->getAt(context, static_cast<int>(bi));
                         if (hasModuleAncestor(b, depth + 1)) return true;
                     }
@@ -2429,7 +2429,7 @@ static const proto::ProtoObject* py_object_init(
                         const proto::ProtoObject* basesAttr = c->getAttribute(context, env->getBasesString());
                         const proto::ProtoTuple* basesT = basesAttr ? basesAttr->asTuple(context) : nullptr;
                         if (!basesT) return false;
-                        for (unsigned long bi = 0; bi < basesT->getSize(context); ++bi) {
+                        for (proto::proto_ulong bi = 0; bi < basesT->getSize(context); ++bi) {
                             if (walk(basesT->getAt(context, static_cast<int>(bi)), depth + 1)) return true;
                         }
                         return false;
@@ -2596,7 +2596,7 @@ static const proto::ProtoObject* py_object_setattr(
                 env->getAttribute(context, metaCls, env->getMroString(), false);
             const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
             if (mroT) {
-                for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+                for (proto::proto_ulong i = 0; i < mroT->getSize(context); ++i) {
                     const proto::ProtoObject* base = mroT->getAt(context, i);
                     if (!base || base == PROTO_NONE) continue;
                     if (base == env->getObjectPrototype()
@@ -2880,9 +2880,9 @@ static const proto::ProtoObject* py_dir(
             if (vnT && ncAutomatic > 0) {
                 std::vector<std::string> names;
                 const proto::ProtoObject** locals = context->getAutomaticLocals();
-                unsigned long nVars = vnT->getSize(context);
-                unsigned long n = std::min<unsigned long>(nVars, (unsigned long)ncAutomatic);
-                for (unsigned long i = 0; i < n; ++i) {
+                proto::proto_ulong nVars = vnT->getSize(context);
+                proto::proto_ulong n = std::min<proto::proto_ulong>(nVars, (proto::proto_ulong)ncAutomatic);
+                for (proto::proto_ulong i = 0; i < n; ++i) {
                     const proto::ProtoObject* val = locals ? locals[i] : nullptr;
                     // protoCore initializes fast slots with PROTO_NONE to
                     // signal "unbound" (there is no separate sentinel as
@@ -2955,7 +2955,7 @@ static const proto::ProtoObject* py_dir(
                 std::vector<std::string> names;
                 auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
                 while (it && it->hasNext(context)) {
-                    unsigned long key = it->nextKey(context);
+                    proto::proto_ulong key = it->nextKey(context);
                     const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
                     const proto::ProtoObject* val = it->nextValue(context);
                     if (val == PROTO_NONE || !keyObj || !keyObj->isString(context)) {
@@ -3008,7 +3008,7 @@ static const proto::ProtoObject* py_dir(
             const proto::ProtoTuple* mroT_d = mroAttr_d ? mroAttr_d->asTuple(context) : nullptr;
             const proto::ProtoObject* dirM = nullptr;
             if (mroT_d) {
-                for (unsigned long i = 0; i < mroT_d->getSize(context); ++i) {
+                for (proto::proto_ulong i = 0; i < mroT_d->getSize(context); ++i) {
                     const proto::ProtoObject* b = mroT_d->getAt(context, i);
                     if (!b || b == PROTO_NONE) continue;
                     // Skip the default object.__dir__ — it's a no-op
@@ -3063,7 +3063,7 @@ static const proto::ProtoObject* py_dir(
         if (attrs) {
             auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
             while (it && it->hasNext(context)) {
-                unsigned long key = it->nextKey(context);
+                proto::proto_ulong key = it->nextKey(context);
                 const proto::ProtoString* s = reinterpret_cast<const proto::ProtoObject*>(key)->asString(context);
                 if (s) {
                     std::string name;
@@ -3110,7 +3110,7 @@ static const proto::ProtoObject* py_dir(
                 env_dir->getMroString(), false);
             const proto::ProtoTuple* mroT = mroA ? mroA->asTuple(context) : nullptr;
             if (mroT) {
-                for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+                for (proto::proto_ulong i = 0; i < mroT->getSize(context); ++i) {
                     if (mroT->getAt(context, static_cast<int>(i)) == env_dir->getModulePrototype()) {
                         isModuleInstance = true;
                         break;
@@ -3137,7 +3137,7 @@ static const proto::ProtoObject* py_dir(
         const proto::ProtoTuple* mroT = mroA ? mroA->asTuple(context) : nullptr;
         bool hasOverride = false;
         if (mroT && dictS) {
-            for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+            for (proto::proto_ulong i = 0; i < mroT->getSize(context); ++i) {
                 const proto::ProtoObject* base = mroT->getAt(context, i);
                 if (!base || base == PROTO_NONE) continue;
                 if (base == env_dir->getModulePrototype()
@@ -3193,7 +3193,7 @@ static const proto::ProtoObject* py_dir(
                     : clsForWalk->getAttribute(context, mroS_dir);
         const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
         if (mroT) {
-            for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+            for (proto::proto_ulong i = 0; i < mroT->getSize(context); ++i) {
                 const proto::ProtoObject* base = mroT->getAt(context, i);
                 if (base && base != clsForWalk && base != PROTO_NONE) collectOwn(base);
             }
@@ -3516,7 +3516,7 @@ static const proto::ProtoObject* compile_eval_source(
     const proto::ProtoTuple* cos = compiler.getConstants();
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG: py_eval compiling source='%s'\n", source.c_str());
-        for (unsigned long i = 0; i < cos->getSize(context); i++) {
+        for (proto::proto_ulong i = 0; i < cos->getSize(context); i++) {
              fprintf(stderr, "  Const[%lu]: %s\n", i, PythonEnvironment::reprObject(context, cos->getAt(context, i)).c_str());
         }
         fflush(stderr);
@@ -4009,7 +4009,7 @@ static const proto::ProtoObject* py_super_getattr(
         
         if (mro) {
             if (get_env_diag()) {
-                fprintf(stderr, "DEBUG_SUPER: MRO size=%lu\n", (unsigned long)mro->getSize(context));
+                fprintf(stderr, "DEBUG_SUPER: MRO size=%lu\n", (proto::proto_ulong)mro->getSize(context));
                 for (size_t i = 0; i < mro->getSize(context); ++i) {
                      std::string cname;
                      const proto::ProtoObject* c = mro->getAt(context, i);
@@ -4043,7 +4043,7 @@ static const proto::ProtoObject* py_super_getattr(
     }
 
     if (get_env_diag()) {
-        fprintf(stderr, "DEBUG_SUPER: targets size=%lu\n", (unsigned long)targets.size());
+        fprintf(stderr, "DEBUG_SUPER: targets size=%lu\n", (proto::proto_ulong)targets.size());
     }
     for (const proto::ProtoObject* target : targets) {
         if (!target || target == PROTO_NONE) continue;
@@ -4311,7 +4311,7 @@ static bool super_obj_is_valid(proto::ProtoContext* context,
         const proto::ProtoObject* mroA = mroS ? venv->getAttribute(context, cls, mroS, false) : nullptr;
         const proto::ProtoTuple* mroT = mroA ? mroA->asTuple(context) : nullptr;
         if (mroT) {
-            for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+            for (proto::proto_ulong i = 0; i < mroT->getSize(context); ++i) {
                 if (mroT->getAt(context, static_cast<int>(i)) == type) return true;
             }
         }
@@ -4327,7 +4327,7 @@ static bool super_obj_is_valid(proto::ProtoContext* context,
         const proto::ProtoObject* mroA = venv->getAttribute(context, objType, mroS, false);
         const proto::ProtoTuple* mroT = mroA ? mroA->asTuple(context) : nullptr;
         if (mroT) {
-            for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+            for (proto::proto_ulong i = 0; i < mroT->getSize(context); ++i) {
                 const proto::ProtoObject* base = mroT->getAt(context, static_cast<int>(i));
                 if (!base || base == PROTO_NONE) continue;
                 if (base == venv->getObjectPrototype()) break;
@@ -4496,7 +4496,7 @@ static const proto::ProtoObject* py_super_new(
                if (closure && closure != PROTO_NONE) {
                    if (closure->asList(context)) {
                        const proto::ProtoList* l = closure->asList(context);
-                       for (unsigned long i = 0; i < l->getSize(context); ++i) {
+                       for (proto::proto_ulong i = 0; i < l->getSize(context); ++i) {
                            const proto::ProtoObject* next = l->getAt(context, i);
                            if (visited.find(next) == visited.end()) {
                                visited.insert(next);
@@ -4505,7 +4505,7 @@ static const proto::ProtoObject* py_super_new(
                        }
                    } else if (closure->asTuple(context)) {
                        const proto::ProtoTuple* t = closure->asTuple(context);
-                       for (unsigned long i = 0; i < t->getSize(context); ++i) {
+                       for (proto::proto_ulong i = 0; i < t->getSize(context); ++i) {
                            const proto::ProtoObject* next = t->getAt(context, i);
                            if (visited.find(next) == visited.end()) {
                                visited.insert(next);
@@ -4794,12 +4794,12 @@ static const proto::ProtoObject* py_exec(
             }
             mirror = const_cast<proto::ProtoObject*>(mirror->setAttribute(context, env->getFGlobalsString(), globals));
             if (keys) {
-                unsigned long n = keys->getSize(context);
-                for (unsigned long i = 0; i < n; ++i) {
+                proto::proto_ulong n = keys->getSize(context);
+                for (proto::proto_ulong i = 0; i < n; ++i) {
                     const proto::ProtoObject* k = keys->getAt(context, static_cast<int>(i));
                     if (!k || !k->isString(context)) continue;
                     const proto::ProtoString* ks = k->asString(context);
-                    unsigned long h = ks->getHash(context);
+                    proto::proto_ulong h = ks->getHash(context);
                     if (!localsData->has(context, h)) continue;
                     const proto::ProtoObject* v = localsData->getAt(context, h);
                     if (v && v != PROTO_NONE) {
@@ -4835,15 +4835,15 @@ static const proto::ProtoObject* py_exec(
             const proto::ProtoObject* coNames = codeObj->getAttribute(context, PythonEnvironment::getInternedString(context, "co_names"));
             const proto::ProtoTuple* coNamesT = coNames ? coNames->asTuple(context) : nullptr;
             if (coNamesT) {
-                unsigned long sz = coNamesT->getSize(context);
-                for (unsigned long i = 0; i < sz; ++i) {
+                proto::proto_ulong sz = coNamesT->getSize(context);
+                for (proto::proto_ulong i = 0; i < sz; ++i) {
                     const proto::ProtoObject* nm = coNamesT->getAt(context, static_cast<int>(i));
                     if (!nm || !nm->isString(context)) continue;
                     const proto::ProtoString* nmS = nm->asString(context);
                     if (frame->hasOwnAttribute(context, nmS) != PROTO_TRUE) continue;
                     const proto::ProtoObject* v = frame->proto::ProtoObject::getOwnAttributeDirect(context, nmS);
                     if (!v) continue;
-                    unsigned long h = nmS->getHash(context);
+                    proto::proto_ulong h = nmS->getHash(context);
                     if (!localsData->has(context, h)) {
                         keysList = keysList->appendLast(context, nm);
                     }
@@ -4946,10 +4946,10 @@ static int sorted_compare(proto::ProtoContext* context, const proto::ProtoObject
     if (a->asTuple(context) && b->asTuple(context)) {
         const proto::ProtoTuple* ta = a->asTuple(context);
         const proto::ProtoTuple* tb = b->asTuple(context);
-        unsigned long sa = ta->getSize(context);
-        unsigned long sb = tb->getSize(context);
-        unsigned long minlen = sa < sb ? sa : sb;
-        for (unsigned long i = 0; i < minlen; ++i) {
+        proto::proto_ulong sa = ta->getSize(context);
+        proto::proto_ulong sb = tb->getSize(context);
+        proto::proto_ulong minlen = sa < sb ? sa : sb;
+        for (proto::proto_ulong i = 0; i < minlen; ++i) {
             int c = sorted_compare(context,
                                    ta->getAt(context, static_cast<int>(i)),
                                    tb->getAt(context, static_cast<int>(i)));
@@ -5008,8 +5008,8 @@ static int sorted_compare(proto::ProtoContext* context, const proto::ProtoObject
     }
     int cmp = a->compare(context, b);
     if (cmp != 0) return cmp;
-    unsigned long ha = a->getHash(context);
-    unsigned long hb = b->getHash(context);
+    proto::proto_ulong ha = a->getHash(context);
+    proto::proto_ulong hb = b->getHash(context);
     if (ha == hb) return 0;
     return ha < hb ? -1 : 1;
 }
@@ -5043,12 +5043,12 @@ static const proto::ProtoObject* py_sorted(
     const proto::ProtoObject* keyFn = nullptr;
     bool reverse = false;
     if (keywordParameters) {
-        unsigned long keyH = PythonEnvironment::getInternedString(context, "key")->getHash(context);
+        proto::proto_ulong keyH = PythonEnvironment::getInternedString(context, "key")->getHash(context);
         if (keywordParameters->has(context, keyH)) {
             const proto::ProtoObject* v = keywordParameters->getAt(context, keyH);
             if (v && v != PROTO_NONE) keyFn = v;
         }
-        unsigned long revH = PythonEnvironment::getInternedString(context, "reverse")->getHash(context);
+        proto::proto_ulong revH = PythonEnvironment::getInternedString(context, "reverse")->getHash(context);
         if (keywordParameters->has(context, revH)) {
             const proto::ProtoObject* v = keywordParameters->getAt(context, revH);
             if (v) {
@@ -5166,7 +5166,7 @@ const proto::ProtoObject* py_object_hash(
     }
     if (!obj) return PROTO_NONE;
     // Identity hash
-    unsigned long h = reinterpret_cast<unsigned long>(obj);
+    proto::proto_ulong h = reinterpret_cast<proto::proto_ulong>(obj);
     return context->fromInteger(static_cast<long long>(h));
 }
 
@@ -5325,7 +5325,7 @@ static const proto::ProtoObject* py_hasattr(
         const proto::ProtoObject* mroObj = (cls && mroS) ? env->getAttribute(context, cls, mroS, false) : nullptr;
         const proto::ProtoTuple* mroT = (mroObj && mroObj != PROTO_NONE) ? mroObj->asTuple(context) : nullptr;
         if (mroT) {
-            for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+            for (proto::proto_ulong i = 0; i < mroT->getSize(context); ++i) {
                 const proto::ProtoObject* base = mroT->getAt(context, i);
                 if (base && base != PROTO_NONE && base != obj) {
                     if (base->hasOwnAttribute(context, nameStr) == PROTO_TRUE) return PROTO_TRUE;
@@ -5643,7 +5643,7 @@ const proto::ProtoList* computeC3MRO(proto::ProtoContext* context, const proto::
         if (candidate) {
             // Deduplicate: only add if not already in result. Use pointer identity.
             bool alreadyIn = false;
-            for (unsigned long r = 0; r < result->getSize(context); ++r) {
+            for (proto::proto_ulong r = 0; r < result->getSize(context); ++r) {
                 if (areSameClasses(context, result->getAt(context, static_cast<int>(r)), candidate)) {
                     alreadyIn = true;
                     break;
@@ -5740,10 +5740,10 @@ static const proto::ProtoObject* py_genericalias_hash(
     const proto::ProtoString* argsS   = PythonEnvironment::getInternedString(context, "__args__");
     const proto::ProtoObject* origin = self->getAttribute(context, originS);
     const proto::ProtoObject* args   = self->getAttribute(context, argsS);
-    unsigned long h1 = origin ? origin->getHash(context) : 0;
-    unsigned long h2 = args ? args->getHash(context) : 0;
+    proto::proto_ulong h1 = origin ? origin->getHash(context) : 0;
+    proto::proto_ulong h2 = args ? args->getHash(context) : 0;
     // Mix two hashes — same combiner as Python's tuple hash.
-    unsigned long h = h1 ^ (h2 + 0x9e3779b9UL + (h1 << 6) + (h1 >> 2));
+    proto::proto_ulong h = h1 ^ (h2 + PROTO_UL(0x9e3779b9) + (h1 << 6) + (h1 >> 2));
     return context->fromInteger(static_cast<long long>(h));
 }
 
@@ -5804,7 +5804,7 @@ const proto::ProtoObject* py_genericalias_repr(
     if (args && args->isTuple(context)) {
         const proto::ProtoTuple* tup = args->asTuple(context);
         argsRepr = "[";
-        for (unsigned long i = 0; i < tup->getSize(context); ++i) {
+        for (proto::proto_ulong i = 0; i < tup->getSize(context); ++i) {
             if (i > 0) argsRepr += ", ";
             argsRepr += renderArg(tup->getAt(context, static_cast<int>(i)));
         }
@@ -5855,12 +5855,12 @@ static bool unionFlattenInto(proto::ProtoContext* ctx,
     if (!argsObj || argsObj == PROTO_NONE) return false;
     if (argsObj->isTuple(ctx)) {
         const proto::ProtoTuple* tup = argsObj->asTuple(ctx);
-        for (unsigned long i = 0; i < tup->getSize(ctx); ++i) out.push_back(tup->getAt(ctx, i));
+        for (proto::proto_ulong i = 0; i < tup->getSize(ctx); ++i) out.push_back(tup->getAt(ctx, i));
         return true;
     }
     if (argsObj->asList(ctx)) {
         const proto::ProtoList* lst = argsObj->asList(ctx);
-        for (unsigned long i = 0; i < lst->getSize(ctx); ++i) out.push_back(lst->getAt(ctx, i));
+        for (proto::proto_ulong i = 0; i < lst->getSize(ctx); ++i) out.push_back(lst->getAt(ctx, i));
         return true;
     }
     return false;
@@ -6041,10 +6041,10 @@ const proto::ProtoObject* py_uniontype_hash(
     const proto::ProtoSparseList*) {
     std::vector<const proto::ProtoObject*> args;
     if (!unionFlattenInto(context, self, args)) return context->fromLong(0);
-    long h = 0;
+    proto::proto_long h = 0;
     for (auto* a : args) {
         if (!a) continue;
-        h ^= static_cast<long>(a->getHash(context));
+        h ^= static_cast<proto::proto_long>(a->getHash(context));
     }
     return context->fromLong(h);
 }
@@ -6224,7 +6224,7 @@ const proto::ProtoObject* py_type_mro(
             // metaclass, metaclass_ancestors].  Stop after appending the
             // first `object` — everything beyond it is the metaclass
             // tail and not part of cls's own MRO.
-            for (unsigned long i = 0; i < parents->getSize(context); ++i) {
+            for (proto::proto_ulong i = 0; i < parents->getSize(context); ++i) {
                 const proto::ProtoObject* p = parents->getAt(context, static_cast<int>(i));
                 if (!p || p == PROTO_NONE) continue;
                 recomputed = recomputed->appendLast(context, p);
@@ -6365,7 +6365,7 @@ const proto::ProtoObject* py_type(
                 auto m = newMethod->asMethod(context);
                 if (m && m != py_type) {
                     const proto::ProtoList* newArgs = context->newList()->appendLast(context, self);
-                    for (unsigned long i = 0; i < argCount; ++i) newArgs = newArgs->appendLast(context, positionalParameters->getAt(context, i));
+                    for (proto::proto_ulong i = 0; i < argCount; ++i) newArgs = newArgs->appendLast(context, positionalParameters->getAt(context, i));
                     return newMethod->call(context, nullptr, py_new, self, newArgs, keywordParameters);
                 }
             }
@@ -6382,10 +6382,10 @@ const proto::ProtoObject* py_type(
         if (env && basesArg) {
             const proto::ProtoTuple* basesTuple = basesArg->asTuple(context);
             if (basesTuple) {
-                unsigned long bn = basesTuple->getSize(context);
-                for (unsigned long i = 0; i < bn; ++i) {
+                proto::proto_ulong bn = basesTuple->getSize(context);
+                for (proto::proto_ulong i = 0; i < bn; ++i) {
                     const proto::ProtoObject* bi = basesTuple->getAt(context, static_cast<int>(i));
-                    for (unsigned long j = i + 1; j < bn; ++j) {
+                    for (proto::proto_ulong j = i + 1; j < bn; ++j) {
                         const proto::ProtoObject* bj = basesTuple->getAt(context, static_cast<int>(j));
                         if (bi && bi == bj) {
                             std::string biName = "?";
@@ -6528,11 +6528,11 @@ const proto::ProtoObject* py_type(
                     std::string ss; slotsVal->asString(context)->toUTF8String(context, ss);
                     if (checkName(ss)) return nullptr;
                 } else if (slotsT) {
-                    for (unsigned long si = 0; si < slotsT->getSize(context); ++si) {
+                    for (proto::proto_ulong si = 0; si < slotsT->getSize(context); ++si) {
                         if (validateSlotItem(slotsT->getAt(context, si))) return nullptr;
                     }
                 } else if (slotsL) {
-                    for (unsigned long si = 0; si < slotsL->getSize(context); ++si) {
+                    for (proto::proto_ulong si = 0; si < slotsL->getSize(context); ++si) {
                         if (validateSlotItem(slotsL->getAt(context, si))) return nullptr;
                     }
                 } else if (slotsVal->isInteger(context) || slotsVal->isFloat(context)
@@ -6586,14 +6586,14 @@ const proto::ProtoObject* py_type(
         if (env && basesArg) {
             const proto::ProtoList* basesL = basesArg->asList(context);
             const proto::ProtoTuple* basesT = basesArg->asTuple(context);
-            unsigned long n = basesL ? basesL->getSize(context) : (basesT ? basesT->getSize(context) : 0UL);
+            proto::proto_ulong n = basesL ? basesL->getSize(context) : (basesT ? basesT->getSize(context) : PROTO_UL(0));
             // Reject obvious non-type bases (None, plain primitive
             // values).  A stricter "must have __mro__" check would
             // reject built-in opaque types like _io._IOBase that
             // don't expose __mro__ as an own attribute, so we limit
             // the rejection to the cases where the base is clearly
             // a value, not a class.
-            for (unsigned long i = 0; i < n; ++i) {
+            for (proto::proto_ulong i = 0; i < n; ++i) {
                 const proto::ProtoObject* base = basesL ? basesL->getAt(context, i)
                                                         : basesT->getAt(context, i);
                 bool isClearlyNotClass =
@@ -6612,7 +6612,7 @@ const proto::ProtoObject* py_type(
                     return nullptr;
                 }
             }
-            for (unsigned long i = 0; i < n; ++i) {
+            for (proto::proto_ulong i = 0; i < n; ++i) {
                 const proto::ProtoObject* base = basesL ? basesL->getAt(context, i)
                                                         : basesT->getAt(context, i);
                 bool isFinal = false;
@@ -6667,7 +6667,7 @@ const proto::ProtoObject* py_type(
                 env->getFrozensetPrototype(), env->getIntPrototype(),
                 env->getFloatPrototype(), env->getModulePrototype(),
             };
-            for (unsigned long i = 0; i < n; ++i) {
+            for (proto::proto_ulong i = 0; i < n; ++i) {
                 const proto::ProtoObject* base = basesL ? basesL->getAt(context, i)
                                                         : basesT->getAt(context, i);
                 for (auto* bp : layoutBuiltins) {
@@ -6678,7 +6678,7 @@ const proto::ProtoObject* py_type(
                         const proto::ProtoObject* bmro = base ? env->getAttribute(context, base, env->getMroString(), false) : nullptr;
                         const proto::ProtoTuple* bmroT = bmro ? bmro->asTuple(context) : nullptr;
                         if (bmroT) {
-                            for (unsigned long j = 0; j < bmroT->getSize(context); ++j) {
+                            for (proto::proto_ulong j = 0; j < bmroT->getSize(context); ++j) {
                                 if (bmroT->getAt(context, static_cast<int>(j)) == bp) { match = true; break; }
                             }
                         }
@@ -6849,7 +6849,7 @@ const proto::ProtoObject* py_type(
                             // The bare-pointer encoding used elsewhere in
                             // this function is for string keys where the
                             // pointer-identity hash happens to coincide.
-                            unsigned long h = ::protoPython::pyDictKeyHash(context, keyObj);
+                            proto::proto_ulong h = ::protoPython::pyDictKeyHash(context, keyObj);
                             if (dictOwn->has(context, h)) {
                                 val = dictOwn->getAt(context, h);
                             }
@@ -6938,7 +6938,7 @@ const proto::ProtoObject* py_type(
                                 const proto::ProtoObject* dataObj = dictOwn->getAt(context, reinterpret_cast<uintptr_t>(dataS));
                                 if (dataObj && dataObj != PROTO_NONE && dataObj->asSparseList(context)) {
                                     const proto::ProtoSparseList* dataSparse = dataObj->asSparseList(context);
-                                    unsigned long dataHash = k->getHash(context);
+                                    proto::proto_ulong dataHash = k->getHash(context);
                                     if (dataSparse->has(context, dataHash)) {
                                         val = dataSparse->getAt(context, dataHash);
                                         valFound = true;
@@ -7207,7 +7207,7 @@ const proto::ProtoObject* py_type(
             // that step contributes nothing new and the chain installs
             // verbatim in C3 order.
             const proto::ProtoList* chainList = context->newList();
-            for (unsigned long i = 1; i < mroList->getSize(context); ++i) {
+            for (proto::proto_ulong i = 1; i < mroList->getSize(context); ++i) {
                 const proto::ProtoObject* p = mroList->getAt(context, i);
                 if (p && p != targetClass && p != PROTO_NONE) {
                     chainList = chainList->appendLast(context, p);
@@ -7259,7 +7259,7 @@ const proto::ProtoObject* py_type(
                 } else if (result->isTuple(context)) {
                     const proto::ProtoTuple* t = result->asTuple(context);
                     const proto::ProtoList* lst = context->newList();
-                    for (unsigned long i = 0; i < t->getSize(context); ++i) {
+                    for (proto::proto_ulong i = 0; i < t->getSize(context); ++i) {
                         lst = lst->appendLast(context, t->getAt(context, static_cast<int>(i)));
                     }
                     customMroList = lst;
@@ -7270,7 +7270,7 @@ const proto::ProtoObject* py_type(
                 // Validate: must contain targetClass itself and `object`.
                 bool hasSelf = false, hasObject = false;
                 const proto::ProtoObject* objectProto = env->getObjectPrototype();
-                for (unsigned long i = 0; i < customMroList->getSize(context); ++i) {
+                for (proto::proto_ulong i = 0; i < customMroList->getSize(context); ++i) {
                     const proto::ProtoObject* e = customMroList->getAt(context, static_cast<int>(i));
                     if (e == targetClass) hasSelf = true;
                     if (e == objectProto) hasObject = true;
@@ -7296,7 +7296,7 @@ const proto::ProtoObject* py_type(
                 targetClass = const_cast<proto::ProtoObject*>(
                     targetClass->setAttribute(context, mroName3, customMroTuple));
                 const proto::ProtoList* customChain = context->newList();
-                for (unsigned long i = 0; i < customMroList->getSize(context); ++i) {
+                for (proto::proto_ulong i = 0; i < customMroList->getSize(context); ++i) {
                     const proto::ProtoObject* e = customMroList->getAt(context, static_cast<int>(i));
                     if (e && e != targetClass && e != PROTO_NONE) {
                         customChain = customChain->appendLast(context, e);
@@ -7317,8 +7317,8 @@ const proto::ProtoObject* py_type(
             const proto::ProtoObject* basesAttr = targetClass->getAttribute(context,
                 PythonEnvironment::getInternedString(context, "__bases__"));
             const proto::ProtoTuple* basesTup = basesAttr ? basesAttr->asTuple(context) : nullptr;
-            unsigned long basesN = basesTup ? basesTup->getSize(context) : 0UL;
-            for (unsigned long bi = 0; bi < basesN; ++bi) {
+            proto::proto_ulong basesN = basesTup ? basesTup->getSize(context) : PROTO_UL(0);
+            for (proto::proto_ulong bi = 0; bi < basesN; ++bi) {
                 const proto::ProtoObject* base = basesTup->getAt(context, static_cast<int>(bi));
                 if (!base || base == PROTO_NONE) continue;
                 const proto::ProtoObject* listObj = base->hasOwnAttribute(context, subListS) == PROTO_TRUE
@@ -7391,10 +7391,10 @@ const proto::ProtoObject* py_type(
                     auto allMagic = [&](const proto::ProtoObject* sv) -> bool {
                         const proto::ProtoTuple* svT2 = sv->asTuple(context);
                         const proto::ProtoList* svL2 = svT2 ? nullptr : sv->asList(context);
-                        unsigned long n = svT2 ? svT2->getSize(context)
+                        proto::proto_ulong n = svT2 ? svT2->getSize(context)
                             : (svL2 ? svL2->getSize(context) : 0);
                         if (n == 0) return true;
-                        for (unsigned long i = 0; i < n; ++i) {
+                        for (proto::proto_ulong i = 0; i < n; ++i) {
                             const proto::ProtoObject* item = svT2
                                 ? svT2->getAt(context, static_cast<int>(i))
                                 : svL2->getAt(context, static_cast<int>(i));
@@ -7417,7 +7417,7 @@ const proto::ProtoObject* py_type(
                             targetClass, env->getMroString(), false);
                         const proto::ProtoTuple* mroT2 = mroAttr2 ? mroAttr2->asTuple(context) : nullptr;
                         if (mroT2) {
-                            for (unsigned long mi = 0; mi < mroT2->getSize(context); ++mi) {
+                            for (proto::proto_ulong mi = 0; mi < mroT2->getSize(context); ++mi) {
                                 const proto::ProtoObject* b = mroT2->getAt(context, static_cast<int>(mi));
                                 if (!b || b == targetClass) continue;
                                 for (auto& vb : varLenBases) {
@@ -7498,9 +7498,9 @@ const proto::ProtoObject* py_type(
                 } else {
                     const proto::ProtoTuple* slotsT = slotsVal->asTuple(context);
                     const proto::ProtoList* slotsL = slotsT ? nullptr : slotsVal->asList(context);
-                    unsigned long sN = slotsT ? slotsT->getSize(context)
+                    proto::proto_ulong sN = slotsT ? slotsT->getSize(context)
                                       : (slotsL ? slotsL->getSize(context) : 0);
-                    for (unsigned long si = 0; si < sN; ++si) {
+                    for (proto::proto_ulong si = 0; si < sN; ++si) {
                         const proto::ProtoObject* item = slotsT
                             ? slotsT->getAt(context, static_cast<int>(si))
                             : slotsL->getAt(context, static_cast<int>(si));
@@ -7555,7 +7555,7 @@ const proto::ProtoObject* py_type(
             const proto::ProtoTuple* curNames = env->getCurrentKwNames();
             if (curNames && keywordParameters && keywordParameters->getSize(context) > 0) {
                 const proto::ProtoList* fk = context->newList();
-                for (unsigned long i = 0; i < curNames->getSize(context); ++i) {
+                for (proto::proto_ulong i = 0; i < curNames->getSize(context); ++i) {
                     const proto::ProtoObject* k = curNames->getAt(context, static_cast<int>(i));
                     if (k && k->isString(context)
                         && keywordParameters->has(context, k->getHash(context))) {
@@ -7771,9 +7771,9 @@ static const proto::ProtoObject* py_isinstance(
             // how the union was built.
             const proto::ProtoList* argsList = argsObj ? argsObj->asList(context) : nullptr;
             const proto::ProtoTuple* argsTuple = (!argsList && argsObj) ? argsObj->asTuple(context) : nullptr;
-            unsigned long n = argsList ? argsList->getSize(context)
+            proto::proto_ulong n = argsList ? argsList->getSize(context)
                               : (argsTuple ? argsTuple->getSize(context) : 0);
-            for (unsigned long i = 0; i < n; ++i) {
+            for (proto::proto_ulong i = 0; i < n; ++i) {
                 const proto::ProtoObject* member = argsList
                     ? argsList->getAt(context, static_cast<int>(i))
                     : argsTuple->getAt(context, static_cast<int>(i));
@@ -7798,7 +7798,7 @@ static const proto::ProtoObject* py_isinstance(
     // which made isinstance(C, (type, ...)) False for every class C.
     if (cls && cls->isTuple(context)) {
         const proto::ProtoTuple* tup = cls->asTuple(context);
-        for (unsigned long i = 0; i < tup->getSize(context); ++i) {
+        for (proto::proto_ulong i = 0; i < tup->getSize(context); ++i) {
             const proto::ProtoList* one = context->newList()
                 ->appendLast(context, obj)
                 ->appendLast(context, tup->getAt(context, i));
@@ -7922,7 +7922,7 @@ static const proto::ProtoObject* py_isinstance(
             const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
             const proto::ProtoObject* icheckM = nullptr;
             if (mroT) {
-                for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+                for (proto::proto_ulong i = 0; i < mroT->getSize(context); ++i) {
                     const proto::ProtoObject* b = mroT->getAt(context, i);
                     if (!b || b == PROTO_NONE) continue;
                     if (b == env->getTypePrototype() || b == env->getObjectPrototype()) break;
@@ -7992,7 +7992,7 @@ static const proto::ProtoObject* py_isinstance(
             const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
             const proto::ProtoObject* gaM = nullptr;
             if (mroT) {
-                for (unsigned long mi = 0; mi < mroT->getSize(context); ++mi) {
+                for (proto::proto_ulong mi = 0; mi < mroT->getSize(context); ++mi) {
                     const proto::ProtoObject* base = mroT->getAt(context, static_cast<int>(mi));
                     if (!base || base == PROTO_NONE) continue;
                     if (base == env->getObjectPrototype() || base == env->getTypePrototype()) break;
@@ -8056,10 +8056,10 @@ static bool py_issubclass_check_single(proto::ProtoContext* context, const proto
     if (mro && (mro->asList(context) || mro->asTuple(context))) {
         const proto::ProtoList* mroList = mro->asList(context);
         const proto::ProtoTuple* mroTuple = mro->asTuple(context);
-        unsigned long size = mroList ? mroList->getSize(context) : (mroTuple ? mroTuple->getSize(context) : 0);
+        proto::proto_ulong size = mroList ? mroList->getSize(context) : (mroTuple ? mroTuple->getSize(context) : 0);
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         const proto::ProtoObject* builtins = env ? env->getBuiltins() : nullptr;
-        for (unsigned long i = 0; i < size; ++i) {
+        for (proto::proto_ulong i = 0; i < size; ++i) {
             const proto::ProtoObject* item = mroList ? mroList->getAt(context, i) : mroTuple->getAt(context, i);
             if (item == base) return true;
             if (env && builtins) {
@@ -8075,8 +8075,8 @@ static bool py_issubclass_check_single(proto::ProtoContext* context, const proto
         if (bases) {
             const proto::ProtoList* basesList = bases->asList(context);
             const proto::ProtoTuple* basesTuple = bases->asTuple(context);
-            unsigned long size = basesList ? basesList->getSize(context) : (basesTuple ? basesTuple->getSize(context) : 0);
-            for (unsigned long i = 0; i < size; ++i) {
+            proto::proto_ulong size = basesList ? basesList->getSize(context) : (basesTuple ? basesTuple->getSize(context) : 0);
+            for (proto::proto_ulong i = 0; i < size; ++i) {
                 const proto::ProtoObject* item = basesList ? basesList->getAt(context, i) : basesTuple->getAt(context, i);
                 if (py_issubclass_check_single(context, item, base, depth + 1)) return true;
             }
@@ -8203,7 +8203,7 @@ static const proto::ProtoObject* py_issubclass(
          const proto::ProtoList* baseList = base->asList(context);
          if (!baseList && base->asTuple(context)) baseList = base->asTuple(context)->asList(context);
          if (baseList) {
-             for (unsigned long i = 0; i < baseList->getSize(context); ++i) {
+             for (proto::proto_ulong i = 0; i < baseList->getSize(context); ++i) {
                   if (py_issubclass_check_single(context, cls, baseList->getAt(context, i))) {
                        return PROTO_TRUE;
                   }
@@ -8456,7 +8456,7 @@ static const proto::ProtoObject* py_pow(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    unsigned long n = positionalParameters->getSize(context);
+    proto::proto_ulong n = positionalParameters->getSize(context);
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     // CPython: pow() requires at least 2 positional args.  Previously
     // pow() and pow(x) silently returned PROTO_NONE; the misuse then
@@ -8492,7 +8492,7 @@ static const proto::ProtoObject* py_pow(
             const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
             bool expIsSubclass = false;
             if (mroT) {
-                for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+                for (proto::proto_ulong i = 0; i < mroT->getSize(context); ++i) {
                     if (mroT->getAt(context, static_cast<int>(i)) == baseCls) {
                         expIsSubclass = true;
                         break;
@@ -8552,7 +8552,7 @@ static const proto::ProtoObject* py_pow(
             const proto::ProtoObject* mroAttr = env->getAttribute(context, baseCls, env->getMroString(), false);
             const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
             if (mroT) {
-                for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+                for (proto::proto_ulong i = 0; i < mroT->getSize(context); ++i) {
                     const proto::ProtoObject* m = mroT->getAt(context, static_cast<int>(i));
                     if (!m || m == PROTO_NONE) continue;
                     if (m == env->getIntPrototype()
@@ -9200,7 +9200,7 @@ static const proto::ProtoObject* py_classmethod_get(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    unsigned long n = positionalParameters->getSize(context);
+    proto::proto_ulong n = positionalParameters->getSize(context);
     if (n < 1) return PROTO_NONE;
     PythonEnvironment* envEarly = PythonEnvironment::fromContext(context);
     // CPython convention: classmethod.__get__(instance, owner=None) infers
@@ -9308,7 +9308,7 @@ static const proto::ProtoObject* py_classmethod(
                 const proto::ProtoObject* keysO = d->getAttribute(context, env->getKeysString());
                 const proto::ProtoList* kl = keysO ? keysO->asList(context) : nullptr;
                 if (!kl) return false;
-                unsigned long n = kl->getSize(context);
+                proto::proto_ulong n = kl->getSize(context);
                 if (n == 0) return true;
                 // protoPython's broken default for function.__annotations__
                 // points at dict-prototype's __dict__ (30+ entries with
@@ -9318,7 +9318,7 @@ static const proto::ProtoObject* py_classmethod(
                 // for dict-shape can sit beyond position 8) and reject the
                 // dict shape on any sign of class-shape / dict-method
                 // contamination.
-                for (unsigned long i = 0; i < n; ++i) {
+                for (proto::proto_ulong i = 0; i < n; ++i) {
                     const proto::ProtoObject* k = kl->getAt(context, static_cast<int>(i));
                     if (!k || !k->isString(context)) continue;
                     std::string s; k->asString(context)->toUTF8String(context, s);
@@ -9470,14 +9470,14 @@ static const proto::ProtoObject* py_staticmethod(
                 const proto::ProtoObject* keysO = d->getAttribute(context, env->getKeysString());
                 const proto::ProtoList* kl = keysO ? keysO->asList(context) : nullptr;
                 if (!kl) return false;
-                unsigned long n = kl->getSize(context);
+                proto::proto_ulong n = kl->getSize(context);
                 if (n == 0) return true;  // legitimately empty user dict
                 // Same widened detector as py_classmethod (see comment
                 // above): the broken default points at dict prototype's
                 // __dict__ with dict-method names — scan all keys and
                 // reject on either class-shape markers or dict-method
                 // contamination, then cap on size.
-                for (unsigned long i = 0; i < n; ++i) {
+                for (proto::proto_ulong i = 0; i < n; ++i) {
                     const proto::ProtoObject* k = kl->getAt(context, static_cast<int>(i));
                     if (!k || !k->isString(context)) continue;
                     std::string s; k->asString(context)->toUTF8String(context, s);
@@ -10209,7 +10209,7 @@ static const proto::ProtoObject* py_range(
         return 0;
     };
 
-    unsigned long argsSize = positionalParameters->getSize(context);
+    proto::proto_ulong argsSize = positionalParameters->getSize(context);
     if (argsSize == 1) {
         bool ok;
         stop = toLong(positionalParameters->getAt(context, 0), ok);
@@ -10283,7 +10283,7 @@ static const proto::ProtoObject* py_zip(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    unsigned long n = positionalParameters->getSize(context);
+    proto::proto_ulong n = positionalParameters->getSize(context);
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoString* iterS = env ? env->getIterString() : PythonEnvironment::getInternedString(context, "__iter__");
     const proto::ProtoString* zipProtoS = env ? env->getZipProtoString() : PythonEnvironment::getInternedString(context, "__zip_proto__");
@@ -10293,7 +10293,7 @@ static const proto::ProtoObject* py_zip(
 
     if (n < 2) return PROTO_NONE; // map __new__ is called with at least map, iterable
     const proto::ProtoList* itersList = context->newList();
-    for (unsigned long i = 1; i < n; ++i) {
+    for (proto::proto_ulong i = 1; i < n; ++i) {
         const proto::ProtoObject* iterable = positionalParameters->getAt(context, static_cast<int>(i));
         const proto::ProtoObject* it = py_iter(context, nullptr, nullptr, context->newList()->appendLast(context, iterable), nullptr);
         if (!it || it == noneObj) return PROTO_NONE;
@@ -10305,7 +10305,7 @@ static const proto::ProtoObject* py_zip(
     bool strict = false;
     if (keywordParameters && env) {
         const proto::ProtoString* strictS = PythonEnvironment::getInternedString(context, "strict");
-        unsigned long sh = strictS->getHash(context);
+        proto::proto_ulong sh = strictS->getHash(context);
         if (keywordParameters->has(context, sh)) {
             const proto::ProtoObject* v = keywordParameters->getAt(context, sh);
             if (v == PROTO_TRUE) strict = true;
@@ -10333,7 +10333,7 @@ static const proto::ProtoObject* py_zip_next(
     const proto::ProtoObject* itersObj = self->getAttribute(context, itersS);
     if (!itersObj || !itersObj->asList(context)) return nullptr;
     const proto::ProtoList* iters = itersObj->asList(context);
-    unsigned long n = iters->getSize(context);
+    proto::proto_ulong n = iters->getSize(context);
     if (n == 0) return nullptr;
 
     const proto::ProtoList* resList = context->newList();
@@ -10345,7 +10345,7 @@ static const proto::ProtoObject* py_zip_next(
     bool strict = self->getAttribute(context, strictMarkS) == PROTO_TRUE;
     long long firstExhaustedAt = -1;
 
-    for (unsigned long i = 0; i < n; ++i) {
+    for (proto::proto_ulong i = 0; i < n; ++i) {
         const proto::ProtoObject* it = iters->getAt(context, static_cast<int>(i));
         const proto::ProtoObject* nextM = it ? it->getAttribute(context, nextS) : nullptr;
         if (!nextM || !nextM->asMethod(context)) return nullptr;
@@ -10371,7 +10371,7 @@ static const proto::ProtoObject* py_zip_next(
                      + " is shorter than argument 1").c_str())->asObject(context));
             return nullptr;
         }
-        for (unsigned long j = firstExhaustedAt + 1; j < n; ++j) {
+        for (proto::proto_ulong j = firstExhaustedAt + 1; j < n; ++j) {
             const proto::ProtoObject* it = iters->getAt(context, static_cast<int>(j));
             const proto::ProtoObject* nextM = it ? it->getAttribute(context, nextS) : nullptr;
             if (!nextM || !nextM->asMethod(context)) continue;
@@ -10547,7 +10547,7 @@ static const proto::ProtoObject* py_map(
     bool strict = false;
     if (keywordParameters && keywordParameters->getSize(context) > 0) {
         const proto::ProtoString* strictS = PythonEnvironment::getInternedString(context, "strict");
-        const unsigned long sh = strictS->getHash(context);
+        const proto::proto_ulong sh = strictS->getHash(context);
         if (keywordParameters->has(context, sh)) {
             const proto::ProtoObject* v = keywordParameters->getAt(context, sh);
             strict = env ? env->isTrue(v) : (v == PROTO_TRUE);
@@ -10561,7 +10561,7 @@ static const proto::ProtoObject* py_map(
     // an iterator from each and stash them as a list on __map_iter__
     // (single-iterable case keeps storing the iterator directly so
     // the existing fast path in py_map_next is unaffected).
-    unsigned long nIter = positionalParameters->getSize(context) - 2;
+    proto::proto_ulong nIter = positionalParameters->getSize(context) - 2;
     const proto::ProtoObject* iterStorage = nullptr;
     if (nIter == 1) {
         const proto::ProtoObject* iterable = positionalParameters->getAt(context, 2);
@@ -10573,7 +10573,7 @@ static const proto::ProtoObject* py_map(
         iterStorage = it;
     } else {
         const proto::ProtoList* iters = context->newList();
-        for (unsigned long i = 0; i < nIter; ++i) {
+        for (proto::proto_ulong i = 0; i < nIter; ++i) {
             const proto::ProtoObject* iterable = positionalParameters->getAt(context, 2 + i);
             const proto::ProtoObject* it = py_iter(context, nullptr, nullptr, context->newList()->appendLast(context, iterable), nullptr);
             if (!it || it == noneObj) return PROTO_NONE;
@@ -10623,7 +10623,7 @@ static const proto::ProtoObject* py_map_next(
     const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
     std::vector<const proto::ProtoObject*> vals;
     if (itersList) {
-        unsigned long n = itersList->getSize(context);
+        proto::proto_ulong n = itersList->getSize(context);
         vals.reserve(n);
         const bool strict = self->getAttribute(context,
             PythonEnvironment::getInternedString(context, "__map_strict__")) == PROTO_TRUE;
@@ -10637,13 +10637,13 @@ static const proto::ProtoObject* py_map_next(
         };
         // CPython's wording: "map() argument 2 is shorter than argument 1",
         // "map() argument 3 is longer than arguments 1-2".
-        auto lengthMismatch = [&](unsigned long idx, const char* how) {
+        auto lengthMismatch = [&](proto::proto_ulong idx, const char* how) {
             std::string msg = "map() argument " + std::to_string(idx + 1) + " is " + how
                 + " than argument" + (idx == 1 ? " " : "s 1-") + std::to_string(idx);
             if (env) env->raiseValueError(context,
                 PythonEnvironment::getInternedString(context, msg.c_str())->asObject(context));
         };
-        for (unsigned long i = 0; i < n; ++i) {
+        for (proto::proto_ulong i = 0; i < n; ++i) {
             const proto::ProtoObject* it = itersList->getAt(context, static_cast<int>(i));
             const proto::ProtoObject* nextM = it->getAttribute(context, nextS);
             if (!nextM || !nextM->asMethod(context)) return nullptr;
@@ -10656,7 +10656,7 @@ static const proto::ProtoObject* py_map_next(
                     lengthMismatch(i, "shorter");
                     return nullptr;
                 }
-                for (unsigned long j = 1; j < n; ++j) {
+                for (proto::proto_ulong j = 1; j < n; ++j) {
                     const proto::ProtoObject* itj = itersList->getAt(context, static_cast<int>(j));
                     const proto::ProtoObject* nextJ = itj->getAttribute(context, nextS);
                     if (!nextJ || !nextJ->asMethod(context)) return nullptr;
@@ -10799,7 +10799,7 @@ const proto::ProtoObject* py_object_new(
     // method not surfaced as an own attr on the prototype) keep
     // working.
     if (env && cls) {
-        unsigned long extraCount = positionalParameters->getSize(context) - 1;
+        proto::proto_ulong extraCount = positionalParameters->getSize(context) - 1;
         bool hasKwargs = keywordParameters && keywordParameters->getSize(context) > 0;
         const proto::ProtoString* isPyS = PythonEnvironment::getInternedString(context, "__is_python_class__");
         bool clsIsPython = cls->hasOwnAttribute(context, isPyS) == PROTO_TRUE;
@@ -10844,7 +10844,7 @@ const proto::ProtoObject* py_object_new(
                 // constructors take canonical positional args).
                 bool newFound = false;
                 bool initFound = false;
-                for (unsigned long mi = 0; mi < mroT->getSize(context); ++mi) {
+                for (proto::proto_ulong mi = 0; mi < mroT->getSize(context); ++mi) {
                     const proto::ProtoObject* base = mroT->getAt(context, static_cast<int>(mi));
                     if (!base || base == PROTO_NONE) continue;
                     if (base == env->getObjectPrototype()) continue;
@@ -10887,7 +10887,7 @@ const proto::ProtoObject* py_object_new(
             // legitimately threads extras through here.
             bool typeOrModuleInMro = false;
             if (mroT) {
-                for (unsigned long mi = 0; mi < mroT->getSize(context); ++mi) {
+                for (proto::proto_ulong mi = 0; mi < mroT->getSize(context); ++mi) {
                     const proto::ProtoObject* base = mroT->getAt(context, static_cast<int>(mi));
                     if (base == env->getTypePrototype() || base == env->getModulePrototype()) {
                         typeOrModuleInMro = true;
@@ -10931,7 +10931,7 @@ const proto::ProtoObject* py_object_new(
             const proto::ProtoObject* mroAttr = env->getAttribute(context, cls, env->getMroString(), false);
             const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
             if (mroT) {
-                for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+                for (proto::proto_ulong i = 0; i < mroT->getSize(context); ++i) {
                     const proto::ProtoObject* m = mroT->getAt(context, static_cast<int>(i));
                     for (const proto::ProtoObject* bp : badProtos) {
                         if (bp && m == bp) return bp;
@@ -11068,7 +11068,7 @@ const proto::ProtoObject* py_bytearray_fallback(proto::ProtoContext* ctx, const 
                 }
             } else if (initArg->isByteBuffer(ctx)) {
                 const proto::ProtoByteBuffer* bb = initArg->asByteBuffer(ctx);
-                unsigned long n = bb->getSize(ctx);
+                proto::proto_ulong n = bb->getSize(ctx);
                 initial.assign(bb->getBuffer(ctx), n);
                 gotBytes = true;
             } else {
@@ -11078,7 +11078,7 @@ const proto::ProtoObject* py_bytearray_fallback(proto::ProtoContext* ctx, const 
                     gotBytes = true;
                 } else if (d && d->isByteBuffer(ctx)) {
                     const proto::ProtoByteBuffer* bb = d->asByteBuffer(ctx);
-                    unsigned long n = bb->getSize(ctx);
+                    proto::proto_ulong n = bb->getSize(ctx);
                     initial.assign(bb->getBuffer(ctx), n);
                     gotBytes = true;
                 }
@@ -11101,7 +11101,7 @@ const proto::ProtoObject* py_bytearray_fallback(proto::ProtoContext* ctx, const 
     // mangle non-ASCII bytes).
     if (env && env->getBytesPrototype()) {
         proto::ProtoObject* b = const_cast<proto::ProtoObject*>(env->getBytesPrototype()->newChild(ctx, true));
-        const proto::ProtoByteBuffer* bb = ctx->newByteBuffer(initial.data(), static_cast<unsigned long>(initial.size()));
+        const proto::ProtoByteBuffer* bb = ctx->newByteBuffer(initial.data(), static_cast<proto::proto_ulong>(initial.size()));
         b->setAttribute(ctx, dataS, bb->asObject(ctx));
         b->setAttribute(ctx, tagS, PROTO_TRUE);
         // Per-instance __setitem__ wins over the immutable bytes
@@ -11210,7 +11210,7 @@ static const proto::ProtoObject* py_bytearray_iadd(
     }
     buf.append(add);
     self->setAttribute(ctx, dataS,
-        ctx->newByteBuffer(buf.data(), static_cast<unsigned long>(buf.size()))->asObject(ctx));
+        ctx->newByteBuffer(buf.data(), static_cast<proto::proto_ulong>(buf.size()))->asObject(ctx));
     return const_cast<proto::ProtoObject*>(self);
 }
 
@@ -11252,7 +11252,7 @@ static const proto::ProtoObject* py_bytearray_setitem(
     std::string buf;
     if (dataObj->isByteBuffer(ctx)) {
         const proto::ProtoByteBuffer* bb = dataObj->asByteBuffer(ctx);
-        unsigned long n = bb->getSize(ctx);
+        proto::proto_ulong n = bb->getSize(ctx);
         buf.assign(bb->getBuffer(ctx), n);
     } else if (dataObj->isString(ctx)) {
         dataObj->asString(ctx)->toUTF8String(ctx, buf);
@@ -11297,7 +11297,7 @@ static const proto::ProtoObject* py_bytearray_setitem(
         }
         buf[static_cast<size_t>(idx)] = static_cast<char>(b);
         self->setAttribute(ctx, dataS,
-            ctx->newByteBuffer(buf.data(), static_cast<unsigned long>(buf.size()))->asObject(ctx));
+            ctx->newByteBuffer(buf.data(), static_cast<proto::proto_ulong>(buf.size()))->asObject(ctx));
         return env ? env->getNonePrototype() : PROTO_NONE;
     }
 
@@ -11345,7 +11345,7 @@ static const proto::ProtoObject* py_bytearray_setitem(
             gotRepl = true;
         } else if (value->isByteBuffer(ctx)) {
             const proto::ProtoByteBuffer* bb = value->asByteBuffer(ctx);
-            unsigned long m = bb->getSize(ctx);
+            proto::proto_ulong m = bb->getSize(ctx);
             repl.assign(bb->getBuffer(ctx), m);
             gotRepl = true;
         } else {
@@ -11355,7 +11355,7 @@ static const proto::ProtoObject* py_bytearray_setitem(
                 gotRepl = true;
             } else if (d && d->isByteBuffer(ctx)) {
                 const proto::ProtoByteBuffer* bb = d->asByteBuffer(ctx);
-                unsigned long m = bb->getSize(ctx);
+                proto::proto_ulong m = bb->getSize(ctx);
                 repl.assign(bb->getBuffer(ctx), m);
                 gotRepl = true;
             }
@@ -11376,7 +11376,7 @@ static const proto::ProtoObject* py_bytearray_setitem(
         newBuf.append(repl);
         newBuf.append(buf, static_cast<size_t>(stop), buf.size() - static_cast<size_t>(stop));
         self->setAttribute(ctx, dataS,
-            ctx->newByteBuffer(newBuf.data(), static_cast<unsigned long>(newBuf.size()))->asObject(ctx));
+            ctx->newByteBuffer(newBuf.data(), static_cast<proto::proto_ulong>(newBuf.size()))->asObject(ctx));
         return env ? env->getNonePrototype() : PROTO_NONE;
     }
 
@@ -11394,7 +11394,7 @@ static const proto::ProtoObject* py_bytearray_setitem(
         newBuf[static_cast<size_t>(i)] = repl[static_cast<size_t>(ri++)];
     }
     self->setAttribute(ctx, dataS,
-        ctx->newByteBuffer(newBuf.data(), static_cast<unsigned long>(newBuf.size()))->asObject(ctx));
+        ctx->newByteBuffer(newBuf.data(), static_cast<proto::proto_ulong>(newBuf.size()))->asObject(ctx));
     return env ? env->getNonePrototype() : PROTO_NONE;
 }
 
@@ -11647,7 +11647,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                 }
             }
         }
-        const proto::ProtoByteBuffer* bb = context->newByteBuffer(initial.data(), static_cast<unsigned long>(initial.size()));
+        const proto::ProtoByteBuffer* bb = context->newByteBuffer(initial.data(), static_cast<proto::proto_ulong>(initial.size()));
         const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataS, bb->asObject(context));
         return PROTO_NONE;
     };
@@ -12063,7 +12063,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
             const proto::ProtoObject* target = self;
             const proto::ProtoObject* nameObj = nullptr;
             const proto::ProtoObject* val = nullptr;
-            unsigned long n = args ? args->getSize(context) : 0UL;
+            proto::proto_ulong n = args ? args->getSize(context) : PROTO_UL(0);
             if (n >= 3) {
                 target = args->getAt(context, 0);
                 nameObj = args->getAt(context, 1);
@@ -12183,8 +12183,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                         ? keysObj->asList(c) : nullptr;
                     if (keysList) {
                         bool present = false;
-                        unsigned long h = annS->getHash(c);
-                        for (unsigned long i = 0; i < keysList->getSize(c); ++i) {
+                        proto::proto_ulong h = annS->getHash(c);
+                        for (proto::proto_ulong i = 0; i < keysList->getSize(c); ++i) {
                             const proto::ProtoObject* k = keysList->getAt(c, static_cast<int>(i));
                             if (k && k->isString(c) && k->getHash(c) == h) { present = true; break; }
                         }
@@ -12221,8 +12221,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                     ? keysObj->asList(c) : nullptr;
                 if (keysList) {
                     bool present = false;
-                    unsigned long h = annS->getHash(c);
-                    for (unsigned long i = 0; i < keysList->getSize(c); ++i) {
+                    proto::proto_ulong h = annS->getHash(c);
+                    for (proto::proto_ulong i = 0; i < keysList->getSize(c); ++i) {
                         const proto::ProtoObject* k = keysList->getAt(c, static_cast<int>(i));
                         if (k && k->isString(c) && k->getHash(c) == h) { present = true; break; }
                     }
@@ -12317,8 +12317,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                         ? keysObj->asList(c) : nullptr;
                     if (keysList) {
                         bool present = false;
-                        unsigned long h = anS->getHash(c);
-                        for (unsigned long i = 0; i < keysList->getSize(c); ++i) {
+                        proto::proto_ulong h = anS->getHash(c);
+                        for (proto::proto_ulong i = 0; i < keysList->getSize(c); ++i) {
                             const proto::ProtoObject* k = keysList->getAt(c, static_cast<int>(i));
                             if (k && k->isString(c) && k->getHash(c) == h) { present = true; break; }
                         }
@@ -12349,8 +12349,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                     ? keysObj->asList(c) : nullptr;
                 if (keysList) {
                     bool present = false;
-                    unsigned long h = anS->getHash(c);
-                    for (unsigned long i = 0; i < keysList->getSize(c); ++i) {
+                    proto::proto_ulong h = anS->getHash(c);
+                    for (proto::proto_ulong i = 0; i < keysList->getSize(c); ++i) {
                         const proto::ProtoObject* k = keysList->getAt(c, static_cast<int>(i));
                         if (k && k->isString(c) && k->getHash(c) == h) { present = true; break; }
                     }
@@ -12385,8 +12385,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                     ? keysObj->asList(c) : nullptr;
                 if (keysList) {
                     const proto::ProtoList* fresh = c->newList();
-                    unsigned long h = anS->getHash(c);
-                    for (unsigned long i = 0; i < keysList->getSize(c); ++i) {
+                    proto::proto_ulong h = anS->getHash(c);
+                    for (proto::proto_ulong i = 0; i < keysList->getSize(c); ++i) {
                         const proto::ProtoObject* k = keysList->getAt(c, static_cast<int>(i));
                         if (k && k->isString(c) && k->getHash(c) == h) continue;
                         fresh = fresh->appendLast(c, k);
@@ -12418,7 +12418,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         if (attrs) {
             const proto::ProtoSparseListIterator* it = attrs->getIterator(ctx);
             while (it && it->hasNext(ctx)) {
-                unsigned long keyHash = it->nextKey(ctx);
+                proto::proto_ulong keyHash = it->nextKey(ctx);
                 const proto::ProtoObject* val = it->nextValue(ctx);
                 const proto::ProtoString* keyS = reinterpret_cast<const proto::ProtoString*>(keyHash);
                 if (keyS) {

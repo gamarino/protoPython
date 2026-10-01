@@ -666,7 +666,7 @@ static const proto::ProtoObject* bio_make_bytes(proto::ProtoContext* ctx,
             env->getBytesPrototype()));
     }
     const proto::ProtoByteBuffer* bb = ctx->newByteBuffer(
-        data.data(), static_cast<unsigned long>(data.size()));
+        data.data(), static_cast<proto::proto_ulong>(data.size()));
     obj = const_cast<proto::ProtoObject*>(obj->setAttribute(ctx,
         env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "__data__"),
         bb->asObject(ctx)));
@@ -684,9 +684,9 @@ static std::string bio_obj_to_bytes(proto::ProtoContext* ctx, const proto::Proto
         return s;
     }
     if (const proto::ProtoByteBuffer* bb = obj->asByteBuffer(ctx)) {
-        unsigned long n = bb->getSize(ctx);
+        proto::proto_ulong n = bb->getSize(ctx);
         std::string out(n, '\0');
-        for (unsigned long i = 0; i < n; ++i) {
+        for (proto::proto_ulong i = 0; i < n; ++i) {
             out[i] = static_cast<char>(static_cast<unsigned char>(bb->getAt(ctx, i)));
         }
         return out;
@@ -701,9 +701,9 @@ static std::string bio_obj_to_bytes(proto::ProtoContext* ctx, const proto::Proto
         const proto::ProtoObject* data = obj->getAttribute(ctx, env->getDataString());
         if (data && data != PROTO_NONE && data != obj) {
             if (const proto::ProtoByteBuffer* bb = data->asByteBuffer(ctx)) {
-                unsigned long n = bb->getSize(ctx);
+                proto::proto_ulong n = bb->getSize(ctx);
                 std::string out(n, '\0');
-                for (unsigned long i = 0; i < n; ++i) {
+                for (proto::proto_ulong i = 0; i < n; ++i) {
                     out[i] = static_cast<char>(static_cast<unsigned char>(bb->getAt(ctx, i)));
                 }
                 return out;
@@ -724,15 +724,15 @@ static std::string bio_get_buf(proto::ProtoContext* ctx, const proto::ProtoObjec
     return bio_obj_to_bytes(ctx, bufObj);
 }
 
-static long bio_get_pos(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
+static proto::proto_long bio_get_pos(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
     const proto::ProtoObject* p = self->getAttribute(ctx, k_bio_pos(ctx));
-    return (p && p->isInteger(ctx)) ? static_cast<long>(p->asLong(ctx)) : 0;
+    return (p && p->isInteger(ctx)) ? static_cast<proto::proto_long>(p->asLong(ctx)) : 0;
 }
 
 static const proto::ProtoObject* bio_set_state(proto::ProtoContext* ctx,
                                                const proto::ProtoObject* self,
                                                const std::string& buf,
-                                               long pos) {
+                                               proto::proto_long pos) {
     self = self->setAttribute(ctx, k_bio_buf(ctx), bio_make_bytes(ctx, buf));
     self = self->setAttribute(ctx, k_bio_pos(ctx), ctx->fromInteger(pos));
     return self;
@@ -758,14 +758,14 @@ static const proto::ProtoObject* py_bio_write(
     }
     std::string text = bio_obj_to_bytes(ctx, data);
     std::string buf = bio_get_buf(ctx, self);
-    long pos = bio_get_pos(ctx, self);
+    proto::proto_long pos = bio_get_pos(ctx, self);
     if (pos < 0) pos = 0;
     if (static_cast<size_t>(pos) > buf.size()) buf.append(static_cast<size_t>(pos) - buf.size(), '\0');
     size_t end = static_cast<size_t>(pos) + text.size();
     if (end > buf.size()) buf.resize(end, '\0');
     for (size_t i = 0; i < text.size(); ++i) buf[pos + i] = text[i];
-    bio_set_state(ctx, self, buf, static_cast<long>(pos + text.size()));
-    return ctx->fromInteger(static_cast<long>(text.size()));
+    bio_set_state(ctx, self, buf, static_cast<proto::proto_long>(pos + text.size()));
+    return ctx->fromInteger(static_cast<proto::proto_long>(text.size()));
 }
 
 static const proto::ProtoObject* py_bio_getvalue(
@@ -790,19 +790,19 @@ static const proto::ProtoObject* py_bio_read(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* args, const proto::ProtoSparseList*) {
     std::string buf = bio_get_buf(ctx, self);
-    long pos = bio_get_pos(ctx, self);
+    proto::proto_long pos = bio_get_pos(ctx, self);
     if (pos < 0) pos = 0;
     size_t size = buf.size();
-    long want = -1;
+    proto::proto_long want = -1;
     if (args && args->getSize(ctx) > 0) {
         const proto::ProtoObject* a = args->getAt(ctx, 0);
-        if (a && a->isInteger(ctx)) want = static_cast<long>(a->asLong(ctx));
+        if (a && a->isInteger(ctx)) want = static_cast<proto::proto_long>(a->asLong(ctx));
     }
     size_t take;
     if (want < 0) take = (static_cast<size_t>(pos) < size) ? size - pos : 0;
     else take = std::min<size_t>(size - std::min<size_t>(pos, size), static_cast<size_t>(want));
-    std::string out = (pos < static_cast<long>(size)) ? buf.substr(pos, take) : std::string();
-    bio_set_state(ctx, self, buf, pos + static_cast<long>(out.size()));
+    std::string out = (pos < static_cast<proto::proto_long>(size)) ? buf.substr(pos, take) : std::string();
+    bio_set_state(ctx, self, buf, pos + static_cast<proto::proto_long>(out.size()));
     return bio_make_bytes(ctx, out);
 }
 
@@ -810,12 +810,12 @@ static const proto::ProtoObject* py_bio_readline(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* args, const proto::ProtoSparseList*) {
     std::string buf = bio_get_buf(ctx, self);
-    long pos = bio_get_pos(ctx, self);
+    proto::proto_long pos = bio_get_pos(ctx, self);
     if (pos < 0) pos = 0;
-    long limit = -1;
+    proto::proto_long limit = -1;
     if (args && args->getSize(ctx) > 0) {
         const proto::ProtoObject* a = args->getAt(ctx, 0);
-        if (a && a->isInteger(ctx)) limit = static_cast<long>(a->asLong(ctx));
+        if (a && a->isInteger(ctx)) limit = static_cast<proto::proto_long>(a->asLong(ctx));
     }
     if (static_cast<size_t>(pos) >= buf.size()) {
         return bio_make_bytes(ctx, std::string());
@@ -826,7 +826,7 @@ static const proto::ProtoObject* py_bio_readline(
     size_t take = end - pos;
     if (limit >= 0 && take > static_cast<size_t>(limit)) take = static_cast<size_t>(limit);
     std::string out = buf.substr(pos, take);
-    bio_set_state(ctx, self, buf, pos + static_cast<long>(take));
+    bio_set_state(ctx, self, buf, pos + static_cast<proto::proto_long>(take));
     return bio_make_bytes(ctx, out);
 }
 
@@ -867,18 +867,18 @@ static const proto::ProtoObject* py_bio_next(
 static const proto::ProtoObject* py_bio_seek(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* args, const proto::ProtoSparseList*) {
-    long off = 0;
-    long whence = 0;
+    proto::proto_long off = 0;
+    proto::proto_long whence = 0;
     if (args && args->getSize(ctx) > 0 && args->getAt(ctx, 0)->isInteger(ctx))
-        off = static_cast<long>(args->getAt(ctx, 0)->asLong(ctx));
+        off = static_cast<proto::proto_long>(args->getAt(ctx, 0)->asLong(ctx));
     if (args && args->getSize(ctx) > 1 && args->getAt(ctx, 1)->isInteger(ctx))
-        whence = static_cast<long>(args->getAt(ctx, 1)->asLong(ctx));
+        whence = static_cast<proto::proto_long>(args->getAt(ctx, 1)->asLong(ctx));
     std::string buf = bio_get_buf(ctx, self);
-    long pos = bio_get_pos(ctx, self);
-    long newPos = pos;
+    proto::proto_long pos = bio_get_pos(ctx, self);
+    proto::proto_long newPos = pos;
     if (whence == 0) newPos = off;
     else if (whence == 1) newPos = pos + off;
-    else if (whence == 2) newPos = static_cast<long>(buf.size()) + off;
+    else if (whence == 2) newPos = static_cast<proto::proto_long>(buf.size()) + off;
     if (newPos < 0) newPos = 0;
     bio_set_state(ctx, self, buf, newPos);
     return ctx->fromInteger(newPos);
@@ -894,16 +894,16 @@ static const proto::ProtoObject* py_bio_truncate(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* args, const proto::ProtoSparseList*) {
     std::string buf = bio_get_buf(ctx, self);
-    long pos = bio_get_pos(ctx, self);
-    long size = pos;
+    proto::proto_long pos = bio_get_pos(ctx, self);
+    proto::proto_long size = pos;
     if (args && args->getSize(ctx) > 0) {
         const proto::ProtoObject* a = args->getAt(ctx, 0);
-        if (a && a->isInteger(ctx)) size = static_cast<long>(a->asLong(ctx));
+        if (a && a->isInteger(ctx)) size = static_cast<proto::proto_long>(a->asLong(ctx));
     }
     if (size < 0) size = 0;
     if (static_cast<size_t>(size) < buf.size()) buf.resize(size);
     bio_set_state(ctx, self, buf, pos);
-    return ctx->fromInteger(static_cast<long>(buf.size()));
+    return ctx->fromInteger(static_cast<proto::proto_long>(buf.size()));
 }
 
 static const proto::ProtoObject* py_bio_close(
@@ -995,15 +995,15 @@ static std::string sio_get_buf(proto::ProtoContext* ctx, const proto::ProtoObjec
     return s;
 }
 
-static long sio_get_pos(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
+static proto::proto_long sio_get_pos(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
     const proto::ProtoObject* p = self->getAttribute(ctx, k_sio_pos(ctx));
-    return (p && p->isInteger(ctx)) ? static_cast<long>(p->asLong(ctx)) : 0;
+    return (p && p->isInteger(ctx)) ? static_cast<proto::proto_long>(p->asLong(ctx)) : 0;
 }
 
 static const proto::ProtoObject* sio_set_state(proto::ProtoContext* ctx,
                                                const proto::ProtoObject* self,
                                                const std::string& buf,
-                                               long pos) {
+                                               proto::proto_long pos) {
     self = self->setAttribute(ctx, k_sio_buf(ctx),
                               PythonEnvironment::getInternedString(ctx, buf.c_str())->asObject(ctx));
     self = self->setAttribute(ctx, k_sio_pos(ctx), ctx->fromInteger(pos));
@@ -1039,15 +1039,15 @@ static const proto::ProtoObject* py_sio_write(
         if (d && d->isString(ctx)) d->asString(ctx)->toUTF8String(ctx, text);
     }
     std::string buf = sio_get_buf(ctx, self);
-    long pos = sio_get_pos(ctx, self);
+    proto::proto_long pos = sio_get_pos(ctx, self);
     if (pos < 0) pos = 0;
     if (static_cast<size_t>(pos) > buf.size()) buf.append(static_cast<size_t>(pos) - buf.size(), '\0');
     // Overwrite starting at pos, extending buffer if necessary.
     size_t end = static_cast<size_t>(pos) + text.size();
     if (end > buf.size()) buf.resize(end, '\0');
     for (size_t i = 0; i < text.size(); ++i) buf[pos + i] = text[i];
-    sio_set_state(ctx, self, buf, static_cast<long>(pos + text.size()));
-    return ctx->fromInteger(static_cast<long>(text.size()));
+    sio_set_state(ctx, self, buf, static_cast<proto::proto_long>(pos + text.size()));
+    return ctx->fromInteger(static_cast<proto::proto_long>(text.size()));
 }
 
 static const proto::ProtoObject* py_sio_getvalue(
@@ -1061,37 +1061,37 @@ static const proto::ProtoObject* py_sio_read(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* args, const proto::ProtoSparseList*) {
     std::string buf = sio_get_buf(ctx, self);
-    long pos = sio_get_pos(ctx, self);
+    proto::proto_long pos = sio_get_pos(ctx, self);
     if (pos < 0) pos = 0;
     size_t size = buf.size();
-    long want = -1;
+    proto::proto_long want = -1;
     if (args && args->getSize(ctx) > 0) {
         const proto::ProtoObject* a = args->getAt(ctx, 0);
-        if (a && a->isInteger(ctx)) want = static_cast<long>(a->asLong(ctx));
+        if (a && a->isInteger(ctx)) want = static_cast<proto::proto_long>(a->asLong(ctx));
     }
     size_t take;
     if (want < 0) take = (static_cast<size_t>(pos) < size) ? size - pos : 0;
     else take = std::min<size_t>(size - std::min<size_t>(pos, size), static_cast<size_t>(want));
-    std::string out = (pos < static_cast<long>(size)) ? buf.substr(pos, take) : std::string();
-    sio_set_state(ctx, self, buf, pos + static_cast<long>(out.size()));
+    std::string out = (pos < static_cast<proto::proto_long>(size)) ? buf.substr(pos, take) : std::string();
+    sio_set_state(ctx, self, buf, pos + static_cast<proto::proto_long>(out.size()));
     return PythonEnvironment::getInternedString(ctx, out.c_str())->asObject(ctx);
 }
 
 static const proto::ProtoObject* py_sio_seek(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* args, const proto::ProtoSparseList*) {
-    long off = 0;
-    long whence = 0;
+    proto::proto_long off = 0;
+    proto::proto_long whence = 0;
     if (args && args->getSize(ctx) > 0 && args->getAt(ctx, 0)->isInteger(ctx))
-        off = static_cast<long>(args->getAt(ctx, 0)->asLong(ctx));
+        off = static_cast<proto::proto_long>(args->getAt(ctx, 0)->asLong(ctx));
     if (args && args->getSize(ctx) > 1 && args->getAt(ctx, 1)->isInteger(ctx))
-        whence = static_cast<long>(args->getAt(ctx, 1)->asLong(ctx));
+        whence = static_cast<proto::proto_long>(args->getAt(ctx, 1)->asLong(ctx));
     std::string buf = sio_get_buf(ctx, self);
-    long pos = sio_get_pos(ctx, self);
-    long newPos = pos;
+    proto::proto_long pos = sio_get_pos(ctx, self);
+    proto::proto_long newPos = pos;
     if (whence == 0) newPos = off;
     else if (whence == 1) newPos = pos + off;
-    else if (whence == 2) newPos = static_cast<long>(buf.size()) + off;
+    else if (whence == 2) newPos = static_cast<proto::proto_long>(buf.size()) + off;
     if (newPos < 0) newPos = 0;
     sio_set_state(ctx, self, buf, newPos);
     return ctx->fromInteger(newPos);
@@ -1107,16 +1107,16 @@ static const proto::ProtoObject* py_sio_truncate(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* args, const proto::ProtoSparseList*) {
     std::string buf = sio_get_buf(ctx, self);
-    long pos = sio_get_pos(ctx, self);
-    long size = pos;
+    proto::proto_long pos = sio_get_pos(ctx, self);
+    proto::proto_long size = pos;
     if (args && args->getSize(ctx) > 0) {
         const proto::ProtoObject* a = args->getAt(ctx, 0);
-        if (a && a->isInteger(ctx)) size = static_cast<long>(a->asLong(ctx));
+        if (a && a->isInteger(ctx)) size = static_cast<proto::proto_long>(a->asLong(ctx));
     }
     if (size < 0) size = 0;
     if (static_cast<size_t>(size) < buf.size()) buf.resize(size);
     sio_set_state(ctx, self, buf, pos);
-    return ctx->fromInteger(static_cast<long>(buf.size()));
+    return ctx->fromInteger(static_cast<proto::proto_long>(buf.size()));
 }
 
 static const proto::ProtoObject* py_sio_close(
@@ -1194,7 +1194,7 @@ static const proto::ProtoObject* py_io_text_encoding(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    const unsigned long argc = posArgs ? posArgs->getSize(ctx) : 0;
+    const proto::proto_ulong argc = posArgs ? posArgs->getSize(ctx) : 0;
     if (argc < 1 || argc > 2) {
         if (env) env->raiseTypeError(ctx, argc < 1
             ? "text_encoding() missing required argument 'encoding' (pos 1)"

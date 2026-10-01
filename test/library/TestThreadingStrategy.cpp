@@ -14,8 +14,8 @@
 #include <vector>
 static const proto::ProtoTuple* listToTuple(proto::ProtoContext* ctx, const proto::ProtoList* list) {
     std::vector<const proto::ProtoObject*> elems;
-    unsigned long size = list->getSize(ctx);
-    for (unsigned long i = 0; i < size; ++i) {
+    proto::proto_ulong size = list->getSize(ctx);
+    for (proto::proto_ulong i = 0; i < size; ++i) {
         elems.push_back(list->getAt(ctx, i));
     }
     return ctx->newTuple(elems);

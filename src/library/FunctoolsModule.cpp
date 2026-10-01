@@ -17,10 +17,10 @@ static const proto::ProtoObject* py_partial_call(
     const proto::ProtoList* args = ctx->newList();
     if (frozenObj && frozenObj->asList(ctx)) {
         const proto::ProtoList* frozen = frozenObj->asList(ctx);
-        for (unsigned long i = 0; i < frozen->getSize(ctx); ++i)
+        for (proto::proto_ulong i = 0; i < frozen->getSize(ctx); ++i)
             args = args->appendLast(ctx, frozen->getAt(ctx, static_cast<int>(i)));
     }
-    for (unsigned long i = 0; i < posArgs->getSize(ctx); ++i)
+    for (proto::proto_ulong i = 0; i < posArgs->getSize(ctx); ++i)
         args = args->appendLast(ctx, posArgs->getAt(ctx, static_cast<int>(i)));
 
     const proto::ProtoObject* callAttr = func->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__call__"));
@@ -37,7 +37,7 @@ static const proto::ProtoObject* py_partial(
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* func = posArgs->getAt(ctx, 0);
     const proto::ProtoList* frozen = ctx->newList();
-    for (unsigned long i = 1; i < posArgs->getSize(ctx); ++i)
+    for (proto::proto_ulong i = 1; i < posArgs->getSize(ctx); ++i)
         frozen = frozen->appendLast(ctx, posArgs->getAt(ctx, static_cast<int>(i)));
 
     const proto::ProtoObject* partialProto = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__partial_proto__"));

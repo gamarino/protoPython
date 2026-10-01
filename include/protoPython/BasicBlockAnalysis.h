@@ -17,7 +17,7 @@
 namespace protoPython {
 
 /** (pcStart, pcEnd) inclusive bytecode indices for one basic block. */
-using BlockBoundary = std::pair<unsigned long, unsigned long>;
+using BlockBoundary = std::pair<proto::proto_ulong, proto::proto_ulong>;
 
 /**
  * Compute basic block boundaries for the given bytecode list.

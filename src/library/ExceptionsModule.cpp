@@ -17,7 +17,7 @@ static const proto::ProtoObject* exception_init(
     const proto::ProtoSparseList* keywordParameters) {
     
     const proto::ProtoObject* instance = self;
-    unsigned long startIdx = 0;
+    proto::proto_ulong startIdx = 0;
     if (!instance || instance == PROTO_NONE) {
         if (!positionalParameters || positionalParameters->getSize(context) == 0) return PROTO_NONE;
         instance = positionalParameters->getAt(context, 0);
@@ -44,7 +44,7 @@ static const proto::ProtoObject* exception_init(
     const proto::ProtoString* argsName = PythonEnvironment::getInternedString(context, "args");
     const proto::ProtoList* actualArgs = context->newList();
     if (positionalParameters && positionalParameters->getSize(context) > startIdx) {
-        for (unsigned long i = startIdx; i < positionalParameters->getSize(context); ++i) {
+        for (proto::proto_ulong i = startIdx; i < positionalParameters->getSize(context); ++i) {
             actualArgs = actualArgs->appendLast(context, positionalParameters->getAt(context, i));
         }
     }
@@ -94,10 +94,10 @@ static const proto::ProtoObject* syntaxerror_init(
     const proto::ProtoObject* argsObj = instance->getAttribute(context,
         PythonEnvironment::getInternedString(context, "args"));
     if (argsObj && (argsObj->isTuple(context) || argsObj->asList(context))) {
-        unsigned long argsSize = argsObj->isTuple(context)
+        proto::proto_ulong argsSize = argsObj->isTuple(context)
             ? argsObj->asTuple(context)->getSize(context)
             : argsObj->asList(context)->getSize(context);
-        auto getArg = [&](unsigned long i) -> const proto::ProtoObject* {
+        auto getArg = [&](proto::proto_ulong i) -> const proto::ProtoObject* {
             if (argsObj->isTuple(context)) return argsObj->asTuple(context)->getAt(context, i);
             return argsObj->asList(context)->getAt(context, i);
         };
@@ -111,10 +111,10 @@ static const proto::ProtoObject* syntaxerror_init(
         if (argsSize >= 2) {
             const proto::ProtoObject* info = getArg(1);
             if (info && info != PROTO_NONE && (info->isTuple(context) || info->asList(context))) {
-                unsigned long infoSize = info->isTuple(context)
+                proto::proto_ulong infoSize = info->isTuple(context)
                     ? info->asTuple(context)->getSize(context)
                     : info->asList(context)->getSize(context);
-                auto getInfo = [&](unsigned long i) -> const proto::ProtoObject* {
+                auto getInfo = [&](proto::proto_ulong i) -> const proto::ProtoObject* {
                     if (info->isTuple(context)) return info->asTuple(context)->getAt(context, i);
                     return info->asList(context)->getAt(context, i);
                 };
@@ -152,7 +152,7 @@ static const proto::ProtoObject* systemexit_init(
         PythonEnvironment::getInternedString(context, "args"));
     const proto::ProtoObject* code = PROTO_NONE;
     if (args && args->isTuple(context)) {
-        const unsigned long argc = args->asTuple(context)->getSize(context);
+        const proto::proto_ulong argc = args->asTuple(context)->getSize(context);
         if (argc == 1) code = args->asTuple(context)->getAt(context, 0);
         else if (argc > 1) code = args;
     }
@@ -204,7 +204,7 @@ static const proto::ProtoObject* exception_str(
 
 // The OSError subclass CPython selects for an errno value
 // (Objects/exceptions.c, _PyExc_InitState); nullptr for plain OSError.
-static const char* oserrorSubclassName(long err) {
+static const char* oserrorSubclassName(proto::proto_long err) {
     switch (err) {
         case EAGAIN:
 #if EWOULDBLOCK != EAGAIN
@@ -252,7 +252,7 @@ static const proto::ProtoObject* oserror_new(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* target = cls;
-    const unsigned long nargs = positionalParameters->getSize(context) - 1;
+    const proto::proto_ulong nargs = positionalParameters->getSize(context) - 1;
     const proto::ProtoObject* builtinsMod = env ? env->getBuiltinsModule() : nullptr;
     if (builtinsMod && nargs >= 2 && nargs <= 5) {
         const proto::ProtoObject* osError = builtinsMod->getAttribute(context,
@@ -289,7 +289,7 @@ static const proto::ProtoObject* oserror_init(
     const proto::ProtoString* argsName = PythonEnvironment::getInternedString(context, "args");
     const proto::ProtoObject* argsObj = instance->getAttribute(context, argsName);
     const proto::ProtoTuple* args = (argsObj && argsObj->isTuple(context)) ? argsObj->asTuple(context) : nullptr;
-    const unsigned long n = args ? args->getSize(context) : 0;
+    const proto::proto_ulong n = args ? args->getSize(context) : 0;
     if (n < 2 || n > 5) return PROTO_NONE;
     auto set = [&](const char* name, const proto::ProtoObject* value) {
         instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context,
@@ -422,7 +422,7 @@ static const proto::ProtoObject* exception_repr(
         return PythonEnvironment::getInternedString(context, (name + "()").c_str())->asObject(context);
     }
     std::string out = name + "(";
-    for (unsigned long i = 0; i < args->getSize(context) && i < 3; ++i) {
+    for (proto::proto_ulong i = 0; i < args->getSize(context) && i < 3; ++i) {
         if (i > 0) out += ", ";
         const proto::ProtoObject* a = args->getAt(context, static_cast<int>(i));
         // CPython renders each arg through repr() so containers, ints,
@@ -456,7 +456,7 @@ static const proto::ProtoObject* importerror_init(
     }
     for (const char* attr : {"name", "path", "name_from"}) {
         const proto::ProtoString* key = PythonEnvironment::getInternedString(context, attr);
-        const unsigned long h = key->getHash(context);
+        const proto::proto_ulong h = key->getHash(context);
         const proto::ProtoObject* value = (keywordParameters && keywordParameters->has(context, h))
             ? keywordParameters->getAt(context, h) : PROTO_NONE;
         instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context, key, value);

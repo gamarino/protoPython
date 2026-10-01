@@ -208,7 +208,7 @@ static const proto::ProtoObject* py_isclose(
     // math_isclose_impl. The tolerances are keyword-only; they used to be
     // read from positions 3 and 4 and passing them by keyword had no effect.
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    const unsigned long nargs = posArgs ? posArgs->getSize(ctx) : 0;
+    const proto::proto_ulong nargs = posArgs ? posArgs->getSize(ctx) : 0;
     if (nargs != 2) {
         if (env) env->raiseTypeError(ctx,
             "isclose() takes exactly 2 positional arguments (" + std::to_string(nargs) + " given)");
@@ -219,8 +219,8 @@ static const proto::ProtoObject* py_isclose(
     double rel_tol = 1e-09;
     double abs_tol = 0.0;
     if (kwArgs) {
-        const unsigned long relH = PythonEnvironment::getInternedString(ctx, "rel_tol")->getHash(ctx);
-        const unsigned long absH = PythonEnvironment::getInternedString(ctx, "abs_tol")->getHash(ctx);
+        const proto::proto_ulong relH = PythonEnvironment::getInternedString(ctx, "rel_tol")->getHash(ctx);
+        const proto::proto_ulong absH = PythonEnvironment::getInternedString(ctx, "abs_tol")->getHash(ctx);
         if (kwArgs->has(ctx, relH)) rel_tol = toDouble(ctx, kwArgs->getAt(ctx, relH));
         if (kwArgs->has(ctx, absH)) abs_tol = toDouble(ctx, kwArgs->getAt(ctx, absH));
     }
@@ -744,11 +744,11 @@ static long long gcd_impl(long long a, long long b) {
 static const proto::ProtoObject* py_gcd(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    unsigned long n = posArgs ? posArgs->getSize(ctx) : 0;
+    proto::proto_ulong n = posArgs ? posArgs->getSize(ctx) : 0;
     if (n == 0) return ctx->fromInteger(0);
     long long acc = posArgs->getAt(ctx, 0)->asLong(ctx);
     if (acc < 0) acc = -acc;
-    for (unsigned long i = 1; i < n; ++i) {
+    for (proto::proto_ulong i = 1; i < n; ++i) {
         long long x = posArgs->getAt(ctx, static_cast<int>(i))->asLong(ctx);
         if (x < 0) x = -x;
         acc = gcd_impl(acc, x);
@@ -760,11 +760,11 @@ static const proto::ProtoObject* py_gcd(
 static const proto::ProtoObject* py_lcm(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    unsigned long n = posArgs ? posArgs->getSize(ctx) : 0;
+    proto::proto_ulong n = posArgs ? posArgs->getSize(ctx) : 0;
     if (n == 0) return ctx->fromInteger(1);
     long long acc = posArgs->getAt(ctx, 0)->asLong(ctx);
     if (acc < 0) acc = -acc;
-    for (unsigned long i = 1; i < n; ++i) {
+    for (proto::proto_ulong i = 1; i < n; ++i) {
         long long x = posArgs->getAt(ctx, static_cast<int>(i))->asLong(ctx);
         if (x < 0) x = -x;
         if (acc == 0 || x == 0) { acc = 0; break; }

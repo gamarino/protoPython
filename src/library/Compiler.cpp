@@ -303,8 +303,8 @@ void Compiler::applyPatches() {
     for (const auto& p : patches_) {
         // p.first is the instruction index (bytecodeOffset() value)
         // the arg slot is at index (p.first * 2) + 1 in the bytecodeVec_
-        unsigned long arrayIdx = static_cast<unsigned long>(p.first) * 2 + 1;
-        if (arrayIdx < static_cast<unsigned long>(bytecodeVec_->getSize(ctx_)))
+        proto::proto_ulong arrayIdx = static_cast<proto::proto_ulong>(p.first) * 2 + 1;
+        if (arrayIdx < static_cast<proto::proto_ulong>(bytecodeVec_->getSize(ctx_)))
             bytecodeVec_ = bytecodeVec_->setAt(ctx_, arrayIdx, ctx_->fromInteger(p.second * 2)); // ExecutionEngine jumps to array index!
     }
     patches_.clear();
@@ -364,7 +364,7 @@ constexpr int WINDOW_SLOTS = 4 * SLOTS_PER_INSTR;  // 4 instructions
 constexpr int SLOT_NOP_OP = 135;                    // OP_NOP
 
 inline int slotAt(const proto::ProtoList* vec, proto::ProtoContext* ctx,
-                  unsigned long idx) {
+                  proto::proto_ulong idx) {
     if (idx >= vec->getSize(ctx)) return -1;
     const proto::ProtoObject* o = vec->getAt(ctx, (int)idx);
     if (!o || !o->isInteger(ctx)) return -1;
@@ -386,14 +386,14 @@ const proto::ProtoList* Compiler::specialiseBytecode(const proto::ProtoList* in)
         return v && v[0] == '1';
     }();
     if (disabled) return in;
-    const unsigned long nSlots = in->getSize(ctx_);
+    const proto::proto_ulong nSlots = in->getSize(ctx_);
     if (nSlots < WINDOW_SLOTS) return in;
 
     // Build an array-of-ints view we can scan/rewrite in O(N).  We
     // commit back to a ProtoList only once at the end.
     std::vector<int> bc;
     bc.reserve(nSlots);
-    for (unsigned long k = 0; k < nSlots; ++k) {
+    for (proto::proto_ulong k = 0; k < nSlots; ++k) {
         bc.push_back(slotAt(in, ctx_, k));
     }
 
@@ -413,8 +413,8 @@ const proto::ProtoList* Compiler::specialiseBytecode(const proto::ProtoList* in)
             && bc[base + 1] == expected;
     };
 
-    unsigned long rewrites = 0;
-    for (unsigned long i = 0; i + WINDOW_SLOTS <= bc.size(); ) {
+    proto::proto_ulong rewrites = 0;
+    for (proto::proto_ulong i = 0; i + WINDOW_SLOTS <= bc.size(); ) {
         // Pattern 1: LOAD_FAST a; LOAD_FAST b; INPLACE_ADD; STORE_FAST a
         int a = matchLoadFast(i);
         int b = (a >= 0) ? matchLoadFast(i + 2) : -1;
@@ -478,7 +478,7 @@ const proto::ProtoList* Compiler::specialiseBytecode(const proto::ProtoList* in)
     }
     if (get_env_diag()) {
         fprintf(stderr, "PEEPHOLE: %lu fused-op rewrites in this function\n",
-                (unsigned long)rewrites);
+                (proto::proto_ulong)rewrites);
     }
     return out;
 }
@@ -557,7 +557,7 @@ bool Compiler::compileConstant(ConstantNode* n) {
             // std::string used as a raw-bytes buffer.
             const proto::ProtoByteBuffer* bb = ctx_->newByteBuffer(
                 n->bytesVal.data(),
-                static_cast<unsigned long>(n->bytesVal.size()));
+                static_cast<proto::proto_ulong>(n->bytesVal.size()));
             b->setAttribute(ctx_,
                 PythonEnvironment::getInternedString(ctx_, "__data__"),
                 bb->asObject(ctx_));
@@ -5551,10 +5551,10 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     // In executeBytecodeRange the int* is used directly, eliminating 16 AVL lookups +
     // 1 malloc/free per function call (paid on every recursive fib invocation in Step 5).
     if (bytecode && env && env->getCoNativeBytecodeString()) {
-        const unsigned long bcSize = bytecode->getSize(ctx);
+        const proto::proto_ulong bcSize = bytecode->getSize(ctx);
         if (bcSize > 0) {
             int* intBuf = new int[bcSize];
-            for (unsigned long j = 0; j < bcSize; ++j) {
+            for (proto::proto_ulong j = 0; j < bcSize; ++j) {
                 const proto::ProtoObject* elem = bytecode->getAt(ctx, j);
                 intBuf[j] = (elem && elem->isInteger(ctx)) ? static_cast<int>(elem->asLong(ctx)) : 0;
             }
@@ -5678,7 +5678,7 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     // especially for eval() and exec() calls which would otherwise clobber the caller's stack slots.
     const proto::ProtoList* localNames = ctx->newList();
     const proto::ProtoList* vlist = co_varnames ? co_varnames->asList(ctx) : nullptr;
-    unsigned long vcount = vlist ? vlist->getSize(ctx) : 0;
+    proto::proto_ulong vcount = vlist ? vlist->getSize(ctx) : 0;
     
     // Use the maximum of vcount and automatic_count to ensure enough slots are reserved for both locals and stack.
     int nLocalsNeeded = std::max((int)vcount, (int)automatic_count);
@@ -5691,7 +5691,7 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     proto::ProtoContext* execCtx = subCtx;
     PythonEnvironment::setCurrentContext(execCtx);
 
-    unsigned long stackOffset = (co_varnames && co_varnames->asTuple(execCtx)) ? co_varnames->asTuple(execCtx)->getSize(execCtx) : 0;
+    proto::proto_ulong stackOffset = (co_varnames && co_varnames->asTuple(execCtx)) ? co_varnames->asTuple(execCtx)->getSize(execCtx) : 0;
 
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG: runCodeObject co_code size=%lu co_consts size=%lu stackOffset=%lu\n",

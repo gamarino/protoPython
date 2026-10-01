@@ -52,7 +52,7 @@ const proto::ProtoObject* py_func_async_func_1(proto::ProtoContext* ctx, const p
     gen = const_cast<proto::ProtoObject*>(gen->setAttribute(ctx, env->getGiPCString(), ctx->fromInteger(0)));
     gen = const_cast<proto::ProtoObject*>(gen->setAttribute(ctx, env->getGiRunningString(), PROTO_FALSE));
     const proto::ProtoSparseList* initialLocals = ctx->newSparseList();
-    unsigned long nPos = args ? args->getSize(ctx) : 0;
+    proto::proto_ulong nPos = args ? args->getSize(ctx) : 0;
     gen = const_cast<proto::ProtoObject*>(gen->setAttribute(ctx, env->getGiLocalsString(), initialLocals->asObject(ctx)));
     return gen;
 }

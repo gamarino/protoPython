@@ -16,7 +16,7 @@
 namespace protoPython {
 
 /** Opaque handle: index into HPyContext handle table. 0 means invalid. */
-typedef unsigned long HPy;
+typedef proto::proto_ulong HPy;
 static const HPy HPy_NULL = 0;
 
 /**

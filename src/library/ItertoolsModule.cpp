@@ -204,8 +204,8 @@ static const proto::ProtoObject* py_chain_next(
     if (!itersObj || !itersObj->asList(ctx) || !idxObj || !idxObj->isInteger(ctx)) return nullptr;
     const proto::ProtoList* iters = itersObj->asList(ctx);
     long long idx = idxObj->asLong(ctx);
-    unsigned long n = iters->getSize(ctx);
-    while (static_cast<unsigned long>(idx) < n) {
+    proto::proto_ulong n = iters->getSize(ctx);
+    while (static_cast<proto::proto_ulong>(idx) < n) {
         const proto::ProtoObject* it = iters->getAt(ctx, static_cast<int>(idx));
         const proto::ProtoObject* nextM = it ? it->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__next__")) : nullptr;
         if (!nextM || !nextM->asMethod(ctx)) {
@@ -613,10 +613,10 @@ static const proto::ProtoObject* py_product_next(
         if (env) env->raiseStopIteration(ctx, PROTO_NONE);
         return nullptr;
     }
-    unsigned long n = pools->getSize(ctx);
+    proto::proto_ulong n = pools->getSize(ctx);
     // Build current tuple (use the indices as offsets into each pool).
     const proto::ProtoList* tupList = ctx->newList();
-    for (unsigned long i = 0; i < n; ++i) {
+    for (proto::proto_ulong i = 0; i < n; ++i) {
         const proto::ProtoList* pool = pools->getAt(ctx, static_cast<int>(i))->asList(ctx);
         long long idx = indices->getAt(ctx, static_cast<int>(i))->asLong(ctx);
         if (!pool || pool->getSize(ctx) == 0) {
@@ -677,9 +677,9 @@ static const proto::ProtoObject* py_product(
     // Drain each input iterable into a list and replicate the whole
     // sequence `repeat` times (matches CPython's
     // `pools = [tuple(pool) for pool in args] * repeat`).
-    unsigned long basesz = posArgs ? posArgs->getSize(ctx) : 0UL;
+    proto::proto_ulong basesz = posArgs ? posArgs->getSize(ctx) : PROTO_UL(0);
     const proto::ProtoList* basePools = ctx->newList();
-    for (unsigned long i = 0; i < basesz; ++i) {
+    for (proto::proto_ulong i = 0; i < basesz; ++i) {
         const proto::ProtoObject* iterable = posArgs->getAt(ctx, static_cast<int>(i));
         if (!env) return PROTO_NONE;
         const proto::ProtoObject* it = env->iter(iterable);
@@ -695,13 +695,13 @@ static const proto::ProtoObject* py_product(
     }
     const proto::ProtoList* pools = ctx->newList();
     for (long long r = 0; r < repeat; ++r) {
-        for (unsigned long i = 0; i < basePools->getSize(ctx); ++i) {
+        for (proto::proto_ulong i = 0; i < basePools->getSize(ctx); ++i) {
             pools = pools->appendLast(ctx, basePools->getAt(ctx, static_cast<int>(i)));
         }
     }
-    unsigned long n = pools->getSize(ctx);
+    proto::proto_ulong n = pools->getSize(ctx);
     const proto::ProtoList* indices = ctx->newList();
-    for (unsigned long i = 0; i < n; ++i) {
+    for (proto::proto_ulong i = 0; i < n; ++i) {
         indices = indices->appendLast(ctx, ctx->fromInteger(0));
     }
     const proto::ProtoObject* proto = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__product_proto__"));
@@ -752,7 +752,7 @@ static const proto::ProtoObject* py_starmap_next(
     const proto::ProtoList* args = nullptr;
     if (auto* t = argsObj->asTuple(ctx)) {
         const proto::ProtoList* L = ctx->newList();
-        for (unsigned long i = 0; i < t->getSize(ctx); ++i)
+        for (proto::proto_ulong i = 0; i < t->getSize(ctx); ++i)
             L = L->appendLast(ctx, t->getAt(ctx, static_cast<int>(i)));
         args = L;
     } else if (auto* l = argsObj->asList(ctx)) {
@@ -764,7 +764,7 @@ static const proto::ProtoObject* py_starmap_next(
         if (d) {
             if (auto* t2 = d->asTuple(ctx)) {
                 const proto::ProtoList* L = ctx->newList();
-                for (unsigned long i = 0; i < t2->getSize(ctx); ++i)
+                for (proto::proto_ulong i = 0; i < t2->getSize(ctx); ++i)
                     L = L->appendLast(ctx, t2->getAt(ctx, static_cast<int>(i)));
                 args = L;
             } else if (auto* l2 = d->asList(ctx)) {
@@ -875,8 +875,8 @@ static const proto::ProtoObject* py_chain(
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList*) {
     const proto::ProtoList* iters = ctx->newList();
-    unsigned long n = posArgs->getSize(ctx);
-    for (unsigned long i = 0; i < n; ++i) {
+    proto::proto_ulong n = posArgs->getSize(ctx);
+    for (proto::proto_ulong i = 0; i < n; ++i) {
         const proto::ProtoObject* iterable = posArgs->getAt(ctx, static_cast<int>(i));
         const proto::ProtoObject* itAttr = iterable->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__iter__"));
         if (!itAttr || !itAttr->asMethod(ctx)) continue;
@@ -902,7 +902,7 @@ static const proto::ProtoObject* py_chain_new(
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* cls = posArgs->getAt(ctx, 0);
     const proto::ProtoList* iterables = ctx->newList();
-    for (unsigned long i = 1; i < posArgs->getSize(ctx); ++i) {
+    for (proto::proto_ulong i = 1; i < posArgs->getSize(ctx); ++i) {
         iterables = iterables->appendLast(ctx, posArgs->getAt(ctx, static_cast<int>(i)));
     }
     return py_chain(ctx, cls, nullptr, iterables, nullptr);

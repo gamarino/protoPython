@@ -12,8 +12,8 @@
 static const proto::ProtoTuple* listToTuple(proto::ProtoContext* ctx, const proto::ProtoList* list) {
     if (!list) return nullptr;
     std::vector<const proto::ProtoObject*> elems;
-    unsigned long size = list->getSize(ctx);
-    for (unsigned long i = 0; i < size; ++i) {
+    proto::proto_ulong size = list->getSize(ctx);
+    for (proto::proto_ulong i = 0; i < size; ++i) {
         elems.push_back(list->getAt(ctx, i));
     }
     return ctx->newTuple(elems);
@@ -60,7 +60,7 @@ TEST(ExecutionEngineTest, ExecuteBytecodeRangeFullRangeEqualsExecuteMinimal) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_ADD))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE))->appendLast(&ctx, ctx.fromInteger(0));
-    unsigned long n = bytecode->getSize(&ctx);
+    proto::proto_ulong n = bytecode->getSize(&ctx);
     proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* rangeResult = protoPython::executeBytecodeRange(&ctx, listToTuple(&ctx, constants), listToTuple(&ctx, bytecode), nullptr, frame, 0, n ? n - 1 : 0);
     const proto::ProtoObject* minimalResult = protoPython::executeMinimalBytecode(&ctx, listToTuple(&ctx, constants), listToTuple(&ctx, bytecode), nullptr, frame);
@@ -400,14 +400,14 @@ TEST(ExecutionEngineTest, BuildMap) {
     ASSERT_NE(keys->asList(&ctx), nullptr);
     const proto::ProtoList* keysList = keys->asList(&ctx);
     EXPECT_EQ(keysList->getSize(&ctx), 2u);
-    unsigned long h0 = keysList->getAt(&ctx, 0)->getHash(&ctx);
-    unsigned long h1 = keysList->getAt(&ctx, 1)->getHash(&ctx);
+    proto::proto_ulong h0 = keysList->getAt(&ctx, 0)->getHash(&ctx);
+    proto::proto_ulong h1 = keysList->getAt(&ctx, 1)->getHash(&ctx);
     const proto::ProtoObject* v0 = data->asSparseList(&ctx)->getAt(&ctx, h0);
     const proto::ProtoObject* v1 = data->asSparseList(&ctx)->getAt(&ctx, h1);
     ASSERT_NE(v0, nullptr);
     ASSERT_NE(v1, nullptr);
-    long a0 = v0->asLong(&ctx);
-    long a1 = v1->asLong(&ctx);
+    proto::proto_long a0 = v0->asLong(&ctx);
+    proto::proto_long a1 = v1->asLong(&ctx);
     EXPECT_TRUE((a0 == 1 && a1 == 2) || (a0 == 2 && a1 == 1));
 }
 
@@ -1163,7 +1163,7 @@ TEST(ExecutionEngineTest, CompiledAssignment) {
     const proto::ProtoTuple* compConsts = codeObj->getAttribute(&ctx, proto::ProtoString::fromUTF8String(&ctx, "co_consts"))->asTuple(&ctx);
     std::cerr << "Compiled code size: " << (compCode ? compCode->getSize(&ctx) : 0) << "\n";
     if (compCode) {
-        for (unsigned long i=0; i<compCode->getSize(&ctx); i+=2) {
+        for (proto::proto_ulong i=0; i<compCode->getSize(&ctx); i+=2) {
             std::cerr << "OP: " << compCode->getAt(&ctx, i)->asLong(&ctx) << " ARG: " << compCode->getAt(&ctx, i+1)->asLong(&ctx) << "\n";
         }
     }

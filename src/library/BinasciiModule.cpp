@@ -48,9 +48,9 @@ static std::string obj_to_bytes(proto::ProtoContext* ctx, const proto::ProtoObje
     }
     // Direct ByteBuffer cell — read its octets directly.
     if (const proto::ProtoByteBuffer* bb = obj->asByteBuffer(ctx)) {
-        unsigned long n = bb->getSize(ctx);
+        proto::proto_ulong n = bb->getSize(ctx);
         std::string out(n, '\0');
-        for (unsigned long i = 0; i < n; ++i) {
+        for (proto::proto_ulong i = 0; i < n; ++i) {
             out[i] = static_cast<char>(static_cast<unsigned char>(bb->getAt(ctx, i)));
         }
         return out;
@@ -72,10 +72,10 @@ static std::string obj_to_bytes(proto::ProtoContext* ctx, const proto::ProtoObje
             // bytes >= 0x80 and embedded \0 unchanged).
             const proto::ProtoByteBuffer* bb = data->asByteBuffer(ctx);
             if (bb) {
-                unsigned long n = bb->getSize(ctx);
+                proto::proto_ulong n = bb->getSize(ctx);
                 std::string out;
                 out.resize(n);
-                for (unsigned long i = 0; i < n; ++i) {
+                for (proto::proto_ulong i = 0; i < n; ++i) {
                     out[i] = static_cast<char>(static_cast<unsigned char>(bb->getAt(ctx, i)));
                 }
                 return out;
@@ -130,7 +130,7 @@ static const proto::ProtoObject* make_bytes(proto::ProtoContext* ctx, const std:
             env->getBytesPrototype()));
     }
     const proto::ProtoByteBuffer* bb = ctx->newByteBuffer(
-        data.data(), static_cast<unsigned long>(data.size()));
+        data.data(), static_cast<proto::proto_ulong>(data.size()));
     obj = const_cast<proto::ProtoObject*>(obj->setAttribute(ctx,
         env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "__data__"),
         bb->asObject(ctx)));
@@ -288,7 +288,7 @@ static const proto::ProtoObject* py_hexlify(
             const proto::ProtoTuple* mT = mAttr ? mAttr->asTuple(ctx) : nullptr;
             bool hasInt = false;
             if (mT && intP) {
-                for (unsigned long i = 0; i < mT->getSize(ctx); ++i) {
+                for (proto::proto_ulong i = 0; i < mT->getSize(ctx); ++i) {
                     if (mT->getAt(ctx, static_cast<int>(i)) == intP) { hasInt = true; break; }
                 }
             }

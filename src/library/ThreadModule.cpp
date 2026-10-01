@@ -342,7 +342,7 @@ static const proto::ProtoObject* thread_bootstrap(
     // env->lookupName("x")) ran in a fresh thread with NULL
     // s_currentGlobals and saw every name as missing — silently
     // raising and dying before any side effect.
-    unsigned long callableIdx = 0;
+    proto::proto_ulong callableIdx = 0;
     protoPython::PythonEnvironment* env = nullptr;
     const proto::ProtoObject* spawnerGlobals = nullptr;
     if (args->getSize(context) >= 2) {
@@ -380,7 +380,7 @@ static const proto::ProtoObject* thread_bootstrap(
         }
         const proto::ProtoObject* callable = args->getAt(context, static_cast<int>(callableIdx));
         const proto::ProtoList* argList = context->newList();
-        for (unsigned long i = callableIdx + 1; i < args->getSize(context); ++i)
+        for (proto::proto_ulong i = callableIdx + 1; i < args->getSize(context); ++i)
             argList = argList->appendLast(context, args->getAt(context, static_cast<int>(i)));
         result = protoPython::invokePythonCallable(context, callable, argList, nullptr);
         if (spawnerGlobals) {
@@ -424,7 +424,7 @@ static const proto::ProtoObject* py_start_new_thread(
         const proto::ProtoObject* second = posArgs->getAt(ctx, 1);
         if (second->asTuple(ctx)) {
             const proto::ProtoTuple* tup = second->asTuple(ctx);
-            for (unsigned long i = 0; i < tup->getSize(ctx); ++i)
+            for (proto::proto_ulong i = 0; i < tup->getSize(ctx); ++i)
                 argsForThread = argsForThread->appendLast(ctx, tup->getAt(ctx, static_cast<int>(i)));
         } else {
             argsForThread = argsForThread->appendLast(ctx, second);
@@ -578,7 +578,7 @@ static const proto::ProtoObject* py_handle_is_done(
     proto::ProtoThread* thread =
         static_cast<proto::ProtoThread*>(ext->getPointer(ctx));
     if (!thread) return PROTO_TRUE;
-    unsigned long threadId = reinterpret_cast<uintptr_t>(thread);
+    proto::proto_ulong threadId = reinterpret_cast<uintptr_t>(thread);
     const proto::ProtoSparseList* threads = ctx->space->threads;
     if (!threads) return PROTO_TRUE;
     return (threads->getAt(ctx, threadId) == PROTO_NONE) ? PROTO_TRUE : PROTO_FALSE;
@@ -626,7 +626,7 @@ static const proto::ProtoObject* py_make_thread_handle(
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     proto::ProtoObject* handle =
         const_cast<proto::ProtoObject*>(ctx->newObject(true));
-    long initialIdent = 0;
+    proto::proto_long initialIdent = 0;
     if (posArgs && posArgs->getSize(ctx) >= 1) {
         const proto::ProtoObject* a0 = posArgs->getAt(ctx, 0);
         if (a0 && a0->isInteger(ctx)) initialIdent = a0->asLong(ctx);
@@ -675,7 +675,7 @@ static const proto::ProtoObject* py_start_joinable_thread(
     if (kwargs) {
         const proto::ProtoString* handleKey =
             proto::ProtoString::createSymbol(ctx, "handle");
-        unsigned long handleHash = handleKey->getHash(ctx);
+        proto::proto_ulong handleHash = handleKey->getHash(ctx);
         if (kwargs->has(ctx, handleHash)) {
             handle = kwargs->getAt(ctx, handleHash);
         }
@@ -777,7 +777,7 @@ static const proto::ProtoObject* py_is_alive(
     proto::ProtoThread* thread = static_cast<proto::ProtoThread*>(ext->getPointer(ctx));
     if (!thread) return PROTO_FALSE;
     
-    unsigned long threadId = reinterpret_cast<uintptr_t>(thread);
+    proto::proto_ulong threadId = reinterpret_cast<uintptr_t>(thread);
     const proto::ProtoSparseList* threads = ctx->space->threads;
     if (threads && threads->getAt(ctx, threadId) != PROTO_NONE)
         return PROTO_TRUE;
@@ -871,7 +871,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
 
     auto py_get_handle = [](proto::ProtoContext* c, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) -> const proto::ProtoObject* {
         if (!args || args->getSize(c) < 1) return PROTO_NONE;
-        unsigned long tid = (unsigned long)args->getAt(c, 0)->asLong(c);
+        proto::proto_ulong tid = (proto::proto_ulong)args->getAt(c, 0)->asLong(c);
         const proto::ProtoSparseList* threads = c->space->threads;
         if (!threads) return PROTO_NONE;
         return threads->getAt(c, tid);

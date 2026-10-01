@@ -136,7 +136,7 @@ static const proto::ProtoObject* make_bytes_obj(proto::ProtoContext* ctx, const 
             env->getBytesPrototype()));
     }
     const proto::ProtoByteBuffer* bb = ctx->newByteBuffer(
-        data.data(), static_cast<unsigned long>(data.size()));
+        data.data(), static_cast<proto::proto_ulong>(data.size()));
     obj = const_cast<proto::ProtoObject*>(obj->setAttribute(ctx,
         env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "__data__"),
         bb->asObject(ctx)));
@@ -150,7 +150,7 @@ static bool extract_bytes(proto::ProtoContext* ctx, const proto::ProtoObject* ob
         return true;
     }
     if (const proto::ProtoByteBuffer* bb = obj->asByteBuffer(ctx)) {
-        unsigned long n = bb->getSize(ctx);
+        proto::proto_ulong n = bb->getSize(ctx);
         out.assign(bb->getBuffer(ctx), n);
         return true;
     }
@@ -162,7 +162,7 @@ static bool extract_bytes(proto::ProtoContext* ctx, const proto::ProtoObject* ob
         const proto::ProtoObject* data = obj->getAttribute(ctx, env->getDataString());
         if (data && data != PROTO_NONE && data != obj) {
             if (const proto::ProtoByteBuffer* bb = data->asByteBuffer(ctx)) {
-                unsigned long n = bb->getSize(ctx);
+                proto::proto_ulong n = bb->getSize(ctx);
                 out.assign(bb->getBuffer(ctx), n);
                 return true;
             }
@@ -193,7 +193,7 @@ static bool extract_bytes(proto::ProtoContext* ctx, const proto::ProtoObject* ob
 static const proto::ProtoObject* pack_impl(proto::ProtoContext* ctx,
                                            const std::string& fmt,
                                            const proto::ProtoList* values,
-                                           unsigned long values_off) {
+                                           proto::proto_ulong values_off) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     char order;
     std::vector<FmtItem> items;
@@ -201,8 +201,8 @@ static const proto::ProtoObject* pack_impl(proto::ProtoContext* ctx,
 
     std::string out;
     out.reserve(format_total_size(items));
-    unsigned long vi = values_off;
-    unsigned long n_values = values ? values->getSize(ctx) : 0;
+    proto::proto_ulong vi = values_off;
+    proto::proto_ulong n_values = values ? values->getSize(ctx) : 0;
 
     auto need_value = [&](const proto::ProtoObject*& dst) -> bool {
         if (vi >= n_values) {
@@ -304,7 +304,7 @@ static const proto::ProtoObject* sign_extend(proto::ProtoContext* ctx,
 static const proto::ProtoObject* unpack_impl(proto::ProtoContext* ctx,
                                              const std::string& fmt,
                                              const std::string& buf,
-                                             unsigned long offset) {
+                                             proto::proto_ulong offset) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     char order;
     std::vector<FmtItem> items;
@@ -417,7 +417,7 @@ const proto::ProtoObject* py_unpack_from(proto::ProtoContext* ctx,
         const proto::ProtoObject* o = args->getAt(ctx, 2);
         if (o && o->isInteger(ctx)) offset = o->asLong(ctx);
     }
-    return unpack_impl(ctx, fmt, buf, static_cast<unsigned long>(offset));
+    return unpack_impl(ctx, fmt, buf, static_cast<proto::proto_ulong>(offset));
 }
 
 const proto::ProtoObject* py_iter_unpack(proto::ProtoContext* ctx,
@@ -435,7 +435,7 @@ const proto::ProtoObject* py_iter_unpack(proto::ProtoContext* ctx,
     if (chunk <= 0) return PythonEnvironment::wrapList(ctx, ctx->newList());
     const proto::ProtoList* result = ctx->newList();
     for (size_t off = 0; off + chunk <= buf.size(); off += chunk) {
-        const proto::ProtoObject* tup = unpack_impl(ctx, fmt, buf, static_cast<unsigned long>(off));
+        const proto::ProtoObject* tup = unpack_impl(ctx, fmt, buf, static_cast<proto::proto_ulong>(off));
         if (!tup) return nullptr;
         result = result->appendLast(ctx, tup);
     }

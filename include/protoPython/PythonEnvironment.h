@@ -794,7 +794,7 @@ public:
      * globals have no string __name__.  The name is resolved when the scope
      * is entered, so the stack never reads a globals object afterwards.
      */
-    static const proto::ProtoObject* getScopeModuleName(unsigned long depth);
+    static const proto::ProtoObject* getScopeModuleName(proto::proto_ulong depth);
     
     /** Sets the current thread-local context (for RAII management). */
     static void setCurrentContext(proto::ProtoContext* ctx) { s_threadContext = ctx; }
@@ -984,7 +984,7 @@ public:
      * @details Both raise TypeError for an unhashable value and return false / nullptr. setAdd keeps
      * the element already stored under an equal key.
      */
-    static bool hashKey(proto::ProtoContext* ctx, const proto::ProtoObject* value, unsigned long& hash);
+    static bool hashKey(proto::ProtoContext* ctx, const proto::ProtoObject* value, proto::proto_ulong& hash);
     static const proto::ProtoSet* setAdd(proto::ProtoContext* ctx, const proto::ProtoSet* s, const proto::ProtoObject* value);
 
     /**

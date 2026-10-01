@@ -27,15 +27,15 @@ static bool opIsBlockEnd(int op) {
            op == OP_POP_JUMP_IF_FALSE || op == OP_FOR_ITER;
 }
 
-static int getOpAt(proto::ProtoContext* ctx, const proto::ProtoList* bytecode, unsigned long pc) {
+static int getOpAt(proto::ProtoContext* ctx, const proto::ProtoList* bytecode, proto::proto_ulong pc) {
     const proto::ProtoObject* obj = bytecode->getAt(ctx, static_cast<int>(pc));
     return (obj && obj->isInteger(ctx)) ? static_cast<int>(obj->asLong(ctx)) : -1;
 }
 
-static long getArgAt(proto::ProtoContext* ctx, const proto::ProtoList* bytecode, unsigned long pc) {
+static proto::proto_long getArgAt(proto::ProtoContext* ctx, const proto::ProtoList* bytecode, proto::proto_ulong pc) {
     if (pc + 1 >= bytecode->getSize(ctx)) return -1;
     const proto::ProtoObject* obj = bytecode->getAt(ctx, static_cast<int>(pc + 1));
-    return (obj && obj->isInteger(ctx)) ? static_cast<long>(obj->asLong(ctx)) : -1;
+    return (obj && obj->isInteger(ctx)) ? static_cast<proto::proto_long>(obj->asLong(ctx)) : -1;
 }
 
 std::vector<BlockBoundary> getBasicBlockBoundaries(
@@ -43,30 +43,30 @@ std::vector<BlockBoundary> getBasicBlockBoundaries(
     const proto::ProtoList* bytecode) {
     std::vector<BlockBoundary> out;
     if (!ctx || !bytecode) return out;
-    unsigned long n = bytecode->getSize(ctx);
+    proto::proto_ulong n = bytecode->getSize(ctx);
     if (n == 0) return out;
 
-    std::unordered_set<unsigned long> blockStarts;
+    std::unordered_set<proto::proto_ulong> blockStarts;
     blockStarts.insert(0);
 
-    for (unsigned long pc = 0; pc < n; ) {
+    for (proto::proto_ulong pc = 0; pc < n; ) {
         int op = getOpAt(ctx, bytecode, pc);
         if (op < 0) break;
         if (opIsBlockEnd(op)) {
-            long arg = getArgAt(ctx, bytecode, pc);
-            if (op != OP_RETURN_VALUE && arg >= 0 && static_cast<unsigned long>(arg) < n)
-                blockStarts.insert(static_cast<unsigned long>(arg));
+            proto::proto_long arg = getArgAt(ctx, bytecode, pc);
+            if (op != OP_RETURN_VALUE && arg >= 0 && static_cast<proto::proto_ulong>(arg) < n)
+                blockStarts.insert(static_cast<proto::proto_ulong>(arg));
         }
         pc += opHasArg(op) ? 2 : 1;
     }
 
-    std::vector<unsigned long> starts(blockStarts.begin(), blockStarts.end());
+    std::vector<proto::proto_ulong> starts(blockStarts.begin(), blockStarts.end());
     std::sort(starts.begin(), starts.end());
 
     for (size_t i = 0; i < starts.size(); ++i) {
-        unsigned long pcStart = starts[i];
-        unsigned long pcEnd = pcStart;
-        unsigned long pc = pcStart;
+        proto::proto_ulong pcStart = starts[i];
+        proto::proto_ulong pcEnd = pcStart;
+        proto::proto_ulong pc = pcStart;
         while (pc < n) {
             int op = getOpAt(ctx, bytecode, pc);
             if (op < 0) break;

@@ -28,11 +28,11 @@ static const proto::ProtoObject* py_fcntl_fcntl(
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     int fd  = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
     int cmd = static_cast<int>(posArgs->getAt(ctx, 1)->asLong(ctx));
-    long arg = 0;
+    proto::proto_long arg = 0;
     if (posArgs->getSize(ctx) >= 3) {
         const proto::ProtoObject* a = posArgs->getAt(ctx, 2);
         if (a && a != PROTO_NONE && a->isInteger(ctx)) {
-            arg = static_cast<long>(a->asLong(ctx));
+            arg = static_cast<proto::proto_long>(a->asLong(ctx));
         }
     }
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
@@ -58,11 +58,11 @@ static const proto::ProtoObject* py_fcntl_ioctl(
     const proto::ProtoSparseList* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     int fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
-    unsigned long request = static_cast<unsigned long>(posArgs->getAt(ctx, 1)->asLong(ctx));
-    long arg = 0;
+    proto::proto_ulong request = static_cast<proto::proto_ulong>(posArgs->getAt(ctx, 1)->asLong(ctx));
+    proto::proto_long arg = 0;
     if (posArgs->getSize(ctx) >= 3) {
         const proto::ProtoObject* a = posArgs->getAt(ctx, 2);
-        if (a && a != PROTO_NONE && a->isInteger(ctx)) arg = static_cast<long>(a->asLong(ctx));
+        if (a && a != PROTO_NONE && a->isInteger(ctx)) arg = static_cast<proto::proto_long>(a->asLong(ctx));
     }
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     int res = ::ioctl(fd, request, arg);

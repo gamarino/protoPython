@@ -37,7 +37,7 @@ public:
     // be actively misleading: protoPython's dispatch loop calls safepoint()
     // every 64 opcodes, and each submission zeroes that counter, so the delta is
     // smallest exactly when protoPython is conforming.
-    unsigned long makeGarbage(unsigned long requestedCells) override {
+    proto::proto_ulong makeGarbage(proto::proto_ulong requestedCells) override {
         return runUntilConsumed(requestedCells,
             "def _conf_churn(n):\n"
             "    total = 0\n"
@@ -59,7 +59,7 @@ public:
     // Measuring the list instead would make this case pass, and would be
     // choosing the workload to get the answer -- the same defect as a fixture
     // written so that it cannot go red.
-    unsigned long makeSequenceGarbage(unsigned long requestedCells) override {
+    proto::proto_ulong makeSequenceGarbage(proto::proto_ulong requestedCells) override {
         return runUntilConsumed(requestedCells,
             "def _conf_tchurn(n):\n"
             "    total = 0\n"
@@ -87,7 +87,7 @@ public:
     // The backlog is bounded by draining in the same round, so the live set
     // stays small and a failure means the collector could not keep up rather
     // than that the workload was unboundedly live.
-    bool runProducerConsumer(unsigned long units) override {
+    bool runProducerConsumer(proto::proto_ulong units) override {
         // BOUNDED BACKLOG, and that is load-bearing.  The first draft started
         // four producers, joined them all, and only then drained -- so 200,000
         // items were live at once by construction, the live set legitimately
@@ -95,8 +95,8 @@ public:
         // that said nothing about protoPython.  Here each round produces and
         // drains 2,000 items, so at most 2,000 are ever in flight and a failure
         // means the collector could not keep up.
-        const unsigned long perRound = 2000;
-        const unsigned long rounds = (units / perRound) + 1;
+        const proto::proto_ulong perRound = 2000;
+        const proto::proto_ulong rounds = (units / perRound) + 1;
         const std::string src =
             "import threading\n"
             "from collections import deque\n"
@@ -227,13 +227,13 @@ public:
     //
     // See TestMutableCycles.cpp for the shape-by-shape census with real bounds,
     // and docs/CONFORMANCE.md for why declaredMutableCycles() is NOT overridden.
-    unsigned long makeMutableGraph() override {
+    proto::proto_ulong makeMutableGraph() override {
         if (env_.executeString(mutableProbeSource(), "<conformance:mutables>") != 0) {
             env_.takePendingException();
             return 0;
         }
         const long long built = readIntGlobal("_conf_mutables_built");
-        return built > 0 ? static_cast<unsigned long>(built) : 0;
+        return built > 0 ? static_cast<proto::proto_ulong>(built) : 0;
     }
 
     // The probe, shared with TestMutableCycles.cpp so that the census test and
@@ -366,10 +366,10 @@ private:
         return v->asLong(ctx);
     }
 
-    unsigned long runUntilConsumed(unsigned long requestedCells,
+    proto::proto_ulong runUntilConsumed(proto::proto_ulong requestedCells,
                                    const char* snippet) {
-        const long floor = inUse() + (long) (requestedCells + requestedCells / 2);
-        unsigned long rounds = 0;
+        const proto::proto_long floor = inUse() + (proto::proto_long) (requestedCells + requestedCells / 2);
+        proto::proto_ulong rounds = 0;
         while (inUse() < floor && rounds < 4096) {
             if (env_.executeString(snippet, "<conformance:garbage>") != 0) {
                 env_.takePendingException();
@@ -380,9 +380,9 @@ private:
         return rounds;
     }
 
-    long inUse() {
+    proto::proto_long inUse() {
         proto::ProtoSpace* s = env_.getSpace();
-        return (long) s->heapSize - (long) s->freeCellsCount;
+        return (proto::proto_long) s->heapSize - (proto::proto_long) s->freeCellsCount;
     }
 
     PythonEnvironment env_;

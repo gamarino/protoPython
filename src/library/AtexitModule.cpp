@@ -52,7 +52,7 @@ static const proto::ProtoObject* py_register(
     // Preserve trailing positional / keyword args so the handler is
     // re-called with the exact bindings it requested.
     const proto::ProtoList* hargs = ctx->newList();
-    for (unsigned long i = 1; i < posArgs->getSize(ctx); ++i) {
+    for (proto::proto_ulong i = 1; i < posArgs->getSize(ctx); ++i) {
         hargs = hargs->appendLast(ctx, posArgs->getAt(ctx, static_cast<int>(i)));
     }
 
@@ -72,10 +72,10 @@ static const proto::ProtoObject* py_register(
         const proto::ProtoSparseListIterator* it = kwargs->getIterator(ctx);
         while (it && it->hasNext(ctx)) {
             const proto::ProtoObject* val = it->nextValue(ctx);
-            unsigned long key = it->nextKey(ctx);
+            proto::proto_ulong key = it->nextKey(ctx);
             it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(ctx);
             const proto::ProtoList* pair = ctx->newList();
-            pair = pair->appendLast(ctx, ctx->fromInteger(static_cast<long>(key)));
+            pair = pair->appendLast(ctx, ctx->fromInteger(static_cast<proto::proto_long>(key)));
             pair = pair->appendLast(ctx, val);
             kwList = kwList->appendLast(ctx, pair->asObject(ctx));
         }
@@ -111,8 +111,8 @@ static const proto::ProtoObject* py_unregister(
     // Filter out entries whose callable matches `target`. CPython
     // matches on identity (`is`), so we use pointer equality.
     const proto::ProtoList* kept = ctx->newList();
-    unsigned long n = lst->getSize(ctx);
-    for (unsigned long i = 0; i < n; ++i) {
+    proto::proto_ulong n = lst->getSize(ctx);
+    for (proto::proto_ulong i = 0; i < n; ++i) {
         const proto::ProtoObject* entry = lst->getAt(ctx, static_cast<int>(i));
         const proto::ProtoList* el = entry->asList(ctx);
         if (!el) continue;
@@ -136,7 +136,7 @@ static const proto::ProtoObject* py_run_exitfuncs(
     const proto::ProtoList* lst = listObj->asList(ctx);
 
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    unsigned long n = lst->getSize(ctx);
+    proto::proto_ulong n = lst->getSize(ctx);
     // CPython: handlers run LIFO. Latest registration fires first.
     for (long long i = static_cast<long long>(n) - 1; i >= 0; --i) {
         const proto::ProtoObject* entry = lst->getAt(ctx, static_cast<int>(i));

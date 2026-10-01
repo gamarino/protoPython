@@ -12,12 +12,12 @@ namespace {
 
 // Counts the objects pinned in root sets named "hpy-handles", the root set each
 // HPyContext registers for its handles.
-unsigned long countHandleRoots(proto::ProtoSpace& space) {
-    unsigned long pinned = 0;
+proto::proto_ulong countHandleRoots(proto::ProtoSpace& space) {
+    proto::proto_ulong pinned = 0;
     space.forEachRootSet(
         [](void* user, proto::ProtoRootSet* rs) {
             if (std::string(rs->getName()) == "hpy-handles") {
-                *static_cast<unsigned long*>(user) += rs->size();
+                *static_cast<proto::proto_ulong*>(user) += rs->size();
             }
         },
         &pinned);

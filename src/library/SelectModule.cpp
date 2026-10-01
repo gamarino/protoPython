@@ -92,8 +92,8 @@ static const proto::ProtoObject* py_select(
     struct timeval tv;
     struct timeval* tvp = nullptr;
     if (timeout_sec >= 0.0) {
-        tv.tv_sec = (long)timeout_sec;
-        tv.tv_usec = (long)((timeout_sec - tv.tv_sec) * 1e6);
+        tv.tv_sec = (proto::proto_long)timeout_sec;
+        tv.tv_usec = (proto::proto_long)((timeout_sec - tv.tv_sec) * 1e6);
         tvp = &tv;
     }
 

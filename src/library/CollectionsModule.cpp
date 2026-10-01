@@ -14,7 +14,7 @@ namespace collections {
 // pointers behind the external pointer holding this state was invisible to it.
 // Mutations publish a new list with a compare-and-swap, as list mutators do.
 struct DequeState {
-    std::atomic<long> maxlen{-1}; // CPython's maxlen; -1 when unbounded
+    std::atomic<proto::proto_long> maxlen{-1}; // CPython's maxlen; -1 when unbounded
 };
 
 static const proto::ProtoObject* py_collections_dummy(
@@ -110,7 +110,7 @@ static DequeState* get_deque_state(proto::ProtoContext* ctx, const proto::ProtoO
 static DequeState* resolve_deque_receiver(proto::ProtoContext* ctx,
                                           const proto::ProtoObject*& self,
                                           const proto::ProtoList* posArgs,
-                                          unsigned long& argOff) {
+                                          proto::proto_ulong& argOff) {
     argOff = 0;
     DequeState* state = self ? get_deque_state(ctx, self) : nullptr;
     if (!state && posArgs && posArgs->getSize(ctx) > 0) {
@@ -158,8 +158,8 @@ static bool deque_publish(proto::ProtoContext* ctx, const proto::ProtoObject* se
 // maxlen: adding at one end drops items from the other.
 static const proto::ProtoList* deque_trim_front(proto::ProtoContext* ctx, const DequeState* state,
                                                 const proto::ProtoList* items) {
-    const long maxlen = state->maxlen.load();
-    while (maxlen >= 0 && items->getSize(ctx) > static_cast<unsigned long>(maxlen)) {
+    const proto::proto_long maxlen = state->maxlen.load();
+    while (maxlen >= 0 && items->getSize(ctx) > static_cast<proto::proto_ulong>(maxlen)) {
         items = items->removeFirst(ctx);
     }
     return items;
@@ -167,8 +167,8 @@ static const proto::ProtoList* deque_trim_front(proto::ProtoContext* ctx, const 
 
 static const proto::ProtoList* deque_trim_back(proto::ProtoContext* ctx, const DequeState* state,
                                                const proto::ProtoList* items) {
-    const long maxlen = state->maxlen.load();
-    while (maxlen >= 0 && items->getSize(ctx) > static_cast<unsigned long>(maxlen)) {
+    const proto::proto_long maxlen = state->maxlen.load();
+    while (maxlen >= 0 && items->getSize(ctx) > static_cast<proto::proto_ulong>(maxlen)) {
         items = items->removeLast(ctx);
     }
     return items;
@@ -203,7 +203,7 @@ static const proto::ProtoObject* py_deque_append(
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* kwArgs) {
 
-    unsigned long argOff = 0;
+    proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (!state) {
         // CPython: descriptor doesn't apply to a non-deque object.
@@ -234,7 +234,7 @@ static const proto::ProtoObject* py_deque_appendleft(
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* kwArgs) {
 
-    unsigned long argOff = 0;
+    proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (!state) {
         protoPython::PythonEnvironment* env =
@@ -262,7 +262,7 @@ static const proto::ProtoObject* py_deque_pop(
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* kwArgs) {
 
-    unsigned long argOff = 0;
+    proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (!state) {
         protoPython::PythonEnvironment* env =
@@ -293,7 +293,7 @@ static const proto::ProtoObject* py_deque_popleft(
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* kwArgs) {
 
-    unsigned long argOff = 0;
+    proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (!state) {
         protoPython::PythonEnvironment* env =
@@ -324,7 +324,7 @@ static const proto::ProtoObject* py_deque_len(
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* kwArgs) {
 
-    unsigned long argOff = 0;
+    proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (state) {
         const proto::ProtoObject* raw = nullptr;
@@ -339,7 +339,7 @@ static const proto::ProtoObject* py_deque_getitem(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* /*kwArgs*/) {
-    unsigned long argOff = 0;
+    proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (!posArgs || posArgs->getSize(ctx) <= argOff) return PROTO_NONE;
     const proto::ProtoObject* idxObj = posArgs->getAt(ctx, static_cast<int>(argOff));
@@ -372,7 +372,7 @@ static const proto::ProtoObject* py_deque_count(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* /*kwArgs*/) {
-    unsigned long argOff = 0;
+    proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!state) {
@@ -395,8 +395,8 @@ static const proto::ProtoObject* py_deque_count(
     // the deque do not disturb the walk.
     PythonEnvironment::TransientPin pinItems(env, items ? items->asObject(ctx) : nullptr);
     long long count = 0;
-    const unsigned long n = items ? items->getSize(ctx) : 0;
-    for (unsigned long i = 0; i < n; ++i) {
+    const proto::proto_ulong n = items ? items->getSize(ctx) : 0;
+    for (proto::proto_ulong i = 0; i < n; ++i) {
         const proto::ProtoObject* item = items->getAt(ctx, static_cast<int>(i));
         if (item == value) { ++count; continue; }
         if (!env) continue;
@@ -415,7 +415,7 @@ static const proto::ProtoObject* py_deque_remove(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* /*kwArgs*/) {
-    unsigned long argOff = 0;
+    proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (!state) {
         protoPython::PythonEnvironment* env =
@@ -431,9 +431,9 @@ static const proto::ProtoObject* py_deque_remove(
     for (;;) {
         const proto::ProtoObject* raw = nullptr;
         const proto::ProtoList* items = deque_items(ctx, self, raw);
-        const unsigned long n = items->getSize(ctx);
-        long found = -1;
-        for (unsigned long i = 0; i < n && found < 0; ++i) {
+        const proto::proto_ulong n = items->getSize(ctx);
+        proto::proto_long found = -1;
+        for (proto::proto_ulong i = 0; i < n && found < 0; ++i) {
             const proto::ProtoObject* item = items->getAt(ctx, static_cast<int>(i));
             bool eq = item == value;
             if (!eq && env) {
@@ -441,7 +441,7 @@ static const proto::ProtoObject* py_deque_remove(
                 if (!r && env->hasPendingException()) return nullptr;
                 eq = (r == PROTO_TRUE);
             }
-            if (eq) found = static_cast<long>(i);
+            if (eq) found = static_cast<proto::proto_long>(i);
         }
         if (found < 0) break;
         if (deque_publish(ctx, self, raw, items->removeAt(ctx, static_cast<int>(found)))) return PROTO_NONE;
@@ -457,7 +457,7 @@ static const proto::ProtoObject* py_deque_clear(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* /*kwArgs*/) {
-    unsigned long argOff = 0;
+    proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (!state) {
         protoPython::PythonEnvironment* env =
@@ -480,7 +480,7 @@ static const proto::ProtoObject* py_deque_extend(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* /*kwArgs*/) {
-    unsigned long argOff = 0;
+    proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (!state) {
         protoPython::PythonEnvironment* env =
@@ -511,7 +511,7 @@ static const proto::ProtoObject* py_deque_extendleft(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* /*kwArgs*/) {
-    unsigned long argOff = 0;
+    proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (!state) {
         protoPython::PythonEnvironment* env =
@@ -527,11 +527,11 @@ static const proto::ProtoObject* py_deque_extendleft(
     if (!env) return PROTO_NONE;
     const proto::ProtoList* incoming = deque_collect(ctx, env, iterable);
     if (!incoming) return nullptr;
-    const unsigned long n = incoming->getSize(ctx);
+    const proto::proto_ulong n = incoming->getSize(ctx);
     for (;;) {
         const proto::ProtoObject* raw = nullptr;
         const proto::ProtoList* items = deque_items(ctx, self, raw);
-        for (unsigned long i = 0; i < n; ++i) {
+        for (proto::proto_ulong i = 0; i < n; ++i) {
             items = items->appendFirst(ctx, incoming->getAt(ctx, static_cast<int>(i)));
         }
         if (deque_publish(ctx, self, raw, deque_trim_back(ctx, state, items))) return PROTO_NONE;
@@ -564,7 +564,7 @@ static const proto::ProtoObject* py_deque_repr(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     (void)parentLink; (void)positionalParameters; (void)keywordParameters;
-    unsigned long argOff = 0;
+    proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(context, self, positionalParameters, argOff);
     // CPython names the subclass, D([1, 2]), and shows a maxlen.
     std::string s = "deque";
@@ -577,11 +577,11 @@ static const proto::ProtoObject* py_deque_repr(
         if (!clsName.empty()) s = clsName;
     }
     s += "([";
-    long maxlen = -1;
+    proto::proto_long maxlen = -1;
     if (state) {
         const proto::ProtoObject* raw = nullptr;
         const proto::ProtoList* items = deque_items(context, self, raw);
-        for (unsigned long i = 0; i < items->getSize(context); ++i) {
+        for (proto::proto_ulong i = 0; i < items->getSize(context); ++i) {
             if (i > 0) s += ", ";
             s += protoPython::PythonEnvironment::reprObject(context, items->getAt(context, static_cast<int>(i)));
         }
@@ -601,7 +601,7 @@ static const proto::ProtoObject* py_deque_iter(
     const proto::ProtoSparseList* kwArgs) {
     (void)parentLink; (void)posArgs; (void)kwArgs;
     
-    unsigned long argOff = 0;
+    proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (!state) return PROTO_NONE;
     const proto::ProtoString* itProtoS = PythonEnvironment::getInternalString(ctx, "__deque_iterator_proto__");
@@ -632,7 +632,7 @@ static const proto::ProtoObject* py_deque_reversed(
     const proto::ProtoSparseList* kwArgs) {
     (void)parentLink; (void)posArgs; (void)kwArgs;
     
-    unsigned long argOff = 0;
+    proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (!state) return PROTO_NONE;
     const proto::ProtoString* itProtoS = PythonEnvironment::getInternalString(ctx, "__deque_reverse_iterator_proto__");
@@ -678,7 +678,7 @@ static const proto::ProtoObject* py_deque_iterator_next(
     }
 
     long long idx = idxObj->asLong(ctx);
-    if (idx < 0 || static_cast<unsigned long>(idx) >= items->getSize(ctx)) {
+    if (idx < 0 || static_cast<proto::proto_ulong>(idx) >= items->getSize(ctx)) {
         return nullptr;
     }
     
@@ -712,7 +712,7 @@ static const proto::ProtoObject* py_deque_reverse_iterator_next(
     }
 
     long long idx = idxObj->asLong(ctx);
-    if (idx < 0 || static_cast<unsigned long>(idx) >= items->getSize(ctx)) {
+    if (idx < 0 || static_cast<proto::proto_ulong>(idx) >= items->getSize(ctx)) {
         return nullptr;
     }
     
@@ -766,7 +766,7 @@ static const proto::ProtoObject* py_deque_init(
     const proto::ProtoSparseList* kwArgs) {
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
     if (!env) return PROTO_NONE;
-    unsigned long argOff = 0;
+    proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (!state) {
         env->raiseTypeError(ctx,
@@ -774,7 +774,7 @@ static const proto::ProtoObject* py_deque_init(
             "doesn't apply to a non-deque object");
         return nullptr;
     }
-    unsigned long nargs = posArgs ? posArgs->getSize(ctx) : 0;
+    proto::proto_ulong nargs = posArgs ? posArgs->getSize(ctx) : 0;
     if (nargs > argOff + 2) {
         env->raiseTypeError(ctx, "deque expected at most 2 arguments, got "
             + std::to_string(nargs - argOff));
@@ -785,15 +785,15 @@ static const proto::ProtoObject* py_deque_init(
     const proto::ProtoObject* maxlenObj = nargs > argOff + 1
         ? posArgs->getAt(ctx, static_cast<int>(argOff + 1)) : PROTO_NONE;
     if (kwArgs) {
-        unsigned long iterableH = PythonEnvironment::getInternedString(ctx, "iterable")->getHash(ctx);
-        unsigned long maxlenH = PythonEnvironment::getInternedString(ctx, "maxlen")->getHash(ctx);
+        proto::proto_ulong iterableH = PythonEnvironment::getInternedString(ctx, "iterable")->getHash(ctx);
+        proto::proto_ulong maxlenH = PythonEnvironment::getInternedString(ctx, "maxlen")->getHash(ctx);
         if (kwArgs->has(ctx, iterableH)) iterable = kwArgs->getAt(ctx, iterableH);
         if (kwArgs->has(ctx, maxlenH)) maxlenObj = kwArgs->getAt(ctx, maxlenH);
     }
     if (!maxlenObj || maxlenObj == env->getNonePrototype() || maxlenObj->isNone(ctx)) {
         maxlenObj = PROTO_NONE;
     }
-    long maxlen = -1;
+    proto::proto_long maxlen = -1;
     if (maxlenObj != PROTO_NONE) {
         if (!maxlenObj->isInteger(ctx)) {
             env->raiseTypeError(ctx, "an integer is required");
@@ -804,7 +804,7 @@ static const proto::ProtoObject* py_deque_init(
                 PythonEnvironment::getInternedString(ctx, "maxlen must be non-negative")->asObject(ctx));
             return nullptr;
         }
-        maxlen = static_cast<long>(maxlenObj->asLong(ctx));
+        maxlen = static_cast<proto::proto_long>(maxlenObj->asLong(ctx));
     }
     state->maxlen.store(maxlen);
     // CPython clears the deque before extending it, so d.__init__(d) empties d.
@@ -838,7 +838,7 @@ static const proto::ProtoObject* deque_compare(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ProtoList* posArgs, int op) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env) return PROTO_NONE;
-    unsigned long argOff = 0;
+    proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (!state || !posArgs || posArgs->getSize(ctx) <= argOff) return env->getNotImplementedPrototype();
     const proto::ProtoObject* other = posArgs->getAt(ctx, static_cast<int>(argOff));
@@ -879,10 +879,10 @@ static const proto::ProtoObject* py_deque_ge(proto::ProtoContext* ctx, const pro
 // fget of the read-only `maxlen` property: None when unbounded.
 static const proto::ProtoObject* py_deque_maxlen_get(proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    unsigned long argOff = 0;
+    proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (!state) return PROTO_NONE;
-    const long maxlen = state->maxlen.load();
+    const proto::proto_long maxlen = state->maxlen.load();
     return maxlen < 0 ? PROTO_NONE : ctx->fromInteger(maxlen);
 }
 

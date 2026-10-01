@@ -153,7 +153,7 @@ static const proto::ProtoObject* sys_getsizeof(
             const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
             const proto::ProtoObject* sizeM = nullptr;
             if (mroT) {
-                for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+                for (proto::proto_ulong i = 0; i < mroT->getSize(context); ++i) {
                     const proto::ProtoObject* b = mroT->getAt(context, i);
                     if (!b || b == PROTO_NONE) continue;
                     if (b->hasOwnAttribute(context, sizeofS) == PROTO_TRUE) {
@@ -348,17 +348,17 @@ static const proto::ProtoObject* sys_getframemodulename(
             arg = keywordParameters->getAt(context, depthS->getHash(context));
         }
     }
-    long depth = 0;
+    proto::proto_long depth = 0;
     if (arg) {
         if (!arg->isInteger(context)) {
             if (env) env->raiseTypeError(context, "_getframemodulename() depth must be an integer");
             return nullptr;
         }
-        depth = static_cast<long>(arg->asLong(context));
+        depth = static_cast<proto::proto_long>(arg->asLong(context));
     }
     // CPython treats a negative depth as 0.
     const proto::ProtoObject* name = PythonEnvironment::getScopeModuleName(
-        depth > 0 ? static_cast<unsigned long>(depth) : 0UL);
+        depth > 0 ? static_cast<proto::proto_ulong>(depth) : PROTO_UL(0));
     return name ? name : PROTO_NONE;
 }
 
@@ -485,11 +485,11 @@ static const proto::ProtoObject* sys_set_asyncgen_hooks(
     static const char* const kParams[2] = {"firstiter", "finalizer"};
     for (int w = 0; w < 2; ++w) {
         const proto::ProtoObject* v = nullptr;  // not given: keep the current hook
-        if (positionalParameters && positionalParameters->getSize(context) > static_cast<unsigned long>(w)) {
+        if (positionalParameters && positionalParameters->getSize(context) > static_cast<proto::proto_ulong>(w)) {
             v = positionalParameters->getAt(context, w);
         }
         if (keywordParameters) {
-            const unsigned long h = PythonEnvironment::getInternedString(context, kParams[w])->getHash(context);
+            const proto::proto_ulong h = PythonEnvironment::getInternedString(context, kParams[w])->getHash(context);
             if (keywordParameters->has(context, h)) v = keywordParameters->getAt(context, h);
         }
         if (!v) continue;

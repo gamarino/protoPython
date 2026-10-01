@@ -60,7 +60,7 @@ static std::string toUtf8(const std::wstring& w) {
     std::string out;
     out.reserve(w.size());
     for (wchar_t wc : w) {
-        const unsigned long cp = static_cast<unsigned long>(wc);
+        const proto::proto_ulong cp = static_cast<proto::proto_ulong>(wc);
         if (cp < 0x80) {
             out += static_cast<char>(cp);
         } else if (cp < 0x800) {
@@ -176,7 +176,7 @@ static long long resolveGroupRef(proto::ProtoContext* ctx,
             proto::ProtoString::createSymbol(ctx, "__re_groupindex__"));
         if (gi && gi->asList(ctx)) {
             const proto::ProtoList* lst = gi->asList(ctx);
-            for (unsigned long k = 0; k < lst->getSize(ctx); ++k) {
+            for (proto::proto_ulong k = 0; k < lst->getSize(ctx); ++k) {
                 const proto::ProtoObject* pair = lst->getAt(ctx, k);
                 if (!pair || !pair->asList(ctx)) continue;
                 const proto::ProtoList* p = pair->asList(ctx);
@@ -237,7 +237,7 @@ static const proto::ProtoObject* py_match_groupdict(
 
     if (gi && gi->asList(ctx) && groups) {
         const proto::ProtoList* lst = gi->asList(ctx);
-        for (unsigned long k = 0; k < lst->getSize(ctx); ++k) {
+        for (proto::proto_ulong k = 0; k < lst->getSize(ctx); ++k) {
             const proto::ProtoObject* pair = lst->getAt(ctx, k);
             if (!pair || !pair->asList(ctx) || pair->asList(ctx)->getSize(ctx) < 2) continue;
             const proto::ProtoObject* nameObj = pair->asList(ctx)->getAt(ctx, 0);
@@ -277,7 +277,7 @@ static const proto::ProtoObject* py_match_groups(
     const proto::ProtoList* groups = groupsObj->asList(ctx);
     // Replace unmatched (PROTO_NONE) with default value
     const proto::ProtoList* result = ctx->newList();
-    for (unsigned long i = 0; i < groups->getSize(ctx); ++i) {
+    for (proto::proto_ulong i = 0; i < groups->getSize(ctx); ++i) {
         const proto::ProtoObject* g = groups->getAt(ctx, static_cast<int>(i));
         result = result->appendLast(ctx, (g == PROTO_NONE) ? defaultVal : g);
     }
@@ -487,7 +487,7 @@ static long long extractFlags(proto::ProtoContext* ctx,
         if (f && f->isInteger(ctx)) flags = f->asLong(ctx);
     }
     // Override/merge with explicit flags argument
-    if (posArgs && posArgs->getSize(ctx) > (unsigned long)flagsArgIdx) {
+    if (posArgs && posArgs->getSize(ctx) > (proto::proto_ulong)flagsArgIdx) {
         const proto::ProtoObject* fa = posArgs->getAt(ctx, flagsArgIdx);
         if (fa && fa->isInteger(ctx)) flags |= fa->asLong(ctx);
     }
@@ -495,13 +495,13 @@ static long long extractFlags(proto::ProtoContext* ctx,
 }
 
 // An optional integer argument given at position `idx` or as keyword `name`.
-static long long intArg(proto::ProtoContext* ctx, const proto::ProtoList* posArgs, unsigned long idx,
+static long long intArg(proto::ProtoContext* ctx, const proto::ProtoList* posArgs, proto::proto_ulong idx,
                         const proto::ProtoSparseList* kwArgs, const char* name, long long dflt) {
     const proto::ProtoObject* v = nullptr;
     if (posArgs && posArgs->getSize(ctx) > idx) {
         v = posArgs->getAt(ctx, static_cast<int>(idx));
     } else if (kwArgs) {
-        const unsigned long h = PythonEnvironment::getInternedString(ctx, name)->getHash(ctx);
+        const proto::proto_ulong h = PythonEnvironment::getInternedString(ctx, name)->getHash(ctx);
         if (kwArgs->has(ctx, h)) v = kwArgs->getAt(ctx, h);
     }
     return (v && v->isInteger(ctx)) ? v->asLong(ctx) : dflt;

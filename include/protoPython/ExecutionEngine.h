@@ -306,7 +306,7 @@ constexpr int OP_LT_FAST_FAST_JF = 214;
  *        Uses direct protoCore types (zero-copy). See REARCHITECTURE_PROTOCORE.md.
  */
 struct Block {
-    unsigned long handlerPc;
+    proto::proto_ulong handlerPc;
     size_t stackDepth;
     bool isWithBlock = false;
 };
@@ -317,14 +317,14 @@ const proto::ProtoObject* executeBytecodeRange(
     const proto::ProtoTuple* bytecode,
     const proto::ProtoTuple* names,
     proto::ProtoObject*& frame,
-    unsigned long pcStart,
-    unsigned long pcEnd,
-    unsigned long stackOffset = 0,
-    unsigned long* outPc = nullptr,
+    proto::proto_ulong pcStart,
+    proto::proto_ulong pcEnd,
+    proto::proto_ulong stackOffset = 0,
+    proto::proto_ulong* outPc = nullptr,
     bool* yielded = nullptr,
     std::vector<Block>* externalBlockStack = nullptr,
-    unsigned long initialTop = 0,
-    unsigned long* finalTopPtr = nullptr,
+    proto::proto_ulong initialTop = 0,
+    proto::proto_ulong* finalTopPtr = nullptr,
     const int* nativeBc = nullptr,
     const proto::ProtoObject** nativeConsts = nullptr,
     const proto::ProtoObject** nativeNames  = nullptr);

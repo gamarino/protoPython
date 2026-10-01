@@ -46,9 +46,9 @@ namespace {
 // Cycles whose reported path contains `hop`.  `path` is a SHORTEST closed walk
 // through the lowest-numbered handle of the component, so a shape is named by the
 // attribute that closes that walk.
-unsigned long countShape(const proto::MutableGraphReport& r, const char* hop)
+proto::proto_ulong countShape(const proto::MutableGraphReport& r, const char* hop)
 {
-    unsigned long n = 0;
+    proto::proto_ulong n = 0;
     for (const proto::MutableCycle& c : r.cycles)
         if (c.path.find(hop) != std::string::npos) ++n;
     return n;
@@ -57,10 +57,10 @@ unsigned long countShape(const proto::MutableGraphReport& r, const char* hop)
 // The quantity that actually measures retention: how many mutable handles sit
 // inside SOME cycle, and are therefore marked for the life of the space.  Unlike
 // the cycle count this cannot fall when two components merge.
-unsigned long handlesInCycles(const proto::MutableGraphReport& r)
+proto::proto_ulong handlesInCycles(const proto::MutableGraphReport& r)
 {
-    unsigned long n = 0;
-    for (const proto::MutableCycle& c : r.cycles) n += (unsigned long) c.refs.size();
+    proto::proto_ulong n = 0;
+    for (const proto::MutableCycle& c : r.cycles) n += (proto::proto_ulong) c.refs.size();
     return n;
 }
 
@@ -119,8 +119,8 @@ TEST(MutableCycles, TheProbesShapesArePresentAndAttributable)
     std::printf("[ CYCLES   ] mutables table %lu -> %lu entries; cycles %lu -> %lu; "
                 "handles inside a cycle %lu -> %lu; %lu cells walked\n",
                 before.handles, after.handles,
-                (unsigned long) before.cycles.size(),
-                (unsigned long) after.cycles.size(),
+                (proto::proto_ulong) before.cycles.size(),
+                (proto::proto_ulong) after.cycles.size(),
                 handlesInCycles(before), handlesInCycles(after), after.cellsVisited);
     for (const char* hop : {".__mro__", ".f_locals", ".__getattr__",
                             ".__closure_frames__"})

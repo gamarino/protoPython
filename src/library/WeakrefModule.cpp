@@ -54,8 +54,8 @@ static const proto::ProtoString* sym(proto::ProtoContext* ctx, const char* n) {
 // Stable per-object key — protoCore handles don't move, so the
 // pointer cast is a stable identity for the object's lifetime in
 // `__active__`.
-static unsigned long obj_key(const proto::ProtoObject* obj) {
-    return static_cast<unsigned long>(reinterpret_cast<uintptr_t>(obj));
+static proto::proto_ulong obj_key(const proto::ProtoObject* obj) {
+    return static_cast<proto::proto_ulong>(reinterpret_cast<uintptr_t>(obj));
 }
 
 static const proto::ProtoSparseList* active_get(
@@ -88,7 +88,7 @@ static const proto::ProtoObject* lookup_via_handle(
 
     const proto::ProtoObject* keyObj = handle->getAttribute(ctx, sym(ctx, "_wr_key"));
     if (!keyObj || !keyObj->isInteger(ctx)) return PROTO_NONE;
-    unsigned long key = static_cast<unsigned long>(keyObj->asLong(ctx));
+    proto::proto_ulong key = static_cast<proto::proto_ulong>(keyObj->asLong(ctx));
 
     const proto::ProtoObject* mod = env->lookupName("_weakref");
     if (!mod || mod == PROTO_NONE) return PROTO_NONE;
@@ -100,7 +100,7 @@ static const proto::ProtoObject* lookup_via_handle(
     const proto::ProtoObject* hook = mod->getAttribute(ctx, sym(ctx, "_reload_hook"));
     if (hook && hook != PROTO_NONE && hook != PROTO_FALSE) {
         std::vector<const proto::ProtoObject*> args;
-        args.push_back(ctx->fromInteger(static_cast<long>(key)));
+        args.push_back(ctx->fromInteger(static_cast<proto::proto_long>(key)));
         const proto::ProtoObject* reloaded = env->callObject(hook, args);
         if (reloaded && reloaded != PROTO_NONE) {
             active = active->setAt(ctx, key, reloaded);
@@ -124,7 +124,7 @@ static const proto::ProtoObject* py_weakref_ref(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    unsigned long n = posArgs ? posArgs->getSize(ctx) : 0;
+    proto::proto_ulong n = posArgs ? posArgs->getSize(ctx) : 0;
 
     // Dereference path.
     if (n == 0) return lookup_via_handle(ctx, self);
@@ -155,7 +155,7 @@ static const proto::ProtoObject* py_weakref_ref(
     //      `__mro__` as an own attr (the protoPython compiler emits it).
     // Both share `type(arg) == type` (the metaclass). That's the
     // canonical check.
-    unsigned long base = 0;
+    proto::proto_ulong base = 0;
     if (n >= 2 && env) {
         const proto::ProtoObject* a0 = posArgs->getAt(ctx, 0);
         if (a0 && a0 != PROTO_NONE) {
@@ -210,9 +210,9 @@ static const proto::ProtoObject* py_weakref_ref(
             if (!sv) return false;
             const proto::ProtoList* sL = sv->asList(ctx);
             const proto::ProtoTuple* sT = sv->asTuple(ctx);
-            unsigned long n = sL ? sL->getSize(ctx)
+            proto::proto_ulong n = sL ? sL->getSize(ctx)
                               : (sT ? sT->getSize(ctx) : 0);
-            for (unsigned long i = 0; i < n; ++i) {
+            for (proto::proto_ulong i = 0; i < n; ++i) {
                 const proto::ProtoObject* item = sL
                     ? sL->getAt(ctx, static_cast<int>(i))
                     : sT->getAt(ctx, static_cast<int>(i));
@@ -227,7 +227,7 @@ static const proto::ProtoObject* py_weakref_ref(
             return false;
         };
         if (mroT) {
-            for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
+            for (proto::proto_ulong i = 0; i < mroT->getSize(ctx); ++i) {
                 const proto::ProtoObject* anc = mroT->getAt(ctx, static_cast<int>(i));
                 if (!anc || anc == PROTO_NONE) continue;
                 if (blocksWeakref(anc)) hasBlocker = true;
@@ -251,9 +251,9 @@ static const proto::ProtoObject* py_weakref_ref(
                 if (!slotsAttr) return false;
                 const proto::ProtoList* slotsL = slotsAttr->asList(ctx);
                 const proto::ProtoTuple* slotsTp = slotsAttr->asTuple(ctx);
-                unsigned long nn = slotsL ? slotsL->getSize(ctx)
+                proto::proto_ulong nn = slotsL ? slotsL->getSize(ctx)
                                   : (slotsTp ? slotsTp->getSize(ctx) : 0);
-                for (unsigned long i = 0; i < nn; ++i) {
+                for (proto::proto_ulong i = 0; i < nn; ++i) {
                     const proto::ProtoObject* item = slotsL
                         ? slotsL->getAt(ctx, static_cast<int>(i))
                         : slotsTp->getAt(ctx, static_cast<int>(i));
@@ -269,7 +269,7 @@ static const proto::ProtoObject* py_weakref_ref(
             };
             bool weakrefAvailable = false;
             if (mroT) {
-                for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
+                for (proto::proto_ulong i = 0; i < mroT->getSize(ctx); ++i) {
                     const proto::ProtoObject* base = mroT->getAt(ctx, i);
                     if (!base || base == PROTO_NONE) continue;
                     if (base == env->getObjectPrototype()) continue;
@@ -293,7 +293,7 @@ static const proto::ProtoObject* py_weakref_ref(
         }
     }
 
-    unsigned long key = obj_key(target);
+    proto::proto_ulong key = obj_key(target);
 
     if (mod && mod != PROTO_NONE) {
         const proto::ProtoSparseList* active = active_get(ctx, mod);
@@ -306,7 +306,7 @@ static const proto::ProtoObject* py_weakref_ref(
         refObj = const_cast<proto::ProtoObject*>(refObj->addParent(ctx, refType));
     }
     refObj = const_cast<proto::ProtoObject*>(refObj->setAttribute(ctx,
-        sym(ctx, "_wr_key"), ctx->fromInteger(static_cast<long>(key))));
+        sym(ctx, "_wr_key"), ctx->fromInteger(static_cast<proto::proto_long>(key))));
     if (n > base + 1) {
         refObj = const_cast<proto::ProtoObject*>(refObj->setAttribute(ctx,
             sym(ctx, "callback"), posArgs->getAt(ctx, static_cast<int>(base + 1))));
@@ -326,8 +326,8 @@ static const proto::ProtoObject* py_weakref_evict(
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env || !posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
-    unsigned long key = arg->isInteger(ctx)
-        ? static_cast<unsigned long>(arg->asLong(ctx))
+    proto::proto_ulong key = arg->isInteger(ctx)
+        ? static_cast<proto::proto_ulong>(arg->asLong(ctx))
         : obj_key(arg);
     const proto::ProtoObject* mod = env->lookupName("_weakref");
     if (!mod || mod == PROTO_NONE) return PROTO_NONE;
@@ -344,7 +344,7 @@ static const proto::ProtoObject* py_weakref_getweakrefcount(
     if (!env || !posArgs || posArgs->getSize(ctx) < 1) return ctx->fromInteger(0);
     const proto::ProtoObject* mod = env->lookupName("_weakref");
     if (!mod || mod == PROTO_NONE) return ctx->fromInteger(0);
-    unsigned long key = obj_key(posArgs->getAt(ctx, 0));
+    proto::proto_ulong key = obj_key(posArgs->getAt(ctx, 0));
     const proto::ProtoSparseList* active = active_get(ctx, mod);
     const proto::ProtoObject* found = active->getAt(ctx, key);
     return ctx->fromInteger((found && found != PROTO_NONE) ? 1 : 0);

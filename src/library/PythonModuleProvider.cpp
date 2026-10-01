@@ -62,7 +62,7 @@ static std::vector<std::string> searchDirectories(const std::vector<std::string>
             if (data && data->asList(ctx)) entries = data->asList(ctx);
             else if (pathObj->asList(ctx)) entries = pathObj->asList(ctx);
         }
-        for (unsigned long i = 0; entries && i < entries->getSize(ctx); ++i) {
+        for (proto::proto_ulong i = 0; entries && i < entries->getSize(ctx); ++i) {
             const proto::ProtoObject* entry = entries->getAt(ctx, static_cast<int>(i));
             if (!entry || entry == PROTO_NONE) continue;
             // A str subclass keeps its text in __data__, like every wrapped

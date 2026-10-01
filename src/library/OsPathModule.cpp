@@ -42,7 +42,7 @@ static const proto::ProtoObject* py_join(
             }
         }
     } else {
-        for (unsigned long i = 0; i < posArgs->getSize(ctx); ++i) {
+        for (proto::proto_ulong i = 0; i < posArgs->getSize(ctx); ++i) {
             if (i > 0) out += sep;
             const proto::ProtoObject* part = posArgs->getAt(ctx, static_cast<int>(i));
             if (part->isString(ctx)) {

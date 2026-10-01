@@ -88,20 +88,20 @@ bool requestOneCycle(proto::ProtoSpace& space, proto::ProtoContext* ctx,
 void driveCycles(proto::ProtoSpace& space, proto::ProtoContext* ctx,
                  unsigned maxCycles, unsigned deadlineMs)
 {
-    long previousInUse = (long) space.heapSize - (long) space.freeCellsCount;
+    proto::proto_long previousInUse = (proto::proto_long) space.heapSize - (proto::proto_long) space.freeCellsCount;
     unsigned stable = 0;
     for (unsigned i = 0; i < maxCycles; ++i) {
         if (!requestOneCycle(space, ctx, deadlineMs)) return;
-        const long inUse = (long) space.heapSize - (long) space.freeCellsCount;
+        const proto::proto_long inUse = (proto::proto_long) space.heapSize - (proto::proto_long) space.freeCellsCount;
         if (inUse >= previousInUse) { if (++stable >= 2) return; }
         else stable = 0;
         previousInUse = inUse;
     }
 }
 
-long markedCells(proto::ProtoSpace& space)
+proto::proto_long markedCells(proto::ProtoSpace& space)
 {
-    return (long) space.liveCellsLastCycle.load(std::memory_order_relaxed);
+    return (proto::proto_long) space.liveCellsLastCycle.load(std::memory_order_relaxed);
 }
 
 /// ONE environment for the whole process.
@@ -131,14 +131,14 @@ protected:
     /// `defs` already compiled and settled so that the one-off cost of compiling
     /// (protoPython pins each compiled module's bytecode for the life of the
     /// environment) is not counted as retention.
-    long retentionOf(const std::string& defs, const std::string& call) {
+    proto::proto_long retentionOf(const std::string& defs, const std::string& call) {
         if (env_.executeString(defs, "<retention:defs>") != 0) {
             env_.takePendingException();
             ADD_FAILURE() << "definitions failed to execute";
             return -1;
         }
         settle();
-        const long before = markedCells(space());
+        const proto::proto_long before = markedCells(space());
         if (env_.executeString(call, "<retention:call>") != 0) {
             env_.takePendingException();
             ADD_FAILURE() << "workload failed to execute";
@@ -174,7 +174,7 @@ TEST_F(RetentionTest, FinishedThreadReleasesItsPyThreadRoot)
     // Only the main thread's record may still be pinned once every spawned
     // thread has been joined.  Whatever that baseline is, 24 more threads must
     // not change it.
-    const unsigned long baseline = roots->size();
+    const proto::proto_ulong baseline = roots->size();
     ASSERT_EQ(env_.executeString("_r = _run(24)\n", "<retention:many>"), 0);
     EXPECT_EQ(roots->size(), baseline)
         << "24 threads started and joined left " << (roots->size() - baseline)
@@ -197,9 +197,9 @@ TEST_F(RetentionTest, DroppedFunctionObjectsAreReclaimed)
         "        xs = [(lambda: None) for _ in range(per_round)]\n"
         "        del xs\n"
         "    return rounds * per_round\n";
-    const long small = retentionOf(defs, "_r = _mkmany(20, 10)\n");   //  200 fns
+    const proto::proto_long small = retentionOf(defs, "_r = _mkmany(20, 10)\n");   //  200 fns
     ASSERT_GE(small, 0);
-    const long large = retentionOf(defs, "_r = _mkmany(20, 60)\n");   // 1200 fns
+    const proto::proto_long large = retentionOf(defs, "_r = _mkmany(20, 60)\n");   // 1200 fns
     ASSERT_GE(large, 0);
 
     const double perFunction = (double) (large - small) / 1000.0;
@@ -232,9 +232,9 @@ TEST_F(RetentionTest, FinishedThreadsDoNotAccumulateMarkedCells)
         "            t.join()\n"
         "        del ts\n"
         "    return rounds * n\n";
-    const long small = retentionOf(defs, "_r = _t_run(10, 2)\n");   // 20 threads
+    const proto::proto_long small = retentionOf(defs, "_r = _t_run(10, 2)\n");   // 20 threads
     ASSERT_GE(small, 0);
-    const long large = retentionOf(defs, "_r = _t_run(10, 10)\n");  // 100 threads
+    const proto::proto_long large = retentionOf(defs, "_r = _t_run(10, 10)\n");  // 100 threads
     ASSERT_GE(large, 0);
 
     const double perThread = (double) (large - small) / 80.0;
