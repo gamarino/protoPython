@@ -757,6 +757,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
 #if defined(_WIN32)
     // sys.winver: the language version, as CPython on Windows (site.py reads it).
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "winver"), PythonEnvironment::getInternedString(ctx, "3.14")->asObject(ctx));
+#elif defined(__APPLE__)
+    // sys._framework: CPython on macOS always has it, "" when it is not a
+    // framework build; site.py and sysconfig read it on darwin.
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_framework"), PythonEnvironment::getInternedString(ctx, "")->asObject(ctx));
 #endif
     
     // sys.byteorder

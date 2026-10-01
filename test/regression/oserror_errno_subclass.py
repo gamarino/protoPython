@@ -3,6 +3,7 @@
 # strerror and filename set, as in CPython.
 import errno
 import os
+import sys
 import tempfile
 
 
@@ -39,6 +40,9 @@ try:
     raises(FileExistsError, lambda: os.mkdir(base), errno.EEXIST, base)
     if os.name == "nt":
         raises(PermissionError, lambda: os.remove(base), errno.EACCES, base)
+    elif sys.platform == "darwin":
+        # unlink() of a directory fails with EPERM on macOS.
+        raises(PermissionError, lambda: os.remove(base), errno.EPERM, base)
     else:
         raises(IsADirectoryError, lambda: os.remove(base), errno.EISDIR, base)
     os.remove(path)
