@@ -53,9 +53,12 @@ class BinaryDiscoveryTest(unittest.TestCase):
         self.assertEqual(self.discover({"PATH": self.empty_path}), debug)
 
     def test_path_lookup(self):
-        on_path = os.path.join(self.root, "bin", "protopy")
+        # A PATH search finds only executables with a PATHEXT suffix on Windows.
+        on_path = os.path.join(self.root, "bin", "protopy.exe" if os.name == "nt" else "protopy")
         make_executable(on_path)
-        self.assertEqual(self.discover({"PATH": os.path.dirname(on_path)}), on_path)
+        found = self.discover({"PATH": os.path.dirname(on_path)})
+        # normcase: Windows matches PATHEXT in any case (protopy.EXE).
+        self.assertEqual(os.path.normcase(found), os.path.normcase(on_path))
 
     def test_not_found(self):
         self.assertIsNone(self.discover({"PATH": self.empty_path}))

@@ -76,6 +76,10 @@ else:
 
 # some platforms do not support subprocesses
 _can_fork_exec = sys.platform not in {"emscripten", "wasi", "ios", "tvos", "watchos"}
+# protoPython on Windows has neither msvcrt and _winapi's process functions
+# nor fork: subprocess imports, and Popen raises OSError(ENOTSUP).
+if sys.platform == "win32" and not _mswindows:
+    _can_fork_exec = False
 
 if _mswindows:
     import _winapi

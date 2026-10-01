@@ -280,7 +280,13 @@ class socket:
         fd = self._fileno
         if fd is None or fd not in _pipe_peer:
             return
-        import fcntl
+        try:
+            import fcntl
+        except ImportError:
+            # Windows has no O_NONBLOCK for pipes: a non-blocking recv() asks
+            # select() whether data is there first.
+            self._nonblocking = not flag
+            return
         for f in (fd, _pipe_peer[fd]):
             flags = fcntl.fcntl(f, fcntl.F_GETFL)
             if flag:
@@ -329,6 +335,10 @@ class socket:
         fd = self._fileno
         if fd is None or fd not in _pipe_peer:
             raise OSError("recv: not implemented in stub")
+        if getattr(self, "_nonblocking", False):
+            import select
+            if not select.select([fd], [], [], 0)[0]:
+                raise BlockingIOError(_errno.EAGAIN, _os.strerror(_errno.EAGAIN))
         return _pipe_io(_os.read, fd, bufsize)
 
     def recvfrom(self, bufsize, flags=0):

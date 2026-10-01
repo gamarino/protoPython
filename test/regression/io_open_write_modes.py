@@ -56,7 +56,8 @@ try:
         raise AssertionError("expected FileNotFoundError")
     try:
         open(base, "w")
-    except IsADirectoryError:
+    except IsADirectoryError if os.name != "nt" else PermissionError:
+        # Windows reports a directory opened for writing as EACCES.
         pass
     else:
         raise AssertionError("expected IsADirectoryError")

@@ -9,7 +9,8 @@ import pathlib
 
 p = pathlib.Path("a") / "b"
 assert str(p) == os.path.join("a", "b")
-assert repr(p) == "PosixPath('a/b')"
+# Windows' concrete path class is WindowsPath, as in CPython.
+assert repr(p) == ("WindowsPath('a/b')" if os.name == "nt" else "PosixPath('a/b')")
 assert p.name == "b"
 assert p.parent.name == "a"
 assert os.fspath(p) == os.path.join("a", "b")

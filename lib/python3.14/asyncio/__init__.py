@@ -43,8 +43,28 @@ __all__ = (base_events.__all__ +
            transports.__all__)
 
 if sys.platform == 'win32':  # pragma: no cover
-    from .windows_events import *
-    __all__ += windows_events.__all__
+    try:
+        import _overlapped
+    except ImportError:
+        _overlapped = None
+    if _overlapped is not None:
+        from .windows_events import *
+        __all__ += windows_events.__all__
+    else:
+        # protoPython on Windows has no _overlapped, hence no proactor: the
+        # selector event loop of the other platforms, without signal handlers
+        # or subprocesses.
+        from . import selector_events as _selector_events
+
+        class SelectorEventLoop(_selector_events.BaseSelectorEventLoop):
+            """Selector event loop (Windows, without the IOCP proactor)."""
+
+        class _DefaultEventLoopPolicy(events._BaseDefaultEventLoopPolicy):
+            _loop_factory = SelectorEventLoop
+
+        EventLoop = SelectorEventLoop
+        windows_events = None
+        __all__ += ('SelectorEventLoop', 'EventLoop')
 else:
     from .unix_events import *  # pragma: no cover
     __all__ += unix_events.__all__
@@ -58,6 +78,8 @@ def __getattr__(name: str):
             return events._AbstractEventLoopPolicy
         case "DefaultEventLoopPolicy":
             warnings._deprecated(f"asyncio.{name}", remove=(3, 16))
+            if sys.platform == 'win32' and windows_events is None:
+                return _DefaultEventLoopPolicy
             if sys.platform == 'win32':
                 return windows_events._DefaultEventLoopPolicy
             return unix_events._DefaultEventLoopPolicy

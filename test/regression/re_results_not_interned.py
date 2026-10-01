@@ -77,7 +77,10 @@ assert getattr(m, "group")(2) == "0123456789"
 # under PROTOCORE_HEAP_LIMIT_CELLS (see CMakeLists.txt) so the collector
 # actually runs; interned results could never be reclaimed at all.
 def rss_kb():
-    f = open("/proc/self/status")
+    try:
+        f = open("/proc/self/status")
+    except OSError:
+        return -1  # no /proc (Windows, macOS): the memory check is skipped
     data = f.read()
     f.close()
     for line in data.split("\n"):

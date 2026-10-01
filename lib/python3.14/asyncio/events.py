@@ -789,7 +789,13 @@ def _init_event_loop_policy():
     with _lock:
         if _event_loop_policy is None:  # pragma: no branch
             if sys.platform == 'win32':
-                from .windows_events import _DefaultEventLoopPolicy
+                try:
+                    import _overlapped  # noqa: F401
+                except ImportError:
+                    # protoPython on Windows: the selector loop (__init__.py).
+                    from . import _DefaultEventLoopPolicy
+                else:
+                    from .windows_events import _DefaultEventLoopPolicy
             else:
                 from .unix_events import _DefaultEventLoopPolicy
             _event_loop_policy = _DefaultEventLoopPolicy()

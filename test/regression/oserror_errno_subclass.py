@@ -24,7 +24,12 @@ missing = "/nonexistent-protopython-dir/file"
 raises(FileNotFoundError, lambda: os.stat(missing), errno.ENOENT, missing)
 raises(FileNotFoundError, lambda: open(missing), errno.ENOENT, missing)
 raises(FileNotFoundError, lambda: os.listdir(missing), errno.ENOENT, missing)
-raises(IsADirectoryError, lambda: open("/"), errno.EISDIR, "/")
+# Windows refuses to open a directory, or to remove one as a file, with
+# EACCES (PermissionError), as CPython reports there.
+if os.name == "nt":
+    raises(PermissionError, lambda: open("/"), errno.EACCES, "/")
+else:
+    raises(IsADirectoryError, lambda: open("/"), errno.EISDIR, "/")
 
 base = tempfile.mkdtemp()
 try:
@@ -32,7 +37,10 @@ try:
     os.close(os.open(path, os.O_CREAT | os.O_WRONLY, 0o600))
     raises(NotADirectoryError, lambda: os.listdir(path), errno.ENOTDIR, path)
     raises(FileExistsError, lambda: os.mkdir(base), errno.EEXIST, base)
-    raises(IsADirectoryError, lambda: os.remove(base), errno.EISDIR, base)
+    if os.name == "nt":
+        raises(PermissionError, lambda: os.remove(base), errno.EACCES, base)
+    else:
+        raises(IsADirectoryError, lambda: os.remove(base), errno.EISDIR, base)
     os.remove(path)
 finally:
     os.rmdir(base)

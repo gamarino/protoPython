@@ -33,7 +33,12 @@ import marshal
 _MS_WINDOWS = (sys.platform == 'win32')
 if _MS_WINDOWS:
     import nt as _os
-    import winreg
+    # protoPython on Windows has no winreg: only WindowsRegistryFinder (not on
+    # sys.meta_path by default) uses it.
+    try:
+        import winreg
+    except ImportError:
+        winreg = None
 else:
     import posix as _os
 

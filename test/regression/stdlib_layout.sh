@@ -17,6 +17,10 @@ trap 'rm -rf "$tmp"' EXIT
 #    binary keeps its absolute build RPATH, so its libraries still resolve.
 mkdir -p "$tmp/prefix/bin" "$tmp/prefix/$parent/python3.14"
 cp "$protopy" "$tmp/prefix/bin/protopy"
+# Windows has no RPATH: the copy needs the DLLs next to it, as installed.
+case "$protopy" in
+  *.exe) cp "$(dirname "$protopy")"/*.dll "$tmp/prefix/bin/" ;;
+esac
 echo 'OK = 1' > "$tmp/prefix/$parent/python3.14/_pp_stdlib_layout_probe.py"
 (cd / && "$tmp/prefix/bin/protopy" -c 'import _pp_stdlib_layout_probe, sys
 assert sys.path[0].endswith("python3.14"), sys.path') \

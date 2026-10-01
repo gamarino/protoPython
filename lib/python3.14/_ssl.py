@@ -93,6 +93,14 @@ def RAND_add(string, entropy):
 def RAND_bytes(n):
     return b'\x00' * n
 
+# Windows certificate stores (ssl.py imports these on win32); the stub has no
+# certificate store, so they are empty.
+def enum_certificates(store_name):
+    return []
+
+def enum_crls(store_name):
+    return []
+
 # txt2obj / nid2obj (stubs)
 _oids = {
     '1.3.6.1.5.5.7.3.1': (129, 'serverAuth', 'TLS Web Server Authentication', '1.3.6.1.5.5.7.3.1'),

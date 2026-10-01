@@ -59,5 +59,5 @@ import textwrap
 assert from_function() is textwrap and eval("textwrap") is textwrap
 import os.path
 
-assert os.path.join("a", "b") == "a/b" and os is __import__("os")
+assert os.path.join("a", "b") == "a" + os.sep + "b" and os is __import__("os")
 print("global names no import OK")
