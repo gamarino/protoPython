@@ -14,7 +14,9 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#if !defined(_WIN32)
 #include <unistd.h>
+#endif
 
 #ifdef STDLIB_PATH
 #define DEFAULT_STDLIB STDLIB_PATH
@@ -27,7 +29,10 @@
 #include <unistd.h>
 #endif
 #ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
 #include <windows.h>
+#include "../library/PosixCompat.h"
 #endif
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
@@ -35,15 +40,41 @@
 
 namespace {
 
+#ifdef _WIN32
+static void usleep(unsigned int microseconds) {
+    Sleep(microseconds / 1000);
+}
+#endif
+
+// Windows: the standard streams carry exactly the bytes the program writes, as
+// on Linux and macOS (no "\n" -> "\r\n" translation), and a console shows and
+// reads them as UTF-8. The process code page is UTF-8 through the manifest
+// (src/windows/utf8.manifest), so argv, getenv and paths are UTF-8 too.
+static void prepareStandardStreams() {
+#ifdef _WIN32
+    _setmode(_fileno(stdin), _O_BINARY);
+    _setmode(_fileno(stdout), _O_BINARY);
+    _setmode(_fileno(stderr), _O_BINARY);
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+#endif
+}
+
+// The separator of PROTO_PYTHONPATH's directory list: ';' on Windows, where
+// ':' follows a drive letter.
+#ifdef _WIN32
+constexpr char kPathListSeparator = ';';
+#else
+constexpr char kPathListSeparator = ':';
+#endif
+
 static std::string getExecutablePath() {
 #ifdef __linux__
     char result[PATH_MAX];
     ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
     if (count > 0) return std::string(result, count);
 #elif defined(_WIN32)
-    char result[MAX_PATH];
-    DWORD count = GetModuleFileNameA(NULL, result, MAX_PATH);
-    if (count > 0) return std::string(result, count);
+    return protopy_executable_path();
 #elif defined(__APPLE__)
     char result[PATH_MAX];
     uint32_t size = sizeof(result);
@@ -292,6 +323,7 @@ int executeModule(protoPython::PythonEnvironment& env, const std::string& module
 } // namespace
 
 int main(int argc, char* argv[]) {
+    prepareStandardStreams();
     CliOptions options;
     std::string parseError;
     if (!parseArgs(argc, argv, options, parseError)) {
@@ -305,13 +337,13 @@ int main(int argc, char* argv[]) {
         return EXIT_OK;
     }
 
-    // PROTO_PYTHONPATH: extra module search directories, separated by ':'.
-    // Empty entries are ignored.
+    // PROTO_PYTHONPATH: extra module search directories, separated by ':'
+    // (';' on Windows). Empty entries are ignored.
     if (const char* pathEnv = std::getenv("PROTO_PYTHONPATH")) {
         const std::string paths = pathEnv;
         size_t start = 0;
         while (start <= paths.size()) {
-            size_t end = paths.find(':', start);
+            size_t end = paths.find(kPathListSeparator, start);
             if (end == std::string::npos) end = paths.size();
             if (end > start) options.searchPaths.push_back(paths.substr(start, end - start));
             start = end + 1;

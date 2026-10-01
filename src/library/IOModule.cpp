@@ -13,6 +13,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
+#include "PosixCompat.h"
 
 namespace protoPython {
 namespace io {
@@ -95,7 +96,7 @@ static const proto::ProtoObject* py_io_read(
     // byte-like instead of decoding-then-re-encoding strings.
     int fd = io_get_fd(context, self);
     if (fd >= 0) {
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
         // 2026-05-25: ::read may block arbitrarily (pipes, sockets,
         // slow filesystems, NFS). Bracket the syscall(s) in a
         // protoCore unmanaged region so the GC quorum is not pinned
@@ -173,7 +174,7 @@ static const proto::ProtoObject* py_io_close(
     // the attribute so subsequent reads/writes report a closed fd.
     int fd = io_get_fd(context, self);
     if (fd >= 0) {
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
         ::close(fd);
 #endif
         const_cast<proto::ProtoObject*>(self)->setAttribute(context,
@@ -336,7 +337,7 @@ static const proto::ProtoObject* py_io_isatty(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList*, const proto::ProtoSparseList*) {
     int fd = io_get_fd(ctx, self);
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     if (fd >= 0) return ::isatty(fd) ? PROTO_TRUE : PROTO_FALSE;
 #endif
     return PROTO_FALSE;
@@ -383,7 +384,7 @@ static const proto::ProtoObject* py_io_write(
     // fd-backed write: emit raw octets via ::write.
     int fd = io_get_fd(context, self);
     if (fd >= 0) {
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
         std::string s;
         if (!io_extract_bytes(context, data, s)) {
             PythonEnvironment* env = PythonEnvironment::fromContext(context);
@@ -507,7 +508,7 @@ static const proto::ProtoObject* py_io_open(
         return (pathEnv && pathEnv->hasPendingException()) ? nullptr : PROTO_NONE;
     }
 
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     // Write-only modes ("w", "a", "x", text or binary) open the file and
     // write through the descriptor. The buffer-backed object below only
     // holds data in memory, so writes made through it never reached the

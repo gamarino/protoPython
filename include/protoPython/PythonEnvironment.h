@@ -796,10 +796,28 @@ public:
      */
     static const proto::ProtoObject* getScopeModuleName(proto::proto_ulong depth);
     
+    // Windows: thread_local data cannot be imported from a DLL, so outside
+    // protoPython.dll (protopy, tests, extension modules) the inline accessors
+    // below call these exported functions instead of reading the variables.
+    // protoPython_EXPORTS is defined only while CMake builds the DLL itself.
+#if defined(_WIN32)
+    static proto::ProtoContext* threadContextOutOfLine();
+    static void setThreadContextOutOfLine(proto::ProtoContext* ctx);
+    static PythonEnvironment* threadEnvOutOfLine();
+    static void setThreadEnvOutOfLine(PythonEnvironment* env);
+    static bool pendingExceptionFlagOutOfLine();
+#endif
+#if defined(_WIN32) && !defined(protoPython_EXPORTS)
+    /** Sets the current thread-local context (for RAII management). */
+    static void setCurrentContext(proto::ProtoContext* ctx) { setThreadContextOutOfLine(ctx); }
+    /** Gets the current thread-local context. */
+    static proto::ProtoContext* getCurrentContext() { return threadContextOutOfLine(); }
+#else
     /** Sets the current thread-local context (for RAII management). */
     static void setCurrentContext(proto::ProtoContext* ctx) { s_threadContext = ctx; }
     /** Gets the current thread-local context. */
     static proto::ProtoContext* getCurrentContext() { return s_threadContext; }
+#endif
     
     static thread_local PythonEnvironment* s_threadEnv;
     static thread_local proto::ProtoContext* s_threadContext;
@@ -901,9 +919,15 @@ public:
      * Inline fast path: a single TLS bool read.  Defined in the header so
      * the hot dispatcher inlines it instead of paying a cross-DSO call.
      */
+#if defined(_WIN32) && !defined(protoPython_EXPORTS)
+    bool hasPendingException() const {
+        return threadContextOutOfLine() != nullptr && pendingExceptionFlagOutOfLine();
+    }
+#else
     bool hasPendingException() const {
         return s_threadContext != nullptr && s_pendingExcFlag;
     }
+#endif
 
     /**
      * @brief Returns the pending exception without clearing it.
@@ -1643,14 +1667,24 @@ public:
     class ContextScope {
     public:
         ContextScope(PythonEnvironment* env, proto::ProtoContext* ctx) : ctx_(ctx) {
+#if defined(_WIN32) && !defined(protoPython_EXPORTS)
+            prevEnv_ = PythonEnvironment::threadEnvOutOfLine();
+            prevCtx_ = PythonEnvironment::threadContextOutOfLine();
+#else
             prevEnv_ = PythonEnvironment::s_threadEnv;
             prevCtx_ = PythonEnvironment::s_threadContext;
+#endif
             PythonEnvironment::registerContext(ctx, env);
         }
         ~ContextScope() {
             if (protoPython::diagThreadEnabled()) std::cerr << "[proto-thread] ContextScope destruction ctx=" << ctx_ << " tid=" << std::this_thread::get_id() << "\n" << std::flush;
+#if defined(_WIN32) && !defined(protoPython_EXPORTS)
+            PythonEnvironment::setThreadEnvOutOfLine(prevEnv_);
+            PythonEnvironment::setThreadContextOutOfLine(prevCtx_);
+#else
             PythonEnvironment::s_threadEnv = prevEnv_;
             PythonEnvironment::s_threadContext = prevCtx_;
+#endif
         }
     private:
         proto::ProtoContext* ctx_;

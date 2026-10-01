@@ -9,6 +9,7 @@
 #if defined(__linux__)
 #include <unistd.h>
 #endif
+#include "PosixCompat.h"
 
 namespace protoPython {
 namespace sys {
@@ -753,6 +754,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     const char* plat = "linux";
 #endif
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "platform"), PythonEnvironment::getInternedString(ctx, plat)->asObject(ctx));
+#if defined(_WIN32)
+    // sys.winver: the language version, as CPython on Windows (site.py reads it).
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "winver"), PythonEnvironment::getInternedString(ctx, "3.14")->asObject(ctx));
+#endif
     
     // sys.byteorder
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
@@ -783,6 +788,11 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
 #define PROTOPY_SYS_VERSION_COMPILER "Clang " __clang_version__
 #elif defined(__GNUC__)
 #define PROTOPY_SYS_VERSION_COMPILER "GCC " __VERSION__
+#elif defined(_MSC_VER)
+// CPython's spelling, e.g. "MSC v.1944 64 bit (AMD64)".
+#define PROTOPY_SYS_VERSION_STR2(x) #x
+#define PROTOPY_SYS_VERSION_STR(x) PROTOPY_SYS_VERSION_STR2(x)
+#define PROTOPY_SYS_VERSION_COMPILER "MSC v." PROTOPY_SYS_VERSION_STR(_MSC_VER) " 64 bit (AMD64)"
 #else
 #define PROTOPY_SYS_VERSION_COMPILER "unknown compiler"
 #endif
@@ -891,8 +901,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
 
     // sys.builtin_module_names
     const proto::ProtoList* builtinsList = ctx->newList();
+    // os.py picks its platform module from this list: posix where there is
+    // one, nt on Windows (where "posix" is not a module, as in CPython).
     const char* builtin_names[] = {
-        "builtins", "sys", "_io", "_os", "posix", "nt", "time", "_thread",
+        "builtins", "sys", "_io", "_os",
+#if !defined(_WIN32)
+        "posix",
+#endif
+        "nt", "time", "_thread",
         "_signal", "re", "_weakref", "_warnings", "_collections", "logging",
         "operator", "_operator", "math", "_functools", "itertools", "json",
         "atexit", "exceptions", "_codecs", "_ast", "errno", "stat",
@@ -918,6 +934,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         self_buf[self_len] = '\0';
         exe_path = self_buf;
     }
+#elif defined(_WIN32)
+    exe_path = protopy_executable_path();
 #endif
     if (exe_path.empty()) {
         exe_path = (argv && !argv->empty()) ? (*argv)[0] : std::string("/usr/bin/protopy");

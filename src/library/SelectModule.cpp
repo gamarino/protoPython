@@ -1,8 +1,21 @@
 #include <protoPython/SelectModule.h>
 #include <protoPython/PythonEnvironment.h>
+#if defined(_WIN32)
+// select() on Windows waits on sockets only, as CPython's select.select there.
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <winsock2.h>
+#include <windows.h>
+#include <io.h>
+#pragma comment(lib, "ws2_32")
+#include <cerrno>
+#include <mutex>
+#else
 #include <sys/select.h>
 #include <sys/time.h>
 #include <unistd.h>
+#endif
 // <algorithm> for the std::max(initializer_list) overload used below. GCC 13
 // reaches it transitively through another header; GCC 14 does not, so a
 // Fedora 41 build fails without this include.
@@ -26,10 +39,18 @@ static int fillFdSet(proto::ProtoContext* ctx, const proto::ProtoObject* obj, fd
     auto process = [&](const proto::ProtoObject* fd) {
         if (fd && fd->isInteger(ctx)) {
             int f = (int)fd->asLong(ctx);
+#if defined(_WIN32)
+            // A Windows fd_set is a list of up to FD_SETSIZE sockets, not a bitmap.
+            if (f >= 0 && set->fd_count < FD_SETSIZE) {
+                FD_SET(static_cast<SOCKET>(f), set);
+                if (f > maxfd) maxfd = f;
+            }
+#else
             if (f >= 0 && f < FD_SETSIZE) {
                 FD_SET(f, set);
                 if (f > maxfd) maxfd = f;
             }
+#endif
         }
     };
 
@@ -53,6 +74,73 @@ static int fillFdSet(proto::ProtoContext* ctx, const proto::ProtoObject* obj, fd
     }
     return maxfd;
 }
+
+#if defined(_WIN32)
+// Windows: Winsock's select() takes sockets only. A number that is a C runtime
+// descriptor is a pipe (os.pipe(), the self-pipe of asyncio's event loop),
+// which is polled with PeekNamedPipe -- readable when it holds data or its
+// writer is gone -- or a file or console, always ready, as poll() reports
+// them on POSIX. Other numbers are sockets, asked with a zero-timeout select().
+// The sets are polled every millisecond until something is ready or the
+// timeout (negative: none) expires. On return the sets hold the ready fds.
+static int windowsSelect(proto::ProtoContext* ctx, fd_set& rfds, fd_set& wfds, fd_set& efds,
+                         double timeoutSec, int& err) {
+    static std::once_flag wsaOnce;
+    std::call_once(wsaOnce, [] { WSADATA data; WSAStartup(MAKEWORD(2, 2), &data); });
+    const fd_set inR = rfds, inW = wfds, inX = efds;
+    const ULONGLONG start = GetTickCount64();
+    proto::ProtoContext::UnmanagedScope u(ctx);
+    for (;;) {
+        FD_ZERO(&rfds); FD_ZERO(&wfds); FD_ZERO(&efds);
+        fd_set sockR, sockW, sockX;
+        FD_ZERO(&sockR); FD_ZERO(&sockW); FD_ZERO(&sockX);
+        bool anySocket = false;
+        int ready = 0;
+        auto crtHandle = [](SOCKET s) {
+            return reinterpret_cast<HANDLE>(_get_osfhandle(static_cast<int>(s)));
+        };
+        for (u_int k = 0; k < inR.fd_count; ++k) {
+            const SOCKET s = inR.fd_array[k];
+            const HANDLE h = crtHandle(s);
+            if (h == INVALID_HANDLE_VALUE) { FD_SET(s, &sockR); anySocket = true; continue; }
+            bool readable = true;
+            if (GetFileType(h) == FILE_TYPE_PIPE) {
+                DWORD avail = 0;
+                readable = !PeekNamedPipe(h, nullptr, 0, nullptr, &avail, nullptr) || avail > 0;
+            }
+            if (readable) { FD_SET(s, &rfds); ++ready; }
+        }
+        for (u_int k = 0; k < inW.fd_count; ++k) {
+            const SOCKET s = inW.fd_array[k];
+            if (crtHandle(s) == INVALID_HANDLE_VALUE) { FD_SET(s, &sockW); anySocket = true; continue; }
+            FD_SET(s, &wfds);
+            ++ready;
+        }
+        for (u_int k = 0; k < inX.fd_count; ++k) {
+            const SOCKET s = inX.fd_array[k];
+            if (crtHandle(s) == INVALID_HANDLE_VALUE) { FD_SET(s, &sockX); anySocket = true; }
+        }
+        if (anySocket) {
+            timeval zero{0, 0};
+            const int n = ::select(0, &sockR, &sockW, &sockX, &zero);
+            if (n == SOCKET_ERROR) {
+                const int wsa = WSAGetLastError();
+                err = (wsa == WSAENOTSOCK) ? EBADF : (wsa == WSAEINTR) ? EINTR : EINVAL;
+                return -1;
+            }
+            for (u_int k = 0; k < sockR.fd_count; ++k) { FD_SET(sockR.fd_array[k], &rfds); ++ready; }
+            for (u_int k = 0; k < sockW.fd_count; ++k) { FD_SET(sockW.fd_array[k], &wfds); ++ready; }
+            for (u_int k = 0; k < sockX.fd_count; ++k) { FD_SET(sockX.fd_array[k], &efds); ++ready; }
+        }
+        if (ready > 0) return ready;
+        if (timeoutSec >= 0.0
+            && static_cast<double>(GetTickCount64() - start) >= timeoutSec * 1000.0) {
+            return 0;
+        }
+        Sleep(1);
+    }
+}
+#endif
 
 // select(rlist, wlist, xlist[, timeout]) -> (rlist, wlist, xlist)
 static const proto::ProtoObject* py_select(
@@ -106,11 +194,16 @@ static const proto::ProtoObject* py_select(
     // moment we examine errno.
     int ret;
     int err = 0;
+#if defined(_WIN32)
+    (void)tvp;
+    ret = windowsSelect(ctx, rfds, wfds, efds, timeout_sec, err);
+#else
     {
         proto::ProtoContext::UnmanagedScope u(ctx);
         ret = ::select(maxfd + 1, &rfds, &wfds, &efds, tvp);
         err = (ret < 0) ? errno : 0;
     }
+#endif
     if (ret < 0) {
         PythonEnvironment::fromContext(ctx)->raiseOSError(ctx, err, strerror(err), "");
         return nullptr;

@@ -60,6 +60,11 @@ static void global_signal_handler(int sig) {
         s_pending[sig] = 1;
         s_pendingAny = 1;
     }
+#if defined(_WIN32)
+    // The C runtime resets the disposition to SIG_DFL before calling a
+    // handler; re-arm it so the next signal reaches Python too.
+    std::signal(sig, global_signal_handler);
+#endif
 }
 
 bool hasPendingSignal() {
@@ -194,10 +199,27 @@ static const proto::ProtoObject* py_strsignal(
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     int sig = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+#if defined(_WIN32)
+    // The C runtime has no strsignal(); these are CPython's texts there.
+    const char* s = nullptr;
+    switch (sig) {
+    case SIGINT:   s = "Interrupt"; break;
+    case SIGILL:   s = "Illegal instruction"; break;
+    case SIGABRT:  s = "Aborted"; break;
+    case SIGFPE:   s = "Floating-point exception"; break;
+    case SIGSEGV:  s = "Segmentation fault"; break;
+    case SIGTERM:  s = "Terminated"; break;
+    case SIGBREAK: s = "Break"; break;
+    default: break;
+    }
+    if (!s) return PROTO_NONE;
+#else
     const char* s = ::strsignal(sig);
+#endif
     return PythonEnvironment::getInternedString(ctx, s ? s : "Unknown signal")->asObject(ctx);
 }
 
+#if !defined(_WIN32)
 // signal.alarm(seconds) -> previous remaining alarm in seconds.
 static const proto::ProtoObject* py_alarm(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
@@ -236,6 +258,7 @@ static const proto::ProtoObject* py_siginterrupt(
     ::siginterrupt(sig, flag);
     return PROTO_NONE;
 }
+#endif // !_WIN32
 
 // signal.set_wakeup_fd(fd) -> previous fd (or -1).  Stub: protoPython
 // doesn't wire a wakeup-fd channel into the signal handler, but
@@ -258,9 +281,15 @@ static const proto::ProtoObject* py_valid_signals(
     const proto::ProtoList*, const proto::ProtoSparseList*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoSet* s = ctx->newSet();
+#if defined(_WIN32)
+    for (int i : {SIGINT, SIGILL, SIGFPE, SIGSEGV, SIGTERM, SIGBREAK, SIGABRT}) {
+        s = s->add(ctx, ctx->fromInteger(i));
+    }
+#else
     for (int i = 1; i < NSIG; ++i) {
         s = s->add(ctx, ctx->fromInteger(i));
     }
+#endif
     (void)env;
     return s->asObject(ctx);
 }
@@ -295,12 +324,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_raise_signal));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "strsignal"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_strsignal));
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "alarm"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_alarm));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "pause"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_pause));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "siginterrupt"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_siginterrupt));
+#endif
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "set_wakeup_fd"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_set_wakeup_fd));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "valid_signals"),
@@ -308,22 +339,31 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
 
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGINT"), ctx->fromInteger(SIGINT));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGTERM"), ctx->fromInteger(SIGTERM));
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGUSR1"), ctx->fromInteger(SIGUSR1));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGUSR2"), ctx->fromInteger(SIGUSR2));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGHUP"), ctx->fromInteger(SIGHUP));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGALRM"), ctx->fromInteger(SIGALRM));
+#endif
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIG_DFL"), ctx->fromInteger(0));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIG_IGN"), ctx->fromInteger(1));
     // Signals subprocess.py touches by name (SIGKILL/SIGPIPE/SIGCHLD/
     // SIGABRT/SIGSEGV/SIGFPE/SIGILL/SIGQUIT/SIGSTOP/SIGCONT) plus a
     // few extras the stdlib expects to be present unconditionally.
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGKILL"), ctx->fromInteger(SIGKILL));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGPIPE"), ctx->fromInteger(SIGPIPE));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGCHLD"), ctx->fromInteger(SIGCHLD));
+#endif
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGABRT"), ctx->fromInteger(SIGABRT));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGSEGV"), ctx->fromInteger(SIGSEGV));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGFPE"),  ctx->fromInteger(SIGFPE));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGILL"),  ctx->fromInteger(SIGILL));
+#if defined(_WIN32)
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGBREAK"), ctx->fromInteger(SIGBREAK));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "CTRL_C_EVENT"), ctx->fromInteger(0));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "CTRL_BREAK_EVENT"), ctx->fromInteger(1));
+#else
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGQUIT"), ctx->fromInteger(SIGQUIT));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGSTOP"), ctx->fromInteger(SIGSTOP));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGCONT"), ctx->fromInteger(SIGCONT));
@@ -331,6 +371,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGTTIN"), ctx->fromInteger(SIGTTIN));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGTTOU"), ctx->fromInteger(SIGTTOU));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGBUS"),  ctx->fromInteger(SIGBUS));
+#endif
 #ifdef SIGSYS
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGSYS"),  ctx->fromInteger(SIGSYS));
 #endif

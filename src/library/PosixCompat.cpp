@@ -1,0 +1,510 @@
+// PosixCompat.cpp — Windows implementation of PosixCompat.h. Built on Windows
+// only (src/library/CMakeLists.txt); see the header for what it provides.
+#if defined(_WIN32)
+
+#include "PosixCompat.h"
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <winioctl.h>
+#include <tlhelp32.h>
+
+#include <cerrno>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <cwchar>
+#include <string>
+#include <vector>
+
+// The macros of PosixCompat.h rename these; the definitions below need the
+// real names.
+#undef stat
+#undef lstat
+#undef fstat
+#undef open
+#undef mkdir
+#undef rmdir
+#undef unlink
+#undef chdir
+#undef getcwd
+#undef access
+#undef readlink
+#undef fcntl
+#undef utimensat
+#undef setenv
+#undef unsetenv
+#undef pipe
+#undef getppid
+
+std::wstring protopy_widen(const std::string& utf8) {
+    if (utf8.empty()) return std::wstring();
+    int n = MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), nullptr, 0);
+    std::wstring out(static_cast<size_t>(n), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), out.data(), n);
+    return out;
+}
+
+std::string protopy_narrow(const std::wstring& utf16) {
+    if (utf16.empty()) return std::string();
+    int n = WideCharToMultiByte(CP_UTF8, 0, utf16.data(), static_cast<int>(utf16.size()),
+                                nullptr, 0, nullptr, nullptr);
+    std::string out(static_cast<size_t>(n), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, utf16.data(), static_cast<int>(utf16.size()),
+                        out.data(), n, nullptr, nullptr);
+    return out;
+}
+
+std::string protopy_executable_path() {
+    std::vector<wchar_t> buf(MAX_PATH);
+    for (;;) {
+        DWORD n = GetModuleFileNameW(nullptr, buf.data(), static_cast<DWORD>(buf.size()));
+        if (n == 0) return std::string();
+        if (n < buf.size()) return protopy_narrow(std::wstring(buf.data(), n));
+        buf.resize(buf.size() * 2);
+    }
+}
+
+// CPython's winerror_to_errno (PC/errmap.h), for the codes file functions return.
+int protopy_errno_from_win32(unsigned long winerror) {
+    switch (winerror) {
+    case ERROR_FILE_NOT_FOUND:
+    case ERROR_PATH_NOT_FOUND:
+    case ERROR_INVALID_DRIVE:
+    case ERROR_NO_MORE_FILES:
+    case ERROR_BAD_NETPATH:
+    case ERROR_BAD_NET_NAME:
+    case ERROR_BAD_PATHNAME:
+    case ERROR_FILENAME_EXCED_RANGE:
+    case ERROR_INVALID_NAME:
+    case ERROR_DIRECTORY:
+        return winerror == ERROR_DIRECTORY ? ENOTDIR : ENOENT;
+    case ERROR_ACCESS_DENIED:
+    case ERROR_CURRENT_DIRECTORY:
+    case ERROR_SHARING_VIOLATION:
+    case ERROR_LOCK_VIOLATION:
+    case ERROR_NETWORK_ACCESS_DENIED:
+    case ERROR_CANNOT_MAKE:
+    case ERROR_FAIL_I24:
+    case ERROR_DRIVE_LOCKED:
+    case ERROR_SEEK_ON_DEVICE:
+    case ERROR_NOT_LOCKED:
+    case ERROR_LOCK_FAILED:
+    case ERROR_PRIVILEGE_NOT_HELD:
+        return EACCES;
+    case ERROR_FILE_EXISTS:
+    case ERROR_ALREADY_EXISTS:
+        return EEXIST;
+    case ERROR_DIR_NOT_EMPTY:
+        return ENOTEMPTY;
+    case ERROR_NOT_SAME_DEVICE:
+        return EXDEV;
+    case ERROR_INVALID_HANDLE:
+    case ERROR_INVALID_TARGET_HANDLE:
+    case ERROR_DIRECT_ACCESS_HANDLE:
+        return EBADF;
+    case ERROR_NOT_ENOUGH_MEMORY:
+    case ERROR_OUTOFMEMORY:
+        return ENOMEM;
+    case ERROR_DISK_FULL:
+        return ENOSPC;
+    case ERROR_BROKEN_PIPE:
+    case ERROR_NO_DATA:
+        return EPIPE;
+    case ERROR_TOO_MANY_OPEN_FILES:
+        return EMFILE;
+    case ERROR_NOT_A_REPARSE_POINT:
+    case ERROR_INVALID_PARAMETER:
+    case ERROR_NEGATIVE_SEEK:
+    default:
+        return EINVAL;
+    }
+}
+
+static int fail_win32() {
+    errno = protopy_errno_from_win32(GetLastError());
+    return -1;
+}
+
+// --- stat ------------------------------------------------------------------------
+
+// 100 ns ticks since 1601-01-01 → seconds and nanoseconds since 1970-01-01.
+static struct timespec filetime_to_timespec(const FILETIME& ft) {
+    ULARGE_INTEGER t;
+    t.LowPart = ft.dwLowDateTime;
+    t.HighPart = ft.dwHighDateTime;
+    const long long ticks = static_cast<long long>(t.QuadPart) - 116444736000000000LL;
+    long long sec = ticks / 10000000LL;
+    long long rem = ticks % 10000000LL;
+    if (rem < 0) { rem += 10000000LL; sec -= 1; }
+    struct timespec ts;
+    ts.tv_sec = static_cast<time_t>(sec);
+    ts.tv_nsec = static_cast<long>(rem * 100);
+    return ts;
+}
+
+static FILETIME timespec_to_filetime(const struct timespec& ts) {
+    const long long ticks = static_cast<long long>(ts.tv_sec) * 10000000LL
+                          + ts.tv_nsec / 100 + 116444736000000000LL;
+    FILETIME ft;
+    ft.dwLowDateTime = static_cast<DWORD>(ticks & 0xFFFFFFFFLL);
+    ft.dwHighDateTime = static_cast<DWORD>(static_cast<unsigned long long>(ticks) >> 32);
+    return ft;
+}
+
+static bool has_exec_extension(const std::wstring& path) {
+    size_t dot = path.find_last_of(L'.');
+    size_t sep = path.find_last_of(L"\\/");
+    if (dot == std::wstring::npos || (sep != std::wstring::npos && dot < sep)) return false;
+    std::wstring ext = path.substr(dot);
+    for (auto& c : ext) c = static_cast<wchar_t>(towlower(c));
+    return ext == L".exe" || ext == L".bat" || ext == L".cmd" || ext == L".com";
+}
+
+// CPython's attributes_to_mode plus the executable bits _wstat adds.
+static unsigned int attributes_to_mode(DWORD attr, const std::wstring& path) {
+    unsigned int mode = 0;
+    if (attr & FILE_ATTRIBUTE_DIRECTORY) mode |= S_IFDIR | 0111;
+    else mode |= S_IFREG;
+    if (attr & FILE_ATTRIBUTE_READONLY) mode |= 0444;
+    else mode |= 0666;
+    if (!(attr & FILE_ATTRIBUTE_DIRECTORY) && has_exec_extension(path)) mode |= 0111;
+    return mode;
+}
+
+static void fill_from_info(struct protopy_stat* st, const BY_HANDLE_FILE_INFORMATION& info,
+                           const std::wstring& path, bool isLink) {
+    std::memset(st, 0, sizeof(*st));
+    st->st_mode = isLink ? (S_IFLNK | 0777) : attributes_to_mode(info.dwFileAttributes, path);
+    st->st_ino = (static_cast<unsigned long long>(info.nFileIndexHigh) << 32) | info.nFileIndexLow;
+    st->st_dev = info.dwVolumeSerialNumber;
+    st->st_nlink = info.nNumberOfLinks;
+    st->st_size = static_cast<long long>((static_cast<unsigned long long>(info.nFileSizeHigh) << 32)
+                                         | info.nFileSizeLow);
+    st->st_atim = filetime_to_timespec(info.ftLastAccessTime);
+    st->st_mtim = filetime_to_timespec(info.ftLastWriteTime);
+    st->st_ctim = filetime_to_timespec(info.ftCreationTime);
+}
+
+static bool is_symlink_reparse(const std::wstring& wpath) {
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW(wpath.c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) return false;
+    FindClose(h);
+    return (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)
+        && fd.dwReserved0 == IO_REPARSE_TAG_SYMLINK;
+}
+
+static int stat_impl(const char* path, struct protopy_stat* st, bool followLinks) {
+    std::wstring wpath = protopy_widen(path);
+    bool isLink = false;
+    DWORD flags = FILE_FLAG_BACKUP_SEMANTICS;
+    if (!followLinks && is_symlink_reparse(wpath)) {
+        isLink = true;
+        flags |= FILE_FLAG_OPEN_REPARSE_POINT;
+    }
+    HANDLE h = CreateFileW(wpath.c_str(), FILE_READ_ATTRIBUTES,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                           nullptr, OPEN_EXISTING, flags, nullptr);
+    if (h == INVALID_HANDLE_VALUE) {
+        DWORD err = GetLastError();
+        // A file another process holds without FILE_SHARE_*: its directory
+        // entry still answers, as in CPython's fallback.
+        if (err == ERROR_SHARING_VIOLATION || err == ERROR_ACCESS_DENIED) {
+            WIN32_FIND_DATAW fd;
+            HANDLE fh = FindFirstFileW(wpath.c_str(), &fd);
+            if (fh != INVALID_HANDLE_VALUE) {
+                FindClose(fh);
+                BY_HANDLE_FILE_INFORMATION info = {};
+                info.dwFileAttributes = fd.dwFileAttributes;
+                info.ftCreationTime = fd.ftCreationTime;
+                info.ftLastAccessTime = fd.ftLastAccessTime;
+                info.ftLastWriteTime = fd.ftLastWriteTime;
+                info.nFileSizeHigh = fd.nFileSizeHigh;
+                info.nFileSizeLow = fd.nFileSizeLow;
+                info.nNumberOfLinks = 1;
+                fill_from_info(st, info, wpath, isLink);
+                return 0;
+            }
+        }
+        errno = protopy_errno_from_win32(err);
+        return -1;
+    }
+    BY_HANDLE_FILE_INFORMATION info;
+    BOOL ok = GetFileInformationByHandle(h, &info);
+    DWORD err = GetLastError();
+    CloseHandle(h);
+    if (!ok) {
+        errno = protopy_errno_from_win32(err);
+        return -1;
+    }
+    fill_from_info(st, info, wpath, isLink);
+    return 0;
+}
+
+int protopy_stat(const char* path, struct protopy_stat* st) { return stat_impl(path, st, true); }
+int protopy_lstat(const char* path, struct protopy_stat* st) { return stat_impl(path, st, false); }
+
+int protopy_fstat(int fd, struct protopy_stat* st) {
+    HANDLE h = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
+    if (h == INVALID_HANDLE_VALUE) { errno = EBADF; return -1; }
+    std::memset(st, 0, sizeof(*st));
+    DWORD type = GetFileType(h);
+    if (type == FILE_TYPE_DISK) {
+        BY_HANDLE_FILE_INFORMATION info;
+        if (!GetFileInformationByHandle(h, &info)) return fail_win32();
+        fill_from_info(st, info, std::wstring(), false);
+        return 0;
+    }
+    // Consoles are character devices and pipes FIFOs, as CPython reports them.
+    st->st_mode = (type == FILE_TYPE_CHAR) ? (S_IFCHR | 0666)
+                : (type == FILE_TYPE_PIPE) ? (S_IFIFO | 0666) : 0;
+    if (type == FILE_TYPE_PIPE) {
+        DWORD avail = 0;
+        if (PeekNamedPipe(h, nullptr, 0, nullptr, &avail, nullptr)) st->st_size = avail;
+    }
+    return 0;
+}
+
+// --- Directories -------------------------------------------------------------------
+
+struct DIR {
+    HANDLE handle;
+    WIN32_FIND_DATAW data;
+    bool first;
+    struct dirent entry;
+};
+
+DIR* opendir(const char* path) {
+    std::wstring pattern = protopy_widen(path);
+    if (pattern.empty()) { errno = ENOENT; return nullptr; }
+    DWORD attr = GetFileAttributesW(pattern.c_str());
+    if (attr == INVALID_FILE_ATTRIBUTES) { fail_win32(); return nullptr; }
+    if (!(attr & FILE_ATTRIBUTE_DIRECTORY)) { errno = ENOTDIR; return nullptr; }
+    wchar_t last = pattern.back();
+    if (last != L'\\' && last != L'/' && last != L':') pattern += L'\\';
+    pattern += L'*';
+    DIR* d = new DIR();
+    d->handle = FindFirstFileW(pattern.c_str(), &d->data);
+    if (d->handle == INVALID_HANDLE_VALUE) {
+        DWORD err = GetLastError();
+        delete d;
+        errno = protopy_errno_from_win32(err);
+        return nullptr;
+    }
+    d->first = true;
+    return d;
+}
+
+struct dirent* readdir(DIR* d) {
+    if (!d || d->handle == INVALID_HANDLE_VALUE) return nullptr;
+    if (!d->first) {
+        if (!FindNextFileW(d->handle, &d->data)) return nullptr;
+    }
+    d->first = false;
+    std::string name = protopy_narrow(d->data.cFileName);
+    std::strncpy(d->entry.d_name, name.c_str(), sizeof(d->entry.d_name) - 1);
+    d->entry.d_name[sizeof(d->entry.d_name) - 1] = '\0';
+    return &d->entry;
+}
+
+int closedir(DIR* d) {
+    if (!d) return -1;
+    if (d->handle != INVALID_HANDLE_VALUE) FindClose(d->handle);
+    delete d;
+    return 0;
+}
+
+// --- Paths and files ----------------------------------------------------------------
+
+int protopy_open(const char* path, int flags, int mode) {
+    int pmode = (mode & 0200) ? (_S_IREAD | _S_IWRITE) : _S_IREAD;
+    return _wopen(protopy_widen(path).c_str(), flags | _O_BINARY, pmode);
+}
+
+int protopy_mkdir(const char* path, int /*mode*/) {
+    return _wmkdir(protopy_widen(path).c_str());
+}
+
+int protopy_rmdir(const char* path) { return _wrmdir(protopy_widen(path).c_str()); }
+
+int protopy_unlink(const char* path) {
+    std::wstring w = protopy_widen(path);
+    // A symbolic link to a directory is removed with RemoveDirectory, as
+    // CPython's os.unlink does.
+    DWORD attr = GetFileAttributesW(w.c_str());
+    if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY)
+        && (attr & FILE_ATTRIBUTE_REPARSE_POINT)) {
+        return RemoveDirectoryW(w.c_str()) ? 0 : fail_win32();
+    }
+    if (!DeleteFileW(w.c_str())) return fail_win32();
+    return 0;
+}
+
+int protopy_chdir(const char* path) {
+    if (!SetCurrentDirectoryW(protopy_widen(path).c_str())) return fail_win32();
+    return 0;
+}
+
+char* protopy_getcwd(char* buf, size_t size) {
+    DWORD n = GetCurrentDirectoryW(0, nullptr);
+    if (n == 0) { fail_win32(); return nullptr; }
+    std::wstring w(n, L'\0');
+    n = GetCurrentDirectoryW(n, w.data());
+    w.resize(n);
+    std::string s = protopy_narrow(w);
+    if (s.size() + 1 > size) { errno = ERANGE; return nullptr; }
+    std::memcpy(buf, s.c_str(), s.size() + 1);
+    return buf;
+}
+
+int protopy_access(const char* path, int mode) {
+    // The C runtime rejects X_OK; Windows has no execute permission to check.
+    return _waccess(protopy_widen(path).c_str(), mode & (R_OK | W_OK));
+}
+
+// Symbolic links and junctions: the substitute name, as CPython's os.readlink.
+ssize_t protopy_readlink(const char* path, char* buf, size_t size) {
+    std::wstring w = protopy_widen(path);
+    HANDLE h = CreateFileW(w.c_str(), FILE_READ_ATTRIBUTES,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                           OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS,
+                           nullptr);
+    if (h == INVALID_HANDLE_VALUE) return fail_win32();
+    std::vector<unsigned char> data(MAXIMUM_REPARSE_DATA_BUFFER_SIZE);
+    DWORD got = 0;
+    BOOL ok = DeviceIoControl(h, FSCTL_GET_REPARSE_POINT, nullptr, 0, data.data(),
+                              static_cast<DWORD>(data.size()), &got, nullptr);
+    DWORD err = GetLastError();
+    CloseHandle(h);
+    if (!ok) { errno = protopy_errno_from_win32(err); return -1; }
+    // REPARSE_DATA_BUFFER (ntifs.h), declared here for user mode.
+    struct ReparseHeader {
+        ULONG tag; USHORT dataLength; USHORT reserved;
+        USHORT substOffset; USHORT substLength; USHORT printOffset; USHORT printLength;
+    };
+    const ReparseHeader* hdr = reinterpret_cast<const ReparseHeader*>(data.data());
+    const unsigned char* pathBuffer;
+    if (hdr->tag == IO_REPARSE_TAG_SYMLINK) {
+        pathBuffer = data.data() + sizeof(ReparseHeader) + sizeof(ULONG); // + Flags
+    } else if (hdr->tag == IO_REPARSE_TAG_MOUNT_POINT) {
+        pathBuffer = data.data() + sizeof(ReparseHeader);
+    } else {
+        errno = EINVAL;
+        return -1;
+    }
+    std::wstring target(reinterpret_cast<const wchar_t*>(pathBuffer + hdr->substOffset),
+                        hdr->substLength / sizeof(wchar_t));
+    std::string s = protopy_narrow(target);
+    size_t n = s.size() < size ? s.size() : size;
+    std::memcpy(buf, s.data(), n);
+    return static_cast<ssize_t>(n);
+}
+
+// Descriptor flags: FD_CLOEXEC is "the handle is not inherited".
+int protopy_fcntl(int fd, int cmd, int arg) {
+    HANDLE h = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
+    if (h == INVALID_HANDLE_VALUE) { errno = EBADF; return -1; }
+    if (cmd == F_GETFD) {
+        DWORD flags = 0;
+        if (!GetHandleInformation(h, &flags)) return fail_win32();
+        return (flags & HANDLE_FLAG_INHERIT) ? 0 : FD_CLOEXEC;
+    }
+    if (cmd == F_SETFD) {
+        DWORD inherit = (arg & FD_CLOEXEC) ? 0 : HANDLE_FLAG_INHERIT;
+        if (!SetHandleInformation(h, HANDLE_FLAG_INHERIT, inherit)) return fail_win32();
+        return 0;
+    }
+    errno = EINVAL;
+    return -1;
+}
+
+int protopy_utimensat(int /*dirfd*/, const char* path, const struct timespec times[2], int /*flags*/) {
+    HANDLE h = CreateFileW(protopy_widen(path).c_str(), FILE_WRITE_ATTRIBUTES,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                           OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return fail_win32();
+    FILETIME now;
+    GetSystemTimeAsFileTime(&now);
+    FILETIME ft[2];
+    const FILETIME* use[2] = {nullptr, nullptr};
+    for (int i = 0; i < 2; ++i) {
+        if (times[i].tv_nsec == UTIME_OMIT) continue;
+        ft[i] = (times[i].tv_nsec == UTIME_NOW) ? now : timespec_to_filetime(times[i]);
+        use[i] = &ft[i];
+    }
+    BOOL ok = SetFileTime(h, nullptr, use[0], use[1]);
+    DWORD err = GetLastError();
+    CloseHandle(h);
+    if (!ok) { errno = protopy_errno_from_win32(err); return -1; }
+    return 0;
+}
+
+int protopy_setenv(const char* name, const char* value, int overwrite) {
+    std::wstring wname = protopy_widen(name);
+    if (!overwrite && _wgetenv(wname.c_str())) return 0;
+    return _wputenv_s(wname.c_str(), protopy_widen(value).c_str()) == 0 ? 0 : -1;
+}
+
+int protopy_unsetenv(const char* name) {
+    // An empty value removes the variable.
+    return _wputenv_s(protopy_widen(name).c_str(), L"") == 0 ? 0 : -1;
+}
+
+int protopy_pipe(int fds[2]) {
+    // Binary and not inherited, as os.pipe() on Windows.
+    return _pipe(fds, 65536, _O_BINARY | _O_NOINHERIT);
+}
+
+pid_t protopy_getppid() {
+    DWORD self = GetCurrentProcessId();
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return 0;
+    PROCESSENTRY32W pe;
+    pe.dwSize = sizeof(pe);
+    pid_t parent = 0;
+    if (Process32FirstW(snap, &pe)) {
+        do {
+            if (pe.th32ProcessID == self) { parent = static_cast<pid_t>(pe.th32ParentProcessID); break; }
+        } while (Process32NextW(snap, &pe));
+    }
+    CloseHandle(snap);
+    return parent;
+}
+
+int backtrace(void** buffer, int size) {
+    if (size <= 0) return 0;
+    return static_cast<int>(CaptureStackBackTrace(0, static_cast<DWORD>(size), buffer, nullptr));
+}
+
+char** backtrace_symbols(void* const* buffer, int size) {
+    // One malloc block, as glibc: the pointer array, then the strings.
+    const size_t each = 2 + 2 * sizeof(void*) + 1;
+    char** out = static_cast<char**>(std::malloc(static_cast<size_t>(size) * (sizeof(char*) + each)));
+    if (!out) return nullptr;
+    char* text = reinterpret_cast<char*>(out + size);
+    for (int i = 0; i < size; ++i) {
+        out[i] = text + static_cast<size_t>(i) * each;
+        std::snprintf(out[i], each, "%p", buffer[i]);
+    }
+    return out;
+}
+
+void backtrace_symbols_fd(void* const* buffer, int size, int fd) {
+    for (int i = 0; i < size; ++i) {
+        char line[2 + 2 * sizeof(void*) + 2];
+        int n = std::snprintf(line, sizeof(line), "%p\n", buffer[i]);
+        if (n > 0) _write(fd, line, static_cast<unsigned>(n));
+    }
+}
+
+int protopy_rename(const char* from, const char* to, bool replace) {
+    DWORD flags = replace ? MOVEFILE_REPLACE_EXISTING : 0;
+    if (!MoveFileExW(protopy_widen(from).c_str(), protopy_widen(to).c_str(), flags))
+        return fail_win32();
+    return 0;
+}
+
+#endif // _WIN32

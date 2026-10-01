@@ -6,6 +6,7 @@
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
 #include <sys/stat.h>
 #endif
+#include "PosixCompat.h"
 
 namespace protoPython {
 namespace os_path {
@@ -67,7 +68,7 @@ static const proto::ProtoObject* py_exists(
     if (!pathObj->isString(ctx)) return PROTO_FALSE;
     std::string path;
     pathObj->asString(ctx)->toUTF8String(ctx, path);
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     struct stat st;
     return (stat(path.c_str(), &st) == 0) ? PROTO_TRUE : PROTO_FALSE;
 #else
@@ -88,7 +89,7 @@ static const proto::ProtoObject* py_isfile(
     if (!pathObj->isString(ctx)) return PROTO_FALSE;
     std::string path;
     pathObj->asString(ctx)->toUTF8String(ctx, path);
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     struct stat st;
     if (stat(path.c_str(), &st) != 0) return PROTO_FALSE;
     return S_ISREG(st.st_mode) ? PROTO_TRUE : PROTO_FALSE;
@@ -110,7 +111,7 @@ static const proto::ProtoObject* py_isdir(
     if (!pathObj->isString(ctx)) return PROTO_FALSE;
     std::string path;
     pathObj->asString(ctx)->toUTF8String(ctx, path);
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     struct stat st;
     if (stat(path.c_str(), &st) != 0) return PROTO_FALSE;
     return S_ISDIR(st.st_mode) ? PROTO_TRUE : PROTO_FALSE;
@@ -178,23 +179,39 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "basename"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_basename));
 
-    // Path constants
+    // Path constants (ntpath's on Windows, as os.path is ntpath there).
+#if defined(_WIN32)
+    const char* sepValue = "\\";
+    const char* pathsepValue = ";";
+    const char* defpathValue = ".;C:\\bin";
+    const char* devnullValue = "nul";
+#else
+    const char* sepValue = "/";
+    const char* pathsepValue = ":";
+    const char* defpathValue = ":/bin:/usr/bin";
+    const char* devnullValue = "/dev/null";
+#endif
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "curdir"),
         PythonEnvironment::getInternedString(ctx, ".")->asObject(ctx));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "pardir"),
         PythonEnvironment::getInternedString(ctx, "..")->asObject(ctx));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "sep"),
-        PythonEnvironment::getInternedString(ctx, "/")->asObject(ctx));
+        PythonEnvironment::getInternedString(ctx, sepValue)->asObject(ctx));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "pathsep"),
-        PythonEnvironment::getInternedString(ctx, ":")->asObject(ctx));
+        PythonEnvironment::getInternedString(ctx, pathsepValue)->asObject(ctx));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "defpath"),
-        PythonEnvironment::getInternedString(ctx, ":/bin:/usr/bin")->asObject(ctx));
+        PythonEnvironment::getInternedString(ctx, defpathValue)->asObject(ctx));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "extsep"),
         PythonEnvironment::getInternedString(ctx, ".")->asObject(ctx));
+#if defined(_WIN32)
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "altsep"),
+        PythonEnvironment::getInternedString(ctx, "/")->asObject(ctx));
+#else
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "altsep"),
         PROTO_NONE);
+#endif
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "devnull"),
-        PythonEnvironment::getInternedString(ctx, "/dev/null")->asObject(ctx));
+        PythonEnvironment::getInternedString(ctx, devnullValue)->asObject(ctx));
 
     return mod;
 }

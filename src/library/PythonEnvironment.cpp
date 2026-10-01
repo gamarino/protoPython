@@ -46,6 +46,7 @@
 #include <protoPython/Compiler.h>
 #include <protoCore.h>
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <iostream>
 #include <thread>
@@ -60,11 +61,14 @@
 #include <deque>
 #include <unordered_set>
 #include <functional>
+#if !defined(_WIN32)
 #include <execinfo.h>
+#endif
 #include <cstring>
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
 #include <unistd.h>
 #endif
+#include "PosixCompat.h"
 
 static bool get_thread_diag() {
     return protoPython::diagThreadEnabled();
@@ -75,6 +79,13 @@ static bool get_thread_diag() {
 #include <shared_mutex>
 
 namespace protoPython {
+
+#if defined(_WIN32)
+// _winapi (WinapiModule.cpp, Windows only).
+namespace winapi_module {
+const proto::ProtoObject* initialize(proto::ProtoContext* ctx);
+}
+#endif
 
 // Two-phase intern pool:
 //   Phase 1 (read, common case): take a shared_lock and call .find().
@@ -16600,6 +16611,20 @@ proto::ProtoSpace* PythonEnvironment::getProcessSpace() {
 /** Singleton enforcement: L-Shape mandates one ProtoSpace per process. Log if multiple PythonEnvironment instances exist. */
 static std::atomic<int> s_pythonEnvInstanceCount{0};
 
+#if defined(_WIN32)
+// The exported accessors of the thread_local state (PythonEnvironment.h).
+proto::ProtoContext* PythonEnvironment::threadContextOutOfLine() { return s_threadContext; }
+void PythonEnvironment::setThreadContextOutOfLine(proto::ProtoContext* ctx) { s_threadContext = ctx; }
+PythonEnvironment* PythonEnvironment::threadEnvOutOfLine() { return s_threadEnv; }
+void PythonEnvironment::setThreadEnvOutOfLine(PythonEnvironment* env) { s_threadEnv = env; }
+bool PythonEnvironment::pendingExceptionFlagOutOfLine() { return s_pendingExcFlag; }
+
+// The C runtime ends the process when a function gets an invalid argument (a
+// closed descriptor, an out-of-range struct tm); POSIX returns an error
+// instead. Report the error, as CPython does with _Py_BEGIN_SUPPRESS_IPH.
+static void ignoreInvalidParameter(const wchar_t*, const wchar_t*, const wchar_t*, unsigned int, uintptr_t) {}
+#endif
+
 PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::vector<std::string>& searchPaths,
                                      const std::vector<std::string>& argv) : space_(getProcessSpace()),
                                      // protoCore auto-detects the main OS thread in ProtoContext's constructor
@@ -16612,6 +16637,9 @@ PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::v
     }
     int prev = s_pythonEnvInstanceCount.fetch_add(1, std::memory_order_relaxed);
     // Multiple instances check removed for silence
+#if defined(_WIN32)
+    _set_invalid_parameter_handler(ignoreInvalidParameter);
+#endif
     s_mainThreadId = std::this_thread::get_id();
     registerContext(rootContext_, this);
     // GC anchor for active exceptions (see `activeExcsRoots_` doc and
@@ -22137,7 +22165,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoObject* pathMod = os_path::initialize(rootContext_);
     registerNativeModule(nativeProviderPtr, "os.path", [pathMod](proto::ProtoContext* ctx) { return pathMod; });
     registerNativeModule(nativeProviderPtr, "_os", [this, pathMod](proto::ProtoContext* ctx) { return os_module::initialize(ctx, this, pathMod); });
+#if !defined(_WIN32)
     registerNativeModule(nativeProviderPtr, "posix", [this, pathMod](proto::ProtoContext* ctx) { return os_module::initialize(ctx, this, pathMod); });
+#endif
     registerNativeModule(nativeProviderPtr, "nt", [this, pathMod](proto::ProtoContext* ctx) { return os_module::initialize(ctx, this, pathMod); });
     registerNativeModule(nativeProviderPtr, "_signal", [](proto::ProtoContext* ctx) { return signal_module::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "_thread", [](proto::ProtoContext* ctx) { return thread_module::initialize(ctx); });
@@ -22161,8 +22191,13 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     registerNativeModule(nativeProviderPtr, "_string", [](proto::ProtoContext* c) { return string_module::initialize(c); });
     registerNativeModule(nativeProviderPtr, "binascii", [](proto::ProtoContext* c) { return binascii::initialize(c); });
     registerNativeModule(nativeProviderPtr, "_datetime", [](proto::ProtoContext* c) { return datetime::initialize(c); });
+#if defined(_WIN32)
+    registerNativeModule(nativeProviderPtr, "_winapi", [](proto::ProtoContext* c) { return winapi_module::initialize(c); });
+#else
+    // POSIX only: CPython has neither module on Windows.
     registerNativeModule(nativeProviderPtr, "_posixsubprocess", [this](proto::ProtoContext* c) { return posixsubprocess_module::initialize(c, this); });
     registerNativeModule(nativeProviderPtr, "fcntl", [this](proto::ProtoContext* c) { return fcntl_module::initialize(c, this); });
+#endif
     registerNativeModule(nativeProviderPtr, "select", [this](proto::ProtoContext* c) { return select_module::initialize(c, this); });
     // _bisect native module disabled: only bisect/bisect_left/bisect_right
     // are exposed natively, missing insort variants and the `key=` kwarg.
@@ -25585,7 +25620,9 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
             fprintf(stderr, "DEBUG_ATTR_ERR: __dict__ not found on obj=%p name=%s isClass=%d val=%p depth=%d raiseError=%d\n",
                     (void*)obj, objNameDiag.c_str(), isClass?1:0, (void*)val, getAttrDepth, raiseError?1:0);
             // Print C++ backtrace
+#if !defined(_WIN32)
             #include <execinfo.h>
+#endif
             void* bt[30]; int n = backtrace(bt, 30);
             char** syms = backtrace_symbols(bt, n);
             for (int k = 0; k < n; k++) fprintf(stderr, "  %s\n", syms[k]);

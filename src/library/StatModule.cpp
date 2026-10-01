@@ -1,5 +1,6 @@
 #include <protoPython/StatModule.h>
 #include <sys/stat.h>
+#include "PosixCompat.h"
 
 namespace protoPython {
 namespace stat_module {

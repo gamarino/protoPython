@@ -4,7 +4,11 @@
 #include <atomic>
 #include <csignal>
 #include <cstring>
+#if defined(_WIN32)
+#include <io.h>  // write
+#else
 #include <unistd.h>
+#endif
 
 // faulthandler — real implementation. Replaces a 35-line stub
 // (enable/disable were `return PROTO_NONE`, is_enabled hardcoded
@@ -42,7 +46,9 @@ static const char* sig_name(int sig) {
         case SIGSEGV: return "Segmentation fault";
         case SIGFPE:  return "Floating point exception";
         case SIGABRT: return "Aborted";
+#ifdef SIGBUS
         case SIGBUS:  return "Bus error";
+#endif
         case SIGILL:  return "Illegal instruction";
         default:      return "Fatal signal";
     }
@@ -69,7 +75,9 @@ static void install_signals(int fd) {
     std::signal(SIGSEGV, faulthandler_signal_handler);
     std::signal(SIGFPE,  faulthandler_signal_handler);
     std::signal(SIGABRT, faulthandler_signal_handler);
+#ifdef SIGBUS
     std::signal(SIGBUS,  faulthandler_signal_handler);
+#endif
     std::signal(SIGILL,  faulthandler_signal_handler);
 }
 
@@ -78,7 +86,9 @@ static void uninstall_signals() {
     std::signal(SIGSEGV, SIG_DFL);
     std::signal(SIGFPE,  SIG_DFL);
     std::signal(SIGABRT, SIG_DFL);
+#ifdef SIGBUS
     std::signal(SIGBUS,  SIG_DFL);
+#endif
     std::signal(SIGILL,  SIG_DFL);
 }
 

@@ -20,6 +20,16 @@
 #include <sys/sysmacros.h>
 extern char** environ;
 #endif
+#if defined(_WIN32)
+#include <signal.h>
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <bcrypt.h>
+#pragma comment(lib, "bcrypt")
+#endif
+#include "PosixCompat.h"
 
 namespace protoPython {
 namespace os_module {
@@ -149,7 +159,11 @@ static const proto::ProtoObject* py_scandir_next(
         const proto::ProtoObject* entry = direntry_proto && direntry_proto != PROTO_NONE ? direntry_proto->newChild(ctx, true) : ctx->newObject(false);
         
         std::string fullPath = state->path;
+#if defined(_WIN32)
+        if (fullPath.back() != '/' && fullPath.back() != '\\' && fullPath.back() != ':') fullPath += "\\";
+#else
         if (fullPath.back() != '/') fullPath += "/";
+#endif
         fullPath += n;
 
         entry = entry->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "name"), PythonEnvironment::getInternedString(ctx, n)->asObject(ctx));
@@ -278,7 +292,7 @@ static const proto::ProtoObject* py_getcwd(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     char buf[4096];
     if (getcwd(buf, sizeof(buf)))
         return PythonEnvironment::getInternedString(ctx, buf)->asObject(ctx);
@@ -296,7 +310,7 @@ static const proto::ProtoObject* py_chdir(
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
     std::string path;
     if (!PythonEnvironment::fsPathArgument(ctx, pathObj, path)) return notAPath(ctx);
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     if (chdir(path.c_str()) == 0) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (env) env->raiseOSError(ctx, errno, std::strerror(errno), path);
@@ -321,7 +335,7 @@ static const proto::ProtoObject* py_listdir(
         }
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     const proto::ProtoList* result = ctx->newList();
     DIR* d = opendir(path.c_str());
     if (!d) {
@@ -438,7 +452,7 @@ static const proto::ProtoObject* py_remove(
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
     std::string path;
     if (!PythonEnvironment::fsPathArgument(ctx, pathObj, path)) return notAPath(ctx);
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     if (unlink(path.c_str()) != 0) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
         if (env) env->raiseOSError(ctx, errno, std::strerror(errno), path);
@@ -469,7 +483,7 @@ static const proto::ProtoObject* py_mkdir(
     if (!PythonEnvironment::fsPathArgument(ctx, pathObj, path)) return notAPath(ctx);
     int mode = 0777;
     if (posArgs->getSize(ctx) >= 2) mode = static_cast<int>(posArgs->getAt(ctx, 1)->asLong(ctx));
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     if (mkdir(path.c_str(), mode) != 0) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
         if (env) env->raiseOSError(ctx, errno, std::strerror(errno), path);
@@ -497,6 +511,12 @@ static const proto::ProtoObject* py_rename(
         if (env) env->raiseOSError(ctx, errno, std::strerror(errno), oldPath);
         return nullptr;
     }
+#elif defined(_WIN32)
+    if (protopy_rename(oldPath.c_str(), newPath.c_str(), /*replace=*/false) != 0) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseOSError(ctx, errno, std::strerror(errno), oldPath);
+        return nullptr;
+    }
 #endif
     return PROTO_NONE;
 }
@@ -507,7 +527,23 @@ static const proto::ProtoObject* py_replace(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* kwargs) {
+#if defined(_WIN32)
+    // os.replace replaces an existing destination; os.rename does not there.
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    std::string oldPath, newPath;
+    if (!PythonEnvironment::fsPathArgument(ctx, posArgs->getAt(ctx, 0), oldPath)
+        || !PythonEnvironment::fsPathArgument(ctx, posArgs->getAt(ctx, 1), newPath)) {
+        return notAPath(ctx);
+    }
+    if (protopy_rename(oldPath.c_str(), newPath.c_str(), /*replace=*/true) != 0) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseOSError(ctx, errno, std::strerror(errno), oldPath);
+        return nullptr;
+    }
+    return PROTO_NONE;
+#else
     return py_rename(ctx, self, parentLink, posArgs, kwargs);
+#endif
 }
 
 static const proto::ProtoObject* py_access(
@@ -522,7 +558,7 @@ static const proto::ProtoObject* py_access(
         return notAPath(ctx) ? PROTO_FALSE : nullptr;
     }
     int mode = static_cast<int>(posArgs->getAt(ctx, 1)->asLong(ctx));
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     return access(path.c_str(), mode) == 0 ? PROTO_TRUE : PROTO_FALSE;
 #else
     return PROTO_FALSE;
@@ -539,7 +575,7 @@ static const proto::ProtoObject* py_rmdir(
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
     std::string path;
     if (!PythonEnvironment::fsPathArgument(ctx, pathObj, path)) return notAPath(ctx);
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     if (rmdir(path.c_str()) != 0) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
         if (env) env->raiseOSError(ctx, errno, std::strerror(errno), path);
@@ -562,7 +598,7 @@ static const proto::ProtoObject* py_setenv(
     std::string key, val;
     keyObj->asString(ctx)->toUTF8String(ctx, key);
     valObj->asString(ctx)->toUTF8String(ctx, val);
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     if (get_env_diag()) {
         // log removed
     }
@@ -582,7 +618,7 @@ static const proto::ProtoObject* py_unsetenv(
     if (!keyObj->isString(ctx)) return PROTO_NONE;
     std::string key;
     keyObj->asString(ctx)->toUTF8String(ctx, key);
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     if (get_env_diag()) {
         // log removed
     }
@@ -711,6 +747,25 @@ static const proto::ProtoObject* py_kill(
         if (env) env->raiseOSError(ctx, errno, std::strerror(errno), "");
         return nullptr;
     }
+#elif defined(_WIN32)
+    if (sig == CTRL_C_EVENT || sig == CTRL_BREAK_EVENT) {
+        if (!GenerateConsoleCtrlEvent(static_cast<DWORD>(sig), static_cast<DWORD>(pid))) {
+            int err = protopy_errno_from_win32(GetLastError());
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (env) env->raiseOSError(ctx, err, std::strerror(err), "");
+            return nullptr;
+        }
+        return PROTO_NONE;
+    }
+    HANDLE process = OpenProcess(PROCESS_TERMINATE, FALSE, static_cast<DWORD>(pid));
+    if (!process || !TerminateProcess(process, static_cast<UINT>(sig))) {
+        int err = protopy_errno_from_win32(GetLastError());
+        if (process) CloseHandle(process);
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseOSError(ctx, err, std::strerror(err), "");
+        return nullptr;
+    }
+    CloseHandle(process);
 #endif
     return PROTO_NONE;
 }
@@ -721,7 +776,7 @@ static const proto::ProtoObject* py_pipe(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     int pipefds[2];
     if (pipe(pipefds) == 0) {
         const proto::ProtoList* tuple = ctx->newList();
@@ -740,7 +795,7 @@ static const proto::ProtoObject* py_environ_keys(
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     const proto::ProtoList* result = ctx->newList();
     for (char** p = environ; p && *p; ++p) {
         const char* eq = strchr(*p, '=');
@@ -762,7 +817,7 @@ static const proto::ProtoObject* py_environ_values(
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     const proto::ProtoList* result = ctx->newList();
     for (char** p = environ; p && *p; ++p) {
         const char* eq = strchr(*p, '=');
@@ -784,7 +839,7 @@ static const proto::ProtoObject* py_environ_items(
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     const proto::ProtoList* result = ctx->newList();
     for (char** p = environ; p && *p; ++p) {
         const char* eq = strchr(*p, '=');
@@ -845,7 +900,9 @@ static const proto::ProtoObject* py_environ_delitem(
 }
 
 #include <fcntl.h>
+#if !defined(_WIN32)
 #include <utime.h>
+#endif
 
 static const proto::ProtoObject* py_open(
     proto::ProtoContext* ctx,
@@ -866,7 +923,7 @@ static const proto::ProtoObject* py_open(
         mode = static_cast<int>(posArgs->getAt(ctx, 2)->asLong(ctx));
     }
     
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     int fd = open(path.c_str(), flags, mode);
     if (fd < 0) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -887,7 +944,7 @@ static const proto::ProtoObject* py_close(
     const proto::ProtoSparseList* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     int fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     if (close(fd) != 0) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
         if (env) env->raiseOSError(ctx, errno, std::strerror(errno), "");
@@ -911,7 +968,7 @@ static const proto::ProtoObject* py_isatty(
     const proto::ProtoObject* fdObj = posArgs->getAt(ctx, 0);
     if (!fdObj || !fdObj->isInteger(ctx)) return PROTO_FALSE;
     int fd = static_cast<int>(fdObj->asLong(ctx));
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     return isatty(fd) ? PROTO_TRUE : PROTO_FALSE;
 #else
     return PROTO_FALSE;
@@ -1013,7 +1070,7 @@ static const proto::ProtoObject* py_utime(
         return 0;
     };
 
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     struct timespec ts[2];
     if (nsObj) {
         const proto::ProtoObject *a = nullptr, *b = nullptr;
@@ -1107,6 +1164,14 @@ static const proto::ProtoObject* py_urandom(
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
         if (env) env->raiseOSError(ctx, EIO,
             "/dev/urandom returned fewer bytes than requested", "/dev/urandom");
+        return nullptr;
+    }
+#elif defined(_WIN32)
+    if (n > 0 && !BCRYPT_SUCCESS(BCryptGenRandom(nullptr, reinterpret_cast<PUCHAR>(&buf[0]),
+                                                  static_cast<ULONG>(n),
+                                                  BCRYPT_USE_SYSTEM_PREFERRED_RNG))) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseOSError(ctx, EIO, "BCryptGenRandom failed", "");
         return nullptr;
     }
 #endif
@@ -1221,7 +1286,7 @@ static const proto::ProtoObject* py_getpid(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     return ctx->fromInteger(getpid());
 #else
     return ctx->fromInteger(0);
@@ -1234,7 +1299,7 @@ static const proto::ProtoObject* py_getppid(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     return ctx->fromInteger(getppid());
 #else
     return ctx->fromInteger(0);
@@ -1252,7 +1317,7 @@ static const proto::ProtoObject* py_create_environ(
     if (env && env->getDictPrototype()) {
         dict = dict->addParent(ctx, env->getDictPrototype());
     }
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     for (char** p = environ; p && *p; ++p) {
         const char* eq = strchr(*p, '=');
         if (eq && eq > *p) {
@@ -1442,7 +1507,7 @@ static const proto::ProtoObject* py_os_read(
     }
     std::string buf;
     buf.resize(static_cast<size_t>(n));
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     // 2026-05-25: bracket the syscall in a protoCore unmanaged region
     // so the GC quorum does not stall behind an I/O wait.
     ssize_t got;
@@ -1481,7 +1546,7 @@ static const proto::ProtoObject* py_os_write(
         if (env) env->raiseTypeError(ctx, "a bytes-like object is required");
         return nullptr;
     }
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     // 2026-05-25: bracket the syscall as in py_os_read.
     ssize_t written;
     int err = 0;
@@ -1515,7 +1580,7 @@ static const proto::ProtoObject* py_os_dup(
     const proto::ProtoSparseList* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     int fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     int newfd = ::dup(fd);
     if (newfd < 0) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -1556,7 +1621,7 @@ static const proto::ProtoObject* py_os_dup2(
             if (v && v != PROTO_NONE && env) inheritable = env->isTrue(v);
         }
     }
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     int res = ::dup2(fd, fd2);
     if (res < 0) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -1585,7 +1650,7 @@ static const proto::ProtoObject* py_os_set_inheritable(
     int fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     bool inheritable = env ? env->isTrue(posArgs->getAt(ctx, 1)) : true;
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     int flags = fcntl(fd, F_GETFD);
     if (flags == -1) {
         if (env) env->raiseOSError(ctx, errno, std::strerror(errno), "");
@@ -1609,7 +1674,7 @@ static const proto::ProtoObject* py_os_get_inheritable(
     const proto::ProtoSparseList* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     int fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     int flags = fcntl(fd, F_GETFD);
     if (flags == -1) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -2126,7 +2191,7 @@ static const proto::ProtoObject* py_os_umask(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     int newmask = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
     int oldmask = ::umask(newmask);
     return ctx->fromInteger(oldmask);
@@ -2148,6 +2213,16 @@ static const proto::ProtoObject* py_os_getlogin(
     if (!user) user = std::getenv("LOGNAME");
     if (!user) user = "unknown";
     return PythonEnvironment::getInternedString(ctx, user)->asObject(ctx);
+#elif defined(_WIN32)
+    wchar_t name[256 + 1];
+    DWORD size = 256 + 1;
+    if (GetUserNameW(name, &size) && size > 0)
+        return PythonEnvironment::getInternedString(ctx,
+            protopy_narrow(std::wstring(name, size - 1)).c_str())->asObject(ctx);
+    int err = protopy_errno_from_win32(GetLastError());
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env) env->raiseOSError(ctx, err, std::strerror(err), "");
+    return nullptr;
 #else
     return PythonEnvironment::getInternedString(ctx, "unknown")->asObject(ctx);
 #endif
@@ -2183,6 +2258,23 @@ static const proto::ProtoObject* py_os_times(
     fields = fields->appendLast(ctx, ctx->fromDouble(t.tms_cstime / ticks));
     fields = fields->appendLast(ctx, ctx->fromDouble(real / ticks));
     return ctx->newTupleFromList(fields)->asObject(ctx);
+#elif defined(_WIN32)
+    // Process user and kernel time; children and elapsed are 0, as CPython.
+    FILETIME created, exited, kernel, user;
+    GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user);
+    auto seconds = [](const FILETIME& ft) {
+        ULARGE_INTEGER t;
+        t.LowPart = ft.dwLowDateTime;
+        t.HighPart = ft.dwHighDateTime;
+        return static_cast<double>(t.QuadPart) * 1e-7;
+    };
+    const proto::ProtoList* fields = ctx->newList();
+    fields = fields->appendLast(ctx, ctx->fromDouble(seconds(user)));
+    fields = fields->appendLast(ctx, ctx->fromDouble(seconds(kernel)));
+    fields = fields->appendLast(ctx, ctx->fromDouble(0.0));
+    fields = fields->appendLast(ctx, ctx->fromDouble(0.0));
+    fields = fields->appendLast(ctx, ctx->fromDouble(0.0));
+    return ctx->newTupleFromList(fields)->asObject(ctx);
 #else
     return PROTO_NONE;
 #endif
@@ -2195,7 +2287,7 @@ static const proto::ProtoObject* py_os_fstat(
     const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     int fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     struct stat st;
     if (::fstat(fd, &st) != 0) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -2374,24 +2466,40 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_access));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "rmdir"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_rmdir));
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getuid"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getuid));
+#endif
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "geteuid"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_geteuid));
+#endif
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getgid"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getgid));
+#endif
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getegid"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getegid));
+#endif
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "environ_keys"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_environ_keys));
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "waitpid"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_waitpid));
+#endif
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "waitstatus_to_exitcode"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_waitstatus_to_exitcode));
+#endif
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "WIFSTOPPED"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_WIFSTOPPED));
+#endif
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "WSTOPSIG"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_WSTOPSIG));
+#endif
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "urandom"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_urandom));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "kill"),
@@ -2414,10 +2522,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getpid_method));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getppid"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getppid_method));
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_path_splitroot_ex"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_path_splitroot_ex_method));
+#endif
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_path_normpath"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_path_normpath_method));
+#endif
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_create_environ"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_create_environ_method));
 
@@ -2434,16 +2546,26 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_set_inheritable));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "get_inheritable"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_get_inheritable));
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "fork"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_fork));
+#endif
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "execv"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_execv));
+#endif
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "execve"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_execve));
+#endif
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "execvp"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_execvp));
+#endif
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "execvpe"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_execvpe));
+#endif
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "fsdecode"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_fsdecode));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "fsencode"),
@@ -2452,47 +2574,77 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_strerror));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "get_exec_path"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_get_exec_path));
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "confstr"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_confstr));
+#endif
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "register_at_fork"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_register_at_fork));
+#endif
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "WIFEXITED"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_WIFEXITED));
+#endif
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "WIFSIGNALED"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_WIFSIGNALED));
+#endif
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "WEXITSTATUS"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_WEXITSTATUS));
+#endif
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "WTERMSIG"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_WTERMSIG));
+#endif
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "fstat"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_fstat));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "umask"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_umask));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getlogin"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_getlogin));
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "WIFCONTINUED"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_WIFCONTINUED));
+#endif
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "times"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_times));
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "makedev"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_makedev));
+#endif
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "major"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_major));
+#endif
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "minor"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_minor));
+#endif
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "sysconf"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_sysconf));
+#endif
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getloadavg"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_getloadavg));
+#endif
     // Path-like constant.  subprocess reads os.devnull when stdin/
     // stdout/stderr is DEVNULL.
+#if defined(_WIN32)
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "devnull"),
+        PythonEnvironment::getInternedString(ctx, "nul")->asObject(ctx));
+#else
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "devnull"),
         PythonEnvironment::getInternedString(ctx, "/dev/null")->asObject(ctx));
+#endif
     // _CS_PATH for os.confstr (subprocess calls confstr("CS_PATH")).
 #ifdef _CS_PATH
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "CS_PATH"),
         ctx->fromInteger(_CS_PATH));
 #endif
+#if !defined(_WIN32)
     // os.confstr_names: name → int mapping that CPython exposes.
     // Stored as a real dict so platform.libc_ver() and other consumers
     // can read it directly.  Only the names we actually resolve are
@@ -2519,6 +2671,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
 #endif
         mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "confstr_names"), cn);
     }
+#endif
     // WCONTINUED/WUNTRACED constants for wait().
 #ifdef WCONTINUED
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "WCONTINUED"),
@@ -2589,7 +2742,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
 
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     // Wait constants
+#if !defined(_WIN32)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "WNOHANG"), ctx->fromInteger(WNOHANG));
+#endif
     
     // WIFSTOPPED, WSTOPSIG are macros, but os module has them as functions that take status!
     // Wait, os.WIFSTOPPED and os.WSTOPSIG are FUNCTIONS in CPython!
@@ -2639,16 +2794,34 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "replace")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "access")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "rmdir")->asObject(ctx));
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "getuid")->asObject(ctx));
+#endif
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "geteuid")->asObject(ctx));
+#endif
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "getgid")->asObject(ctx));
+#endif
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "getegid")->asObject(ctx));
+#endif
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "environ_keys")->asObject(ctx));
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "waitpid")->asObject(ctx));
+#endif
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "waitstatus_to_exitcode")->asObject(ctx));
+#endif
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "WIFSTOPPED")->asObject(ctx));
+#endif
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "WSTOPSIG")->asObject(ctx));
+#endif
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "WNOHANG")->asObject(ctx));
+#endif
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "urandom")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "kill")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "pipe")->asObject(ctx));
@@ -2717,8 +2890,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "isatty")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "getpid")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "getppid")->asObject(ctx));
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "_path_splitroot_ex")->asObject(ctx));
+#endif
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "_path_normpath")->asObject(ctx));
+#endif
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "_create_environ")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "stat_result")->asObject(ctx));
     // POSIX subset (read/write/dup/fork/exec family + helpers).
@@ -2728,31 +2905,65 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "dup2")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "set_inheritable")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "get_inheritable")->asObject(ctx));
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "fork")->asObject(ctx));
+#endif
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "execv")->asObject(ctx));
+#endif
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "execve")->asObject(ctx));
+#endif
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "execvp")->asObject(ctx));
+#endif
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "execvpe")->asObject(ctx));
+#endif
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "fsdecode")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "fsencode")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "strerror")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "get_exec_path")->asObject(ctx));
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "confstr")->asObject(ctx));
+#endif
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "register_at_fork")->asObject(ctx));
+#endif
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "WIFEXITED")->asObject(ctx));
+#endif
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "WIFSIGNALED")->asObject(ctx));
+#endif
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "WEXITSTATUS")->asObject(ctx));
+#endif
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "WTERMSIG")->asObject(ctx));
+#endif
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "fstat")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "umask")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "getlogin")->asObject(ctx));
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "WIFCONTINUED")->asObject(ctx));
+#endif
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "times")->asObject(ctx));
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "makedev")->asObject(ctx));
+#endif
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "major")->asObject(ctx));
+#endif
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "minor")->asObject(ctx));
+#endif
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "sysconf")->asObject(ctx));
+#endif
+#if !defined(_WIN32)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "getloadavg")->asObject(ctx));
+#endif
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "devnull")->asObject(ctx));
 #ifdef _CS_PATH
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "CS_PATH")->asObject(ctx));

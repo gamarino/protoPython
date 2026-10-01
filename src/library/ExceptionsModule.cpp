@@ -4,6 +4,7 @@
 #include <protoPython/ExceptionsModule.h>
 
 #include <cerrno>
+#include "PosixCompat.h"
 #include <string>
 
 namespace protoPython {
@@ -214,7 +215,10 @@ static const char* oserrorSubclassName(proto::proto_long err) {
         case EINPROGRESS:  return "BlockingIOError";
         case ECHILD:       return "ChildProcessError";
         case EPIPE:
-        case ESHUTDOWN:    return "BrokenPipeError";
+#ifdef ESHUTDOWN
+        case ESHUTDOWN:
+#endif
+                           return "BrokenPipeError";
         case ECONNABORTED: return "ConnectionAbortedError";
         case ECONNREFUSED: return "ConnectionRefusedError";
         case ECONNRESET:   return "ConnectionResetError";

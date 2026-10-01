@@ -15,6 +15,7 @@ else()
 endif()
 
 add_executable(protopy main.cpp)
+protopython_windows_executable(protopy)
 target_link_libraries(protopy PRIVATE protoPython)
 target_compile_definitions(protopy PRIVATE
     STDLIB_PATH="${_stdlib_path}"

@@ -6,6 +6,14 @@
 #include <protoPython/SignalModule.h>
 #include <protoCore.h>
 #include <cmath>
+#if defined(_MSC_VER) && !defined(__clang__)
+// MSVC has no __int128; its standard library's 128-bit integer class has the
+// same arithmetic for the overflow checks below.
+#include <__msvc_int128.hpp>
+using protopy_int128 = std::_Signed128;
+#else
+using protopy_int128 = __int128;
+#endif
 #include <cstdint>
 #include <iostream>
 #include <limits>
@@ -4790,7 +4798,7 @@ const proto::ProtoObject* executeBytecodeRange(
             // __int128 to detect overflow.  sieve hot loop is `i * j`
             // with both operands well within SmallInt range.
             if (proto::isSmallInt(a) && proto::isSmallInt(b)) {
-                __int128 prod = (__int128)proto::asSmallInt(a) * proto::asSmallInt(b);
+                protopy_int128 prod = (protopy_int128)proto::asSmallInt(a) * proto::asSmallInt(b);
                 if (proto::smallIntInRange(static_cast<long long>(prod))) {
                     stack.pop_back();
                     stack.back() = proto::makeSmallInt(static_cast<long long>(prod));
@@ -5171,9 +5179,9 @@ const proto::ProtoObject* executeBytecodeRange(
             if (proto::isSmallInt(a) && proto::isSmallInt(b)) {
                 long long shift = proto::asSmallInt(b);
                 if (shift >= 0 && shift < 63) {
-                    __int128 result = (__int128)proto::asSmallInt(a) << shift;
+                    protopy_int128 result = (protopy_int128)proto::asSmallInt(a) << shift;
                     long long r64 = static_cast<long long>(result);
-                    if (proto::smallIntInRange(r64) && ((__int128)r64 == result)) {
+                    if (proto::smallIntInRange(r64) && ((protopy_int128)r64 == result)) {
                         stack.pop_back();
                         stack.back() = proto::makeSmallInt(r64);
                         i = next_i; continue;

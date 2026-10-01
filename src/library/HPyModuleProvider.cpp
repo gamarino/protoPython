@@ -2,7 +2,7 @@
 #include <protoPython/HPyModuleProvider.h>
 #include <protoPython/HPyABI.h>
 #include <algorithm>
-#include <dlfcn.h>
+#include "DynamicLibrary.h"
 #include <filesystem>
 #include <system_error>
 
@@ -19,7 +19,8 @@ HPyModuleProvider::~HPyModuleProvider() {
 }
 
 const proto::ProtoObject* HPyModuleProvider::tryLoad(const std::string& logicalPath, proto::ProtoContext* ctx) {
-    // Step 1205: find <name>.hpy.so, then <name>.so, in each search directory;
+    // Step 1205: find <name>.hpy.so, then <name>.so, in each search directory
+    // (.hpy.dll and .dll on Windows);
     // dots in the module name map to directory separators.
     std::string filename = logicalPath;
     std::replace(filename.begin(), filename.end(), '.', '/');
@@ -27,7 +28,7 @@ const proto::ProtoObject* HPyModuleProvider::tryLoad(const std::string& logicalP
     std::string foundPath;
     std::error_code ec;
     for (const auto& basePath : basePaths_) {
-        for (const char* suffix : {".hpy.so", ".so"}) {
+        for (const char* suffix : {".hpy" PROTOPY_SHLIB_SUFFIX, PROTOPY_SHLIB_SUFFIX}) {
             std::string candidate = (std::filesystem::path(basePath) / (filename + suffix)).string();
             if (std::filesystem::exists(candidate, ec)) {
                 foundPath = std::move(candidate);

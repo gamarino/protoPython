@@ -78,7 +78,30 @@ set_target_properties(protoPython PROPERTIES
 # Now we apply -g unconditionally (debuginfo is useful for Release crash
 # reports too) and let CMAKE_CXX_FLAGS_<CONFIG> control the optimisation
 # level.  Override per-config below if a finer-grained tweak is needed.
-target_compile_options(protoPython PRIVATE -g)
+target_compile_options(protoPython PRIVATE ${PROTOPYTHON_DEBUG_INFO_FLAG})
+
+if(WIN32)
+    # The POSIX calls of the native modules, mapped onto Win32 (PosixCompat.h).
+    # and the part of _winapi the standard library imports on Windows.
+    target_sources(protoPython PRIVATE PosixCompat.cpp WinapiModule.cpp)
+    # _posixsubprocess and fcntl exist only on POSIX systems (as in CPython):
+    # their sources stay in the target but are not compiled, and
+    # PythonEnvironment.cpp does not register them.
+    set_source_files_properties(PosixSubprocessModule.cpp FcntlModule.cpp
+        PROPERTIES HEADER_FILE_ONLY ON)
+    # No __declspec annotations in the sources: export every symbol, as ELF does.
+    set_target_properties(protoPython PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+    # Windows finds a DLL next to the program that loads it: copy protoCore.dll
+    # into the build's bin/ so protopy and the tests run in place. A target the
+    # library depends on, not a post-build step: the tests are run to list their
+    # cases as soon as they are linked.
+    add_custom_target(protopython_runtime_dlls
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:protoCore>"
+                "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+        VERBATIM)
+    add_dependencies(protoPython protopython_runtime_dlls)
+endif()
 
 # Step #3 (2026-06-15): TLS model. Every thread_local declared inside this
 # shared library defaults to the `global-dynamic` model, which means every

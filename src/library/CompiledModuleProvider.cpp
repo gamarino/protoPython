@@ -1,6 +1,6 @@
 #include <protoPython/CompiledModuleProvider.h>
 #include <protoPython/PythonEnvironment.h>
-#include <dlfcn.h>
+#include "DynamicLibrary.h"
 #include <filesystem>
 #include <iostream>
 #include <algorithm>
@@ -23,7 +23,7 @@ const proto::ProtoObject* CompiledModuleProvider::tryLoad(const std::string& log
 
     std::string foundPath;
     for (const auto& basePath : basePaths_) {
-        std::string p = (std::filesystem::path(basePath) / (filename + ".so")).string();
+        std::string p = (std::filesystem::path(basePath) / (filename + PROTOPY_SHLIB_SUFFIX)).string();
         if (std::filesystem::exists(p)) {
             foundPath = p;
             break;

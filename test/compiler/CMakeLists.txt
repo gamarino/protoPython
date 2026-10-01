@@ -5,6 +5,13 @@
 # sync with the current libprotoPython / libprotoCore ABI (the manual
 # build path that preceded this CMakeLists drifted in May 2026 and
 # silently broke the protopyc benchmark column).
+#
+# protopyc builds a module with a C++ compiler and make, through a bash script;
+# that path is Linux/macOS only, and so are these targets.
+if(WIN32)
+    return()
+endif()
+
 add_executable(run_module run_module.cpp)
 
 target_include_directories(run_module PRIVATE

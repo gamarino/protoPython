@@ -6,9 +6,39 @@
 #include <thread>
 #include <ctime>
 #include <cstring>
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 
 namespace protoPython {
 namespace time_module {
+
+#if defined(_WIN32)
+// The C runtime's reentrant forms are ctime_s/asctime_s (a 26-byte buffer is
+// all they need; callers pass 64).
+static char* ctime_r(const time_t* t, char* buf) {
+    return ctime_s(buf, 64, t) == 0 ? buf : nullptr;
+}
+static char* asctime_r(const struct tm* tmv, char* buf) {
+    return asctime_s(buf, 64, tmv) == 0 ? buf : nullptr;
+}
+// FILETIME durations (100 ns units) in seconds.
+static double filetimeSeconds(const FILETIME& ft) {
+    ULARGE_INTEGER t;
+    t.LowPart = ft.dwLowDateTime;
+    t.HighPart = ft.dwHighDateTime;
+    return static_cast<double>(t.QuadPart) * 1e-7;
+}
+static long long filetimeNanoseconds(const FILETIME& ft) {
+    ULARGE_INTEGER t;
+    t.LowPart = ft.dwLowDateTime;
+    t.HighPart = ft.dwHighDateTime;
+    return static_cast<long long>(t.QuadPart) * 100LL;
+}
+#endif
 
 static double toDouble(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     if (obj->isDouble(ctx)) return obj->asDouble(ctx);
@@ -85,6 +115,10 @@ static const proto::ProtoObject* py_process_time(
         double sec = ts.tv_sec + ts.tv_nsec / 1e9;
         return ctx->fromDouble(sec);
     }
+#elif defined(_WIN32)
+    FILETIME created, exited, kernel, user;
+    if (GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user))
+        return ctx->fromDouble(filetimeSeconds(kernel) + filetimeSeconds(user));
 #endif
     return ctx->fromDouble(0.0);
 }
@@ -98,6 +132,10 @@ static const proto::ProtoObject* py_process_time_ns(
         long long ns = static_cast<long long>(ts.tv_sec) * 1000000000LL + ts.tv_nsec;
         return ctx->fromInteger(ns);
     }
+#elif defined(_WIN32)
+    FILETIME created, exited, kernel, user;
+    if (GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user))
+        return ctx->fromInteger(filetimeNanoseconds(kernel) + filetimeNanoseconds(user));
 #endif
     return ctx->fromInteger(0);
 }
@@ -111,6 +149,10 @@ static const proto::ProtoObject* py_thread_time(
         double sec = ts.tv_sec + ts.tv_nsec / 1e9;
         return ctx->fromDouble(sec);
     }
+#elif defined(_WIN32)
+    FILETIME created, exited, kernel, user;
+    if (GetThreadTimes(GetCurrentThread(), &created, &exited, &kernel, &user))
+        return ctx->fromDouble(filetimeSeconds(kernel) + filetimeSeconds(user));
 #endif
     return ctx->fromDouble(0.0);
 }
@@ -452,6 +494,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ::tzset();
         if (::tzname[0]) std_name = ::tzname[0];
         if (::tzname[1]) dst_name = ::tzname[1];
+#elif defined(_WIN32)
+        static char winStd[128], winDst[128];
+        size_t got = 0;
+        _tzset();
+        if (_get_tzname(&got, winStd, sizeof(winStd), 0) == 0 && winStd[0]) std_name = winStd;
+        if (_get_tzname(&got, winDst, sizeof(winDst), 1) == 0 && winDst[0]) dst_name = winDst;
 #endif
         const proto::ProtoList* tznameList = ctx->newList()
             ->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, std_name)->asObject(ctx))
@@ -468,6 +516,21 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromInteger(static_cast<long long>(::timezone - 3600)));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "daylight"),
         ctx->fromInteger(static_cast<long long>(::daylight)));
+#elif defined(_WIN32)
+    {
+        long tz = 0;
+        int dl = 0;
+        long dstbias = 0;
+        _get_timezone(&tz);
+        _get_daylight(&dl);
+        _get_dstbias(&dstbias);
+        mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "timezone"),
+            ctx->fromInteger(static_cast<long long>(tz)));
+        mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "altzone"),
+            ctx->fromInteger(static_cast<long long>(tz) + static_cast<long long>(dstbias)));
+        mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "daylight"),
+            ctx->fromInteger(static_cast<long long>(dl)));
+    }
 #else
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "timezone"), ctx->fromInteger(0));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "altzone"),  ctx->fromInteger(0));

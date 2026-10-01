@@ -2,6 +2,9 @@
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/ReModule.h>
 #include <cctype>
+#include <climits>
+#include <cwchar>
+#include <cwctype>
 #include <regex>
 #include <string>
 #include <vector>
@@ -23,12 +26,110 @@ namespace re {
 // UTF-8 bytes of a str made a character class see each byte of a multibyte
 // character on its own, reported match positions in bytes and split
 // characters in group strings. Subjects and patterns are therefore matched as
-// UTF-32 strings with std::wregex (wchar_t is 32 bits on Linux).
+// UTF-32 strings with std::wregex (wchar_t is 32 bits on Linux), or with a
+// char32_t std::basic_regex where wchar_t is 16 bits (Windows).
 // ---------------------------------------------------------------------------
-static_assert(sizeof(wchar_t) == 4, "re matches str values as UTF-32 wchar_t strings");
+#if WCHAR_MAX >= 0x10FFFF
+// wchar_t holds every code point (Linux, macOS): std::wregex as always.
+using ReChar = wchar_t;
+using ReString = std::wstring;
+using ReRegex = std::wregex;
+using ReMatch = std::wsmatch;
+using ReIterator = std::wsregex_iterator;
+using ReTokenIterator = std::wsregex_token_iterator;
+#define RE_LIT(x) L##x
+#else
+// wchar_t is UTF-16 (Windows): match UTF-32 char32_t strings instead, so
+// positions stay code point indexes. The standard library has regex traits
+// for char and wchar_t only; these give std::basic_regex what it needs for
+// char32_t, with the classification std::wregex's default "C" locale gives
+// (towlower/isw* within the BMP, nothing above it).
+class ReTraits : public std::_Regex_traits_base {
+public:
+    using _Uelem = unsigned int;
+    using char_type = char32_t;
+    using size_type = size_t;
+    using string_type = std::u32string;
+    using locale_type = std::locale;
 
-static std::wstring toWide(const std::string& s) {
-    std::wstring out;
+    static size_type length(const char32_t* str) { return std::char_traits<char32_t>::length(str); }
+    char32_t translate(char32_t c) const { return c; }
+    char32_t translate_nocase(char32_t c) const {
+        return c < 0x10000 ? static_cast<char32_t>(std::towlower(static_cast<wint_t>(c))) : c;
+    }
+    template <class It> string_type transform(It first, It last) const { return string_type(first, last); }
+    template <class It> string_type transform_primary(It first, It last) const {
+        string_type out(first, last);
+        for (auto& c : out) c = translate_nocase(c);
+        return out;
+    }
+    template <class It> string_type lookup_collatename(It first, It last) const {
+        return string_type(first, last);
+    }
+    bool isctype(char32_t c, char_class_type mask) const {
+        if (mask == static_cast<char_class_type>(-1)) return c == U'_' || isctype(c, _Ch_alnum);
+        if (c >= 0x10000) return false;
+        // The character's classification bits, laid out as ctype<wchar_t>'s
+        // table: the alpha mask includes the upper and lower bits, so a
+        // letter carries only alpha's own bit plus its case bit.
+        const wint_t w = static_cast<wint_t>(c);
+        unsigned int bits = 0;
+        if (std::iswalpha(w)) bits |= static_cast<unsigned int>(_Ch_alpha & ~(_Ch_upper | _Ch_lower));
+        if (std::iswupper(w)) bits |= _Ch_upper;
+        if (std::iswlower(w)) bits |= _Ch_lower;
+        if (std::iswdigit(w)) bits |= _Ch_digit;
+        if (std::iswspace(w)) bits |= _Ch_space;
+        if (std::iswpunct(w)) bits |= _Ch_punct;
+        if (std::iswcntrl(w)) bits |= _Ch_cntrl;
+        if (std::iswxdigit(w)) bits |= _Ch_xdigit;
+        if (std::iswblank(w)) bits |= _Ch_blank;
+        return (bits & static_cast<unsigned short>(mask)) != 0;
+    }
+    template <class It> char_class_type lookup_classname(It first, It last, bool icase = false) const {
+        static const struct { const char* name; char_class_type mask; } names[] = {
+            {"alnum", _Ch_alnum}, {"alpha", _Ch_alpha}, {"blank", _Ch_blank}, {"cntrl", _Ch_cntrl},
+            {"d", _Ch_digit}, {"digit", _Ch_digit}, {"graph", _Ch_graph}, {"lower", _Ch_lower},
+            {"print", _Ch_print}, {"punct", _Ch_punct}, {"space", _Ch_space}, {"s", _Ch_space},
+            {"upper", _Ch_upper}, {"w", static_cast<char_class_type>(-1)}, {"xdigit", _Ch_xdigit},
+        };
+        std::string key;
+        for (It it = first; it != last; ++it) {
+            const char32_t c = *it;
+            key += static_cast<char>(c < 0x80 ? std::tolower(static_cast<int>(c)) : '?');
+        }
+        for (const auto& n : names) {
+            if (key == n.name) {
+                char_class_type m = n.mask;
+                if (icase && (m & (_Ch_lower | _Ch_upper))) m |= _Ch_lower | _Ch_upper;
+                return m;
+            }
+        }
+        return 0;
+    }
+    int value(char32_t c, int base) const {
+        if ((base != 8 && U'0' <= c && c <= U'9') || (base == 8 && U'0' <= c && c <= U'7'))
+            return static_cast<int>(c - U'0');
+        if (base != 16) return -1;
+        if (U'a' <= c && c <= U'f') return static_cast<int>(c - U'a' + 10);
+        if (U'A' <= c && c <= U'F') return static_cast<int>(c - U'A' + 10);
+        return -1;
+    }
+    locale_type imbue(locale_type loc) { locale_type old = loc_; loc_ = loc; return old; }
+    locale_type getloc() const { return loc_; }
+private:
+    locale_type loc_;
+};
+using ReChar = char32_t;
+using ReString = std::u32string;
+using ReRegex = std::basic_regex<char32_t, ReTraits>;
+using ReMatch = std::match_results<ReString::const_iterator>;
+using ReIterator = std::regex_iterator<ReString::const_iterator, char32_t, ReTraits>;
+using ReTokenIterator = std::regex_token_iterator<ReString::const_iterator, char32_t, ReTraits>;
+#define RE_LIT(x) U##x
+#endif
+
+static ReString toWide(const std::string& s) {
+    ReString out;
     out.reserve(s.size());
     for (size_t i = 0; i < s.size();) {
         const unsigned char c = static_cast<unsigned char>(s[i]);
@@ -46,20 +147,20 @@ static std::wstring toWide(const std::string& s) {
         }
         if (!ok) {
             // Not valid UTF-8: keep the byte value rather than dropping it.
-            out += static_cast<wchar_t>(c);
+            out += static_cast<ReChar>(c);
             ++i;
             continue;
         }
-        out += static_cast<wchar_t>(cp);
+        out += static_cast<ReChar>(cp);
         i += n;
     }
     return out;
 }
 
-static std::string toUtf8(const std::wstring& w) {
+static std::string toUtf8(const ReString& w) {
     std::string out;
     out.reserve(w.size());
-    for (wchar_t wc : w) {
+    for (ReChar wc : w) {
         const proto::proto_ulong cp = static_cast<proto::proto_ulong>(wc);
         if (cp < 0x80) {
             out += static_cast<char>(cp);
@@ -81,7 +182,7 @@ static std::string toUtf8(const std::wstring& w) {
 }
 
 // The code points of a str argument; false when obj is not a str.
-static bool wideArg(proto::ProtoContext* ctx, const proto::ProtoObject* obj, std::wstring& out) {
+static bool wideArg(proto::ProtoContext* ctx, const proto::ProtoObject* obj, ReString& out) {
     if (!obj || !obj->isString(ctx)) return false;
     std::string utf8;
     obj->asString(ctx)->toUTF8String(ctx, utf8);
@@ -95,7 +196,7 @@ static bool wideArg(proto::ProtoContext* ctx, const proto::ProtoObject* obj, std
 // these made each distinct result permanent, so `re` over varying input grew
 // the heap without bound. See PythonEnvironment::getInternedString in the
 // header for the rule.
-static const proto::ProtoObject* newStr(proto::ProtoContext* ctx, const std::wstring& w) {
+static const proto::ProtoObject* newStr(proto::ProtoContext* ctx, const ReString& w) {
     return PythonEnvironment::newStr(ctx, toUtf8(w));
 }
 
@@ -111,8 +212,8 @@ static const proto::ProtoObject* newStr(proto::ProtoContext* ctx, const std::wst
 static const proto::ProtoObject* makeMatchObject(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* matchProto,
-    const std::wsmatch& m,
-    const std::wstring& subject,
+    const ReMatch& m,
+    const ReString& subject,
     size_t posOffset = 0,
     const proto::ProtoObject* patObj = nullptr)
 {
@@ -354,7 +455,11 @@ static bool getPattern(proto::ProtoContext* ctx, const proto::ProtoObject* patOb
 static std::regex_constants::syntax_option_type pyFlagsToStdFlags(long long pyFlags) {
     auto flags = std::regex_constants::ECMAScript;
     if (pyFlags & 2)   flags |= std::regex_constants::icase;   // IGNORECASE
+#if !defined(_MSC_VER)
     if (pyFlags & 8)   flags |= std::regex_constants::multiline; // MULTILINE
+#endif
+    // MSVC's std::regex has no multiline flag: ^ and $ always match at line
+    // boundaries there, as with MULTILINE.
     return flags;
 }
 
@@ -402,6 +507,13 @@ static TranslatedRegex translatePyRegexEx(const std::string& src, long long pyFl
     for (size_t i = 0; i < src.size(); ) {
         char c = src[i];
         if (inClass) {
+#if defined(_MSC_VER)
+            // [\b] is a backspace in Python and ECMAScript; MSVC's std::regex
+            // reads it as the letter b.
+            if (c == '\\' && i + 1 < src.size() && src[i + 1] == 'b') {
+                out += "\\x08"; i += 2; continue;
+            }
+#endif
             if (c == '\\' && i + 1 < src.size()) {
                 out += c; out += src[i + 1]; i += 2; continue;
             }
@@ -512,17 +624,17 @@ static long long intArg(proto::ProtoContext* ctx, const proto::ProtoList* posArg
 // can continue (its regex_search will return false) while the Python-level
 // re.error we set propagates back up.  Built once and cached so that the
 // fallback path itself never throws.  CPython behaviour: re.error / PatternError.
-static const std::wregex& neverMatchesRegex() {
-    static const std::wregex kNever(LR"(\b\B)");  // word-boundary AND non-boundary -> never true
+static const ReRegex& neverMatchesRegex() {
+    static const ReRegex kNever(RE_LIT(R"(\b\B)"));  // word-boundary AND non-boundary -> never true
     return kNever;
 }
 
-static std::wregex makeRegex(proto::ProtoContext* ctx,
+static ReRegex makeRegex(proto::ProtoContext* ctx,
                              const std::string& pat,
                              long long pyFlags) {
     try {
         const std::string translated = translatePyRegex(pat, pyFlags);
-        return std::wregex(toWide(translated), pyFlagsToStdFlags(pyFlags));
+        return ReRegex(toWide(translated), pyFlagsToStdFlags(pyFlags));
     } catch (const std::regex_error& e) {
         // std::regex (the C++ stdlib) rejects several constructs the
         // Python `re` module accepts — most commonly named groups
@@ -564,8 +676,8 @@ static const proto::ProtoObject* getMatchProto(proto::ProtoContext* ctx,
 // \g<number> and \g<name>, octal escapes (\0, \0oo and \ooo), the escapes
 // \a \b \f \n \r \t \v \\, and any other escaped non-letter kept as written.
 // Returns false with an exception pending for a bad reference or escape.
-static bool expandTemplate(proto::ProtoContext* ctx, const std::wstring& tmpl,
-                           const std::wsmatch& m, const TranslatedRegex& tr, std::wstring& out) {
+static bool expandTemplate(proto::ProtoContext* ctx, const ReString& tmpl,
+                           const ReMatch& m, const TranslatedRegex& tr, ReString& out) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     auto fail = [&](const std::string& msg) {
         if (env) env->raiseRuntimeError(ctx, msg);
@@ -576,24 +688,24 @@ static bool expandTemplate(proto::ProtoContext* ctx, const std::wstring& tmpl,
         if (m[g].matched) out += m.str(g);  // an unmatched group expands to ''
         return true;
     };
-    auto isDigit = [](wchar_t d) { return d >= L'0' && d <= L'9'; };
-    auto isOctal = [](wchar_t d) { return d >= L'0' && d <= L'7'; };
+    auto isDigit = [](ReChar d) { return d >= L'0' && d <= L'9'; };
+    auto isOctal = [](ReChar d) { return d >= L'0' && d <= L'7'; };
     for (size_t i = 0; i < tmpl.size(); ++i) {
-        const wchar_t c = tmpl[i];
+        const ReChar c = tmpl[i];
         if (c != L'\\' || i + 1 == tmpl.size()) {
             out += c;
             continue;
         }
-        const wchar_t n = tmpl[++i];
+        const ReChar n = tmpl[++i];
         if (n == L'g') {
             if (i + 1 >= tmpl.size() || tmpl[i + 1] != L'<') return fail("missing <");
             const size_t close = tmpl.find(L'>', i + 2);
-            if (close == std::wstring::npos) return fail("missing >, unterminated name");
-            const std::wstring name = tmpl.substr(i + 2, close - (i + 2));
+            if (close == ReString::npos) return fail("missing >, unterminated name");
+            const ReString name = tmpl.substr(i + 2, close - (i + 2));
             i = close;
             if (name.empty()) return fail("missing group name");
             bool numeric = true;
-            for (wchar_t d : name) numeric = numeric && isDigit(d);
+            for (ReChar d : name) numeric = numeric && isDigit(d);
             if (numeric) {
                 if (name.size() > 9) return fail("invalid group reference " + toUtf8(name));
                 if (!appendGroup(std::stoul(toUtf8(name)))) return false;
@@ -612,7 +724,7 @@ static bool expandTemplate(proto::ProtoContext* ctx, const std::wstring& tmpl,
             unsigned v = 0;
             size_t j = i + 1;
             for (int k = 0; k < 2 && j < tmpl.size() && isOctal(tmpl[j]); ++k, ++j) v = v * 8 + (tmpl[j] - L'0');
-            out += static_cast<wchar_t>(v);
+            out += static_cast<ReChar>(v);
             i = j - 1;
             continue;
         }
@@ -620,7 +732,7 @@ static bool expandTemplate(proto::ProtoContext* ctx, const std::wstring& tmpl,
             if (i + 2 < tmpl.size() && isOctal(n) && isOctal(tmpl[i + 1]) && isOctal(tmpl[i + 2])) {
                 const unsigned v = (n - L'0') * 64 + (tmpl[i + 1] - L'0') * 8 + (tmpl[i + 2] - L'0');
                 if (v > 0377) return fail("octal escape value outside of range 0-0o377");
-                out += static_cast<wchar_t>(v);
+                out += static_cast<ReChar>(v);
                 i += 2;
                 continue;
             }
@@ -665,23 +777,23 @@ static bool substitute(proto::ProtoContext* ctx, const proto::ProtoObject* patOb
         env->raiseTypeError(ctx, "first argument must be string or compiled pattern");
         return false;
     }
-    std::wstring s;
+    ReString s;
     if (!wideArg(ctx, strObj, s)) {
         env->raiseTypeError(ctx, "expected string or bytes-like object");
         return false;
     }
-    std::wstring tmpl;
+    ReString tmpl;
     const bool replIsTemplate = wideArg(ctx, replObj, tmpl);
     const TranslatedRegex tr = translatePyRegexEx(pat, flags);
-    const std::wregex re = makeRegex(ctx, pat, flags);
+    const ReRegex re = makeRegex(ctx, pat, flags);
     if (env->hasPendingException()) return false;
 
-    std::wstring out;
+    ReString out;
     long long replaced = 0;
     size_t last = 0;
-    for (auto it = std::wsregex_iterator(s.begin(), s.end(), re), end = std::wsregex_iterator(); it != end; ++it) {
+    for (auto it = ReIterator(s.begin(), s.end(), re), end = ReIterator(); it != end; ++it) {
         if (count > 0 && replaced >= count) break;
-        const std::wsmatch& m = *it;
+        const ReMatch& m = *it;
         const size_t start = static_cast<size_t>(m.position(0));
         out.append(s, last, start - last);
         if (replIsTemplate) {
@@ -693,7 +805,7 @@ static bool substitute(proto::ProtoContext* ctx, const proto::ProtoObject* patOb
             if (!r) {
                 if (env->hasPendingException()) return false;
             } else if (r->isString(ctx)) {
-                std::wstring piece;
+                ReString piece;
                 wideArg(ctx, r, piece);
                 out += piece;
             } else if (r != PROTO_NONE && r != env->getNonePrototype()) {
@@ -708,7 +820,7 @@ static bool substitute(proto::ProtoContext* ctx, const proto::ProtoObject* patOb
         last = start + static_cast<size_t>(m.length(0));
         ++replaced;
     }
-    out.append(s, last, std::wstring::npos);
+    out.append(s, last, ReString::npos);
     resultOut = newStr(ctx, out);
     replacedOut = replaced;
     return true;
@@ -801,13 +913,13 @@ static const proto::ProtoObject* py_match(
 {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     std::string pat;
-    std::wstring s;
+    ReString s;
     const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
     if (!getPattern(ctx, patObj, pat)) return PROTO_NONE;
     if (!wideArg(ctx, posArgs->getAt(ctx, 1), s)) return PROTO_NONE;
     long long flags = extractFlags(ctx, patObj, posArgs, 2);
-    std::wregex re = makeRegex(ctx, pat, flags);
-    std::wsmatch m;
+    ReRegex re = makeRegex(ctx, pat, flags);
+    ReMatch m;
     if (!std::regex_search(s, m, re) || m.position() != 0) return PROTO_NONE;
     return makeMatchObject(ctx, getMatchProto(ctx, self), m, s, 0, patObj);
 }
@@ -818,13 +930,13 @@ static const proto::ProtoObject* py_search(
 {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     std::string pat;
-    std::wstring s;
+    ReString s;
     const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
     if (!getPattern(ctx, patObj, pat)) return PROTO_NONE;
     if (!wideArg(ctx, posArgs->getAt(ctx, 1), s)) return PROTO_NONE;
     long long flags = extractFlags(ctx, patObj, posArgs, 2);
-    std::wregex re = makeRegex(ctx, pat, flags);
-    std::wsmatch m;
+    ReRegex re = makeRegex(ctx, pat, flags);
+    ReMatch m;
     if (!std::regex_search(s, m, re)) return PROTO_NONE;
     return makeMatchObject(ctx, getMatchProto(ctx, self), m, s, 0, patObj);
 }
@@ -835,10 +947,10 @@ static const proto::ProtoObject* py_escape(
 {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
-    std::wstring s;
+    ReString s;
     if (!wideArg(ctx, patObj, s)) return patObj;
-    std::wstring escaped;
-    for (wchar_t c : s) {
+    ReString escaped;
+    for (ReChar c : s) {
         // Escaping the bytes of a multibyte character broke it; like CPython,
         // non-ASCII characters are never escaped.
         if (c < 0x80 && !isalnum(static_cast<unsigned char>(c)) && c != L'_') escaped += L'\\';
@@ -882,17 +994,17 @@ static const proto::ProtoObject* py_pattern_match(
 {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     std::string pat;
-    std::wstring s;
+    ReString s;
     if (!getPattern(ctx, self, pat)) return PROTO_NONE;
     if (!wideArg(ctx, posArgs->getAt(ctx, 0), s)) return PROTO_NONE;
 
     size_t pos = 0, endpos = s.size();
     matchWindow(ctx, posArgs, s.size(), pos, endpos);
 
-    std::wstring sub = (pos < endpos) ? s.substr(pos, endpos - pos) : std::wstring();
+    ReString sub = (pos < endpos) ? s.substr(pos, endpos - pos) : ReString();
     long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::wregex re = makeRegex(ctx, pat, flags);
-    std::wsmatch m;
+    ReRegex re = makeRegex(ctx, pat, flags);
+    ReMatch m;
     if (!std::regex_search(sub, m, re) || m.position() != 0) return PROTO_NONE;
     return makeMatchObject(ctx, getMatchProto(ctx, self), m, s, pos, self);
 }
@@ -903,12 +1015,12 @@ static const proto::ProtoObject* py_pattern_fullmatch(
 {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     std::string pat;
-    std::wstring s;
+    ReString s;
     if (!getPattern(ctx, self, pat)) return PROTO_NONE;
     if (!wideArg(ctx, posArgs->getAt(ctx, 0), s)) return PROTO_NONE;
     long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::wregex re = makeRegex(ctx, pat, flags);
-    std::wsmatch m;
+    ReRegex re = makeRegex(ctx, pat, flags);
+    ReMatch m;
     if (!std::regex_match(s, m, re)) return PROTO_NONE;
     return makeMatchObject(ctx, getMatchProto(ctx, self), m, s, 0, self);
 }
@@ -919,17 +1031,17 @@ static const proto::ProtoObject* py_pattern_search(
 {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     std::string pat;
-    std::wstring s;
+    ReString s;
     if (!getPattern(ctx, self, pat)) return PROTO_NONE;
     if (!wideArg(ctx, posArgs->getAt(ctx, 0), s)) return PROTO_NONE;
 
     size_t pos = 0, endpos = s.size();
     matchWindow(ctx, posArgs, s.size(), pos, endpos);
 
-    std::wstring sub = (pos < endpos) ? s.substr(pos, endpos - pos) : std::wstring();
+    ReString sub = (pos < endpos) ? s.substr(pos, endpos - pos) : ReString();
     long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::wregex re = makeRegex(ctx, pat, flags);
-    std::wsmatch m;
+    ReRegex re = makeRegex(ctx, pat, flags);
+    ReMatch m;
     if (!std::regex_search(sub, m, re)) return PROTO_NONE;
     return makeMatchObject(ctx, getMatchProto(ctx, self), m, s, pos, self);
 }
@@ -980,16 +1092,16 @@ static const proto::ProtoObject* py_pattern_findall(
 {
     if (posArgs->getSize(ctx) < 1) return PythonEnvironment::wrapList(ctx, ctx->newList());
     std::string pat;
-    std::wstring s;
+    ReString s;
     if (!getPattern(ctx, self, pat)) return PythonEnvironment::wrapList(ctx, ctx->newList());
     if (!wideArg(ctx, posArgs->getAt(ctx, 0), s)) return PythonEnvironment::wrapList(ctx, ctx->newList());
     long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::wregex re = makeRegex(ctx, pat, flags);
+    ReRegex re = makeRegex(ctx, pat, flags);
     const proto::ProtoList* results = ctx->newList();
-    auto begin = std::wsregex_iterator(s.begin(), s.end(), re);
-    auto end2 = std::wsregex_iterator();
+    auto begin = ReIterator(s.begin(), s.end(), re);
+    auto end2 = ReIterator();
     for (auto it = begin; it != end2; ++it) {
-        const std::wsmatch& sm = *it;
+        const ReMatch& sm = *it;
         if (sm.size() > 2) {
             // 2+ capturing groups: return list of tuples (CPython behavior)
             const proto::ProtoList* grps = ctx->newList();
@@ -1028,16 +1140,16 @@ static const proto::ProtoObject* py_pattern_finditer(
 {
     if (posArgs->getSize(ctx) < 1) return PythonEnvironment::wrapList(ctx, ctx->newList());
     std::string pat;
-    std::wstring s;
+    ReString s;
     if (!getPattern(ctx, self, pat)) return PythonEnvironment::wrapList(ctx, ctx->newList());
     if (!wideArg(ctx, posArgs->getAt(ctx, 0), s)) return PythonEnvironment::wrapList(ctx, ctx->newList());
     long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::wregex re = makeRegex(ctx, pat, flags);
+    ReRegex re = makeRegex(ctx, pat, flags);
     const proto::ProtoObject* matchProto = self->getAttribute(ctx,
         proto::ProtoString::createSymbol(ctx, "__match_proto__"));
     const proto::ProtoList* results = ctx->newList();
-    auto begin = std::wsregex_iterator(s.begin(), s.end(), re);
-    auto end2 = std::wsregex_iterator();
+    auto begin = ReIterator(s.begin(), s.end(), re);
+    auto end2 = ReIterator();
     for (auto it = begin; it != end2; ++it) {
         results = results->appendLast(ctx, makeMatchObject(ctx, matchProto, *it, s, 0, self));
     }
@@ -1058,14 +1170,14 @@ static const proto::ProtoObject* py_pattern_split(
 {
     if (posArgs->getSize(ctx) < 1) return PythonEnvironment::wrapList(ctx, ctx->newList());
     std::string pat;
-    std::wstring s;
+    ReString s;
     if (!getPattern(ctx, self, pat)) return PythonEnvironment::wrapList(ctx, ctx->newList());
     if (!wideArg(ctx, posArgs->getAt(ctx, 0), s)) return PythonEnvironment::wrapList(ctx, ctx->newList());
     long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::wregex re = makeRegex(ctx, pat, flags);
+    ReRegex re = makeRegex(ctx, pat, flags);
     const proto::ProtoList* results = ctx->newList();
-    std::wsregex_token_iterator it(s.begin(), s.end(), re, -1);
-    std::wsregex_token_iterator end2;
+    ReTokenIterator it(s.begin(), s.end(), re, -1);
+    ReTokenIterator end2;
     for (; it != end2; ++it) {
         results = results->appendLast(ctx, newStr(ctx, it->str()));
     }
@@ -1087,13 +1199,13 @@ static const proto::ProtoObject* py_fullmatch(
 {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     std::string pat;
-    std::wstring s;
+    ReString s;
     const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
     if (!getPattern(ctx, patObj, pat)) return PROTO_NONE;
     if (!wideArg(ctx, posArgs->getAt(ctx, 1), s)) return PROTO_NONE;
     long long flags = extractFlags(ctx, patObj, posArgs, 2);
-    std::wregex re = makeRegex(ctx, pat, flags);
-    std::wsmatch m;
+    ReRegex re = makeRegex(ctx, pat, flags);
+    ReMatch m;
     if (!std::regex_match(s, m, re)) return PROTO_NONE;
     return makeMatchObject(ctx, getMatchProto(ctx, self), m, s, 0, patObj);
 }
@@ -1162,15 +1274,15 @@ static const proto::ProtoObject* py_finditer(
     const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* strObj = posArgs->getAt(ctx, 1);
     std::string pat;
-    std::wstring s;
+    ReString s;
     if (!getPattern(ctx, patObj, pat)) return PythonEnvironment::wrapList(ctx, ctx->newList());
     if (!wideArg(ctx, strObj, s)) return PythonEnvironment::wrapList(ctx, ctx->newList());
     long long flags = extractFlags(ctx, patObj, posArgs, 2);
-    std::wregex re = makeRegex(ctx, pat, flags);
+    ReRegex re = makeRegex(ctx, pat, flags);
     const proto::ProtoObject* matchProto = getMatchProto(ctx, self);
     const proto::ProtoList* results = ctx->newList();
-    auto begin = std::wsregex_iterator(s.begin(), s.end(), re);
-    auto end2 = std::wsregex_iterator();
+    auto begin = ReIterator(s.begin(), s.end(), re);
+    auto end2 = ReIterator();
     for (auto it = begin; it != end2; ++it) {
         results = results->appendLast(ctx, makeMatchObject(ctx, matchProto, *it, s, 0, patObj));
     }
@@ -1215,7 +1327,7 @@ static const proto::ProtoObject* py_scanner_iter_match(
     if (!strObj || !strObj->isString(ctx)) return PROTO_NONE;
     if (!patAttr || !patAttr->isString(ctx)) return PROTO_NONE;
 
-    std::wstring s;
+    ReString s;
     std::string pat;
     wideArg(ctx, strObj, s);
     patAttr->asString(ctx)->toUTF8String(ctx, pat);
@@ -1225,10 +1337,10 @@ static const proto::ProtoObject* py_scanner_iter_match(
     if (pos >= (long long)s.size()) return PROTO_NONE;
 
     long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::wregex re = makeRegex(ctx, pat, flags);
+    ReRegex re = makeRegex(ctx, pat, flags);
 
-    std::wstring sub = s.substr(static_cast<size_t>(pos));
-    std::wsmatch m;
+    ReString sub = s.substr(static_cast<size_t>(pos));
+    ReMatch m;
     if (!std::regex_search(sub, m, re) || m.position(0) != 0) return PROTO_NONE;
 
     // Advance position.
@@ -1362,7 +1474,7 @@ static const proto::ProtoObject* py_scanner_scan(
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     if (!posArgs->getAt(ctx, 0)->isString(ctx)) return PROTO_NONE;
 
-    std::wstring s;
+    ReString s;
     wideArg(ctx, posArgs->getAt(ctx, 0), s);
 
     const proto::ProtoObject* patObj = self->getAttribute(ctx,
@@ -1378,15 +1490,15 @@ static const proto::ProtoObject* py_scanner_scan(
     else return PROTO_NONE;
 
     long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::wregex re = makeRegex(ctx, pat, flags);
+    ReRegex re = makeRegex(ctx, pat, flags);
 
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoList* results = ctx->newList();
     size_t i = 0;
 
     while (i < s.size()) {
-        std::wstring sub = s.substr(i);
-        std::wsmatch m;
+        ReString sub = s.substr(i);
+        ReMatch m;
         if (!std::regex_search(sub, m, re) || m.position(0) != 0) break;
         size_t j = i + m.length(0);
         if (j == i) break;  // zero-length match guard

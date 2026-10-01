@@ -1,0 +1,4 @@
+# The CTest scripts run through bash, also on Windows (Git for Windows):
+# keep them LF in every checkout, whatever core.autocrlf says.
+test/regression/*.sh text eol=lf
+tests/conformity/scripts/*.sh text eol=lf

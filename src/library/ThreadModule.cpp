@@ -15,6 +15,13 @@
 #if defined(__linux__)
 #include <sys/syscall.h>
 #endif
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <process.h>
+#endif
 
 namespace protoPython {
 namespace thread_module {
@@ -245,6 +252,8 @@ static const proto::ProtoObject* py_rlock_release(
 static long long current_thread_id() {
 #if defined(__linux__)
     return static_cast<long long>(syscall(SYS_gettid));
+#elif defined(_WIN32)
+    return static_cast<long long>(GetCurrentThreadId());
 #else
     return static_cast<long long>(std::hash<std::thread::id>{}(std::this_thread::get_id()));
 #endif
@@ -257,6 +266,8 @@ static long long g_main_thread_id = current_thread_id();
 static long long current_process_id() {
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     return static_cast<long long>(getpid());
+#elif defined(_WIN32)
+    return static_cast<long long>(_getpid());
 #else
     return static_cast<long long>(std::hash<std::thread::id>{}(std::this_thread::get_id()));
 #endif

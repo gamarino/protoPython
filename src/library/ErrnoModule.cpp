@@ -1,5 +1,6 @@
 #include <protoPython/ErrnoModule.h>
 #include <errno.h>
+#include "PosixCompat.h"
 
 namespace protoPython {
 namespace errno_module {

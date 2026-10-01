@@ -1,10 +1,13 @@
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/PythonModuleProvider.h>
 #include <sys/stat.h>
+#if !defined(_WIN32)
 #include <unistd.h>
+#endif
 #include <algorithm>
 #include <iostream>
 #include <vector>
+#include "PosixCompat.h"
 
 namespace protoPython {
 

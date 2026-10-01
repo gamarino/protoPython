@@ -86,6 +86,9 @@ if(TARGET protoCoreConformance)
     set(_protopy_conformance protoCoreConformance)
 elseif(TARGET protoCore::conformance)
     set(_protopy_conformance protoCore::conformance)
+elseif(TARGET protoCore::protoCoreConformance)
+    # The name protoCore's installed package actually exports.
+    set(_protopy_conformance protoCore::protoCoreConformance)
 endif()
 
 if(_protopy_conformance)

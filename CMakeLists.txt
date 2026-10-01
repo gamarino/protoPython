@@ -3,7 +3,51 @@ project(protoPython VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-add_compile_options(-fno-delete-null-pointer-checks)
+
+# Compiler and platform differences, gathered here so the targets below read the
+# same on every platform. Outside MSVC these are the flags the build always used.
+if(MSVC)
+    # Sources are UTF-8; PythonEnvironment.cpp and BuiltinsModule.cpp exceed the
+    # default section limit. MSVC never deletes null-pointer checks the way GCC's
+    # -fdelete-null-pointer-checks does, so that flag has no counterpart.
+    add_compile_options(/utf-8 /bigobj)
+    add_compile_definitions(NOMINMAX _CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_WARNINGS)
+    # Debug information for the library in every configuration, as -g elsewhere.
+    set(PROTOPYTHON_DEBUG_INFO_FLAG "")
+else()
+    add_compile_options(-fno-delete-null-pointer-checks)
+    set(PROTOPYTHON_DEBUG_INFO_FLAG -g)
+endif()
+if(WIN32)
+    # Windows has no rpath: a program finds its DLLs next to itself, so every
+    # executable and DLL of the build goes to one directory.
+    if(NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY)
+        set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+    endif()
+endif()
+if(MSVC)
+    set(PROTOPYTHON_WINDOWS_STACK_RESERVE "33554432" CACHE STRING
+        "Stack reserve, in bytes, of protoPython's executables on Windows")
+endif()
+# Windows: a UTF-8 process code page for an executable (argv, getenv and paths
+# are UTF-8, as elsewhere), and the stack reserve below. Does nothing on other
+# platforms.
+function(protopython_windows_executable target)
+    if(WIN32)
+        target_sources(${target} PRIVATE "${PROJECT_SOURCE_DIR}/src/windows/utf8.manifest")
+    endif()
+    if(MSVC)
+        # The interpreter recurses on the native stack, one dispatcher frame per
+        # Python call. Windows gives a thread 1 MiB unless the executable asks
+        # for more (Linux: 8 MiB), and that held fewer than 100 Python calls,
+        # far below the recursion limit of 1000; MSVC's frames for the
+        # dispatcher are also larger than GCC's. The reserve applies to the main
+        # thread and to every thread created with the default size
+        # (std::thread, so Python threads too); it is address space, committed
+        # only as used.
+        target_link_options(${target} PRIVATE "/STACK:${PROTOPYTHON_WINDOWS_STACK_RESERVE}")
+    endif()
+endfunction()
 
 include(GNUInstallDirs)
 
@@ -124,6 +168,51 @@ configure_file(src/Version.h.in "${PROTOPYTHON_GENERATED_INCLUDE_DIR}/protoPytho
 add_subdirectory(src/library)
 
 enable_testing()
+# The script tests are bash scripts. Windows cannot run a script directly, so
+# there they run through the bash of Git for Windows (not the bash.exe in System32,
+# which is WSL); elsewhere the prefix is empty and the script is the command.
+if(WIN32)
+    find_program(PROTOPYTHON_BASH bash
+        HINTS "C:/Program Files/Git/bin" "C:/Program Files/Git/usr/bin" NO_DEFAULT_PATH)
+    if(NOT PROTOPYTHON_BASH)
+        find_program(PROTOPYTHON_BASH bash)
+    endif()
+    set(PROTOPYTHON_SH "${PROTOPYTHON_BASH}")
+else()
+    set(PROTOPYTHON_SH "")
+endif()
+# Exit-status checks run without a shell on Windows (assert_exit.cmake): Git
+# Bash's command-line parsing would drop the quotes inside `protopy -c` code.
+if(WIN32)
+    set(PROTOPYTHON_ASSERT_EXIT ${CMAKE_COMMAND} -P ${CMAKE_SOURCE_DIR}/test/regression/assert_exit.cmake --)
+else()
+    set(PROTOPYTHON_ASSERT_EXIT ${CMAKE_SOURCE_DIR}/test/regression/assert_exit.sh)
+endif()
+# GoogleTest normally comes from protoCore's own test/ directory, which exists
+# only in the developer fallback (add_subdirectory). With an installed protoCore
+# the GoogleTest-based tests are skipped (test/library/CMakeLists.txt) unless
+# this option fetches GoogleTest itself. It is on by default on Windows, where
+# protoCore is always an installed package; elsewhere the default keeps the
+# build as it was.
+if(WIN32)
+    set(_protopython_fetch_gtest_default ON)
+else()
+    set(_protopython_fetch_gtest_default OFF)
+endif()
+option(PROTOPYTHON_FETCH_GOOGLETEST
+    "Fetch GoogleTest when protoCore does not provide gtest_main"
+    ${_protopython_fetch_gtest_default})
+if(PROTOPYTHON_FETCH_GOOGLETEST AND NOT TARGET gtest_main)
+    include(FetchContent)
+    FetchContent_Declare(googletest
+        URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+    set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+    # protoPython links the dynamic C runtime (CMake's default); GoogleTest
+    # would otherwise pick the static one under MSVC.
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googletest)
+endif()
 add_subdirectory(test/library)
 add_subdirectory(src/runtime)
 add_subdirectory(test/regression)
@@ -160,7 +249,7 @@ endif()
 # directory, is not misled by a ../lib/python3.14 next to the working directory,
 # and does not treat the PROTO_PYTHONPATH marker as a directory.
 add_test(NAME protopy_stdlib_layout
-    COMMAND ${CMAKE_SOURCE_DIR}/test/regression/stdlib_layout.sh
+    COMMAND ${PROTOPYTHON_SH} ${CMAKE_SOURCE_DIR}/test/regression/stdlib_layout.sh
             $<TARGET_FILE:protopy> ${PROTOPYTHON_STDLIB_INSTALL_PARENT})
 set_tests_properties(protopy_stdlib_layout PROPERTIES
     TIMEOUT 60
@@ -176,7 +265,7 @@ set_tests_properties(protopy_struct_sequences PROPERTIES
 # REPL statements run in __main__ (names persist between lines); the banner,
 # help(), --help and sys.version report the project version.
 add_test(NAME protopy_repl_names_persist
-    COMMAND ${CMAKE_SOURCE_DIR}/test/regression/repl_names_persist.sh
+    COMMAND ${PROTOPYTHON_SH} ${CMAKE_SOURCE_DIR}/test/regression/repl_names_persist.sh
             $<TARGET_FILE:protopy> ${PROJECT_VERSION}
             ${CMAKE_BINARY_DIR}/test/regression/repl_home)
 set_tests_properties(protopy_repl_names_persist PROPERTIES
@@ -191,18 +280,18 @@ set_tests_properties(protopy_json_heapq_pure_python PROPERTIES
     LABELS "regression_gate")
 # The const_cast review report runs and exits 0 (--strict would fail on any match).
 add_test(NAME conformity_const_cast_report
-    COMMAND ${CMAKE_SOURCE_DIR}/tests/conformity/scripts/check_const_cast.sh)
+    COMMAND ${PROTOPYTHON_SH} ${CMAKE_SOURCE_DIR}/tests/conformity/scripts/check_const_cast.sh)
 set_tests_properties(conformity_const_cast_report PROPERTIES
     TIMEOUT 60
     LABELS "regression_gate")
 
 add_test(NAME protopy_cli_help COMMAND $<TARGET_FILE:protopy> --help)
 add_test(NAME protopy_cli_missing_module
-    COMMAND ${CMAKE_SOURCE_DIR}/test/regression/assert_exit.sh 65 $<TARGET_FILE:protopy> --dry-run --module __proto_missing__)
+    COMMAND ${PROTOPYTHON_ASSERT_EXIT} 65 $<TARGET_FILE:protopy> --dry-run --module __proto_missing__)
 add_test(NAME protopy_cli_script_success
-    COMMAND ${CMAKE_SOURCE_DIR}/test/regression/assert_exit.sh 0 $<TARGET_FILE:protopy> --dry-run --script ${CMAKE_SOURCE_DIR}/test/regression/regrtest_runner.py)
+    COMMAND ${PROTOPYTHON_ASSERT_EXIT} 0 $<TARGET_FILE:protopy> --dry-run --script ${CMAKE_SOURCE_DIR}/test/regression/regrtest_runner.py)
 add_test(NAME protopy_cli_bytecode_only
-    COMMAND ${CMAKE_SOURCE_DIR}/test/regression/assert_exit.sh 0 $<TARGET_FILE:protopy> --bytecode-only --script ${CMAKE_SOURCE_DIR}/test/regression/regrtest_runner.py)
+    COMMAND ${PROTOPYTHON_ASSERT_EXIT} 0 $<TARGET_FILE:protopy> --bytecode-only --script ${CMAKE_SOURCE_DIR}/test/regression/regrtest_runner.py)
 # LOAD_METHOD's inline cache must bind every call to its own receiver.
 add_test(NAME protopy_load_method_pic_receivers
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/load_method_pic_receivers.py)
@@ -648,7 +737,7 @@ foreach(exit_case IN ITEMS raise_int:3 raise_from_main:5 sys_exit_int:4 raise_st
     list(GET exit_case_parts 0 exit_case_name)
     list(GET exit_case_parts 1 exit_case_status)
     add_test(NAME protopy_system_exit_${exit_case_name}
-        COMMAND ${CMAKE_SOURCE_DIR}/test/regression/assert_exit.sh ${exit_case_status}
+        COMMAND ${PROTOPYTHON_ASSERT_EXIT} ${exit_case_status}
                 $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/system_exit/${exit_case_name}.py)
     set_tests_properties(protopy_system_exit_${exit_case_name} PROPERTIES
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
@@ -659,7 +748,7 @@ endforeach()
 # exception still exits with 70.
 function(add_system_exit_c_test case_name expected_status source)
     add_test(NAME protopy_system_exit_c_${case_name}
-        COMMAND ${CMAKE_SOURCE_DIR}/test/regression/assert_exit.sh ${expected_status}
+        COMMAND ${PROTOPYTHON_ASSERT_EXIT} ${expected_status}
                 $<TARGET_FILE:protopy> -c ${source})
     set_tests_properties(protopy_system_exit_c_${case_name} PROPERTIES
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
@@ -1045,9 +1134,20 @@ foreach(hpy_module IN ITEMS math_hpy hpy_no_init)
     else()
         add_library(${hpy_module} MODULE test/hpy/hpy_no_init.cpp)
     endif()
+    if(WIN32)
+        # A DLL module (HPyModuleProvider looks for .hpy.dll there), with its
+        # entry point exported. Windows places a MODULE's DLL with RUNTIME
+        # output, so its directory is set too.
+        set(_hpy_suffix ".hpy.dll")
+        set_target_properties(${hpy_module} PROPERTIES
+            WINDOWS_EXPORT_ALL_SYMBOLS ON
+            RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/test/hpy)
+    else()
+        set(_hpy_suffix ".hpy.so")
+    endif()
     set_target_properties(${hpy_module} PROPERTIES
         PREFIX ""
-        SUFFIX ".hpy.so"
+        SUFFIX "${_hpy_suffix}"
         LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/test/hpy)
 endforeach()
 # `import math_hpy` loads the extension: name, file, functions, ImportError for a
