@@ -102,6 +102,12 @@ if(protoCore_FOUND)
     endif()
     set(PROTOPYTHON_PROTOCORE_INCLUDE_DIR "${protoCore_INCLUDE_DIR}")
     set(PROTOPYTHON_PROTOCORE_EXTERNAL TRUE)
+    if(APPLE)
+        # The package's dylib is @rpath/libprotoCore.<N>.dylib: give the
+        # build-tree executables an rpath to its directory, or dyld cannot find
+        # it (exit 127) when the prefix is not a default search location.
+        list(APPEND CMAKE_BUILD_RPATH "${protoCore_LIB_DIR}")
+    endif()
     message(STATUS "protoPython: installed protoCore ${protoCore_VERSION} "
                    "(SOVERSION ${protoCore_SOVERSION}) from ${protoCore_DIR}")
 elseif(DEFINED PROTO_CORE_PREFIX OR PROTOCORE_REQUIRE_PACKAGE)

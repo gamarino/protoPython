@@ -17,8 +17,19 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <sys/times.h>
+#if defined(__linux__)
+// glibc's major/minor/makedev. macOS has no <sys/sysmacros.h>: they come from
+// <sys/types.h> there.
 #include <sys/sysmacros.h>
+#endif
+#if defined(__APPLE__)
+// A shared library on macOS cannot link `environ` (only executables define
+// it); _NSGetEnviron() returns the same variable.
+#include <crt_externs.h>
+#define environ (*_NSGetEnviron())
+#else
 extern char** environ;
+#endif
 #endif
 #if defined(_WIN32)
 #include <signal.h>
