@@ -319,9 +319,40 @@ int closedir(DIR* d) {
 
 // --- Paths and files ----------------------------------------------------------------
 
+// open() through CreateFileW so that the file can be renamed or removed while
+// it is open (FILE_SHARE_DELETE), as on POSIX: protoPython closes a file
+// object when it is collected, not when its last reference goes, and _wopen's
+// sharing mode made os.replace/os.remove of such a file fail with EACCES.
 int protopy_open(const char* path, int flags, int mode) {
-    int pmode = (mode & 0200) ? (_S_IREAD | _S_IWRITE) : _S_IREAD;
-    return _wopen(protopy_widen(path).c_str(), flags | _O_BINARY, pmode);
+    DWORD access = 0;
+    switch (flags & (_O_RDONLY | _O_WRONLY | _O_RDWR)) {
+    case _O_WRONLY: access = GENERIC_WRITE; break;
+    case _O_RDWR:   access = GENERIC_READ | GENERIC_WRITE; break;
+    default:        access = GENERIC_READ; break;
+    }
+    DWORD disposition;
+    if ((flags & _O_CREAT) && (flags & _O_EXCL)) disposition = CREATE_NEW;
+    else if ((flags & _O_CREAT) && (flags & _O_TRUNC)) disposition = CREATE_ALWAYS;
+    else if (flags & _O_CREAT) disposition = OPEN_ALWAYS;
+    else if (flags & _O_TRUNC) disposition = TRUNCATE_EXISTING;
+    else disposition = OPEN_EXISTING;
+    // A new file without the owner's write permission is read-only, as _wopen.
+    DWORD attributes = ((flags & _O_CREAT) && !(mode & 0200)) ? FILE_ATTRIBUTE_READONLY
+                                                              : FILE_ATTRIBUTE_NORMAL;
+    SECURITY_ATTRIBUTES sa = {sizeof(sa), nullptr, (flags & _O_NOINHERIT) ? FALSE : TRUE};
+    HANDLE h = CreateFileW(protopy_widen(path).c_str(), access,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, &sa,
+                           disposition, attributes, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return fail_win32();
+    int fd = _open_osfhandle(reinterpret_cast<intptr_t>(h),
+                             (flags & (_O_APPEND | _O_RDONLY | _O_WRONLY | _O_RDWR | _O_NOINHERIT))
+                                 | _O_BINARY);
+    if (fd < 0) {
+        int err = errno;
+        CloseHandle(h);
+        errno = err;
+    }
+    return fd;
 }
 
 int protopy_mkdir(const char* path, int /*mode*/) {
@@ -501,8 +532,43 @@ void backtrace_symbols_fd(void* const* buffer, int size, int fd) {
 }
 
 int protopy_rename(const char* from, const char* to, bool replace) {
+    const std::wstring wfrom = protopy_widen(from);
+    const std::wstring wto = protopy_widen(to);
+    if (replace) {
+        // POSIX rename semantics (Windows 10 1607+, NTFS): the destination is
+        // replaced even while a file object that has not been collected yet
+        // still holds it open. Elsewhere, MoveFileExW below.
+        HANDLE h = CreateFileW(wfrom.c_str(), DELETE | SYNCHRONIZE,
+                               FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                               OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+                               nullptr);
+        if (h != INVALID_HANDLE_VALUE) {
+            std::wstring full(32768, L'\0');
+            DWORD len = GetFullPathNameW(wto.c_str(), static_cast<DWORD>(full.size()), full.data(), nullptr);
+            BOOL ok = FALSE;
+            if (len > 0 && len < full.size()) {
+                full.resize(len);
+                std::vector<unsigned char> buf(sizeof(FILE_RENAME_INFO) + full.size() * sizeof(wchar_t));
+                auto* info = reinterpret_cast<FILE_RENAME_INFO*>(buf.data());
+                info->Flags = 0x1 /* REPLACE_IF_EXISTS */ | 0x2 /* POSIX_SEMANTICS */;
+                info->RootDirectory = nullptr;
+                info->FileNameLength = static_cast<DWORD>(full.size() * sizeof(wchar_t));
+                std::memcpy(info->FileName, full.c_str(), full.size() * sizeof(wchar_t));
+                ok = SetFileInformationByHandle(h, static_cast<FILE_INFO_BY_HANDLE_CLASS>(22) /* FileRenameInfoEx */,
+                                                info, static_cast<DWORD>(buf.size()));
+            }
+            DWORD err = GetLastError();
+            CloseHandle(h);
+            if (ok) return 0;
+            if (err != ERROR_INVALID_PARAMETER && err != ERROR_NOT_SUPPORTED
+                && err != ERROR_INVALID_FUNCTION) {
+                errno = protopy_errno_from_win32(err);
+                return -1;
+            }
+        }
+    }
     DWORD flags = replace ? MOVEFILE_REPLACE_EXISTING : 0;
-    if (!MoveFileExW(protopy_widen(from).c_str(), protopy_widen(to).c_str(), flags))
+    if (!MoveFileExW(wfrom.c_str(), wto.c_str(), flags))
         return fail_win32();
     return 0;
 }

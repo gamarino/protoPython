@@ -161,6 +161,11 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
 #ifdef ENOTRECOVERABLE
     ADD_ERRNO(ENOTRECOVERABLE);
 #endif
+#if defined(_WIN32) && defined(ENOTSUP)
+    // subprocess raises OSError(errno.ENOTSUP) where processes are not
+    // supported, which is the case on Windows (no CreateProcess binding yet).
+    ADD_ERRNO(ENOTSUP);
+#endif
 
     // errorcode map
     const proto::ProtoSparseList* errorcode = ctx->newSparseList();
