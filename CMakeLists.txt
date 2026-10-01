@@ -66,12 +66,14 @@ set(PROTOPYTHON_STDLIB_INSTALL_PARENT "${CMAKE_INSTALL_LIBDIR}/protoPython")
 #      ../protoCore with add_subdirectory(). Used only when no installed package
 #      was found and no prefix was named; refused by -DPROTOCORE_REQUIRE_PACKAGE=ON.
 #
-# The version floor is 2.0: protoPython uses no protoCore API newer than 2.0.0
-# (it references neither ProtoMPSCQueue nor any other 2.1 addition). The ceiling
-# is the next major, because protoCore's major version and its soname move
-# together.
-set(PROTOCORE_MIN_VERSION      "2.0")
-set(PROTOCORE_MIN_VERSION_FULL "2.0.0")
+# The version floor is 2.7: protoPython spells protoCore's 64-bit integers
+# proto::proto_long / proto::proto_ulong (and PROTO_L / PROTO_UL), which first
+# exist in protoCore 2.7.0; they are long / unsigned long on Linux and macOS and
+# long long on Windows. (Before that the floor was 2.0: no other protoCore API
+# newer than 2.0.0 is used.) The ceiling is the next major, because protoCore's
+# major version and its soname move together; the SOVERSION is asserted below.
+set(PROTOCORE_MIN_VERSION      "2.7")
+set(PROTOCORE_MIN_VERSION_FULL "2.7.0")
 set(PROTOCORE_NEXT_MAJOR       "3.0.0")
 set(PROTOCORE_ABI_SOVERSION    "3")
 option(PROTOCORE_REQUIRE_PACKAGE
