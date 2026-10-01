@@ -3,6 +3,9 @@
 #include <protoCore.h>
 #include <csignal>
 #include <cstring>
+#if !defined(_WIN32)
+#include <unistd.h>  // alarm, pause (glibc pulls it in through other headers; macOS does not)
+#endif
 
 namespace protoPython {
 

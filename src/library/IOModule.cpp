@@ -479,6 +479,18 @@ static const proto::ProtoObject* io_make_fd_file(proto::ProtoContext* context,
     return fileObj;
 }
 
+// open()'s `newline` argument (6th positional or keyword) is None or absent.
+static bool io_newline_is_none(proto::ProtoContext* context, const proto::ProtoList* pos,
+                               const proto::ProtoSparseList* kw) {
+    if (pos && pos->getSize(context) >= 6) return pos->getAt(context, 5) == PROTO_NONE;
+    if (kw) {
+        const proto::proto_ulong h =
+            PythonEnvironment::getInternedString(context, "newline")->getHash(context);
+        if (kw->has(context, h)) return kw->getAt(context, h) == PROTO_NONE;
+    }
+    return true;
+}
+
 static const proto::ProtoObject* py_io_open(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -575,6 +587,26 @@ static const proto::ProtoObject* py_io_open(
             std::stringstream ss;
             ss << f.rdbuf();
             *buffer = ss.str();
+        }
+        // Universal newlines, as CPython's text mode on every platform: with
+        // newline=None (the default) "\r\n" and "\r" read as "\n". A file
+        // written on Windows reads the same everywhere.
+        if (mode.find('b') == std::string::npos && io_newline_is_none(context, positionalParameters,
+                                                                      keywordParameters)) {
+            std::string& s = *buffer;
+            if (s.find('\r') != std::string::npos) {
+                std::string out;
+                out.reserve(s.size());
+                for (std::size_t i = 0; i < s.size(); ++i) {
+                    if (s[i] == '\r') {
+                        out.push_back('\n');
+                        if (i + 1 < s.size() && s[i + 1] == '\n') ++i;
+                    } else {
+                        out.push_back(s[i]);
+                    }
+                }
+                s.swap(out);
+            }
         }
     }
     fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "__file_buffer__"),

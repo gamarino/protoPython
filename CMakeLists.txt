@@ -482,6 +482,13 @@ set_tests_properties(protopy_with_return_in_loop PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# Text mode reads with universal newlines (CRLF and CR read as LF), as CPython.
+add_test(NAME protopy_universal_newlines
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/universal_newlines.py)
+set_tests_properties(protopy_universal_newlines PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # Strings computed by `re` are collectable objects, not interned symbols.
 # Run under a heap limit so the collector actually runs and the RSS bound in
 # the test means something: without a limit protoCore never starts a cycle.
