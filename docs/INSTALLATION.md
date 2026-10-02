@@ -308,10 +308,12 @@ through CMake's `InstallRequiredSystemLibraries`, so the unpacked `protopy.exe`
 runs without protoCore or the Visual C++ Redistributable installed. `cmake
 --install` copies the same DLLs into `<prefix>/bin`.
 
-In CI on 2026-10-02 (branch `fix/windows-review`, protoCore 2.7.0 at `fc5d79db`,
-the ref both workflows pin), all 159 registered tests pass on Windows (MSVC,
-`windows-2022`), all 161 on macOS (Apple clang, `macos-14`), and all 670 of the
-Linux job, which also registers protoCore's own suite. Clock-dependent cases run
+In CI on 2026-10-02 (branch `fix/followups-2026-10-02`, protoCore 2.7.0 at
+`fc5d79db`, the ref both workflows pin; runs 36980068151 and 36980071038), all 161
+registered tests pass on Windows (MSVC, `windows-2022`), all 163 on macOS (Apple
+clang, `macos-14`), and all 672 of the Linux job, which also registers protoCore's
+own suite; the same Windows run built the ZIP and the NSIS installer and ran the
+unpacked `protopy.exe` with only the system directories on `PATH`. Clock-dependent cases run
 separately and do not gate (`.github/workflows/ci.yml`). The same Windows and
 macOS jobs, ZIP step included, also pass against protoCore 2.9.0 (`21889c91`,
 whose DLL is `protoCore-3.dll`; CI run 36975536944); the workflows still pin
