@@ -22998,8 +22998,9 @@ const proto::ProtoObject* PythonEnvironment::getGlobals() const {
 
 // Returns the __main__ module that executeString and runRepl run code in.
 // When sys.modules has no __main__ yet, it is created as a mutable child of
-// builtins, named __main__, with __file__ = fileName, and registered in
-// sys.modules. It must be mutable: STORE_NAME and IMPORT_NAME update a mutable
+// builtins, named __main__, and registered in sys.modules. It has __file__ =
+// fileName unless fileName is a pseudo-name such as "<string>" (`-c`) or
+// "<stdin>" (the REPL): CPython's __main__ has no __file__ then. It must be mutable: STORE_NAME and IMPORT_NAME update a mutable
 // namespace in place, whereas setAttribute on an immutable object returns a
 // new object and the binding would be lost after each statement.
 static const proto::ProtoObject* ensureMainModule(PythonEnvironment* env,
@@ -23013,7 +23014,9 @@ static const proto::ProtoObject* ensureMainModule(PythonEnvironment* env,
         const proto::ProtoString* mainName = PythonEnvironment::getInternedString(context, "__main__");
         mod = builtinsModule->newChild(context, true);
         mod = mod->setAttribute(context, PythonEnvironment::getInternedString(context, "__name__"), mainName->asObject(context));
-        mod = mod->setAttribute(context, PythonEnvironment::getInternedString(context, "__file__"), PythonEnvironment::getInternedString(context, fileName.c_str())->asObject(context));
+        const bool pseudoName = !fileName.empty() && fileName.front() == '<' && fileName.back() == '>';
+        if (!pseudoName)
+            mod = mod->setAttribute(context, PythonEnvironment::getInternedString(context, "__file__"), PythonEnvironment::getInternedString(context, fileName.c_str())->asObject(context));
 
         // Add to sys.modules (attribute lookup + dict __data__ for Python-side access)
         const proto::ProtoObject* modules = sysModule->getAttribute(context, PythonEnvironment::getInternedString(context, "modules"));
