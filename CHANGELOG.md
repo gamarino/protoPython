@@ -125,7 +125,9 @@ onwards. Commit hashes are given for reference.
   - A file object that is never closed releases its descriptor when it is
     collected (it never did); Windows deletes with POSIX semantics where NTFS
     has them. Files still close on `close()`/`with`/collection, not on losing
-    their last reference (documented) (`protopy_file_close_on_collect`).
+    their last reference (documented) (`protopy_file_close_on_collect`,
+    skipped on Windows where heap-limited collection crashes independently of
+    this change -- see INSTALLATION.md; `protopy_unclosed_files_directory_cleanup`).
   - `time.gmtime`/`localtime`/`ctime` and `datetime` timestamp conversions
     before 1970 and after 3000 no longer dereference a null `struct tm`:
     UTC conversions work for every year, local ones raise `OSError` where
