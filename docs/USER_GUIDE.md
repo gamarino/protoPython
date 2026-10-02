@@ -31,8 +31,12 @@ Only one of a script, a module and `-c` may be given. Arguments that follow the 
 are passed to the program in `sys.argv`; `sys.argv[0]` is the script path, the module
 name or `-c`.
 
-Running `protopy` without arguments prints the usage text and exits with status 64. It
-does not start the REPL; use `-i`.
+Running `protopy` without a target does what CPython does: when standard input is a
+terminal it starts the REPL; otherwise it reads the whole program from standard input
+and runs it as `__main__` (`echo 'print(1)' | protopy`), with `sys.argv` `['']`,
+`sys.path[0]` `''`, and errors reported against `"<stdin>"`. `protopy - [args...]`
+reads the program from standard input in either case and passes the arguments after
+`-` to it (`sys.argv[0]` is `-`).
 
 A script's module body runs once as `__main__`, as in CPython. protopy never calls a
 `main()` function on its own; call it explicitly, typically under

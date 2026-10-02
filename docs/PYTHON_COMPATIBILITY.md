@@ -161,5 +161,9 @@ The most fundamental difference from CPython is the **absence of the Global Inte
    replaced `sys.stdin`, and never uses GNU readline line editing. The REPL
    reads through the same buffer. On a Windows console reads use
    `ReadConsoleW`, so non-ASCII input arrives as UTF-8 whatever the console
-   code page; Ctrl+Z at the start of a line is end of file. Reads are not
-   serialized between threads (CPython's `BufferedReader` holds a lock).
+   code page; Ctrl+Z at the start of a line is end of file. Every operation on
+   a descriptor file (`read`, `readline`, `write`, `seek`, `tell`, `truncate`,
+   `close`) holds the descriptor's lock, so threads reading `sys.stdin`
+   concurrently each get whole lines, every line once. (CPython's
+   `TextIOWrapper` is not thread-safe: on CPython 3.14 the same eight-thread
+   test, `test/regression/stdin_threads.py`, returned a torn line.)

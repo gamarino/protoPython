@@ -69,6 +69,13 @@ onwards. Commit hashes are given for reference.
 
 ### Changed
 
+- **`protopy` with no target runs the program on standard input** when standard
+  input is not a terminal (`echo 'print(1)' | protopy`), and starts the REPL
+  when it is, as CPython does; it used to print the usage text and exit with
+  status 64. `protopy - [args...]` reads the program from standard input in
+  either case. `PythonEnvironment::executeString` now compiles the source under
+  the name it is given, so tracebacks name it (`"<stdin>"`, or an embedder's
+  name) rather than always `"<string>"` (test: `protopy_cli_stdin`).
 - **protoCore 2.7.0 is required** (was 2.0): `proto::proto_long` first exists
   there. The DEB/RPM dependency floor follows, and CI pins protoCore
   `fc5d79db` (v2.7.0) instead of `752bdb2` (2.6.2) (`8c9e1b45`).
@@ -113,6 +120,28 @@ onwards. Commit hashes are given for reference.
 
 ### Fixed
 
+- **`io.StringIO` counted UTF-8 bytes.** `read(n)` returned `n` bytes, splitting
+  multi-byte characters, and `tell()`/`seek()` were byte offsets. Positions are
+  now character indices and `seek()` follows CPython's rules (`ValueError` for a
+  negative position, `OSError` for a nonzero relative seek). Its buffer is no
+  longer interned on every write (test: `protopy_stringio_char_positions`).
+- **A `str` with an embedded NUL built by the runtime was truncated at it**
+  (`PythonEnvironment::newStr` used protoCore's NUL-terminated constructor);
+  it now passes the length.
+- **Concurrent reads of `sys.stdin` tore lines.** Threads calling
+  `sys.stdin.readline()` at once shared the read-ahead buffer without a lock and
+  got torn or duplicated lines, or crashed the process. Each operation on a
+  descriptor file now holds the descriptor's lock (test: `protopy_cli_stdin`,
+  case `stdin_threads`, eight threads reading a pipe).
+- **`compile()`** accepts an empty program in `exec` mode, and the `SyntaxError`
+  it raises carries `filename`, which the error report prints instead of always
+  `"<stdin>"`.
+- **`protopy_re_results_not_interned` was flaky on macOS** (35744 KB against a
+  35000 KB bound): it bounded RSS growth from the start of the process, which
+  depends on the platform allocator. It now bounds the growth after a warm-up,
+  measured in the same process: about 0 MB with collectable results, 24-34 MB
+  on Linux, macOS and Windows with results interned again (checked by mutation
+  in CI).
 - **`sys.stdin` could not be read.** It was a stub with no `read`,
   `readline`, `readlines` or iteration, and `input()` read `std::cin`
   separately. `sys.stdin` (and `sys.__stdin__`) is now a text file over
