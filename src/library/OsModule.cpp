@@ -70,18 +70,28 @@ static const proto::ProtoObject* notAPath(proto::ProtoContext* ctx) {
     return (env && env->hasPendingException()) ? nullptr : PROTO_NONE;
 }
 
+// The follow_symlinks keyword of DirEntry.is_dir/is_file/stat (default
+// True). shutil.rmtree and os.walk pass False so that a link to a directory
+// is not taken for the directory.
+static bool followSymlinksArg(proto::ProtoContext* ctx, const proto::ProtoSparseList* kwargs) {
+    if (!kwargs) return true;
+    const proto::proto_ulong h = PythonEnvironment::getInternedString(ctx, "follow_symlinks")->getHash(ctx);
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    return !(kwargs->has(ctx, h) && env) || env->isTrue(kwargs->getAt(ctx, h));
+}
+
 static const proto::ProtoObject* py_direntry_is_dir(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoSparseList* kwargs) {
     const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"));
     if (!pathObj || !pathObj->isString(ctx)) return PROTO_FALSE;
     std::string path;
     pathObj->asString(ctx)->toUTF8String(ctx, path);
     struct stat st;
-    if (stat(path.c_str(), &st) == 0) {
+    if ((followSymlinksArg(ctx, kwargs) ? stat(path.c_str(), &st) : lstat(path.c_str(), &st)) == 0) {
         return S_ISDIR(st.st_mode) ? PROTO_TRUE : PROTO_FALSE;
     }
     return PROTO_FALSE;
@@ -92,13 +102,13 @@ static const proto::ProtoObject* py_direntry_is_file(
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoSparseList* kwargs) {
     const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"));
     if (!pathObj || !pathObj->isString(ctx)) return PROTO_FALSE;
     std::string path;
     pathObj->asString(ctx)->toUTF8String(ctx, path);
     struct stat st;
-    if (stat(path.c_str(), &st) == 0) {
+    if ((followSymlinksArg(ctx, kwargs) ? stat(path.c_str(), &st) : lstat(path.c_str(), &st)) == 0) {
         return S_ISREG(st.st_mode) ? PROTO_TRUE : PROTO_FALSE;
     }
     return PROTO_FALSE;
@@ -137,10 +147,16 @@ static const proto::ProtoObject* py_direntry_fspath(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* /*kwargs*/) {
-    const proto::ProtoObject* path = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"));
-    if (path) return path;
+    // os.fspath(entry) looks __fspath__ up on the type, DirEntry, and passes
+    // the entry as the first argument.
+    const proto::ProtoString* pathS = proto::ProtoString::createSymbol(ctx, "path");
+    if (self->hasOwnAttribute(ctx, pathS) != PROTO_TRUE && posArgs && posArgs->getSize(ctx) > 0) {
+        self = posArgs->getAt(ctx, 0);
+    }
+    const proto::ProtoObject* path = self->getAttribute(ctx, pathS);
+    if (path && path != PROTO_NONE) return path;
     // If called on the prototype itself, or if path is missing, return None to avoid polluting fspath logic
     return PROTO_NONE;
 }
@@ -177,6 +193,9 @@ static const proto::ProtoObject* py_scandir_next(
 #endif
         fullPath += n;
 
+        if (direntry_proto && direntry_proto != PROTO_NONE) {
+            entry = entry->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__class__"), direntry_proto);
+        }
         entry = entry->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "name"), PythonEnvironment::getInternedString(ctx, n)->asObject(ctx));
         entry = entry->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"), PythonEnvironment::getInternedString(ctx, fullPath.c_str())->asObject(ctx));
         return entry;
@@ -232,21 +251,30 @@ static const proto::ProtoObject* make_stat_result(proto::ProtoContext* ctx, cons
         {"st_blksize",  ctx->fromInteger(static_cast<long long>(st.st_blksize))},
         {"st_blocks",   ctx->fromInteger(static_cast<long long>(st.st_blocks))},
         {"st_rdev",     ctx->fromInteger(static_cast<long long>(st.st_rdev))},
+#if defined(_WIN32)
+        // As CPython on Windows: shutil reads them to tell directory
+        // junctions from symbolic links.
+        {"st_file_attributes", ctx->fromInteger(static_cast<long long>(st.st_file_attributes))},
+        {"st_reparse_tag",     ctx->fromInteger(static_cast<long long>(st.st_reparse_tag))},
+#endif
     }, 10);
 }
 
+// DirEntry.stat(*, follow_symlinks=True): lstat() for follow_symlinks=False,
+// which shutil.copytree and rmtree pass to tell links from directories.
 static const proto::ProtoObject* py_direntry_stat(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoSparseList* kwargs) {
     const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"));
     if (!pathObj || !pathObj->isString(ctx)) return PROTO_NONE;
     std::string path;
     pathObj->asString(ctx)->toUTF8String(ctx, path);
+    const bool follow = followSymlinksArg(ctx, kwargs);
     struct stat st;
-    if (stat(path.c_str(), &st) == 0) {
+    if ((follow ? stat(path.c_str(), &st) : lstat(path.c_str(), &st)) == 0) {
         return make_stat_result(ctx, st);
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -1444,11 +1472,50 @@ static const proto::ProtoObject* py_os_readlink(proto::ProtoContext* ctx, const 
     const proto::ProtoObject* pathObj = args->getAt(ctx, 0);
     std::string path;
     if (!PythonEnvironment::fsPathArgument(ctx, pathObj, path)) return notAPath(ctx);
-    char buf[1024];
-    ssize_t len = readlink(path.c_str(), buf, sizeof(buf)-1);
-    if (len < 0) return pathObj; // Return path as dummy if failed
-    buf[len] = '\0';
-    return PythonEnvironment::getInternedString(ctx, buf)->asObject(ctx);
+    std::vector<char> buf(32768);
+    ssize_t len = readlink(path.c_str(), buf.data(), buf.size() - 1);
+    if (len < 0) {
+        // Not a link (EINVAL), missing, ...: OSError, as CPython.
+        const int err = errno;
+        if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx)) {
+            env->raiseOSError(ctx, err, std::strerror(err), path);
+        }
+        return nullptr;
+    }
+    return PythonEnvironment::newStr(ctx, std::string(buf.data(), static_cast<size_t>(len)));
+}
+
+// os.symlink(src, dst, target_is_directory=False, *, dir_fd=None): dst
+// becomes a symbolic link to src. On Windows target_is_directory makes a
+// directory link, and creating one needs the privilege or developer mode, as
+// in CPython.
+static const proto::ProtoObject* py_os_symlink(proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+                                               const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (args->getSize(ctx) < 2) {
+        if (env) env->raiseTypeError(ctx, "symlink() missing required argument 'src' or 'dst'");
+        return nullptr;
+    }
+    std::string src, dst;
+    if (!PythonEnvironment::fsPathArgument(ctx, args->getAt(ctx, 0), src)) return notAPath(ctx);
+    if (!PythonEnvironment::fsPathArgument(ctx, args->getAt(ctx, 1), dst)) return notAPath(ctx);
+    const proto::ProtoObject* dirArg = args->getSize(ctx) > 2 ? args->getAt(ctx, 2) : nullptr;
+    if (!dirArg && kwargs) {
+        const proto::proto_ulong h = PythonEnvironment::getInternedString(ctx, "target_is_directory")->getHash(ctx);
+        if (kwargs->has(ctx, h)) dirArg = kwargs->getAt(ctx, h);
+    }
+    const bool targetIsDirectory = dirArg && env && env->isTrue(dirArg);
+#if defined(_WIN32)
+    if (protopy_symlink(src.c_str(), dst.c_str(), targetIsDirectory) != 0) {
+#else
+    (void)targetIsDirectory;
+    if (::symlink(src.c_str(), dst.c_str()) != 0) {
+#endif
+        const int err = errno;
+        if (env) env->raiseOSError(ctx, err, std::strerror(err), src);
+        return nullptr;
+    }
+    return PROTO_NONE;
 }
 
 // ===== POSIX subset for subprocess support =====
@@ -2411,8 +2478,19 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__fspath__"),
         ctx->fromMethod(nullptr, py_direntry_fspath));
 
+    direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"),
+        PythonEnvironment::getInternedString(ctx, "DirEntry")->asObject(ctx));
+    direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__qualname__"),
+        PythonEnvironment::getInternedString(ctx, "DirEntry")->asObject(ctx));
+    if (env && env->getTypePrototype()) {
+        direntry_proto = direntry_proto->setAttribute(ctx, env->getClassString(), env->getTypePrototype());
+    }
+
     const proto::ProtoObject* mod = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(false);
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_direntry_proto"), direntry_proto);
+    // os.DirEntry: scandir()'s entries are its children (shutil tests
+    // isinstance(x, os.DirEntry)).
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "DirEntry"), direntry_proto);
     if (pathModule) {
         mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"), pathModule);
     }
@@ -2453,6 +2531,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getcwd));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "readlink"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_readlink));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "symlink"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_symlink));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "chdir"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_chdir));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "listdir"),
@@ -2706,6 +2786,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     if (env && env->getTypePrototype()) {
         statResultType = statResultType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__class__"), env->getTypePrototype());
     }
+#if defined(_WIN32)
+    // hasattr(os.stat_result, "st_file_attributes") is how shutil detects
+    // Windows' extra fields (make_stat_result fills them).
+    statResultType = statResultType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "st_file_attributes"), PROTO_NONE);
+    statResultType = statResultType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "st_reparse_tag"), PROTO_NONE);
+#endif
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "stat_result"), statResultType);
 
     // Common constants
@@ -2722,7 +2808,18 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_CREAT"), ctx->fromInteger(O_CREAT));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_EXCL"), ctx->fromInteger(O_EXCL));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_TRUNC"), ctx->fromInteger(O_TRUNC));
-#ifdef O_BINARY
+#if defined(_WIN32)
+    // The C runtime's open() flags CPython's os exposes on Windows. tempfile
+    // opens NamedTemporaryFile/TemporaryFile with O_TEMPORARY (deleted when
+    // closed) and O_NOINHERIT; protopy_open (PosixCompat.cpp) honours them.
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_BINARY"), ctx->fromInteger(_O_BINARY));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_TEXT"), ctx->fromInteger(_O_TEXT));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_NOINHERIT"), ctx->fromInteger(_O_NOINHERIT));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_TEMPORARY"), ctx->fromInteger(_O_TEMPORARY));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_SHORT_LIVED"), ctx->fromInteger(_O_SHORT_LIVED));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_SEQUENTIAL"), ctx->fromInteger(_O_SEQUENTIAL));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_RANDOM"), ctx->fromInteger(_O_RANDOM));
+#elif defined(O_BINARY)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_BINARY"), ctx->fromInteger(O_BINARY));
 #endif
 #ifdef O_NOFOLLOW
@@ -2796,6 +2893,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "unsetenv")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "getcwd")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "readlink")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "symlink")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "DirEntry")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "chdir")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "listdir")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "remove")->asObject(ctx));
@@ -2852,7 +2951,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "O_CREAT")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "O_EXCL")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "O_TRUNC")->asObject(ctx));
-#ifdef O_BINARY
+#if defined(_WIN32)
+    for (const char* name : {"O_BINARY", "O_TEXT", "O_NOINHERIT", "O_TEMPORARY", "O_SHORT_LIVED",
+                             "O_SEQUENTIAL", "O_RANDOM"}) {
+        keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, name)->asObject(ctx));
+    }
+#elif defined(O_BINARY)
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "O_BINARY")->asObject(ctx));
 #endif
 #ifdef O_NOFOLLOW

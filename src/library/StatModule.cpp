@@ -163,6 +163,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     setFn("S_IFMT",   py_S_IFMT);
     setFn("filemode", py_filemode);
 
+#if defined(_WIN32)
+    // The reparse tags of os.stat_result.st_reparse_tag, as CPython's _stat
+    // on Windows (shutil tells junctions from links with them).
+    setInt("IO_REPARSE_TAG_SYMLINK", 0xA000000CLL);
+    setInt("IO_REPARSE_TAG_MOUNT_POINT", 0xA0000003LL);
+    setInt("IO_REPARSE_TAG_APPEXECLINK", 0x8000001BLL);
+#endif
+
     return mod;
 }
 

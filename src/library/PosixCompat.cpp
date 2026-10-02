@@ -67,6 +67,22 @@ std::string protopy_executable_path() {
     }
 }
 
+static void ignoreInvalidParameter(const wchar_t*, const wchar_t*, const wchar_t*, unsigned int, uintptr_t) {}
+
+protopy_iph protopy_ignore_invalid_parameters() {
+    return _set_thread_local_invalid_parameter_handler(ignoreInvalidParameter);
+}
+
+void protopy_restore_invalid_parameters(protopy_iph previous) {
+    _set_thread_local_invalid_parameter_handler(previous);
+}
+
+void protopy_ignore_invalid_parameters_process_wide() {
+    _set_invalid_parameter_handler(ignoreInvalidParameter);
+}
+
+unsigned long protopy_current_thread_id() { return GetCurrentThreadId(); }
+
 // CPython's winerror_to_errno (PC/errmap.h), for the codes file functions return.
 int protopy_errno_from_win32(unsigned long winerror) {
     switch (winerror) {
@@ -175,9 +191,11 @@ static unsigned int attributes_to_mode(DWORD attr, const std::wstring& path) {
 }
 
 static void fill_from_info(struct protopy_stat* st, const BY_HANDLE_FILE_INFORMATION& info,
-                           const std::wstring& path, bool isLink) {
+                           const std::wstring& path, bool isLink, unsigned long reparseTag = 0) {
     std::memset(st, 0, sizeof(*st));
     st->st_mode = isLink ? (S_IFLNK | 0777) : attributes_to_mode(info.dwFileAttributes, path);
+    st->st_file_attributes = info.dwFileAttributes;
+    st->st_reparse_tag = reparseTag;
     st->st_ino = (static_cast<unsigned long long>(info.nFileIndexHigh) << 32) | info.nFileIndexLow;
     st->st_dev = info.dwVolumeSerialNumber;
     st->st_nlink = info.nNumberOfLinks;
@@ -188,22 +206,30 @@ static void fill_from_info(struct protopy_stat* st, const BY_HANDLE_FILE_INFORMA
     st->st_ctim = filetime_to_timespec(info.ftCreationTime);
 }
 
-static bool is_symlink_reparse(const std::wstring& wpath) {
+// The reparse tag of a path that is a name-surrogate reparse point (a
+// symbolic link or a junction, which lstat() does not follow), else 0.
+static unsigned long link_reparse_tag(const std::wstring& wpath) {
     WIN32_FIND_DATAW fd;
     HANDLE h = FindFirstFileW(wpath.c_str(), &fd);
-    if (h == INVALID_HANDLE_VALUE) return false;
+    if (h == INVALID_HANDLE_VALUE) return 0;
     FindClose(h);
-    return (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)
-        && fd.dwReserved0 == IO_REPARSE_TAG_SYMLINK;
+    if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) return 0;
+    return IsReparseTagNameSurrogate(fd.dwReserved0) ? fd.dwReserved0 : 0;
 }
 
 static int stat_impl(const char* path, struct protopy_stat* st, bool followLinks) {
     std::wstring wpath = protopy_widen(path);
     bool isLink = false;
+    unsigned long reparseTag = 0;
     DWORD flags = FILE_FLAG_BACKUP_SEMANTICS;
-    if (!followLinks && is_symlink_reparse(wpath)) {
-        isLink = true;
-        flags |= FILE_FLAG_OPEN_REPARSE_POINT;
+    if (!followLinks) {
+        // lstat(): a symbolic link is S_IFLNK; a junction is reported as the
+        // directory it is, with its reparse tag (CPython's rules).
+        reparseTag = link_reparse_tag(wpath);
+        if (reparseTag != 0) {
+            isLink = reparseTag == IO_REPARSE_TAG_SYMLINK;
+            flags |= FILE_FLAG_OPEN_REPARSE_POINT;
+        }
     }
     HANDLE h = CreateFileW(wpath.c_str(), FILE_READ_ATTRIBUTES,
                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
@@ -225,7 +251,7 @@ static int stat_impl(const char* path, struct protopy_stat* st, bool followLinks
                 info.nFileSizeHigh = fd.nFileSizeHigh;
                 info.nFileSizeLow = fd.nFileSizeLow;
                 info.nNumberOfLinks = 1;
-                fill_from_info(st, info, wpath, isLink);
+                fill_from_info(st, info, wpath, isLink, reparseTag);
                 return 0;
             }
         }
@@ -240,7 +266,7 @@ static int stat_impl(const char* path, struct protopy_stat* st, bool followLinks
         errno = protopy_errno_from_win32(err);
         return -1;
     }
-    fill_from_info(st, info, wpath, isLink);
+    fill_from_info(st, info, wpath, isLink, reparseTag);
     return 0;
 }
 
@@ -321,8 +347,13 @@ int closedir(DIR* d) {
 
 // open() through CreateFileW so that the file can be renamed or removed while
 // it is open (FILE_SHARE_DELETE), as on POSIX: protoPython closes a file
-// object when it is collected, not when its last reference goes, and _wopen's
-// sharing mode made os.replace/os.remove of such a file fail with EACCES.
+// object when it is closed or collected, not when its last reference goes,
+// and _wopen's sharing mode made os.replace/os.remove of such a file fail
+// with EACCES. The C runtime's flags are honoured as _wopen does: _O_TEMPORARY
+// deletes the file when its last handle closes (FILE_FLAG_DELETE_ON_CLOSE),
+// _O_SHORT_LIVED keeps it in memory where possible (FILE_ATTRIBUTE_TEMPORARY),
+// _O_SEQUENTIAL / _O_RANDOM are access hints, _O_NOINHERIT is not inherited,
+// and _O_TEXT gives a text-mode descriptor (binary otherwise).
 int protopy_open(const char* path, int flags, int mode) {
     DWORD access = 0;
     switch (flags & (_O_RDONLY | _O_WRONLY | _O_RDWR)) {
@@ -339,6 +370,13 @@ int protopy_open(const char* path, int flags, int mode) {
     // A new file without the owner's write permission is read-only, as _wopen.
     DWORD attributes = ((flags & _O_CREAT) && !(mode & 0200)) ? FILE_ATTRIBUTE_READONLY
                                                               : FILE_ATTRIBUTE_NORMAL;
+    if (flags & _O_SHORT_LIVED) attributes = (attributes & ~FILE_ATTRIBUTE_NORMAL) | FILE_ATTRIBUTE_TEMPORARY;
+    if (flags & _O_TEMPORARY) {
+        attributes |= FILE_FLAG_DELETE_ON_CLOSE;
+        access |= DELETE;
+    }
+    if (flags & _O_SEQUENTIAL) attributes |= FILE_FLAG_SEQUENTIAL_SCAN;
+    else if (flags & _O_RANDOM) attributes |= FILE_FLAG_RANDOM_ACCESS;
     SECURITY_ATTRIBUTES sa = {sizeof(sa), nullptr, (flags & _O_NOINHERIT) ? FALSE : TRUE};
     HANDLE h = CreateFileW(protopy_widen(path).c_str(), access,
                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, &sa,
@@ -346,7 +384,7 @@ int protopy_open(const char* path, int flags, int mode) {
     if (h == INVALID_HANDLE_VALUE) return fail_win32();
     int fd = _open_osfhandle(reinterpret_cast<intptr_t>(h),
                              (flags & (_O_APPEND | _O_RDONLY | _O_WRONLY | _O_RDWR | _O_NOINHERIT))
-                                 | _O_BINARY);
+                                 | ((flags & _O_TEXT) ? _O_TEXT : _O_BINARY));
     if (fd < 0) {
         int err = errno;
         CloseHandle(h);
@@ -359,19 +397,67 @@ int protopy_mkdir(const char* path, int /*mode*/) {
     return _wmkdir(protopy_widen(path).c_str());
 }
 
-int protopy_rmdir(const char* path) { return _wrmdir(protopy_widen(path).c_str()); }
+// Removes a file or an empty directory (the link itself, for a symbolic link
+// or junction) with POSIX semantics where the file system has them (NTFS,
+// Windows 10 1709 and later): the name goes at once even while handles to the
+// file are open, as on Linux, so the directory holding it can be removed next.
+// A file object protoPython has not closed yet (it closes when collected)
+// would otherwise leave the name "delete pending" until that happens.
+// Returns 1 when done, 0 when the file system cannot do it (the caller falls
+// back to DeleteFileW / RemoveDirectoryW), or -1 with errno set.
+static int delete_posix(const std::wstring& w, bool directory) {
+    HANDLE h = CreateFileW(w.c_str(), DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                           nullptr, OPEN_EXISTING,
+                           FILE_FLAG_OPEN_REPARSE_POINT | (directory ? FILE_FLAG_BACKUP_SEMANTICS : 0), nullptr);
+    if (h == INVALID_HANDLE_VALUE) return 0;  // let the classic call report the error
+    struct { DWORD Flags; } info = {0x1 /* FILE_DISPOSITION_FLAG_DELETE */ | 0x2 /* POSIX_SEMANTICS */};
+    const BOOL ok = SetFileInformationByHandle(h, static_cast<FILE_INFO_BY_HANDLE_CLASS>(21) /* FileDispositionInfoEx */,
+                                               &info, sizeof(info));
+    const DWORD err = GetLastError();
+    CloseHandle(h);
+    if (ok) return 1;
+    if (err == ERROR_INVALID_PARAMETER || err == ERROR_NOT_SUPPORTED || err == ERROR_INVALID_FUNCTION) return 0;
+    errno = protopy_errno_from_win32(err);
+    return -1;
+}
+
+int protopy_rmdir(const char* path) {
+    const std::wstring w = protopy_widen(path);
+    const DWORD attr = GetFileAttributesW(w.c_str());
+    if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY)) {
+        const int r = delete_posix(w, true);
+        if (r != 0) return r > 0 ? 0 : -1;
+    }
+    return _wrmdir(w.c_str());
+}
 
 int protopy_unlink(const char* path) {
     std::wstring w = protopy_widen(path);
     // A symbolic link to a directory is removed with RemoveDirectory, as
     // CPython's os.unlink does.
     DWORD attr = GetFileAttributesW(w.c_str());
-    if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY)
-        && (attr & FILE_ATTRIBUTE_REPARSE_POINT)) {
-        return RemoveDirectoryW(w.c_str()) ? 0 : fail_win32();
+    const bool dirLink = attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY)
+                         && (attr & FILE_ATTRIBUTE_REPARSE_POINT);
+    // A read-only file stays a PermissionError, as in CPython.
+    if (attr != INVALID_FILE_ATTRIBUTES && (dirLink || !(attr & FILE_ATTRIBUTE_DIRECTORY))
+        && !(attr & FILE_ATTRIBUTE_READONLY)) {
+        const int r = delete_posix(w, dirLink);
+        if (r != 0) return r > 0 ? 0 : -1;
     }
+    if (dirLink) return RemoveDirectoryW(w.c_str()) ? 0 : fail_win32();
     if (!DeleteFileW(w.c_str())) return fail_win32();
     return 0;
+}
+
+int protopy_symlink(const char* target, const char* link, bool directory) {
+    const std::wstring wtarget = protopy_widen(target);
+    const std::wstring wlink = protopy_widen(link);
+    DWORD flags = directory ? SYMBOLIC_LINK_FLAG_DIRECTORY : 0;
+    // SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE (developer mode, Windows 10
+    // 1703+); older systems reject the flag, so retry without it.
+    if (CreateSymbolicLinkW(wlink.c_str(), wtarget.c_str(), flags | 0x2)) return 0;
+    if (GetLastError() == ERROR_INVALID_PARAMETER && CreateSymbolicLinkW(wlink.c_str(), wtarget.c_str(), flags)) return 0;
+    return fail_win32();
 }
 
 int protopy_chdir(const char* path) {

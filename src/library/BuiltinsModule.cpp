@@ -214,7 +214,7 @@ static const proto::ProtoObject* py_import(
                         fprintf(stderr, "DEBUG IMPORT: attr '%s' NOT FOUND in module '%s'\n", itemName.c_str(), moduleName.c_str());
                         const proto::ProtoSparseList* attrs = leaf->getAttributes(context);
                         if (attrs) {
-                            fprintf(stderr, "DEBUG IMPORT: Module has %lu attributes:\n", attrs->getSize(context));
+                            fprintf(stderr, "DEBUG IMPORT: Module has %llu attributes:\n", static_cast<unsigned long long>(attrs->getSize(context)));
                             const proto::ProtoSparseListIterator* it = attrs->getIterator(context);
                             while (it && it->hasNext(context)) {
                                 proto::proto_ulong key = it->nextKey(context);
@@ -486,7 +486,7 @@ static const proto::ProtoObject* py_print(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     if (get_env_diag()) {
-        fprintf(stderr, "DEBUG: py_print called with %lu args\n", positionalParameters->getSize(context));
+        fprintf(stderr, "DEBUG: py_print called with %" PROTO_FMT_U " args\n", positionalParameters->getSize(context));
     }
     std::string sep = " ";
     std::string end = "\n";
@@ -495,11 +495,10 @@ static const proto::ProtoObject* py_print(
     const proto::ProtoString* strS = env ? env->getStrString() : PythonEnvironment::getInternedString(context, "__str__");
     const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
     // print(*args, sep=' ', end='\n', file=sys.stdout, flush=False)
-    // Honour sep and end kwargs.  file / flush are still ignored (we
-    // always emit to std::cout) — supporting custom file objects
-    // through this builtin would require teaching it the file-like
-    // write protocol, which is out of scope here.
+    // Honours sep, end and file (its write method); flush is ignored, as
+    // nothing here buffers.
     bool toStderr = false;
+    const proto::ProtoObject* explicitFile = nullptr;
     if (env && keywordParameters && keywordParameters->getSize(context) > 0) {
         const proto::ProtoTuple* kwNames = env->getCurrentKwNames();
         if (kwNames) {
@@ -528,19 +527,17 @@ static const proto::ProtoObject* py_print(
                 }
             }
             if (keywordParameters->has(context, fh)) {
-                // Best-effort routing: detect sys.stderr by comparing
-                // against the module-level singleton.  Any other file
-                // object falls through to stdout (incomplete but
-                // backward-compatible).
+                // The default sys.stdout / sys.stderr objects carry
+                // __file_kind__ and are written directly; any other file
+                // object is written through its write method below.
                 const proto::ProtoObject* v = keywordParameters->getAt(context, fh);
-                if (v && v != PROTO_NONE) {
+                if (v && v != PROTO_NONE && v != env->getNonePrototype()) {
                     const proto::ProtoString* nm = PythonEnvironment::getInternedString(context, "__file_kind__");
                     const proto::ProtoObject* kind = v->getAttribute(context, nm);
-                    if (kind && kind->isString(context)) {
-                        std::string ks;
-                        kind->asString(context)->toUTF8String(context, ks);
-                        if (ks == "stderr") toStderr = true;
-                    }
+                    std::string ks;
+                    if (kind && kind->isString(context)) kind->asString(context)->toUTF8String(context, ks);
+                    if (ks == "stderr") toStderr = true;
+                    else if (ks != "stdout") explicitFile = v;
                 }
             }
         }
@@ -556,7 +553,7 @@ static const proto::ProtoObject* py_print(
     for (proto::proto_ulong i = 0; i < size; ++i) {
         const proto::ProtoObject* obj = positionalParameters->getAt(context, static_cast<int>(i));
         if (get_env_diag()) {
-            fprintf(stderr, "DEBUG: py_print arg[%lu]=%p noneProto=%p\n", i, (void*)obj, (void*)(env ? env->getNonePrototype() : nullptr));
+            fprintf(stderr, "DEBUG: py_print arg[%" PROTO_FMT_U "]=%p noneProto=%p\n", i, (void*)obj, (void*)(env ? env->getNonePrototype() : nullptr));
         }
 
         bool isNone = !obj || obj == PROTO_NONE || (env && obj == env->getNonePrototype());
@@ -712,7 +709,7 @@ static const proto::ProtoObject* py_print(
         if (sysMod && sysMod != PROTO_NONE) {
             const proto::ProtoString* outName = PythonEnvironment::getInternedString(
                 context, toStderr ? "stderr" : "stdout");
-            const proto::ProtoObject* fileObj = sysMod->getAttribute(context, outName);
+            const proto::ProtoObject* fileObj = explicitFile ? explicitFile : sysMod->getAttribute(context, outName);
             if (fileObj && fileObj != PROTO_NONE) {
                 // Compare against the default __file_kind__-tagged
                 // file: if the current sys.stdout/stderr is NOT the
@@ -763,10 +760,10 @@ static const proto::ProtoObject* py_print(
                         }
                     }
                     if (writeFn && writeFn != PROTO_NONE) {
-                        const proto::ProtoString* renderedS = PythonEnvironment::getInternedString(
-                            context, buffered.str().c_str());
+                        // The text is data, not vocabulary: a collectable str.
+                        const proto::ProtoObject* renderedObj = PythonEnvironment::newStr(context, buffered.str());
                         const proto::ProtoList* callArgs = context->newList()
-                            ->appendLast(context, renderedS->asObject(context));
+                            ->appendLast(context, renderedObj);
                         if (writeFn->asMethod(context)) {
                             writeFn->asMethod(context)(context,
                                 const_cast<proto::ProtoObject*>(fileObj), nullptr,
@@ -774,7 +771,7 @@ static const proto::ProtoObject* py_print(
                         } else {
                             const proto::ProtoList* fullArgs = context->newList()
                                 ->appendLast(context, fileObj)
-                                ->appendLast(context, renderedS->asObject(context));
+                                ->appendLast(context, renderedObj);
                             invokePythonCallable(context, writeFn, fullArgs, nullptr);
                         }
                         wroteViaWrite = true;
@@ -3517,7 +3514,7 @@ static const proto::ProtoObject* compile_eval_source(
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG: py_eval compiling source='%s'\n", source.c_str());
         for (proto::proto_ulong i = 0; i < cos->getSize(context); i++) {
-             fprintf(stderr, "  Const[%lu]: %s\n", i, PythonEnvironment::reprObject(context, cos->getAt(context, i)).c_str());
+             fprintf(stderr, "  Const[%llu]: %s\n", static_cast<unsigned long long>(i), PythonEnvironment::reprObject(context, cos->getAt(context, i)).c_str());
         }
         fflush(stderr);
     }
@@ -4009,7 +4006,7 @@ static const proto::ProtoObject* py_super_getattr(
         
         if (mro) {
             if (get_env_diag()) {
-                fprintf(stderr, "DEBUG_SUPER: MRO size=%lu\n", (proto::proto_ulong)mro->getSize(context));
+                fprintf(stderr, "DEBUG_SUPER: MRO size=%llu\n", static_cast<unsigned long long>((proto::proto_ulong)mro->getSize(context)));
                 for (size_t i = 0; i < mro->getSize(context); ++i) {
                      std::string cname;
                      const proto::ProtoObject* c = mro->getAt(context, i);
@@ -4043,7 +4040,7 @@ static const proto::ProtoObject* py_super_getattr(
     }
 
     if (get_env_diag()) {
-        fprintf(stderr, "DEBUG_SUPER: targets size=%lu\n", (proto::proto_ulong)targets.size());
+        fprintf(stderr, "DEBUG_SUPER: targets size=%llu\n", static_cast<unsigned long long>((proto::proto_ulong)targets.size()));
     }
     for (const proto::ProtoObject* target : targets) {
         if (!target || target == PROTO_NONE) continue;
@@ -7107,7 +7104,7 @@ const proto::ProtoObject* py_type(
 
         if (tupleBases) {
             if (get_env_diag()) {
-                fprintf(stderr, "DEBUG py_type: tupleBases size=%lu\n", tupleBases->getSize(context));
+                fprintf(stderr, "DEBUG py_type: tupleBases size=%llu\n", static_cast<unsigned long long>(tupleBases->getSize(context)));
                 for (size_t i = 0; i < tupleBases->getSize(context); ++i) {
                     const proto::ProtoObject* b = tupleBases->getAt(context, static_cast<int>(i));
                     std::string bn = "unknown";
@@ -10590,8 +10587,8 @@ static const proto::ProtoObject* py_map(
             PythonEnvironment::getInternedString(context, "__map_strict__"), PROTO_TRUE);
     }
     if (get_env_diag()) {
-        fprintf(stderr, "DEBUG: py_map created mapObj=%p func=%p iter=%p (n=%lu)\n",
-            (void*)mapObj, (void*)func, (void*)iterStorage, nIter);
+        fprintf(stderr, "DEBUG: py_map created mapObj=%p func=%p iter=%p (n=%llu)\n",
+            (void*)mapObj, (void*)func, (void*)iterStorage, static_cast<unsigned long long>(nIter));
         fflush(stderr);
     }
     return mapObj;

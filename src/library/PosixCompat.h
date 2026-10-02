@@ -146,6 +146,9 @@ struct protopy_stat {
     long long st_blksize;
     long long st_blocks;
     unsigned long long st_rdev;
+    // Windows only, as in CPython's os.stat_result there.
+    unsigned long st_file_attributes;  // FILE_ATTRIBUTE_*
+    unsigned long st_reparse_tag;      // IO_REPARSE_TAG_* of a link lstat() did not follow, else 0
 };
 int protopy_stat(const char* path, struct protopy_stat* st);
 int protopy_lstat(const char* path, struct protopy_stat* st);
@@ -169,6 +172,8 @@ int protopy_chdir(const char* path);
 char* protopy_getcwd(char* buf, size_t size);
 int protopy_access(const char* path, int mode);
 ssize_t protopy_readlink(const char* path, char* buf, size_t size);
+// os.symlink: CreateSymbolicLinkW, unprivileged where developer mode allows it.
+int protopy_symlink(const char* target, const char* link, bool directory);
 int protopy_fcntl(int fd, int cmd, int arg = 0);
 int protopy_utimensat(int dirfd, const char* path, const struct timespec times[2], int flags);
 int protopy_setenv(const char* name, const char* value, int overwrite);
@@ -179,6 +184,34 @@ pid_t protopy_getppid();
 // Renames `from` to `to`; replaces an existing `to` only when `replace` is set
 // (os.rename refuses, os.replace replaces, as CPython on Windows).
 int protopy_rename(const char* from, const char* to, bool replace);
+// The C runtime ends the process when one of its functions gets an invalid
+// argument (a closed descriptor, an out-of-range struct tm); POSIX returns an
+// error instead, and so does protoPython, as CPython does with
+// _Py_BEGIN_SUPPRESS_IPH. The handler that does this is installed per thread,
+// on the threads that run Python code (and around descriptor operations on
+// protoCore's collector thread), never process-wide by the library: a program
+// that embeds protoPython keeps its own process-wide handler. protopy.exe
+// installs it process-wide in its main().
+//
+// protopy_ignore_invalid_parameters() makes the calling thread report errors;
+// it returns the handler that was there. The scope does the same for its
+// lifetime.
+using protopy_iph = void (*)(const wchar_t*, const wchar_t*, const wchar_t*, unsigned int, uintptr_t);
+protopy_iph protopy_ignore_invalid_parameters();
+void protopy_restore_invalid_parameters(protopy_iph previous);
+void protopy_ignore_invalid_parameters_process_wide();
+// GetCurrentThreadId(), without <windows.h> in the including file.
+unsigned long protopy_current_thread_id();
+class ProtopyInvalidParameterScope {
+public:
+    ProtopyInvalidParameterScope() : previous_(protopy_ignore_invalid_parameters()) {}
+    ~ProtopyInvalidParameterScope() { protopy_restore_invalid_parameters(previous_); }
+    ProtopyInvalidParameterScope(const ProtopyInvalidParameterScope&) = delete;
+    ProtopyInvalidParameterScope& operator=(const ProtopyInvalidParameterScope&) = delete;
+private:
+    protopy_iph previous_;
+};
+
 // GetLastError() → errno, as CPython's winerror_to_errno.
 int protopy_errno_from_win32(unsigned long winerror);
 // UTF-8 ↔ UTF-16.
