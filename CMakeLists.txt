@@ -582,6 +582,17 @@ set_tests_properties(protopy_file_close_on_collect PROPERTIES
     SKIP_RETURN_CODE 77
     TIMEOUT 120
     LABELS "regression_gate")
+# Objects held only by running frames survive heap-limited collections: every
+# context is chained onto the thread's current one (MemoryManager.hpp). The
+# cross-platform workflow runs it repeatedly.
+add_test(NAME protopy_heap_limit_live_frames
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/heap_limit_live_frames.py)
+set_tests_properties(protopy_heap_limit_live_frames PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    ENVIRONMENT "PROTOCORE_HEAP_LIMIT_CELLS=1000000"
+    PASS_REGULAR_EXPRESSION "heap_limit_live_frames: ok"
+    TIMEOUT 120
+    LABELS "regression_gate")
 # Directories of files that were written and never closed can be removed.
 add_test(NAME protopy_unclosed_files_directory_cleanup
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/unclosed_files_directory_cleanup.py)

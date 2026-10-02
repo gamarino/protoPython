@@ -81,6 +81,7 @@ jobs:
           -DPROTOPYTHON_FETCH_GOOGLETEST=ON
 
       - name: Build protoPython
+        id: build
         working-directory: protoPython
         run: cmake --build build --parallel 4
 
@@ -94,6 +95,20 @@ jobs:
       - name: Test suite
         working-directory: protoPython
         run: ctest --test-dir build -j2 --output-on-failure --timeout 600 -E "$CLOCK_DEPENDENT_TESTS" < /dev/null
+
+      # Heap-limited collection under file and allocation pressure, repeated:
+      # a context chained off the thread's current one let the collector free
+      # objects of running frames in about one Windows run in ten (CI run
+      # 36987826465). Each test runs up to 25 times and the step fails at the
+      # first failing run.
+      - name: Heap-limit collection, repeated
+        # Also after a failing suite: its verdict is independent evidence.
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: protoPython
+        run: |
+          ctest --test-dir build --output-on-failure --timeout 300 --repeat until-fail:25 \
+            -R '^(protopy_heap_limit_live_frames|protopy_file_close_on_collect)$' < /dev/null
+          echo "Heap-limit tests: 25 consecutive passing runs each" >> "$GITHUB_STEP_SUMMARY"
 
       # The Windows package: every generator the configuration enabled (the ZIP,
       # and the NSIS installer when makensis is on the runner). The ZIP is
