@@ -28976,7 +28976,18 @@ static const proto::ProtoObject* buildTraceback(proto::ProtoContext* ctx, const 
 const proto::ProtoObject* PythonEnvironment::newStr(proto::ProtoContext* ctx, const std::string& str) {
     if (!ctx) ctx = s_threadContext;
     if (!ctx) return PROTO_NONE;
-    const proto::ProtoString* s = proto::ProtoString::fromStdString(ctx, str);
+    // fromUTF8Buffer takes the length, so a str holding NUL characters (which
+    // Python allows) is kept whole; fromStdString stops at the first NUL.
+    uint8_t remainder[4];
+    uint8_t remainderCount = 0;
+    const proto::ProtoString* s = proto::ProtoString::fromUTF8Buffer(ctx,
+        reinterpret_cast<const uint8_t*>(str.data()), str.size(), nullptr, 0, remainder, &remainderCount);
+    // A trailing truncated sequence is kept as its bytes' code points, as
+    // fromStdString's tolerance of malformed input did.
+    for (uint8_t i = 0; s && i < remainderCount; ++i) {
+        const char one[2] = {static_cast<char>(remainder[i]), '\0'};
+        s = s->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, one));
+    }
     return s ? s->asObject(ctx) : PROTO_NONE;
 }
 
