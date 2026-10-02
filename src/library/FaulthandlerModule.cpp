@@ -60,7 +60,7 @@ extern "C" void faulthandler_signal_handler(int sig) {
     // Use raw write(2) — async-signal-safe per POSIX.
     (void)write(fd, prefix, sizeof(prefix) - 1);
     const char* name = sig_name(sig);
-    (void)write(fd, name, std::strlen(name));
+    (void)write(fd, name, static_cast<unsigned>(std::strlen(name)));
     (void)write(fd, "\n", 1);
     // Reset to SIG_DFL and re-raise so the OS produces the normal
     // terminal effect (segfault dump / abort / etc.). Without this

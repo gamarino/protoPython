@@ -56,6 +56,13 @@ target_link_libraries(test_hpy_context PRIVATE protoPython protoCore gtest_main)
 add_test(NAME test_hpy_context COMMAND test_hpy_context)
 set_tests_properties(test_hpy_context PROPERTIES TIMEOUT 60 LABELS "regression_gate")
 
+# 64-bit multiplication and shift overflow checks (CheckedArith.h).
+add_executable(test_checked_arith TestCheckedArith.cpp)
+target_include_directories(test_checked_arith PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(test_checked_arith PRIVATE gtest_main)
+add_test(NAME test_checked_arith COMMAND test_checked_arith)
+set_tests_properties(test_checked_arith PROPERTIES TIMEOUT 30 LABELS "regression_gate")
+
 # Compiler unit tests (parse → compile → execute; covers all major language features)
 add_executable(test_compiler TestCompiler.cpp)
 target_link_libraries(test_compiler PRIVATE protoPython protoCore gtest_main)

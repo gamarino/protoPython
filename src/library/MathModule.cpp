@@ -316,7 +316,7 @@ static const proto::ProtoObject* py_hypot(
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     double sum = 0.0;
     for (size_t k = 0; k < posArgs->getSize(ctx); k++)
-        sum += toDouble(ctx, posArgs->getAt(ctx, k)) * toDouble(ctx, posArgs->getAt(ctx, k));
+        sum += toDouble(ctx, posArgs->getAt(ctx, static_cast<int>(k))) * toDouble(ctx, posArgs->getAt(ctx, static_cast<int>(k)));
     return ctx->fromDouble(std::sqrt(sum));
 }
 

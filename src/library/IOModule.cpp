@@ -1,6 +1,7 @@
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/IOModule.h>
 #include <protoPython/DiagUtils.h>
+#include <algorithm>
 #include <cstdio>
 #include <cerrno>
 #include <cstring>
@@ -12,6 +13,12 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#endif
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
 #endif
 #include "PosixCompat.h"
 
@@ -81,6 +88,316 @@ static const proto::ProtoObject* io_read_result(proto::ProtoContext* context, co
     return PythonEnvironment::getInternedString(context, data.c_str())->asObject(context);
 }
 
+// ----- Descriptor-backed files -----------------------------------------------
+//
+// open() in a writing or read-write mode, open() with an opener, and
+// io.open(fd) return a file object over an OS descriptor. The descriptor
+// belongs to the object (unless closefd=False): close() and `with` release
+// it at once, and an object that is never closed releases it when the
+// collector reclaims it (the FdOwner finalizer below). CPython closes such a
+// file as soon as its last reference goes; protoPython has no reference
+// counts, so an unclosed file stays open until it is collected -- and
+// protoCore collects only under a configured heap limit
+// (PROTOCORE_HEAP_LIMIT_CELLS) -- or until the process exits.
+//
+// Reads go through a read-ahead buffer owned with the descriptor (readline
+// reads a block and keeps the rest); writes are unbuffered. Text mode is
+// UTF-8: reads translate "\r\n" and "\r" to "\n" when newline is None, and
+// writes translate "\n" to os.linesep ("\r\n" on Windows) when newline is
+// None, or to the newline given, as CPython's TextIOWrapper.
+struct FdOwner {
+    int fd;
+    bool closefd;
+    std::string readAhead;  // bytes read from fd but not yet consumed
+    bool eof = false;       // the last read returned 0 bytes
+};
+
+// Runs on protoCore's collector thread.
+static void fd_owner_finalizer(void* p) {
+    FdOwner* owner = static_cast<FdOwner*>(p);
+    if (owner->fd >= 0 && owner->closefd) {
+#if defined(_WIN32)
+        // A descriptor the program closed itself (os.close(f.fileno())) is
+        // an error to report, not a reason to end the process.
+        ProtopyInvalidParameterScope reportInvalidParameters;
+#endif
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
+        ::close(owner->fd);
+#endif
+    }
+    delete owner;
+}
+
+static FdOwner* io_fd_owner(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
+    const proto::ProtoObject* o = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__fd_owner__"));
+    if (!o || o == PROTO_NONE) return nullptr;
+    const proto::ProtoExternalPointer* ext = o->asExternalPointer(ctx);
+    return ext ? static_cast<FdOwner*>(ext->getPointer(ctx)) : nullptr;
+}
+
+static bool io_flag(proto::ProtoContext* ctx, const proto::ProtoObject* self, const char* name) {
+    const proto::ProtoObject* v = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, name));
+    return v == PROTO_TRUE;
+}
+
+static long long io_lseek(int fd, long long offset, int whence) {
+#if defined(_WIN32)
+    return _lseeki64(fd, offset, whence);
+#else
+    return static_cast<long long>(::lseek(fd, static_cast<off_t>(offset), whence));
+#endif
+}
+
+static void io_raise_errno(proto::ProtoContext* ctx, int err) {
+    if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx)) env->raiseOSError(ctx, err, std::strerror(err));
+}
+
+static void io_raise_closed(proto::ProtoContext* ctx) {
+    if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx)) {
+        env->raiseValueError(ctx, PythonEnvironment::newStr(ctx, "I/O operation on closed file."));
+    }
+}
+
+// One read(2) of up to `n` bytes, outside the managed region (it may block).
+// Returns the count, 0 at end of file; -1 with OSError pending.
+static long long io_read_once(proto::ProtoContext* ctx, int fd, char* buf, size_t n) {
+    for (;;) {
+        long long got;
+        int err = 0;
+        {
+            proto::ProtoContext::UnmanagedScope u(ctx);
+#if defined(_WIN32)
+            got = ::read(fd, buf, static_cast<unsigned>(n > 0x7fffffff ? 0x7fffffff : n));
+#else
+            got = static_cast<long long>(::read(fd, buf, n));
+#endif
+            err = (got < 0) ? errno : 0;
+        }
+        if (got >= 0) return got;
+        if (err == EINTR) continue;
+        io_raise_errno(ctx, err);
+        return -1;
+    }
+}
+
+// Appends one more block to the read-ahead buffer. Returns false with an
+// exception pending; sets eof at end of file.
+static bool io_fill(proto::ProtoContext* ctx, FdOwner* owner) {
+    char chunk[8192];
+    const long long got = io_read_once(ctx, owner->fd, chunk, sizeof(chunk));
+    if (got < 0) return false;
+    if (got == 0) owner->eof = true;
+    else owner->readAhead.append(chunk, static_cast<size_t>(got));
+    return true;
+}
+
+// Before writing or seeking, give back what was read ahead, so the file
+// position is where the caller believes it is.
+static void io_drop_read_ahead(FdOwner* owner) {
+    if (!owner->readAhead.empty()) {
+        io_lseek(owner->fd, -static_cast<long long>(owner->readAhead.size()), SEEK_CUR);
+        owner->readAhead.clear();
+    }
+    owner->eof = false;
+}
+
+// "\r\n" and "\r" -> "\n".
+static void io_translate_universal(std::string& s) {
+    if (s.find('\r') == std::string::npos) return;
+    std::string out;
+    out.reserve(s.size());
+    for (size_t i = 0; i < s.size(); ++i) {
+        if (s[i] == '\r') {
+            out.push_back('\n');
+            if (i + 1 < s.size() && s[i + 1] == '\n') ++i;
+        } else {
+            out.push_back(s[i]);
+        }
+    }
+    s.swap(out);
+}
+
+// Makes sure a "\r" at the end of the read-ahead buffer is not the first half
+// of a "\r\n" pair split across reads.
+static bool io_complete_cr(proto::ProtoContext* ctx, FdOwner* owner) {
+    while (!owner->eof && !owner->readAhead.empty() && owner->readAhead.back() == '\r') {
+        const size_t before = owner->readAhead.size();
+        if (!io_fill(ctx, owner)) return false;
+        if (owner->readAhead.size() > before) break;
+    }
+    return true;
+}
+
+// The bytes of a read(n) on a descriptor file. Binary: as a raw read, at most
+// one read(2) (what was read ahead first). Text: n characters, reading until
+// there are enough or the file ends.
+static bool io_fd_read(proto::ProtoContext* ctx, FdOwner* owner, bool text, bool universal,
+                       long long n, std::string& out) {
+    out.clear();
+    if (n < 0) {
+        while (!owner->eof) {
+            if (!io_fill(ctx, owner)) return false;
+        }
+        out.swap(owner->readAhead);
+        owner->eof = false;
+        if (text && universal) io_translate_universal(out);
+        return true;
+    }
+    if (n == 0) return true;
+    if (!text) {
+        if (owner->readAhead.empty()) {
+            out.resize(static_cast<size_t>(n));
+            const long long got = io_read_once(ctx, owner->fd, &out[0], static_cast<size_t>(n));
+            if (got < 0) return false;
+            out.resize(static_cast<size_t>(got));
+            return true;
+        }
+        const size_t take = std::min(owner->readAhead.size(), static_cast<size_t>(n));
+        out.assign(owner->readAhead, 0, take);
+        owner->readAhead.erase(0, take);
+        return true;
+    }
+    // Text: walk code points (a "\r\n" pair is one character when
+    // translating), reading more until n of them are available.
+    size_t i = 0;
+    long long chars = 0;
+    for (;;) {
+        std::string& buf = owner->readAhead;
+        while (chars < n && i < buf.size()) {
+            const unsigned char c = static_cast<unsigned char>(buf[i]);
+            size_t len = c < 0x80 ? 1 : (c >> 5) == 0x6 ? 2 : (c >> 4) == 0xe ? 3 : (c >> 3) == 0x1e ? 4 : 1;
+            if (universal && c == '\r') {
+                if (i + 1 >= buf.size() && !owner->eof) break;  // need the next byte
+                if (i + 1 < buf.size() && buf[i + 1] == '\n') len = 2;
+            }
+            if (i + len > buf.size() && !owner->eof) break;  // an incomplete character
+            i += std::min(len, buf.size() - i);
+            ++chars;
+        }
+        if (chars >= n || owner->eof) break;
+        if (!io_fill(ctx, owner)) return false;
+    }
+    out.assign(owner->readAhead, 0, i);
+    owner->readAhead.erase(0, i);
+    if (universal) io_translate_universal(out);
+    return true;
+}
+
+// The bytes of the next line (with its terminator), "" at end of file.
+static bool io_fd_readline(proto::ProtoContext* ctx, FdOwner* owner, bool universal, std::string& out) {
+    size_t scanned = 0;
+    for (;;) {
+        std::string& buf = owner->readAhead;
+        for (size_t i = scanned; i < buf.size(); ++i) {
+            if (buf[i] == '\n' || (universal && buf[i] == '\r')) {
+                size_t end = i + 1;
+                if (buf[i] == '\r') {
+                    if (end >= buf.size() && !owner->eof) {
+                        // Is it "\r\n"? Read on to find out.
+                        if (!io_fill(ctx, owner)) return false;
+                        return io_fd_readline(ctx, owner, universal, out);
+                    }
+                    if (end < buf.size() && buf[end] == '\n') ++end;
+                }
+                out.assign(buf, 0, end);
+                buf.erase(0, end);
+                if (universal) io_translate_universal(out);
+                return true;
+            }
+        }
+        scanned = buf.size();
+        if (owner->eof) {
+            out.swap(buf);
+            buf.clear();
+            if (universal) io_translate_universal(out);
+            return true;
+        }
+        if (!io_fill(ctx, owner)) return false;
+    }
+}
+
+// The Python value of bytes read from a descriptor file: str in text mode,
+// bytes in binary mode.
+static const proto::ProtoObject* io_fd_result(proto::ProtoContext* ctx, bool text, const std::string& data) {
+    return text ? PythonEnvironment::newStr(ctx, data) : bio_make_bytes(ctx, data);
+}
+
+// An open descriptor file whose descriptor was released by close(); raises
+// ValueError and returns true for an operation on it.
+static bool io_closed_fd_file(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
+    if (io_fd_owner(ctx, self) && io_get_fd(ctx, self) < 0) {
+        io_raise_closed(ctx);
+        return true;
+    }
+    return false;
+}
+
+// Writes all of `data` to the descriptor. Returns false with OSError pending.
+static bool io_write_all(proto::ProtoContext* ctx, int fd, const std::string& data) {
+    size_t done = 0;
+    while (done < data.size()) {
+        long long written;
+        int err = 0;
+        {
+            // ::write can block on full pipes / sockets / slow disks.
+            proto::ProtoContext::UnmanagedScope u(ctx);
+            const size_t chunk = std::min<size_t>(data.size() - done, 0x40000000);
+#if defined(_WIN32)
+            written = ::write(fd, data.data() + done, static_cast<unsigned>(chunk));
+#else
+            written = static_cast<long long>(::write(fd, data.data() + done, chunk));
+#endif
+            err = (written < 0) ? errno : 0;
+        }
+        if (written < 0) {
+            if (err == EINTR) continue;
+            io_raise_errno(ctx, err);
+            return false;
+        }
+        done += static_cast<size_t>(written);
+    }
+    return true;
+}
+
+// file.write(data) on a descriptor file: str in text mode (encoded as UTF-8,
+// "\n" translated as the newline argument asks), a bytes-like object in
+// binary mode. Returns the number of characters or bytes written.
+static const proto::ProtoObject* io_fd_write(proto::ProtoContext* ctx, const proto::ProtoObject* self,
+                                             FdOwner* owner, const proto::ProtoObject* data) {
+    const bool text = io_flag(ctx, self, "__text__");
+    std::string s;
+    if (text) {
+        if (!data->isString(ctx)) {
+            if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx)) {
+                env->raiseTypeError(ctx, "write() argument must be str");
+            }
+            return nullptr;
+        }
+        data->asString(ctx)->toUTF8String(ctx, s);
+        const proto::ProtoObject* nl = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__write_nl__"));
+        if (nl && nl != PROTO_NONE && nl->isString(ctx) && s.find('\n') != std::string::npos) {
+            std::string newline;
+            nl->asString(ctx)->toUTF8String(ctx, newline);
+            std::string out;
+            out.reserve(s.size() + s.size() / 16);
+            for (char c : s) {
+                if (c == '\n') out += newline;
+                else out.push_back(c);
+            }
+            s.swap(out);
+        }
+    } else if (!io_extract_bytes(ctx, data, s)) {
+        if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx)) {
+            env->raiseTypeError(ctx, "a bytes-like object is required");
+        }
+        return nullptr;
+    }
+    io_drop_read_ahead(owner);
+    if (!io_write_all(ctx, owner->fd, s)) return nullptr;
+    if (text) return ctx->fromInteger(static_cast<long long>(data->asString(ctx)->getSize(ctx)));
+    return ctx->fromInteger(static_cast<long long>(s.size()));
+}
+
 static const proto::ProtoObject* py_io_read(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -91,61 +408,18 @@ static const proto::ProtoObject* py_io_read(
     if (posArgs->getSize(context) > 0 && posArgs->getAt(context, 0)->isInteger(context))
         n = posArgs->getAt(context, 0)->asLong(context);
 
-    // fd-backed file (io.open(fd, ...)): defer to ::read.  Return real
-    // bytes so subprocess._communicate can treat the result as
-    // byte-like instead of decoding-then-re-encoding strings.
+    // A descriptor file reads through its read-ahead buffer (io_fd_read).
     int fd = io_get_fd(context, self);
     if (fd >= 0) {
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
-        // 2026-05-25: ::read may block arbitrarily (pipes, sockets,
-        // slow filesystems, NFS). Bracket the syscall(s) in a
-        // protoCore unmanaged region so the GC quorum is not pinned
-        // waiting for I/O to complete. The errno + raiseOSError
-        // handling runs AFTER returnFromUnmanaged because that path
-        // touches ProtoObject* state (forbidden while unmanaged).
-        std::string out;
-        int err = 0;
-        if (n < 0) {
-            // read everything until EOF
-            char chunk[4096];
-            for (;;) {
-                ssize_t got;
-                {
-                    proto::ProtoContext::UnmanagedScope u(context);
-                    got = ::read(fd, chunk, sizeof(chunk));
-                    err = (got < 0) ? errno : 0;
-                }
-                if (got < 0) {
-                    if (err == EINTR) continue;
-                    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-                    if (env) env->raiseOSError(context, err, std::strerror(err), "");
-                    return nullptr;
-                }
-                if (got == 0) break;
-                out.append(chunk, static_cast<size_t>(got));
-            }
-        } else if (n > 0) {
-            out.resize(static_cast<size_t>(n));
-            ssize_t got;
-            for (;;) {
-                {
-                    proto::ProtoContext::UnmanagedScope u(context);
-                    got = ::read(fd, &out[0], static_cast<size_t>(n));
-                    err = (got < 0) ? errno : 0;
-                }
-                if (got >= 0) break;
-                if (err == EINTR) continue;
-                PythonEnvironment* env = PythonEnvironment::fromContext(context);
-                if (env) env->raiseOSError(context, err, std::strerror(err), "");
-                return nullptr;
-            }
-            out.resize(static_cast<size_t>(got));
+        FdOwner* owner = io_fd_owner(context, self);
+        if (owner) {
+            const bool text = io_flag(context, self, "__text__");
+            std::string out;
+            if (!io_fd_read(context, owner, text, io_flag(context, self, "__universal__"), n, out)) return nullptr;
+            return io_fd_result(context, text, out);
         }
-        return bio_make_bytes(context, out);
-#else
-        return PythonEnvironment::getInternedString(context, "")->asObject(context);
-#endif
     }
+    if (io_closed_fd_file(context, self)) return nullptr;
 
     const proto::ProtoObject* bufObj = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__file_buffer__"));
     if (!bufObj || !bufObj->asExternalPointer(context)) return PythonEnvironment::getInternedString(context, "")->asObject(context);
@@ -170,12 +444,19 @@ static const proto::ProtoObject* py_io_close(
     const proto::ParentLink*,
     const proto::ProtoList*,
     const proto::ProtoSparseList*) {
-    // fd-backed: close the underlying fd via ::close and null out
-    // the attribute so subsequent reads/writes report a closed fd.
+    // Descriptor file: release the descriptor now (unless closefd=False)
+    // and mark the object closed; its owner no longer closes anything when
+    // collected. Closing twice does nothing, as in CPython.
     int fd = io_get_fd(context, self);
     if (fd >= 0) {
+        FdOwner* owner = io_fd_owner(context, self);
+        const bool closefd = !owner || owner->closefd;
+        if (owner) {
+            owner->fd = -1;
+            owner->readAhead.clear();
+        }
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
-        ::close(fd);
+        if (closefd) ::close(fd);
 #endif
         const_cast<proto::ProtoObject*>(self)->setAttribute(context,
             proto::ProtoString::createSymbol(context, "__file_fd__"),
@@ -236,12 +517,29 @@ static std::string io_consume_line(const proto::ProtoObject* self,
     return line;
 }
 
+// The next line of a descriptor file, as str or bytes; nullptr with an
+// exception pending.
+static const proto::ProtoObject* io_fd_next_line(proto::ProtoContext* context, const proto::ProtoObject* self,
+                                                 FdOwner* owner, bool& atEnd) {
+    std::string line;
+    if (!io_fd_readline(context, owner, io_flag(context, self, "__universal__"), line)) return nullptr;
+    atEnd = line.empty();
+    return io_fd_result(context, io_flag(context, self, "__text__"), line);
+}
+
 static const proto::ProtoObject* py_io_readline(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
     const proto::ProtoList*,
     const proto::ProtoSparseList*) {
+    if (io_get_fd(context, self) >= 0) {
+        if (FdOwner* owner = io_fd_owner(context, self)) {
+            bool atEnd = false;
+            return io_fd_next_line(context, self, owner, atEnd);
+        }
+    }
+    if (io_closed_fd_file(context, self)) return nullptr;
     std::string line = io_consume_line(self, context);
     return io_read_result(context, self, line);
 }
@@ -264,6 +562,18 @@ static const proto::ProtoObject* py_io_next(
     const proto::ParentLink*,
     const proto::ProtoList*,
     const proto::ProtoSparseList*) {
+    if (io_get_fd(context, self) >= 0) {
+        if (FdOwner* owner = io_fd_owner(context, self)) {
+            bool atEnd = false;
+            const proto::ProtoObject* line = io_fd_next_line(context, self, owner, atEnd);
+            if (line && atEnd) {
+                if (PythonEnvironment* env = PythonEnvironment::fromContext(context)) env->raiseStopIteration(context);
+                return nullptr;
+            }
+            return line;
+        }
+    }
+    if (io_closed_fd_file(context, self)) return nullptr;
     std::string line = io_consume_line(self, context);
     if (line.empty()) {
         // EOF — raise StopIteration so the caller terminates the loop.
@@ -275,13 +585,14 @@ static const proto::ProtoObject* py_io_next(
 }
 
 static const proto::ProtoObject* py_io_flush(
-    proto::ProtoContext*,
-    const proto::ProtoObject*,
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
     const proto::ParentLink*,
     const proto::ProtoList*,
     const proto::ProtoSparseList*) {
-    // No-op for our buffer-backed file: writes already go to the
-    // backing buffer immediately. Return None.
+    // Writes are unbuffered (descriptor files) or go to the backing buffer
+    // immediately, so there is nothing to flush; a closed file raises.
+    if (io_closed_fd_file(ctx, self)) return nullptr;
     return PROTO_NONE;
 }
 
@@ -304,34 +615,114 @@ static const proto::ProtoObject* py_io_fileno(
 }
 
 // readable/writable/seekable predicates — subprocess and asyncio
-// poke these to decide whether to read/write or use TextIOWrapper.
+// poke these to decide whether to read/write or use TextIOWrapper. A
+// descriptor file answers from its mode, as CPython's FileIO does.
+static bool io_mode_has(proto::ProtoContext* ctx, const proto::ProtoObject* self, const char* chars) {
+    const proto::ProtoObject* m = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "mode"));
+    if (!m || !m->isString(ctx)) return false;
+    std::string mode;
+    m->asString(ctx)->toUTF8String(ctx, mode);
+    return mode.find_first_of(chars) != std::string::npos;
+}
+
 static const proto::ProtoObject* py_io_readable(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList*, const proto::ProtoSparseList*) {
+    if (io_closed_fd_file(ctx, self)) return nullptr;
     int fd = io_get_fd(ctx, self);
     if (fd < 0) return PROTO_FALSE;
-    // For fd-backed files the mode determines readability — but
-    // CPython's BufferedReader.readable() is True so long as the fd
-    // wasn't opened write-only.  We don't track mode precisely, so
-    // return True (consistent with buffered-reader-style wrappers).
-    return PROTO_TRUE;
+    return io_mode_has(ctx, self, "r+") ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_io_writable(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList*, const proto::ProtoSparseList*) {
+    if (io_closed_fd_file(ctx, self)) return nullptr;
     int fd = io_get_fd(ctx, self);
     if (fd < 0) return PROTO_FALSE;
-    return PROTO_TRUE;
+    return io_mode_has(ctx, self, "wax+") ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_io_seekable(
-    proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*,
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList*, const proto::ProtoSparseList*) {
-    // Pipes / sockets / ttys are not seekable.  Conservative answer
-    // is False for fd-backed wrappers — subprocess never seeks.
-    return PROTO_FALSE;
+    if (io_closed_fd_file(ctx, self)) return nullptr;
+    // Files are seekable; pipes, sockets and terminals are not.
+    int fd = io_get_fd(ctx, self);
+    if (fd < 0) return PROTO_FALSE;
+#if defined(_WIN32)
+    const HANDLE h = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
+    if (h == INVALID_HANDLE_VALUE || GetFileType(h) != FILE_TYPE_DISK) return PROTO_FALSE;
+#endif
+    return io_lseek(fd, 0, SEEK_CUR) >= 0 ? PROTO_TRUE : PROTO_FALSE;
 }
+
+// file.seek(offset, whence=0) on a descriptor file: the new position.
+static const proto::ProtoObject* py_io_seek(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (io_closed_fd_file(ctx, self)) return nullptr;
+    FdOwner* owner = io_fd_owner(ctx, self);
+    if (!owner || owner->fd < 0) return ctx->fromInteger(0);
+    long long offset = 0;
+    int whence = SEEK_SET;
+    if (posArgs && posArgs->getSize(ctx) > 0 && posArgs->getAt(ctx, 0)->isInteger(ctx))
+        offset = posArgs->getAt(ctx, 0)->asLong(ctx);
+    if (posArgs && posArgs->getSize(ctx) > 1 && posArgs->getAt(ctx, 1)->isInteger(ctx))
+        whence = static_cast<int>(posArgs->getAt(ctx, 1)->asLong(ctx));
+    // A relative seek starts from where the caller is, not from the end of
+    // what was read ahead.
+    io_drop_read_ahead(owner);
+    const long long pos = io_lseek(owner->fd, offset, whence);
+    if (pos < 0) {
+        io_raise_errno(ctx, errno);
+        return nullptr;
+    }
+    return ctx->fromInteger(pos);
+}
+
+// file.tell() on a descriptor file.
+static const proto::ProtoObject* py_io_tell(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    if (io_closed_fd_file(ctx, self)) return nullptr;
+    FdOwner* owner = io_fd_owner(ctx, self);
+    if (!owner || owner->fd < 0) return ctx->fromInteger(0);
+    const long long pos = io_lseek(owner->fd, 0, SEEK_CUR);
+    if (pos < 0) {
+        io_raise_errno(ctx, errno);
+        return nullptr;
+    }
+    return ctx->fromInteger(pos - static_cast<long long>(owner->readAhead.size()));
+}
+
+// file.truncate(size=None) on a descriptor file: the new size.
+static const proto::ProtoObject* py_io_truncate(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (io_closed_fd_file(ctx, self)) return nullptr;
+    FdOwner* owner = io_fd_owner(ctx, self);
+    if (!owner || owner->fd < 0) return ctx->fromInteger(0);
+    io_drop_read_ahead(owner);
+    long long size = io_lseek(owner->fd, 0, SEEK_CUR);
+    if (posArgs && posArgs->getSize(ctx) > 0 && posArgs->getAt(ctx, 0)->isInteger(ctx))
+        size = posArgs->getAt(ctx, 0)->asLong(ctx);
+#if defined(_WIN32)
+    const int err = _chsize_s(owner->fd, size);
+#else
+    const int err = ::ftruncate(owner->fd, static_cast<off_t>(size)) == 0 ? 0 : errno;
+#endif
+    if (err != 0) {
+        io_raise_errno(ctx, err);
+        return nullptr;
+    }
+    return ctx->fromInteger(size);
+}
+
+// file.writelines(lines): write() of each item.
+static const proto::ProtoObject* py_io_writelines(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*);
 
 static const proto::ProtoObject* py_io_isatty(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
@@ -349,6 +740,20 @@ static const proto::ProtoObject* py_io_readlines(
     const proto::ParentLink*,
     const proto::ProtoList*,
     const proto::ProtoSparseList*) {
+    if (io_get_fd(context, self) >= 0) {
+        if (FdOwner* owner = io_fd_owner(context, self)) {
+            const proto::ProtoList* lines = context->newList();
+            for (;;) {
+                bool atEnd = false;
+                const proto::ProtoObject* line = io_fd_next_line(context, self, owner, atEnd);
+                if (!line) return nullptr;
+                if (atEnd) break;
+                lines = lines->appendLast(context, line);
+            }
+            return PythonEnvironment::wrapList(context, lines);
+        }
+    }
+    if (io_closed_fd_file(context, self)) return nullptr;
     const proto::ProtoObject* bufObj = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__file_buffer__"));
     if (!bufObj || !bufObj->asExternalPointer(context)) return context->newList()->asObject(context);
     std::string* buffer = static_cast<std::string*>(bufObj->asExternalPointer(context)->getPointer(context));
@@ -381,41 +786,11 @@ static const proto::ProtoObject* py_io_write(
     if (posArgs->getSize(context) < 1) return context->fromInteger(0);
     const proto::ProtoObject* data = posArgs->getAt(context, 0);
 
-    // fd-backed write: emit raw octets via ::write.
-    int fd = io_get_fd(context, self);
-    if (fd >= 0) {
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
-        std::string s;
-        if (!io_extract_bytes(context, data, s)) {
-            PythonEnvironment* env = PythonEnvironment::fromContext(context);
-            if (env) env->raiseTypeError(context, "a bytes-like object is required");
-            return nullptr;
-        }
-        // 2026-05-25: ::write can block on full pipes / sockets / slow
-        // disks. Bracket each syscall iteration in an unmanaged region.
-        ssize_t written;
-        int err = 0;
-        for (;;) {
-            {
-                proto::ProtoContext::UnmanagedScope u(context);
-                written = ::write(fd, s.data(), s.size());
-                err = (written < 0) ? errno : 0;
-            }
-            if (written >= 0) break;
-            if (err == EINTR) continue;
-            PythonEnvironment* env = PythonEnvironment::fromContext(context);
-            if (env) env->raiseOSError(context, err, std::strerror(err), "");
-            return nullptr;
-        }
-        // A text write returns the number of characters, as TextIOWrapper does.
-        if (data->isString(context) && static_cast<size_t>(written) == s.size()) {
-            return context->fromInteger(static_cast<long long>(data->asString(context)->getSize(context)));
-        }
-        return context->fromInteger(static_cast<long long>(written));
-#else
-        return context->fromInteger(0);
-#endif
+    // Descriptor file: through to the descriptor (io_fd_write).
+    if (io_get_fd(context, self) >= 0) {
+        if (FdOwner* owner = io_fd_owner(context, self)) return io_fd_write(context, self, owner, data);
     }
+    if (io_closed_fd_file(context, self)) return nullptr;
 
     const proto::ProtoObject* bufObj = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__file_buffer__"));
     if (!bufObj || !bufObj->asExternalPointer(context)) return context->fromInteger(0);
@@ -452,43 +827,112 @@ static const proto::ProtoObject* io_make_fd_file_prototype(proto::ProtoContext* 
     method("writable", py_io_writable);
     method("seekable", py_io_seekable);
     method("isatty", py_io_isatty);
+    method("seek", py_io_seek);
+    method("tell", py_io_tell);
+    method("truncate", py_io_truncate);
+    method("writelines", py_io_writelines);
     return proto;
 }
 
-// A file object over an open OS descriptor: read, write and close go to
-// ::read, ::write and ::close. It is mutable so that close() records
-// `closed` and the released descriptor on it.
-static const proto::ProtoObject* io_make_fd_file(proto::ProtoContext* context,
-                                                 const proto::ProtoObject* ioModule, int fd,
-                                                 const std::string& mode,
-                                                 const proto::ProtoObject* nameObj) {
-    const proto::ProtoObject* proto = ioModule ? ioModule->getAttribute(context,
-        proto::ProtoString::createSymbol(context, "__fd_file_prototype__")) : nullptr;
-    const proto::ProtoObject* fileObj = (proto && proto != PROTO_NONE)
-        ? proto->newChild(context, true)
-        : context->newObject(true);
-    fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "__file_fd__"),
-        context->fromInteger(fd));
-    fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "mode"),
-        PythonEnvironment::getInternedString(context, mode.c_str())->asObject(context));
-    fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "name"), nameObj);
-    // buffering: -1 (default).
-    fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "buffering"),
-        context->fromInteger(-1));
-    fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "closed"), PROTO_FALSE);
-    return fileObj;
+static const proto::ProtoObject* py_io_writelines(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoObject* lines = posArgs->getAt(ctx, 0);
+    // Any iterable: list() it through the builtin.
+    const proto::ProtoObject* listType = env && env->getBuiltins()
+        ? env->getBuiltins()->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "list")) : nullptr;
+    const proto::ProtoObject* asList = (listType && listType != PROTO_NONE) ? env->callObject(listType, {lines}) : nullptr;
+    if (!asList) return env && env->hasPendingException() ? nullptr : PROTO_NONE;
+    const proto::ProtoObject* data = asList->getAttribute(ctx, env->getDataString());
+    const proto::ProtoList* items = data ? data->asList(ctx) : asList->asList(ctx);
+    if (!items) return PROTO_NONE;
+    for (proto::proto_ulong i = 0; i < items->getSize(ctx); ++i) {
+        const proto::ProtoList* one = ctx->newList()->appendLast(ctx, items->getAt(ctx, static_cast<int>(i)));
+        if (!py_io_write(ctx, self, nullptr, one, nullptr)) return nullptr;
+    }
+    return PROTO_NONE;
+}
+
+// open()'s argument at `index` or keyword `name`; nullptr when absent.
+static const proto::ProtoObject* io_open_arg(proto::ProtoContext* context, const proto::ProtoList* pos,
+                                             const proto::ProtoSparseList* kw, proto::proto_ulong index,
+                                             const char* name) {
+    if (pos && pos->getSize(context) > index) return pos->getAt(context, static_cast<int>(index));
+    if (kw) {
+        const proto::proto_ulong h = PythonEnvironment::getInternedString(context, name)->getHash(context);
+        if (kw->has(context, h)) return kw->getAt(context, h);
+    }
+    return nullptr;
 }
 
 // open()'s `newline` argument (6th positional or keyword) is None or absent.
 static bool io_newline_is_none(proto::ProtoContext* context, const proto::ProtoList* pos,
                                const proto::ProtoSparseList* kw) {
-    if (pos && pos->getSize(context) >= 6) return pos->getAt(context, 5) == PROTO_NONE;
-    if (kw) {
-        const proto::proto_ulong h =
-            PythonEnvironment::getInternedString(context, "newline")->getHash(context);
-        if (kw->has(context, h)) return kw->getAt(context, h) == PROTO_NONE;
+    const proto::ProtoObject* nl = io_open_arg(context, pos, kw, 5, "newline");
+    return !nl || nl == PROTO_NONE;
+}
+
+// A file object over an open OS descriptor (see "Descriptor-backed files").
+// It is mutable so that close() records `closed` and the released descriptor
+// on it. `newline` is open()'s argument (nullptr: absent).
+static const proto::ProtoObject* io_make_fd_file(proto::ProtoContext* context,
+                                                 const proto::ProtoObject* ioModule, int fd,
+                                                 const std::string& mode,
+                                                 const proto::ProtoObject* nameObj,
+                                                 bool closefd,
+                                                 const proto::ProtoObject* newline) {
+    const proto::ProtoObject* proto = ioModule ? ioModule->getAttribute(context,
+        proto::ProtoString::createSymbol(context, "__fd_file_prototype__")) : nullptr;
+    const proto::ProtoObject* fileObj = (proto && proto != PROTO_NONE)
+        ? proto->newChild(context, true)
+        : context->newObject(true);
+    auto set = [&](const char* name, const proto::ProtoObject* value) {
+        fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, name), value);
+    };
+    set("__file_fd__", context->fromInteger(fd));
+    set("__fd_owner__", context->fromExternalPointer(new FdOwner{fd, closefd}, fd_owner_finalizer));
+    set("mode", PythonEnvironment::getInternedString(context, mode.c_str())->asObject(context));
+    set("name", nameObj);
+    set("buffering", context->fromInteger(-1));  // the default
+    set("closed", PROTO_FALSE);
+    const bool text = mode.find('b') == std::string::npos;
+    std::string nl;
+    const bool nlNone = !newline || newline == PROTO_NONE || !newline->isString(context);
+    if (!nlNone) newline->asString(context)->toUTF8String(context, nl);
+    set("__text__", text ? PROTO_TRUE : PROTO_FALSE);
+    // Reading: universal newlines when newline is None.
+    set("__universal__", (text && nlNone) ? PROTO_TRUE : PROTO_FALSE);
+    // Writing: "\n" becomes os.linesep when newline is None, or the newline
+    // given when it is "\r" or "\r\n"; "" and "\n" write "\n" as is.
+#if defined(_WIN32)
+    const char* linesep = "\r\n";
+#else
+    const char* linesep = nullptr;
+#endif
+    const char* writeNl = nullptr;
+    if (text) {
+        if (nlNone) writeNl = linesep;
+        else if (nl == "\r" || nl == "\r\n") writeNl = nl == "\r" ? "\r" : "\r\n";
     }
-    return true;
+    if (writeNl) set("__write_nl__", PythonEnvironment::getInternedString(context, writeNl)->asObject(context));
+    return fileObj;
+}
+
+// The os.open() flags of an open() mode, as CPython's FileIO computes them.
+static int io_mode_open_flags(const std::string& mode) {
+    const bool plus = mode.find('+') != std::string::npos;
+    int flags = 0;
+    if (mode.find('w') != std::string::npos) flags = (plus ? O_RDWR : O_WRONLY) | O_CREAT | O_TRUNC;
+    else if (mode.find('a') != std::string::npos) flags = (plus ? O_RDWR : O_WRONLY) | O_CREAT | O_APPEND;
+    else if (mode.find('x') != std::string::npos) flags = (plus ? O_RDWR : O_WRONLY) | O_CREAT | O_EXCL;
+    else flags = plus ? O_RDWR : O_RDONLY;
+    flags |= O_CLOEXEC;
+#ifdef O_BINARY
+    flags |= O_BINARY;
+#endif
+    return flags;
 }
 
 static const proto::ProtoObject* py_io_open(
@@ -501,16 +945,37 @@ static const proto::ProtoObject* py_io_open(
 
     const proto::ProtoObject* fileArg = positionalParameters->getAt(context, 0);
     std::string mode = "r";
-    if (positionalParameters->getSize(context) >= 2 && positionalParameters->getAt(context, 1)->isString(context)) {
-        positionalParameters->getAt(context, 1)->asString(context)->toUTF8String(context, mode);
-    }
+    const proto::ProtoObject* modeArg = io_open_arg(context, positionalParameters, keywordParameters, 1, "mode");
+    if (modeArg && modeArg->isString(context)) modeArg->asString(context)->toUTF8String(context, mode);
+    const proto::ProtoObject* newlineArg = io_open_arg(context, positionalParameters, keywordParameters, 5, "newline");
+    const proto::ProtoObject* closefdArg = io_open_arg(context, positionalParameters, keywordParameters, 6, "closefd");
+    const proto::ProtoObject* openerArg = io_open_arg(context, positionalParameters, keywordParameters, 7, "opener");
+    const bool closefd = !(closefdArg == PROTO_FALSE
+                           || (closefdArg && closefdArg->isInteger(context) && closefdArg->asLong(context) == 0));
 
     // PEP 446 / CPython compat: io.open(fd: int, mode, ...) wraps an
-    // existing OS fd into a file-like that delegates read/write/close
-    // to ::read / ::write / ::close.  subprocess.Popen routes
+    // existing OS fd into a file object.  subprocess.Popen routes
     // captured stdout/stderr through this path.
     if (fileArg && fileArg->isInteger(context)) {
-        return io_make_fd_file(context, self, static_cast<int>(fileArg->asLong(context)), mode, fileArg);
+        return io_make_fd_file(context, self, static_cast<int>(fileArg->asLong(context)), mode, fileArg,
+                               closefd, newlineArg);
+    }
+
+    // open(file, mode, ..., opener=f): the descriptor is f(file, flags), as
+    // in CPython. tempfile opens its files this way.
+    if (openerArg && openerArg != PROTO_NONE) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (!env) return PROTO_NONE;
+        const proto::ProtoObject* fdObj = env->callObject(openerArg,
+            {fileArg, context->fromInteger(io_mode_open_flags(mode))});
+        if (!fdObj) return nullptr;
+        if (!fdObj->isInteger(context) || fdObj->asLong(context) < 0) {
+            env->raiseValueError(context, PythonEnvironment::newStr(context,
+                "opener returned " + std::string(fdObj->isInteger(context) ? std::to_string(fdObj->asLong(context)) : "a non-integer")));
+            return nullptr;
+        }
+        return io_make_fd_file(context, self, static_cast<int>(fdObj->asLong(context)), mode, fileArg,
+                               true, newlineArg);
     }
 
     // A str or an os.PathLike (such as pathlib.Path), as CPython accepts.
@@ -521,18 +986,13 @@ static const proto::ProtoObject* py_io_open(
     }
 
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
-    // Write-only modes ("w", "a", "x", text or binary) open the file and
-    // write through the descriptor. The buffer-backed object below only
-    // holds data in memory, so writes made through it never reached the
-    // file. Read and "+" modes keep that object.
-    if (mode.find('+') == std::string::npos
-        && (mode.find('w') != std::string::npos || mode.find('a') != std::string::npos
-            || mode.find('x') != std::string::npos)) {
-        int flags = O_WRONLY | O_CREAT | O_CLOEXEC;
-        if (mode.find('w') != std::string::npos) flags |= O_TRUNC;
-        else if (mode.find('a') != std::string::npos) flags |= O_APPEND;
-        else flags |= O_EXCL;
-        int fd = ::open(filename.c_str(), flags, 0666);
+    // Writing and read-write modes ("w", "a", "x", "r+", ...) open the file
+    // and work through the descriptor. Plain reads ("r", "rb") read the
+    // whole file now and close it at once (the buffer-backed object below),
+    // so they never keep a descriptor.
+    if (mode.find('+') != std::string::npos || mode.find('w') != std::string::npos
+        || mode.find('a') != std::string::npos || mode.find('x') != std::string::npos) {
+        int fd = ::open(filename.c_str(), io_mode_open_flags(mode), 0666);
         if (fd < 0) {
             int err = errno;
             if (PythonEnvironment* env = PythonEnvironment::fromContext(context)) {
@@ -541,7 +1001,7 @@ static const proto::ProtoObject* py_io_open(
             }
             return PROTO_NONE;
         }
-        return io_make_fd_file(context, self, fd, mode, fileArg);
+        return io_make_fd_file(context, self, fd, mode, fileArg, true, newlineArg);
     }
 #endif
 
@@ -720,7 +1180,7 @@ static std::string bio_obj_to_bytes(proto::ProtoContext* ctx, const proto::Proto
         proto::proto_ulong n = bb->getSize(ctx);
         std::string out(n, '\0');
         for (proto::proto_ulong i = 0; i < n; ++i) {
-            out[i] = static_cast<char>(static_cast<unsigned char>(bb->getAt(ctx, i)));
+            out[i] = static_cast<char>(static_cast<unsigned char>(bb->getAt(ctx, static_cast<int>(i))));
         }
         return out;
     }
@@ -737,7 +1197,7 @@ static std::string bio_obj_to_bytes(proto::ProtoContext* ctx, const proto::Proto
                 proto::proto_ulong n = bb->getSize(ctx);
                 std::string out(n, '\0');
                 for (proto::proto_ulong i = 0; i < n; ++i) {
-                    out[i] = static_cast<char>(static_cast<unsigned char>(bb->getAt(ctx, i)));
+                    out[i] = static_cast<char>(static_cast<unsigned char>(bb->getAt(ctx, static_cast<int>(i))));
                 }
                 return out;
             }

@@ -25,6 +25,15 @@ if(WIN32)
         set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     endif()
 endif()
+# Warning level of protoPython's own targets (the library, protopy, protopyc):
+# MSVC's /W3, which reports narrowing conversions (C4244, C4267) among others.
+# CMake no longer adds /W3 by itself (policy CMP0092), and MSVC's default is
+# /W1. Other compilers keep their defaults.
+function(protopython_warnings target)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /W3)
+    endif()
+endfunction()
 if(MSVC)
     set(PROTOPYTHON_WINDOWS_STACK_RESERVE "33554432" CACHE STRING
         "Stack reserve, in bytes, of protoPython's executables on Windows")
@@ -497,6 +506,65 @@ add_test(NAME protopy_re_results_not_interned
 set_tests_properties(protopy_re_results_not_interned PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     ENVIRONMENT "PROTOCORE_HEAP_LIMIT_CELLS=500000"
+    TIMEOUT 120
+    LABELS "regression_gate")
+# re's ^, $, \A, \Z and . follow CPython's line rules on every platform.
+add_test(NAME protopy_re_anchors
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/re_anchors.py)
+set_tests_properties(protopy_re_anchors PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
+# time/datetime conversions before 1970 and after 3000 answer or raise, never crash.
+add_test(NAME protopy_time_out_of_range
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/time_out_of_range.py)
+set_tests_properties(protopy_time_out_of_range PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
+# tempfile: NamedTemporaryFile, TemporaryFile, TemporaryDirectory round trips.
+add_test(NAME protopy_tempfile_roundtrip
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/tempfile_roundtrip.py)
+set_tests_properties(protopy_tempfile_roundtrip PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
+# Unclosed files release their descriptor when collected (under a heap limit, so
+# protoCore collects). Exit 77 (skipped) on Windows: see the test's header.
+add_test(NAME protopy_file_close_on_collect
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/file_close_on_collect.py)
+set_tests_properties(protopy_file_close_on_collect PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    ENVIRONMENT "PROTOCORE_HEAP_LIMIT_CELLS=1000000"
+    SKIP_RETURN_CODE 77
+    TIMEOUT 120
+    LABELS "regression_gate")
+# Directories of files that were written and never closed can be removed.
+add_test(NAME protopy_unclosed_files_directory_cleanup
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/unclosed_files_directory_cleanup.py)
+set_tests_properties(protopy_unclosed_files_directory_cleanup PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
+# Text-mode writes translate "\n" to os.linesep, honouring newline=.
+add_test(NAME protopy_text_newline_write
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/text_newline_write.py)
+set_tests_properties(protopy_text_newline_write PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
+# select.select on pipes: timeouts, readiness, ValueError for unrepresentable sets.
+add_test(NAME protopy_select_pipes
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/select_pipes.py)
+set_tests_properties(protopy_select_pipes PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
+# os.symlink, lstat and shutil.copytree/rmtree over symbolic links.
+add_test(NAME protopy_copytree_symlinks
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/copytree_symlinks.py)
+set_tests_properties(protopy_copytree_symlinks PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
 # bool(), `if` / `while` and the native truth test agree on every shape.
@@ -1204,6 +1272,17 @@ if(PROTOPYTHON_BUILD_EXAMPLES)
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
         TIMEOUT 60
         LABELS "regression_gate")
+    # An embedding program keeps its own invalid-parameter handler (Windows);
+    # a bad descriptor is an OSError, never the end of the process.
+    add_executable(embedding_invalid_parameter_scope test/embedding/invalid_parameter_scope.cpp)
+    target_link_libraries(embedding_invalid_parameter_scope PRIVATE protoPython protoCore)
+    target_compile_definitions(embedding_invalid_parameter_scope PRIVATE
+        STDLIB_PATH="${CMAKE_SOURCE_DIR}/lib/python3.14")
+    add_test(NAME embedding_invalid_parameter_scope COMMAND embedding_invalid_parameter_scope)
+    set_tests_properties(embedding_invalid_parameter_scope PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        TIMEOUT 60
+        LABELS "regression_gate")
 endif()
 
 # --- Install RPATH: installed binaries and libs find each other without LD_LIBRARY_PATH ---
@@ -1312,8 +1391,19 @@ elseif(UNIX)
     set(CPACK_RPM_PACKAGE_REQUIRES
         "protoCore >= ${PROTOCORE_MIN_VERSION_FULL}, protoCore < ${PROTOCORE_NEXT_MAJOR}")
 elseif(WIN32)
-    # UNVERIFIED: no Windows build host (D-I6).
-    set(CPACK_GENERATOR "NSIS;ZIP")
+    # The ZIP is built and run in CI (cross-platform.yml). NSIS only when
+    # makensis is present: cpack aborts the whole run when a generator's tool
+    # is missing, which would take the ZIP down with it. protoCore is not
+    # bundled, as in the other packages: protoCore's DLL (protoCore-3.dll
+    # from protoCore 2.9.0 on) comes from protoCore's own package and must be on PATH.
+    set(CPACK_GENERATOR "ZIP")
+    find_program(PROTOPYTHON_MAKENSIS_EXECUTABLE makensis)
+    if(PROTOPYTHON_MAKENSIS_EXECUTABLE)
+        list(APPEND CPACK_GENERATOR "NSIS")
+        message(STATUS "CPack: NSIS generator enabled (makensis found)")
+    else()
+        message(STATUS "CPack: NSIS generator disabled (makensis not found)")
+    endif()
     set(CPACK_NSIS_HELP_LINK "https://github.com/gamarino/protoPython")
     set(CPACK_NSIS_PACKAGE_NAME "protoPython")
 endif()

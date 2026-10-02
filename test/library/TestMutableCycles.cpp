@@ -116,16 +116,16 @@ TEST(MutableCycles, TheProbesShapesArePresentAndAttributable)
            "than about the shapes this test names";
 
     // --- the finding ---------------------------------------------------------
-    std::printf("[ CYCLES   ] mutables table %lu -> %lu entries; cycles %lu -> %lu; "
-                "handles inside a cycle %lu -> %lu; %lu cells walked\n",
-                before.handles, after.handles,
-                (proto::proto_ulong) before.cycles.size(),
-                (proto::proto_ulong) after.cycles.size(),
-                handlesInCycles(before), handlesInCycles(after), after.cellsVisited);
+    std::printf("[ CYCLES   ] mutables table %llu -> %llu entries; cycles %llu -> %llu; "
+                "handles inside a cycle %llu -> %llu; %llu cells walked\n",
+                static_cast<unsigned long long>(before.handles), static_cast<unsigned long long>(after.handles),
+                static_cast<unsigned long long>((proto::proto_ulong) before.cycles.size()),
+                static_cast<unsigned long long>((proto::proto_ulong) after.cycles.size()),
+                static_cast<unsigned long long>(handlesInCycles(before)), static_cast<unsigned long long>(handlesInCycles(after)), static_cast<unsigned long long>(after.cellsVisited));
     for (const char* hop : {".__mro__", ".f_locals", ".__getattr__",
                             ".__closure_frames__"})
-        std::printf("[ CYCLES   ]   %-22s %lu -> %lu\n", hop,
-                    countShape(before, hop), countShape(after, hop));
+        std::printf("[ CYCLES   ]   %-22s %llu -> %llu\n", hop,
+                    static_cast<unsigned long long>(countShape(before, hop)), static_cast<unsigned long long>(countShape(after, hop)));
     std::fflush(stdout);
 
     // One zero-arg `super()` call site in the probe, so exactly one self-bound

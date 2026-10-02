@@ -270,7 +270,7 @@ static const proto::ProtoObject* py_weakref_ref(
             bool weakrefAvailable = false;
             if (mroT) {
                 for (proto::proto_ulong i = 0; i < mroT->getSize(ctx); ++i) {
-                    const proto::ProtoObject* base = mroT->getAt(ctx, i);
+                    const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(i));
                     if (!base || base == PROTO_NONE) continue;
                     if (base == env->getObjectPrototype()) continue;
                     if (containsWeakref(base)) { weakrefAvailable = true; break; }

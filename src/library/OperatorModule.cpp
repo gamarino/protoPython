@@ -324,7 +324,7 @@ static const proto::ProtoObject* py_itemgetter_call(
     } else {
         const proto::ProtoList* results = ctx->newList();
         for (proto::proto_ulong i = 0; i < items->getSize(ctx); ++i) {
-            results = results->appendLast(ctx, getItem(items->getAt(ctx, i)));
+            results = results->appendLast(ctx, getItem(items->getAt(ctx, static_cast<int>(i))));
         }
         const proto::ProtoTuple* tup = ctx->newTupleFromList(results);
         return tup ? tup->asObject(ctx) : PROTO_NONE;
@@ -377,7 +377,7 @@ static const proto::ProtoObject* py_attrgetter_call(
     }
     const proto::ProtoList* results = ctx->newList();
     for (proto::proto_ulong i = 0; i < attrs->getSize(ctx); ++i) {
-        results = results->appendLast(ctx, getNestedAttr(obj, attrs->getAt(ctx, i)));
+        results = results->appendLast(ctx, getNestedAttr(obj, attrs->getAt(ctx, static_cast<int>(i))));
     }
     const proto::ProtoTuple* tup = ctx->newTupleFromList(results);
     return tup ? tup->asObject(ctx) : PROTO_NONE;
@@ -412,7 +412,7 @@ static const proto::ProtoObject* py_methodcaller_call(
     if (argsObj && argsObj->asList(ctx)) {
         const proto::ProtoList* stored = argsObj->asList(ctx);
         for (proto::proto_ulong i = 0; i < stored->getSize(ctx); ++i)
-            callArgVec.push_back(stored->getAt(ctx, i));
+            callArgVec.push_back(stored->getAt(ctx, static_cast<int>(i)));
     }
     if (env) return env->callObjectEx(method, callArgVec, {});
     const proto::ProtoList* callArgs = ctx->newList();
@@ -429,7 +429,7 @@ static const proto::ProtoObject* py_methodcaller(
     holder = holder->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__mc_name__"), name);
     const proto::ProtoList* extraArgs = ctx->newList();
     for (proto::proto_ulong i = 1; i < posArgs->getSize(ctx); ++i)
-        extraArgs = extraArgs->appendLast(ctx, posArgs->getAt(ctx, i));
+        extraArgs = extraArgs->appendLast(ctx, posArgs->getAt(ctx, static_cast<int>(i)));
     holder = holder->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__mc_args__"), extraArgs->asObject(ctx));
     return ctx->fromMethod(const_cast<proto::ProtoObject*>(holder), py_methodcaller_call);
 }

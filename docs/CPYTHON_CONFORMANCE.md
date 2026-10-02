@@ -88,12 +88,28 @@ defect and adds a `test/regression/*.py` test registered in
 - **Runtime:** `gc.collect()` is a no-op (protoCore collects under heap
   pressure only); sets and dicts treat two distinct keys with equal
   hashes as the same key (accepted limitation).
+- **Files are closed by `close()`, `with`, or collection, not by losing their
+  last reference.** CPython closes `open(p, "w").write(s)`'s file at the end
+  of the statement (reference counting); protoPython has no reference counts,
+  so such a file keeps its descriptor until the collector reclaims it, and
+  protoCore collects only under a heap limit (`PROTOCORE_HEAP_LIMIT_CELLS`),
+  so by default until the process exits. Its data is on disk at once (writes
+  are unbuffered). On Linux, macOS and NTFS (where protoPython deletes and
+  renames with POSIX semantics) the file and its directory can still be
+  renamed or removed; on FAT, exFAT and network shares a file removed while
+  protoPython holds it open stays "delete pending", and its directory cannot
+  be removed, until the process exits. Use `with`. Plain reads (`"r"`,
+  `"rb"` without an opener) read the file at once and keep no descriptor.
 - **Case of non-ASCII characters:** `upper()`, `lower()`, `title()`,
   `capitalize()`, `swapcase()`, `casefold()` and the `isupper()`, `islower()`,
   `isalpha()` family change and classify ASCII letters only, since the
   runtime has no Unicode database: `"é".upper()` is `'é'` and
   `"é".isalpha()` is False.
-- **re:** the native module translates patterns to `std::wregex` (ECMAScript);
-  `\w`, `\d`, `\s` and `re.IGNORECASE` are ASCII-only, `re.error` does not
-  exist (compile errors raise `RuntimeError`), and conditional, atomic and
-  recursive groups are unsupported.
+- **re:** the native module translates patterns to the C++ standard library's
+  ECMAScript `std::regex`; `\w`, `\d`, `\s` and `re.IGNORECASE` are
+  ASCII-only, `re.error` does not exist (compile errors raise `RuntimeError`),
+  and lookbehind, scoped inline flags (`(?i:...)`), conditional, atomic and
+  recursive groups are unsupported. Line boundaries follow Python's rules on
+  every platform (`^`, `$`, `\A`, `\Z`, `.` and `re.MULTILINE` /
+  `re.DOTALL`; only `"\n"` ends a line), and global inline flags such as
+  `(?m)` at the start of a pattern work.

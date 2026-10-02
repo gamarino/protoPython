@@ -36,6 +36,10 @@ bool CppGenerator::generate(ModuleNode* module, const std::string& filename) {
     finalOut_ << "#include <protoCore.h>\n";
     finalOut_ << "#include <protoPython/PythonEnvironment.h>\n";
     finalOut_ << "#include <protoPython/Tokenizer.h>\n";
+    // Fixed-width integers and portable overflow checks: `long` is 32 bits on
+    // Windows, and __builtin_mul_overflow is GCC/Clang only.
+    finalOut_ << "#include <protoPython/CheckedArith.h>\n";
+    finalOut_ << "#include <cstdint>\n";
     finalOut_ << "#include <algorithm>\n\n";
     
     finalOut_ << header_.str();
@@ -499,12 +503,12 @@ bool CppGenerator::generateBinOp(BinOpNode* n) {
     // call).  Anything else (LargeInteger, str, list, mixed types, …)
     // falls back to env->binaryOp so semantics stay identical.
     //
-    // Long C++ overflow is impossible for the arithmetic ops here:
-    // protoCore SmallInts hold a 56-bit signed payload, so the sum,
-    // difference or product of two 56-bit values fits in a 64-bit long
-    // (worst case is ~112 bits multiplicatively — handled by the safe
-    // overflow check below; the additive ops cannot overflow long at
-    // all).  ctx->fromInteger transparently promotes back to a
+    // 64-bit C++ overflow is impossible for the additive ops here:
+    // protoCore SmallInts hold a 56-bit signed payload, so the sum or
+    // difference of two of them fits in std::int64_t. A product can need
+    // ~112 bits and goes through protoPython::checkedMul64 (CheckedArith.h,
+    // portable to MSVC). The emitted code never uses `long`, which is 32
+    // bits on Windows.  ctx->fromInteger transparently promotes back to a
     // LargeInteger when the result steps outside the SmallInt range.
     const char* arithOp = nullptr;
     const char* cmpOp = nullptr;
@@ -595,12 +599,12 @@ bool CppGenerator::generateBinOp(BinOpNode* n) {
         *out_ << "        const proto::ProtoObject* __b = ";
         if (!generateNode(n->right.get())) return false;
         *out_ << ";\n";
-        *out_ << "        if (__a && __b && __a->isInteger(ctx) && __b->isInteger(ctx)) {\n";
-        *out_ << "            long __va = __a->asLong(ctx);\n";
-        *out_ << "            long __vb = __b->asLong(ctx);\n";
+        *out_ << "        if (__a && __b && proto::isSmallInt(__a) && proto::isSmallInt(__b)) {\n";
+        *out_ << "            std::int64_t __va = proto::asSmallInt(__a);\n";
+        *out_ << "            std::int64_t __vb = proto::asSmallInt(__b);\n";
         if (needsOverflowGuard) {
-            *out_ << "            long __vr;\n";
-            *out_ << "            if (!__builtin_mul_overflow(__va, __vb, &__vr)) return ctx->fromInteger(__vr);\n";
+            *out_ << "            std::int64_t __vr;\n";
+            *out_ << "            if (!protoPython::checkedMul64(__va, __vb, &__vr)) return ctx->fromInteger(__vr);\n";
         } else {
             *out_ << "            return ctx->fromInteger(__va " << arithOp << " __vb);\n";
         }
@@ -619,8 +623,8 @@ bool CppGenerator::generateBinOp(BinOpNode* n) {
         *out_ << "        const proto::ProtoObject* __b = ";
         if (!generateNode(n->right.get())) return false;
         *out_ << ";\n";
-        *out_ << "        if (__a && __b && __a->isInteger(ctx) && __b->isInteger(ctx)) {\n";
-        *out_ << "            return (__a->asLong(ctx) " << cmpOp << " __b->asLong(ctx)) ? PROTO_TRUE : PROTO_FALSE;\n";
+        *out_ << "        if (__a && __b && proto::isSmallInt(__a) && proto::isSmallInt(__b)) {\n";
+        *out_ << "            return (proto::asSmallInt(__a) " << cmpOp << " proto::asSmallInt(__b)) ? PROTO_TRUE : PROTO_FALSE;\n";
         *out_ << "        }\n";
         *out_ << "        return ";
         emitFallback();
@@ -823,7 +827,7 @@ bool CppGenerator::generateFunctionInternal(const std::string& name,
         
         // Bind parameters to initial locals (with defaults aligned to the
         // last N positional params, matching PEP semantics).
-        *out_ << "    unsigned long nPos = args ? args->getSize(ctx) : 0;\n";
+        *out_ << "    proto::proto_ulong nPos = args ? args->getSize(ctx) : 0;\n";
         const size_t numDefaultsGen = defaults ? defaults->size() : 0;
         const size_t defaultStartGen = parameters.size() > numDefaultsGen
                                             ? parameters.size() - numDefaultsGen
@@ -831,7 +835,7 @@ bool CppGenerator::generateFunctionInternal(const std::string& name,
         for (size_t i = 0; i < parameters.size(); ++i) {
              auto it = std::find(orderedLocals.begin(), orderedLocals.end(), parameters[i]);
              if (it != orderedLocals.end()) {
-                 int idx = std::distance(orderedLocals.begin(), it);
+                 int idx = static_cast<int>(std::distance(orderedLocals.begin(), it));
                  if (i >= defaultStartGen && defaults) {
                      *out_ << "    initialLocals = initialLocals->setAt(ctx, " << idx
                            << ", (nPos > " << i << ") ? args->getAt(ctx, " << i << ") : ";
@@ -853,7 +857,7 @@ bool CppGenerator::generateFunctionInternal(const std::string& name,
         // Standard function logic
         *out_ << "\nconst proto::ProtoObject* " << cppFuncName << "(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {\n";
         *out_ << "    auto* env = protoPython::PythonEnvironment::get(ctx);\n";
-        *out_ << "    unsigned long nPos = args ? args->getSize(ctx) : 0;\n";
+        *out_ << "    proto::proto_ulong nPos = args ? args->getSize(ctx) : 0;\n";
         
         // Bind parameters.  Trailing parameters may carry default values
         // (PEP-style: defaults align to the LAST N positional params).
@@ -990,8 +994,8 @@ bool CppGenerator::generateClassDef(ClassDefNode* n) {
     *out_ << "        if (keys) {\n";
     *out_ << "            auto it = keys->getIterator(ctx);\n";
     *out_ << "            while (it && it->hasNext(ctx)) {\n";
-    *out_ << "                unsigned long key = it->nextKey(ctx);\n";
-    *out_ << "                const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);\n";
+    *out_ << "                proto::proto_ulong key = it->nextKey(ctx);\n";
+    *out_ << "                const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(static_cast<std::uintptr_t>(key));\n";
     *out_ << "                if (keyObj && keyObj->isString(ctx)) {\n";
     *out_ << "                    const proto::ProtoString* k = keyObj->asString(ctx);\n";
     *out_ << "                    cls_" << n->name << "->setAttribute(ctx, k, ns_" << n->name << "->getAttribute(ctx, k));\n";
@@ -1009,7 +1013,7 @@ bool CppGenerator::generateClassDef(ClassDefNode* n) {
     *out_ << "        const proto::ProtoObject* init = env->getAttribute(ctx, obj, env->getInitString());\n";
     *out_ << "        if (init && init != PROTO_NONE) {\n";
     *out_ << "            std::vector<const proto::ProtoObject*> vargs;\n";
-    *out_ << "            for (unsigned long i = 0; i < args->getSize(ctx); ++i) vargs.push_back(args->getAt(ctx, i));\n";
+    *out_ << "            for (proto::proto_ulong i = 0; i < args->getSize(ctx); ++i) vargs.push_back(args->getAt(ctx, i));\n";
     *out_ << "            env->callObject(init, vargs);\n";
     *out_ << "        }\n";
     *out_ << "        return obj;\n";
@@ -1058,12 +1062,12 @@ bool CppGenerator::generateAugAssign(AugAssignNode* n) {
                       << "        const proto::ProtoObject* __b = ";
                 if (!generateNode(n->value.get())) return false;
                 *out_ << ";\n"
-                      << "        if (__a && __b && __a->isInteger(ctx) && __b->isInteger(ctx)) {\n"
-                      << "            long __va = __a->asLong(ctx);\n"
-                      << "            long __vb = __b->asLong(ctx);\n";
+                      << "        if (__a && __b && proto::isSmallInt(__a) && proto::isSmallInt(__b)) {\n"
+                      << "            std::int64_t __va = proto::asSmallInt(__a);\n"
+                      << "            std::int64_t __vb = proto::asSmallInt(__b);\n";
                 if (overflow) {
-                    *out_ << "            long __vr;\n"
-                          << "            if (!__builtin_mul_overflow(__va, __vb, &__vr)) return ctx->fromInteger(__vr);\n";
+                    *out_ << "            std::int64_t __vr;\n"
+                          << "            if (!protoPython::checkedMul64(__va, __vb, &__vr)) return ctx->fromInteger(__vr);\n";
                 } else {
                     *out_ << "            return ctx->fromInteger(__va " << arithOp << " __vb);\n";
                 }
@@ -1470,7 +1474,7 @@ bool CppGenerator::generateLambda(LambdaNode* n) {
     *out_ << "ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {\n";
     *out_ << "        auto* env = protoPython::PythonEnvironment::get(ctx);\n";
     *out_ << "        // Bind parameters\n";
-    *out_ << "        unsigned long nPos = args ? args->getSize(ctx) : 0;\n";
+    *out_ << "        proto::proto_ulong nPos = args ? args->getSize(ctx) : 0;\n";
     {
         const size_t numDefaultsLam = n->defaults.size();
         const size_t defaultStartLam = n->parameters.size() > numDefaultsLam
@@ -1492,7 +1496,7 @@ bool CppGenerator::generateLambda(LambdaNode* n) {
 
     if (!n->vararg.empty()) {
         *out_ << "        const proto::ProtoList* vaList = ctx->newList();\n";
-        *out_ << "        for (unsigned long i = " << n->parameters.size() << "; i < nPos; ++i) vaList = vaList->appendLast(ctx, args->getAt(ctx, i));\n";
+        *out_ << "        for (proto::proto_ulong i = " << n->parameters.size() << "; i < nPos; ++i) vaList = vaList->appendLast(ctx, args->getAt(ctx, i));\n";
         *out_ << "        auto* vaTup = static_cast<const proto::ProtoObject*>(ctx->newObject(true));\n";
         *out_ << "        vaTup->setAttribute(ctx, env->getDataString(), (const proto::ProtoObject*)ctx->newTupleFromList(vaList));\n";
         *out_ << "        if (env->getTuplePrototype()) vaTup->addParent(ctx, env->getTuplePrototype());\n";

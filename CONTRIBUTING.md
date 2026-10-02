@@ -6,10 +6,13 @@ are welcome at <https://github.com/gamarino/protoPython>.
 
 ## Prerequisites
 
-- **Linux.** The runtime uses POSIX system calls and Linux-specific interfaces
-  such as `/proc/self/exe`; other platforms are not currently tested.
+- **Linux, macOS or Windows.** Development happens on Linux; continuous
+  integration also builds and tests macOS (Apple clang) and Windows (MSVC,
+  Visual Studio 2022) against an installed protoCore
+  (`.github/workflows/cross-platform.yml`). The Windows build is described in
+  [docs/INSTALLATION.md](docs/INSTALLATION.md), "Windows (MSVC)".
 - **A C++20 compiler:** GCC or Clang (the build passes GCC/Clang-specific flags
-  such as `-fno-delete-null-pointer-checks`).
+  such as `-fno-delete-null-pointer-checks`), or MSVC on Windows.
 - **CMake 3.20 or newer.**
 - **protoCore**, in one of two ways:
   - *Development (default):* check protoCore out next to this repository as

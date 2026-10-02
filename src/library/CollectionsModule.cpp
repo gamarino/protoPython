@@ -48,7 +48,7 @@ static const proto::ProtoObject* py_tuple_getter_get(proto::ProtoContext* ctx, c
         if (data) tup = data->asTuple(ctx);
     }
     if (tup && index >= 0 && (size_t)index < tup->getSize(ctx)) {
-        return tup->getAt(ctx, (size_t)index);
+        return tup->getAt(ctx, static_cast<int>((size_t)index));
     }
     return PROTO_NONE;
 }

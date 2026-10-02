@@ -51,7 +51,7 @@ static std::string obj_to_bytes(proto::ProtoContext* ctx, const proto::ProtoObje
         proto::proto_ulong n = bb->getSize(ctx);
         std::string out(n, '\0');
         for (proto::proto_ulong i = 0; i < n; ++i) {
-            out[i] = static_cast<char>(static_cast<unsigned char>(bb->getAt(ctx, i)));
+            out[i] = static_cast<char>(static_cast<unsigned char>(bb->getAt(ctx, static_cast<int>(i))));
         }
         return out;
     }
@@ -76,7 +76,7 @@ static std::string obj_to_bytes(proto::ProtoContext* ctx, const proto::ProtoObje
                 std::string out;
                 out.resize(n);
                 for (proto::proto_ulong i = 0; i < n; ++i) {
-                    out[i] = static_cast<char>(static_cast<unsigned char>(bb->getAt(ctx, i)));
+                    out[i] = static_cast<char>(static_cast<unsigned char>(bb->getAt(ctx, static_cast<int>(i))));
                 }
                 return out;
             }

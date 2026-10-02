@@ -337,7 +337,11 @@ def copyfile(src, dst, *, follow_symlinks=True):
                                 pass
                     # Windows, see:
                     # https://github.com/python/cpython/pull/7160#discussion_r195405230
-                    elif _WINDOWS and file_size > 0:
+                    # protoPython: _copyfileobj_readinto needs readinto() and
+                    # memoryview slicing, which protoPython's files and
+                    # memoryview do not provide; copyfileobj below is used
+                    # on every platform.
+                    elif _WINDOWS and file_size > 0 and hasattr(fsrc, "readinto"):
                         _copyfileobj_readinto(fsrc, fdst, min(file_size, COPY_BUFSIZE))
                         return dst
 

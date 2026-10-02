@@ -25,7 +25,8 @@ try:
     path = base / "note.txt"
     assert path.write_text("first line\nsecond line\n") == 23
     assert path.exists()
-    assert os.path.getsize(path) == 23
+    # Text mode writes each "\n" as os.linesep ("\r\n" on Windows, as CPython).
+    assert os.path.getsize(path) == 21 + 2 * len(os.linesep), os.path.getsize(path)
     assert path.read_text() == "first line\nsecond line\n"
     assert path.read_text(encoding="utf-8").splitlines() == ["first line", "second line"]
     path.write_text("replaced", encoding="utf-8")

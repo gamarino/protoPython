@@ -987,6 +987,8 @@ public:
     void raiseRecursionError(proto::ProtoContext* context);
     void raiseAssertionError(proto::ProtoContext* ctx, const proto::ProtoObject* msg = nullptr);
     void raiseZeroDivisionError(proto::ProtoContext* ctx);
+    // OverflowError(msg), the builtin type.
+    void raiseOverflowError(proto::ProtoContext* ctx, const std::string& msg);
     void raiseIndexError(proto::ProtoContext* context, const std::string& msg);
     void raiseStopIteration(proto::ProtoContext* context, const proto::ProtoObject* value = nullptr);
     void raiseStopAsyncIteration(proto::ProtoContext* context);
@@ -1179,6 +1181,10 @@ private:
      * releases every pin at once.
      */
     proto::ProtoRootSet* gcRoots_{nullptr};
+    // Windows: the constructing thread's previous invalid-parameter handler,
+    // restored by the destructor on that thread (PosixCompat.h).
+    void* previousInvalidParameterHandler_{nullptr};
+    unsigned long invalidParameterThread_{0};
 
     /**
      * @brief The builtins module's pin, replaced in place whenever the

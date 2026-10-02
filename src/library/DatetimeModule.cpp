@@ -3,8 +3,10 @@
 #include <protoPython/DiagUtils.h>
 #include <protoCore.h>
 #include <string>
+#include "TimeConv.h"
 
 #include <algorithm>
+#include <cmath>
 #include <ctime>
 #include <cstring>
 
@@ -187,6 +189,111 @@ static DateState* get_date_state(proto::ProtoContext* ctx, const proto::ProtoObj
         }
     }
     return nullptr;
+}
+
+// Calendar arithmetic of their own: the C runtime's mktime() fails before
+// 1970 on Windows and left struct tm's weekday and yearday unset there.
+
+// The year, month and day of a date or datetime instance.
+static bool ymdOf(proto::ProtoContext* ctx, const proto::ProtoObject* self, int& y, int& m, int& d) {
+    if (const DateState* st = get_date_state(ctx, self)) {
+        y = st->year; m = st->month; d = st->day;
+        return true;
+    }
+    const proto::ProtoObject* yo = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "year"));
+    const proto::ProtoObject* mo = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "month"));
+    const proto::ProtoObject* dob = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "day"));
+    if (!yo || !mo || !dob || !yo->isInteger(ctx) || !mo->isInteger(ctx) || !dob->isInteger(ctx)) return false;
+    y = static_cast<int>(yo->asLong(ctx));
+    m = static_cast<int>(mo->asLong(ctx));
+    d = static_cast<int>(dob->asLong(ctx));
+    return true;
+}
+
+// ISO weekday, Monday = 1 ... Sunday = 7.
+static int isoWeekday(int y, int m, int d) {
+    const int sundayBased = timeconv::weekdayFromDays(timeconv::daysFromCivil(y, static_cast<unsigned>(m), static_cast<unsigned>(d)));
+    return sundayBased == 0 ? 7 : sundayBased;
+}
+
+// Day of the year, 1-based.
+static int dayOfYear(int y, int m, int d) {
+    return static_cast<int>(timeconv::daysFromCivil(y, static_cast<unsigned>(m), static_cast<unsigned>(d))
+                            - timeconv::daysFromCivil(y, 1, 1)) + 1;
+}
+
+static int isoWeeksInYear(int y) {
+    auto p = [](long long year) { return (year + year / 4 - year / 100 + year / 400) % 7; };
+    return (p(y) == 4 || p(static_cast<long long>(y) - 1) == 3) ? 53 : 52;
+}
+
+// ISO 8601 year, week and weekday of a date.
+static void isoCalendar(int y, int m, int d, int& isoYear, int& isoWeek, int& isoDay) {
+    isoDay = isoWeekday(y, m, d);
+    isoYear = y;
+    isoWeek = (dayOfYear(y, m, d) - isoDay + 10) / 7;
+    if (isoWeek < 1) {
+        isoYear = y - 1;
+        isoWeek = isoWeeksInYear(isoYear);
+    } else if (isoWeek > isoWeeksInYear(y)) {
+        isoYear = y + 1;
+        isoWeek = 1;
+    }
+}
+
+// A struct tm with the calendar fields of a date and time, weekday and
+// yearday included (for strftime and timetuple).
+static void fillTm(struct tm& t, int y, int m, int d, int hour, int minute, int second) {
+    std::memset(&t, 0, sizeof(t));
+    t.tm_year = y - 1900;
+    t.tm_mon = m - 1;
+    t.tm_mday = d;
+    t.tm_hour = hour;
+    t.tm_min = minute;
+    t.tm_sec = second;
+    t.tm_wday = isoWeekday(y, m, d) % 7;
+    t.tm_yday = dayOfYear(y, m, d) - 1;
+    t.tm_isdst = -1;
+}
+
+// A POSIX timestamp split into a broken-down time (UTC or local) and
+// microseconds, rounded half to even as CPython does. Raises OverflowError,
+// OSError or ValueError, and returns false, when it cannot be represented.
+static bool timestampFields(proto::ProtoContext* ctx, const proto::ProtoObject* tsObj, bool utc,
+                            struct tm& out, int& microseconds) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!tsObj || !(tsObj->isInteger(ctx) || tsObj->isDouble(ctx))) {
+        if (env) env->raiseTypeError(ctx, "an integer or float is required");
+        return false;
+    }
+    std::int64_t secs = 0;
+    microseconds = 0;
+    if (proto::isSmallInt(tsObj)) {
+        secs = proto::asSmallInt(tsObj);
+    } else {
+        const double ts = tsObj->asDouble(ctx);
+        if (std::isnan(ts)) {
+            if (env) env->raiseValueError(ctx, PythonEnvironment::newStr(ctx, "Invalid value NaN (not a number)"));
+            return false;
+        }
+        if (!timeconv::secondsToTimeT(ts, secs)) {
+            if (env) env->raiseOverflowError(ctx, "timestamp out of range for platform time_t");
+            return false;
+        }
+        microseconds = static_cast<int>(std::nearbyint((ts - std::floor(ts)) * 1e6));
+        if (microseconds >= 1000000) { microseconds -= 1000000; secs += 1; }
+    }
+    const int err = utc ? timeconv::utcTime(secs, &out) : timeconv::localTime(secs, &out);
+    if (err != 0) {
+        if (env) env->raiseOSError(ctx, err, std::strerror(err));
+        return false;
+    }
+    if (out.tm_year + 1900 < 1 || out.tm_year + 1900 > 9999) {
+        if (env) env->raiseValueError(ctx, PythonEnvironment::newStr(ctx,
+            "year " + std::to_string(out.tm_year + 1900) + " is out of range"));
+        return false;
+    }
+    return true;
 }
 
 // time
@@ -417,53 +524,30 @@ static const proto::ProtoObject* py_date_replace(
 static const proto::ProtoObject* py_date_weekday(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList*, const proto::ProtoSparseList*) {
-    DateState* state = get_date_state(ctx, self);
-    if (!state) return ctx->fromInteger(0);
-    struct tm t;
-    memset(&t, 0, sizeof(t));
-    t.tm_year = state->year - 1900;
-    t.tm_mon = state->month - 1;
-    t.tm_mday = state->day;
-    mktime(&t);
-    return ctx->fromInteger((t.tm_wday + 6) % 7); // Mon=0, Sun=6
+    int y, m, d;
+    if (!ymdOf(ctx, self, y, m, d)) return ctx->fromInteger(0);
+    return ctx->fromInteger(isoWeekday(y, m, d) - 1); // Mon=0, Sun=6
 }
 
 static const proto::ProtoObject* py_date_isoweekday(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList*, const proto::ProtoSparseList*) {
-    DateState* state = get_date_state(ctx, self);
-    if (!state) return ctx->fromInteger(1);
-    struct tm t;
-    memset(&t, 0, sizeof(t));
-    t.tm_year = state->year - 1900;
-    t.tm_mon = state->month - 1;
-    t.tm_mday = state->day;
-    mktime(&t);
-    return ctx->fromInteger(t.tm_wday == 0 ? 7 : t.tm_wday); // Mon=1, Sun=7
+    int y, m, d;
+    if (!ymdOf(ctx, self, y, m, d)) return ctx->fromInteger(1);
+    return ctx->fromInteger(isoWeekday(y, m, d)); // Mon=1, Sun=7
 }
 
 static const proto::ProtoObject* py_date_isocalendar(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList*, const proto::ProtoSparseList*) {
-    DateState* state = get_date_state(ctx, self);
-    if (!state) return PROTO_NONE;
-    struct tm t;
-    memset(&t, 0, sizeof(t));
-    t.tm_year = state->year - 1900;
-    t.tm_mon = state->month - 1;
-    t.tm_mday = state->day;
-    mktime(&t);
-    
-    // ISO calendar week calculation is a bit complex, but we can use strftime %G, %V, %u if available
-    char y[8], w[8], d[8];
-    std::strftime(y, sizeof(y), "%G", &t);
-    std::strftime(w, sizeof(w), "%V", &t);
-    std::strftime(d, sizeof(d), "%u", &t);
-    
+    int y, m, d;
+    if (!ymdOf(ctx, self, y, m, d)) return PROTO_NONE;
+    int isoYear, isoWeek, isoDay;
+    isoCalendar(y, m, d, isoYear, isoWeek, isoDay);
     const proto::ProtoList* tup = ctx->newList();
-    tup = tup->appendLast(ctx, ctx->fromInteger(std::stoll(y)));
-    tup = tup->appendLast(ctx, ctx->fromInteger(std::stoll(w)));
-    tup = tup->appendLast(ctx, ctx->fromInteger(std::stoll(d)));
+    tup = tup->appendLast(ctx, ctx->fromInteger(isoYear));
+    tup = tup->appendLast(ctx, ctx->fromInteger(isoWeek));
+    tup = tup->appendLast(ctx, ctx->fromInteger(isoDay));
     return ctx->newTupleFromList(tup)->asObject(ctx);
 }
 
@@ -496,10 +580,10 @@ static const proto::ProtoObject* py_date_fromtimestamp(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* args, const proto::ProtoSparseList* /*kwArgs*/) {
     if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
-    double ts = args->getAt(ctx, 0)->asDouble(ctx);
-    time_t t = (time_t)ts;
-    struct tm* ltm = localtime(&t);
-    return create_date_instance(ctx, self, ltm->tm_year + 1900, ltm->tm_mon + 1, ltm->tm_mday);
+    struct tm lt;
+    int us;
+    if (!timestampFields(ctx, args->getAt(ctx, 0), false, lt, us)) return nullptr;
+    return create_date_instance(ctx, self, lt.tm_year + 1900, lt.tm_mon + 1, lt.tm_mday);
 }
 
 static const proto::ProtoObject* py_date_fromordinal(
@@ -579,9 +663,12 @@ static const proto::ProtoObject* py_date_sub(
 static const proto::ProtoObject* py_date_today(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList*, const proto::ProtoSparseList*) {
-    time_t t = time(nullptr);
-    struct tm* ltm = localtime(&t);
-    return create_date_instance(ctx, self, ltm->tm_year + 1900, ltm->tm_mon + 1, ltm->tm_mday);
+    struct tm lt;
+    if (int err = timeconv::localTime(static_cast<std::int64_t>(time(nullptr)), &lt)) {
+        if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx)) env->raiseOSError(ctx, err, std::strerror(err));
+        return nullptr;
+    }
+    return create_date_instance(ctx, self, lt.tm_year + 1900, lt.tm_mon + 1, lt.tm_mday);
 }
 
 
@@ -843,10 +930,13 @@ static const proto::ProtoObject* py_datetime_sub(
 static const proto::ProtoObject* py_datetime_now(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList*, const proto::ProtoSparseList*) {
-    time_t t = time(nullptr);
-    struct tm* ltm = localtime(&t);
-    return create_datetime_instance(ctx, self, ltm->tm_year + 1900, ltm->tm_mon + 1, ltm->tm_mday,
-                                    ltm->tm_hour, ltm->tm_min, ltm->tm_sec, 0);
+    struct tm lt;
+    if (int err = timeconv::localTime(static_cast<std::int64_t>(time(nullptr)), &lt)) {
+        if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx)) env->raiseOSError(ctx, err, std::strerror(err));
+        return nullptr;
+    }
+    return create_datetime_instance(ctx, self, lt.tm_year + 1900, lt.tm_mon + 1, lt.tm_mday,
+                                    lt.tm_hour, lt.tm_min, lt.tm_sec, 0);
 }
 
 
@@ -925,7 +1015,7 @@ static const proto::ProtoObject* py_class_call_bridge(
     if (newMethod && newMethod->asMethod(ctx)) {
         // args for __new__: (cls, *args)
         const proto::ProtoList* newArgs = ctx->newList()->appendLast(ctx, self);
-        for (size_t i = 0; i < args->getSize(ctx); ++i) newArgs = newArgs->appendLast(ctx, args->getAt(ctx, i));
+        for (size_t i = 0; i < args->getSize(ctx); ++i) newArgs = newArgs->appendLast(ctx, args->getAt(ctx, static_cast<int>(i)));
         return newMethod->asMethod(ctx)(ctx, self, nullptr, newArgs, kwargs);
     }
     return PROTO_NONE;
@@ -992,12 +1082,24 @@ static const proto::ProtoObject* py_datetime_fromtimestamp(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* args, const proto::ProtoSparseList* /*kwArgs*/) {
     if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
-    double ts = args->getAt(ctx, 0)->asDouble(ctx);
-    time_t t = (time_t)ts;
-    struct tm* ltm = localtime(&t);
-    int us = (int)((ts - (double)t) * 1000000.0);
-    return create_datetime_instance(ctx, self, ltm->tm_year + 1900, ltm->tm_mon + 1, ltm->tm_mday,
-                                    ltm->tm_hour, ltm->tm_min, ltm->tm_sec, us);
+    struct tm lt;
+    int us;
+    if (!timestampFields(ctx, args->getAt(ctx, 0), false, lt, us)) return nullptr;
+    return create_datetime_instance(ctx, self, lt.tm_year + 1900, lt.tm_mon + 1, lt.tm_mday,
+                                    lt.tm_hour, lt.tm_min, lt.tm_sec, us);
+}
+
+// datetime.utcfromtimestamp(ts): the naive UTC datetime, for every year from
+// 1 to 9999 on every platform.
+static const proto::ProtoObject* py_datetime_utcfromtimestamp(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList* /*kwArgs*/) {
+    if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
+    struct tm ut;
+    int us;
+    if (!timestampFields(ctx, args->getAt(ctx, 0), true, ut, us)) return nullptr;
+    return create_datetime_instance(ctx, self, ut.tm_year + 1900, ut.tm_mon + 1, ut.tm_mday,
+                                    ut.tm_hour, ut.tm_min, ut.tm_sec, us);
 }
 
 static const proto::ProtoObject* py_datetime_combine(
@@ -1105,10 +1207,8 @@ static const proto::ProtoObject* py_date_strftime(
     int d = (int)self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "day"))->asLong(ctx);
 
     struct tm t;
-    memset(&t, 0, sizeof(t));
-    t.tm_year = y - 1900;
-    t.tm_mon = m - 1;
-    t.tm_mday = d;
+    fillTm(t, y, m, d, 0, 0, 0);
+    t.tm_isdst = 0;
 
     char buf[256];
     if (std::strftime(buf, sizeof(buf), format.c_str(), &t)) {
@@ -1140,14 +1240,9 @@ static const proto::ProtoObject* py_datetime_strftime(
     int sec = (int)self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "second"))->asLong(ctx);
     
     struct tm t;
-    memset(&t, 0, sizeof(t));
-    t.tm_year = y - 1900;
-    t.tm_mon = m - 1;
-    t.tm_mday = d;
-    t.tm_hour = hour;
-    t.tm_min = min;
-    t.tm_sec = sec;
-    
+    fillTm(t, y, m, d, hour, min, sec);
+    t.tm_isdst = 0;
+
     char buf[256];
     if (std::strftime(buf, sizeof(buf), format.c_str(), &t)) {
         return proto::ProtoString::fromUTF8(ctx, buf)->asObject(ctx);
@@ -1164,11 +1259,7 @@ static const proto::ProtoObject* py_date_timetuple(
     int d = (int)self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "day"))->asLong(ctx);
     
     struct tm t;
-    memset(&t, 0, sizeof(t));
-    t.tm_year = y - 1900;
-    t.tm_mon = m - 1;
-    t.tm_mday = d;
-    mktime(&t); // Fill tm_wday, tm_yday
+    fillTm(t, y, m, d, 0, 0, 0);
     
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoObject* timeMod = env->resolve("time", ctx);
@@ -1176,7 +1267,6 @@ static const proto::ProtoObject* py_date_timetuple(
     const proto::ProtoObject* struct_time = timeMod->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "struct_time"));
     if (!struct_time) return PROTO_NONE;
     
-    const proto::ProtoList* args = ctx->newList();
     const proto::ProtoList* tup = ctx->newList();
     tup = tup->appendLast(ctx, ctx->fromInteger(t.tm_year + 1900));
     tup = tup->appendLast(ctx, ctx->fromInteger(t.tm_mon + 1));
@@ -1188,8 +1278,7 @@ static const proto::ProtoObject* py_date_timetuple(
     tup = tup->appendLast(ctx, ctx->fromInteger(t.tm_yday + 1));
     tup = tup->appendLast(ctx, ctx->fromInteger(t.tm_isdst));
     
-    args = args->appendLast(ctx, ctx->newTupleFromList(tup)->asObject(ctx));
-    return struct_time->call(ctx, nullptr, nullptr, struct_time, args, nullptr);
+    return env->callObject(struct_time, {ctx->newTupleFromList(tup)->asObject(ctx)});
 }
 
 static const proto::ProtoObject* py_datetime_timetuple(
@@ -1204,14 +1293,7 @@ static const proto::ProtoObject* py_datetime_timetuple(
     int sec = (int)self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "second"))->asLong(ctx);
     
     struct tm t;
-    memset(&t, 0, sizeof(t));
-    t.tm_year = y - 1900;
-    t.tm_mon = m - 1;
-    t.tm_mday = d;
-    t.tm_hour = hour;
-    t.tm_min = min;
-    t.tm_sec = sec;
-    mktime(&t);
+    fillTm(t, y, m, d, hour, min, sec);
     
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoObject* timeMod = env->resolve("time", ctx);
@@ -1229,9 +1311,8 @@ static const proto::ProtoObject* py_datetime_timetuple(
     tup = tup->appendLast(ctx, ctx->fromInteger(t.tm_yday + 1));
     tup = tup->appendLast(ctx, ctx->fromInteger(t.tm_isdst));
     
-    const proto::ProtoList* args = ctx->newList();
-    args = args->appendLast(ctx, ctx->newTupleFromList(tup)->asObject(ctx));
-    return struct_time->call(ctx, nullptr, nullptr, struct_time, args, nullptr);
+    if (!struct_time || struct_time == PROTO_NONE) return PROTO_NONE;
+    return env->callObject(struct_time, {ctx->newTupleFromList(tup)->asObject(ctx)});
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
@@ -1443,6 +1524,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
                                           ctx->fromMethod(nullptr, py_datetime_now));
     datetimeType = datetimeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "fromtimestamp"), 
                                           ctx->fromMethod(nullptr, py_datetime_fromtimestamp));
+    datetimeType = datetimeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "utcfromtimestamp"),
+                                          ctx->fromMethod(nullptr, py_datetime_utcfromtimestamp));
 
     datetimeType = datetimeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "replace"), 
                                           ctx->fromMethod(nullptr, py_datetime_replace));

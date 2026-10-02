@@ -94,3 +94,24 @@ jobs:
       - name: Test suite
         working-directory: protoPython
         run: ctest --test-dir build -j2 --output-on-failure --timeout 600 -E "$CLOCK_DEPENDENT_TESTS" < /dev/null
+
+      # The Windows ZIP: built with cpack, unpacked into a fresh directory and
+      # run from there, with nothing from the build tree on PATH -- only
+      # protoCore's installed bin directory, since protoCore's DLL is not bundled
+      # (docs/INSTALLATION.md, "Packaging").
+      - name: Windows ZIP package, run from a clean directory
+        if: runner.os == 'Windows'
+        working-directory: protoPython/build
+        run: |
+          cpack -G ZIP
+          zip=$(ls protopython-*-win64.zip | head -1)
+          dest="$(cygpath -u "$RUNNER_TEMP")/zip-run"
+          rm -rf "$dest" && mkdir -p "$dest"
+          if command -v unzip >/dev/null; then unzip -q "$zip" -d "$dest"; else 7z x -o"$dest" "$zip" >/dev/null; fi
+          find "$dest" -maxdepth 3 -name '*.exe' -o -maxdepth 3 -name '*.dll'
+          root=$(ls -d "$dest"/*/ | head -1)
+          prefix_bin=$(cygpath -u "$GITHUB_WORKSPACE/prefix/bin")
+          cd "$dest"
+          PATH="$prefix_bin:/usr/bin:/c/Windows/System32" "${root}bin/protopy.exe" -c "import sys, json, re, tempfile; print(sys.platform, json.dumps([1, 2]), re.match(r'^a\$', 'a\nb'))"
+          echo "Windows ZIP: $zip ran from a clean directory" >> "$GITHUB_STEP_SUMMARY"
+

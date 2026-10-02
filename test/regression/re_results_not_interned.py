@@ -76,35 +76,36 @@ assert getattr(m, "group")(2) == "0123456789"
 # Memory bound: many distinct results must not accumulate. The test is run
 # under PROTOCORE_HEAP_LIMIT_CELLS (see CMakeLists.txt) so the collector
 # actually runs; interned results could never be reclaimed at all.
+#
+# sys._current_rss() is protoPython's resident set size of the process in
+# bytes (/proc on Linux, task_info on macOS, GetProcessMemoryInfo on Windows),
+# or -1 where it cannot be read. The token count is checked everywhere; only
+# the memory bound depends on it, and a platform without it says so.
 def rss_kb():
-    try:
-        f = open("/proc/self/status")
-    except OSError:
-        return -1  # no /proc (Windows, macOS): the memory check is skipped
-    data = f.read()
-    f.close()
-    for line in data.split("\n"):
-        if line.startswith("VmRSS"):
-            return int(line.split()[1])
-    return -1
+    rss = sys._current_rss()
+    return rss // 1024 if rss >= 0 else -1
 
 
 start = rss_kb()
+WORD = re.compile(r"[a-z0-9_]+")
+n = 0
+for i in range(20000):
+    text = "item_%d_value_%d end" % (i, i * 7)
+    n += len(WORD.findall(text))
+# Two tokens per line: "item_<i>_value_<j>" and "end".
+assert n == 40000, n
 if start > 0:
-    WORD = re.compile(r"[a-z0-9_]+")
-    n = 0
-    for i in range(20000):
-        text = "item_%d_value_%d end" % (i, i * 7)
-        n += len(WORD.findall(text))
     growth = rss_kb() - start
-    # Two tokens per line: "item_<i>_value_<j>" and "end".
-    assert n == 40000, n
-    # Measured under PROTOCORE_HEAP_LIMIT_CELLS=500000, three runs each and a
-    # spread under 0.2 MB: this loop grew RSS by about 42.1 MB with interned
-    # results and about 29.1 MB with collectable ones. The bound sits between
-    # the two, with headroom over the current figure so the test is not a
-    # flake. What remains is mostly the "%"-formatted subjects, which are still
-    # interned; see protoPython_interned_data_strings_options.md.
+    # Measured on Linux under PROTOCORE_HEAP_LIMIT_CELLS=500000, three runs
+    # each and a spread under 0.2 MB: this loop grew RSS by about 42.1 MB with
+    # interned results and about 29.1 MB with collectable ones. The bound sits
+    # between the two, with headroom over the current figure so the test is
+    # not a flake. What remains is mostly the "%"-formatted subjects, which are
+    # still interned; see protoPython_interned_data_strings_options.md.
     assert growth < 35000, "RSS grew by %d KB over 20000 re calls" % growth
+    print("re_results_not_interned: RSS grew by %d KB" % growth)
+else:
+    print("re_results_not_interned: SKIPPED the RSS bound: sys._current_rss() "
+          "is not available on " + sys.platform)
 
 print("re_results_not_interned: ok")
