@@ -456,17 +456,28 @@ bool CppGenerator::generateWhile(WhileNode* n) {
     // thread (and every other thread parked waiting for STW) stalls.
     // The check is a single relaxed atomic load on the fast path.
     if (n->orelse) {
+        // The else clause runs after the loop, outside it: a `break` or
+        // `continue` there acts on the enclosing loop, so it is emitted after
+        // the C++ loop, guarded by a flag set when the condition turns false
+        // (not by a `break` of this loop).
+        static int whileElseId = 0;
+        const int id = whileElseId++;
+        *out_ << "{\n";
+        *out_ << "bool __while_done_" << id << " = false;\n";
         *out_ << "while (true) {\n";
         *out_ << "    ctx->safepoint();\n";
         *out_ << "    if (!env->isTrue(";
         if (!generateNode(n->test.get())) return false;
         *out_ << ")) {\n";
-        if (!generateNode(n->orelse.get())) return false;
-        *out_ << ";\n";
+        *out_ << "        __while_done_" << id << " = true;\n";
         *out_ << "        break;\n";
         *out_ << "    }\n";
         if (!generateNode(n->body.get())) return false;
         *out_ << ";\n}\n";
+        *out_ << "if (__while_done_" << id << ") {\n";
+        if (!generateNode(n->orelse.get())) return false;
+        *out_ << ";\n}\n";
+        *out_ << "}\n";
     } else {
         *out_ << "while (env->isTrue(";
         if (!generateNode(n->test.get())) return false;
@@ -1337,6 +1348,9 @@ bool CppGenerator::generateFor(ForNode* n) {
     *out_ << "        auto* __iter_" << id << " = env->iter(";
     if (!generateNode(n->iter.get())) return false;
     *out_ << ");\n";
+    // The else clause runs after the loop, outside it (see generateWhile):
+    // emitted after the C++ loop, when the iterator was exhausted.
+    if (n->orelse) *out_ << "        bool __for_done_" << id << " = false;\n";
     *out_ << "        while (true) {\n";
     *out_ << "            ctx->safepoint();\n";
     *out_ << "            auto* __val_" << id << " = env->next(__iter_" << id << ");\n";
@@ -1345,10 +1359,7 @@ bool CppGenerator::generateFor(ForNode* n) {
     *out_ << "                break;\n";
     *out_ << "            }\n";
     *out_ << "            if (!__val_" << id << " || __val_" << id << " == PROTO_NONE) {\n";
-    if (n->orelse) {
-        if (!generateNode(n->orelse.get())) return false;
-        *out_ << ";\n";
-    }
+    if (n->orelse) *out_ << "                __for_done_" << id << " = true;\n";
     *out_ << "                break;\n";
     *out_ << "            }\n";
     
@@ -1379,6 +1390,11 @@ bool CppGenerator::generateFor(ForNode* n) {
     
     if (!generateNode(n->body.get())) return false;
     *out_ << "        }\n";
+    if (n->orelse) {
+        *out_ << "        if (__for_done_" << id << ") {\n";
+        if (!generateNode(n->orelse.get())) return false;
+        *out_ << ";\n        }\n";
+    }
     *out_ << "    }";
     return true;
 }
