@@ -592,6 +592,22 @@ set_tests_properties(protopy_file_close_on_collect PROPERTIES
     ENVIRONMENT "PROTOCORE_HEAP_LIMIT_CELLS=1000000"
     TIMEOUT 120
     LABELS "regression_gate")
+# __main__.__file__ is absolute and sys.argv[0] is the path as given (the
+# script is run by a relative path); `-c` code has no __main__.__file__.
+add_test(NAME protopy_main_file_absolute
+    COMMAND $<TARGET_FILE:protopy> test/regression/main_file_absolute.py)
+set_tests_properties(protopy_main_file_absolute PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "main_file_absolute: ok"
+    TIMEOUT 120
+    LABELS "regression_gate")
+add_test(NAME protopy_c_main_has_no_file
+    COMMAND $<TARGET_FILE:protopy> -c
+            "import __main__, sys; assert not hasattr(__main__, '__file__'), __main__.__file__; assert sys.argv[0] == '-c', sys.argv; print('c_main_has_no_file: ok')")
+set_tests_properties(protopy_c_main_has_no_file PROPERTIES
+    PASS_REGULAR_EXPRESSION "c_main_has_no_file: ok"
+    TIMEOUT 120
+    LABELS "regression_gate")
 # Objects held only by running frames survive heap-limited collections: every
 # context is chained onto the thread's current one (MemoryManager.hpp). The
 # cross-platform workflow runs it repeatedly.
