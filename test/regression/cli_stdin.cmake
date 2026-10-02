@@ -78,6 +78,34 @@ check(attributes "" "0 True False utf-8 strict <stdin> r False False True <stdin
 check(input_replaced_stdin "ignored\n" "from StringIO\n"
     -c "import io, sys\nsys.stdin = io.StringIO('from StringIO\\n')\nprint(input())")
 
+# Threads reading sys.stdin concurrently from a pipe each get whole lines,
+# and every line exactly once (test/regression/stdin_threads.py). The pipe is
+# `cmake -E cat <file> | protopy`, so reads return pipe-sized chunks.
+set(_lines_count 20000)
+# The filler is the one stdin_threads.py expects.
+string(REPEAT "x" 90 _filler)
+# Written in blocks: appending every line to one CMake string is quadratic.
+file(WRITE "${WORK}/stdin_threads.in" "")
+math(EXPR _blocks "${_lines_count} / 500 - 1")
+foreach(b RANGE ${_blocks})
+    set(_text "")
+    foreach(k RANGE 499)
+        math(EXPR i "${b} * 500 + ${k}")
+        string(APPEND _text "${i}:${_filler}\n")
+    endforeach()
+    file(APPEND "${WORK}/stdin_threads.in" "${_text}")
+endforeach()
+execute_process(
+    COMMAND "${CMAKE_COMMAND}" -E cat "${WORK}/stdin_threads.in"
+    COMMAND "${PROTOPY}" "${CMAKE_CURRENT_LIST_DIR}/stdin_threads.py" ${_lines_count}
+    OUTPUT_VARIABLE out ERROR_VARIABLE err RESULTS_VARIABLE rcs)
+if(NOT rcs STREQUAL "0;0" OR NOT out STREQUAL "stdin_threads: ${_lines_count} whole lines\n")
+    message(SEND_ERROR "stdin_threads: exit ${rcs}\n--- got ---\n${out}\n--- stderr ---\n${err}")
+    math(EXPR _failures "${_failures} + 1")
+else()
+    message(STATUS "stdin_threads: ok")
+endif()
+
 if(_failures GREATER 0)
     message(FATAL_ERROR "${_failures} standard input case(s) failed")
 endif()

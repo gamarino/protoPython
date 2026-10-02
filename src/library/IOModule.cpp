@@ -8,6 +8,7 @@
 #include <sstream>
 #include <string>
 #include <iostream>
+#include <mutex>
 #include <streambuf>
 #include <fstream>
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
@@ -142,6 +143,12 @@ static const proto::ProtoObject* io_read_result(proto::ProtoContext* context, co
 // UTF-8: reads translate "\r\n" and "\r" to "\n" when newline is None, and
 // writes translate "\n" to os.linesep ("\r\n" on Windows) when newline is
 // None, or to the newline given, as CPython's TextIOWrapper.
+//
+// Every file object over one descriptor shares one FdOwner (sys.stdin and
+// sys.stdin.buffer do), and threads share file objects, so the owner's state
+// is guarded by `lock`: each read, readline, write, seek, tell, truncate and
+// close holds it for the whole operation (FdOwnerLock), and concurrent
+// readline() calls each get whole lines.
 struct FdOwner {
     int fd;
     bool closefd;
@@ -150,6 +157,27 @@ struct FdOwner {
 #if defined(_WIN32)
     wchar_t pendingSurrogate = 0;  // console input: first half of a UTF-16 pair
 #endif
+    std::mutex lock;
+};
+
+// Holds an FdOwner's lock for one operation. The holder may block in a read
+// or park at a GC safepoint while it holds the lock, so a contended lock is
+// waited for inside an unmanaged region: the collector never waits for a
+// thread queued here (the same rule as the dict commit stripes and
+// _thread.lock). No Python code runs while the lock is held.
+class FdOwnerLock {
+public:
+    FdOwnerLock(proto::ProtoContext* ctx, FdOwner* owner) : lk_(owner->lock, std::try_to_lock) {
+        if (!lk_.owns_lock()) {
+            proto::ProtoContext::UnmanagedScope u(ctx);
+            lk_.lock();
+        }
+    }
+    FdOwnerLock(const FdOwnerLock&) = delete;
+    FdOwnerLock& operator=(const FdOwnerLock&) = delete;
+
+private:
+    std::unique_lock<std::mutex> lk_;
 };
 
 // Runs on protoCore's collector thread.
@@ -529,8 +557,11 @@ static const proto::ProtoObject* io_fd_write(proto::ProtoContext* ctx, const pro
         }
         return nullptr;
     }
-    io_drop_read_ahead(owner);
-    if (!io_write_all(ctx, owner->fd, s)) return nullptr;
+    {
+        FdOwnerLock guard(ctx, owner);
+        io_drop_read_ahead(owner);
+        if (!io_write_all(ctx, owner->fd, s)) return nullptr;
+    }
     if (text) return ctx->fromInteger(static_cast<long long>(data->asString(ctx)->getSize(ctx)));
     return ctx->fromInteger(static_cast<long long>(s.size()));
 }
@@ -551,8 +582,12 @@ static const proto::ProtoObject* py_io_read(
         FdOwner* owner = io_fd_owner(context, self);
         if (owner) {
             const bool text = io_flag(context, self, "__text__");
+            const bool universal = io_flag(context, self, "__universal__");
             std::string out;
-            if (!io_fd_read(context, owner, text, io_flag(context, self, "__universal__"), n, out)) return nullptr;
+            {
+                FdOwnerLock guard(context, owner);
+                if (!io_fd_read(context, owner, text, universal, n, out)) return nullptr;
+            }
             return io_fd_result(context, text, out);
         }
     }
@@ -594,6 +629,7 @@ static const proto::ProtoObject* py_io_close(
         FdOwner* owner = io_fd_owner(context, self);
         const bool closefd = !owner || owner->closefd;
         if (owner) {
+            FdOwnerLock guard(context, owner);
             owner->fd = -1;
             owner->readAhead.clear();
         }
@@ -657,11 +693,15 @@ static std::string io_consume_line(const proto::ProtoObject* self,
 static const proto::ProtoObject* io_fd_next_line(proto::ProtoContext* context, const proto::ProtoObject* self,
                                                  FdOwner* owner, bool& atEnd, long long limit = -1) {
     std::string line;
-    if (limit == 0) return io_fd_result(context, io_flag(context, self, "__text__"), line);
-    if (!io_fd_readline(context, owner, io_flag(context, self, "__universal__"), line)) return nullptr;
-    atEnd = line.empty();
     const bool text = io_flag(context, self, "__text__");
-    io_limit_line(owner, text, limit, line);
+    if (limit == 0) return io_fd_result(context, text, line);
+    const bool universal = io_flag(context, self, "__universal__");
+    {
+        FdOwnerLock guard(context, owner);
+        if (!io_fd_readline(context, owner, universal, line)) return nullptr;
+        io_limit_line(owner, text, limit, line);
+    }
+    atEnd = line.empty();
     return io_fd_result(context, text, line);
 }
 
@@ -874,6 +914,7 @@ static const proto::ProtoObject* py_io_seek(
     if (BufferFile* bf = io_buffer_file(ctx, self)) return io_buffer_seek(ctx, self, bf, offset, whence);
     FdOwner* owner = io_fd_owner(ctx, self);
     if (!owner || owner->fd < 0) return ctx->fromInteger(0);
+    FdOwnerLock guard(ctx, owner);
     // A relative seek starts from where the caller is, not from the end of
     // what was read ahead.
     io_drop_read_ahead(owner);
@@ -893,12 +934,19 @@ static const proto::ProtoObject* py_io_tell(
     if (BufferFile* bf = io_buffer_file(ctx, self)) return ctx->fromInteger(static_cast<long long>(bf->pos));
     FdOwner* owner = io_fd_owner(ctx, self);
     if (!owner || owner->fd < 0) return ctx->fromInteger(0);
-    const long long pos = io_lseek(owner->fd, 0, SEEK_CUR);
-    if (pos < 0) {
-        io_raise_errno(ctx, errno);
+    long long pos;
+    int err = 0;
+    {
+        FdOwnerLock guard(ctx, owner);
+        pos = io_lseek(owner->fd, 0, SEEK_CUR);
+        if (pos < 0) err = errno;
+        else pos -= static_cast<long long>(owner->readAhead.size());
+    }
+    if (err != 0) {
+        io_raise_errno(ctx, err);
         return nullptr;
     }
-    return ctx->fromInteger(pos - static_cast<long long>(owner->readAhead.size()));
+    return ctx->fromInteger(pos);
 }
 
 // file.truncate(size=None) on a descriptor file: the new size.
@@ -912,6 +960,7 @@ static const proto::ProtoObject* py_io_truncate(
     }
     FdOwner* owner = io_fd_owner(ctx, self);
     if (!owner || owner->fd < 0) return ctx->fromInteger(0);
+    FdOwnerLock guard(ctx, owner);
     io_drop_read_ahead(owner);
     long long size = io_lseek(owner->fd, 0, SEEK_CUR);
     if (posArgs && posArgs->getSize(ctx) > 0 && posArgs->getAt(ctx, 0)->isInteger(ctx))
