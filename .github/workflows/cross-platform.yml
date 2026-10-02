@@ -95,23 +95,38 @@ jobs:
         working-directory: protoPython
         run: ctest --test-dir build -j2 --output-on-failure --timeout 600 -E "$CLOCK_DEPENDENT_TESTS" < /dev/null
 
-      # The Windows ZIP: built with cpack, unpacked into a fresh directory and
-      # run from there, with nothing from the build tree on PATH -- only
-      # protoCore's installed bin directory, since protoCore's DLL is not bundled
-      # (docs/INSTALLATION.md, "Packaging").
+      # The Windows package: every generator the configuration enabled (the ZIP,
+      # and the NSIS installer when makensis is on the runner). The ZIP is
+      # unpacked into a fresh directory and run from there with PATH holding
+      # only the Windows system directories: nothing from the build tree or the
+      # protoCore prefix can be found, so every DLL protopy.exe needs must come
+      # from the ZIP. The runner has the MSVC runtime installed system-wide, so
+      # its DLLs are checked by name.
       - name: Windows ZIP package, run from a clean directory
         if: runner.os == 'Windows'
         working-directory: protoPython/build
         run: |
-          cpack -G ZIP
+          cpack
+          if grep -q 'CPACK_GENERATOR "[^"]*NSIS' CPackConfig.cmake; then
+            ls protopython-*-win64.exe || { echo "NSIS was enabled but built no installer"; exit 1; }
+            echo "Windows installer built: $(ls protopython-*-win64.exe)" >> "$GITHUB_STEP_SUMMARY"
+          fi
           zip=$(ls protopython-*-win64.zip | head -1)
+          listing=$(7z l "$zip" | tr -d '\r')
+          for dll in protoPython.dll vcruntime140.dll msvcp140.dll; do
+            grep -qi "bin.$dll\$" <<<"$listing" || { echo "the ZIP has no bin/$dll"; exit 1; }
+          done
+          grep -qiE 'bin.protoCore(-[0-9]+)?\.dll$' <<<"$listing" || { echo "the ZIP has no protoCore DLL"; exit 1; }
           dest="$(cygpath -u "$RUNNER_TEMP")/zip-run"
-          rm -rf "$dest" && mkdir -p "$dest"
-          if command -v unzip >/dev/null; then unzip -q "$zip" -d "$dest"; else 7z x -o"$dest" "$zip" >/dev/null; fi
-          find "$dest" -maxdepth 3 -name '*.exe' -o -maxdepth 3 -name '*.dll'
-          root=$(ls -d "$dest"/*/ | head -1)
-          prefix_bin=$(cygpath -u "$GITHUB_WORKSPACE/prefix/bin")
-          cd "$dest"
-          PATH="$prefix_bin:/usr/bin:/c/Windows/System32" "${root}bin/protopy.exe" -c "import sys, json, re, tempfile; print(sys.platform, json.dumps([1, 2]), re.match(r'^a\$', 'a\nb'))"
-          echo "Windows ZIP: $zip ran from a clean directory" >> "$GITHUB_STEP_SUMMARY"
+          rm -rf "$dest" && mkdir -p "$dest/work"
+          7z x -o"$dest" "$zip" >/dev/null
+          exe=$(ls "$dest"/*/bin/protopy.exe)
+          printf 'import sys, json, re, tempfile\nprint(sys.platform, json.dumps([1, 2]), sum(range(11)))\n' > "$dest/work/check.py"
+          cd "$dest/work"
+          sys="$(cygpath -u "$WINDIR")/System32"
+          clean_path="$sys:$(cygpath -u "$WINDIR"):$sys/Wbem"
+          out=$(/usr/bin/env PATH="$clean_path" "$exe" check.py | tr -d '\r')
+          echo "$out"
+          [ "$out" = "win32 [1, 2] 55" ] || { echo "unexpected output from the unpacked protopy"; exit 1; }
+          echo "Windows ZIP: $zip ran from a clean directory with only system directories on PATH" >> "$GITHUB_STEP_SUMMARY"
 
