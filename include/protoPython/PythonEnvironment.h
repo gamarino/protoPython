@@ -1181,6 +1181,10 @@ private:
      * releases every pin at once.
      */
     proto::ProtoRootSet* gcRoots_{nullptr};
+    // Windows: the constructing thread's previous invalid-parameter handler,
+    // restored by the destructor on that thread (PosixCompat.h).
+    void* previousInvalidParameterHandler_{nullptr};
+    unsigned long invalidParameterThread_{0};
 
     /**
      * @brief The builtins module's pin, replaced in place whenever the

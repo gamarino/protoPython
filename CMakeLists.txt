@@ -1255,6 +1255,17 @@ if(PROTOPYTHON_BUILD_EXAMPLES)
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
         TIMEOUT 60
         LABELS "regression_gate")
+    # An embedding program keeps its own invalid-parameter handler (Windows);
+    # a bad descriptor is an OSError, never the end of the process.
+    add_executable(embedding_invalid_parameter_scope test/embedding/invalid_parameter_scope.cpp)
+    target_link_libraries(embedding_invalid_parameter_scope PRIVATE protoPython protoCore)
+    target_compile_definitions(embedding_invalid_parameter_scope PRIVATE
+        STDLIB_PATH="${CMAKE_SOURCE_DIR}/lib/python3.14")
+    add_test(NAME embedding_invalid_parameter_scope COMMAND embedding_invalid_parameter_scope)
+    set_tests_properties(embedding_invalid_parameter_scope PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        TIMEOUT 60
+        LABELS "regression_gate")
 endif()
 
 # --- Install RPATH: installed binaries and libs find each other without LD_LIBRARY_PATH ---

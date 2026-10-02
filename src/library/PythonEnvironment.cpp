@@ -4518,8 +4518,8 @@ static const proto::ProtoObject* py_dict_getitem(
             std::string ks;
             key->asString(context)->toUTF8String(context, ks);
             if (ks == "signal" || ks == "__dict__") {
-                fprintf(stderr, "DEBUG_GETITEM: key='%s' hash=%lu dictSize=%lu has=%d self=%p\n",
-                        ks.c_str(), hash, dict ? dict->getSize(context) : 0,
+                fprintf(stderr, "DEBUG_GETITEM: key='%s' hash=%llu dictSize=%llu has=%d self=%p\n",
+                        ks.c_str(), static_cast<unsigned long long>(hash), static_cast<unsigned long long>(dict ? dict->getSize(context) : 0),
                         dict ? (int)dict->has(context, hash) : -1, (void*)realSelf);
                 fflush(stderr);
             }
@@ -6962,7 +6962,7 @@ static const proto::ProtoObject* py_tuple_call(
         const proto::ProtoList* otherL = skipFastPath2 ? nullptr : iterable->asList(context);
         if (otherL) {
             proto::proto_ulong sz = otherL->getSize(context);
-            if (get_env_diag()) fprintf(stderr, "DEBUG: py_tuple_call asList size=%lu\n", sz);
+            if (get_env_diag()) fprintf(stderr, "DEBUG: py_tuple_call asList size=%llu\n", static_cast<unsigned long long>(sz));
             for (proto::proto_ulong i = 0; i < sz; ++i) {
                 l = const_cast<proto::ProtoList*>(l->appendLast(context, otherL->getAt(context, static_cast<int>(i))));
             }
@@ -6970,7 +6970,7 @@ static const proto::ProtoObject* py_tuple_call(
             const proto::ProtoTuple* otherT = iterable->asTuple(context);
             if (otherT) {
                 proto::proto_ulong sz = otherT->getSize(context);
-                if (get_env_diag()) fprintf(stderr, "DEBUG: py_tuple_call asTuple size=%lu\n", sz);
+                if (get_env_diag()) fprintf(stderr, "DEBUG: py_tuple_call asTuple size=%llu\n", static_cast<unsigned long long>(sz));
                 for (proto::proto_ulong i = 0; i < sz; ++i) {
                     l = const_cast<proto::ProtoList*>(l->appendLast(context, otherT->getAt(context, static_cast<int>(i))));
                 }
@@ -14554,7 +14554,7 @@ static const proto::ProtoObject* py_str_join(
     int posOff = 0;
     const proto::ProtoString* sep = str_from_self_or_arg(context, self, posArgs, &posOff);
     if (!sep || !posArgs || posArgs->getSize(context) < static_cast<proto::proto_ulong>(1 + posOff)) {
-        if (get_env_diag()) fprintf(stderr, "DEBUG: py_str_join invalid args sep=%p posArgs=%p size=%lu\n", (void*)sep, (void*)posArgs, posArgs ? posArgs->getSize(context) : 0);
+        if (get_env_diag()) fprintf(stderr, "DEBUG: py_str_join invalid args sep=%p posArgs=%p size=%llu\n", (void*)sep, (void*)posArgs, static_cast<unsigned long long>(posArgs ? posArgs->getSize(context) : 0));
         return nullptr;
     }
     std::string sepStr;
@@ -16620,10 +16620,6 @@ PythonEnvironment* PythonEnvironment::threadEnvOutOfLine() { return s_threadEnv;
 void PythonEnvironment::setThreadEnvOutOfLine(PythonEnvironment* env) { s_threadEnv = env; }
 bool PythonEnvironment::pendingExceptionFlagOutOfLine() { return s_pendingExcFlag; }
 
-// The C runtime ends the process when a function gets an invalid argument (a
-// closed descriptor, an out-of-range struct tm); POSIX returns an error
-// instead. Report the error, as CPython does with _Py_BEGIN_SUPPRESS_IPH.
-static void ignoreInvalidParameter(const wchar_t*, const wchar_t*, const wchar_t*, unsigned int, uintptr_t) {}
 #endif
 
 PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::vector<std::string>& searchPaths,
@@ -16639,7 +16635,12 @@ PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::v
     int prev = s_pythonEnvInstanceCount.fetch_add(1, std::memory_order_relaxed);
     // Multiple instances check removed for silence
 #if defined(_WIN32)
-    _set_invalid_parameter_handler(ignoreInvalidParameter);
+    // Invalid C runtime arguments become errors on this thread (and on the
+    // Python threads, ThreadModule.cpp), not process-wide: an embedding
+    // program keeps its own handler (PosixCompat.h). Restored by the
+    // destructor when it runs on this thread.
+    previousInvalidParameterHandler_ = reinterpret_cast<void*>(protopy_ignore_invalid_parameters());
+    invalidParameterThread_ = protopy_current_thread_id();
 #endif
     s_mainThreadId = std::this_thread::get_id();
     registerContext(rootContext_, this);
@@ -16667,6 +16668,11 @@ PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::v
 }
 
 PythonEnvironment::~PythonEnvironment() {
+#if defined(_WIN32)
+    if (invalidParameterThread_ == protopy_current_thread_id()) {
+        protopy_restore_invalid_parameters(reinterpret_cast<protopy_iph>(previousInvalidParameterHandler_));
+    }
+#endif
     // P3 D12: release every permanent pin at once.
     //
     // This used to be ~150 hand-written `std::remove` calls on
@@ -18881,8 +18887,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             const proto::ProtoObject* im_func = methodObj->getAttribute(ctx, env->getFuncDunderString());
 
             if (get_env_diag()) {
-                fprintf(stderr, "DEBUG METHOD CALL: methodObj=%p im_self=%p im_func=%p actualArgsSize=%lu\n",
-                        (void*)methodObj, (void*)im_self, (void*)im_func, actualArgs ? actualArgs->getSize(ctx) : 0);
+                fprintf(stderr, "DEBUG METHOD CALL: methodObj=%p im_self=%p im_func=%p actualArgsSize=%llu\n",
+                        (void*)methodObj, (void*)im_self, (void*)im_func, static_cast<unsigned long long>(actualArgs ? actualArgs->getSize(ctx) : 0));
                 fflush(stderr);
             }
             
@@ -18894,7 +18900,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                     }
                 }
                 if (get_env_diag()) {
-                    fprintf(stderr, "DEBUG METHOD CALL: forwarding to im_func=%p subArgsSize=%lu\n", (void*)im_func, subArgs->getSize(ctx));
+                    fprintf(stderr, "DEBUG METHOD CALL: forwarding to im_func=%p subArgsSize=%llu\n", (void*)im_func, static_cast<unsigned long long>(subArgs->getSize(ctx)));
                     fflush(stderr);
                 }
                 return invokePythonCallable(ctx, im_func, subArgs, kwargs);
@@ -22982,7 +22988,7 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
 
     const proto::ProtoSparseList* oldAttrs = mod->getAttributes(ctx);
     if (oldAttrs) {
-        if (get_env_diag()) fprintf(stderr, "DEBUG: executeModule %s - copying %lu attributes\n", moduleName.c_str(), oldAttrs->getSize(ctx));
+        if (get_env_diag()) fprintf(stderr, "DEBUG: executeModule %s - copying %llu attributes\n", moduleName.c_str(), static_cast<unsigned long long>(oldAttrs->getSize(ctx)));
         auto* it = const_cast<proto::ProtoSparseListIterator*>(oldAttrs->getIterator(ctx));
         while (it && it->hasNext(ctx)) {
             proto::proto_ulong key = it->nextKey(ctx);
@@ -23106,10 +23112,10 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                                     // 2. Set as dict item (Python-side lookup)
                                     const proto::ProtoObject* dataAttr = mods->getAttribute(ctx, getDataString());
                                     if (protoPython::diagModEnabled()) {
-                                        fprintf(stderr, "DEBUG_MODDATA: module=%s mods=%p dataAttr=%p hasSparse=%d modNameS_hash=%lu\n",
+                                        fprintf(stderr, "DEBUG_MODDATA: module=%s mods=%p dataAttr=%p hasSparse=%d modNameS_hash=%llu\n",
                                                 moduleName.c_str(), (void*)mods, (void*)dataAttr,
                                                 (dataAttr && dataAttr->asSparseList(ctx)) ? 1 : 0,
-                                                (proto::proto_ulong)modNameS->getHash(ctx));
+                                                static_cast<unsigned long long>((proto::proto_ulong)modNameS->getHash(ctx)));
                                         fflush(stderr);
                                     }
                                     if (dataAttr && dataAttr != PROTO_NONE) {

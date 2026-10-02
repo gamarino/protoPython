@@ -22,6 +22,7 @@
 #include <windows.h>
 #include <process.h>
 #endif
+#include "PosixCompat.h"
 
 namespace protoPython {
 namespace thread_module {
@@ -339,6 +340,10 @@ static const proto::ProtoObject* thread_bootstrap(
     const proto::ProtoList* args,
     const proto::ProtoSparseList* /*kwargs*/) {
     diagBootstrapTid();
+#if defined(_WIN32)
+    // Invalid C runtime arguments are errors on Python threads (PosixCompat.h).
+    protopy_ignore_invalid_parameters();
+#endif
     if (!args || args->getSize(context) < 1) return PROTO_NONE;
     // Args layout produced by py_start_new_thread / py_start_joinable_thread:
     //   args[0]   = ExternalPointer(env)              (optional)

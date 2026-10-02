@@ -8,10 +8,12 @@
 #include <protoPython/Version.h>
 #include <protoCore.h>
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <streambuf>
 #include <string>
 #include <vector>
 #if !defined(_WIN32)
@@ -46,17 +48,100 @@ static void usleep(unsigned int microseconds) {
 }
 #endif
 
+#ifdef _WIN32
+// The console's code pages before protopy switched them to UTF-8; restored
+// when the process exits (normally, through sys.exit or an uncaught
+// exception, or on Ctrl+C / Ctrl+Break / closing the console window), so the
+// console is left as protopy found it. os._exit() ends the process without
+// running exit handlers and leaves UTF-8 selected.
+static UINT g_savedConsoleInputCP = 0;
+static UINT g_savedConsoleOutputCP = 0;
+
+static void restoreConsoleCodePages() {
+    if (g_savedConsoleOutputCP != 0) SetConsoleOutputCP(g_savedConsoleOutputCP);
+    if (g_savedConsoleInputCP != 0) SetConsoleCP(g_savedConsoleInputCP);
+}
+
+static BOOL WINAPI restoreConsoleOnControlEvent(DWORD) {
+    restoreConsoleCodePages();
+    return FALSE;  // the default handling (ending the process) follows
+}
+
+// std::cin over a console: ReadConsoleW, converted to UTF-8, so non-ASCII
+// input arrives intact whatever the console's fonts and code pages (a byte
+// read of a console returns the input code page's encoding, and characters
+// outside it are lost). "\r\n" becomes "\n"; Ctrl+Z at the start of a read
+// is end of file, as in CPython.
+class ConsoleInputBuffer : public std::streambuf {
+public:
+    explicit ConsoleInputBuffer(HANDLE console) : console_(console) {}
+
+protected:
+    int_type underflow() override {
+        if (gptr() < egptr()) return traits_type::to_int_type(*gptr());
+        wchar_t wide[1024];
+        DWORD count = 0;
+        if (!ReadConsoleW(console_, wide, 1024, &count, nullptr) || count == 0) return traits_type::eof();
+        if (wide[0] == 0x1A) return traits_type::eof();
+        std::wstring text = pendingSurrogate_;
+        pendingSurrogate_.clear();
+        text.append(wide, count);
+        // A UTF-16 pair split between two reads waits for its second half.
+        if (!text.empty() && text.back() >= 0xD800 && text.back() <= 0xDBFF) {
+            pendingSurrogate_ = text.back();
+            text.pop_back();
+        }
+        data_.clear();
+        if (!text.empty()) {
+            const int n = WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
+                                              nullptr, 0, nullptr, nullptr);
+            std::string utf8(static_cast<size_t>(n), '\0');
+            WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), utf8.data(), n,
+                                nullptr, nullptr);
+            for (size_t i = 0; i < utf8.size(); ++i) {
+                if (utf8[i] == '\r' && i + 1 < utf8.size() && utf8[i + 1] == '\n') continue;
+                data_.push_back(utf8[i]);
+            }
+        }
+        if (data_.empty()) return underflow();
+        setg(data_.data(), data_.data(), data_.data() + data_.size());
+        return traits_type::to_int_type(*gptr());
+    }
+
+private:
+    HANDLE console_;
+    std::string data_;
+    std::wstring pendingSurrogate_;
+};
+#endif
+
 // Windows: the standard streams carry exactly the bytes the program writes, as
 // on Linux and macOS (no "\n" -> "\r\n" translation), and a console shows and
 // reads them as UTF-8. The process code page is UTF-8 through the manifest
 // (src/windows/utf8.manifest), so argv, getenv and paths are UTF-8 too.
 static void prepareStandardStreams() {
 #ifdef _WIN32
+    // protopy.exe reports invalid C runtime arguments as errors on every
+    // thread, the collector's included; the library does it only on the
+    // threads that run Python code (PosixCompat.h).
+    protopy_ignore_invalid_parameters_process_wide();
     _setmode(_fileno(stdin), _O_BINARY);
     _setmode(_fileno(stdout), _O_BINARY);
     _setmode(_fileno(stderr), _O_BINARY);
-    SetConsoleOutputCP(CP_UTF8);
-    SetConsoleCP(CP_UTF8);
+    g_savedConsoleOutputCP = GetConsoleOutputCP();  // 0 without a console
+    g_savedConsoleInputCP = GetConsoleCP();
+    if (g_savedConsoleOutputCP != 0 || g_savedConsoleInputCP != 0) {
+        std::atexit(restoreConsoleCodePages);
+        SetConsoleCtrlHandler(restoreConsoleOnControlEvent, TRUE);
+        SetConsoleOutputCP(CP_UTF8);
+        SetConsoleCP(CP_UTF8);
+    }
+    const HANDLE in = GetStdHandle(STD_INPUT_HANDLE);
+    DWORD consoleMode = 0;
+    if (in != INVALID_HANDLE_VALUE && in != nullptr && GetConsoleMode(in, &consoleMode)) {
+        static ConsoleInputBuffer consoleInput(in);
+        std::cin.rdbuf(&consoleInput);
+    }
 #endif
 }
 

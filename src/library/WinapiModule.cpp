@@ -4,8 +4,9 @@
 // shutil imports _winapi unconditionally on win32 and calls
 // NeedCurrentDirectoryForExePath from shutil.which(); ntpath.normcase uses
 // LCMapStringEx when it is there. Process creation (CreateProcess, pipes,
-// handles) is not provided, so subprocess, which imports those names, raises
-// ImportError on Windows, as does asyncio's Windows event loop (_overlapped).
+// handles) is not provided: subprocess imports (lib/python3.14/subprocess.py
+// guards its _winapi import) and Popen raises OSError(errno.ENOTSUP). There is
+// no _overlapped either, so asyncio uses the selector event loop.
 #if defined(_WIN32)
 
 #include <protoPython/PythonEnvironment.h>
