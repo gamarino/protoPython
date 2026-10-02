@@ -113,6 +113,12 @@ onwards. Commit hashes are given for reference.
 
 ### Fixed
 
+- **Windows ZIP is self-contained.** Like protoST, protoScala, protoClojure
+  and protoJS, the ZIP (and the NSIS installer, built only when `makensis` is
+  found) now bundles protoCore's DLL, copied from the linked `protoCore` target
+  whatever its name, and the MSVC runtime through `InstallRequiredSystemLibraries`.
+  `cross-platform.yml` checks the DLLs are in the ZIP and runs the unpacked
+  `protopy.exe` on a script with only the Windows system directories on `PATH`.
 - **Frame objects expose `f_locals` and `f_lineno`.** `import site` failed
   with a setuptools `*-nspkg.pth` in the user site directory (e.g.
   sphinxcontrib-jsmath's), whose line reads `sys._getframe(1).f_locals['sitedir']`.

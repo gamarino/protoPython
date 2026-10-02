@@ -169,7 +169,9 @@ prints whether a generator was enabled or disabled and why.
 Package names are pinned rather than left to each generator's default casing:
 `protopython` for DEB, `protoPython` for RPM. Both declare a bounded dependency on
 protoCore's own package (`protocore (>= 2.7.0), protocore (<< 3.0.0)` for DEB;
-`protoCore >= 2.7.0, protoCore < 3.0.0` for RPM). protoCore is never bundled.
+`protoCore >= 2.7.0, protoCore < 3.0.0` for RPM). The DEB, RPM and TGZ
+packages do not bundle protoCore; the Windows ZIP and installer do (see
+[Windows (MSVC)](#windows-msvc)).
 
 ### Platform verification status
 
@@ -183,7 +185,7 @@ of protoCore.
 | Linux / Debian-Ubuntu | TGZ, DEB | **VERIFIED.** Installed with `dpkg -i` as root in a throwaway `ubuntu:24.04` container and run there from `/usr/bin/protopy`, outside any repository, with no `LD_LIBRARY_PATH` and no `PROTO*` variable set. `import json` resolved out of the installed `<libdir>/protoPython/python3.14`. |
 | Linux / Fedora-RHEL | TGZ, RPM | **UNVERIFIED — blocked, and the reason is specific.** `cpack -G RPM` runs, but Fedora's `brp-mangle-shebangs` fails the build on the bundled CPython standard library: `ERROR: ambiguous python shebang in .../encodings/rot_13.py: #!/usr/bin/env python`. That is fatal, so no RPM is produced. The build itself is fine; only the RPM packaging step is blocked. It needs a maintainer decision (suppress `__brp_mangle_shebangs`, or correct the shebang in the shipped stdlib). |
 | macOS | DragNDrop | **UNVERIFIED.** Configured and reviewed only; there is no macOS host here. Review is not verification. |
-| Windows | ZIP (NSIS when `makensis` is found) | **ZIP built and run in CI.** On every run of `cross-platform.yml` (first on 2026-10-02, protoCore 2.7.0) `cpack -G ZIP` produces `protopython-1.0.0-win64.zip` with `bin/protopy.exe`, `bin/protopyc.exe`, `bin/protoPython.dll`, `lib/protoPython.lib`, the headers and the standard library; it is unpacked into a fresh directory and `protopy.exe` runs from there with only protoCore's installed `bin` directory on `PATH` (protoCore is not bundled; the MSVC runtime comes from the system). NSIS was not run. |
+| Windows | ZIP (NSIS when `makensis` is found) | **ZIP built and run in CI.** On every run of `cross-platform.yml` (first on 2026-10-02, protoCore 2.7.0) `cpack -G ZIP` produces `protopython-1.0.0-win64.zip` with `bin/protopy.exe`, `bin/protopyc.exe`, `bin/protoPython.dll`, `lib/protoPython.lib`, the headers and the standard library; it is unpacked into a fresh directory and `protopy.exe` runs a script from there with only the Windows system directories on `PATH`. Since 2026-10-02 the ZIP also bundles protoCore's DLL and the MSVC runtime, and the step checks that they are in it. The NSIS installer is built and checked when the runner has `makensis`. |
 
 ### Portability fixed while verifying
 
@@ -296,8 +298,15 @@ library in `<prefix>/lib` and the standard library in
 `<prefix>/lib/protoPython/python3.14`; protoCore's own install adds its DLL
 (`protoCore-3.dll`, or `protoCore.dll` before 2.9.0) to its prefix's `bin`. With those `bin` directories on `PATH`,
 `protopy` runs scripts, `-c` programs and the REPL from `cmd.exe` or PowerShell.
-`cpack -G ZIP` produces `protopython-<version>-win64.zip` (without protoCore,
-which is never bundled).
+`cpack` produces `protopython-<version>-win64.zip` (and an NSIS installer,
+`protopython-<version>-win64.exe`, when `makensis` is found at configure time).
+Both are self-contained, as the protoST, protoScala, protoClojure and protoJS
+packages: they bundle protoCore's DLL, copied from the `protoCore` target the
+build links (`protoCore-3.dll` from protoCore 2.9.0 on, `protoCore.dll` before),
+and the Microsoft C++ runtime DLLs (`msvcp140.dll`, `vcruntime140.dll`, ...)
+through CMake's `InstallRequiredSystemLibraries`, so the unpacked `protopy.exe`
+runs without protoCore or the Visual C++ Redistributable installed. `cmake
+--install` copies the same DLLs into `<prefix>/bin`.
 
 In CI on 2026-10-02 (branch `fix/windows-review`, protoCore 2.7.0 at `fc5d79db`,
 the ref both workflows pin), all 159 registered tests pass on Windows (MSVC,

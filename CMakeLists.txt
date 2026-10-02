@@ -1335,6 +1335,28 @@ install(DIRECTORY lib/python3.14
     COMPONENT protoPython
 )
 
+# Windows: a self-contained ZIP/installer, as protoST, protoScala, protoClojure
+# and protoJS ship. protoCore's DLL is copied from the imported (or sibling)
+# protoCore target, whatever it is named (protoCore-3.dll from protoCore 2.9.0
+# on, protoCore.dll before), and the Microsoft C++ runtime DLLs (msvcp140.dll,
+# vcruntime140.dll, ...) are deployed app-local through
+# InstallRequiredSystemLibraries, so a machine without protoCore or the Visual
+# C++ Redistributable runs the unpacked protopy.exe.
+if(WIN32)
+    if(TARGET protoCore)
+        install(FILES "$<TARGET_FILE:protoCore>"
+            DESTINATION ${CMAKE_INSTALL_BINDIR}
+            COMPONENT protoPython)
+    endif()
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION ${CMAKE_INSTALL_BINDIR})
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_COMPONENT protoPython)
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set(CMAKE_INSTALL_DEBUG_LIBRARIES ON)
+        set(CMAKE_INSTALL_DEBUG_LIBRARIES_ONLY ON)
+    endif()
+    include(InstallRequiredSystemLibraries)
+endif()
+
 # --- CPack Configuration ---
 set(CPACK_PACKAGE_NAME "protopython")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
@@ -1400,9 +1422,8 @@ elseif(UNIX)
 elseif(WIN32)
     # The ZIP is built and run in CI (cross-platform.yml). NSIS only when
     # makensis is present: cpack aborts the whole run when a generator's tool
-    # is missing, which would take the ZIP down with it. protoCore is not
-    # bundled, as in the other packages: protoCore's DLL (protoCore-3.dll
-    # from protoCore 2.9.0 on) comes from protoCore's own package and must be on PATH.
+    # is missing, which would take the ZIP down with it. Both bundle protoCore's
+    # DLL and the MSVC runtime (see the install rules above).
     set(CPACK_GENERATOR "ZIP")
     find_program(PROTOPYTHON_MAKENSIS_EXECUTABLE makensis)
     if(PROTOPYTHON_MAKENSIS_EXECUTABLE)
