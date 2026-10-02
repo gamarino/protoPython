@@ -562,6 +562,14 @@ set_tests_properties(protopy_re_results_not_interned PROPERTIES
     ENVIRONMENT "PROTOCORE_HEAP_LIMIT_CELLS=500000"
     TIMEOUT 120
     LABELS "regression_gate")
+# io.StringIO counts characters: read(n), readline(n), seek(), tell(),
+# truncate() and write()'s result are character counts and indices.
+add_test(NAME protopy_stringio_char_positions
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/stringio_char_positions.py)
+set_tests_properties(protopy_stringio_char_positions PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # re's ^, $, \A, \Z and . follow CPython's line rules on every platform.
 add_test(NAME protopy_re_anchors
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/re_anchors.py)

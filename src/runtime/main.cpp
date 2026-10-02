@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -133,6 +134,7 @@ struct CliOptions {
     bool trace{false};
     bool repl{false};
     bool safePath{false};  // -P (or -I): nothing prepended to sys.path
+    bool stdinProgram{false};  // "-": the program is read from standard input
     std::string moduleName;
     std::string scriptPath;
     std::string commandLine;
@@ -215,6 +217,8 @@ static void printUsage(const char* prog) {
                  "  " << prog << " [-c <cmd>] [-p <path> | --path <path>]...\n"
                  "  " << prog << " [--script <script.py>] [--path <path>]...\n"
                  "  " << prog << " [module_name|script.py]\n"
+                 "  " << prog << " [-] [args]...    Program read from standard input; with no\n"
+                 "                    target and a terminal as standard input, the REPL\n"
                  "Options:\n"
                  "  -c <command>      Execute Python program passed as string\n"
                  "  -m <module-name>  Execute module as a script\n"
@@ -278,6 +282,12 @@ static bool parseArgs(int argc, char* argv[], CliOptions& opts, std::string& err
                 return false;
             }
             opts.searchPaths.push_back(argv[++i]);
+        } else if (arg == "-") {
+            // As in CPython: the program is standard input, and the
+            // arguments after "-" are the program's.
+            opts.stdinProgram = true;
+            for (int j = i + 1; j < argc; ++j) opts.targetArgs.push_back(argv[j]);
+            break;
         } else if (arg == "-P") {
             opts.safePath = true;
         } else if (arg == "-I" || arg == "-E" || arg == "-S" || arg == "-s"
@@ -321,9 +331,10 @@ static bool parseArgs(int argc, char* argv[], CliOptions& opts, std::string& err
             return false;
         }
     }
-    int targets = (!opts.moduleName.empty()) + (!opts.scriptPath.empty()) + (!opts.commandLine.empty());
+    int targets = (!opts.moduleName.empty()) + (!opts.scriptPath.empty()) + (!opts.commandLine.empty())
+        + opts.stdinProgram;
     if (targets > 1) {
-        error = "Specify only one of -c, -m, or script path";
+        error = "Specify only one of -c, -m, -, or script path";
         return false;
     }
     return true;
@@ -434,8 +445,35 @@ int main(int argc, char* argv[]) {
     std::vector<std::string> searchPaths = sitePaths;
     searchPaths.insert(searchPaths.end(), options.searchPaths.begin(), options.searchPaths.end());
 
+    // No target, as CPython: the REPL when standard input is a terminal (or
+    // with -i), otherwise the program read from standard input ("-" reads it
+    // in every case). The whole program is read before it runs, so the
+    // program's sys.stdin starts at the end of its input.
+    const bool noTarget = options.commandLine.empty() && options.moduleName.empty()
+        && options.scriptPath.empty();
+    bool runSource = !options.commandLine.empty();
+    std::string source = options.commandLine;
+    std::string sourceName = "<string>";
+    if (noTarget && !options.repl && !options.dryRun && !options.bytecodeOnly) {
+        const bool stdinIsTerminal =
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
+            ::isatty(0) != 0;
+#else
+            false;
+#endif
+        if (options.stdinProgram || !stdinIsTerminal) {
+            // std::cin reads through sys.stdin's buffer (prepareStandardStreams).
+            source.assign(std::istreambuf_iterator<char>(std::cin), std::istreambuf_iterator<char>());
+            runSource = true;
+            sourceName = "<stdin>";
+        } else {
+            options.repl = true;
+        }
+    }
+
     std::vector<std::string> argvVec;
-    if (!options.commandLine.empty()) argvVec.push_back("-c");
+    if (options.stdinProgram) argvVec.push_back("-");
+    else if (!options.commandLine.empty()) argvVec.push_back("-c");
     else if (!options.scriptPath.empty()) argvVec.push_back(options.scriptPath);
     else if (!options.moduleName.empty()) argvVec.push_back(options.moduleName);
     else argvVec.push_back("");
@@ -464,7 +502,7 @@ int main(int argc, char* argv[]) {
         return EXIT_OK;
     }
 
-    if (!options.commandLine.empty()) {
+    if (runSource) {
         std::vector<std::string> cmdPaths = searchPaths;
         if (!options.safePath) cmdPaths.insert(cmdPaths.begin(), cwd);
         protoPython::PythonEnvironment env(stdLibPath, cmdPaths, argvVec);
@@ -475,7 +513,7 @@ int main(int argc, char* argv[]) {
             });
             env.enableDefaultTrace();
         }
-        int ret = env.executeString(options.commandLine, "<string>");
+        int ret = env.executeString(source, sourceName);
 
         if (ret == -2) {
             const proto::ProtoObject* exc = env.takePendingException();
@@ -488,7 +526,9 @@ int main(int argc, char* argv[]) {
                     finishInterpreter(env);
                     return env.getExitRequested();
                 }
-                std::cerr << "protopy: unhandled exception in -c execution:\n" << excOut.str();
+                std::cerr << "protopy: unhandled exception in "
+                          << (sourceName == "<stdin>" ? "standard input program" : "-c execution")
+                          << ":\n" << excOut.str();
             }
             finishInterpreter(env);
             return EXIT_RUNTIME;

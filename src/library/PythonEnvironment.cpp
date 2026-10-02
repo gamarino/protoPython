@@ -17147,7 +17147,8 @@ void PythonEnvironment::raiseKeyboardInterrupt(proto::ProtoContext* ctx) {
     }
 }
 
-void PythonEnvironment::raiseSyntaxError(proto::ProtoContext* ctx, const std::string& msg, int lineno, int offset, const std::string& text) {
+void PythonEnvironment::raiseSyntaxError(proto::ProtoContext* ctx, const std::string& msg, int lineno, int offset, const std::string& text,
+                                         const std::string& filename) {
     if (!syntaxErrorType) return;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx));
     const proto::ProtoObject* exc = invokePythonCallable(ctx, syntaxErrorType, args, nullptr);
@@ -17155,6 +17156,8 @@ void PythonEnvironment::raiseSyntaxError(proto::ProtoContext* ctx, const std::st
         exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "lineno"), ctx->fromInteger(lineno));
         exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "offset"), ctx->fromInteger(offset));
         exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "text"), PythonEnvironment::getInternedString(ctx, text.c_str())->asObject(ctx));
+        if (!filename.empty())
+            exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "filename"), newStr(ctx, filename));
         setPendingException(exc);
     }
 }
@@ -23059,12 +23062,24 @@ int PythonEnvironment::executeString(const std::string& source, const std::strin
 
     int result = 0;
     if (builtinsModule) {
+        // compile(source, name, "exec") first, so tracebacks and the code
+        // object carry `name` as their file name ("<stdin>" for a program
+        // read from standard input), then exec(code, __main__).
+        const proto::ProtoObject* compileFn = builtinsModule->getAttribute(context, PythonEnvironment::getInternedString(context, "compile"));
         const proto::ProtoObject* execFn = builtinsModule->getAttribute(context, PythonEnvironment::getInternedString(context, "exec"));
-        if (execFn) {
-            const proto::ProtoList* args = context->newList()
-                ->appendLast(context, PythonEnvironment::getInternedString(context, source.c_str())->asObject(context))
-                ->appendLast(context, const_cast<proto::ProtoObject*>(mod));
-            execFn->asMethod(context)(context, const_cast<proto::ProtoObject*>(builtinsModule), nullptr, args, nullptr);
+        if (compileFn && execFn) {
+            const proto::ProtoList* compileArgs = context->newList()
+                ->appendLast(context, PythonEnvironment::newStr(context, source))
+                ->appendLast(context, PythonEnvironment::newStr(context, name))
+                ->appendLast(context, PythonEnvironment::getInternedString(context, "exec")->asObject(context));
+            const proto::ProtoObject* code = compileFn->asMethod(context)(
+                context, const_cast<proto::ProtoObject*>(builtinsModule), nullptr, compileArgs, nullptr);
+            if (!hasPendingException() && code && code != PROTO_NONE) {
+                const proto::ProtoList* args = context->newList()
+                    ->appendLast(context, code)
+                    ->appendLast(context, const_cast<proto::ProtoObject*>(mod));
+                execFn->asMethod(context)(context, const_cast<proto::ProtoObject*>(builtinsModule), nullptr, args, nullptr);
+            }
             if (hasPendingException()) {
                 result = -2;
             }
@@ -23925,7 +23940,10 @@ std::string PythonEnvironment::formatException(const proto::ProtoObject* exc, co
         std::string line;
         textObj->asString(context)->toUTF8String(context, line);
         int offset = static_cast<int>(offsetObj->asLong(context));
-        out += "  File \"<stdin>\", line " + std::to_string(linenoObj->asLong(context)) + "\n";
+        std::string fileName = "<stdin>";
+        const proto::ProtoObject* fileObj = exc->getAttribute(context, PythonEnvironment::getInternedString(context, "filename"));
+        if (fileObj && fileObj->isString(context)) fileObj->asString(context)->toUTF8String(context, fileName);
+        out += "  File \"" + fileName + "\", line " + std::to_string(linenoObj->asLong(context)) + "\n";
         out += "    " + line + "\n";
         out += "    " + std::string(offset > 0 ? offset : 0, ' ') + "^\n";
     }
@@ -28976,7 +28994,18 @@ static const proto::ProtoObject* buildTraceback(proto::ProtoContext* ctx, const 
 const proto::ProtoObject* PythonEnvironment::newStr(proto::ProtoContext* ctx, const std::string& str) {
     if (!ctx) ctx = s_threadContext;
     if (!ctx) return PROTO_NONE;
-    const proto::ProtoString* s = proto::ProtoString::fromStdString(ctx, str);
+    // fromUTF8Buffer takes the length, so a str holding NUL characters (which
+    // Python allows) is kept whole; fromStdString stops at the first NUL.
+    uint8_t remainder[4];
+    uint8_t remainderCount = 0;
+    const proto::ProtoString* s = proto::ProtoString::fromUTF8Buffer(ctx,
+        reinterpret_cast<const uint8_t*>(str.data()), str.size(), nullptr, 0, remainder, &remainderCount);
+    // A trailing truncated sequence is kept as its bytes' code points, as
+    // fromStdString's tolerance of malformed input did.
+    for (uint8_t i = 0; s && i < remainderCount; ++i) {
+        const char one[2] = {static_cast<char>(remainder[i]), '\0'};
+        s = s->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, one));
+    }
     return s ? s->asObject(ctx) : PROTO_NONE;
 }
 

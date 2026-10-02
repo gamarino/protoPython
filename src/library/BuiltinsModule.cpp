@@ -3477,7 +3477,7 @@ static const proto::ProtoObject* py_compile(
         }
         size_t end = source.find('\n', start);
         std::string lineText = source.substr(start, end == std::string::npos ? std::string::npos : end - start);
-        cenv->raiseSyntaxError(context, msg, lineno, col, lineText);
+        cenv->raiseSyntaxError(context, msg, lineno, col, lineText, filename);
     };
     if (mode == "eval") {
         Parser parser(source);
@@ -3511,7 +3511,9 @@ static const proto::ProtoObject* py_compile(
     } else {
         Parser parser(source);
         std::unique_ptr<ModuleNode> mod = parser.parseModule();
-        if (parser.hasError() || !mod || mod->body.empty()) {
+        // An empty module is valid in exec mode (compile("", f, "exec"), a
+        // program of only comments); the interactive mode needs a statement.
+        if (parser.hasError() || !mod || (mod->body.empty() && mode != "exec")) {
             if (get_env_diag()) {
                 fprintf(stderr, "py_compile: parser error at %d:%d: %s\n", parser.getLastErrorLine(), parser.getLastErrorColumn(), parser.getLastErrorMsg().c_str());
             }

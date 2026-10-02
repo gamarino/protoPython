@@ -1007,7 +1007,10 @@ public:
     void raiseImportError(proto::ProtoContext* context, const std::string& msg,
                           const std::string& name = "", const std::string& path = "");
     void raiseKeyboardInterrupt(proto::ProtoContext* context);
-    void raiseSyntaxError(proto::ProtoContext* context, const std::string& msg, int lineno, int offset, const std::string& text);
+    /** Raise SyntaxError(msg) with lineno, offset and text; and filename
+     *  when given (the error report prints it, "<stdin>" otherwise). */
+    void raiseSyntaxError(proto::ProtoContext* context, const std::string& msg, int lineno, int offset, const std::string& text,
+                          const std::string& filename = "");
     /**
      * Emit a SyntaxWarning via _py_warnings.warn_explicit.  Honours the
      * active warnings filter chain (catch_warnings(record=True), simplefilter,

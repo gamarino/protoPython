@@ -15,6 +15,64 @@
 import re
 import sys
 
+# Memory bound: many distinct results must not accumulate. The test is run
+# under PROTOCORE_HEAP_LIMIT_CELLS (see CMakeLists.txt) so the collector
+# actually runs; interned results could never be reclaimed at all. This part
+# runs first so that, if results are interned again, it is the bound that
+# fails (the identity checks below would catch that too).
+#
+# sys._current_rss() is protoPython's resident set size of the process in
+# bytes (/proc on Linux, task_info on macOS, GetProcessMemoryInfo on Windows),
+# or -1 where it cannot be read. The token count is checked everywhere; only
+# the memory bound depends on it, and a platform without it says so.
+#
+# What is bounded is growth after a warm-up, measured in this same process,
+# not the absolute RSS increase from the start: the first rounds fill the
+# heap up to the cell limit and grow the allocator's arenas, and that cost
+# depends on the platform allocator (it was 29.1 MB on Linux and 35.7 MB on
+# macOS for the same loop). Once the heap has reached its working size,
+# collectable results are reclaimed and RSS stays flat, while interned ones
+# keep adding to it at the same rate as before.
+#
+# The subjects are built with "+" and str(), which give collectable strings;
+# "%"-formatted strings are still interned and would grow RSS on their own
+# (see PythonEnvironment::getInternedString in PythonEnvironment.h).
+def rss_kb():
+    rss = sys._current_rss()
+    return rss // 1024 if rss >= 0 else -1
+
+
+WORD = re.compile(r"[a-z0-9_]+")
+
+
+def tokenize_round(tag, count):
+    """findall over `count` distinct subjects; returns the number of tokens."""
+    n = 0
+    for i in range(count):
+        text = tag + "_" + str(i) + "_value_" + str(i * 7) + " end"
+        n += len(WORD.findall(text))
+    return n
+
+
+ROUND = 20000
+# Two tokens per subject: "<tag>_<i>_value_<j>" and "end".
+assert tokenize_round("warmup", ROUND) == 2 * ROUND
+baseline = rss_kb()
+for r in range(2):
+    assert tokenize_round("round%d" % r, ROUND) == 2 * ROUND
+if baseline > 0:
+    growth = rss_kb() - baseline
+    # Measured on Linux under PROTOCORE_HEAP_LIMIT_CELLS=500000, over the
+    # 40000 calls after the warm-up: within +-1.5 MB with collectable results
+    # (a collection cycle landing on either side of a measurement), about
+    # 22 MB with results interned again. The bound sits well between the two.
+    assert growth < 8000, (
+        "RSS grew by %d KB over %d re calls after warm-up" % (growth, 2 * ROUND))
+    print("re_results_not_interned: RSS grew by %d KB after warm-up" % growth)
+else:
+    print("re_results_not_interned: SKIPPED the RSS bound: sys._current_rss() "
+          "is not available on " + sys.platform)
+
 LONG = "token_alpha_0123456789"
 assert len(LONG.encode()) > 6
 
@@ -72,40 +130,5 @@ assert re.escape("a.b") == "a\\.b"
 m = GPAT.search(LONG)
 assert getattr(m, "group")(2) == "0123456789"
 
-
-# Memory bound: many distinct results must not accumulate. The test is run
-# under PROTOCORE_HEAP_LIMIT_CELLS (see CMakeLists.txt) so the collector
-# actually runs; interned results could never be reclaimed at all.
-#
-# sys._current_rss() is protoPython's resident set size of the process in
-# bytes (/proc on Linux, task_info on macOS, GetProcessMemoryInfo on Windows),
-# or -1 where it cannot be read. The token count is checked everywhere; only
-# the memory bound depends on it, and a platform without it says so.
-def rss_kb():
-    rss = sys._current_rss()
-    return rss // 1024 if rss >= 0 else -1
-
-
-start = rss_kb()
-WORD = re.compile(r"[a-z0-9_]+")
-n = 0
-for i in range(20000):
-    text = "item_%d_value_%d end" % (i, i * 7)
-    n += len(WORD.findall(text))
-# Two tokens per line: "item_<i>_value_<j>" and "end".
-assert n == 40000, n
-if start > 0:
-    growth = rss_kb() - start
-    # Measured on Linux under PROTOCORE_HEAP_LIMIT_CELLS=500000, three runs
-    # each and a spread under 0.2 MB: this loop grew RSS by about 42.1 MB with
-    # interned results and about 29.1 MB with collectable ones. The bound sits
-    # between the two, with headroom over the current figure so the test is
-    # not a flake. What remains is mostly the "%"-formatted subjects, which are
-    # still interned; see protoPython_interned_data_strings_options.md.
-    assert growth < 35000, "RSS grew by %d KB over 20000 re calls" % growth
-    print("re_results_not_interned: RSS grew by %d KB" % growth)
-else:
-    print("re_results_not_interned: SKIPPED the RSS bound: sys._current_rss() "
-          "is not available on " + sys.platform)
 
 print("re_results_not_interned: ok")

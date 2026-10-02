@@ -78,6 +78,59 @@ check(attributes "" "0 True False utf-8 strict <stdin> r False False True <stdin
 check(input_replaced_stdin "ignored\n" "from StringIO\n"
     -c "import io, sys\nsys.stdin = io.StringIO('from StringIO\\n')\nprint(input())")
 
+# protopy with no target runs the program read from standard input when it is
+# not a terminal, as CPython does (the REPL starts only on a terminal):
+# sys.argv is [''], the program runs as __main__ with sys.path[0] '', and
+# sys.stdin is at its end. "-" reads the program from standard input too and
+# passes the remaining arguments to it.
+check(program_from_stdin "import sys\nprint(repr(sys.stdin.read()), sys.argv, __name__, repr(sys.path[0]))\n"
+    "'' [''] __main__ ''\n")
+check(program_from_stdin_dash "import sys\nprint(sys.argv)\n" "['-', 'a', 'b']\n" - a b)
+check(program_from_stdin_empty "" "")
+check(program_from_stdin_comment "# only a comment\n" "")
+# What that relies on: compile() takes an empty program in exec mode, and a
+# SyntaxError carries the file name it was compiled under.
+check(compile_empty_and_filename "" "True afile.py 1\n"
+    -c "c = compile('', 'x', 'exec')\ntry:\n    compile('def f(:', 'afile.py', 'exec')\nexcept SyntaxError as e:\n    print(c is not None, e.filename, e.lineno)")
+# An uncaught exception is reported against "<stdin>" with a failing status.
+file(WRITE "${WORK}/program_from_stdin_error.in" "x = 1\nraise ValueError('boom')\n")
+execute_process(COMMAND "${PROTOPY}" INPUT_FILE "${WORK}/program_from_stdin_error.in"
+    OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
+if(rc STREQUAL "0" OR NOT err MATCHES "File \"<stdin>\", line 2" OR NOT err MATCHES "ValueError: boom")
+    message(SEND_ERROR "program_from_stdin_error: exit ${rc}\n--- stdout ---\n${out}\n--- stderr ---\n${err}")
+    math(EXPR _failures "${_failures} + 1")
+else()
+    message(STATUS "program_from_stdin_error: ok")
+endif()
+
+# Threads reading sys.stdin concurrently from a pipe each get whole lines,
+# and every line exactly once (test/regression/stdin_threads.py). The pipe is
+# `cmake -E cat <file> | protopy`, so reads return pipe-sized chunks.
+set(_lines_count 20000)
+# The filler is the one stdin_threads.py expects.
+string(REPEAT "x" 90 _filler)
+# Written in blocks: appending every line to one CMake string is quadratic.
+file(WRITE "${WORK}/stdin_threads.in" "")
+math(EXPR _blocks "${_lines_count} / 500 - 1")
+foreach(b RANGE ${_blocks})
+    set(_text "")
+    foreach(k RANGE 499)
+        math(EXPR i "${b} * 500 + ${k}")
+        string(APPEND _text "${i}:${_filler}\n")
+    endforeach()
+    file(APPEND "${WORK}/stdin_threads.in" "${_text}")
+endforeach()
+execute_process(
+    COMMAND "${CMAKE_COMMAND}" -E cat "${WORK}/stdin_threads.in"
+    COMMAND "${PROTOPY}" "${CMAKE_CURRENT_LIST_DIR}/stdin_threads.py" ${_lines_count}
+    OUTPUT_VARIABLE out ERROR_VARIABLE err RESULTS_VARIABLE rcs)
+if(NOT rcs STREQUAL "0;0" OR NOT out STREQUAL "stdin_threads: ${_lines_count} whole lines\n")
+    message(SEND_ERROR "stdin_threads: exit ${rcs}\n--- got ---\n${out}\n--- stderr ---\n${err}")
+    math(EXPR _failures "${_failures} + 1")
+else()
+    message(STATUS "stdin_threads: ok")
+endif()
+
 if(_failures GREATER 0)
     message(FATAL_ERROR "${_failures} standard input case(s) failed")
 endif()

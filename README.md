@@ -156,7 +156,9 @@ print("Starts with 'Hello':", s.startswith("Hello"))
 | `protopy --help` | Show all options. |
 
 The environment variable `PROTO_PYTHONPATH` adds module search paths. Running
-`protopy` with no arguments prints the usage text and exits with status 64.
+`protopy` with no arguments starts the REPL when standard input is a terminal and
+otherwise runs the program read from standard input (`echo 'print(1)' | protopy`),
+as CPython does; `protopy - [args...]` always reads the program from standard input.
 
 Exit status: `0` on success, `64` for a usage error, `65` when the script or module
 cannot be resolved, `70` for an unhandled runtime failure, and `n` when the program

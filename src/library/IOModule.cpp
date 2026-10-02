@@ -8,6 +8,7 @@
 #include <sstream>
 #include <string>
 #include <iostream>
+#include <mutex>
 #include <streambuf>
 #include <fstream>
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
@@ -142,6 +143,12 @@ static const proto::ProtoObject* io_read_result(proto::ProtoContext* context, co
 // UTF-8: reads translate "\r\n" and "\r" to "\n" when newline is None, and
 // writes translate "\n" to os.linesep ("\r\n" on Windows) when newline is
 // None, or to the newline given, as CPython's TextIOWrapper.
+//
+// Every file object over one descriptor shares one FdOwner (sys.stdin and
+// sys.stdin.buffer do), and threads share file objects, so the owner's state
+// is guarded by `lock`: each read, readline, write, seek, tell, truncate and
+// close holds it for the whole operation (FdOwnerLock), and concurrent
+// readline() calls each get whole lines.
 struct FdOwner {
     int fd;
     bool closefd;
@@ -150,6 +157,27 @@ struct FdOwner {
 #if defined(_WIN32)
     wchar_t pendingSurrogate = 0;  // console input: first half of a UTF-16 pair
 #endif
+    std::mutex lock;
+};
+
+// Holds an FdOwner's lock for one operation. The holder may block in a read
+// or park at a GC safepoint while it holds the lock, so a contended lock is
+// waited for inside an unmanaged region: the collector never waits for a
+// thread queued here (the same rule as the dict commit stripes and
+// _thread.lock). No Python code runs while the lock is held.
+class FdOwnerLock {
+public:
+    FdOwnerLock(proto::ProtoContext* ctx, FdOwner* owner) : lk_(owner->lock, std::try_to_lock) {
+        if (!lk_.owns_lock()) {
+            proto::ProtoContext::UnmanagedScope u(ctx);
+            lk_.lock();
+        }
+    }
+    FdOwnerLock(const FdOwnerLock&) = delete;
+    FdOwnerLock& operator=(const FdOwnerLock&) = delete;
+
+private:
+    std::unique_lock<std::mutex> lk_;
 };
 
 // Runs on protoCore's collector thread.
@@ -529,8 +557,11 @@ static const proto::ProtoObject* io_fd_write(proto::ProtoContext* ctx, const pro
         }
         return nullptr;
     }
-    io_drop_read_ahead(owner);
-    if (!io_write_all(ctx, owner->fd, s)) return nullptr;
+    {
+        FdOwnerLock guard(ctx, owner);
+        io_drop_read_ahead(owner);
+        if (!io_write_all(ctx, owner->fd, s)) return nullptr;
+    }
     if (text) return ctx->fromInteger(static_cast<long long>(data->asString(ctx)->getSize(ctx)));
     return ctx->fromInteger(static_cast<long long>(s.size()));
 }
@@ -551,8 +582,12 @@ static const proto::ProtoObject* py_io_read(
         FdOwner* owner = io_fd_owner(context, self);
         if (owner) {
             const bool text = io_flag(context, self, "__text__");
+            const bool universal = io_flag(context, self, "__universal__");
             std::string out;
-            if (!io_fd_read(context, owner, text, io_flag(context, self, "__universal__"), n, out)) return nullptr;
+            {
+                FdOwnerLock guard(context, owner);
+                if (!io_fd_read(context, owner, text, universal, n, out)) return nullptr;
+            }
             return io_fd_result(context, text, out);
         }
     }
@@ -594,6 +629,7 @@ static const proto::ProtoObject* py_io_close(
         FdOwner* owner = io_fd_owner(context, self);
         const bool closefd = !owner || owner->closefd;
         if (owner) {
+            FdOwnerLock guard(context, owner);
             owner->fd = -1;
             owner->readAhead.clear();
         }
@@ -657,11 +693,15 @@ static std::string io_consume_line(const proto::ProtoObject* self,
 static const proto::ProtoObject* io_fd_next_line(proto::ProtoContext* context, const proto::ProtoObject* self,
                                                  FdOwner* owner, bool& atEnd, long long limit = -1) {
     std::string line;
-    if (limit == 0) return io_fd_result(context, io_flag(context, self, "__text__"), line);
-    if (!io_fd_readline(context, owner, io_flag(context, self, "__universal__"), line)) return nullptr;
-    atEnd = line.empty();
     const bool text = io_flag(context, self, "__text__");
-    io_limit_line(owner, text, limit, line);
+    if (limit == 0) return io_fd_result(context, text, line);
+    const bool universal = io_flag(context, self, "__universal__");
+    {
+        FdOwnerLock guard(context, owner);
+        if (!io_fd_readline(context, owner, universal, line)) return nullptr;
+        io_limit_line(owner, text, limit, line);
+    }
+    atEnd = line.empty();
     return io_fd_result(context, text, line);
 }
 
@@ -874,6 +914,7 @@ static const proto::ProtoObject* py_io_seek(
     if (BufferFile* bf = io_buffer_file(ctx, self)) return io_buffer_seek(ctx, self, bf, offset, whence);
     FdOwner* owner = io_fd_owner(ctx, self);
     if (!owner || owner->fd < 0) return ctx->fromInteger(0);
+    FdOwnerLock guard(ctx, owner);
     // A relative seek starts from where the caller is, not from the end of
     // what was read ahead.
     io_drop_read_ahead(owner);
@@ -893,12 +934,19 @@ static const proto::ProtoObject* py_io_tell(
     if (BufferFile* bf = io_buffer_file(ctx, self)) return ctx->fromInteger(static_cast<long long>(bf->pos));
     FdOwner* owner = io_fd_owner(ctx, self);
     if (!owner || owner->fd < 0) return ctx->fromInteger(0);
-    const long long pos = io_lseek(owner->fd, 0, SEEK_CUR);
-    if (pos < 0) {
-        io_raise_errno(ctx, errno);
+    long long pos;
+    int err = 0;
+    {
+        FdOwnerLock guard(ctx, owner);
+        pos = io_lseek(owner->fd, 0, SEEK_CUR);
+        if (pos < 0) err = errno;
+        else pos -= static_cast<long long>(owner->readAhead.size());
+    }
+    if (err != 0) {
+        io_raise_errno(ctx, err);
         return nullptr;
     }
-    return ctx->fromInteger(pos - static_cast<long long>(owner->readAhead.size()));
+    return ctx->fromInteger(pos);
 }
 
 // file.truncate(size=None) on a descriptor file: the new size.
@@ -912,6 +960,7 @@ static const proto::ProtoObject* py_io_truncate(
     }
     FdOwner* owner = io_fd_owner(ctx, self);
     if (!owner || owner->fd < 0) return ctx->fromInteger(0);
+    FdOwnerLock guard(ctx, owner);
     io_drop_read_ahead(owner);
     long long size = io_lseek(owner->fd, 0, SEEK_CUR);
     if (posArgs && posArgs->getSize(ctx) > 0 && posArgs->getAt(ctx, 0)->isInteger(ctx))
@@ -1667,12 +1716,55 @@ static const proto::ProtoString* k_sio_pos(proto::ProtoContext* c) {
     return proto::ProtoString::createSymbol(c, "__sio_pos__");
 }
 
-static std::string sio_get_buf(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
+// StringIO keeps its text as a str and its position as a character index,
+// as CPython's StringIO does: read(n), readline(n), seek(), tell(),
+// truncate() and write()'s return value all count characters. The methods
+// work on the text as code points (one char32_t per character) and convert
+// at the boundary; the str itself is stored as UTF-8 by protoCore.
+static std::u32string sio_decode(const std::string& utf8) {
+    std::u32string out;
+    out.reserve(utf8.size());
+    for (size_t i = 0; i < utf8.size();) {
+        const unsigned char b = static_cast<unsigned char>(utf8[i]);
+        size_t len = b < 0x80 ? 1 : (b >> 5) == 0x6 ? 2 : (b >> 4) == 0xE ? 3 : (b >> 3) == 0x1E ? 4 : 1;
+        if (i + len > utf8.size()) len = 1;
+        char32_t cp = len == 1 ? b : len == 2 ? (b & 0x1F) : len == 3 ? (b & 0x0F) : (b & 0x07);
+        for (size_t k = 1; k < len; ++k) cp = (cp << 6) | (static_cast<unsigned char>(utf8[i + k]) & 0x3F);
+        out.push_back(cp);
+        i += len;
+    }
+    return out;
+}
+
+static std::string sio_encode(const std::u32string& text) {
+    std::string out;
+    out.reserve(text.size());
+    for (char32_t cp : text) {
+        if (cp < 0x80) {
+            out.push_back(static_cast<char>(cp));
+        } else if (cp < 0x800) {
+            out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        } else if (cp < 0x10000) {
+            out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+            out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        } else {
+            out.push_back(static_cast<char>(0xF0 | (cp >> 18)));
+            out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        }
+    }
+    return out;
+}
+
+static std::u32string sio_get_buf(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
     const proto::ProtoObject* bufObj = self->getAttribute(ctx, k_sio_buf(ctx));
-    if (!bufObj || !bufObj->isString(ctx)) return std::string();
+    if (!bufObj || !bufObj->isString(ctx)) return std::u32string();
     std::string s;
     bufObj->asString(ctx)->toUTF8String(ctx, s);
-    return s;
+    return sio_decode(s);
 }
 
 static proto::proto_long sio_get_pos(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
@@ -1682,10 +1774,9 @@ static proto::proto_long sio_get_pos(proto::ProtoContext* ctx, const proto::Prot
 
 static const proto::ProtoObject* sio_set_state(proto::ProtoContext* ctx,
                                                const proto::ProtoObject* self,
-                                               const std::string& buf,
+                                               const std::u32string& buf,
                                                proto::proto_long pos) {
-    self = self->setAttribute(ctx, k_sio_buf(ctx),
-                              PythonEnvironment::getInternedString(ctx, buf.c_str())->asObject(ctx));
+    self = self->setAttribute(ctx, k_sio_buf(ctx), PythonEnvironment::newStr(ctx, sio_encode(buf)));
     self = self->setAttribute(ctx, k_sio_pos(ctx), ctx->fromInteger(pos));
     return self;
 }
@@ -1718,29 +1809,29 @@ static const proto::ProtoObject* py_sio_write(
             PythonEnvironment::getInternedString(ctx, "__data__"));
         if (d && d->isString(ctx)) d->asString(ctx)->toUTF8String(ctx, text);
     }
-    std::string buf = sio_get_buf(ctx, self);
+    const std::u32string chars = sio_decode(text);
+    std::u32string buf = sio_get_buf(ctx, self);
     proto::proto_long pos = sio_get_pos(ctx, self);
     if (pos < 0) pos = 0;
-    if (static_cast<size_t>(pos) > buf.size()) buf.append(static_cast<size_t>(pos) - buf.size(), '\0');
-    // Overwrite starting at pos, extending buffer if necessary.
-    size_t end = static_cast<size_t>(pos) + text.size();
-    if (end > buf.size()) buf.resize(end, '\0');
-    for (size_t i = 0; i < text.size(); ++i) buf[pos + i] = text[i];
-    sio_set_state(ctx, self, buf, static_cast<proto::proto_long>(pos + text.size()));
-    return ctx->fromInteger(static_cast<proto::proto_long>(text.size()));
+    // Overwrite starting at pos; a position past the end pads with NUL
+    // characters, as CPython does.
+    const size_t end = static_cast<size_t>(pos) + chars.size();
+    if (end > buf.size()) buf.resize(end, U'\0');
+    std::copy(chars.begin(), chars.end(), buf.begin() + pos);
+    sio_set_state(ctx, self, buf, static_cast<proto::proto_long>(end));
+    return ctx->fromInteger(static_cast<proto::proto_long>(chars.size()));
 }
 
 static const proto::ProtoObject* py_sio_getvalue(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList*, const proto::ProtoSparseList*) {
-    std::string buf = sio_get_buf(ctx, self);
-    return PythonEnvironment::getInternedString(ctx, buf.c_str())->asObject(ctx);
+    return PythonEnvironment::newStr(ctx, sio_encode(sio_get_buf(ctx, self)));
 }
 
 static const proto::ProtoObject* py_sio_read(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* args, const proto::ProtoSparseList*) {
-    std::string buf = sio_get_buf(ctx, self);
+    std::u32string buf = sio_get_buf(ctx, self);
     proto::proto_long pos = sio_get_pos(ctx, self);
     if (pos < 0) pos = 0;
     size_t size = buf.size();
@@ -1752,9 +1843,9 @@ static const proto::ProtoObject* py_sio_read(
     size_t take;
     if (want < 0) take = (static_cast<size_t>(pos) < size) ? size - pos : 0;
     else take = std::min<size_t>(size - std::min<size_t>(pos, size), static_cast<size_t>(want));
-    std::string out = (pos < static_cast<proto::proto_long>(size)) ? buf.substr(pos, take) : std::string();
+    std::u32string out = (pos < static_cast<proto::proto_long>(size)) ? buf.substr(pos, take) : std::u32string();
     sio_set_state(ctx, self, buf, pos + static_cast<proto::proto_long>(out.size()));
-    return PythonEnvironment::getInternedString(ctx, out.c_str())->asObject(ctx);
+    return PythonEnvironment::newStr(ctx, sio_encode(out));
 }
 
 // StringIO.readline(size=-1): the next line ("\n"-terminated; newline
@@ -1762,7 +1853,7 @@ static const proto::ProtoObject* py_sio_read(
 static const proto::ProtoObject* py_sio_readline(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* args, const proto::ProtoSparseList*) {
-    std::string buf = sio_get_buf(ctx, self);
+    std::u32string buf = sio_get_buf(ctx, self);
     proto::proto_long pos = sio_get_pos(ctx, self);
     if (pos < 0) pos = 0;
     long long limit = -1;
@@ -1770,15 +1861,15 @@ static const proto::ProtoObject* py_sio_readline(
         const proto::ProtoObject* a = args->getAt(ctx, 0);
         if (a && a->isInteger(ctx)) limit = a->asLong(ctx);
     }
-    std::string line;
+    std::u32string line;
     if (static_cast<size_t>(pos) < buf.size()) {
-        const size_t nl = buf.find('\n', static_cast<size_t>(pos));
-        const size_t end = nl == std::string::npos ? buf.size() : nl + 1;
+        const size_t nl = buf.find(U'\n', static_cast<size_t>(pos));
+        const size_t end = nl == std::u32string::npos ? buf.size() : nl + 1;
         line = buf.substr(static_cast<size_t>(pos), end - static_cast<size_t>(pos));
-        line.resize(io_line_cut(true, limit, line));
+        if (limit >= 0 && static_cast<size_t>(limit) < line.size()) line.resize(static_cast<size_t>(limit));
     }
     sio_set_state(ctx, self, buf, pos + static_cast<proto::proto_long>(line.size()));
-    return PythonEnvironment::newStr(ctx, line);
+    return PythonEnvironment::newStr(ctx, sio_encode(line));
 }
 
 static const proto::ProtoObject* py_sio_readlines(
@@ -1820,13 +1911,34 @@ static const proto::ProtoObject* py_sio_seek(
         off = static_cast<proto::proto_long>(args->getAt(ctx, 0)->asLong(ctx));
     if (args && args->getSize(ctx) > 1 && args->getAt(ctx, 1)->isInteger(ctx))
         whence = static_cast<proto::proto_long>(args->getAt(ctx, 1)->asLong(ctx));
-    std::string buf = sio_get_buf(ctx, self);
-    proto::proto_long pos = sio_get_pos(ctx, self);
-    proto::proto_long newPos = pos;
+    // CPython's StringIO.seek: positions are character indices; a negative
+    // absolute position is a ValueError, and only zero offsets are allowed
+    // relative to the current position or the end (OSError otherwise).
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (whence < 0 || whence > 2) {
+        if (env) env->raiseValueError(ctx, PythonEnvironment::newStr(ctx,
+            "Invalid whence (" + std::to_string(whence) + ", should be 0, 1 or 2)"));
+        return nullptr;
+    }
+    if (whence == 0 && off < 0) {
+        if (env) env->raiseValueError(ctx, PythonEnvironment::newStr(ctx,
+            "Negative seek position " + std::to_string(off)));
+        return nullptr;
+    }
+    if (whence != 0 && off != 0) {
+        const char* msg = whence == 1 ? "Can't do nonzero cur-relative seeks"
+                                      : "Can't do nonzero end-relative seeks";
+        const proto::ProtoObject* osError = env ? env->resolve("OSError", ctx) : nullptr;
+        const proto::ProtoObject* exc = (osError && osError != PROTO_NONE)
+            ? env->callObject(osError, {PythonEnvironment::newStr(ctx, msg)}) : nullptr;
+        if (exc && exc != PROTO_NONE) env->raiseException(exc);
+        else if (env) env->raiseValueError(ctx, PythonEnvironment::newStr(ctx, msg));
+        return nullptr;
+    }
+    std::u32string buf = sio_get_buf(ctx, self);
+    proto::proto_long newPos = sio_get_pos(ctx, self);
     if (whence == 0) newPos = off;
-    else if (whence == 1) newPos = pos + off;
-    else if (whence == 2) newPos = static_cast<proto::proto_long>(buf.size()) + off;
-    if (newPos < 0) newPos = 0;
+    else if (whence == 2) newPos = static_cast<proto::proto_long>(buf.size());
     sio_set_state(ctx, self, buf, newPos);
     return ctx->fromInteger(newPos);
 }
@@ -1840,7 +1952,7 @@ static const proto::ProtoObject* py_sio_tell(
 static const proto::ProtoObject* py_sio_truncate(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* args, const proto::ProtoSparseList*) {
-    std::string buf = sio_get_buf(ctx, self);
+    std::u32string buf = sio_get_buf(ctx, self);
     proto::proto_long pos = sio_get_pos(ctx, self);
     proto::proto_long size = pos;
     if (args && args->getSize(ctx) > 0) {
@@ -1856,7 +1968,7 @@ static const proto::ProtoObject* py_sio_truncate(
 static const proto::ProtoObject* py_sio_close(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList*, const proto::ProtoSparseList*) {
-    sio_set_state(ctx, self, std::string(), 0);
+    sio_set_state(ctx, self, std::u32string(), 0);
     return PROTO_NONE;
 }
 
@@ -1928,7 +2040,7 @@ static const proto::ProtoObject* py_sio_new(
         }
     }
     inst = const_cast<proto::ProtoObject*>(inst->setAttribute(ctx, k_sio_buf(ctx),
-        PythonEnvironment::getInternedString(ctx, initial.c_str())->asObject(ctx)));
+        PythonEnvironment::newStr(ctx, initial)));
     inst = const_cast<proto::ProtoObject*>(inst->setAttribute(ctx, k_sio_pos(ctx), ctx->fromInteger(0)));
     return inst;
 }

@@ -71,7 +71,7 @@ This document catalogs stub implementations and their completion status.
 | re | compile, match, search, fullmatch, findall, finditer, split, sub, subn, escape | Native ReModule (C++) on `std::wregex`: matches code points; `sub`/`subn` take a template or a replacement function. The native module resolves before the `lib/python3.14/re` package. Limits are listed in docs/CPYTHON_CONFORMANCE.md. |
 | atexit | register, unregister, _run_exitfuncs | Implemented (v37): register stores callbacks; _run_exitfuncs invoked at shutdown. |
 | heapq | heappush, heappop, heapify | Implemented: list as min-heap; heappush, heappop, heapify in-place. |
-| io | StringIO | Minimal: getvalue, read, write. |
+| io | StringIO | read, readline, readlines, write, seek, tell, truncate, getvalue, iteration; positions are character indices, as in CPython. `newline` translation is not modelled. |
 | typing | Any, List, Dict, etc. | Minimal stub for type hints. |
 | unittest | TestCase, main | Minimal stub placeholders. |
 | traceback | extract_tb, format_* | Minimal stub. |
