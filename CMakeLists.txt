@@ -434,6 +434,42 @@ set_tests_properties(protopy_io_open_code PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# sys.path_hooks / sys.path_importer_cache, PEP 420 namespace packages, an
+# nspkg .pth namespace package and pkgutil.iter_modules.
+add_test(NAME protopy_import_path_hooks
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/import_path_hooks.py)
+set_tests_properties(protopy_import_path_hooks PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
+# An atexit handler that raises is reported as CPython reports it, and the
+# other handlers still run with their keyword arguments.
+add_test(NAME protopy_atexit_callback_error
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/atexit_callback_error.py)
+set_tests_properties(protopy_atexit_callback_error PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "atexit_callback_error: registered\r?\nException ignored in atexit callback <function failing_handler at 0x[0-9a-f]+>:\r?\nTraceback \\(most recent call last\\):\r?\n(  File [^\n]*\n)+[^\n]*ValueError[^\n]*: boom[\r\n]+later_handler 1 3"
+    LABELS "regression_gate")
+# A .pth line importing importlib.util exits cleanly with HOME empty: atexit
+# handlers run at interpreter exit, not at the end of the next import.
+add_test(NAME protopy_pth_importlib_empty_home
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/pth_importlib_empty_home.py)
+set_tests_properties(protopy_pth_importlib_empty_home PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    ENVIRONMENT "HOME="
+    TIMEOUT 120
+    FAIL_REGULAR_EXPRESSION "Exception ignored;atexit"
+    LABELS "regression_gate")
+# A weakref.finalize alive at exit runs from its atexit handler (gc.isenabled).
+add_test(NAME protopy_weakref_finalize_at_exit
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/weakref_finalize_at_exit.py)
+set_tests_properties(protopy_weakref_finalize_at_exit PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "weakref_finalize_at_exit: finalizer ran"
+    FAIL_REGULAR_EXPRESSION "Exception ignored;atexit:"
+    LABELS "regression_gate")
 # platform.python_version() parses sys.version.
 add_test(NAME protopy_platform_version
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/platform_version.py)
