@@ -77,8 +77,17 @@ onwards. Commit hashes are given for reference.
   the name it is given, so tracebacks name it (`"<stdin>"`, or an embedder's
   name) rather than always `"<string>"` (test: `protopy_cli_stdin`).
 - **protoCore 2.7.0 is required** (was 2.0): `proto::proto_long` first exists
-  there. The DEB/RPM dependency floor follows, and CI pins protoCore
-  `fc5d79db` (v2.7.0) instead of `752bdb2` (2.6.2) (`8c9e1b45`).
+  there. The DEB/RPM dependency floor follows (`8c9e1b45`). CI builds
+  protoCore 2.9.4 (`9cb0ef54`, tag v2.9.4) in every push and pull-request job
+  on Linux, macOS and Windows, and the 2.7.0 minimum (`fc5d79db`) in one
+  Windows job of `cross-platform.yml`, the only floor job; the nightly
+  schedule of `ci.yml` builds protoCore `master`.
+- **Embedder conformance host and protoCore 2.9.4's `releaseFlagRaised()`.**
+  protoCore 2.9.4 made the `joinBlockingThread` release flag atomic and added
+  `proto::conformance::releaseFlagRaised()` as the read hosts must use.
+  protoPython's host never reads the flag (its worker is bounded by the clock,
+  not by the flag), so there was no plain read to replace; the host's comment
+  now records this, and that any future poll must go through the helper.
 - **Scripts no longer call `main()` implicitly.** protopy used to call a
   module-level `main()` after running a script, so a script that called
   `main()` itself ran it twice. Scripts now behave as in CPython. Wall-clock
