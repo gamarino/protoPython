@@ -11,6 +11,14 @@ import tempfile
 
 WINDOWS = os.name == "nt"
 
+
+def link_target(path):
+    # Windows returns an absolute target as an extended path ("\\\\?\\C:\\..."), as CPython.
+    target = os.readlink(path)
+    if WINDOWS and target.startswith("\\\\?\\"):
+        target = target[4:]
+    return target
+
 root = tempfile.mkdtemp()
 src = os.path.join(root, "src")
 os.mkdir(src)
@@ -46,7 +54,7 @@ if linked:
     link = os.path.join(src, "link.txt")
     assert os.path.islink(link), 'os.path.islink(link)'
     assert stat.S_ISLNK(os.lstat(link).st_mode), 'stat.S_ISLNK(os.lstat(link).st_mode)'
-    assert os.readlink(link) == os.path.join(src, "a.txt")
+    assert link_target(link) == os.path.join(src, "a.txt"), link_target(link)
     assert os.path.isfile(link), 'os.path.isfile(link)'
     if WINDOWS:
         lst = os.lstat(link)
@@ -62,23 +70,23 @@ if linked:
     # symlinks=True copies the links as links.
     dst = os.path.join(root, "dst")
     shutil.copytree(src, dst, symlinks=True)
-    assert os.path.islink(os.path.join(dst, "link.txt"))
-    assert os.readlink(os.path.join(dst, "link.txt")) == os.path.join(src, "a.txt")
-    assert os.path.islink(os.path.join(dst, "linkdir"))
+    assert os.path.islink(os.path.join(dst, "link.txt")), "dst/link.txt is a link"
+    assert link_target(os.path.join(dst, "link.txt")) == os.path.join(src, "a.txt"), "dst link target"
+    assert os.path.islink(os.path.join(dst, "linkdir")), "dst/linkdir is a link"
 
     # symlinks=False copies what they point to.
     dst2 = os.path.join(root, "dst2")
     shutil.copytree(src, dst2)
-    assert not os.path.islink(os.path.join(dst2, "link.txt"))
+    assert not os.path.islink(os.path.join(dst2, "link.txt")), "dst2/link.txt copied"
     with open(os.path.join(dst2, "link.txt")) as f:
         assert f.read() == "A", "check at line 74"
-    assert os.path.isdir(os.path.join(dst2, "linkdir"))
+    assert os.path.isdir(os.path.join(dst2, "linkdir")), "dst2/linkdir copied"
     with open(os.path.join(dst2, "linkdir", "b.txt")) as f:
         assert f.read() == "B", "check at line 77"
 
     # rmtree removes a tree with links in it, never what they point to.
     shutil.rmtree(dst)
-    assert os.path.exists(os.path.join(src, "sub", "b.txt"))
+    assert os.path.exists(os.path.join(src, "sub", "b.txt")), "rmtree left the link target"
 else:
     shutil.copytree(src, os.path.join(root, "dst2"))
 

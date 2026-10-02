@@ -34,8 +34,8 @@ static const proto::ProtoObject* py_bisect_right(
     while (lo < hi) {
         long long mid = (lo + hi) / 2;
         const proto::ProtoObject* item = nullptr;
-        if (a->asList(ctx)) item = a->asList(ctx)->getAt(ctx, (size_t)mid);
-        else if (a->isTuple(ctx)) item = a->asTuple(ctx)->getAt(ctx, (size_t)mid);
+        if (a->asList(ctx)) item = a->asList(ctx)->getAt(ctx, static_cast<int>((size_t)mid));
+        else if (a->isTuple(ctx)) item = a->asTuple(ctx)->getAt(ctx, static_cast<int>((size_t)mid));
         
         // x < item ?
         const proto::ProtoList* args = ctx->newList()->appendLast(ctx, item);
@@ -76,8 +76,8 @@ static const proto::ProtoObject* py_bisect_left(
     while (lo < hi) {
         long long mid = (lo + hi) / 2;
         const proto::ProtoObject* item = nullptr;
-        if (a->asList(ctx)) item = a->asList(ctx)->getAt(ctx, (size_t)mid);
-        else if (a->isTuple(ctx)) item = a->asTuple(ctx)->getAt(ctx, (size_t)mid);
+        if (a->asList(ctx)) item = a->asList(ctx)->getAt(ctx, static_cast<int>((size_t)mid));
+        else if (a->isTuple(ctx)) item = a->asTuple(ctx)->getAt(ctx, static_cast<int>((size_t)mid));
         
         // item < x ?
         const proto::ProtoList* args = ctx->newList()->appendLast(ctx, x);

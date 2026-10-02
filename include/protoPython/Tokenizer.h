@@ -150,7 +150,7 @@ public:
     bool hasNext() const;
 
     int getLine() const { return line_; }
-    int getColumn() const { return pos_ - lineStartPos_ + 1; }
+    int getColumn() const { return static_cast<int>(pos_ - lineStartPos_ + 1); }
 
 private:
     std::string source_;

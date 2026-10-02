@@ -410,15 +410,15 @@ static const proto::ProtoObject* py_strftime(
         if (tObj->asList(ctx)) {
             const proto::ProtoList* l = tObj->asList(ctx);
             if (l->getSize(ctx) >= 9) {
-                tm_val.tm_year = l->getAt(ctx, 0)->asLong(ctx) - 1900;
-                tm_val.tm_mon = l->getAt(ctx, 1)->asLong(ctx) - 1;
-                tm_val.tm_mday = l->getAt(ctx, 2)->asLong(ctx);
-                tm_val.tm_hour = l->getAt(ctx, 3)->asLong(ctx);
-                tm_val.tm_min = l->getAt(ctx, 4)->asLong(ctx);
-                tm_val.tm_sec = l->getAt(ctx, 5)->asLong(ctx);
+                tm_val.tm_year = static_cast<int>(l->getAt(ctx, 0)->asLong(ctx)) - 1900;
+                tm_val.tm_mon = static_cast<int>(l->getAt(ctx, 1)->asLong(ctx)) - 1;
+                tm_val.tm_mday = static_cast<int>(l->getAt(ctx, 2)->asLong(ctx));
+                tm_val.tm_hour = static_cast<int>(l->getAt(ctx, 3)->asLong(ctx));
+                tm_val.tm_min = static_cast<int>(l->getAt(ctx, 4)->asLong(ctx));
+                tm_val.tm_sec = static_cast<int>(l->getAt(ctx, 5)->asLong(ctx));
                 tm_val.tm_wday = (static_cast<int>(l->getAt(ctx, 6)->asLong(ctx)) + 1) % 7;
-                tm_val.tm_yday = l->getAt(ctx, 7)->asLong(ctx) - 1;
-                tm_val.tm_isdst = l->getAt(ctx, 8)->asLong(ctx);
+                tm_val.tm_yday = static_cast<int>(l->getAt(ctx, 7)->asLong(ctx)) - 1;
+                tm_val.tm_isdst = static_cast<int>(l->getAt(ctx, 8)->asLong(ctx));
                 found = true;
             }
         }

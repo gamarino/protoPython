@@ -3,6 +3,7 @@
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/StructSequence.h>
 #include <protoCore.h>
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -1126,10 +1127,10 @@ static const proto::ProtoObject* py_utime(
         if (!extractPair(timesObj, &a, &b)) return PROTO_NONE;
         double as = toDouble(a), bs = toDouble(b);
         ts[0].tv_sec  = static_cast<time_t>(as);
-        ts[0].tv_nsec = static_cast<proto::proto_long>((as - static_cast<double>(ts[0].tv_sec)) * 1e9);
+        ts[0].tv_nsec = static_cast<long>((as - static_cast<double>(ts[0].tv_sec)) * 1e9);
         if (ts[0].tv_nsec < 0) { ts[0].tv_nsec += PROTO_L(1000000000); ts[0].tv_sec -= 1; }
         ts[1].tv_sec  = static_cast<time_t>(bs);
-        ts[1].tv_nsec = static_cast<proto::proto_long>((bs - static_cast<double>(ts[1].tv_sec)) * 1e9);
+        ts[1].tv_nsec = static_cast<long>((bs - static_cast<double>(ts[1].tv_sec)) * 1e9);
         if (ts[1].tv_nsec < 0) { ts[1].tv_nsec += PROTO_L(1000000000); ts[1].tv_sec -= 1; }
     } else {
         // Both members "now"
@@ -1593,7 +1594,11 @@ static const proto::ProtoObject* py_os_read(
     for (;;) {
         {
             proto::ProtoContext::UnmanagedScope u(ctx);
+            #if defined(_WIN32)
+            got = ::read(fd, n > 0 ? &buf[0] : nullptr, static_cast<unsigned>(n));
+#else
             got = ::read(fd, n > 0 ? &buf[0] : nullptr, static_cast<size_t>(n));
+#endif
             err = (got < 0) ? errno : 0;
         }
         if (got >= 0) break;
@@ -1631,7 +1636,11 @@ static const proto::ProtoObject* py_os_write(
     for (;;) {
         {
             proto::ProtoContext::UnmanagedScope u(ctx);
+#if defined(_WIN32)
+            written = ::write(fd, data.data(), static_cast<unsigned>(std::min<size_t>(data.size(), 0x7fffffff)));
+#else
             written = ::write(fd, data.data(), data.size());
+#endif
             err = (written < 0) ? errno : 0;
         }
         if (written >= 0) break;

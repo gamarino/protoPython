@@ -33,13 +33,13 @@ static const proto::ProtoObject* py_check_methods(
     if (!mroList) return PROTO_FALSE;
 
     for (size_t i = 1; i < posArgs->getSize(ctx); ++i) {
-        const proto::ProtoObject* methodObj = posArgs->getAt(ctx, i);
+        const proto::ProtoObject* methodObj = posArgs->getAt(ctx, static_cast<int>(i));
         const proto::ProtoString* methodName = methodObj ? methodObj->asString(ctx) : nullptr;
         if (!methodName) continue;
 
         bool found = false;
         for (size_t j = 0; j < mroList->getSize(ctx); ++j) {
-            const proto::ProtoObject* base = mroList->getAt(ctx, j);
+            const proto::ProtoObject* base = mroList->getAt(ctx, static_cast<int>(j));
             const proto::ProtoObject* dict = base->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__dict__"));
             if (dict && dict->hasAttribute(ctx, methodName)) {
                 found = true;
@@ -71,7 +71,7 @@ static const proto::ProtoList* collectMappingItems(proto::ProtoContext* ctx, con
         }
         const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, receiver);
         proto::proto_ulong n = args ? args->getSize(ctx) : 0;
-        for (proto::proto_ulong j = 0; j < n; ++j) selfArgs = selfArgs->appendLast(ctx, args->getAt(ctx, j));
+        for (proto::proto_ulong j = 0; j < n; ++j) selfArgs = selfArgs->appendLast(ctx, args->getAt(ctx, static_cast<int>(j)));
         // Use the extern helper declared in ExecutionEngine.cpp
         return invokePythonCallable(ctx, method, selfArgs, nullptr);
     };
@@ -190,7 +190,7 @@ static const proto::ProtoObject* py_mapping_values(
     if (!items) return PythonEnvironment::wrapList(ctx, ctx->newList());
     const proto::ProtoList* result = ctx->newList();
     for (proto::proto_ulong i = 0; i < items->getSize(ctx); ++i) {
-        const proto::ProtoObject* pair = items->getAt(ctx, i);
+        const proto::ProtoObject* pair = items->getAt(ctx, static_cast<int>(i));
         if (pair && pair->isTuple(ctx) && pair->asTuple(ctx)->getSize(ctx) >= 2)
             result = result->appendLast(ctx, pair->asTuple(ctx)->getAt(ctx, 1));
     }
@@ -278,7 +278,7 @@ static const proto::ProtoObject* py_mutable_mapping_update(
         // Python callable — prepend receiver as self.
         const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, receiver);
         proto::proto_ulong n = args ? args->getSize(ctx) : 0;
-        for (proto::proto_ulong j = 0; j < n; ++j) selfArgs = selfArgs->appendLast(ctx, args->getAt(ctx, j));
+        for (proto::proto_ulong j = 0; j < n; ++j) selfArgs = selfArgs->appendLast(ctx, args->getAt(ctx, static_cast<int>(j)));
         return invokePythonCallable(ctx, method, selfArgs, nullptr);
     };
 
@@ -418,14 +418,14 @@ static const proto::ProtoObject* py_abc_check_methods(
 
     // Loop through methods (args 1..N)
     for (proto::proto_ulong i = 1; i < args->getSize(ctx); ++i) {
-        const proto::ProtoObject* methodObj = args->getAt(ctx, i);
+        const proto::ProtoObject* methodObj = args->getAt(ctx, static_cast<int>(i));
         if (!methodObj->isString(ctx)) continue;
         
         proto::proto_ulong methodHash = methodObj->getHash(ctx);
         bool found = false;
 
         for (proto::proto_ulong j = 0; j < mro->getSize(ctx); ++j) {
-            const proto::ProtoObject* B = mro->getAt(ctx, j);
+            const proto::ProtoObject* B = mro->getAt(ctx, static_cast<int>(j));
             const proto::ProtoSparseList* attrs = B->getOwnAttributes(ctx);
             // fprintf(stderr, "  Checking class %lu in MRO\n", j);
             
@@ -463,7 +463,7 @@ static const proto::ProtoObject* abc_invoke_method(
     }
     const proto::ProtoList* sa = ctx->newList()->appendLast(ctx, recv);
     proto::proto_ulong n = args ? args->getSize(ctx) : 0;
-    for (proto::proto_ulong j = 0; j < n; ++j) sa = sa->appendLast(ctx, args->getAt(ctx, j));
+    for (proto::proto_ulong j = 0; j < n; ++j) sa = sa->appendLast(ctx, args->getAt(ctx, static_cast<int>(j)));
     return invokePythonCallable(ctx, method, sa, nullptr);
 }
 
@@ -633,7 +633,7 @@ static const proto::ProtoObject* py_mutable_sequence_append(
             return m->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(recv), nullptr, a, nullptr);
         const proto::ProtoList* sa = ctx->newList()->appendLast(ctx, recv);
         proto::proto_ulong n = a ? a->getSize(ctx) : 0;
-        for (proto::proto_ulong j = 0; j < n; ++j) sa = sa->appendLast(ctx, a->getAt(ctx, j));
+        for (proto::proto_ulong j = 0; j < n; ++j) sa = sa->appendLast(ctx, a->getAt(ctx, static_cast<int>(j)));
         return invokePythonCallable(ctx, m, sa, nullptr);
     };
     const proto::ProtoObject* lenObj = invoke(lenM, self, ctx->newList());

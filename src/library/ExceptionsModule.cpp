@@ -46,7 +46,7 @@ static const proto::ProtoObject* exception_init(
     const proto::ProtoList* actualArgs = context->newList();
     if (positionalParameters && positionalParameters->getSize(context) > startIdx) {
         for (proto::proto_ulong i = startIdx; i < positionalParameters->getSize(context); ++i) {
-            actualArgs = actualArgs->appendLast(context, positionalParameters->getAt(context, i));
+            actualArgs = actualArgs->appendLast(context, positionalParameters->getAt(context, static_cast<int>(i)));
         }
     }
     const proto::ProtoObject* args = context->newTupleFromList(actualArgs)->asObject(context);
@@ -99,8 +99,8 @@ static const proto::ProtoObject* syntaxerror_init(
             ? argsObj->asTuple(context)->getSize(context)
             : argsObj->asList(context)->getSize(context);
         auto getArg = [&](proto::proto_ulong i) -> const proto::ProtoObject* {
-            if (argsObj->isTuple(context)) return argsObj->asTuple(context)->getAt(context, i);
-            return argsObj->asList(context)->getAt(context, i);
+            if (argsObj->isTuple(context)) return argsObj->asTuple(context)->getAt(context, static_cast<int>(i));
+            return argsObj->asList(context)->getAt(context, static_cast<int>(i));
         };
         if (argsSize >= 1) {
             const proto::ProtoObject* msgArg = getArg(0);
@@ -116,8 +116,8 @@ static const proto::ProtoObject* syntaxerror_init(
                     ? info->asTuple(context)->getSize(context)
                     : info->asList(context)->getSize(context);
                 auto getInfo = [&](proto::proto_ulong i) -> const proto::ProtoObject* {
-                    if (info->isTuple(context)) return info->asTuple(context)->getAt(context, i);
-                    return info->asList(context)->getAt(context, i);
+                    if (info->isTuple(context)) return info->asTuple(context)->getAt(context, static_cast<int>(i));
+                    return info->asList(context)->getAt(context, static_cast<int>(i));
                 };
                 if (infoSize >= 1) instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context,
                     PythonEnvironment::getInternedString(context, "filename"), getInfo(0));
@@ -580,12 +580,12 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
         if (baseMro && baseMro->isTuple(ctx)) {
             const proto::ProtoTuple* bt = baseMro->asTuple(ctx);
             for (size_t i = 0; i < bt->getSize(ctx); ++i) {
-                mroList = mroList->appendLast(ctx, bt->getAt(ctx, i));
+                mroList = mroList->appendLast(ctx, bt->getAt(ctx, static_cast<int>(i)));
             }
         } else if (baseMro && baseMro->asList(ctx)) {
             const proto::ProtoList* bl = baseMro->asList(ctx);
             for (size_t i = 0; i < bl->getSize(ctx); ++i) {
-                mroList = mroList->appendLast(ctx, bl->getAt(ctx, i));
+                mroList = mroList->appendLast(ctx, bl->getAt(ctx, static_cast<int>(i)));
             }
         } else {
             mroList = mroList->appendLast(ctx, base);

@@ -1015,7 +1015,7 @@ static const proto::ProtoObject* py_class_call_bridge(
     if (newMethod && newMethod->asMethod(ctx)) {
         // args for __new__: (cls, *args)
         const proto::ProtoList* newArgs = ctx->newList()->appendLast(ctx, self);
-        for (size_t i = 0; i < args->getSize(ctx); ++i) newArgs = newArgs->appendLast(ctx, args->getAt(ctx, i));
+        for (size_t i = 0; i < args->getSize(ctx); ++i) newArgs = newArgs->appendLast(ctx, args->getAt(ctx, static_cast<int>(i)));
         return newMethod->asMethod(ctx)(ctx, self, nullptr, newArgs, kwargs);
     }
     return PROTO_NONE;

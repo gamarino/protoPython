@@ -223,7 +223,7 @@ static long long resolveGroupRef(proto::ProtoContext* ctx,
         if (gi && gi->asList(ctx)) {
             const proto::ProtoList* lst = gi->asList(ctx);
             for (proto::proto_ulong k = 0; k < lst->getSize(ctx); ++k) {
-                const proto::ProtoObject* pair = lst->getAt(ctx, k);
+                const proto::ProtoObject* pair = lst->getAt(ctx, static_cast<int>(k));
                 if (!pair || !pair->asList(ctx)) continue;
                 const proto::ProtoList* p = pair->asList(ctx);
                 if (p->getSize(ctx) < 2) continue;
@@ -284,7 +284,7 @@ static const proto::ProtoObject* py_match_groupdict(
     if (gi && gi->asList(ctx) && groups) {
         const proto::ProtoList* lst = gi->asList(ctx);
         for (proto::proto_ulong k = 0; k < lst->getSize(ctx); ++k) {
-            const proto::ProtoObject* pair = lst->getAt(ctx, k);
+            const proto::ProtoObject* pair = lst->getAt(ctx, static_cast<int>(k));
             if (!pair || !pair->asList(ctx) || pair->asList(ctx)->getSize(ctx) < 2) continue;
             const proto::ProtoObject* nameObj = pair->asList(ctx)->getAt(ctx, 0);
             const proto::ProtoObject* idxObj  = pair->asList(ctx)->getAt(ctx, 1);
@@ -1039,6 +1039,16 @@ static size_t mappedIndex(const Subject& sj, ReString::const_iterator it) {
     return static_cast<size_t>(it - sj.mapped.cbegin());
 }
 
+// libc++'s regex_search over a non-empty range does not try the empty match
+// at its very end ($ or a lookahead there); libstdc++ and MSVC do. Try it
+// separately when the search from `from` found nothing.
+static bool matchAtEnd(const CompiledRe& cr, const Subject& sj, size_t from, size_t last, ReMatch& m) {
+    if (from >= last) return false;
+    const auto end = sj.mapped.cbegin() + static_cast<std::ptrdiff_t>(last);
+    return std::regex_search(end, end, m, cr.re,
+                             std::regex_constants::match_prev_avail | std::regex_constants::match_continuous);
+}
+
 // Searches [pos, endpos) of the subject (code point positions). `anchored`:
 // the match must start at pos (pattern.match). `whole`: it must span the
 // whole range (fullmatch). `^` and `\A` match only at the true start, as in
@@ -1059,6 +1069,7 @@ static bool findMatch(const CompiledRe& cr, const Subject& sj, size_t pos, size_
         return whole ? std::regex_match(first, last, m, cr.re, f) : std::regex_search(first, last, m, cr.re, f);
     };
     if (attempt(start, flags)) return true;
+    if (!anchored && !whole && matchAtEnd(cr, sj, start, sj.searchEnd(endpos), m)) return true;
     // A MULTILINE pattern whose match at pos does not take the line-start
     // marker before pos: try once more after it.
     const size_t after = sj.searchEnd(pos);
@@ -1089,7 +1100,8 @@ static void forEachMatch(const CompiledRe& cr, const Subject& sj, size_t pos, si
         if (cur > 0) flags |= std::regex_constants::match_prev_avail;
         if (notNull) flags |= std::regex_constants::match_not_null | std::regex_constants::match_continuous;
         if (!std::regex_search(base + static_cast<std::ptrdiff_t>(cur), base + static_cast<std::ptrdiff_t>(last),
-                               m, cr.re, flags)) {
+                               m, cr.re, flags)
+            && (notNull || !matchAtEnd(cr, sj, cur, last, m))) {
             if (!notNull || cur == last) break;
             notNull = false;
             ++cur;

@@ -305,7 +305,7 @@ void Compiler::applyPatches() {
         // the arg slot is at index (p.first * 2) + 1 in the bytecodeVec_
         proto::proto_ulong arrayIdx = static_cast<proto::proto_ulong>(p.first) * 2 + 1;
         if (arrayIdx < static_cast<proto::proto_ulong>(bytecodeVec_->getSize(ctx_)))
-            bytecodeVec_ = bytecodeVec_->setAt(ctx_, arrayIdx, ctx_->fromInteger(p.second * 2)); // ExecutionEngine jumps to array index!
+            bytecodeVec_ = bytecodeVec_->setAt(ctx_, static_cast<int>(arrayIdx), ctx_->fromInteger(p.second * 2)); // ExecutionEngine jumps to array index!
     }
     patches_.clear();
 }
@@ -397,18 +397,18 @@ const proto::ProtoList* Compiler::specialiseBytecode(const proto::ProtoList* in)
         bc.push_back(slotAt(in, ctx_, k));
     }
 
-    auto matchLoadFast = [&](int base) -> int {
+    auto matchLoadFast = [&](proto::proto_ulong base) -> int {
         // Returns the FAST index, or -1 if not a LOAD_FAST.
-        if (base + 1 >= (int)bc.size()) return -1;
+        if (base + 1 >= bc.size()) return -1;
         if (bc[base] != OP_LOAD_FAST) return -1;
         int idx = bc[base + 1];
         return fitsByte(idx) ? idx : -1;
     };
-    auto matchInplaceAdd = [&](int base) -> bool {
-        return base + 1 < (int)bc.size() && bc[base] == OP_INPLACE_ADD;
+    auto matchInplaceAdd = [&](proto::proto_ulong base) -> bool {
+        return base + 1 < bc.size() && bc[base] == OP_INPLACE_ADD;
     };
-    auto matchStoreFastSame = [&](int base, int expected) -> bool {
-        return base + 1 < (int)bc.size()
+    auto matchStoreFastSame = [&](proto::proto_ulong base, int expected) -> bool {
+        return base + 1 < bc.size()
             && bc[base] == OP_STORE_FAST
             && bc[base + 1] == expected;
     };
@@ -5555,7 +5555,7 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
         if (bcSize > 0) {
             int* intBuf = new int[bcSize];
             for (proto::proto_ulong j = 0; j < bcSize; ++j) {
-                const proto::ProtoObject* elem = bytecode->getAt(ctx, j);
+                const proto::ProtoObject* elem = bytecode->getAt(ctx, static_cast<int>(j));
                 intBuf[j] = (elem && elem->isInteger(ctx)) ? static_cast<int>(elem->asLong(ctx)) : 0;
             }
             const proto::ProtoObject* nativeBcObj = ctx->fromBuffer(

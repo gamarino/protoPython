@@ -197,7 +197,7 @@ static const proto::ProtoObject* sys_getsizeof(
             const proto::ProtoObject* sizeM = nullptr;
             if (mroT) {
                 for (proto::proto_ulong i = 0; i < mroT->getSize(context); ++i) {
-                    const proto::ProtoObject* b = mroT->getAt(context, i);
+                    const proto::ProtoObject* b = mroT->getAt(context, static_cast<int>(i));
                     if (!b || b == PROTO_NONE) continue;
                     if (b->hasOwnAttribute(context, sizeofS) == PROTO_TRUE) {
                         sizeM = b->getOwnAttributeDirect(context, sizeofS);

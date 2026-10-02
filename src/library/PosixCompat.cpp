@@ -514,6 +514,9 @@ ssize_t protopy_readlink(const char* path, char* buf, size_t size) {
     }
     std::wstring target(reinterpret_cast<const wchar_t*>(pathBuffer + hdr->substOffset),
                         hdr->substLength / sizeof(wchar_t));
+    // An NT path ("\??\C:\...") is returned as a Win32 extended path
+    // ("\\?\C:\..."), as CPython's os.readlink does.
+    if (target.size() > 4 && target.compare(0, 4, L"\\??\\") == 0) target[1] = L'\\';
     std::string s = protopy_narrow(target);
     size_t n = s.size() < size ? s.size() : size;
     std::memcpy(buf, s.data(), n);

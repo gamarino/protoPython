@@ -835,7 +835,7 @@ bool CppGenerator::generateFunctionInternal(const std::string& name,
         for (size_t i = 0; i < parameters.size(); ++i) {
              auto it = std::find(orderedLocals.begin(), orderedLocals.end(), parameters[i]);
              if (it != orderedLocals.end()) {
-                 int idx = std::distance(orderedLocals.begin(), it);
+                 int idx = static_cast<int>(std::distance(orderedLocals.begin(), it));
                  if (i >= defaultStartGen && defaults) {
                      *out_ << "    initialLocals = initialLocals->setAt(ctx, " << idx
                            << ", (nPos > " << i << ") ? args->getAt(ctx, " << i << ") : ";

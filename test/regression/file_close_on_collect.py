@@ -61,13 +61,26 @@ assert not os.path.exists(d)
 
 print("file_close_on_collect: TemporaryDirectory")
 # TemporaryDirectory cleans up after files opened and dropped in its scope.
-with tempfile.TemporaryDirectory() as td:
-    for i in range(10):
-        write_implicitly(os.path.join(td, "%d.txt" % i), "v%d" % i)
-    contents = [open(os.path.join(td, "%d.txt" % i)).read() for i in range(10)]
-    assert contents == ["v%d" % i for i in range(10)], contents
-    os.mkdir(os.path.join(td, "sub"))
-    write_implicitly(os.path.join(td, "sub", "deep.txt"), "deep")
+# Each step is announced, and an OSError names its errno and filename, so a
+# failure on a platform this cannot be run on locally is located by its log.
+step = "start"
+try:
+    with tempfile.TemporaryDirectory() as td:
+        for i in range(10):
+            step = "write %d" % i
+            write_implicitly(os.path.join(td, "%d.txt" % i), "v%d" % i)
+        step = "read back"
+        contents = [open(os.path.join(td, "%d.txt" % i)).read() for i in range(10)]
+        assert contents == ["v%d" % i for i in range(10)], contents
+        step = "mkdir sub"
+        os.mkdir(os.path.join(td, "sub"))
+        step = "write sub/deep.txt"
+        write_implicitly(os.path.join(td, "sub", "deep.txt"), "deep")
+        step = "cleanup"
+except OSError as e:
+    print("file_close_on_collect: %s at step %r: errno %r, filename %r"
+          % (type(e).__name__, step, e.errno, e.filename))
+    raise
 assert not os.path.exists(td), "TemporaryDirectory left " + td
 
 print("file_close_on_collect: explicit close")

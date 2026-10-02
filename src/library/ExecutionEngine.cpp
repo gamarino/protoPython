@@ -642,7 +642,7 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
             if (kwNamesTuple) {
                 proto::proto_ulong n = kwNamesTuple->getSize(calleeCtx);
                 for (proto::proto_ulong ni = 0; ni < n; ++ni) {
-                    const proto::ProtoObject* nm = kwNamesTuple->getAt(calleeCtx, ni);
+                    const proto::ProtoObject* nm = kwNamesTuple->getAt(calleeCtx, static_cast<int>(ni));
                     if (!nm) continue;
                     proto::proto_ulong key = nm->getHash(calleeCtx);
                     if (!kwargs->has(calleeCtx, key)) continue;
@@ -650,7 +650,7 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
 
                     bool alreadyBound = false;
                     for (proto::proto_ulong i = 0; i < (proto::proto_ulong)(nparams_count + kwonly_count); ++i) {
-                        const proto::ProtoObject* paramName = co_varnames->getAt(calleeCtx, i);
+                        const proto::ProtoObject* paramName = co_varnames->getAt(calleeCtx, static_cast<int>(i));
                         if (paramName && paramName->getHash(calleeCtx) == key) {
                             alreadyBound = true;
                             break;
@@ -669,7 +669,7 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
 
                     bool alreadyBound = false;
                     for (proto::proto_ulong i = 0; i < (proto::proto_ulong)(nparams_count + kwonly_count); ++i) {
-                        const proto::ProtoObject* paramName = co_varnames->getAt(calleeCtx, i);
+                        const proto::ProtoObject* paramName = co_varnames->getAt(calleeCtx, static_cast<int>(i));
                         if (paramName && paramName->getHash(calleeCtx) == key) {
                             alreadyBound = true;
                             break;
@@ -689,7 +689,7 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
              proto::proto_ulong size = keys ? keys->getSize(calleeCtx) : 0;
              fprintf(stderr, "DEBUG runUserFunctionCall: kwDict populated with %llu keys\n", static_cast<unsigned long long>(size));
              for (proto::proto_ulong i = 0; i < size; ++i) {
-                 const proto::ProtoObject* k = keys->getAt(calleeCtx, i);
+                 const proto::ProtoObject* k = keys->getAt(calleeCtx, static_cast<int>(i));
                  std::string ks = env ? env->reprObject(calleeCtx, k) : "???";
                  fprintf(stderr, "  key[%llu]=%s\n", static_cast<unsigned long long>(i), ks.c_str());
              }
@@ -1772,8 +1772,8 @@ static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
         proto::ProtoList* resL = const_cast<proto::ProtoList*>(ctx->newList());
         proto::proto_ulong n1 = l1->getSize(ctx);
         proto::proto_ulong n2 = l2->getSize(ctx);
-        for (proto::proto_ulong i = 0; i < n1; ++i) resL = const_cast<proto::ProtoList*>(resL->appendLast(ctx, l1->getAt(ctx, i)));
-        for (proto::proto_ulong i = 0; i < n2; ++i) resL = const_cast<proto::ProtoList*>(resL->appendLast(ctx, l2->getAt(ctx, i)));
+        for (proto::proto_ulong i = 0; i < n1; ++i) resL = const_cast<proto::ProtoList*>(resL->appendLast(ctx, l1->getAt(ctx, static_cast<int>(i))));
+        for (proto::proto_ulong i = 0; i < n2; ++i) resL = const_cast<proto::ProtoList*>(resL->appendLast(ctx, l2->getAt(ctx, static_cast<int>(i))));
 
         const proto::ProtoObject* aCls = env ? env->getType(ctx, a) : a->getAttribute(ctx, protoPython::PythonEnvironment::getInternalString(ctx, "__class__"));
         // CPython: sequence ops on subclasses without an own __add__
@@ -1894,7 +1894,7 @@ static const proto::ProtoObject* binaryMultiply(proto::ProtoContext* ctx,
         proto::ProtoList* resultList = const_cast<proto::ProtoList*>(ctx->newList());
         for (long long rep = 0; rep < n; ++rep) {
             for (size_t idx = 0; idx < seqSize; ++idx) {
-                const proto::ProtoObject* elem = t->getAt(ctx, idx);
+                const proto::ProtoObject* elem = t->getAt(ctx, static_cast<int>(idx));
                 if (elem) resultList = const_cast<proto::ProtoList*>(resultList->appendLast(ctx, elem));
             }
         }
@@ -2286,7 +2286,7 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
                         const proto::ProtoList* parents = b->getParents(ctx);
                         if (parents) {
                             for (size_t i = 0; i < parents->getSize(ctx); ++i) {
-                                if (parents->getAt(ctx, i) == mpProto) { isMP = true; break; }
+                                if (parents->getAt(ctx, static_cast<int>(i)) == mpProto) { isMP = true; break; }
                             }
                         }
                     }
@@ -2384,9 +2384,9 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
                 bool eq = false;
                 if (env_local) {
                     // Identity first (`x is e or x == e`), so NaN is found.
-                    eq = env_local->objectsEqual(ctx, a, lst->getAt(ctx, i));
+                    eq = env_local->objectsEqual(ctx, a, lst->getAt(ctx, static_cast<int>(i)));
                 } else {
-                    eq = (a->compare(ctx, lst->getAt(ctx, i)) == 0);
+                    eq = (a->compare(ctx, lst->getAt(ctx, static_cast<int>(i))) == 0);
                 }
                 if (eq) {
                     found = true;
@@ -2724,7 +2724,7 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
         const proto::ProtoList* selfPrependedArgs = ctx->newList()->appendLast(ctx, callable);
         proto::proto_ulong nargs = args ? args->getSize(ctx) : 0;
         for (proto::proto_ulong j = 0; j < nargs; ++j) {
-            selfPrependedArgs = selfPrependedArgs->appendLast(ctx, args->getAt(ctx, j));
+            selfPrependedArgs = selfPrependedArgs->appendLast(ctx, args->getAt(ctx, static_cast<int>(j)));
         }
         return invokeCallable(ctx, callAttr, selfPrependedArgs, kwargs);
     }
@@ -2763,7 +2763,7 @@ static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const pr
             const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
             if (mroT) {
                 for (proto::proto_ulong i = 0; i < mroT->getSize(ctx); ++i) {
-                    const proto::ProtoObject* base = mroT->getAt(ctx, i);
+                    const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(i));
                     if (!base || base == PROTO_NONE) continue;
                     if (base->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
                         const proto::ProtoObject* v = base->getOwnAttributeDirect(ctx, name);
@@ -2940,7 +2940,7 @@ static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const pr
     if (codeS && method->hasOwnAttribute(ctx, codeS) == PROTO_TRUE) {
         const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, container);
         proto::proto_ulong n = args ? args->getSize(ctx) : 0;
-        for (proto::proto_ulong j = 0; j < n; ++j) selfArgs = selfArgs->appendLast(ctx, args->getAt(ctx, j));
+        for (proto::proto_ulong j = 0; j < n; ++j) selfArgs = selfArgs->appendLast(ctx, args->getAt(ctx, static_cast<int>(j)));
         return invokeCallable(ctx, method, selfArgs, kwargs);
     }
     return invokeCallable(ctx, method, args, kwargs);
@@ -3100,7 +3100,7 @@ const proto::ProtoObject* py_generator_send_impl(
         // the prelude / save loop accordingly so we never deref past
         // the slot array.
         proto::ProtoObject** stackBase = (allSlots && nSlots > stackOffset) ? allSlots + stackOffset : nullptr;
-        unsigned int maxStack = (allSlots && nSlots > stackOffset) ? (nSlots - stackOffset) : 0;
+        unsigned int maxStack = (allSlots && nSlots > stackOffset) ? static_cast<unsigned int>(nSlots - stackOffset) : 0;
 
         if (slist && stackBase) {
             proto::proto_ulong sSize = slist->getSize(calleeCtx);
@@ -3683,7 +3683,7 @@ bool invokeInitSubclass(proto::ProtoContext* ctx,
         PythonEnvironment::getInternedString(ctx, "__init_subclass__");
     // super(cls, cls).__init_subclass__: the first definition after cls.
     for (proto::proto_ulong mi = 1; mi < mroT->getSize(ctx); ++mi) {
-        const proto::ProtoObject* base = mroT->getAt(ctx, mi);
+        const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(mi));
         if (!base || base == PROTO_NONE) continue;
         const proto::ProtoObject* hook = base->getOwnAttributeDirect(ctx, iscS);
         if (!hook || hook == PROTO_NONE) continue;
@@ -3740,7 +3740,7 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
         const proto::ProtoList* newArgs = ctx->newList()->appendLast(ctx, self);
         if (args) {
             for (size_t i = 0; i < args->getSize(ctx); ++i) {
-                newArgs = newArgs->appendLast(ctx, args->getAt(ctx, i));
+                newArgs = newArgs->appendLast(ctx, args->getAt(ctx, static_cast<int>(i)));
             }
         }
         
@@ -3880,7 +3880,7 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
                 const proto::ProtoList* initArgs = ctx->newList()->appendLast(ctx, obj);
                 if (args) {
                     for (size_t i = 0; i < args->getSize(ctx); ++i) {
-                        initArgs = initArgs->appendLast(ctx, args->getAt(ctx, i));
+                        initArgs = initArgs->appendLast(ctx, args->getAt(ctx, static_cast<int>(i)));
                     }
                 }
                 const proto::ProtoObject* initRes = invokePythonCallable(ctx, initM, initArgs, kwargs);
@@ -3949,8 +3949,8 @@ static void updateContextLocation(proto::ProtoContext* ctx, proto::ProtoObject* 
         int current_lineno = lineno;
         for (proto::proto_ulong j = 0; j < lnotab->getSize(ctx); j += 2) {
             if (j + 1 >= lnotab->getSize(ctx)) break;
-            int pc_offset = static_cast<int>(lnotab->getAt(ctx, j)->asLong(ctx));
-            int line_offset = static_cast<int>(static_cast<signed char>(lnotab->getAt(ctx, j+1)->asLong(ctx)));
+            int pc_offset = static_cast<int>(lnotab->getAt(ctx, static_cast<int>(j))->asLong(ctx));
+            int line_offset = static_cast<int>(static_cast<signed char>(lnotab->getAt(ctx, static_cast<int>(j+1))->asLong(ctx)));
             if (get_env_diag()) {
                 fprintf(stderr, "DEBUG: lnotab entry j=%llu, pc_offset=%d, line_offset=%d\n", static_cast<unsigned long long>(j), pc_offset, line_offset);
             }
@@ -4033,7 +4033,7 @@ const proto::ProtoObject* executeBytecodeRange(
     if (!bc) {
         bc_fallback.resize(n);
         for (proto::proto_ulong j = 0; j < n; ++j) {
-            const proto::ProtoObject* obj = bytecode->getAt(ctx, j);
+            const proto::ProtoObject* obj = bytecode->getAt(ctx, static_cast<int>(j));
             bc_fallback[j] = (obj && obj->isInteger(ctx)) ? static_cast<int>(obj->asLong(ctx)) : 0;
         }
         bc = bc_fallback.data();
@@ -5678,7 +5678,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
                 if (!mroT) return env->getAttribute(ctx, cls, name, false);
                 for (proto::proto_ulong i = 0; i < mroT->getSize(ctx); ++i) {
-                    const proto::ProtoObject* base = mroT->getAt(ctx, i);
+                    const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(i));
                     if (!base || base == PROTO_NONE) continue;
                     if (base->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
                         const proto::ProtoObject* v = base->getOwnAttributeDirect(ctx, name);
@@ -6047,7 +6047,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         const proto::ProtoSparseList* fromSL = fromData->asSparseList(ctx);
                         const proto::ProtoList* fromKeys = fromKeysObj->asList(ctx);
                         for (proto::proto_ulong j = 0; j < fromKeys->getSize(ctx); ++j) {
-                            const proto::ProtoObject* k = fromKeys->getAt(ctx, j);
+                            const proto::ProtoObject* k = fromKeys->getAt(ctx, static_cast<int>(j));
                             proto::proto_ulong h = ::protoPython::pyDictKeyHash(ctx, k);
                             const proto::ProtoObject* v = fromSL->getAt(ctx, h);
                             bool isNew = !toSL->has(ctx, h);
@@ -6088,7 +6088,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                 if (raw) selfArgs = selfArgs->appendLast(ctx, recv);
                                 proto::proto_ulong n = args ? args->getSize(ctx) : 0;
                                 for (proto::proto_ulong j = 0; j < n; ++j)
-                                    selfArgs = selfArgs->appendLast(ctx, args->getAt(ctx, j));
+                                    selfArgs = selfArgs->appendLast(ctx, args->getAt(ctx, static_cast<int>(j)));
                                 return invokePythonCallable(ctx, m, selfArgs, nullptr);
                             };
                             const proto::ProtoObject* keysObj =
@@ -6136,7 +6136,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     const proto::ProtoList* fromList = (fromData && fromData->asList(ctx)) ? fromData->asList(ctx) : iterable->asList(ctx);
                     if (fromList) {
                         for (proto::proto_ulong j = 0; j < fromList->getSize(ctx); ++j) {
-                            lst = lst->appendLast(ctx, fromList->getAt(ctx, j));
+                            lst = lst->appendLast(ctx, fromList->getAt(ctx, static_cast<int>(j)));
                         }
                         lstObj->setAttribute(ctx, dataString, lst->asObject(ctx));
                     } else {
@@ -6144,7 +6144,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         const proto::ProtoTuple* fromTuple = (fromData && fromData->asTuple(ctx)) ? fromData->asTuple(ctx) : iterable->asTuple(ctx);
                         if (fromTuple) {
                             for (proto::proto_ulong j = 0; j < fromTuple->getSize(ctx); ++j) {
-                                lst = lst->appendLast(ctx, fromTuple->getAt(ctx, j));
+                                lst = lst->appendLast(ctx, fromTuple->getAt(ctx, static_cast<int>(j)));
                             }
                             lstObj->setAttribute(ctx, dataString, lst->asObject(ctx));
                         } else if (env) {
@@ -6207,7 +6207,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     const proto::ProtoList* fromList = (fromData && fromData->asList(ctx)) ? fromData->asList(ctx) : iterable->asList(ctx);
                     if (fromList) {
                         for (proto::proto_ulong j = 0; s && j < fromList->getSize(ctx); ++j) {
-                            s = PythonEnvironment::setAdd(ctx, s, fromList->getAt(ctx, j));
+                            s = PythonEnvironment::setAdd(ctx, s, fromList->getAt(ctx, static_cast<int>(j)));
                         }
                     } else if (env) {
                         const proto::ProtoObject* it = env->iter(iterable);
@@ -6340,8 +6340,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     bool found = false;
                     std::unordered_set<const proto::ProtoObject*> visited;
                     while (worklist->getSize(ctx) > 0) {
-                        const proto::ProtoObject* curr = worklist->getAt(ctx, worklist->getSize(ctx) - 1);
-                        worklist = worklist->removeAt(ctx, worklist->getSize(ctx) - 1);
+                        const proto::ProtoObject* curr = worklist->getAt(ctx, static_cast<int>(worklist->getSize(ctx) - 1));
+                        worklist = worklist->removeAt(ctx, static_cast<int>(worklist->getSize(ctx)) - 1);
                         stack[stack.top - 1] = worklist->asObject(ctx); // Update root
 
                         if (!curr || curr == PROTO_NONE || visited.count(curr)) continue;
@@ -6367,13 +6367,13 @@ const proto::ProtoObject* executeBytecodeRange(
                             if (closureAttr->asList(ctx)) {
                                 const proto::ProtoList* l = closureAttr->asList(ctx);
                                 for (proto::proto_ulong i = 0; i < l->getSize(ctx); ++i) {
-                                    worklist = worklist->appendLast(ctx, l->getAt(ctx, i));
+                                    worklist = worklist->appendLast(ctx, l->getAt(ctx, static_cast<int>(i)));
                                     stack[stack.top - 1] = worklist->asObject(ctx);
                                 }
                             } else if (closureAttr->asTuple(ctx)) {
                                 const proto::ProtoTuple* t = closureAttr->asTuple(ctx);
                                 for (proto::proto_ulong i = 0; i < t->getSize(ctx); ++i) {
-                                    worklist = worklist->appendLast(ctx, t->getAt(ctx, i));
+                                    worklist = worklist->appendLast(ctx, t->getAt(ctx, static_cast<int>(i)));
                                     stack[stack.top - 1] = worklist->asObject(ctx);
                                 }
                             } else {
@@ -6467,8 +6467,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     bool found = false;
                     std::unordered_set<const proto::ProtoObject*> visited;
                     while (worklist->getSize(ctx) > 0) {
-                        const proto::ProtoObject* curr = worklist->getAt(ctx, worklist->getSize(ctx) - 1);
-                        worklist = worklist->removeAt(ctx, worklist->getSize(ctx) - 1);
+                        const proto::ProtoObject* curr = worklist->getAt(ctx, static_cast<int>(worklist->getSize(ctx) - 1));
+                        worklist = worklist->removeAt(ctx, static_cast<int>(worklist->getSize(ctx)) - 1);
                         stack[stack.top - 1] = worklist->asObject(ctx);
                         
                         if (!curr || curr == PROTO_NONE || visited.count(curr)) continue;
@@ -6505,13 +6505,13 @@ const proto::ProtoObject* executeBytecodeRange(
                                 if (closureAttr->asList(ctx)) {
                                     const proto::ProtoList* l = closureAttr->asList(ctx);
                                     for (proto::proto_ulong i = 0; i < l->getSize(ctx); ++i) {
-                                        worklist = worklist->appendLast(ctx, l->getAt(ctx, i));
+                                        worklist = worklist->appendLast(ctx, l->getAt(ctx, static_cast<int>(i)));
                                         stack[stack.top - 1] = worklist->asObject(ctx);
                                     }
                                 } else if (closureAttr->asTuple(ctx)) {
                                     const proto::ProtoTuple* t = closureAttr->asTuple(ctx);
                                     for (proto::proto_ulong i = 0; i < t->getSize(ctx); ++i) {
-                                        worklist = worklist->appendLast(ctx, t->getAt(ctx, i));
+                                        worklist = worklist->appendLast(ctx, t->getAt(ctx, static_cast<int>(i)));
                                         stack[stack.top - 1] = worklist->asObject(ctx);
                                     }
                                 } else {
@@ -7671,7 +7671,7 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();
             const proto::ProtoTuple* namesTuple = namesTupleObj->asTuple(ctx);
             if (!namesTuple) { i = next_i; continue; }
-            int nkw = namesTuple->getSize(ctx);
+            int nkw = static_cast<int>(namesTuple->getSize(ctx));
             int npos = arg - nkw;
             if (stack.size() < static_cast<size_t>(arg) + 1) { 
                  if (env) env->raiseRuntimeError(ctx, "Stack underflow in OP_CALL_FUNCTION_KW");
@@ -7721,7 +7721,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 callable = X;
                 const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, Y);
                 for (proto::proto_ulong j = 0; j < plArgs->getSize(ctx); ++j) {
-                    selfArgs = selfArgs->appendLast(ctx, plArgs->getAt(ctx, j));
+                    selfArgs = selfArgs->appendLast(ctx, plArgs->getAt(ctx, static_cast<int>(j)));
                 }
                 callArgs = selfArgs;
             }
@@ -7883,7 +7883,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 posArgs = ctx->newList();
                 const proto::ProtoTuple* t = starargs->asTuple(ctx);
                 for (proto::proto_ulong j = 0; j < t->getSize(ctx); ++j) {
-                    posArgs = posArgs->appendLast(ctx, t->getAt(ctx, j));
+                    posArgs = posArgs->appendLast(ctx, t->getAt(ctx, static_cast<int>(j)));
                 }
             } else if (starargs && starargs != PROTO_NONE && env) {
                 const proto::ProtoObject* it = env->iter(starargs);
@@ -7924,7 +7924,7 @@ const proto::ProtoObject* executeBytecodeRange(
                      // e.g. `f(**{b'foo': 1})` raises TypeError.
                      const proto::ProtoList* kl = keysListObj->asList(ctx);
                      for (proto::proto_ulong kj = 0; kj < kl->getSize(ctx); ++kj) {
-                         const proto::ProtoObject* k = kl->getAt(ctx, kj);
+                         const proto::ProtoObject* k = kl->getAt(ctx, static_cast<int>(kj));
                          if (!k || !k->isString(ctx)) {
                              env->raiseTypeError(ctx, "keywords must be strings");
                              kwError = true;
@@ -7960,7 +7960,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 // Prepend Y (Self) to targetArgs
                 const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, Y);
                 for (proto::proto_ulong j = 0; j < posArgs->getSize(ctx); ++j) {
-                    selfArgs = selfArgs->appendLast(ctx, posArgs->getAt(ctx, j));
+                    selfArgs = selfArgs->appendLast(ctx, posArgs->getAt(ctx, static_cast<int>(j)));
                 }
                 targetArgs = selfArgs;
             }
@@ -8082,7 +8082,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                     if (coFreevars) {
                                         bool needed = false;
                                         for (proto::proto_ulong fi = 0; fi < coFreevars->getSize(ctx); ++fi) {
-                                            const proto::ProtoObject* fvn = coFreevars->getAt(ctx, fi);
+                                            const proto::ProtoObject* fvn = coFreevars->getAt(ctx, static_cast<int>(fi));
                                             if (fvn && fvn->isString(ctx) &&
                                                 fvn->asString(ctx)->cmp_to_string(ctx, vname) == 0) {
                                                 needed = true; break;
@@ -8216,7 +8216,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 // Robust detection: in modern bytecode, the function result of MAKE_FUNCTION
                 // might have been pushed with a NULL marker if it was meant to be called.
                 // But in BUILD_CLASS opcode (legacy path), we expect items directly.
-                int firstIdx = stack.top - 4;
+                int firstIdx = static_cast<int>(stack.top) - 4;
                 const proto::ProtoObject* body = stack[firstIdx + 3];
                 const proto::ProtoObject* kwds = stack[firstIdx + 2];
                 const proto::ProtoObject* bases = stack[firstIdx + 1];
@@ -8224,7 +8224,7 @@ const proto::ProtoObject* executeBytecodeRange(
 
                 if (body == nullptr && stack.top >= 5) {
                     // Oops, there was a NULL marker. Shift.
-                    firstIdx = stack.top - 5;
+                    firstIdx = static_cast<int>(stack.top) - 5;
                     body = stack[firstIdx + 4];
                     kwds = stack[firstIdx + 3];
                     bases = stack[firstIdx + 2];
@@ -8371,7 +8371,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         const proto::ProtoList* lb = tb ? nullptr : bases->asList(ctx);
                         size_t bn = tb ? tb->getSize(ctx) : (lb ? lb->getSize(ctx) : 0);
                         for (size_t i = 0; i < bn; ++i) {
-                            const proto::ProtoObject* b = tb ? tb->getAt(ctx, i) : lb->getAt(ctx, i);
+                            const proto::ProtoObject* b = tb ? tb->getAt(ctx, static_cast<int>(i)) : lb->getAt(ctx, static_cast<int>(i));
                             if (!b || b == PROTO_NONE) continue;
                             const proto::ProtoObject* bm = env->getAttribute(ctx, b,
                                 env->getClassString(), false);
@@ -8451,7 +8451,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         // the metaclass winner — CPython lets the
                         // metaclass's own __new__ validate them later.
                         for (size_t i = 0; i < bnInit; ++i) {
-                            const proto::ProtoObject* basei = tbInit ? tbInit->getAt(ctx, i) : lbInit->getAt(ctx, i);
+                            const proto::ProtoObject* basei = tbInit ? tbInit->getAt(ctx, static_cast<int>(i)) : lbInit->getAt(ctx, static_cast<int>(i));
                             if (!basei || basei == PROTO_NONE || !env) continue;
                             const proto::ProtoObject* m0 = env->getAttribute(ctx, basei, env->getClassString(), false);
                             if (!m0 || m0 == PROTO_NONE) m0 = env->getType(ctx, basei);
@@ -8476,7 +8476,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         
                         size_t basesSize = tupleBases ? tupleBases->getSize(ctx) : (listBases ? listBases->getSize(ctx) : 0);
                         for (size_t i = 0; i < basesSize; ++i) {
-                            const proto::ProtoObject* base = tupleBases ? tupleBases->getAt(ctx, i) : listBases->getAt(ctx, i);
+                            const proto::ProtoObject* base = tupleBases ? tupleBases->getAt(ctx, static_cast<int>(i)) : listBases->getAt(ctx, static_cast<int>(i));
                             if (!base || base == PROTO_NONE) continue;
 
                             const proto::ProtoObject* baseMeta = nullptr;
@@ -8518,7 +8518,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                     }
                                     if (mroTuple) {
                                         for (size_t j = 0; j < mroTuple->getSize(ctx); ++j) {
-                                            if (areSameClassesVM(ctx, mroTuple->getAt(ctx, j), bestMeta)) {
+                                            if (areSameClassesVM(ctx, mroTuple->getAt(ctx, static_cast<int>(j)), bestMeta)) {
                                                 isSub = true;
                                                 break;
                                             }
@@ -8527,7 +8527,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                         const proto::ProtoList* mroList = mro->asList(ctx);
                                         if (mroList) {
                                             for (proto::proto_ulong j = 0; j < mroList->getSize(ctx); ++j) {
-                                                if (areSameClassesVM(ctx, mroList->getAt(ctx, j), bestMeta)) {
+                                                if (areSameClassesVM(ctx, mroList->getAt(ctx, static_cast<int>(j)), bestMeta)) {
                                                     isSub = true;
                                                     break;
                                                 }
@@ -8568,7 +8568,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                     }
                                     if (bmroT) {
                                         for (size_t j = 0; j < bmroT->getSize(ctx); ++j) {
-                                            if (areSameClassesVM(ctx, bmroT->getAt(ctx, j), baseMeta)) {
+                                            if (areSameClassesVM(ctx, bmroT->getAt(ctx, static_cast<int>(j)), baseMeta)) {
                                                 bestIsSubOfBase = true;
                                                 break;
                                             }
@@ -9079,7 +9079,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         const proto::ProtoTuple* mro2T = mro2 ? mro2->asTuple(ctx) : nullptr;
                         if (mro2T) {
                             for (proto::proto_ulong mi = 1; mi < mro2T->getSize(ctx); ++mi) {
-                                const proto::ProtoObject* base = mro2T->getAt(ctx, mi);
+                                const proto::ProtoObject* base = mro2T->getAt(ctx, static_cast<int>(mi));
                                 if (!base || base == PROTO_NONE) continue;
                                 const proto::ProtoObject* baseAm = base->getOwnAttributeDirect(ctx, amS);
                                 if (!baseAm || baseAm == PROTO_NONE) continue;
@@ -9087,7 +9087,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                 const proto::ProtoTuple* bt = bl ? nullptr : baseAm->asTuple(ctx);
                                 proto::proto_ulong sz = bl ? bl->getSize(ctx) : (bt ? bt->getSize(ctx) : 0);
                                 for (proto::proto_ulong bi = 0; bi < sz; ++bi) {
-                                    const proto::ProtoObject* bn = bl ? bl->getAt(ctx, bi) : bt->getAt(ctx, bi);
+                                    const proto::ProtoObject* bn = bl ? bl->getAt(ctx, static_cast<int>(bi)) : bt->getAt(ctx, static_cast<int>(bi));
                                     if (!bn || !bn->isString(ctx)) continue;
                                     // Check if this class has a concrete override.
                                     const proto::ProtoObject* override_ = targetClass->getOwnAttributeDirect(ctx, bn->asString(ctx));
@@ -9331,9 +9331,9 @@ const proto::ProtoObject* executeBytecodeRange(
                     if (data) { list = data->asList(ctx); tup = data->asTuple(ctx); }
                 }
                 if (list) {
-                    for (size_t j = 0; j < list->getSize(ctx); ++j) all.push_back(list->getAt(ctx, j));
+                    for (size_t j = 0; j < list->getSize(ctx); ++j) all.push_back(list->getAt(ctx, static_cast<int>(j)));
                 } else if (tup) {
-                    for (size_t j = 0; j < tup->getSize(ctx); ++j) all.push_back(tup->getAt(ctx, j));
+                    for (size_t j = 0; j < tup->getSize(ctx); ++j) all.push_back(tup->getAt(ctx, static_cast<int>(j)));
                 } else {
                     continue;
                 }
@@ -9763,7 +9763,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                 const proto::ProtoTuple* oMroT = oMroAttr ? oMroAttr->asTuple(ctx) : nullptr;
                                 if (oMroT) {
                                     for (proto::proto_ulong mi = 0; mi < oMroT->getSize(ctx); ++mi) {
-                                        if (oMroT->getAt(ctx, mi) == modProto) {
+                                        if (oMroT->getAt(ctx, static_cast<int>(mi)) == modProto) {
                                             isModuleLike = true;
                                             break;
                                         }
@@ -9859,7 +9859,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                 const proto::ProtoObject* override = nullptr;
                                 if (mroT) {
                                     for (proto::proto_ulong mi = 0; mi < mroT->getSize(ctx); ++mi) {
-                                        const proto::ProtoObject* base = mroT->getAt(ctx, mi);
+                                        const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(mi));
                                         if (!base || base == PROTO_NONE) continue;
                                         if (base == env->getObjectPrototype()) break;
                                         if (base->hasOwnAttribute(ctx, delattrS) == PROTO_TRUE) {
