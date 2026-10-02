@@ -183,7 +183,7 @@ of protoCore.
 | Linux / Debian-Ubuntu | TGZ, DEB | **VERIFIED.** Installed with `dpkg -i` as root in a throwaway `ubuntu:24.04` container and run there from `/usr/bin/protopy`, outside any repository, with no `LD_LIBRARY_PATH` and no `PROTO*` variable set. `import json` resolved out of the installed `<libdir>/protoPython/python3.14`. |
 | Linux / Fedora-RHEL | TGZ, RPM | **UNVERIFIED — blocked, and the reason is specific.** `cpack -G RPM` runs, but Fedora's `brp-mangle-shebangs` fails the build on the bundled CPython standard library: `ERROR: ambiguous python shebang in .../encodings/rot_13.py: #!/usr/bin/env python`. That is fatal, so no RPM is produced. The build itself is fine; only the RPM packaging step is blocked. It needs a maintainer decision (suppress `__brp_mangle_shebangs`, or correct the shebang in the shipped stdlib). |
 | macOS | DragNDrop | **UNVERIFIED.** Configured and reviewed only; there is no macOS host here. Review is not verification. |
-| Windows | NSIS, ZIP | **ZIP built, NSIS unverified.** On 2026-10-01 (Windows 11, MSVC 19.44, protoCore 2.6.2) `cpack -G ZIP` produced `protopython-1.0.0-win64.zip` with `bin/protopy.exe`, `bin/protopyc.exe`, `bin/protoPython.dll`, `lib/protoPython.lib`, the headers and the standard library; the same layout, installed with `cmake --install`, ran from `cmd.exe` (see [Windows (MSVC)](#windows-msvc)). NSIS (needs `makensis`) was not run. |
+| Windows | ZIP (NSIS when `makensis` is found) | **ZIP built and run in CI.** On every run of `cross-platform.yml` (first on 2026-10-02, protoCore 2.7.0) `cpack -G ZIP` produces `protopython-1.0.0-win64.zip` with `bin/protopy.exe`, `bin/protopyc.exe`, `bin/protoPython.dll`, `lib/protoPython.lib`, the headers and the standard library; it is unpacked into a fresh directory and `protopy.exe` runs from there with only protoCore's installed `bin` directory on `PATH` (protoCore is not bundled; the MSVC runtime comes from the system). NSIS was not run. |
 
 ### Portability fixed while verifying
 
@@ -297,7 +297,11 @@ library in `<prefix>/lib` and the standard library in
 `cpack -G ZIP` produces `protopython-<version>-win64.zip` (without protoCore,
 which is never bundled).
 
-All 152 tests pass on Windows (2026-10-01, protoCore 2.7.0).
+In CI on 2026-10-02 (branch `fix/windows-review`, protoCore 2.7.0 at `fc5d79db`,
+the ref both workflows pin), all 159 registered tests pass on Windows (MSVC,
+`windows-2022`), all 161 on macOS (Apple clang, `macos-14`), and all 670 of the
+Linux job, which also registers protoCore's own suite. Clock-dependent cases run
+separately and do not gate (`.github/workflows/ci.yml`).
 
 How Windows differs, by design:
 
