@@ -52,7 +52,9 @@ build is needed.
 ctest --test-dir build_release --output-on-failure
 ```
 
-On 2026-09-16 the suite has 410 tests.
+On 2026-10-02 this configuration (protoCore built from `../protoCore`, its own
+suite registered too) has 707 tests in CI; against an installed protoCore,
+protoPython's own suite has 182.
 
 ### Using an installed protoCore
 
@@ -308,16 +310,16 @@ through CMake's `InstallRequiredSystemLibraries`, so the unpacked `protopy.exe`
 runs without protoCore or the Visual C++ Redistributable installed. `cmake
 --install` copies the same DLLs into `<prefix>/bin`.
 
-In CI on 2026-10-02 (branch `fix/followups-2026-10-02`, protoCore 2.7.0 at
-`fc5d79db`, the ref both workflows pin; runs 36980068151 and 36980071038), all 161
-registered tests pass on Windows (MSVC, `windows-2022`), all 163 on macOS (Apple
-clang, `macos-14`), and all 672 of the Linux job, which also registers protoCore's
-own suite; the same Windows run built the ZIP and the NSIS installer and ran the
-unpacked `protopy.exe` with only the system directories on `PATH`. Clock-dependent cases run
-separately and do not gate (`.github/workflows/ci.yml`). The same Windows and
-macOS jobs, ZIP step included, also pass against protoCore 2.9.0 (`21889c91`,
-whose DLL is `protoCore-3.dll`; CI run 36975536944); the workflows still pin
-2.7.0.
+In CI on 2026-10-02 (branch `fix/context-chain-and-leftovers`, protoCore 2.9.2 at
+`01f4c730`, the ref both workflows pin; runs 36997039445 and 36997042918), the 175
+gating tests of the 179 registered pass on Windows (MSVC, `windows-2022`), the 178
+of 182 on macOS (Apple clang, `macos-14`), and the 695 of 707 of the Linux job,
+which also registers protoCore's own suite; the same Windows run built the ZIP and
+the NSIS installer and ran the unpacked `protopy.exe` with only the system
+directories on `PATH`. Clock-dependent cases run separately and do not gate
+(`.github/workflows/ci.yml`). On Windows and macOS the heap-limited tests
+`protopy_heap_limit_live_frames` and `protopy_file_close_on_collect` then run 25
+more times each.
 
 How Windows differs, by design:
 
