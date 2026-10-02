@@ -303,7 +303,10 @@ In CI on 2026-10-02 (branch `fix/windows-review`, protoCore 2.7.0 at `fc5d79db`,
 the ref both workflows pin), all 159 registered tests pass on Windows (MSVC,
 `windows-2022`), all 161 on macOS (Apple clang, `macos-14`), and all 670 of the
 Linux job, which also registers protoCore's own suite. Clock-dependent cases run
-separately and do not gate (`.github/workflows/ci.yml`).
+separately and do not gate (`.github/workflows/ci.yml`). The same Windows and
+macOS jobs, ZIP step included, also pass against protoCore 2.9.0 (`21889c91`,
+whose DLL is `protoCore-3.dll`; CI run 36975536944); the workflows still pin
+2.7.0.
 
 How Windows differs, by design:
 
