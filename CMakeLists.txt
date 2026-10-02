@@ -25,6 +25,15 @@ if(WIN32)
         set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     endif()
 endif()
+# Warning level of protoPython's own targets (the library, protopy, protopyc):
+# MSVC's /W3, which reports narrowing conversions (C4244, C4267) among others.
+# CMake no longer adds /W3 by itself (policy CMP0092), and MSVC's default is
+# /W1. Other compilers keep their defaults.
+function(protopython_warnings target)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /W3)
+    endif()
+endfunction()
 if(MSVC)
     set(PROTOPYTHON_WINDOWS_STACK_RESERVE "33554432" CACHE STRING
         "Stack reserve, in bytes, of protoPython's executables on Windows")

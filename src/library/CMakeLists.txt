@@ -50,6 +50,7 @@ add_library(protoPython SHARED
     BisectModule.cpp
     FaulthandlerModule.cpp
 )
+protopython_warnings(protoPython)
 
 target_include_directories(protoPython PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../include>
