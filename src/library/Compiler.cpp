@@ -1561,15 +1561,19 @@ bool Compiler::compileWhile(WhileNode* n) {
     int afterLoopBody = bytecodeOffset();
     addPatch(jumpToEndSlot, afterLoopBody);
     
+    // The else clause runs after the loop has finished, so it is outside
+    // the loop: a `break` / `continue` there targets the enclosing loop.
+    std::vector<int> breakPatches = std::move(loopStack_.back().breakPatches);
+    loopStack_.pop_back();
+
     if (n->orelse) {
         if (!compileNode(n->orelse.get())) return false;
     }
     
     int endPC = bytecodeOffset();
-    for (int patchIdx : loopStack_.back().breakPatches) {
+    for (int patchIdx : breakPatches) {
         addPatch(patchIdx, endPC);
     }
-    loopStack_.pop_back();
     
     return true;
 }
@@ -1589,14 +1593,19 @@ bool Compiler::compileFor(ForNode* n) {
     int afterLoop = bytecodeOffset();
     addPatch(argSlot, afterLoop);
     
+    // The else clause is outside the loop (see compileWhile): pop the loop
+    // before compiling it so its `break` / `continue` reach the enclosing
+    // loop instead of popping that loop's iterator and jumping here.
+    std::vector<int> breakPatches = std::move(loopStack_.back().breakPatches);
+    loopStack_.pop_back();
+
     if (n->orelse) {
         if (!compileNode(n->orelse.get())) return false;
     }
     
-    for (int patchIdx : loopStack_.back().breakPatches) {
+    for (int patchIdx : breakPatches) {
         addPatch(patchIdx, bytecodeOffset());
     }
-    loopStack_.pop_back();
     
     return true;
 }
@@ -4882,14 +4891,17 @@ bool Compiler::compileAsyncFor(AsyncForNode* n) {
     int afterLoop = bytecodeOffset();
     addPatch(argSlot, afterLoop);
 
+    // The else clause is outside the loop (see compileFor).
+    std::vector<int> breakPatches = std::move(loopStack_.back().breakPatches);
+    loopStack_.pop_back();
+
     if (n->orelse) {
         if (!compileNode(n->orelse.get())) return false;
     }
 
-    for (int patch : loopStack_.back().breakPatches) {
+    for (int patch : breakPatches) {
         addPatch(patch, bytecodeOffset());
     }
-    loopStack_.pop_back();
     return true;
 }
 
@@ -5618,11 +5630,22 @@ void Compiler::setLineNumber(int line) {
     // or handle negative if needed.
     // Our updateContextLocation handles line_offset as int.
     
+    // The line delta is a signed byte: split larger jumps into
+    // (0, +/-127) steps instead of clamping them, which left every later
+    // line of the code object off by the excess.
+    while (lineDelta > 127) {
+        lnotabVec_.push_back(static_cast<unsigned char>(pcDelta));
+        lnotabVec_.push_back(127);
+        pcDelta = 0;
+        lineDelta -= 127;
+    }
+    while (lineDelta < -128) {
+        lnotabVec_.push_back(static_cast<unsigned char>(pcDelta));
+        lnotabVec_.push_back(static_cast<unsigned char>(static_cast<signed char>(-128)));
+        pcDelta = 0;
+        lineDelta += 128;
+    }
     lnotabVec_.push_back(static_cast<unsigned char>(pcDelta));
-    // Line delta can be larger than 127/255? 
-    // Python uses signed char for line delta.
-    if (lineDelta > 127) lineDelta = 127; 
-    if (lineDelta < -128) lineDelta = -128;
     lnotabVec_.push_back(static_cast<unsigned char>(static_cast<signed char>(lineDelta)));
 
     lastPC_ = pc;

@@ -3545,7 +3545,10 @@ static const proto::ProtoObject* compile_eval_source(
     // py_eval: expression compile.  Size automatic_count to the operand-stack
     // max so the GC sees every value pushed during evaluation.
     const int evalAutomaticCount = compiler.getMaxStack() + 32;
-    return makeCodeObject(context, cos, compiler.getNames(), compiler.getBytecode(), nullptr, nullptr, 0, 0, evalAutomaticCount, false, false, nullptr, 1, compiler.getLnotab());
+    return makeCodeObject(context, cos, compiler.getNames(), compiler.getBytecode(),
+        PythonEnvironment::getInternedString(context, "<string>"), nullptr, 0, 0,
+        evalAutomaticCount, false, false, nullptr,
+        compiler.getFirstLine() > 0 ? compiler.getFirstLine() : 1, compiler.getLnotab());
 }
 
 /** eval(expr, globals=None, locals=None): run a code object, or compile and
@@ -4757,7 +4760,12 @@ static const proto::ProtoObject* compile_exec_source(
     // GC-visible automaticLocals by sizing automatic_count to the
     // compile-time max stack depth plus a safety margin.
     const int moduleAutomaticCount = compiler.getMaxStack() + 32;
-    return makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode(), nullptr, nullptr, 0, 0, moduleAutomaticCount, 0, false, nullptr, 1, compiler.getLnotab());
+    // co_filename '<string>' and the lnotab's own base line, so traceback
+    // entries name the exec'd text and the line inside it.
+    return makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode(),
+        PythonEnvironment::getInternedString(context, "<string>"), nullptr, 0, 0,
+        moduleAutomaticCount, 0, false, nullptr,
+        compiler.getFirstLine() > 0 ? compiler.getFirstLine() : 1, compiler.getLnotab());
 }
 
 /** exec(source, globals=None, locals=None): run a code object, or compile

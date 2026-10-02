@@ -449,7 +449,7 @@ add_test(NAME protopy_atexit_callback_error
 set_tests_properties(protopy_atexit_callback_error PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
-    PASS_REGULAR_EXPRESSION "atexit_callback_error: registered\r?\nException ignored in atexit callback <function failing_handler at 0x[0-9a-f]+>:\r?\nTraceback \\(most recent call last\\):\r?\n(  File [^\n]*\n)+[^\n]*ValueError[^\n]*: boom[\r\n]+later_handler 1 3"
+    PASS_REGULAR_EXPRESSION "atexit_callback_error: registered\r?\nException ignored in atexit callback <function failing_handler at 0x[0-9a-f]+>:\r?\nTraceback \\(most recent call last\\):\r?\n  File [^\n]*atexit_callback_error\\.py\", line 12, in failing_handler\r?\n    raise ValueError\\(\"boom\"\\)\r?\n[^\n]*ValueError[^\n]*: boom[\r\n]+later_handler 1 3"
     LABELS "regression_gate")
 # A .pth line importing importlib.util exits cleanly with HOME empty: atexit
 # handlers run at interpreter exit, not at the end of the next import.
@@ -1224,6 +1224,38 @@ add_test(NAME protopy_typing_import
 set_tests_properties(protopy_typing_import PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
+    LABELS "regression_gate")
+# break / continue in a loop's else clause act on the enclosing loop.
+add_test(NAME protopy_loop_else_break
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/loop_else_break.py)
+set_tests_properties(protopy_loop_else_break PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
+# weakref.ref hashes/compares like its referent: WeakKeyDictionary and the
+# singledispatch dispatch cache find their entries.
+add_test(NAME protopy_weakref_identity_keys
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/weakref_identity_keys.py)
+set_tests_properties(protopy_weakref_identity_keys PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
+# Traceback entries carry the running code's file, function and current line
+# (functions, modules, imported modules, exec/eval/compile code).
+add_test(NAME protopy_traceback_locations
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/traceback_locations.py)
+set_tests_properties(protopy_traceback_locations PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
+# An uncaught exception prints one entry per frame with its source line.
+add_test(NAME protopy_traceback_uncaught
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/traceback_uncaught.py)
+set_tests_properties(protopy_traceback_uncaught PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    PASS_REGULAR_EXPRESSION "Traceback \\(most recent call last\\):\r?\n  File \"[^\n]*traceback_uncaught\\.py\", line 14, in <module>\r?\n    outer\\(\\)\r?\n  File \"[^\n]*traceback_uncaught\\.py\", line 11, in outer\r?\n    return inner\\(1\\) \\+ 1\r?\n  File \"[^\n]*traceback_uncaught\\.py\", line 7, in inner\r?\n    return n / 0\r?\n[^\n]*ZeroDivisionError[^\n]*: division by zero"
+    FAIL_REGULAR_EXPRESSION "<unknown>"
     LABELS "regression_gate")
 # The _typing stub's Generic must compose with ABCMeta-derived metaclasses.
 add_test(NAME protopy_typing_stub_generic

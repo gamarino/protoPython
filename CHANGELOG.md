@@ -113,6 +113,40 @@ onwards. Commit hashes are given for reference.
 
 ### Fixed
 
+- **`weakref.WeakKeyDictionary` never found its keys.** `weakref.ref` objects
+  had no `__hash__`/`__eq__`, so `ref(obj)` built for a lookup was never equal
+  to the `ref(obj)` stored as the key: `get`/`in`/`[]` missed, setting a key
+  again added a second entry, and `functools.singledispatch` never hit its
+  dispatch cache. A reference now hashes like its referent (`TypeError` once
+  the referent is gone) and two references compare their referents while both
+  are alive, identity otherwise, as in CPython; its repr is
+  `<weakref at 0x...; to 'C' at 0x...>`. (`id()`/`hash()` of an instance were
+  already stable across attribute mutation; the test pins that too.) Test:
+  `protopy_weakref_identity_keys`.
+- **`break`/`continue` in a loop's `else:` clause acted on the finished
+  loop.** The compiler emitted the `else` clause of `for`, `while` and
+  `async for` while the loop was still the innermost one, so a `break` there
+  popped the enclosing loop's iterator and fell through, and the enclosing
+  loop ran again. `functools._c3_merge` uses that shape: every
+  `singledispatch` call with a type not in the registry (and
+  `functools._c3_mro(object)`) looped until the process ran out of memory.
+  Test: `protopy_loop_else_break`.
+- **Traceback entries showed `File "<unknown>"` and wrong lines.** Only frames
+  that had a frame object with a matching code object got a usable entry:
+  small functions run without a frame object, and module-level and
+  `exec`/`eval` code run with their namespace as the frame, so their entries
+  had no `f_code` (dropped by `traceback.extract_tb`, `<unknown>` in the
+  uncaught-exception report) or carried the calling module's file and name.
+  Every entry now holds the running code object (a synthesised frame when the
+  activation has none), and `tb_lineno` is the line of the instruction that
+  raised: the line table (`co_lnotab`, a tuple) was never decoded because it
+  was read as a list, its offsets were compared in the wrong unit, and line
+  jumps over 127 lines were clamped. `exec`/`eval` code is named `<string>`
+  with lines counted inside the string; `compile()` keeps its file name. The
+  uncaught-exception report no longer prints a trailing `<unknown>` entry for
+  the end of the chain and shows each entry's source line, as CPython does.
+  Tests: `protopy_traceback_locations`, `protopy_traceback_uncaught`.
+
 - **atexit handlers ran at the end of the next import.** `PythonEnvironment::
   executeModule` ran every registered handler when any module finished
   executing, so a handler registered by `weakref.finalize` (for example

@@ -48,7 +48,7 @@ The most fundamental difference from CPython is the **absence of the Global Inte
 
 - **Object Model**: Objects are 64-byte aligned cells in a `ProtoSpace`.
 - **Recursion**: Managed limit via `sys.setrecursionlimit`.
-- **Tracebacks**: unhandled exceptions print a `Traceback (most recent call last)` report; frames often show `File "<unknown>"` without a line number.
+- **Tracebacks**: each entry carries the running code object's file and function name and the line that raised, for functions, module code, imported modules and `exec`/`eval` (`File "<string>"`) or `compile()` code. The uncaught-exception report prints the source line under each entry, as CPython does. `traceback.format_exc()` and friends print the entries without source lines: they read source through `linecache` and `tokenize.open`, which needs `seek()` on a file opened for reading, and read-mode file objects do not have it yet. There are no column ranges (`~~^^` markers): code objects have no `co_positions()`.
 
 ## Notable Differences from CPython
 
@@ -69,7 +69,8 @@ The most fundamental difference from CPython is the **absence of the Global Inte
      the function afterwards, as with CPython 3.13+'s snapshot semantics.
    - `f_lineno` is the first line of the frame's code object (`co_firstlineno`; 1
      for a module): the runtime records the executing line only when an exception
-     is raised.
+     is raised, in the traceback entry's `tb_lineno` (and in the `f_lineno` of the
+     frame synthesised for an entry whose function runs without a frame object).
    - Small functions that build no inner functions or classes run without a frame
      object, so they do not appear in the `f_back` chain, and `sys._getframe()`
      called from such a function's callee skips it. A function that names
@@ -110,3 +111,16 @@ The most fundamental difference from CPython is the **absence of the Global Inte
    embeds `PythonEnvironment` calls `runExitHandlers()` at shutdown.
    `gc.disable()`/`gc.enable()` only change what `gc.isenabled()` reports;
    protoCore's collector keeps running.
+7. **Weak references**: `weakref.ref(obj)` keeps `obj` reachable (it is
+   registered in the `_weakref` module until `_weakref._evict(obj)`), so a
+   reference does not die when the last other reference goes and callbacks do
+   not run; see [CONFORMANCE.md](CONFORMANCE.md). Equality and hashing follow
+   CPython: a reference hashes like its referent and two references to equal
+   live objects are equal, so `WeakKeyDictionary`, `WeakValueDictionary`,
+   `WeakSet` and `functools.singledispatch`'s dispatch cache work.
+8. **Function annotations (PEP 649)**: a function's `__annotations__` is
+   evaluated when the function is defined and its `__annotate__` is `None`
+   (modules and classes do get an `__annotate__`). Code that reads
+   `__annotate__` to decide whether a function is annotated, such as
+   `functools.singledispatch`'s `@f.register` on an annotated function, does
+   not see the annotations; pass the type explicitly (`@f.register(int)`).
