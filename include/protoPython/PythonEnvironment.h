@@ -477,6 +477,10 @@ public:
     const proto::ProtoString* getFCodeString() const { return f_code; }
     const proto::ProtoString* getFGlobalsString() const { return f_globals; }
     const proto::ProtoString* getFLocalsString() const { return f_locals; }
+    /** Internal key: the namespace object of a frame whose locals live on the frame. */
+    const proto::ProtoString* getFrameNamespaceString() const { return frameNamespace; }
+    /** Internal key: on an exec() frame, the frame of the function that called exec(). */
+    const proto::ProtoString* getExecCallerFrameString() const { return execCallerFrame; }
     const proto::ProtoString* getClosureString() const { return __closure__; }
     const proto::ProtoString* getDefaultsString() const { return __defaults__; }
     const proto::ProtoString* getKwdefaultsString() const { return __kwdefaults__; }
@@ -758,6 +762,25 @@ public:
     static const proto::ProtoObject* getCurrentFrame();
 
     /**
+     * @brief One entry of the per-thread chain of running frames.
+     *
+     * The bytecode dispatcher links one entry per activation (on the C++
+     * stack) so that frame introspection can reach the ProtoContext whose
+     * automatic locals hold a CO_OPTIMIZED function's fast locals.  An entry
+     * lives exactly as long as its activation, so a context found through the
+     * chain is always alive and owned by the calling thread.
+     */
+    struct LiveFrame {
+        const proto::ProtoObject* frame;
+        proto::ProtoContext* context;
+        const LiveFrame* previous;
+    };
+    static void pushLiveFrame(LiveFrame* entry);
+    static void popLiveFrame(LiveFrame* entry);
+    /** @brief Context of the running activation of `frame` on this thread, or nullptr. */
+    static proto::ProtoContext* findLiveFrameContext(const proto::ProtoObject* frame);
+
+    /**
      * @brief Sets the current globals for the current thread.
      */
     static void setCurrentGlobals(const proto::ProtoObject* globals);
@@ -824,6 +847,7 @@ public:
     static thread_local int s_recursionDepth;
     static thread_local bool s_inRecursionError;
     static thread_local const proto::ProtoObject* s_currentFrame;
+    static thread_local const LiveFrame* s_liveFrames;
     static thread_local const proto::ProtoObject* s_currentGlobals;
     static thread_local const proto::ProtoObject* s_currentCodeObject;
     /**
@@ -1516,6 +1540,8 @@ private:
     const proto::ProtoString* f_code{nullptr};
     const proto::ProtoString* f_globals{nullptr};
     const proto::ProtoString* f_locals{nullptr};
+    const proto::ProtoString* frameNamespace{nullptr};
+    const proto::ProtoString* execCallerFrame{nullptr};
     const proto::ProtoString* gi_code{nullptr};
     const proto::ProtoString* gi_frame{nullptr};
     const proto::ProtoString* gi_running{nullptr};

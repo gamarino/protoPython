@@ -113,6 +113,23 @@ onwards. Commit hashes are given for reference.
 
 ### Fixed
 
+- **Windows ZIP is self-contained.** Like protoST, protoScala, protoClojure
+  and protoJS, the ZIP (and the NSIS installer, built only when `makensis` is
+  found) now bundles protoCore's DLL, copied from the linked `protoCore` target
+  whatever its name, and the MSVC runtime through `InstallRequiredSystemLibraries`.
+  `cross-platform.yml` checks the DLLs are in the ZIP and runs the unpacked
+  `protopy.exe` on a script with only the Windows system directories on `PATH`.
+- **Frame objects expose `f_locals` and `f_lineno`.** `import site` failed
+  with a setuptools `*-nspkg.pth` in the user site directory (e.g.
+  sphinxcontrib-jsmath's), whose line reads `sys._getframe(1).f_locals['sitedir']`.
+  `f_locals` is the module namespace at module level and a snapshot dict of the
+  local variables in a function (fast-slot locals included, read from the running
+  activation); bare `exec()` in a function now runs in its own frame whose `f_back`
+  is the caller, and sees the caller's variables (it raised `NameError` for them);
+  functions that name `_getframe`/`currentframe` always get a frame. The native
+  `_warnings.warn` ignores `ImportWarning`, `PendingDeprecationWarning` and
+  `ResourceWarning`, as CPython's default filters do. Differences are listed in
+  `docs/PYTHON_COMPATIBILITY.md` (test `protopy_frame_f_locals`).
 - **Windows-port review (branch `fix/windows-review`).** Each item has a
   regression test that runs on Linux, macOS and Windows unless stated.
   - `tempfile.NamedTemporaryFile`/`TemporaryFile` work: `open()` supports
