@@ -17097,6 +17097,18 @@ void PythonEnvironment::raiseZeroDivisionError(proto::ProtoContext* ctx) {
     if (exc && exc != PROTO_NONE) setPendingException(exc);
 }
 
+void PythonEnvironment::raiseOverflowError(proto::ProtoContext* ctx, const std::string& msg) {
+    const proto::ProtoObject* type = builtinsModule
+        ? builtinsModule->getAttribute(ctx, getInternedString(ctx, "OverflowError")) : nullptr;
+    if (!type || type == PROTO_NONE) {
+        raiseValueError(ctx, newStr(ctx, msg));
+        return;
+    }
+    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, newStr(ctx, msg));
+    const proto::ProtoObject* exc = invokePythonCallable(ctx, type, args, nullptr);
+    if (exc && exc != PROTO_NONE) setPendingException(exc);
+}
+
 void PythonEnvironment::raiseIndexError(proto::ProtoContext* ctx, const std::string& msg) {
     if (!indexErrorType) return;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx));

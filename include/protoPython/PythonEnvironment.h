@@ -987,6 +987,8 @@ public:
     void raiseRecursionError(proto::ProtoContext* context);
     void raiseAssertionError(proto::ProtoContext* ctx, const proto::ProtoObject* msg = nullptr);
     void raiseZeroDivisionError(proto::ProtoContext* ctx);
+    // OverflowError(msg), the builtin type.
+    void raiseOverflowError(proto::ProtoContext* ctx, const std::string& msg);
     void raiseIndexError(proto::ProtoContext* context, const std::string& msg);
     void raiseStopIteration(proto::ProtoContext* context, const proto::ProtoObject* value = nullptr);
     void raiseStopAsyncIteration(proto::ProtoContext* context);

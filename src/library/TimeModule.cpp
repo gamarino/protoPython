@@ -2,7 +2,10 @@
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/StructSequence.h>
 #include <protoPython/DiagUtils.h>
+#include "TimeConv.h"
 #include <chrono>
+#include <cmath>
+#include <cstdint>
 #include <thread>
 #include <ctime>
 #include <cstring>
@@ -17,11 +20,8 @@ namespace protoPython {
 namespace time_module {
 
 #if defined(_WIN32)
-// The C runtime's reentrant forms are ctime_s/asctime_s (a 26-byte buffer is
-// all they need; callers pass 64).
-static char* ctime_r(const time_t* t, char* buf) {
-    return ctime_s(buf, 64, t) == 0 ? buf : nullptr;
-}
+// The C runtime's reentrant form is asctime_s (a 26-byte buffer is all it
+// needs; callers pass 64).
 static char* asctime_r(const struct tm* tmv, char* buf) {
     return asctime_s(buf, 64, tmv) == 0 ? buf : nullptr;
 }
@@ -177,7 +177,8 @@ static const proto::ProtoObject* build_struct_time(
     });
 }
 
-static const proto::ProtoObject* make_struct_time(proto::ProtoContext* ctx, struct tm* tm_ptr) {
+// struct tm counts weekdays from Sunday; struct_time.tm_wday from Monday.
+static const proto::ProtoObject* make_struct_time(proto::ProtoContext* ctx, const struct tm* tm_ptr) {
     return build_struct_time(ctx,
         tm_ptr->tm_year + 1900,
         tm_ptr->tm_mon + 1,
@@ -185,9 +186,48 @@ static const proto::ProtoObject* make_struct_time(proto::ProtoContext* ctx, stru
         tm_ptr->tm_hour,
         tm_ptr->tm_min,
         tm_ptr->tm_sec,
-        tm_ptr->tm_wday,
+        (tm_ptr->tm_wday + 6) % 7,
         tm_ptr->tm_yday + 1,
         tm_ptr->tm_isdst);
+}
+
+// The `secs` argument of gmtime/localtime/ctime: absent or None is now; an
+// int or a float is floored to whole seconds. Raises (and returns false) for
+// another type, NaN, or a value outside time_t, as CPython does.
+static bool secondsArgument(proto::ProtoContext* ctx, const proto::ProtoList* posArgs, std::int64_t& out) {
+    const proto::ProtoObject* arg = (posArgs && posArgs->getSize(ctx) > 0) ? posArgs->getAt(ctx, 0) : nullptr;
+    if (!arg || arg == PROTO_NONE) {
+        out = static_cast<std::int64_t>(std::time(nullptr));
+        return true;
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (proto::isSmallInt(arg)) {
+        out = proto::asSmallInt(arg);
+        return true;
+    }
+    double seconds;
+    if (arg->isInteger(ctx) || arg->isDouble(ctx)) {
+        seconds = arg->asDouble(ctx);
+    } else {
+        if (env) env->raiseTypeError(ctx, "an integer or float is required");
+        return false;
+    }
+    if (std::isnan(seconds)) {
+        if (env) env->raiseValueError(ctx, PythonEnvironment::newStr(ctx, "Invalid value NaN (not a number)"));
+        return false;
+    }
+    if (!timeconv::secondsToTimeT(seconds, out)) {
+        if (env) env->raiseOverflowError(ctx, "timestamp out of range for platform time_t");
+        return false;
+    }
+    return true;
+}
+
+// Raises OSError(err) for a conversion the C runtime refused.
+static void raiseConversionError(proto::ProtoContext* ctx, int err) {
+    if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx)) {
+        env->raiseOSError(ctx, err, std::strerror(err));
+    }
 }
 
 // time.struct_time(seq) — construct a struct_time from a 9-element sequence.
@@ -227,27 +267,27 @@ static const proto::ProtoObject* py_struct_time(
 static const proto::ProtoObject* py_localtime(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    time_t t;
-    if (posArgs->getSize(ctx) > 0) {
-        t = static_cast<time_t>(toDouble(ctx, posArgs->getAt(ctx, 0)));
-    } else {
-        t = std::time(nullptr);
+    std::int64_t t;
+    if (!secondsArgument(ctx, posArgs, t)) return nullptr;
+    struct tm tmv;
+    if (int err = timeconv::localTime(t, &tmv)) {
+        raiseConversionError(ctx, err);
+        return nullptr;
     }
-    struct tm* tm_ptr = std::localtime(&t);
-    return make_struct_time(ctx, tm_ptr);
+    return make_struct_time(ctx, &tmv);
 }
 
 static const proto::ProtoObject* py_gmtime(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    time_t t;
-    if (posArgs->getSize(ctx) > 0) {
-        t = static_cast<time_t>(toDouble(ctx, posArgs->getAt(ctx, 0)));
-    } else {
-        t = std::time(nullptr);
+    std::int64_t t;
+    if (!secondsArgument(ctx, posArgs, t)) return nullptr;
+    struct tm tmv;
+    if (int err = timeconv::utcTime(t, &tmv)) {
+        raiseConversionError(ctx, err);
+        return nullptr;
     }
-    struct tm* tm_ptr = std::gmtime(&t);
-    return make_struct_time(ctx, tm_ptr);
+    return make_struct_time(ctx, &tmv);
 }
 
 // time.ctime(secs=None) -> str.  Convert a time expressed in seconds
@@ -256,14 +296,15 @@ static const proto::ProtoObject* py_gmtime(
 static const proto::ProtoObject* py_ctime(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    time_t t;
-    if (posArgs->getSize(ctx) > 0 && posArgs->getAt(ctx, 0) != PROTO_NONE) {
-        t = static_cast<time_t>(toDouble(ctx, posArgs->getAt(ctx, 0)));
-    } else {
-        t = std::time(nullptr);
+    std::int64_t secs;
+    if (!secondsArgument(ctx, posArgs, secs)) return nullptr;
+    struct tm tmv;
+    if (int err = timeconv::localTime(secs, &tmv)) {
+        raiseConversionError(ctx, err);
+        return nullptr;
     }
     char buf[64];
-    if (ctime_r(&t, buf)) {
+    if (asctime_r(&tmv, buf)) {
         // strip trailing newline
         size_t n = std::strlen(buf);
         while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r')) buf[--n] = 0;
@@ -302,13 +343,16 @@ static const proto::ProtoObject* py_asctime(
             tmv.tm_hour = static_cast<int>(list->getAt(ctx, 3)->asLong(ctx));
             tmv.tm_min  = static_cast<int>(list->getAt(ctx, 4)->asLong(ctx));
             tmv.tm_sec  = static_cast<int>(list->getAt(ctx, 5)->asLong(ctx));
-            tmv.tm_wday = static_cast<int>(list->getAt(ctx, 6)->asLong(ctx));
+            // struct_time counts weekdays from Monday, struct tm from Sunday.
+            tmv.tm_wday = (static_cast<int>(list->getAt(ctx, 6)->asLong(ctx)) + 1) % 7;
             tmv.tm_yday = static_cast<int>(list->getAt(ctx, 7)->asLong(ctx));
             tmv.tm_isdst= static_cast<int>(list->getAt(ctx, 8)->asLong(ctx));
         }
     } else {
-        time_t now = std::time(nullptr);
-        tmv = *std::localtime(&now);
+        if (int err = timeconv::localTime(static_cast<std::int64_t>(std::time(nullptr)), &tmv)) {
+            raiseConversionError(ctx, err);
+            return nullptr;
+        }
     }
     char buf[64];
     if (asctime_r(&tmv, buf)) {
@@ -372,7 +416,7 @@ static const proto::ProtoObject* py_strftime(
                 tm_val.tm_hour = l->getAt(ctx, 3)->asLong(ctx);
                 tm_val.tm_min = l->getAt(ctx, 4)->asLong(ctx);
                 tm_val.tm_sec = l->getAt(ctx, 5)->asLong(ctx);
-                tm_val.tm_wday = l->getAt(ctx, 6)->asLong(ctx);
+                tm_val.tm_wday = (static_cast<int>(l->getAt(ctx, 6)->asLong(ctx)) + 1) % 7;
                 tm_val.tm_yday = l->getAt(ctx, 7)->asLong(ctx) - 1;
                 tm_val.tm_isdst = l->getAt(ctx, 8)->asLong(ctx);
                 found = true;
@@ -381,8 +425,10 @@ static const proto::ProtoObject* py_strftime(
     }
     
     if (!found) {
-        time_t t = std::time(nullptr);
-        tm_val = *std::localtime(&t);
+        if (int err = timeconv::localTime(static_cast<std::int64_t>(std::time(nullptr)), &tm_val)) {
+            raiseConversionError(ctx, err);
+            return nullptr;
+        }
     }
 
     char buf[1024];
