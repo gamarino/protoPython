@@ -180,7 +180,7 @@ static const proto::ProtoObject* exception_str(
     const proto::ProtoTuple* args = argsObj && argsObj->isTuple(context) ? argsObj->asTuple(context) : context->newTuple();
     
     if (get_env_diag()) {
-        fprintf(stderr, "DEBUG exception_str: args size %lu\n", args->getSize(context));
+        fprintf(stderr, "DEBUG exception_str: args size %llu\n", static_cast<unsigned long long>(args->getSize(context)));
     }
     
     if (args->getSize(context) == 0) {

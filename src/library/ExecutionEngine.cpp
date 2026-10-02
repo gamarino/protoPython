@@ -364,7 +364,7 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     if (get_env_diag()) {
         const proto::ProtoObject* co_name_obj = codeObj->getAttribute(ctx, env ? env->getCoNameString() : PythonEnvironment::getInternedString(ctx, "co_name"));
         if (co_name_obj && co_name_obj->isString(ctx)) co_name_obj->asString(ctx)->toUTF8String(ctx, fnName);
-        fprintf(stderr, "DEBUG: runUserFunctionCall name=%s nparams_count=%d argCount=%lu\n", fnName.c_str(), nparams_count, args->getSize(ctx));
+        fprintf(stderr, "DEBUG: runUserFunctionCall name=%s nparams_count=%d argCount=%llu\n", fnName.c_str(), nparams_count, static_cast<unsigned long long>(args->getSize(ctx)));
         fflush(stderr);
     }
 
@@ -494,7 +494,7 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     };
 
     if (get_env_diag()) {
-        fprintf(stderr, "DEBUG: runUserFunctionCall nparams_count=%d argCount=%lu argsSize=%lu\n", nparams_count, argCount, args ? args->getSize(calleeCtx) : 0);
+        fprintf(stderr, "DEBUG: runUserFunctionCall nparams_count=%d argCount=%llu argsSize=%llu\n", nparams_count, static_cast<unsigned long long>(argCount), static_cast<unsigned long long>(args ? args->getSize(calleeCtx) : 0));
         fflush(stderr);
     }
 
@@ -687,11 +687,11 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         if (get_env_diag()) {
              const proto::ProtoList* keys = keysList;
              proto::proto_ulong size = keys ? keys->getSize(calleeCtx) : 0;
-             fprintf(stderr, "DEBUG runUserFunctionCall: kwDict populated with %lu keys\n", size);
+             fprintf(stderr, "DEBUG runUserFunctionCall: kwDict populated with %llu keys\n", static_cast<unsigned long long>(size));
              for (proto::proto_ulong i = 0; i < size; ++i) {
                  const proto::ProtoObject* k = keys->getAt(calleeCtx, i);
                  std::string ks = env ? env->reprObject(calleeCtx, k) : "???";
-                 fprintf(stderr, "  key[%lu]=%s\n", i, ks.c_str());
+                 fprintf(stderr, "  key[%llu]=%s\n", static_cast<unsigned long long>(i), ks.c_str());
              }
              std::string r = env ? env->reprObject(calleeCtx, kwDict) : "???";
              fprintf(stderr, "DEBUG runUserFunctionCall: kwDict repr=%s\n", r.c_str());
@@ -3033,7 +3033,7 @@ const proto::ProtoObject* py_generator_send_impl(
     }
     
     if (pc >= co_code_tuple->getSize(ctx)) {
-        if (get_env_diag()) fprintf(stderr, "DEBUG HANG: generator pc >= co_code_tuple! pc=%lu size=%lu\n", pc, co_code_tuple->getSize(ctx));
+        if (get_env_diag()) fprintf(stderr, "DEBUG HANG: generator pc >= co_code_tuple! pc=%llu size=%llu\n", static_cast<unsigned long long>(pc), static_cast<unsigned long long>(co_code_tuple->getSize(ctx)));
         env->raiseStopIteration(ctx, PROTO_NONE);
         return PROTO_NONE;
     }
@@ -3625,9 +3625,9 @@ struct GCStack {
             // Mark overflow so the interpreter loop can raise a clean MemoryError
             // rather than printing an infinite stream of diagnostics.
             overflowed = true;
-            fprintf(stderr, "FATAL: GCStack overflow! top=%lu capacity=%lu — "
+            fprintf(stderr, "FATAL: GCStack overflow! top=%llu capacity=%llu — "
                     "increase PYTHON_STACK_BUFFER in Compiler.cpp\n",
-                    (proto::proto_ulong)top, (proto::proto_ulong)capacity);
+                    static_cast<unsigned long long>((proto::proto_ulong)top), static_cast<unsigned long long>((proto::proto_ulong)capacity));
             fflush(stderr);
         }
     }
@@ -3952,7 +3952,7 @@ static void updateContextLocation(proto::ProtoContext* ctx, proto::ProtoObject* 
             int pc_offset = static_cast<int>(lnotab->getAt(ctx, j)->asLong(ctx));
             int line_offset = static_cast<int>(static_cast<signed char>(lnotab->getAt(ctx, j+1)->asLong(ctx)));
             if (get_env_diag()) {
-                fprintf(stderr, "DEBUG: lnotab entry j=%lu, pc_offset=%d, line_offset=%d\n", j, pc_offset, line_offset);
+                fprintf(stderr, "DEBUG: lnotab entry j=%llu, pc_offset=%d, line_offset=%d\n", static_cast<unsigned long long>(j), pc_offset, line_offset);
             }
             if (cursor + pc_offset > pc) break;
             cursor += pc_offset;
@@ -4098,10 +4098,10 @@ const proto::ProtoObject* executeBytecodeRange(
         proto::proto_ulong next_i = i + 2;
 
         if (diag_local) {
-            fprintf(stderr, "DEBUG HANG TRACE: [PC %lu] OP %d ARG %d\n", i, op, arg);
-            fprintf(stderr, "  Stack (depth=%lu):", (proto::proto_ulong)stack.size());
+            fprintf(stderr, "DEBUG HANG TRACE: [PC %llu] OP %d ARG %d\n", static_cast<unsigned long long>(i), op, arg);
+            fprintf(stderr, "  Stack (depth=%llu):", static_cast<unsigned long long>((proto::proto_ulong)stack.size()));
             for (size_t k = 0; k < stack.size(); ++k) {
-                fprintf(stderr, " [%lu]=%p", (proto::proto_ulong)k, (void*)stack[k]);
+                fprintf(stderr, " [%llu]=%p", static_cast<unsigned long long>((proto::proto_ulong)k), (void*)stack[k]);
             }
             fprintf(stderr, "\n");
             fflush(stderr);
@@ -4150,11 +4150,11 @@ const proto::ProtoObject* executeBytecodeRange(
                 updateContextLocation(ctx, frame, i);
                 
                 if (diag_local) {
-                    fprintf(stderr, "DEBUG: Exception %s at %s:%d (PC %lu)\n", 
+                    fprintf(stderr, "DEBUG: Exception %s at %s:%d (PC %llu)\n", 
                             excName.c_str(), 
                             ctx->currentFileName ? ctx->currentFileName : "unknown", 
                             ctx->currentLineNumber, 
-                            i);
+                            static_cast<unsigned long long>(i));
                     fprintf(stderr, "DEBUG: Exception message: '%s'\n", excMsg.c_str());
                     fprintf(stderr, "DEBUG: raw exception pointer %p\n", exc);
                     fflush(stderr);
@@ -4199,7 +4199,7 @@ const proto::ProtoObject* executeBytecodeRange(
             if (!blockStack.empty()) {
                 Block b = blockStack.back();
                 if (diag_local) {
-                    fprintf(stderr, "DEBUG: Popping block: handlerPc=%lu stackDepth=%zu\n", b.handlerPc, b.stackDepth);
+                    fprintf(stderr, "DEBUG: Popping block: handlerPc=%llu stackDepth=%zu\n", static_cast<unsigned long long>(b.handlerPc), b.stackDepth);
                     fflush(stderr);
                 }
                 blockStack.pop_back();
@@ -4236,7 +4236,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
 
                 if (diag_local) {
-                    fprintf(stderr, "DEBUG: Jumping to handlerPc=%lu\n", b.handlerPc);
+                    fprintf(stderr, "DEBUG: Jumping to handlerPc=%llu\n", static_cast<unsigned long long>(b.handlerPc));
                     fflush(stderr);
                 }
                 i = b.handlerPc;
@@ -4252,7 +4252,7 @@ const proto::ProtoObject* executeBytecodeRange(
         bool diag_env = diag_local;
         int diag_level = diag_env ? 1 : 0;
         if (diag_level >= 2) {
-             fprintf(stderr, "TRACE: PC %lu OP %d ARG %d depth=%zu\n", i, op, (opcodeHasArg(op) ? arg : 0), stack.top);
+             fprintf(stderr, "TRACE: PC %llu OP %d ARG %d depth=%zu\n", static_cast<unsigned long long>(i), op, (opcodeHasArg(op) ? arg : 0), stack.top);
              fprintf(stderr, "  STACK:");
              for (size_t k = 0; k < stack.top && k < 10; ++k) {
                  fprintf(stderr, " [%zu]=%p", k, (void*)stack.slots[k]);
@@ -7544,7 +7544,7 @@ const proto::ProtoObject* executeBytecodeRange(
         case OP_STORE_SUBSCR: {
             // i++;
             if (diag_local) {
-                fprintf(stderr, "DEBUG OP_STORE_SUBSCR stack.size()=%lu\n", (proto::proto_ulong)stack.size());
+                fprintf(stderr, "DEBUG OP_STORE_SUBSCR stack.size()=%llu\n", static_cast<unsigned long long>((proto::proto_ulong)stack.size()));
             }
             if (stack.size() < 3) { i = next_i; continue; }
             proto::ProtoObject* container = const_cast<proto::ProtoObject*>(stack[stack.top - 2]);
@@ -7742,7 +7742,7 @@ const proto::ProtoObject* executeBytecodeRange(
         } break;
         case OP_CALL_FUNCTION: {
             if (stack.size() < (proto::proto_ulong)(arg + 1)) {
-                 if (diag_local) fprintf(stderr, "DEBUG: OP_CALL_FUNCTION FATAL underflow size=%lu arg=%d PC=%lu\n", (proto::proto_ulong)stack.size(), arg, i);
+                 if (diag_local) fprintf(stderr, "DEBUG: OP_CALL_FUNCTION FATAL underflow size=%llu arg=%d PC=%llu\n", static_cast<unsigned long long>((proto::proto_ulong)stack.size()), arg, static_cast<unsigned long long>(i));
                  i = next_i;
                  continue;
             }
@@ -7759,8 +7759,8 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* X = isModern ? stack[firstArgIdx - 2] : nullptr;
             
             if (diag_local) {
-                fprintf(stderr, "DEBUG CALL: argc=%d top=%zu firstArgIdx=%lu X=%p Y=%p isModern=%d\n", 
-                        arg, stack.top, firstArgIdx, (void*)X, (void*)Y, isModern);
+                fprintf(stderr, "DEBUG CALL: argc=%d top=%zu firstArgIdx=%llu X=%p Y=%p isModern=%d\n", 
+                        arg, stack.top, static_cast<unsigned long long>(firstArgIdx), (void*)X, (void*)Y, isModern);
             }
 
             const proto::ProtoObject* callable = nullptr;
@@ -7838,7 +7838,7 @@ const proto::ProtoObject* executeBytecodeRange(
             }
 
             if (!callable) {
-                 if (diag_local) fprintf(stderr, "DEBUG: OP_CALL_FUNCTION nullptr callable detected! PC=%lu\n", i);
+                 if (diag_local) fprintf(stderr, "DEBUG: OP_CALL_FUNCTION nullptr callable detected! PC=%llu\n", static_cast<unsigned long long>(i));
                  if (env) env->raiseTypeError(ctx, "object is not callable (nullptr)");
                  i = next_i;
                  continue;
@@ -8035,7 +8035,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     int line = -1;
                     const proto::ProtoObject* lineObj = codeObj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_firstlineno"));
                     if (lineObj && lineObj->isInteger(ctx)) line = (int)lineObj->asLong(ctx);
-                    fprintf(stderr, "DEBUG: OP_BUILD_FUNCTION PC=%lu arg=0x%lx codeObj=%p (line %d) defaults=%p kwDefaults=%p\n", i, (proto::proto_ulong)arg, (void*)codeObj, line, (void*)defaults, (void*)kwDefaults);
+                    fprintf(stderr, "DEBUG: OP_BUILD_FUNCTION PC=%llu arg=0x%llx codeObj=%p (line %d) defaults=%p kwDefaults=%p\n", static_cast<unsigned long long>(i), static_cast<unsigned long long>((proto::proto_ulong)arg), (void*)codeObj, line, (void*)defaults, (void*)kwDefaults);
                     fflush(stderr);
                 }
 
@@ -8232,7 +8232,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
 
                 if (diag_local) {
-                    fprintf(stderr, "DEBUG OP_BUILD_CLASS: stack size=%lu top=%lu\n", (proto::proto_ulong)stack.size(), (proto::proto_ulong)stack.top);
+                    fprintf(stderr, "DEBUG OP_BUILD_CLASS: stack size=%llu top=%llu\n", static_cast<unsigned long long>((proto::proto_ulong)stack.size()), static_cast<unsigned long long>((proto::proto_ulong)stack.top));
                     for (int j = 0; j < (int)stack.top; ++j) {
                         fprintf(stderr, "  stack[%d] = %p repr=%s\n", j, (void*)stack[j], env ? env->reprObject(ctx, stack[j]).c_str() : "???");
                     }
@@ -8780,7 +8780,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         if (diag_local) {
                             const proto::ProtoObject* keysObj = ns->getAttribute(ctx, env ? env->getKeysString() : protoPython::PythonEnvironment::getInternalString(ctx, "__keys__"));
                             const proto::ProtoList* keysList = keysObj ? keysObj->asList(ctx) : nullptr;
-                            fprintf(stderr, "DEBUG OP_BUILD_CLASS: after body run ns=%p keysSize=%lu\n", (void*)ns, keysList ? keysList->getSize(ctx) : 0);
+                            fprintf(stderr, "DEBUG OP_BUILD_CLASS: after body run ns=%p keysSize=%llu\n", (void*)ns, static_cast<unsigned long long>(keysList ? keysList->getSize(ctx) : 0));
                         }
                         stack.back() = ns; // ns may have been reallocated by CoW during execution
                     } else {
@@ -9989,7 +9989,7 @@ const proto::ProtoObject* executeBytecodeRange(
             }
         } break;
         case OP_SETUP_FINALLY: {
-            if (diag_local) fprintf(stderr, "DEBUG: SETUP_FINALLY handler pc %lu, stack.top %lu\n", (proto::proto_ulong)arg, stack.size());
+            if (diag_local) fprintf(stderr, "DEBUG: SETUP_FINALLY handler pc %llu, stack.top %llu\n", static_cast<unsigned long long>((proto::proto_ulong)arg), static_cast<unsigned long long>(stack.size()));
             fflush(stderr);
             blockStack.push_back({static_cast<proto::proto_ulong>(arg), stack.size()});
             // No continue: fall through to i = next_i

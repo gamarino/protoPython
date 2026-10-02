@@ -477,8 +477,8 @@ const proto::ProtoList* Compiler::specialiseBytecode(const proto::ProtoList* in)
         out = out->appendLast(ctx_, ctx_->fromInteger(v));
     }
     if (get_env_diag()) {
-        fprintf(stderr, "PEEPHOLE: %lu fused-op rewrites in this function\n",
-                (proto::proto_ulong)rewrites);
+        fprintf(stderr, "PEEPHOLE: %llu fused-op rewrites in this function\n",
+                static_cast<unsigned long long>((proto::proto_ulong)rewrites));
     }
     return out;
 }
@@ -5694,10 +5694,10 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     proto::proto_ulong stackOffset = (co_varnames && co_varnames->asTuple(execCtx)) ? co_varnames->asTuple(execCtx)->getSize(execCtx) : 0;
 
     if (get_env_diag()) {
-        fprintf(stderr, "DEBUG: runCodeObject co_code size=%lu co_consts size=%lu stackOffset=%lu\n",
-            co_code->asTuple(execCtx)->getSize(execCtx),
-            co_consts->asTuple(execCtx)->getSize(execCtx),
-            stackOffset);
+        fprintf(stderr, "DEBUG: runCodeObject co_code size=%llu co_consts size=%llu stackOffset=%llu\n",
+            static_cast<unsigned long long>(co_code->asTuple(execCtx)->getSize(execCtx)),
+            static_cast<unsigned long long>(co_consts->asTuple(execCtx)->getSize(execCtx)),
+            static_cast<unsigned long long>(stackOffset));
     }
 
     const proto::ProtoObject* result = executeBytecodeRange(execCtx, co_consts->asTuple(execCtx), co_code->asTuple(execCtx),
