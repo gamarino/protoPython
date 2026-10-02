@@ -3939,55 +3939,85 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
 
 
 
-static void updateContextLocation(proto::ProtoContext* ctx, proto::ProtoObject* frame, proto::proto_ulong pc) {
-    if (!ctx || !frame) return;
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (!env) return;
+// Source line of the instruction at `instrIndex` (instruction units: two
+// bytecode slots per instruction) in `codeObj`. co_lnotab holds
+// (instruction delta, signed line delta) pairs relative to co_firstlineno, as
+// Compiler::setLineNumber records them. Returns 0 when the code object carries
+// no line information.
+static int lineForInstruction(proto::ProtoContext* ctx, PythonEnvironment* env,
+                              const proto::ProtoObject* codeObj,
+                              proto::proto_ulong instrIndex) {
+    if (!ctx || !env || !codeObj || codeObj == PROTO_NONE) return 0;
+    int lineno = 0;
+    const proto::ProtoObject* fln = codeObj->getAttribute(ctx, env->getCoFirstLinenoString());
+    if (fln && fln->isInteger(ctx)) lineno = static_cast<int>(fln->asLong(ctx));
+    if (lineno <= 0) return 0;
 
-    const proto::ProtoObject* co = frame->getAttribute(ctx, env->getFCodeString());
-    if (!co) return;
+    const proto::ProtoObject* lnotabObj = codeObj->getAttribute(ctx, env->getCoLnotabString());
+    const proto::ProtoTuple* lnT = (lnotabObj && lnotabObj != PROTO_NONE) ? lnotabObj->asTuple(ctx) : nullptr;
+    const proto::ProtoList* lnL = (!lnT && lnotabObj && lnotabObj != PROTO_NONE) ? lnotabObj->asList(ctx) : nullptr;
+    const proto::proto_ulong size = lnT ? lnT->getSize(ctx) : (lnL ? lnL->getSize(ctx) : 0);
+    auto at = [&](proto::proto_ulong j) -> long long {
+        const proto::ProtoObject* o = lnT ? lnT->getAt(ctx, static_cast<int>(j))
+                                          : lnL->getAt(ctx, static_cast<int>(j));
+        return (o && o->isInteger(ctx)) ? o->asLong(ctx) : 0;
+    };
+    proto::proto_ulong cursor = 0;
+    for (proto::proto_ulong j = 0; j + 1 < size; j += 2) {
+        const proto::proto_ulong pcDelta = static_cast<proto::proto_ulong>(at(j));
+        const int lineDelta = static_cast<int>(static_cast<signed char>(at(j + 1)));
+        if (cursor + pcDelta > instrIndex) break;
+        cursor += pcDelta;
+        lineno += lineDelta;
+    }
+    return lineno;
+}
 
-    // Set filename
-    const proto::ProtoObject* fn = co->getAttribute(ctx, env->getCoFilenameString());
+// Records the running location on the context (read by the fallback in
+// PythonEnvironment::formatTraceback) and returns the line number.
+static int updateContextLocation(proto::ProtoContext* ctx, PythonEnvironment* env,
+                                 const proto::ProtoObject* codeObj,
+                                 proto::proto_ulong instrIndex) {
+    if (!ctx || !env || !codeObj || codeObj == PROTO_NONE) return 0;
+    const proto::ProtoObject* fn = codeObj->getAttribute(ctx, env->getCoFilenameString());
     if (fn && fn->isString(ctx)) {
         // thread_local: a process-wide map was read and written without a
         // lock from every thread that dispatched an exception concurrently.
         static thread_local std::unordered_map<const proto::ProtoObject*, std::string> filenameCache;
-        if (filenameCache.find(fn) == filenameCache.end()) {
-            std::string s;
-            fn->asString(ctx)->toUTF8String(ctx, s);
-            filenameCache[fn] = s;
+        auto it = filenameCache.find(fn);
+        if (it == filenameCache.end()) {
+            std::string str;
+            fn->asString(ctx)->toUTF8String(ctx, str);
+            it = filenameCache.emplace(fn, std::move(str)).first;
         }
-        ctx->currentFileName = const_cast<char*>(filenameCache[fn].c_str());
+        ctx->currentFileName = const_cast<char*>(it->second.c_str());
     }
-
-    // Set line number
-    int lineno = 0;
-    const proto::ProtoObject* fln = co->getAttribute(ctx, env->getCoFirstLinenoString());
-    if (fln && fln->isInteger(ctx)) {
-        lineno = static_cast<int>(fln->asLong(ctx));
-    }
-
-    const proto::ProtoObject* lnotabObj = co->getAttribute(ctx, env->getCoLnotabString());
-    const proto::ProtoList* lnotab = lnotabObj ? lnotabObj->asList(ctx) : nullptr;
-    if (lnotab) {
-        // Resolve lineno from lnotab and PC
-        proto::proto_ulong cursor = 0;
-        int current_lineno = lineno;
-        for (proto::proto_ulong j = 0; j < lnotab->getSize(ctx); j += 2) {
-            if (j + 1 >= lnotab->getSize(ctx)) break;
-            int pc_offset = static_cast<int>(lnotab->getAt(ctx, static_cast<int>(j))->asLong(ctx));
-            int line_offset = static_cast<int>(static_cast<signed char>(lnotab->getAt(ctx, static_cast<int>(j+1))->asLong(ctx)));
-            if (get_env_diag()) {
-                fprintf(stderr, "DEBUG: lnotab entry j=%llu, pc_offset=%d, line_offset=%d\n", static_cast<unsigned long long>(j), pc_offset, line_offset);
-            }
-            if (cursor + pc_offset > pc) break;
-            cursor += pc_offset;
-            current_lineno += line_offset;
-        }
-        lineno = current_lineno;
-    }
+    const int lineno = lineForInstruction(ctx, env, codeObj, instrIndex);
     ctx->currentLineNumber = lineno;
+    return lineno;
+}
+
+// The code object whose bytecode this dispatcher invocation runs: the
+// per-thread current code object when its co_code is `bytecode`, else the
+// frame's f_code when that matches. nullptr when neither does (bytecode run
+// without a code object, e.g. by unit tests).
+static const proto::ProtoObject* runningCodeObject(proto::ProtoContext* ctx, PythonEnvironment* env,
+                                                   const proto::ProtoObject* frame,
+                                                   const proto::ProtoTuple* bytecode) {
+    if (!ctx || !env || !bytecode) return nullptr;
+    const proto::ProtoObject* bcObj = bytecode->asObject(ctx);
+    auto runs = [&](const proto::ProtoObject* co) -> bool {
+        if (!co || co == PROTO_NONE) return false;
+        const proto::ProtoObject* cc = co->getAttribute(ctx, env->getCoCodeString());
+        return cc && cc == bcObj;
+    };
+    const proto::ProtoObject* co = PythonEnvironment::getCurrentCodeObject();
+    if (runs(co)) return co;
+    if (frame && frame != PROTO_NONE) {
+        co = frame->getAttribute(ctx, env->getFCodeString());
+        if (runs(co)) return co;
+    }
+    return nullptr;
 }
 
 // Raises UnboundLocalError for fast-local slot `idx`, naming the variable
@@ -4100,6 +4130,9 @@ const proto::ProtoObject* executeBytecodeRange(
     // parked.  Polling every 256 opcodes keeps the fast path branch-only
     // while bounding pause-acquisition latency to a few µs.
     unsigned int sp_ctr = 0;
+    // Slot index of the instruction executed last: the one that raised when
+    // an exception is found pending at the top of the loop.
+    proto::proto_ulong lastPc = pcStart;
     for (proto::proto_ulong i = pcStart; i <= pcEnd; ) {
         if ((++sp_ctr & 0x3F) == 0 && ctx) {
             ctx->safepoint();
@@ -4150,31 +4183,40 @@ const proto::ProtoObject* executeBytecodeRange(
         } else
         if (env && env->hasPendingException()) {
             const proto::ProtoObject* exc = env->peekPendingException();
+            const proto::ProtoObject* runningCode = nullptr;
+            int tbLine = 0;
             if (exc) {
-                fflush(stderr);
                 
+                // The exception was raised by the instruction executed last
+                // (`lastPc`); `i` already names the next one.
+                runningCode = runningCodeObject(ctx, env, frame, bytecode);
+                tbLine = updateContextLocation(ctx, env, runningCode, lastPc / 2);
+
+                // Name and message are only read by the diagnostic trace below;
+                // computing str(exc) on every unwound frame ran user __str__
+                // code on the exception path.
                 std::string excName = "unknown";
-                const proto::ProtoObject* cls = exc->getAttribute(ctx, env->getClassString());
-                if (cls) {
-                     const proto::ProtoObject* nameAttr = cls->getAttribute(ctx, env->getNameString());
-                     if (nameAttr && nameAttr->isString(ctx)) nameAttr->asString(ctx)->toUTF8String(ctx, excName);
-                }
-                
                 std::string excMsg = "";
-                const proto::ProtoObject* strFunc = exc->getAttribute(ctx, env->getStrString());
-                if (strFunc) {
-                    if (strFunc->isString(ctx)) {
-                        strFunc->asString(ctx)->toUTF8String(ctx, excMsg);
-                    } else if (strFunc->asMethod(ctx)) {
-                        const proto::ProtoObject* funcSelf = strFunc->asMethodSelf(ctx);
-                        const proto::ProtoObject* strRes = strFunc->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(funcSelf), nullptr, ctx->newList(), ctx->newSparseList());
-                        if (strRes && strRes->isString(ctx)) {
-                            strRes->asString(ctx)->toUTF8String(ctx, excMsg);
+                if (diag_local) {
+                    const proto::ProtoObject* cls = exc->getAttribute(ctx, env->getClassString());
+                    if (cls) {
+                         const proto::ProtoObject* nameAttr = cls->getAttribute(ctx, env->getNameString());
+                         if (nameAttr && nameAttr->isString(ctx)) nameAttr->asString(ctx)->toUTF8String(ctx, excName);
+                    }
+                
+                    const proto::ProtoObject* strFunc = exc->getAttribute(ctx, env->getStrString());
+                    if (strFunc) {
+                        if (strFunc->isString(ctx)) {
+                            strFunc->asString(ctx)->toUTF8String(ctx, excMsg);
+                        } else if (strFunc->asMethod(ctx)) {
+                            const proto::ProtoObject* funcSelf = strFunc->asMethodSelf(ctx);
+                            const proto::ProtoObject* strRes = strFunc->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(funcSelf), nullptr, ctx->newList(), ctx->newSparseList());
+                            if (strRes && strRes->isString(ctx)) {
+                                strRes->asString(ctx)->toUTF8String(ctx, excMsg);
+                            }
                         }
                     }
                 }
-
-                updateContextLocation(ctx, frame, i);
                 
                 if (diag_local) {
                     fprintf(stderr, "DEBUG: Exception %s at %s:%d (PC %llu)\n", 
@@ -4202,9 +4244,18 @@ const proto::ProtoObject* executeBytecodeRange(
             // code object plus the current globals — enough for the
             // observed traceback callers, with no overhead on the
             // exception-free hot path.
+            //
+            // A frame stands for this activation only when its f_code is the
+            // running code object: module-level code and exec/eval run with
+            // the namespace as `frame`, so exec'd code would otherwise be
+            // reported under the caller module's file and name. Any other
+            // case gets a synthesised frame carrying the running code object
+            // and line, which is what traceback formatting reads.
             const proto::ProtoObject* tbFrame = frame;
             if (!tbFrame) tbFrame = PythonEnvironment::getCurrentFrame();
-            if (!tbFrame || tbFrame == PROTO_NONE) {
+            const bool frameIsActivation = tbFrame && tbFrame != PROTO_NONE &&
+                (!runningCode || tbFrame->getAttribute(ctx, env->getFCodeString()) == runningCode);
+            if (!frameIsActivation) {
                 proto::ProtoObject* synth = const_cast<proto::ProtoObject*>(ctx->newObject(false));
                 if (env && env->getFramePrototype()) {
                     synth = const_cast<proto::ProtoObject*>(synth->addParent(ctx, env->getFramePrototype()));
@@ -4214,10 +4265,15 @@ const proto::ProtoObject* executeBytecodeRange(
                     if (curGlobals) {
                         synth = const_cast<proto::ProtoObject*>(synth->setAttribute(ctx, env->getFGlobalsString(), curGlobals));
                     }
+                    if (runningCode) {
+                        synth = const_cast<proto::ProtoObject*>(synth->setAttribute(ctx, env->getFCodeString(), runningCode));
+                    }
+                    synth = const_cast<proto::ProtoObject*>(synth->setAttribute(ctx,
+                        PythonEnvironment::getInternedString(ctx, "f_lineno"), ctx->fromInteger(tbLine)));
                 }
                 tbFrame = synth;
             }
-            env->addTraceback(exc, tbFrame, static_cast<int>(i), ctx->currentLineNumber);
+            env->addTraceback(exc, tbFrame, static_cast<int>(lastPc), tbLine);
             if (diag_local) {
                 fprintf(stderr, "DEBUG: addTraceback returned. blockStack.empty()=%s\n", blockStack.empty() ? "true" : "false");
                 fflush(stderr);
@@ -4298,6 +4354,7 @@ const proto::ProtoObject* executeBytecodeRange(
         // instead of a recoverable Python-level error.  Catch them here, set
         // a pending RuntimeError, and let the normal hasPendingException
         // unwinding take over so the user sees a proper Python traceback.
+        lastPc = i;
         try {
         switch (op) {
         case OP_LOAD_CONST: {

@@ -5630,11 +5630,22 @@ void Compiler::setLineNumber(int line) {
     // or handle negative if needed.
     // Our updateContextLocation handles line_offset as int.
     
+    // The line delta is a signed byte: split larger jumps into
+    // (0, +/-127) steps instead of clamping them, which left every later
+    // line of the code object off by the excess.
+    while (lineDelta > 127) {
+        lnotabVec_.push_back(static_cast<unsigned char>(pcDelta));
+        lnotabVec_.push_back(127);
+        pcDelta = 0;
+        lineDelta -= 127;
+    }
+    while (lineDelta < -128) {
+        lnotabVec_.push_back(static_cast<unsigned char>(pcDelta));
+        lnotabVec_.push_back(static_cast<unsigned char>(static_cast<signed char>(-128)));
+        pcDelta = 0;
+        lineDelta += 128;
+    }
     lnotabVec_.push_back(static_cast<unsigned char>(pcDelta));
-    // Line delta can be larger than 127/255? 
-    // Python uses signed char for line delta.
-    if (lineDelta > 127) lineDelta = 127; 
-    if (lineDelta < -128) lineDelta = -128;
     lnotabVec_.push_back(static_cast<unsigned char>(static_cast<signed char>(lineDelta)));
 
     lastPC_ = pc;

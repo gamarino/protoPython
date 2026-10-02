@@ -23550,10 +23550,16 @@ std::string PythonEnvironment::formatTraceback(const proto::ProtoContext* ctx, c
     if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
     proto::ProtoContext* nonConstCtx = const_cast<proto::ProtoContext*>(ctx);
     
+    // The chain ends at Python's None (addTraceback stores the None object,
+    // which is not the PROTO_NONE sentinel): treating it as one more entry
+    // printed a trailing `File "<unknown>", in <module>` line.
+    auto isEnd = [&](const proto::ProtoObject* o) {
+        return !o || o == PROTO_NONE || o == getNonePrototype();
+    };
     std::vector<const proto::ProtoObject*> tracebacks;
     if (exc && exc != PROTO_NONE) {
         const proto::ProtoObject* tb = exc->getAttribute(nonConstCtx, proto::ProtoString::fromUTF8(nonConstCtx, "__traceback__"));
-        while (tb && tb != PROTO_NONE) {
+        while (!isEnd(tb)) {
             tracebacks.push_back(tb);
             tb = tb->getAttribute(nonConstCtx, proto::ProtoString::fromUTF8(nonConstCtx, "tb_next"));
             if (tracebacks.size() > 50) break; // Safety limit
@@ -23564,9 +23570,32 @@ std::string PythonEnvironment::formatTraceback(const proto::ProtoContext* ctx, c
         return "";
     }
 
+    // Source lines are shown under each entry, as CPython does, when the
+    // file can be read; files are read once per traceback.
+    std::unordered_map<std::string, std::vector<std::string>> sources;
+    auto sourceLine = [&](const std::string& filename, int lineno) -> std::string {
+        if (lineno <= 0 || filename.empty() || filename[0] == '<') return std::string();
+        auto it = sources.find(filename);
+        if (it == sources.end()) {
+            std::vector<std::string> lines;
+            std::ifstream in(filename, std::ios::binary);
+            std::string line;
+            while (in && std::getline(in, line)) {
+                if (!line.empty() && line.back() == '\r') line.pop_back();
+                lines.push_back(line);
+            }
+            it = sources.emplace(filename, std::move(lines)).first;
+        }
+        if (static_cast<size_t>(lineno) > it->second.size()) return std::string();
+        const std::string& raw = it->second[static_cast<size_t>(lineno) - 1];
+        const size_t b = raw.find_first_not_of(" \t\f");
+        if (b == std::string::npos) return std::string();
+        const size_t e = raw.find_last_not_of(" \t\f");
+        return raw.substr(b, e - b + 1);
+    };
+
     std::string out = "Traceback (most recent call last):\n";
-    // Process frames in order (Python __traceback__ linked list from addTraceback: newest frame is tail, oldest caller is head)
-    
+    // Oldest call first: addTraceback prepends an entry per unwound frame.
     for (const auto* tb : tracebacks) {
         std::string filename = "<unknown>";
         std::string funcName = "<module>";
@@ -23602,6 +23631,8 @@ std::string PythonEnvironment::formatTraceback(const proto::ProtoContext* ctx, c
 
         std::string lineStr = lineno > 0 ? ", line " + std::to_string(lineno) : "";
         out += "  File \"" + filename + "\"" + lineStr + ", in " + funcName + "\n";
+        const std::string src = sourceLine(filename, lineno);
+        if (!src.empty()) out += "    " + src + "\n";
     }
     return out;
 }
