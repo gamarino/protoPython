@@ -19,7 +19,8 @@ onwards. Commit hashes are given for reference.
 
 ### Added
 
-- **Windows (MSVC):** protopy builds, passes its test suite (152 of 152) and
+- **Windows (MSVC):** protopy builds, passes its test suite (see
+  `docs/INSTALLATION.md` for the current count) and
   runs scripts, `-c` programs and the REPL natively on Windows 11 with Visual
   Studio 2022, against an installed protoCore (branch `windows-port`:
   `73ea74b3`, `6816cd04`, `02dba2f5`, `36598a2d`). `os` is `nt` with `ntpath`, as in
@@ -111,6 +112,49 @@ onwards. Commit hashes are given for reference.
   are marked as reserved: never emitted and not handled.
 
 ### Fixed
+
+- **Windows-port review (branch `fix/windows-review`).** Each item has a
+  regression test that runs on Linux, macOS and Windows unless stated.
+  - `tempfile.NamedTemporaryFile`/`TemporaryFile` work: `open()` supports
+    read-write modes (`w+`, `r+`, `a+`, `x+`), `opener=`, `seek`/`tell`/
+    `truncate`/`writelines` and text-mode newline translation (`\n` is written
+    as `os.linesep` on Windows, as CPython); on Windows `os.O_TEMPORARY`,
+    `O_NOINHERIT`, `O_SHORT_LIVED`, `O_SEQUENTIAL`, `O_RANDOM` and `O_TEXT`
+    exist and are honoured (`protopy_tempfile_roundtrip`,
+    `protopy_text_newline_write`).
+  - A file object that is never closed releases its descriptor when it is
+    collected (it never did); Windows deletes with POSIX semantics where NTFS
+    has them. Files still close on `close()`/`with`/collection, not on losing
+    their last reference (documented) (`protopy_file_close_on_collect`).
+  - `time.gmtime`/`localtime`/`ctime` and `datetime` timestamp conversions
+    before 1970 and after 3000 no longer dereference a null `struct tm`:
+    UTC conversions work for every year, local ones raise `OSError` where
+    the C runtime cannot represent them; `struct_time.tm_wday` counts from
+    Monday; `date.timetuple()` no longer returns None
+    (`protopy_time_out_of_range`).
+  - `re`: Python's line rules for `^`, `$`, `\A`, `\Z` and `.` on every
+    platform (MSVC matched `^`/`$` at every line); leading inline flags,
+    `pos`/`endpos`, module-level `flags` (`protopy_re_anchors`).
+  - protopyc emits fixed-width integers and portable overflow checks
+    (`CheckedArith.h`); the interpreter's `2**40 * 2**40` evaluated to 0
+    (`test_checked_arith`, `protopyc_emitted_cpp_portable`,
+    `protopyc_portable_ints` (Linux/macOS)).
+  - `re_results_not_interned` checks its token count everywhere and reads RSS
+    through `sys._current_rss()` on all three platforms.
+  - `select.select`: `ValueError` for unrepresentable sets; on Windows a real
+    wait for sockets and a classification that cannot mistake a socket for a
+    descriptor (`protopy_select_pipes`).
+  - `os.symlink`, `os.DirEntry`, `DirEntry.*(follow_symlinks=False)`;
+    `os.readlink` raises `OSError`; on Windows `st_file_attributes`,
+    `st_reparse_tag` and `stat.IO_REPARSE_TAG_*` (`protopy_copytree_symlinks`).
+  - Windows: the invalid-parameter handler is per thread in the library
+    (process-wide only in protopy.exe) (`embedding_invalid_parameter_scope`);
+    console code pages are restored at exit; console input uses
+    `ReadConsoleW`; `/W3` for protoPython's targets; NSIS is packaged only
+    when `makensis` is found, and CI builds the ZIP and runs it from a clean
+    directory.
+  - `print(file=f)` writes to `f` (it wrote to stdout for any file object);
+    diagnostic `printf` formats use `%llu` with explicit casts.
 
 - **macOS (by reading; no macOS host):** build-tree executables get an rpath
   to an installed protoCore's lib directory; `<sys/sysmacros.h>` is included on

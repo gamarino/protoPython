@@ -33,6 +33,7 @@ def descriptor_is_open(fd):
 
 
 d = tempfile.mkdtemp()
+print("file_close_on_collect: leaking descriptors in", d)
 fds = [leaked_descriptor(os.path.join(d, "g%d.txt" % i)) for i in range(8)]
 import sys
 if sys.implementation.name == "cpython":
@@ -45,17 +46,20 @@ else:
             break
 assert not still_open, "descriptors of unreachable files still open: %r" % still_open
 
+print("file_close_on_collect: descriptors released")
 # The data written through an unclosed file reached the file once collected.
 for i in range(8):
     with open(os.path.join(d, "g%d.txt" % i)) as r:
         assert r.read() == "x"
 
+print("file_close_on_collect: removing the directory")
 # A directory whose files were written and never closed can be removed.
 for i in range(20):
     write_implicitly(os.path.join(d, "f%d.txt" % i), "data %d" % i)
 shutil.rmtree(d)
 assert not os.path.exists(d)
 
+print("file_close_on_collect: TemporaryDirectory")
 # TemporaryDirectory cleans up after files opened and dropped in its scope.
 with tempfile.TemporaryDirectory() as td:
     for i in range(10):
@@ -66,6 +70,7 @@ with tempfile.TemporaryDirectory() as td:
     write_implicitly(os.path.join(td, "sub", "deep.txt"), "deep")
 assert not os.path.exists(td), "TemporaryDirectory left " + td
 
+print("file_close_on_collect: explicit close")
 # Explicit close and `with` release the descriptor at once.
 p = tempfile.mktemp()
 f = open(p, "w")

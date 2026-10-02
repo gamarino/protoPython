@@ -27,9 +27,9 @@ if WINDOWS:
         assert isinstance(getattr(stat, name, None), int), "stat has no " + name
     fst = os.lstat(os.path.join(src, "a.txt"))
     assert fst.st_reparse_tag == 0, fst.st_reparse_tag
-    assert not fst.st_file_attributes & stat.FILE_ATTRIBUTE_DIRECTORY
+    assert not fst.st_file_attributes & stat.FILE_ATTRIBUTE_DIRECTORY, 'not fst.st_file_attributes & stat.FILE_ATTRIBUTE_DIRECTORY'
     dst_ = os.stat(src)
-    assert dst_.st_file_attributes & stat.FILE_ATTRIBUTE_DIRECTORY
+    assert dst_.st_file_attributes & stat.FILE_ATTRIBUTE_DIRECTORY, 'dst_.st_file_attributes & stat.FILE_ATTRIBUTE_DIRECTORY'
 
 linked = True
 try:
@@ -44,20 +44,20 @@ except OSError as e:
 
 if linked:
     link = os.path.join(src, "link.txt")
-    assert os.path.islink(link)
-    assert stat.S_ISLNK(os.lstat(link).st_mode)
+    assert os.path.islink(link), 'os.path.islink(link)'
+    assert stat.S_ISLNK(os.lstat(link).st_mode), 'stat.S_ISLNK(os.lstat(link).st_mode)'
     assert os.readlink(link) == os.path.join(src, "a.txt")
-    assert os.path.isfile(link)
+    assert os.path.isfile(link), 'os.path.isfile(link)'
     if WINDOWS:
         lst = os.lstat(link)
         assert lst.st_reparse_tag == stat.IO_REPARSE_TAG_SYMLINK, lst.st_reparse_tag
-        assert lst.st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT
+        assert lst.st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT, 'lst.st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT'
         # stat() follows the link: the target's attributes, no reparse tag.
-        assert os.stat(link).st_reparse_tag == 0
+        assert os.stat(link).st_reparse_tag == 0, 'os.stat(link).st_reparse_tag == 0'
     entries = {e.name: e for e in os.scandir(src)}
-    assert entries["link.txt"].is_symlink()
-    assert stat.S_ISLNK(entries["link.txt"].stat(follow_symlinks=False).st_mode)
-    assert stat.S_ISREG(entries["link.txt"].stat().st_mode)
+    assert entries["link.txt"].is_symlink(), "check at line 58"
+    assert stat.S_ISLNK(entries["link.txt"].stat(follow_symlinks=False).st_mode), "check at line 59"
+    assert stat.S_ISREG(entries["link.txt"].stat().st_mode), "check at line 60"
 
     # symlinks=True copies the links as links.
     dst = os.path.join(root, "dst")
@@ -71,10 +71,10 @@ if linked:
     shutil.copytree(src, dst2)
     assert not os.path.islink(os.path.join(dst2, "link.txt"))
     with open(os.path.join(dst2, "link.txt")) as f:
-        assert f.read() == "A"
+        assert f.read() == "A", "check at line 74"
     assert os.path.isdir(os.path.join(dst2, "linkdir"))
     with open(os.path.join(dst2, "linkdir", "b.txt")) as f:
-        assert f.read() == "B"
+        assert f.read() == "B", "check at line 77"
 
     # rmtree removes a tree with links in it, never what they point to.
     shutil.rmtree(dst)
@@ -83,5 +83,5 @@ else:
     shutil.copytree(src, os.path.join(root, "dst2"))
 
 shutil.rmtree(root)
-assert not os.path.exists(root)
+assert not os.path.exists(root), 'not os.path.exists(root)'
 print("copytree_symlinks: ok")

@@ -410,25 +410,30 @@ static bool getPattern(proto::ProtoContext* ctx, const proto::ProtoObject* patOb
 // mode. Before matching, every "\n", "\r", U+2028 and U+2029 of the subject is
 // replaced by a private code point above U+10FFFF (no str can contain one),
 // and the pattern is rewritten to Python's rules in terms of those:
-//   ^          start of the string (the engine's ^, now never multiline)
-//   ^ (M)      the start, or a line-start marker (below)
+//   ^, \A      the start-of-subject marker (below)
+//   ^ (M)      the start-of-subject or a line-start marker (below)
 //   $          (?=\n?$): the end, or before a final "\n"
 //   $ (M)      (?=\n|$)
-//   \A, \Z     ^ and $
+//   \Z         $
 //   .          any character but "\n" (all of them under re.DOTALL)
 //   \s, [...]  their Python membership for the four terminators
 // with "\n" standing for its private code point. ECMAScript has no
-// lookbehind, so a MULTILINE `^` cannot test the character before it: when a
-// MULTILINE pattern uses `^`, each "\n" of the subject is followed by a
-// line-start marker, `^` consumes it, and everything that can match "\n" may
-// consume the marker after it. Match positions are mapped back to the
-// subject's code points (the marker has no width there).
+// lookbehind, so `^` cannot test the character before it, and the engines
+// disagree on their own `^` once a search starts inside the subject (libc++
+// lets it match there under match_prev_avail). So the engine's `^` is never
+// used: every subject starts with a start-of-subject marker that `^` and
+// `\A` consume, and when a MULTILINE pattern uses `^`, each "\n" of the
+// subject is followed by a line-start marker that `^` consumes too;
+// everything that can match "\n" may consume the marker after it, and
+// nothing else matches a marker. Match positions are mapped back to the
+// subject's code points (markers have no width there).
 // ---------------------------------------------------------------------------
 constexpr ReChar kNL  = static_cast<ReChar>(0x110000);  // "\n"
 constexpr ReChar kCR  = static_cast<ReChar>(0x110001);  // "\r"
 constexpr ReChar kLS  = static_cast<ReChar>(0x110002);  // U+2028 LINE SEPARATOR
 constexpr ReChar kPS  = static_cast<ReChar>(0x110003);  // U+2029 PARAGRAPH SEPARATOR
 constexpr ReChar kLSM = static_cast<ReChar>(0x110004);  // line start after "\n" (MULTILINE ^ only)
+constexpr ReChar kBOS = static_cast<ReChar>(0x110005);  // start of the subject
 static const unsigned long kTerminator[4] = {0x0A, 0x0D, 0x2028, 0x2029};
 static const ReChar kTerminatorSentinel[4] = {kNL, kCR, kLS, kPS};
 
@@ -642,7 +647,7 @@ static void emitClass(ReString& out, const ClassInfo& info, bool lineStartMarks)
         for (int t = 0; t < 4; ++t) {
             if (info.member[t] != info.negated) cls += kTerminatorSentinel[t];
         }
-        if (info.negated) cls += kLSM;
+        if (info.negated) { cls += kLSM; cls += kBOS; }
         cls += L']';
     } else {
         cls += RE_LIT("(?:");
@@ -658,6 +663,7 @@ static void emitClass(ReString& out, const ClassInfo& info, bool lineStartMarks)
         cls += RE_LIT("(?![");
         for (int t = 0; t < 4; ++t) cls += kTerminatorSentinel[t];
         cls += kLSM;
+        cls += kBOS;
         cls += RE_LIT("])");
         cls += info.negated ? RE_LIT("[^") : RE_LIT("[");
         cls += info.body;
@@ -754,9 +760,17 @@ static TranslatedRegex translatePyRegexEx(const std::string& srcUtf8, long long 
         const ReChar c = src[i];
         if (c == L'\\' && i + 1 < src.size()) {
             const ReChar n = src[i + 1];
-            if (n == L'A') { out += L'^'; i += 2; continue; }
+            if (n == L'A') { out += kBOS; i += 2; continue; }
             if (n == L'z' || n == L'Z') { out += L'$'; i += 2; continue; }
-            if (n == L'B' && marks) { out += RE_LIT("(?!"); out += kLSM; out += RE_LIT(")\\B"); i += 2; continue; }
+            if (n == L'B') {
+                // Never between a marker and what follows it.
+                out += RE_LIT("(?![");
+                out += kLSM;
+                out += kBOS;
+                out += RE_LIT("])\\B");
+                i += 2;
+                continue;
+            }
             if (n == L's' || n == L'S' || n == L'w' || n == L'W' || n == L'd' || n == L'D') {
                 ClassInfo info;
                 info.body = src.substr(i, 2);
@@ -812,11 +826,13 @@ static TranslatedRegex translatePyRegexEx(const std::string& srcUtf8, long long 
         }
         if (c == L'^') {
             if (marks) {
-                out += RE_LIT("(?:^|");
+                out += RE_LIT("(?:");
+                out += kBOS;
+                out += L'|';
                 out += kLSM;
                 out += L')';
             } else {
-                out += L'^';
+                out += kBOS;
             }
             ++i;
             continue;
@@ -887,45 +903,40 @@ static TranslatedRegex translatePyRegexEx(const std::string& srcUtf8, long long 
     return result;
 }
 
-// The subject as the engine sees it: line terminators replaced by private
-// code points and, when the pattern needs them, a line-start marker after
-// each "\n". Positions map back to the subject's code points.
+// The subject as the engine sees it: a start-of-subject marker, then the
+// code points with line terminators replaced by private code points and,
+// when the pattern needs them, a line-start marker after each "\n".
+// Positions map back to the subject's code points.
 struct Subject {
     ReString orig;                // the str's code points
     ReString mapped;              // what the engine matches
-    std::vector<size_t> origAt;   // mapped index -> orig index (with markers only)
-    std::vector<size_t> mappedAt; // orig index -> mapped index after any marker (with markers only)
+    std::vector<size_t> origAt;   // mapped index -> orig index
+    std::vector<size_t> mappedAt; // orig index -> mapped index after any marker
 
-    size_t toOrig(size_t k) const { return origAt.empty() ? k : origAt[k]; }
-    // Where a search starting at orig position p begins: before the
-    // line-start marker that follows a "\n", so a MULTILINE ^ can take it.
+    size_t toOrig(size_t k) const { return origAt[k]; }
+    // Where a search starting at orig position p begins: before the marker
+    // in front of p (the start-of-subject marker, or the line-start marker
+    // after a "\n"), so that ^ can take it.
     size_t searchStart(size_t p) const {
-        if (mappedAt.empty()) return p;
-        return (p > 0 && orig[p - 1] == L'\n') ? mappedAt[p] - 1 : mappedAt[p];
+        const size_t k = mappedAt[p];
+        return (k > 0 && (mapped[k - 1] == kBOS || mapped[k - 1] == kLSM)) ? k - 1 : k;
     }
     // Where a range ending at orig position p ends: after that marker.
-    size_t searchEnd(size_t p) const { return mappedAt.empty() ? p : mappedAt[p]; }
-    // The orig code points of [mapped first, mapped last).
-    ReString slice(size_t first, size_t last) const {
-        const size_t a = toOrig(first), b = toOrig(last);
-        return orig.substr(a, b - a);
-    }
+    size_t searchEnd(size_t p) const { return mappedAt[p]; }
 };
 
 static Subject makeSubject(ReString s, bool lineStartMarks) {
     Subject sj;
     sj.orig = std::move(s);
-    sj.mapped.reserve(sj.orig.size() + (lineStartMarks ? 16 : 0));
-    if (lineStartMarks) {
-        sj.mappedAt.reserve(sj.orig.size() + 1);
-        sj.origAt.reserve(sj.orig.size() + 16);
-    }
+    sj.mapped.reserve(sj.orig.size() + 1 + (lineStartMarks ? 16 : 0));
+    sj.mappedAt.reserve(sj.orig.size() + 1);
+    sj.origAt.reserve(sj.orig.size() + 2);
+    sj.mapped += kBOS;
+    sj.origAt.push_back(0);
     for (size_t p = 0; p < sj.orig.size(); ++p) {
         const ReChar c = sj.orig[p];
-        if (lineStartMarks) {
-            sj.mappedAt.push_back(sj.mapped.size());
-            sj.origAt.push_back(p);
-        }
+        sj.mappedAt.push_back(sj.mapped.size());
+        sj.origAt.push_back(p);
         const int t = terminatorIndex(static_cast<unsigned long>(c));
         sj.mapped += t >= 0 ? kTerminatorSentinel[t] : c;
         if (lineStartMarks && t == 0) {
@@ -933,10 +944,8 @@ static Subject makeSubject(ReString s, bool lineStartMarks) {
             sj.mapped += kLSM;
         }
     }
-    if (lineStartMarks) {
-        sj.mappedAt.push_back(sj.mapped.size());
-        sj.origAt.push_back(sj.orig.size());
-    }
+    sj.mappedAt.push_back(sj.mapped.size());
+    sj.origAt.push_back(sj.orig.size());
     return sj;
 }
 
@@ -1041,9 +1050,10 @@ static bool findMatch(const CompiledRe& cr, const Subject& sj, size_t pos, size_
     const auto base = sj.mapped.cbegin();
     const auto last = base + static_cast<std::ptrdiff_t>(sj.searchEnd(endpos));
     auto flags = std::regex_constants::match_default;
-    if (pos > 0) flags |= std::regex_constants::match_not_bol | std::regex_constants::match_prev_avail;
-    if (anchored) flags |= std::regex_constants::match_continuous;
     const size_t start = sj.searchStart(pos);
+    // The previous character is there for \b (^ is the marker, not the engine's).
+    if (start > 0) flags |= std::regex_constants::match_prev_avail;
+    if (anchored) flags |= std::regex_constants::match_continuous;
     auto attempt = [&](size_t from, std::regex_constants::match_flag_type f) {
         const auto first = base + static_cast<std::ptrdiff_t>(from);
         return whole ? std::regex_match(first, last, m, cr.re, f) : std::regex_search(first, last, m, cr.re, f);
@@ -1053,32 +1063,50 @@ static bool findMatch(const CompiledRe& cr, const Subject& sj, size_t pos, size_
     // marker before pos: try once more after it.
     const size_t after = sj.searchEnd(pos);
     if ((anchored || whole) && after != start) {
-        return attempt(after, flags | std::regex_constants::match_not_bol | std::regex_constants::match_prev_avail);
+        return attempt(after, flags | std::regex_constants::match_prev_avail);
     }
     return false;
 }
 
 // Calls f(match) for each successive match in [pos, endpos), until f returns
-// false. Two empty matches at one position of the subject (one on each side
-// of a line-start marker) count once.
+// false, with ECMAScript's (and Python's) rule for empty matches: after an
+// empty match the next one must be non-empty or start further on. The
+// iteration is done here rather than by std::regex_iterator, whose handling
+// of an empty match at the end of the subject differs between libc++ and
+// libstdc++. Two empty matches at one position of the subject (one on each
+// side of a marker) count once.
 template <class F>
 static void forEachMatch(const CompiledRe& cr, const Subject& sj, size_t pos, size_t endpos, F&& f) {
     if (pos > endpos || endpos > sj.orig.size()) return;
     const auto base = sj.mapped.cbegin();
-    auto flags = std::regex_constants::match_default;
-    if (pos > 0) flags |= std::regex_constants::match_not_bol | std::regex_constants::match_prev_avail;
+    const size_t last = sj.searchEnd(endpos);
+    size_t cur = sj.searchStart(pos);
+    bool notNull = false;
     size_t lastEmpty = static_cast<size_t>(-1);
-    for (ReIterator it(base + static_cast<std::ptrdiff_t>(sj.searchStart(pos)),
-                       base + static_cast<std::ptrdiff_t>(sj.searchEnd(endpos)), cr.re, flags), end;
-         it != end; ++it) {
-        const ReMatch& m = *it;
-        const size_t a = sj.toOrig(mappedIndex(sj, m[0].first));
-        const size_t b = sj.toOrig(mappedIndex(sj, m[0].second));
+    ReMatch m;
+    while (cur <= last) {
+        auto flags = std::regex_constants::match_default;
+        if (cur > 0) flags |= std::regex_constants::match_prev_avail;
+        if (notNull) flags |= std::regex_constants::match_not_null | std::regex_constants::match_continuous;
+        if (!std::regex_search(base + static_cast<std::ptrdiff_t>(cur), base + static_cast<std::ptrdiff_t>(last),
+                               m, cr.re, flags)) {
+            if (!notNull || cur == last) break;
+            notNull = false;
+            ++cur;
+            continue;
+        }
+        const size_t ms = mappedIndex(sj, m[0].first);
+        const size_t me = mappedIndex(sj, m[0].second);
+        const size_t a = sj.toOrig(ms);
+        const size_t b = sj.toOrig(me);
+        bool report = true;
         if (a == b) {
-            if (a == lastEmpty) continue;
+            report = a != lastEmpty;
             lastEmpty = a;
         }
-        if (!f(m)) break;
+        if (report && !f(m)) break;
+        notNull = ms == me;
+        cur = me;
     }
 }
 

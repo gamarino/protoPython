@@ -12,7 +12,8 @@ try:
         assert f.writable()
         assert not f.closed
     assert f.closed
-    assert os.path.getsize(path) == 9
+    # Two "\n" written in text mode: os.linesep each ("\r\n" on Windows, as CPython).
+    assert os.path.getsize(path) == 7 + 2 * len(os.linesep), os.path.getsize(path)
     with open(path) as f:
         assert f.read() == "first\né\n"
 

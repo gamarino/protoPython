@@ -9,9 +9,10 @@ protoPython is developed and tested on Linux, where the runtime uses POSIX inter
 such as `unistd.h` and `dlopen` and the CMake files add GCC/Clang compiler options
 (`-fno-delete-null-pointer-checks`, `-ftls-model=initial-exec`). It also builds and
 runs natively on **Windows with MSVC** (Visual Studio 2022), where the same interfaces
-are mapped onto Win32; see [Windows (MSVC)](#windows-msvc). The sources and CMake
-files contain macOS-specific branches (executable path lookup, `@loader_path` RPATH),
-but macOS is not a tested platform.
+are mapped onto Win32; see [Windows (MSVC)](#windows-msvc). macOS (Apple clang,
+arm64) and Windows are built and tested in continuous integration
+(`.github/workflows/cross-platform.yml`, against an installed protoCore), as Linux
+is (`.github/workflows/ci.yml`).
 
 ## Prerequisites
 
@@ -308,9 +309,40 @@ How Windows differs, by design:
   `SIGABRT`, `SIGFPE`, `SIGILL`, `SIGSEGV` and `CTRL_C_EVENT`/`CTRL_BREAK_EVENT`,
   and no `alarm`, `pause` or `siginterrupt`. Opening or removing a directory as a
   file raises `PermissionError`, as CPython does there.
-- **Same output bytes everywhere.** The standard streams are binary, so `print`
-  writes `\n` as on Linux, and the console is switched to UTF-8. Files are always
-  opened in binary mode underneath, as on POSIX.
+- **Text files use `\r\n`, the standard streams do not.** A file opened in text
+  mode writes `\n` as `os.linesep` (`\r\n`) unless `newline=""` or
+  `newline="\n"` is given, and reads `\r\n` and `\r` as `\n`, as in CPython.
+  The standard streams are binary, so `print` to the console or a pipe writes
+  `\n` as on Linux -- a deliberate difference from CPython, which writes `\r\n`
+  there, so that output is byte-identical on every platform. The console is
+  switched to UTF-8 and switched back when protopy exits (not after
+  `os._exit()`); console input is read as UTF-16 (`ReadConsoleW`), so
+  non-ASCII input arrives intact. Descriptors are binary unless opened with
+  `os.O_TEXT`.
+- **`os` has CPython's Windows `open()` flags**: `O_BINARY`, `O_TEXT`,
+  `O_NOINHERIT`, `O_TEMPORARY` (the file is deleted when its last handle
+  closes; `tempfile.NamedTemporaryFile` and `TemporaryFile` use it),
+  `O_SHORT_LIVED`, `O_SEQUENTIAL`, `O_RANDOM`. Files are opened with
+  `FILE_SHARE_DELETE`, and `os.remove`, `os.rmdir` and `os.replace` use POSIX
+  semantics where NTFS has them (Windows 10 1709 and later), so a file
+  protoPython still holds open can be removed or replaced, and its directory
+  removed, as on Linux. On FAT, exFAT and network shares such a file stays
+  "delete pending" until it is closed (see `docs/CPYTHON_CONFORMANCE.md`, "Files
+  are closed by close(), with, or collection").
+- **`os.stat_result`** has `st_file_attributes` and `st_reparse_tag`, and
+  `stat` the `IO_REPARSE_TAG_*` constants; `os.lstat` reports a junction as a
+  directory with `IO_REPARSE_TAG_MOUNT_POINT`, as CPython does. `os.symlink`
+  needs the symbolic-link privilege or developer mode, as in CPython.
+- **Time before 1970 and after 3000.** `time.localtime`, `time.ctime`,
+  `datetime.fromtimestamp` and `date.fromtimestamp` raise `OSError` there, as
+  CPython does on Windows (the C runtime has no time-zone rules for them).
+  `time.gmtime` and `datetime.utcfromtimestamp` answer for every year on every
+  platform (CPython raises `OSError` on Windows for negative values).
+- **Invalid C runtime arguments** (a closed descriptor, ...) raise `OSError`
+  instead of ending the process, as in CPython. The library installs its
+  handler on the threads that run Python code only, so a program embedding
+  `protoPython.dll` keeps its own process-wide handler; `protopy.exe` installs
+  it process-wide.
 - **UTF-8 throughout.** `protopy.exe` and `protopyc.exe` carry a manifest that
   makes UTF-8 the process code page (Windows 10 1903 or later), so arguments,
   environment variables and file names with non-ASCII characters work as on
@@ -330,8 +362,11 @@ How Windows differs, by design:
   Python's line rules on every platform (the engine never applies its own; see
   `src/library/ReModule.cpp`, "Line boundaries").
 - **asyncio** runs on the selector event loop (there is no IOCP proactor:
-  `_overlapped` does not exist), and `select.select` waits on pipes as well as
-  sockets by polling them.
+  `_overlapped` does not exist). `select.select` accepts sockets and C runtime
+  descriptors (pipes, files, the console): sockets alone wait in Winsock's
+  `select()`; pipes, which cannot be waited on for data, are polled with
+  `PeekNamedPipe` every 1 to 20 ms while any sockets wait. A set holds at most
+  512 entries (`ValueError` beyond, as in CPython).
 
 Not available on Windows yet:
 
@@ -339,10 +374,12 @@ Not available on Windows yet:
   `OSError(ENOTSUP)`: process creation (`_winapi.CreateProcess` and the pipe and
   handle functions) is not implemented; `_winapi` has only what `shutil` and
   `ntpath` import. Nor is there `winreg` or `msvcrt`.
-- **protopyc's module build.** `protopyc --emit-cpp` writes the C++ sources, but
-  `--emit-make` and `--build-so` drive a POSIX compiler and `make`; that pipeline
-  has not been ported to MSVC, and its tests (`test/compiler`) are not built on
-  Windows.
+- **protopyc's module build.** `protopyc --emit-cpp` writes C++ that uses
+  fixed-width integers and portable overflow checks, and CI compiles it to an
+  object file with MSVC (`protopyc_emitted_cpp_portable`); building and loading
+  a module from it is not supported: `--emit-make` and `--build-so` drive a
+  POSIX compiler and `make`, that pipeline has not been ported to MSVC, and its
+  build-and-run test (`protopyc_portable_ints`) runs on Linux and macOS only.
 
 ## Next steps
 

@@ -1383,8 +1383,19 @@ elseif(UNIX)
     set(CPACK_RPM_PACKAGE_REQUIRES
         "protoCore >= ${PROTOCORE_MIN_VERSION_FULL}, protoCore < ${PROTOCORE_NEXT_MAJOR}")
 elseif(WIN32)
-    # UNVERIFIED: no Windows build host (D-I6).
-    set(CPACK_GENERATOR "NSIS;ZIP")
+    # The ZIP is built and run in CI (cross-platform.yml). NSIS only when
+    # makensis is present: cpack aborts the whole run when a generator's tool
+    # is missing, which would take the ZIP down with it. protoCore is not
+    # bundled, as in the other packages: protoCore.dll comes from protoCore's
+    # own package and must be on PATH.
+    set(CPACK_GENERATOR "ZIP")
+    find_program(PROTOPYTHON_MAKENSIS_EXECUTABLE makensis)
+    if(PROTOPYTHON_MAKENSIS_EXECUTABLE)
+        list(APPEND CPACK_GENERATOR "NSIS")
+        message(STATUS "CPack: NSIS generator enabled (makensis found)")
+    else()
+        message(STATUS "CPack: NSIS generator disabled (makensis not found)")
+    endif()
     set(CPACK_NSIS_HELP_LINK "https://github.com/gamarino/protoPython")
     set(CPACK_NSIS_PACKAGE_NAME "protoPython")
 endif()
