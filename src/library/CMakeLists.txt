@@ -92,8 +92,9 @@ if(WIN32)
         PROPERTIES HEADER_FILE_ONLY ON)
     # No __declspec annotations in the sources: export every symbol, as ELF does.
     set_target_properties(protoPython PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
-    # Windows finds a DLL next to the program that loads it: copy protoCore.dll
-    # into the build's bin/ so protopy and the tests run in place. A target the
+    # Windows finds a DLL next to the program that loads it: copy protoCore's DLL
+    # (named by the imported target: protoCore-3.dll from 2.9.0 on, protoCore.dll
+    # before) into the build's bin/ so protopy and the tests run in place. A target the
     # library depends on, not a post-build step: the tests are run to list their
     # cases as soon as they are linked.
     add_custom_target(protopython_runtime_dlls

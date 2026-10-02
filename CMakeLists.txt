@@ -1394,8 +1394,8 @@ elseif(WIN32)
     # The ZIP is built and run in CI (cross-platform.yml). NSIS only when
     # makensis is present: cpack aborts the whole run when a generator's tool
     # is missing, which would take the ZIP down with it. protoCore is not
-    # bundled, as in the other packages: protoCore.dll comes from protoCore's
-    # own package and must be on PATH.
+    # bundled, as in the other packages: protoCore's DLL (protoCore-3.dll
+    # from protoCore 2.9.0 on) comes from protoCore's own package and must be on PATH.
     set(CPACK_GENERATOR "ZIP")
     find_program(PROTOPYTHON_MAKENSIS_EXECUTABLE makensis)
     if(PROTOPYTHON_MAKENSIS_EXECUTABLE)

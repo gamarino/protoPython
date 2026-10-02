@@ -97,7 +97,7 @@ jobs:
 
       # The Windows ZIP: built with cpack, unpacked into a fresh directory and
       # run from there, with nothing from the build tree on PATH -- only
-      # protoCore's installed bin directory, since protoCore.dll is not bundled
+      # protoCore's installed bin directory, since protoCore's DLL is not bundled
       # (docs/INSTALLATION.md, "Packaging").
       - name: Windows ZIP package, run from a clean directory
         if: runner.os == 'Windows'

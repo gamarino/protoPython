@@ -283,16 +283,18 @@ cmake --install build
 %PREFIX%\bin\protopy -c "import sys; print(sys.version)"
 ```
 
-The build puts every executable and DLL in `build/bin/` and copies
-`protoCore.dll` there, so `protopy.exe` and the tests run in place. GoogleTest is
+The build puts every executable and DLL in `build/bin/` and copies protoCore's
+DLL there (whatever the imported `protoCore` target names it: `protoCore-3.dll`
+from protoCore 2.9.0 on, `protoCore.dll` before; the import library is
+`protoCore.lib` either way), so `protopy.exe` and the tests run in place. GoogleTest is
 fetched (`PROTOPYTHON_FETCH_GOOGLETEST`, on by default on Windows), so the C++
 tests are built against the installed protoCore too. The script tests run through
 Git for Windows' `bash` (`C:/Program Files/Git/bin`), which must be installed;
 Python 3 is needed for the conformity tests, as on Linux. `cmake --install` puts
 `protopy.exe`, `protopyc.exe` and `protoPython.dll` in `<prefix>/bin`, the import
 library in `<prefix>/lib` and the standard library in
-`<prefix>/lib/protoPython/python3.14`; protoCore's own install adds
-`protoCore.dll` to its prefix's `bin`. With those `bin` directories on `PATH`,
+`<prefix>/lib/protoPython/python3.14`; protoCore's own install adds its DLL
+(`protoCore-3.dll`, or `protoCore.dll` before 2.9.0) to its prefix's `bin`. With those `bin` directories on `PATH`,
 `protopy` runs scripts, `-c` programs and the REPL from `cmd.exe` or PowerShell.
 `cpack -G ZIP` produces `protopython-<version>-win64.zip` (without protoCore,
 which is never bundled).

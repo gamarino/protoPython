@@ -119,7 +119,8 @@ ctest --test-dir build -j8
 build\bin\protopy example.py
 ```
 
-Executables and DLLs (including a copy of `protoCore.dll`) are in `build\bin`. The
+Executables and DLLs (including a copy of protoCore's DLL, `protoCore-3.dll` from
+protoCore 2.9.0 on, `protoCore.dll` before) are in `build\bin`. The
 script tests need Git for Windows' `bash`. `os` is `nt` there, as in CPython;
 subprocesses and protopyc's module build are not available yet. See
 [Windows (MSVC)](docs/INSTALLATION.md#windows-msvc) for installing, the differences
