@@ -1561,15 +1561,19 @@ bool Compiler::compileWhile(WhileNode* n) {
     int afterLoopBody = bytecodeOffset();
     addPatch(jumpToEndSlot, afterLoopBody);
     
+    // The else clause runs after the loop has finished, so it is outside
+    // the loop: a `break` / `continue` there targets the enclosing loop.
+    std::vector<int> breakPatches = std::move(loopStack_.back().breakPatches);
+    loopStack_.pop_back();
+
     if (n->orelse) {
         if (!compileNode(n->orelse.get())) return false;
     }
     
     int endPC = bytecodeOffset();
-    for (int patchIdx : loopStack_.back().breakPatches) {
+    for (int patchIdx : breakPatches) {
         addPatch(patchIdx, endPC);
     }
-    loopStack_.pop_back();
     
     return true;
 }
@@ -1589,14 +1593,19 @@ bool Compiler::compileFor(ForNode* n) {
     int afterLoop = bytecodeOffset();
     addPatch(argSlot, afterLoop);
     
+    // The else clause is outside the loop (see compileWhile): pop the loop
+    // before compiling it so its `break` / `continue` reach the enclosing
+    // loop instead of popping that loop's iterator and jumping here.
+    std::vector<int> breakPatches = std::move(loopStack_.back().breakPatches);
+    loopStack_.pop_back();
+
     if (n->orelse) {
         if (!compileNode(n->orelse.get())) return false;
     }
     
-    for (int patchIdx : loopStack_.back().breakPatches) {
+    for (int patchIdx : breakPatches) {
         addPatch(patchIdx, bytecodeOffset());
     }
-    loopStack_.pop_back();
     
     return true;
 }
@@ -4882,14 +4891,17 @@ bool Compiler::compileAsyncFor(AsyncForNode* n) {
     int afterLoop = bytecodeOffset();
     addPatch(argSlot, afterLoop);
 
+    // The else clause is outside the loop (see compileFor).
+    std::vector<int> breakPatches = std::move(loopStack_.back().breakPatches);
+    loopStack_.pop_back();
+
     if (n->orelse) {
         if (!compileNode(n->orelse.get())) return false;
     }
 
-    for (int patch : loopStack_.back().breakPatches) {
+    for (int patch : breakPatches) {
         addPatch(patch, bytecodeOffset());
     }
-    loopStack_.pop_back();
     return true;
 }
 
