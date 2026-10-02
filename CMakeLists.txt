@@ -592,6 +592,15 @@ set_tests_properties(protopy_file_close_on_collect PROPERTIES
     ENVIRONMENT "PROTOCORE_HEAP_LIMIT_CELLS=1000000"
     TIMEOUT 120
     LABELS "regression_gate")
+# Functions with annotations have an __annotate__ function (PEP 649/749), so
+# functools.singledispatch's plain @register works.
+add_test(NAME protopy_function_annotate
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/function_annotate.py)
+set_tests_properties(protopy_function_annotate PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "function_annotate: ok"
+    TIMEOUT 120
+    LABELS "regression_gate")
 # __main__.__file__ is absolute and sys.argv[0] is the path as given (the
 # script is run by a relative path); `-c` code has no __main__.__file__.
 add_test(NAME protopy_main_file_absolute
