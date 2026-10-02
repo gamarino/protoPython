@@ -499,6 +499,55 @@ set_tests_properties(protopy_re_results_not_interned PROPERTIES
     ENVIRONMENT "PROTOCORE_HEAP_LIMIT_CELLS=500000"
     TIMEOUT 120
     LABELS "regression_gate")
+# re's ^, $, \A, \Z and . follow CPython's line rules on every platform.
+add_test(NAME protopy_re_anchors
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/re_anchors.py)
+set_tests_properties(protopy_re_anchors PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
+# time/datetime conversions before 1970 and after 3000 answer or raise, never crash.
+add_test(NAME protopy_time_out_of_range
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/time_out_of_range.py)
+set_tests_properties(protopy_time_out_of_range PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
+# tempfile: NamedTemporaryFile, TemporaryFile, TemporaryDirectory round trips.
+add_test(NAME protopy_tempfile_roundtrip
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/tempfile_roundtrip.py)
+set_tests_properties(protopy_tempfile_roundtrip PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
+# Unclosed files release their descriptor when collected; gc.collect() collects.
+add_test(NAME protopy_file_close_on_collect
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/file_close_on_collect.py)
+set_tests_properties(protopy_file_close_on_collect PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
+# Text-mode writes translate "\n" to os.linesep, honouring newline=.
+add_test(NAME protopy_text_newline_write
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/text_newline_write.py)
+set_tests_properties(protopy_text_newline_write PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
+# select.select on pipes: timeouts, readiness, ValueError for unrepresentable sets.
+add_test(NAME protopy_select_pipes
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/select_pipes.py)
+set_tests_properties(protopy_select_pipes PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
+# os.symlink, lstat and shutil.copytree/rmtree over symbolic links.
+add_test(NAME protopy_copytree_symlinks
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/copytree_symlinks.py)
+set_tests_properties(protopy_copytree_symlinks PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # bool(), `if` / `while` and the native truth test agree on every shape.
 add_test(NAME protopy_truth_tests
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/truth_tests.py)
