@@ -113,6 +113,17 @@ onwards. Commit hashes are given for reference.
 
 ### Fixed
 
+- **Collection under a heap limit freed live objects** (seen as a crash, or a
+  module-level string read back as NUL bytes, in some Windows runs with
+  `PROTOCORE_HEAP_LIMIT_CELLS`). `ContextScope` and `runCodeObject` named the
+  context they were handed as the new context's `previous`. protoCore's root
+  scan starts at the thread's current context and follows `previous`, and
+  native code is often handed an outer context while inner ones are live, so
+  those were hidden from every collection while the new context was current,
+  and its destructor made the wrong context current. New contexts are now
+  parented on the thread's current context (`chainParent`).
+  `protopy_file_close_on_collect` runs on Windows again.
+
 - **Windows ZIP is self-contained.** Like protoST, protoScala, protoClojure
   and protoJS, the ZIP (and the NSIS installer, built only when `makensis` is
   found) now bundles protoCore's DLL, copied from the linked `protoCore` target
@@ -142,9 +153,8 @@ onwards. Commit hashes are given for reference.
   - A file object that is never closed releases its descriptor when it is
     collected (it never did); Windows deletes with POSIX semantics where NTFS
     has them. Files still close on `close()`/`with`/collection, not on losing
-    their last reference (documented) (`protopy_file_close_on_collect`,
-    skipped on Windows where heap-limited collection crashes independently of
-    this change -- see INSTALLATION.md; `protopy_unclosed_files_directory_cleanup`).
+    their last reference (documented) (`protopy_file_close_on_collect`;
+    `protopy_unclosed_files_directory_cleanup`).
   - `time.gmtime`/`localtime`/`ctime` and `datetime` timestamp conversions
     before 1970 and after 3000 no longer dereference a null `struct tm`:
     UTC conversions work for every year, local ones raise `OSError` where

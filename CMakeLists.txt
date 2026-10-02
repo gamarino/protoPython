@@ -537,13 +537,12 @@ set_tests_properties(protopy_tempfile_roundtrip PROPERTIES
     TIMEOUT 120
     LABELS "regression_gate")
 # Unclosed files release their descriptor when collected (under a heap limit, so
-# protoCore collects). Exit 77 (skipped) on Windows: see the test's header.
+# protoCore collects).
 add_test(NAME protopy_file_close_on_collect
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/file_close_on_collect.py)
 set_tests_properties(protopy_file_close_on_collect PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     ENVIRONMENT "PROTOCORE_HEAP_LIMIT_CELLS=1000000"
-    SKIP_RETURN_CODE 77
     TIMEOUT 120
     LABELS "regression_gate")
 # Directories of files that were written and never closed can be removed.

@@ -9,21 +9,14 @@
 # has happened. `with` and close() release the descriptor at once
 # (unclosed_files_directory_cleanup.py covers removing their directories).
 #
-# NOT RUN ON WINDOWS (exit 77, reported by CTest as skipped): there, a
-# heap-limited collection under this workload crashes the process or corrupts
-# live strings some of the time, with or without this change -- the same
-# script crashed 3 of 20 runs built from main (CI run 36974436607), and with a
-# finalizer that does nothing (run 36973738152). It is a defect of collection
-# on Windows, not of descriptor release; see docs/INSTALLATION.md, "Windows
-# (MSVC)".
+# Windows runs it too. It was skipped there while a heap-limited collection
+# under this workload crashed the process or corrupted live strings in some
+# runs; the cause was contexts created with a `previous` other than the
+# thread's current context, which hid live contexts from the collector
+# (chainParent in include/protoPython/MemoryManager.hpp).
 import os
 import sys
 import tempfile
-
-if sys.platform == "win32":
-    print("file_close_on_collect: SKIPPED on Windows: heap-limited collection is unsafe there "
-          "(CI run 36974436607)")
-    sys.exit(77)
 
 
 def leaked_descriptor(path):

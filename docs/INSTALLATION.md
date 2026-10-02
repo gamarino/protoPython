@@ -388,20 +388,6 @@ How Windows differs, by design:
   `PeekNamedPipe` every 1 to 20 ms while any sockets wait. A set holds at most
   512 entries (`ValueError` beyond, as in CPython).
 
-Known defect on Windows:
-
-- **Collection under a heap limit is not memory-safe.** With
-  `PROTOCORE_HEAP_LIMIT_CELLS` set (the only configuration in which protoCore
-  collects), a workload that allocates while files are opened and polled
-  crashed the process, or corrupted a live module-level string, in some runs:
-  3 of 20 runs of the same script built from `main` before this branch (CI run
-  36974436607), and with the file-descriptor finalizer reduced to nothing (run
-  36973738152) -- so it is not caused by closing descriptors on collection.
-  The default configuration does not collect and is not affected; the other
-  heap-limited tests (`re_results_not_interned`, `hpy_stress`) pass.
-  `protopy_file_close_on_collect` is skipped on Windows (CTest reports it) until
-  this is found and fixed; Linux and macOS run it.
-
 Not available on Windows yet:
 
 - **Subprocesses.** `subprocess` imports, but `Popen` raises

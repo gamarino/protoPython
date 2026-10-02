@@ -24,6 +24,28 @@ inline void promote(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
 }
 
 /**
+ * The context a new ProtoContext must name as its `previous`: the calling
+ * thread's current context.
+ *
+ * protoCore's root scan starts at the thread's current context and follows
+ * `previous`, and ~ProtoContext makes `previous` current again.  A context
+ * created with a `previous` other than the current one therefore hides every
+ * context between them -- their operand stacks, locals and young generations --
+ * from each collection while it is current, and leaves them off the chain
+ * after it is destroyed.  Native code is often handed an outer context (the
+ * caller's frame) while inner contexts are live, so the parent is taken from
+ * the thread, not from the argument.  A context without a thread (early
+ * bootstrap) keeps the given parent.
+ */
+inline proto::ProtoContext* chainParent(proto::ProtoContext* ctx) {
+    if (ctx && ctx->thread) {
+        if (proto::ProtoContext* current = ctx->thread->getCurrentContext())
+            return current;
+    }
+    return ctx;
+}
+
+/**
  * RAII scope for a callee ProtoContext. On construction, pushes a new context
  * (parent = caller); on destruction, restores the thread's current context to parent
  * and destroys the callee context (GC and promotion run in ~ProtoContext).
@@ -66,7 +88,7 @@ public:
                  const proto::ProtoList* args,
                  const proto::ProtoSparseList* kwargs,
                  size_t totalSlots = 0)
-        : parent_(parent ? parent : PythonEnvironment::getCurrentContext()),
+        : parent_(chainParent(parent ? parent : PythonEnvironment::getCurrentContext())),
           ctx_(nullptr) {
         // Prepare the external slot buffer when the count fits in SBO_SLOTS.
         const proto::ProtoObject** extSlots = nullptr;
