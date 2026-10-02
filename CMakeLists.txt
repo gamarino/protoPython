@@ -592,6 +592,15 @@ set_tests_properties(protopy_file_close_on_collect PROPERTIES
     ENVIRONMENT "PROTOCORE_HEAP_LIMIT_CELLS=1000000"
     TIMEOUT 120
     LABELS "regression_gate")
+# seek/tell/seekable/readable/writable on every kind of file object; source
+# lines in traceback.format_exc() (tokenize.open rewinds the file).
+add_test(NAME protopy_file_seek_tell
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/file_seek_tell.py)
+set_tests_properties(protopy_file_seek_tell PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "file_seek_tell: ok"
+    TIMEOUT 120
+    LABELS "regression_gate")
 # Functions with annotations have an __annotate__ function (PEP 649/749), so
 # functools.singledispatch's plain @register works.
 add_test(NAME protopy_function_annotate
