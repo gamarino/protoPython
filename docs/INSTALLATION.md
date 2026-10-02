@@ -325,9 +325,10 @@ How Windows differs, by design:
   its main thread and for the threads it starts. Recursion past
   `sys.getrecursionlimit()` raises `RecursionError` as on Linux. An embedding
   program needs a similar reserve (`/STACK`).
-- **Regular expressions.** Strings are matched as UTF-32, so positions are code
-  points as on Linux, but MSVC's `std::regex` has no single-line mode: `^` and `$`
-  match at every line boundary, with or without `re.MULTILINE`.
+- **Regular expressions** behave as on Linux and macOS: strings are matched as
+  UTF-32, so positions are code points, and `^`, `$`, `\A`, `\Z` and `.` follow
+  Python's line rules on every platform (the engine never applies its own; see
+  `src/library/ReModule.cpp`, "Line boundaries").
 - **asyncio** runs on the selector event loop (there is no IOCP proactor:
   `_overlapped` does not exist), and `select.select` waits on pipes as well as
   sockets by polling them.
