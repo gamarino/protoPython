@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        config: [RelWithDebInfo, Debug]
+        config: [Release]
     defaults:
       run:
         shell: bash
@@ -48,76 +48,40 @@ jobs:
         run: |
           cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.config }} "-DCMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/prefix"
           cmake --build build --parallel 4 --target protopy
-      - name: Enable WER local dumps
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path C:\dumps | Out-Null
-          $k = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\protopy.exe'
-          New-Item -Path $k -Force | Out-Null
-          New-ItemProperty -Path $k -Name DumpFolder -PropertyType ExpandString -Value 'C:\dumps' -Force | Out-Null
-          New-ItemProperty -Path $k -Name DumpType -PropertyType DWord -Value 2 -Force | Out-Null
-          New-ItemProperty -Path $k -Name DumpCount -PropertyType DWord -Value 20 -Force | Out-Null
       - name: Loops
         working-directory: protoPython
         run: |
+          set +e +o pipefail
           export PATH="$(cygpath -u "$GITHUB_WORKSPACE/prefix/bin"):$PATH"
           exe=$(find build -name protopy.exe | head -1)
           echo "exe=$exe"
           sed 's/if sys.platform == "win32":/if False:/' test/regression/file_close_on_collect.py > fcc.py
-          if [ "${{ matrix.config }}" = Debug ]; then N=8; else N=25; fi
-          loop() {  # label, runs, env...
-            local label=$1 n=$2; shift 2
+          loop() {  # label, script, runs, env...
+            local label=$1 script=$2 n=$3; shift 3
             declare -A c=()
             for i in $(seq 1 $n); do
-              env "$@" timeout 600 "$exe" "$SCRIPT" > out.txt 2>&1; rc=$?
+              env PROTOCORE_HEAP_LIMIT_CELLS=1000000 "$@" timeout 600 "$exe" "$script" > out.txt 2>&1
+              rc=$?
               c[$rc]=$(( ${c[$rc]:-0} + 1 ))
-              if [ $rc != 0 ]; then echo "--- $label run $i rc=$rc"; tail -c 1500 out.txt; echo; fi
+              if [ $rc != 0 ] || ! grep -q 'True True\|: ok' out.txt; then
+                echo "--- $label run $i rc=$rc"; tail -c 600 out.txt; echo
+              fi
             done
             local s=""; for k in "${!c[@]}"; do s="$s rc$k:${c[$k]}"; done
-            echo "=== SUMMARY $label:$s"
-            echo "$label:$s" >> summary.txt
+            echo "=== SUMMARY $label (n=$n):$s"
+            echo "$label (n=$n):$s" >> summary.txt
           }
-          export SCRIPT=fcc.py
-          loop "fcc limit1M" $N PROTOCORE_HEAP_LIMIT_CELLS=1000000
-          loop "fcc limit1M+poison" $N PROTOCORE_HEAP_LIMIT_CELLS=1000000 PROTOCORE_GC_POISON=1
-          loop "fcc limit4M" $N PROTOCORE_HEAP_LIMIT_CELLS=4000000
-          export SCRIPT=tests/gcprobe/p14.py
-          loop "p14 limit1M" $N PROTOCORE_HEAP_LIMIT_CELLS=1000000
-          loop "p14 limit1M+poison" $N PROTOCORE_HEAP_LIMIT_CELLS=1000000 PROTOCORE_GC_POISON=1
-          export SCRIPT=fcc.py
-          loop "fcc nolimit" 5 PROTOCORE_GC_POISON=1
+          OLD="PROTOCORE_DIAG_OLD_ORDER=1 PROTOPY_DIAG_OLD_PARENT=1"
+          P14=tests/gcprobe/p14.py
+          echo "CTX mismatches, old parent: $(env PROTOCORE_CTX_CHECK=1 PROTOPY_DIAG_OLD_PARENT=1 "$exe" $P14 2>&1 | grep -c 'CTX CHECK')"
+          echo "CTX mismatches, fixed parent: $(env PROTOCORE_CTX_CHECK=1 "$exe" $P14 2>&1 | grep -c 'CTX CHECK')"
+          loop "forced-cycle base" $P14 3 $OLD PROTOCORE_GC_FORCE_AT_RETURN=10 PROTOCORE_GC_POISON=1
+          loop "forced-cycle both-fixes" $P14 3 PROTOCORE_GC_FORCE_AT_RETURN=10 PROTOCORE_GC_POISON=1
+          loop "p14 base" $P14 30 $OLD
+          loop "p14 core-fix-only" $P14 30 PROTOPY_DIAG_OLD_PARENT=1
+          loop "p14 py-fix-only" $P14 30 PROTOCORE_DIAG_OLD_ORDER=1
+          loop "p14 both-fixes" $P14 60
+          loop "fcc base" fcc.py 20 $OLD
+          loop "fcc both-fixes" fcc.py 40
           cat summary.txt
           cat summary.txt >> "$GITHUB_STEP_SUMMARY"
-      - name: Analyze dumps
-        if: always()
-        shell: pwsh
-        working-directory: protoPython
-        run: |
-          $cdb = 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe'
-          if (-not (Test-Path $cdb)) { Write-Host "no cdb"; Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10' -Directory; exit 0 }
-          $exeDir = Split-Path (Get-ChildItem -Recurse -Filter protopy.exe build | Select-Object -First 1).FullName
-          $sym = "$exeDir;$env:GITHUB_WORKSPACE\prefix\bin;$env:GITHUB_WORKSPACE\protoCore\build;srv*C:\symcache*https://msdl.microsoft.com/download/symbols"
-          $dumps = Get-ChildItem C:\dumps -Filter *.dmp -ErrorAction SilentlyContinue | Select-Object -First 4
-          Write-Host "dumps: $($dumps.Count)"
-          foreach ($d in $dumps) {
-            Write-Host "===== DUMP $($d.Name)"
-            & $cdb -z $d.FullName -y $sym -lines -c ".ecxr; kP 40; !analyze -v; ~*kb 25; q" 2>&1 | Select-Object -Last 400
-          }
-      - name: Stacks under cdb
-        if: always()
-        shell: pwsh
-        working-directory: protoPython
-        run: |
-          $cdb = 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe'
-          if (-not (Test-Path $cdb)) { exit 0 }
-          $env:PATH = "$env:GITHUB_WORKSPACE\prefix\bin;$env:PATH"
-          $exe = (Get-ChildItem -Recurse -Filter protopy.exe build | Select-Object -First 1).FullName
-          $exeDir = Split-Path $exe
-          $sym = "$exeDir;$env:GITHUB_WORKSPACE\prefix\bin;$env:GITHUB_WORKSPACE\protoCore\build"
-          $env:PROTOCORE_HEAP_LIMIT_CELLS = '1000000'
-          $hits = 0
-          for ($i = 1; $i -le 15 -and $hits -lt 2; $i++) {
-            $out = & $cdb -g -G -y $sym -lines -c ".echo CDB-BREAK; .lastevent; .ecxr; r; kP 50; ~*kb 30; q" $exe tests/gcprobe/p14.py 2>&1
-            if ($out -match 'CDB-BREAK') { $hits++; Write-Host "===== cdb run $i"; $out | Select-Object -Last 500 }
-          }
-          Write-Host "cdb breaks: $hits"
