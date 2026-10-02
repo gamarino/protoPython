@@ -83,6 +83,18 @@ set_tests_properties(test_thread_state_released
                      PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE
                      LABELS "regression_gate")
 
+# Every context protoPython creates is chained onto the thread's current
+# context, so the collector's root walk reaches every live frame.
+add_executable(test_context_chain TestContextChain.cpp)
+target_link_libraries(test_context_chain
+    PRIVATE protoPython protoCore gtest_main)
+target_compile_definitions(test_context_chain
+    PRIVATE STDLIB_PATH="${CMAKE_SOURCE_DIR}/lib/python3.14")
+add_test(NAME test_context_chain COMMAND test_context_chain)
+set_tests_properties(test_context_chain
+                     PROPERTIES TIMEOUT 300
+                     LABELS "regression_gate")
+
 # protoCore's embedder conformance suite (P4).
 #
 # protoPython consumes protoCore by add_subdirectory in developer mode, so the
