@@ -4,15 +4,57 @@
 #include <protoPython/StructSequence.h>
 #include <protoPython/Version.h>
 #include <atomic>
+#include <cstdio>
 #include <iostream>
 #include <memory>
 #if defined(__linux__)
 #include <unistd.h>
 #endif
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#endif
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+// GetProcessMemoryInfo from kernel32 (K32GetProcessMemoryInfo), no psapi.lib.
+#ifndef PSAPI_VERSION
+#define PSAPI_VERSION 2
+#endif
+#include <windows.h>
+#include <psapi.h>
+#endif
 #include "PosixCompat.h"
 
 namespace protoPython {
 namespace sys {
+
+// sys._current_rss() -> int: the process's resident set size in bytes
+// (/proc/self/statm on Linux, task_info on macOS, the working set from
+// GetProcessMemoryInfo on Windows), or -1 where it cannot be read. A
+// protoPython extension, for tests that bound memory growth.
+static const proto::ProtoObject* sys_current_rss(
+    proto::ProtoContext* context, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    long long rss = -1;
+#if defined(__linux__)
+    if (FILE* f = std::fopen("/proc/self/statm", "r")) {
+        long long size = 0, resident = 0;
+        if (std::fscanf(f, "%lld %lld", &size, &resident) == 2) rss = resident * sysconf(_SC_PAGESIZE);
+        std::fclose(f);
+    }
+#elif defined(__APPLE__)
+    mach_task_basic_info_data_t info;
+    mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+    if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, reinterpret_cast<task_info_t>(&info), &count) == KERN_SUCCESS)
+        rss = static_cast<long long>(info.resident_size);
+#elif defined(_WIN32)
+    PROCESS_MEMORY_COUNTERS counters;
+    if (GetProcessMemoryInfo(GetCurrentProcess(), &counters, sizeof(counters)))
+        rss = static_cast<long long>(counters.WorkingSetSize);
+#endif
+    return context->fromInteger(rss);
+}
 
 static const proto::ProtoObject* sys_exit(
     proto::ProtoContext* context,
@@ -726,6 +768,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__displayhook__"), dh);
     }
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getsizeof"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getsizeof));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_current_rss"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_current_rss));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_getframe"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getframe));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_getframemodulename"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getframemodulename));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "setrecursionlimit"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_setrecursionlimit));
