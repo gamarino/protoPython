@@ -1225,6 +1225,21 @@ set_tests_properties(protopy_typing_import PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# break / continue in a loop's else clause act on the enclosing loop.
+add_test(NAME protopy_loop_else_break
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/loop_else_break.py)
+set_tests_properties(protopy_loop_else_break PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
+# weakref.ref hashes/compares like its referent: WeakKeyDictionary and the
+# singledispatch dispatch cache find their entries.
+add_test(NAME protopy_weakref_identity_keys
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/weakref_identity_keys.py)
+set_tests_properties(protopy_weakref_identity_keys PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
 # The _typing stub's Generic must compose with ABCMeta-derived metaclasses.
 add_test(NAME protopy_typing_stub_generic
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/typing_stub_generic.py)

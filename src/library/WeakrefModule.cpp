@@ -1,6 +1,9 @@
 #include <protoCore.h>
 #include <protoPython/PythonEnvironment.h>
 
+#include <cstdio>
+#include <string>
+
 // Weak references via *presence-set registry*. Uses protoCore
 // primitives only — no C++ mutexes, no raw pointers, no finalizer
 // hooks. ProtoCore's existing setAttribute / SparseList atomicity
@@ -316,6 +319,120 @@ static const proto::ProtoObject* py_weakref_ref(
     return refObj;
 }
 
+// ---------------------------------------------------------------------------
+// Hashing, equality and repr of reference objects.
+//
+// WeakKeyDictionary stores `ref(key)` and looks entries up with a fresh
+// `ref(key)`, so two references to the same live object must be one dict
+// key: CPython defines `hash(r) == hash(r())` and `r1 == r2` as
+// `r1() == r2()` while both referents are alive (identity once either has
+// gone away). Without these, every lookup missed and functools.singledispatch
+// never hit its dispatch cache.
+// ---------------------------------------------------------------------------
+
+static bool is_ref_object(proto::ProtoContext* ctx, const proto::ProtoObject* o) {
+    return o && o != PROTO_NONE && !o->isInteger(ctx) && !o->isString(ctx)
+        && o->hasOwnAttribute(ctx, sym(ctx, "_wr_key")) == PROTO_TRUE;
+}
+
+// The receiver is `self` for a bound dunder call, or the first positional
+// argument for an unbound one (`weakref.ref.__eq__(r1, r2)`).
+static const proto::ProtoObject* ref_receiver(proto::ProtoContext* ctx,
+    const proto::ProtoObject* self, const proto::ProtoList* posArgs,
+    proto::proto_ulong& argOff) {
+    argOff = 0;
+    if (is_ref_object(ctx, self)) return self;
+    if (posArgs && posArgs->getSize(ctx) > 0) {
+        const proto::ProtoObject* first = posArgs->getAt(ctx, 0);
+        if (is_ref_object(ctx, first)) { argOff = 1; return first; }
+    }
+    return nullptr;
+}
+
+static const proto::ProtoObject* weakref_compare(proto::ProtoContext* ctx,
+    const proto::ProtoObject* self, const proto::ProtoList* posArgs, int op) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return PROTO_NONE;
+    proto::proto_ulong argOff = 0;
+    const proto::ProtoObject* r = ref_receiver(ctx, self, posArgs, argOff);
+    if (!r || !posArgs || posArgs->getSize(ctx) <= argOff)
+        return env->getNotImplementedPrototype();
+    const proto::ProtoObject* other = posArgs->getAt(ctx, static_cast<int>(argOff));
+    if (!is_ref_object(ctx, other)) return env->getNotImplementedPrototype();
+    const proto::ProtoObject* a = lookup_via_handle(ctx, r);
+    const proto::ProtoObject* b = lookup_via_handle(ctx, other);
+    if (!a || a == PROTO_NONE || !b || b == PROTO_NONE) {
+        // Either referent is gone: references compare by identity.
+        bool same = (r == other);
+        return ((op == 0) == same) ? PROTO_TRUE : PROTO_FALSE;
+    }
+    return env->compareObjects(ctx, a, b, op, /*richResult=*/true);
+}
+
+static const proto::ProtoObject* py_weakref_eq(proto::ProtoContext* ctx,
+    const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    return weakref_compare(ctx, self, posArgs, 0);
+}
+
+static const proto::ProtoObject* py_weakref_ne(proto::ProtoContext* ctx,
+    const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    return weakref_compare(ctx, self, posArgs, 1);
+}
+
+static const proto::ProtoObject* py_weakref_hash(proto::ProtoContext* ctx,
+    const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return PROTO_NONE;
+    proto::proto_ulong argOff = 0;
+    const proto::ProtoObject* r = ref_receiver(ctx, self, posArgs, argOff);
+    if (!r) {
+        env->raiseTypeError(ctx, "descriptor '__hash__' requires a 'weakref' object");
+        return nullptr;
+    }
+    const proto::ProtoObject* target = lookup_via_handle(ctx, r);
+    if (!target || target == PROTO_NONE) {
+        env->raiseTypeError(ctx, "weak object has gone away");
+        return nullptr;
+    }
+    const proto::ProtoObject* hashFn = env->getBuiltins()
+        ? env->getBuiltins()->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "hash"))
+        : nullptr;
+    if (!hashFn || hashFn == PROTO_NONE) return ctx->fromInteger(0);
+    return env->callObject(hashFn, {target});
+}
+
+static const proto::ProtoObject* py_weakref_repr(proto::ProtoContext* ctx,
+    const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    proto::proto_ulong argOff = 0;
+    const proto::ProtoObject* r = ref_receiver(ctx, self, posArgs, argOff);
+    if (!env || !r) return ctx->fromUTF8String("<weakref>");
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "<weakref at %#llx; ",
+        static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(r)));
+    std::string out = buf;
+    const proto::ProtoObject* target = lookup_via_handle(ctx, r);
+    if (!target || target == PROTO_NONE) {
+        out += "dead>";
+    } else {
+        std::string tname = "object";
+        const proto::ProtoObject* tp = env->getType(ctx, target);
+        if (tp) {
+            const proto::ProtoObject* nm = tp->getAttribute(ctx,
+                PythonEnvironment::getInternedString(ctx, "__name__"));
+            if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, tname);
+        }
+        std::snprintf(buf, sizeof(buf), "%#llx",
+            static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(target)));
+        out += "to '" + tname + "' at " + buf + ">";
+    }
+    return ctx->fromUTF8String(out.c_str());
+}
+
 static const proto::ProtoObject* py_weakref_proxy(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
@@ -399,6 +516,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
             sym(ctx, "__new__"), ctx->fromMethod(nullptr, py_weakref_ref)));
         refType = const_cast<proto::ProtoObject*>(refType->setAttribute(ctx,
             sym(ctx, "__call__"), ctx->fromMethod(refType, py_weakref_ref)));
+        refType = const_cast<proto::ProtoObject*>(refType->setAttribute(ctx,
+            sym(ctx, "__eq__"), ctx->fromMethod(nullptr, py_weakref_eq)));
+        refType = const_cast<proto::ProtoObject*>(refType->setAttribute(ctx,
+            sym(ctx, "__ne__"), ctx->fromMethod(nullptr, py_weakref_ne)));
+        refType = const_cast<proto::ProtoObject*>(refType->setAttribute(ctx,
+            sym(ctx, "__hash__"), ctx->fromMethod(nullptr, py_weakref_hash)));
+        refType = const_cast<proto::ProtoObject*>(refType->setAttribute(ctx,
+            sym(ctx, "__repr__"), ctx->fromMethod(nullptr, py_weakref_repr)));
         mod->setAttribute(ctx, sym(ctx, "ReferenceType"), refType);
         mod->setAttribute(ctx, sym(ctx, "ref"), refType);
 
