@@ -4,6 +4,7 @@
 #include <protoPython/StructSequence.h>
 #include <protoCore.h>
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -381,6 +382,51 @@ static const proto::ProtoObject* py_os_fspath(
         return nullptr;
     }
     return result;
+}
+
+// nt._path_splitroot(path) -> (root, rest): the part of a Windows path up to
+// and including its root ("C:\\", "C:", "\\", "\\\\server\\share\\") and the
+// rest, as ntpath.splitroot divides it; '/' counts as a separator.
+// importlib's Windows path functions (_path_join, _path_isabs) call it.
+// Defined on every platform so it is compiled everywhere; registered on
+// Windows only, as in CPython.
+[[maybe_unused]] static const proto::ProtoObject* py_nt_path_splitroot(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    std::string p;
+    if (!posArgs || posArgs->getSize(ctx) != 1
+        || !PythonEnvironment::fsPathArgument(ctx, posArgs->getAt(ctx, 0), p)) {
+        if (env && !env->hasPendingException())
+            env->raiseTypeError(ctx, "_path_splitroot() argument must be str or os.PathLike");
+        return nullptr;
+    }
+    std::string n = p;
+    std::replace(n.begin(), n.end(), '/', '\\');
+    size_t split = 0;
+    if (n.compare(0, 1, "\\") == 0) {
+        if (n.compare(0, 2, "\\\\") == 0) {
+            // UNC: \\server\share\ (or \\?\UNC\server\share\).
+            std::string head = n.substr(0, 8);
+            std::transform(head.begin(), head.end(), head.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+            const size_t start = (head == "\\\\?\\UNC\\") ? 8 : 2;
+            const size_t index = n.find('\\', start);
+            const size_t index2 = index == std::string::npos ? std::string::npos : n.find('\\', index + 1);
+            split = index2 == std::string::npos ? n.size() : index2 + 1;
+        } else {
+            split = 1;
+        }
+    } else if (n.size() >= 2 && n[1] == ':') {
+        split = (n.size() >= 3 && n[2] == '\\') ? 3 : 2;
+    }
+    const proto::ProtoList* pair = ctx->newList()
+        ->appendLast(ctx, proto::ProtoString::fromUTF8String(ctx, p.substr(0, split).c_str())->asObject(ctx))
+        ->appendLast(ctx, proto::ProtoString::fromUTF8String(ctx, p.substr(split).c_str())->asObject(ctx));
+    return ctx->newTupleFromList(pair)->asObject(ctx);
 }
 
 static const proto::ProtoObject* py_getcwd(
@@ -2597,6 +2643,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getcwd));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "fspath"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_fspath));
+#if defined(_WIN32)
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_path_splitroot"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_nt_path_splitroot));
+#endif
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "readlink"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_readlink));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "symlink"),
