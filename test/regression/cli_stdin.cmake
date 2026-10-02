@@ -12,6 +12,13 @@ endif()
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")
 set(_failures 0)
+# file(WRITE) writes in text mode on Windows ("\n" becomes "\r\n"), so there a
+# "\r\n" in the input is written as "\n". Elsewhere the bytes are as given.
+if(CMAKE_HOST_WIN32)
+    set(CRLF "\n")
+else()
+    set(CRLF "\r\n")
+endif()
 
 # check(<name> <stdin text> <expected stdout> <protopy args>...)
 # The arguments are a CMake list: Python code separates statements with "\n",
@@ -41,7 +48,7 @@ if(CMAKE_HOST_WIN32)
 else()
     set(_lines "'x\\r\\n'\n'y\\rz'\n")
 endif()
-check(iteration "x\r\ny\rz" "${_lines}"
+check(iteration "x${CRLF}y\rz" "${_lines}"
     -c "import sys\nfor line in sys.stdin: print(repr(line))")
 check(readlines "a\nb" "['a\\n', 'b']\n"
     -c "import sys\nprint(sys.stdin.readlines())")
@@ -60,7 +67,7 @@ check(eof "" "'' '' [] EOFError\n"
 check(input_last_line_without_newline "last" "'last'\n"
     -c "print(repr(input()))")
 # The binary layer reads bytes.
-check(buffer "hé\r\n" "b'h\\xc3\\xa9\\r\\n'\n"
+check(buffer "hé${CRLF}" "b'h\\xc3\\xa9\\r\\n'\n"
     -c "import sys\nprint(sys.stdin.buffer.read())")
 check(text_utf8 "hé\n" "3 True\n"
     -c "import sys\ns = sys.stdin.read()\nprint(len(s), s == 'h\\u00e9\\n')")
