@@ -13,8 +13,8 @@ import traceback
 
 d = tempfile.mkdtemp()
 path = os.path.join(d, "data.txt")
-with open(path, "w") as f:
-    f.write("héllo\nworld\n")          # 13 bytes in UTF-8
+with open(path, "wb") as f:
+    f.write("héllo\nworld\n".encode())  # 13 bytes, "\n" on every platform
 size = os.path.getsize(path)
 assert size == 13, size
 
