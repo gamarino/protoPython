@@ -4,10 +4,12 @@
 #include <protoPython/StructSequence.h>
 #include <protoPython/Version.h>
 #include <atomic>
+#include <cerrno>
 #include <cstdio>
+#include <cstring>
 #include <iostream>
 #include <memory>
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
 #include <unistd.h>
 #endif
 #if defined(__APPLE__)
@@ -787,6 +789,93 @@ static const proto::ProtoObject* sys_file_flush(
     return PROTO_NONE;
 }
 
+// The standard streams' descriptor (0, 1 or 2), from `_stream_type`.
+static int sys_stream_fd(proto::ProtoContext* context, const proto::ProtoObject* self) {
+    const proto::ProtoObject* streamType = self->getAttribute(context, proto::ProtoString::createSymbol(context, "_stream_type"));
+    return (streamType && streamType->isInteger(context)) ? static_cast<int>(streamType->asLong(context)) : 1;
+}
+
+static long long sys_stream_lseek(int fd, long long offset, int whence) {
+    if (fd == 1) fflush(stdout);
+    if (fd == 2) fflush(stderr);
+#if defined(_WIN32)
+    // Only a disk file has a position; lseek on a console or pipe handle
+    // does not fail on Windows.
+    const HANDLE h = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
+    if (h == INVALID_HANDLE_VALUE || GetFileType(h) != FILE_TYPE_DISK) {
+        errno = ESPIPE;
+        return -1;
+    }
+    return _lseeki64(fd, offset, whence);
+#else
+    return static_cast<long long>(::lseek(fd, static_cast<off_t>(offset), whence));
+#endif
+}
+
+// fileno / readable / writable / seekable / isatty / tell / seek of
+// sys.stdin, sys.stdout and sys.stderr, answered from their descriptor as
+// CPython's TextIOWrapper over FileIO does. tell() and seek() fail with
+// OSError when the stream is a terminal or a pipe.
+static const proto::ProtoObject* sys_stream_fileno(
+    proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return context->fromInteger(sys_stream_fd(context, self));
+}
+
+static const proto::ProtoObject* sys_stream_readable(
+    proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return sys_stream_fd(context, self) == 0 ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* sys_stream_writable(
+    proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return sys_stream_fd(context, self) != 0 ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* sys_stream_seekable(
+    proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return sys_stream_lseek(sys_stream_fd(context, self), 0, SEEK_CUR) >= 0 ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* sys_stream_isatty(
+    proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return ::isatty(sys_stream_fd(context, self)) ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* sys_stream_seek_to(proto::ProtoContext* context, const proto::ProtoObject* self,
+                                                    long long offset, int whence) {
+    const long long pos = sys_stream_lseek(sys_stream_fd(context, self), offset, whence);
+    if (pos < 0) {
+        const int err = errno;
+        if (PythonEnvironment* env = PythonEnvironment::fromContext(context))
+            env->raiseOSError(context, err, std::strerror(err));
+        return nullptr;
+    }
+    return context->fromInteger(pos);
+}
+
+static const proto::ProtoObject* sys_stream_tell(
+    proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return sys_stream_seek_to(context, self, 0, SEEK_CUR);
+}
+
+static const proto::ProtoObject* sys_stream_seek(
+    proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    long long offset = 0;
+    int whence = SEEK_SET;
+    if (args && args->getSize(context) > 0 && args->getAt(context, 0)->isInteger(context))
+        offset = args->getAt(context, 0)->asLong(context);
+    if (args && args->getSize(context) > 1 && args->getAt(context, 1)->isInteger(context))
+        whence = static_cast<int>(args->getAt(context, 1)->asLong(context));
+    return sys_stream_seek_to(context, self, offset, whence);
+}
+
 static const proto::ProtoObject* sys_getrecursionlimit(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -1067,6 +1156,13 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         f = f->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "write"), ctx->fromMethod(const_cast<proto::ProtoObject*>(f), sys_file_write));
         f = f->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "flush"), ctx->fromMethod(const_cast<proto::ProtoObject*>(f), sys_file_flush));
         f = f->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_stream_type"), ctx->fromInteger(type));
+        f = f->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "fileno"), ctx->fromMethod(const_cast<proto::ProtoObject*>(f), sys_stream_fileno));
+        f = f->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "readable"), ctx->fromMethod(const_cast<proto::ProtoObject*>(f), sys_stream_readable));
+        f = f->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "writable"), ctx->fromMethod(const_cast<proto::ProtoObject*>(f), sys_stream_writable));
+        f = f->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "seekable"), ctx->fromMethod(const_cast<proto::ProtoObject*>(f), sys_stream_seekable));
+        f = f->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "isatty"), ctx->fromMethod(const_cast<proto::ProtoObject*>(f), sys_stream_isatty));
+        f = f->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tell"), ctx->fromMethod(const_cast<proto::ProtoObject*>(f), sys_stream_tell));
+        f = f->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "seek"), ctx->fromMethod(const_cast<proto::ProtoObject*>(f), sys_stream_seek));
         f = f->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "encoding"),
             PythonEnvironment::getInternedString(ctx, "utf-8")->asObject(ctx));
         f = f->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "errors"),

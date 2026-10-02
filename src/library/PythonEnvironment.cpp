@@ -22337,13 +22337,6 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     sysModule = sysModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__dict__"), sysModule);
     registerNativeModule(nativeProviderPtr, "sys", [this](proto::ProtoContext* ctx) { return sysModule; });
 
-    // _io module
-    const proto::ProtoObject* ioModule = io::initialize(rootContext_);
-    if (modulePrototype) {
-        ioModule = ioModule->addParent(rootContext_, modulePrototype);
-        ioModule = ioModule->setAttribute(rootContext_, py_class, modulePrototype);
-    }
-    registerNativeModule(nativeProviderPtr, "_io", [ioModule](proto::ProtoContext*) { return ioModule; });
 
     // Other native modules
     registerNativeModule(nativeProviderPtr, "_collections", [this](proto::ProtoContext* ctx) { return collections::initialize(ctx, this); });
@@ -22460,6 +22453,24 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     bytesWarningType = exceptionsModule->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "BytesWarning"));
     resourceWarningType = exceptionsModule->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "ResourceWarning"));
     encodingWarningType = exceptionsModule->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "EncodingWarning"));
+
+    // _io module. After the exception types: its UnsupportedOperation is the
+    // exceptions module's (OSError, ValueError) class, and its
+    // BlockingIOError is the builtin one.
+    const proto::ProtoObject* ioModule = io::initialize(rootContext_);
+    {
+        if (modulePrototype) {
+            ioModule = ioModule->addParent(rootContext_, modulePrototype);
+            ioModule = ioModule->setAttribute(rootContext_, py_class, modulePrototype);
+        }
+        const proto::ProtoString* unsupportedS = PythonEnvironment::getInternedString(rootContext_, "UnsupportedOperation");
+        const proto::ProtoObject* unsupported = exceptionsModule->getAttribute(rootContext_, unsupportedS);
+        if (unsupported && unsupported != PROTO_NONE)
+            ioModule = ioModule->setAttribute(rootContext_, unsupportedS, unsupported);
+        if (blockingIOErrorType && blockingIOErrorType != PROTO_NONE)
+            ioModule = ioModule->setAttribute(rootContext_, blockingIOErrorS, blockingIOErrorType);
+        registerNativeModule(nativeProviderPtr, "_io", [ioModule](proto::ProtoContext*) { return ioModule; });
+    }
 
     // Expose common exceptions in builtins using cached strings
     if (builtinsModule) {

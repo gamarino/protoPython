@@ -824,6 +824,20 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     mod = mod->setAttribute(ctx, py_unicodewarning, unicodeWarningType);
     mod = mod->setAttribute(ctx, py_byteswarning, bytesWarningType);
     mod = mod->setAttribute(ctx, py_resourcewarning, resourceWarningType);
+    // io.UnsupportedOperation(OSError, ValueError), as CPython's _io defines
+    // it. Built here, where both bases exist; PythonEnvironment installs it
+    // on the _io module.
+    {
+        const proto::ProtoObject* unsupported = make_exception_type(ctx, objectProto, typeProto,
+                                                                    "UnsupportedOperation", osErrorType);
+        unsupported = unsupported->addParent(ctx, valueErrorType);
+        const proto::ProtoList* bases = ctx->newList()->appendLast(ctx, osErrorType)->appendLast(ctx, valueErrorType);
+        unsupported = unsupported->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__bases__"),
+                                                ctx->newTupleFromList(bases)->asObject(ctx));
+        unsupported = unsupported->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__module__"),
+                                                PythonEnvironment::getInternedString(ctx, "io")->asObject(ctx));
+        mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "UnsupportedOperation"), unsupported);
+    }
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "BaseExceptionGroup"), baseExceptionGroupType);
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "ExceptionGroup"),     exceptionGroupType);
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "MemoryError"),         memoryErrorType);
