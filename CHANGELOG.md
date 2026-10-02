@@ -113,6 +113,27 @@ onwards. Commit hashes are given for reference.
 
 ### Fixed
 
+- **`sys.stdin` could not be read.** It was a stub with no `read`,
+  `readline`, `readlines` or iteration, and `input()` read `std::cin`
+  separately. `sys.stdin` (and `sys.__stdin__`) is now a text file over
+  descriptor 0 as CPython's: UTF-8, `newline="\n"` on POSIX and universal
+  newlines on Windows, `readline(size)`, `read(n)` in characters, a binary
+  `sys.stdin.buffer`, `fileno`, `isatty`, `encoding`, and end of file reported
+  once per read (a terminal can continue after Ctrl+D). `input()` writes its
+  prompt to `sys.stdout` and reads `sys.stdin.readline()`, so it and
+  `sys.stdin` consume one stream in order and a replaced `sys.stdin` is read;
+  protopy's REPL reads through the same buffer. On a Windows console the
+  reads use `ReadConsoleW` (this replaces protopy's console `std::cin`
+  buffer). `io.StringIO` gained `readline`, `readlines` and iteration, and
+  `readline(size)` works on files. Test: `protopy_cli_stdin`.
+- **`sys.path[0]` was the standard library, and `-m` did not search the
+  current directory.** `sys.path` is now ordered as in CPython 3.14: the
+  script's directory (absolute, symbolic links resolved on POSIX), the current
+  directory for `-m` or `''` for `-c` and the REPL, then `-p` and
+  `PROTO_PYTHONPATH`, the standard library and the user site-packages. A
+  script named like a standard module (`random.py`) is now found before it.
+  New option `-P` (also implied by `-I`) prepends nothing. A `''` entry is the
+  current directory at import time. Test: `protopy_cli_sys_path`.
 - **Collection under a heap limit freed objects of running frames.** With
   `PROTOCORE_HEAP_LIMIT_CELLS` set, about one Windows run in ten of a workload
   that opens files while allocating crashed or read a live module-level string
@@ -658,6 +679,12 @@ measured on the development machine at the time. Full reports are in
   more instructions on a property and `__slots__` micro-benchmark; with the
   direct read the same workload runs 6.3 % fewer instructions than before
   that fix, and the pyperformance subset and `attr_lookup` are unchanged.
+
+- Chaining every context onto the thread's current context (`f84ec514`)
+  costs at most 0.82 % instructions on call-heavy benchmarks (fib), with
+  cycle differences of both signs within layout noise; under the 3 %
+  threshold, so it stays as is. Measured with `benchmarks/perf_stat_ab.py`;
+  report: `benchmarks/reports/2026-10-02-context-chain-cost.md`.
 
 ### Repository and documentation
 

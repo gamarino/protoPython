@@ -5,6 +5,7 @@
 #include <unistd.h>
 #endif
 #include <algorithm>
+#include <filesystem>
 #include <iostream>
 #include <vector>
 #include "PosixCompat.h"
@@ -45,6 +46,12 @@ std::string pathEntryText(proto::ProtoContext* ctx, PythonEnvironment* env, cons
     std::string text;
     if (entry) entry->asString(ctx)->toUTF8String(ctx, text);
     return text;
+}
+
+// Whether a path entry is a str subclass instance (its text in __data__).
+bool pathEntryIsStr(proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* entry) {
+    const proto::ProtoObject* d = entry->getAttribute(ctx, env->getDataString());
+    return d && d != PROTO_NONE && d->isString(ctx);
 }
 
 // The elements of a Python list (kept in its __data__ payload), of a bare
@@ -89,8 +96,18 @@ static std::vector<std::string> searchDirectories(const std::vector<std::string>
             sysModule->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "path"));
         const proto::ProtoList* entries = listElements(ctx, env, pathObj);
         for (proto::proto_ulong i = 0; entries && i < entries->getSize(ctx); ++i) {
-            std::string text = pathEntryText(ctx, env, entries->getAt(ctx, static_cast<int>(i)));
-            if (!text.empty()) paths.push_back(text);
+            const proto::ProtoObject* entry = entries->getAt(ctx, static_cast<int>(i));
+            std::string text = pathEntryText(ctx, env, entry);
+            if (!text.empty()) {
+                paths.push_back(text);
+            } else if (entry && entry != PROTO_NONE && (entry->isString(ctx) || pathEntryIsStr(ctx, env, entry))) {
+                // '' is the current directory at the time of the import (the
+                // sys.path[0] of -c and the REPL); modules found there get an
+                // absolute __file__, as CPython's FileFinder gives them.
+                std::error_code ec;
+                const std::filesystem::path cwd = std::filesystem::current_path(ec);
+                if (!ec) paths.push_back(cwd.string());
+            }
         }
     }
 

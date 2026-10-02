@@ -3258,7 +3258,58 @@ static const proto::ProtoObject* py_dir(
     return result->asObject(context);
 }
 
-/** input([prompt]): read line from stdin, return as string. */
+// input() through an input stream an embedder installed with
+// PythonEnvironment::setStdin: the prompt goes to std::cout.
+static const proto::ProtoObject* input_from_stream(proto::ProtoContext* context, PythonEnvironment* env,
+                                                   std::istream* in, const std::string* prompt) {
+    if (prompt) std::cout << *prompt << std::flush;
+    // Blocking on a terminal is the textbook case for the unmanaged-region
+    // bracket: a collection on another thread must not wait for the user.
+    std::string line;
+    bool ok;
+    {
+        proto::ProtoContext::UnmanagedScope u(context);
+        ok = in && static_cast<bool>(std::getline(*in, line));
+    }
+    if (ok) return PythonEnvironment::newStr(context, line);
+    if (in && in->eof()) {
+        env->raiseEOFError(context);
+        return nullptr;
+    }
+    return PythonEnvironment::getInternedString(context, "")->asObject(context);
+}
+
+// stream.name(*args) for input(): the method looked up as the interpreter's
+// LOAD_METHOD does (a native method gets `stream` as self, an unbound Python
+// function gets it as its first argument). nullptr with an exception pending.
+static const proto::ProtoObject* input_call(proto::ProtoContext* context, PythonEnvironment* env,
+                                            const proto::ProtoObject* stream, const char* name,
+                                            const std::vector<const proto::ProtoObject*>& args) {
+    bool unbound = false;
+    const proto::ProtoObject* fn = env->getAttribute(context, stream,
+        PythonEnvironment::getInternedString(context, name), true, &unbound);
+    if (!fn || env->hasPendingException()) return nullptr;
+    if (unbound) {
+        std::vector<const proto::ProtoObject*> full;
+        full.reserve(args.size() + 1);
+        full.push_back(stream);
+        full.insert(full.end(), args.begin(), args.end());
+        return env->callObject(fn, full);
+    }
+    if (proto::ProtoMethod native = fn->asMethod(context)) {
+        const proto::ProtoList* list = context->newList();
+        for (const auto* a : args) list = list->appendLast(context, a);
+        return native(context, stream, nullptr, list, nullptr);
+    }
+    return env->callObject(fn, args);
+}
+
+/** input([prompt]): as CPython's input() when standard input is not an
+ *  interactive terminal with GNU readline: str(prompt) is written to
+ *  sys.stdout, which is flushed, and sys.stdin.readline() is read, so input()
+ *  and sys.stdin consume one stream in order, and a replaced sys.stdin (an
+ *  io.StringIO) is read. A line without "\n" is the last one; '' is end of
+ *  file (EOFError). */
 static const proto::ProtoObject* py_input(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -3266,47 +3317,75 @@ static const proto::ProtoObject* py_input(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     (void)self; (void)parentLink; (void)keywordParameters;
-    if (positionalParameters->getSize(context) >= 1) {
-        const proto::ProtoObject* promptObj = positionalParameters->getAt(context, 0);
-        if (promptObj) {
-            PythonEnvironment* env = PythonEnvironment::fromContext(context);
-            const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
-            const proto::ProtoObject* strMethod = promptObj->getAttribute(context, env ? env->getStrString() : PythonEnvironment::getInternedString(context, "__str__"));
-            if (strMethod && strMethod->asMethod(context)) {
-                const proto::ProtoObject* s = strMethod->asMethod(context)(context, promptObj, nullptr, emptyL, nullptr);
-                if (s && s->isString(context)) {
-                    std::string prompt;
-                    s->asString(context)->toUTF8String(context, prompt);
-                    std::cout << prompt << std::flush;
-                }
-            } else if (promptObj->isString(context)) {
-                std::string prompt;
-                promptObj->asString(context)->toUTF8String(context, prompt);
-                std::cout << prompt << std::flush;
-            }
-        }
-    }
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    std::istream* in = env ? env->getStdin() : &std::cin;
-    // 2026-05-25: `input()` blocks indefinitely on a tty waiting for
-    // the user to type — the textbook case for the unmanaged-region
-    // bracket. Without it, a GC cycle on another thread would stall
-    // for as long as the user thinks. The `getline` ends up calling
-    // ::read on stdin; that syscall is what runs while we are unmanaged.
-    std::string line;
-    bool ok;
-    {
-        proto::ProtoContext::UnmanagedScope u(context);
-        ok = in && static_cast<bool>(std::getline(*in, line));
+    if (!env) return PROTO_NONE;
+    if (positionalParameters->getSize(context) > 1) {
+        env->raiseTypeError(context, "input expected at most 1 argument, got " +
+            std::to_string(positionalParameters->getSize(context)));
+        return nullptr;
     }
-    if (ok)
-        return PythonEnvironment::getInternedString(context, line.c_str())->asObject(context);
+    const proto::ProtoObject* promptObj = positionalParameters->getSize(context) == 1
+        ? positionalParameters->getAt(context, 0) : nullptr;
+    const proto::ProtoObject* promptStr = nullptr;
+    if (promptObj) {
+        const proto::ProtoObject* strType = env->getBuiltins()
+            ? env->getBuiltins()->getAttribute(context, PythonEnvironment::getInternedString(context, "str")) : nullptr;
+        promptStr = (strType && strType != PROTO_NONE) ? env->callObject(strType, {promptObj}) : nullptr;
+        if (!promptStr || env->hasPendingException()) return nullptr;
+    }
 
-    if (in && in->eof()) {
-        if (env) env->raiseEOFError(context);
-        return PROTO_NONE;
+    if (env->getStdin() != &std::cin) {
+        std::string prompt;
+        if (promptStr && promptStr->isString(context)) promptStr->asString(context)->toUTF8String(context, prompt);
+        return input_from_stream(context, env, env->getStdin(), promptStr ? &prompt : nullptr);
     }
-    return PythonEnvironment::getInternedString(context, "")->asObject(context);
+
+    const proto::ProtoObject* sysMod = env->getSysModule();
+    auto stream = [&](const char* name) -> const proto::ProtoObject* {
+        const proto::ProtoObject* s = sysMod
+            ? sysMod->getAttribute(context, PythonEnvironment::getInternedString(context, name)) : nullptr;
+        return (s && s != PROTO_NONE) ? s : nullptr;
+    };
+    const proto::ProtoObject* in = stream("stdin");
+    if (!in) {
+        env->raiseRuntimeError(context, "input(): lost sys.stdin");
+        return nullptr;
+    }
+    const proto::ProtoObject* out = stream("stdout");
+    if (!out) {
+        env->raiseRuntimeError(context, "input(): lost sys.stdout");
+        return nullptr;
+    }
+    // As CPython: sys.stderr is flushed first (its errors ignored), then the
+    // prompt written and sys.stdout flushed.
+    if (const proto::ProtoObject* err = stream("stderr")) {
+        input_call(context, env, err, "flush", {});
+        if (env->hasPendingException()) env->clearPendingException();
+    }
+    if (promptStr) {
+        input_call(context, env, out, "write", {promptStr});
+        if (env->hasPendingException()) return nullptr;
+    }
+    input_call(context, env, out, "flush", {});
+    if (env->hasPendingException()) return nullptr;
+
+    const proto::ProtoObject* line = input_call(context, env, in, "readline", {});
+    if (!line || env->hasPendingException()) return nullptr;
+    if (!line->isString(context)) {
+        env->raiseTypeError(context, "object.readline() returned non-string");
+        return nullptr;
+    }
+    std::string text;
+    line->asString(context)->toUTF8String(context, text);
+    if (text.empty()) {
+        env->raiseEOFError(context);
+        return nullptr;
+    }
+    if (text.back() == '\n') {
+        text.pop_back();
+        return PythonEnvironment::newStr(context, text);
+    }
+    return line;
 }
 
 /** _tokenize_source(source): return list of (toktype_int, value_str) for tokenizer. Internal use by tokenize module. */

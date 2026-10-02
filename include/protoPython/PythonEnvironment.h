@@ -677,7 +677,19 @@ public:
     int getRecursionLimit() const { return recursionLimit_; }
 
     /**
-     * @brief Sets the input stream for builtins.input(). Defaults to std::cin.
+     * @brief Replaces the entries of sys.path (the same list object) with
+     * `beforeStdlib`, the standard library directory, then `afterStdlib`, as
+     * CPython orders them: sys.path[0] (the script's directory, '' or the
+     * current directory), PYTHONPATH-like directories, the standard library,
+     * site-packages. The search paths given to the constructor stay the
+     * import fallback of the module providers.
+     */
+    void setSysPath(const std::vector<std::string>& beforeStdlib, const std::vector<std::string>& afterStdlib);
+
+    /**
+     * @brief Sets the input stream for builtins.input(). Defaults to std::cin,
+     * which means sys.stdin: input() writes its prompt to sys.stdout and
+     * reads sys.stdin.readline(). Any other stream is read directly.
      */
     void setStdin(std::istream* s) { stdin_ = s; }
 

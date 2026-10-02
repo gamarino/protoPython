@@ -43,16 +43,18 @@ A script's module body runs once as `__main__`, as in CPython. protopy never cal
 | Option | Effect |
 |--------|--------|
 | `-p <dir>`, `--path <dir>` | Add a module search directory (repeatable). |
+| `-P` | Do not prepend the script's directory, the current directory or `''` to `sys.path` (CPython's safe path). |
 | `--stdlib <dir>` | Use `<dir>` as the standard library directory. |
 | `--dry-run` | For a script or module target: check that the script file exists, or that the module's `.py` file or package directory is in the standard library or a search directory, then exit with status 0 or 65 without running anything. Modules implemented natively in C++ are not found by this check. |
 | `--bytecode-only` | Currently performs the same check as `--dry-run`; nothing is executed. |
 | `--trace` | Print module enter and leave events to standard error. |
 
 For compatibility with tools that start Python subprocesses (for example
-`test.support.script_helper`), protopy accepts and ignores the CPython flags `-I`,
-`-E`, `-S`, `-s`, `-O`, `-OO`, `-B`, `-q`, `-u`, `-b`, `-bb`, `-d`, `-v`, `-vv` and
-`-vvv`, and `-X <opt>` and `-W <opt>` (also written `-X<opt>` and `-W<opt>`). Any other
-argument that starts with `-` is a usage error.
+`test.support.script_helper`), protopy accepts the CPython flag `-I` (it implies
+`-P`; its other effects are not modelled) and accepts and ignores `-E`, `-S`, `-s`,
+`-O`, `-OO`, `-B`, `-q`, `-u`, `-b`, `-bb`, `-d`, `-v`, `-vv` and `-vvv`, and
+`-X <opt>` and `-W <opt>` (also written `-X<opt>` and `-W<opt>`). Any other argument
+that starts with `-` is a usage error.
 
 ### Exit status
 
@@ -70,14 +72,19 @@ status 1. The REPL exits with status 0 at the end of its input.
 
 ## Module search path
 
-protopy passes these directories to the runtime:
+`sys.path` holds, in this order (as in CPython 3.14):
 
-- the directory of the script (for a script) or the current directory (for `-c` and the REPL);
+- `sys.path[0]`: the directory of the script, absolute, with symbolic links
+  resolved on POSIX (for a script); the current directory, absolute (for `-m`);
+  `''`, the current directory at the time of each import (for `-c` and the
+  REPL). With `-P` (or `-I`, which implies it) nothing is prepended;
 - directories given with `-p`/`--path`;
-- directories listed in the `PROTO_PYTHONPATH` environment variable, separated by `:`;
+- directories listed in the `PROTO_PYTHONPATH` environment variable, separated by `:`
+  (`;` on Windows);
+- the standard library directory;
 - on Linux, `~/.local/lib/python3.14/site-packages` (not for the REPL).
 
-`PYTHONPATH` is not read.
+`PYTHONPATH` and `PYTHONSAFEPATH` are not read.
 
 The standard library directory is taken from `--stdlib`; otherwise from the installed
 location compiled into the binary, resolved relative to the executable's directory;
@@ -88,7 +95,8 @@ directories; see [INSTALLATION.md](INSTALLATION.md#standard-library-location).
 ## Interactive REPL
 
 `protopy -i` reads statements from standard input, executes them and prints the value
-of expression statements. Statements run in the `__main__` module, the same namespace
+of expression statements. It reads through the same buffer as `sys.stdin` and
+`input()`, so with piped input a statement that calls `input()` reads the next line. Statements run in the `__main__` module, the same namespace
 `protopy -c` uses, so names bound by assignments, `def` and `import` stay visible on
 later lines, from a terminal or from piped input.
 

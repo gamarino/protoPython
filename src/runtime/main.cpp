@@ -4,6 +4,7 @@
  */
 
 #include <protoPython/PythonEnvironment.h>
+#include <protoPython/IOModule.h>
 #include <protoPython/DiagUtils.h>
 #include <protoPython/Version.h>
 #include <protoCore.h>
@@ -13,7 +14,6 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
-#include <streambuf>
 #include <string>
 #include <vector>
 #if !defined(_WIN32)
@@ -67,52 +67,6 @@ static BOOL WINAPI restoreConsoleOnControlEvent(DWORD) {
     return FALSE;  // the default handling (ending the process) follows
 }
 
-// std::cin over a console: ReadConsoleW, converted to UTF-8, so non-ASCII
-// input arrives intact whatever the console's fonts and code pages (a byte
-// read of a console returns the input code page's encoding, and characters
-// outside it are lost). "\r\n" becomes "\n"; Ctrl+Z at the start of a read
-// is end of file, as in CPython.
-class ConsoleInputBuffer : public std::streambuf {
-public:
-    explicit ConsoleInputBuffer(HANDLE console) : console_(console) {}
-
-protected:
-    int_type underflow() override {
-        if (gptr() < egptr()) return traits_type::to_int_type(*gptr());
-        wchar_t wide[1024];
-        DWORD count = 0;
-        if (!ReadConsoleW(console_, wide, 1024, &count, nullptr) || count == 0) return traits_type::eof();
-        if (wide[0] == 0x1A) return traits_type::eof();
-        std::wstring text = pendingSurrogate_;
-        pendingSurrogate_.clear();
-        text.append(wide, count);
-        // A UTF-16 pair split between two reads waits for its second half.
-        if (!text.empty() && text.back() >= 0xD800 && text.back() <= 0xDBFF) {
-            pendingSurrogate_ = text.back();
-            text.pop_back();
-        }
-        data_.clear();
-        if (!text.empty()) {
-            const int n = WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
-                                              nullptr, 0, nullptr, nullptr);
-            std::string utf8(static_cast<size_t>(n), '\0');
-            WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), utf8.data(), n,
-                                nullptr, nullptr);
-            for (size_t i = 0; i < utf8.size(); ++i) {
-                if (utf8[i] == '\r' && i + 1 < utf8.size() && utf8[i + 1] == '\n') continue;
-                data_.push_back(utf8[i]);
-            }
-        }
-        if (data_.empty()) return underflow();
-        setg(data_.data(), data_.data(), data_.data() + data_.size());
-        return traits_type::to_int_type(*gptr());
-    }
-
-private:
-    HANDLE console_;
-    std::string data_;
-    std::wstring pendingSurrogate_;
-};
 #endif
 
 // Windows: the standard streams carry exactly the bytes the program writes, as
@@ -136,13 +90,11 @@ static void prepareStandardStreams() {
         SetConsoleOutputCP(CP_UTF8);
         SetConsoleCP(CP_UTF8);
     }
-    const HANDLE in = GetStdHandle(STD_INPUT_HANDLE);
-    DWORD consoleMode = 0;
-    if (in != INVALID_HANDLE_VALUE && in != nullptr && GetConsoleMode(in, &consoleMode)) {
-        static ConsoleInputBuffer consoleInput(in);
-        std::cin.rdbuf(&consoleInput);
-    }
 #endif
+    // std::cin (the REPL's input) reads through sys.stdin's buffer, so the
+    // REPL, input() and sys.stdin consume standard input in order; on a
+    // Windows console it reads with ReadConsoleW (IOModule.cpp).
+    std::cin.rdbuf(protoPython::io::standardInputBuffer());
 }
 
 // The separator of PROTO_PYTHONPATH's directory list: ';' on Windows, where
@@ -180,6 +132,7 @@ struct CliOptions {
     bool bytecodeOnly{false};
     bool trace{false};
     bool repl{false};
+    bool safePath{false};  // -P (or -I): nothing prepended to sys.path
     std::string moduleName;
     std::string scriptPath;
     std::string commandLine;
@@ -265,6 +218,7 @@ static void printUsage(const char* prog) {
                  "Options:\n"
                  "  -c <command>      Execute Python program passed as string\n"
                  "  -m <module-name>  Execute module as a script\n"
+                 "  -P                Don't prepend a potentially unsafe path to sys.path\n"
                  "  -p, --path <path> Append additional module search path (repeatable)\n"
                  "  --stdlib <path>   Override stdlib location (defaults to build-time path)\n"
                  "  --dry-run         Validate inputs but skip environment initialization\n"
@@ -324,6 +278,8 @@ static bool parseArgs(int argc, char* argv[], CliOptions& opts, std::string& err
                 return false;
             }
             opts.searchPaths.push_back(argv[++i]);
+        } else if (arg == "-P") {
+            opts.safePath = true;
         } else if (arg == "-I" || arg == "-E" || arg == "-S" || arg == "-s"
                 || arg == "-O" || arg == "-OO" || arg == "-B" || arg == "-q"
                 || arg == "-u" || arg == "-b" || arg == "-bb" || arg == "-d"
@@ -336,8 +292,8 @@ static bool parseArgs(int argc, char* argv[], CliOptions& opts, std::string& err
             // The flags are accepted but have no effect on the
             // protoPython interpreter (it has no PYTHONHOME hook to
             // ignore, no .pth files to suppress, no -O bytecode
-            // optimisation level, etc.).
-            (void)arg;
+            // optimisation level, etc.). -I implies -P, as in CPython.
+            if (arg == "-I") opts.safePath = true;
         } else if (arg == "-X" || arg == "-W") {
             // -X opt and -W warning_filter both take one value argument.
             // Accept and discard (warnings filter is applied at the
@@ -450,17 +406,32 @@ int main(int argc, char* argv[]) {
         fflush(stderr);
     }
 
-    std::vector<std::string> searchPaths;
-    
-    // Support user directories (e.g., ~/.local/lib/protoPython/3.14/site-packages)
+    // sys.path, as CPython 3.14 orders it: sys.path[0] (below), the -p and
+    // PROTO_PYTHONPATH directories (PYTHONPATH's place), the standard library,
+    // the user's site-packages. The environment is also given the directories
+    // as search paths: the module providers' fallback, and the only paths of
+    // the compiled and HPy extension providers.
+    std::vector<std::string> sitePaths;
 #ifdef __linux__
     const char* home = std::getenv("HOME");
     if (home) {
         std::string userLib = std::string(home) + "/.local/lib/python3.14/site-packages";
-        searchPaths.push_back(userLib);
+        sitePaths.push_back(userLib);
     }
 #endif
+    // sys.path[0]: '' for -c and the REPL (the current directory when each
+    // import runs), the current directory for -m, the script's directory for
+    // a script; nothing with -P (safe path).
+    auto beforeStdlib = [&](const std::string& path0) {
+        std::vector<std::string> before;
+        if (!options.safePath) before.push_back(path0);
+        before.insert(before.end(), options.searchPaths.begin(), options.searchPaths.end());
+        return before;
+    };
+    std::error_code cwdError;
+    const std::string cwd = std::filesystem::current_path(cwdError).string();
 
+    std::vector<std::string> searchPaths = sitePaths;
     searchPaths.insert(searchPaths.end(), options.searchPaths.begin(), options.searchPaths.end());
 
     std::vector<std::string> argvVec;
@@ -474,8 +445,9 @@ int main(int argc, char* argv[]) {
 
     if (options.repl) {
         std::vector<std::string> replPaths = options.searchPaths; // Use options.searchPaths which now includes PROTO_PYTHONPATH
-        replPaths.insert(replPaths.begin(), ".");
+        if (!options.safePath) replPaths.insert(replPaths.begin(), cwd);
         protoPython::PythonEnvironment env(stdLibPath, replPaths, argvVec);
+        env.setSysPath(beforeStdlib(""), {});
         if (options.trace) {
             env.setExecutionHook([](const std::string& name, int phase) {
                 std::cerr << (phase == 0 ? "[trace] enter " : "[trace] leave ") << name << std::endl;
@@ -494,8 +466,9 @@ int main(int argc, char* argv[]) {
 
     if (!options.commandLine.empty()) {
         std::vector<std::string> cmdPaths = searchPaths;
-        cmdPaths.insert(cmdPaths.begin(), ".");
+        if (!options.safePath) cmdPaths.insert(cmdPaths.begin(), cwd);
         protoPython::PythonEnvironment env(stdLibPath, cmdPaths, argvVec);
+        env.setSysPath(beforeStdlib(""), sitePaths);
         if (options.trace) {
             env.setExecutionHook([](const std::string& name, int phase) {
                 std::cerr << (phase == 0 ? "[trace] enter " : "[trace] leave ") << name << std::endl;
@@ -540,12 +513,23 @@ int main(int argc, char* argv[]) {
         std::error_code absError;
         const std::filesystem::path absScript =
             std::filesystem::absolute(std::filesystem::path(options.scriptPath), absError);
+        // The script is found through the module search: its directory as
+        // given stays a search path even with -P.
         scriptPaths.insert(scriptPaths.begin(),
                            dirName(absError ? options.scriptPath : absScript.string()));
+        // sys.path[0] is the script's directory with symbolic links resolved
+        // (realpath on POSIX, as CPython; GetFullPathNameW on Windows).
+        std::string scriptDir = dirName(absError ? options.scriptPath : absScript.string());
+#if !defined(_WIN32)
+        std::error_code realError;
+        const std::filesystem::path realScript = std::filesystem::canonical(absScript, realError);
+        if (!absError && !realError) scriptDir = realScript.parent_path().string();
+#endif
         if (options.dryRun || options.bytecodeOnly) {
             return fileExists(options.scriptPath) ? EXIT_OK : EXIT_RESOLVE;
         }
         protoPython::PythonEnvironment envWithPath(stdLibPath, scriptPaths, argvVec);
+        envWithPath.setSysPath(beforeStdlib(scriptDir), sitePaths);
         if (options.trace) {
             envWithPath.setExecutionHook([](const std::string& name, int phase) {
                 std::cerr << (phase == 0 ? "[trace] enter " : "[trace] leave ") << name << std::endl;
@@ -556,11 +540,14 @@ int main(int argc, char* argv[]) {
         return executeModule(envWithPath, moduleName, true);
     }
 
+    // -m: the current directory is searched first.
+    if (!options.safePath) searchPaths.insert(searchPaths.begin(), cwd);
     if (options.dryRun || options.bytecodeOnly) {
         return moduleExists(options.moduleName, stdLibPath, searchPaths) ? EXIT_OK : EXIT_RESOLVE;
     }
 
     protoPython::PythonEnvironment env(stdLibPath, searchPaths, argvVec);
+    env.setSysPath(beforeStdlib(cwd), sitePaths);
     if (options.trace) {
         env.setExecutionHook([](const std::string& name, int phase) {
             std::cerr << (phase == 0 ? "[trace] enter " : "[trace] leave ") << name << std::endl;

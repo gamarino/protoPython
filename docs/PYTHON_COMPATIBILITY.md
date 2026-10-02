@@ -140,6 +140,26 @@ The most fundamental difference from CPython is the **absence of the Global Inte
    made to the file after `open()` are not seen. Writing and read-write modes
    work through a descriptor, as in CPython.
 10. **`__main__.__file__`** is absolute for a script, as in CPython 3.9+, and
-   absent for `-c` code and the REPL. `sys.path[0]` is the standard library
-   directory rather than the script's directory (the script's directory comes
-   next), and `-m` does not search the current directory.
+   absent for `-c` code and the REPL. `sys.path` is ordered as in CPython 3.14:
+   `sys.path[0]` is the script's directory (absolute, symbolic links resolved
+   on POSIX), the current directory for `-m`, or `''` (the current directory
+   at each import) for `-c` and the REPL; then the `-p`/`PROTO_PYTHONPATH`
+   directories, the standard library and the user site-packages. `-P` (and
+   `-I`, which implies it) prepends nothing; `PYTHONSAFEPATH` is not read.
+   protopy finds the script itself through the module search, so the script's
+   directory as given stays an import fallback after `sys.path` even with
+   `-P`, and the directories given at startup remain a fallback when a program
+   removes them from `sys.path`.
+11. **Standard input**: `sys.stdin` is a text file over descriptor 0 (UTF-8,
+   errors `strict`; `newline="\n"` on POSIX, universal newlines on Windows, as
+   CPython's), with `read`, `readline(size)`, `readlines`, iteration,
+   `fileno`, `isatty`, `encoding` and a binary `sys.stdin.buffer`. It is not an
+   `io.TextIOWrapper` instance. The text layer and `buffer` share one
+   read-ahead buffer (in CPython the text layer decodes ahead of `buffer`, so
+   mixing them differs). `input()` writes its prompt to `sys.stdout` and reads
+   `sys.stdin.readline()`, so it consumes the same stream in order, reads a
+   replaced `sys.stdin`, and never uses GNU readline line editing. The REPL
+   reads through the same buffer. On a Windows console reads use
+   `ReadConsoleW`, so non-ASCII input arrives as UTF-8 whatever the console
+   code page; Ctrl+Z at the start of a line is end of file. Reads are not
+   serialized between threads (CPython's `BufferedReader` holds a lock).

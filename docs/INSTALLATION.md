@@ -53,8 +53,8 @@ ctest --test-dir build_release --output-on-failure
 ```
 
 On 2026-10-02 this configuration (protoCore built from `../protoCore`, its own
-suite registered too) has 707 tests in CI; against an installed protoCore,
-protoPython's own suite has 182.
+suite registered too) has 709 tests in CI; against an installed protoCore,
+protoPython's own suite has 184.
 
 ### Using an installed protoCore
 
@@ -310,10 +310,10 @@ through CMake's `InstallRequiredSystemLibraries`, so the unpacked `protopy.exe`
 runs without protoCore or the Visual C++ Redistributable installed. `cmake
 --install` copies the same DLLs into `<prefix>/bin`.
 
-In CI on 2026-10-02 (branch `fix/context-chain-and-leftovers`, protoCore 2.9.2 at
-`01f4c730`, the ref both workflows pin; runs 36997039445 and 36997042918), the 175
-gating tests of the 179 registered pass on Windows (MSVC, `windows-2022`), the 178
-of 182 on macOS (Apple clang, `macos-14`), and the 695 of 707 of the Linux job,
+In CI on 2026-10-02 (branch `fix/stdin-syspath-perf`, protoCore 2.9.2 at
+`01f4c730`, the ref both workflows pin; runs 37001639893 and 37001642705), the 177
+gating tests of the 181 registered pass on Windows (MSVC, `windows-2022`), the 180
+of 184 on macOS (Apple clang, `macos-14`), and the 697 of 709 of the Linux job,
 which also registers protoCore's own suite; the same Windows run built the ZIP and
 the NSIS installer and ran the unpacked `protopy.exe` with only the system
 directories on `PATH`. Clock-dependent cases run separately and do not gate

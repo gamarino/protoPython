@@ -22,8 +22,10 @@ case "$protopy" in
   *.exe) cp "$(dirname "$protopy")"/*.dll "$tmp/prefix/bin/" ;;
 esac
 echo 'OK = 1' > "$tmp/prefix/$parent/python3.14/_pp_stdlib_layout_probe.py"
+#    For -c, sys.path[0] is '' (the current directory) and the standard library
+#    follows, as in CPython.
 (cd / && "$tmp/prefix/bin/protopy" -c 'import _pp_stdlib_layout_probe, sys
-assert sys.path[0].endswith("python3.14"), sys.path') \
+assert sys.path[0] == "" and sys.path[1].endswith("python3.14"), sys.path') \
   || { echo "FAIL: installed stdlib layout not found"; exit 1; }
 
 # 2. An empty ../lib/python3.14 relative to the working directory must not hijack
