@@ -49,11 +49,12 @@ concurrency:
 
 env:
   PROTOCORE_REPO: numaes/protoCore
-  # protoCore 2.9.2 (tag v2.9.2), SOVERSION 3: a context anchors its return
-  # value before it is popped, the collector-side half of the heap-limit fix
-  # whose protoPython half chains every context onto the thread's current one.
-  # The CMake floor stays 2.7.0 (proto::proto_long).  Bump deliberately.
-  PROTOCORE_REF: ${{ github.event_name == 'schedule' && 'master' || '01f4c730983c8af233db0616f64e241a7d39df7e' }}
+  # protoCore 2.9.4 (tag v2.9.4, 9cb0ef5), SOVERSION 3: the release whose suite
+  # runs clean under ThreadSanitizer, with conformance::releaseFlagRaised().
+  # The minimum CMakeLists.txt declares (PROTOCORE_MIN_VERSION, 2.7.0) is
+  # tested by one job only, the floor job in cross-platform.yml (Windows).
+  # Bump this deliberately.
+  PROTOCORE_REF: ${{ github.event_name == 'schedule' && 'master' || '9cb0ef540826ee6c3162998db84ddf48464d6e2a' }}
   # The clock-dependent cases in this combined suite.  protoPython's own:
   #   protopy_dict_key_hash          assert elapsed < 20.0 for 20000 dict inserts
   #                                  (test/regression/dict_key_hash.py:124)

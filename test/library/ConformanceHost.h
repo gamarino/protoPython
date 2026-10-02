@@ -144,6 +144,13 @@ public:
     // protoPython does not do.  The worker instead allocates for a bounded
     // stretch of its own and finishes, which is what the case needs.
     //
+    // Because the flag is never dereferenced, this host has no read for
+    // protoCore 2.9.4's proto::conformance::releaseFlagRaised() to replace:
+    // there is no unsynchronised access to the flag here.  (The helper also
+    // does not exist below 2.9.4, and the CMake floor is 2.7.0.)  A future
+    // version that does poll the flag must read it through that helper, never
+    // as `*releaseFlag`.
+    //
     // THE BOUND IS WALL CLOCK, NOT AN ITERATION COUNT, and that is the whole
     // point of this shape.  Both cases that use this capability need one thing
     // from it: that a registered, allocating protoPython thread is still up
