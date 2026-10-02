@@ -1,4 +1,5 @@
 #include <protoPython/PythonEnvironment.h>
+#include <protoPython/CheckedArith.h>
 #include <protoPython/DiagUtils.h>
 #include <protoPython/Version.h>
 #include <protoPython/Tokenizer.h>
@@ -28284,21 +28285,46 @@ const proto::ProtoObject* PythonEnvironment::binaryOp(const proto::ProtoObject* 
     if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
     if (!a || !b) return PROTO_NONE;
 
-    if (a->isInteger(ctx) && b->isInteger(ctx)) {
-        long long av = a->asLong(ctx);
-        long long bv = b->asLong(ctx);
+    if (proto::isSmallInt(a) && proto::isSmallInt(b)) {
+        // Two SmallInts (56-bit payloads): sums and differences fit in 64
+        // bits; products and left shifts are checked, and anything that does
+        // not fit goes to protoCore's arbitrary-precision arithmetic. `//`
+        // and `%` round towards negative infinity, as Python's.
+        const std::int64_t av = proto::asSmallInt(a);
+        const std::int64_t bv = proto::asSmallInt(b);
+        std::int64_t r;
         switch (op) {
             case TokenType::Plus: return ctx->fromInteger(av + bv);
             case TokenType::Minus: return ctx->fromInteger(av - bv);
-            case TokenType::Star: return ctx->fromInteger(av * bv);
-            case TokenType::Slash: return (bv != 0) ? ctx->fromDouble((double)av / bv) : (raiseZeroDivisionError(ctx), PROTO_NONE);
-            case TokenType::Modulo: return (bv != 0) ? ctx->fromInteger(av % bv) : (raiseZeroDivisionError(ctx), PROTO_NONE);
-            case TokenType::DoubleSlash: return (bv != 0) ? ctx->fromInteger(av / bv) : (raiseZeroDivisionError(ctx), PROTO_NONE);
-            case TokenType::LShift: return ctx->fromInteger(av << bv);
-            case TokenType::RShift: return ctx->fromInteger(av >> bv);
+            case TokenType::Star:
+                return checkedMul64(av, bv, &r) ? a->multiply(ctx, b) : ctx->fromInteger(r);
+            case TokenType::Slash: return (bv != 0) ? ctx->fromDouble((double)av / (double)bv) : (raiseZeroDivisionError(ctx), PROTO_NONE);
+            case TokenType::Modulo:
+            case TokenType::DoubleSlash: {
+                if (bv == 0) return (raiseZeroDivisionError(ctx), PROTO_NONE);
+                std::int64_t q = av / bv;
+                std::int64_t m = av % bv;
+                if (m != 0 && ((m < 0) != (bv < 0))) { m += bv; q -= 1; }
+                return ctx->fromInteger(op == TokenType::Modulo ? m : q);
+            }
+            case TokenType::LShift:
+                if (bv < 0) break;
+                if (bv < 64 && !checkedShl64(av, static_cast<unsigned>(bv), &r)) return ctx->fromInteger(r);
+                return a->shiftLeft(ctx, static_cast<int>(bv));
+            case TokenType::RShift:
+                if (bv < 0) break;
+                return ctx->fromInteger(bv >= 63 ? (av < 0 ? -1 : 0) : (av >> bv));
             case TokenType::BitAnd: return ctx->fromInteger(av & bv);
             case TokenType::BitOr:  return ctx->fromInteger(av | bv);
             case TokenType::BitXor: return ctx->fromInteger(av ^ bv);
+            default: break;
+        }
+    } else if (a->isInteger(ctx) && b->isInteger(ctx)) {
+        // At least one big integer: protoCore's exact arithmetic.
+        switch (op) {
+            case TokenType::Plus: return a->add(ctx, b);
+            case TokenType::Minus: return a->subtract(ctx, b);
+            case TokenType::Star: return a->multiply(ctx, b);
             default: break;
         }
     } else if (a->isDouble(ctx) || b->isDouble(ctx)) {
