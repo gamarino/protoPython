@@ -169,22 +169,16 @@ static const proto::ProtoObject* imp_extension_suffixes(
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
     const proto::ProtoList* ret = ctx->newList();
     ret = ret->appendLast(ctx, proto::ProtoString::createSymbol(ctx, ".so")->asObject(ctx));
-    return ret->asObject(ctx);
+    // A real list: a bare ProtoList reported len() 0 and printed as [].
+    return PythonEnvironment::wrapList(ctx, ret);
 }
 
-static const proto::ProtoObject* imp_create_dynamic(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    env->raiseImportError(ctx, "Dynamic extensions not yet implemented in ProtoPython");
-    return nullptr;
-}
-
-static const proto::ProtoObject* imp_exec_dynamic(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
-    return PROTO_NONE;
-}
+// _imp has no create_dynamic/exec_dynamic: HPy extension modules are loaded
+// by the `import` statement (HPyModuleProvider), not through importlib's
+// ExtensionFileLoader.  importlib checks hasattr(_imp, 'create_dynamic') to
+// decide whether FileFinder offers extension modules, as on a CPython built
+// without dynamic loading; a create_dynamic that only raised ImportError made
+// FileFinder return specs for .so files that could not be loaded.
 
 // -------------------------------------------------------------
 // Utilities
@@ -239,8 +233,6 @@ const proto::ProtoObject* ImpModule::createImpModule(proto::ProtoContext* ctx) {
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "find_frozen"), ctx->fromMethod(mutMod, imp_find_frozen));
     
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "extension_suffixes"), ctx->fromMethod(mutMod, imp_extension_suffixes));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "create_dynamic"), ctx->fromMethod(mutMod, imp_create_dynamic));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "exec_dynamic"), ctx->fromMethod(mutMod, imp_exec_dynamic));
     
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "source_hash"), ctx->fromMethod(mutMod, imp_source_hash));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_fix_co_filename"), ctx->fromMethod(mutMod, imp_fix_co_filename));

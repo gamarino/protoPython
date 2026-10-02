@@ -12,7 +12,13 @@ to Zip archives.
 
 #from importlib import _bootstrap_external
 #from importlib import _bootstrap  # for _verbose_message
-import _frozen_importlib_external as _bootstrap_external
+try:
+    import _frozen_importlib_external as _bootstrap_external
+except ImportError:
+    # protoPython: importlib is not frozen into the interpreter; importing it
+    # registers its bootstrap modules under the frozen names used here.
+    import importlib
+    import _frozen_importlib_external as _bootstrap_external
 from _frozen_importlib_external import _unpack_uint16, _unpack_uint32, _unpack_uint64
 import _frozen_importlib as _bootstrap  # for _verbose_message
 import _imp  # for check_hash_based_pycs
@@ -820,3 +826,8 @@ def _get_module_code(self, fullname):
             raise ZipImportError(msg, name=fullname) from import_error
         else:
             raise ZipImportError(f"can't find module {fullname!r}", name=fullname)
+
+
+# protoPython: when this module was imported before importlib, importlib
+# installed the path hooks while zipimporter did not exist yet.
+_bootstrap_external._install_path_hooks()

@@ -184,8 +184,10 @@ static const proto::ProtoObject* py_weakref_ref(
                 || c == env->getStrPrototype()
                 || c == env->getBytesPrototype()
                 || c == env->getTuplePrototype()
-                || c == env->getFrozensetPrototype()
-                || c == env->getTypePrototype();
+                || c == env->getFrozensetPrototype();
+            // Classes (instances of type) are weak-referenceable, as in
+            // CPython: functools.singledispatch keys a WeakKeyDictionary
+            // by class.
         };
         std::string tname = "object";
         if (tp) {
