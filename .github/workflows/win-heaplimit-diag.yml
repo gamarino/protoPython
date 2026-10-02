@@ -1,0 +1,118 @@
+name: Windows heap-limit diagnostics
+
+# TEMPORARY (branch diag/win-heaplimit-crash): reproduces the Windows-only
+# crash of test/regression/file_close_on_collect.py under
+# PROTOCORE_HEAP_LIMIT_CELLS and collects stacks. Not for merge.
+
+on:
+  push:
+    branches: ['diag/win-heaplimit-crash']
+
+permissions:
+  contents: read
+
+jobs:
+  diag:
+    name: ${{ matrix.config }}
+    runs-on: windows-2022
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [RelWithDebInfo, Debug]
+    defaults:
+      run:
+        shell: bash
+    env:
+      PROTOCORE_REF: diag/win-heaplimit-crash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: protoPython
+      - uses: actions/checkout@v4
+        with:
+          repository: numaes/protoCore
+          ref: ${{ env.PROTOCORE_REF }}
+          path: protoCore
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build protoCore
+        run: |
+          git -C protoCore log --oneline -1
+          cmake -S protoCore -B protoCore/build -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.config }} -DBUILD_TESTING=OFF
+          cmake --build protoCore/build --parallel 4 --target protoCore
+          cmake --install protoCore/build --prefix "$GITHUB_WORKSPACE/prefix"
+      - name: Build protopy
+        working-directory: protoPython
+        run: |
+          cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.config }} "-DCMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/prefix"
+          cmake --build build --parallel 4 --target protopy
+      - name: Enable WER local dumps
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path C:\dumps | Out-Null
+          $k = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\protopy.exe'
+          New-Item -Path $k -Force | Out-Null
+          New-ItemProperty -Path $k -Name DumpFolder -PropertyType ExpandString -Value 'C:\dumps' -Force | Out-Null
+          New-ItemProperty -Path $k -Name DumpType -PropertyType DWord -Value 2 -Force | Out-Null
+          New-ItemProperty -Path $k -Name DumpCount -PropertyType DWord -Value 20 -Force | Out-Null
+      - name: Loops
+        working-directory: protoPython
+        run: |
+          export PATH="$(cygpath -u "$GITHUB_WORKSPACE/prefix/bin"):$PATH"
+          exe=$(find build -name protopy.exe | head -1)
+          echo "exe=$exe"
+          sed 's/if sys.platform == "win32":/if False:/' test/regression/file_close_on_collect.py > fcc.py
+          if [ "${{ matrix.config }}" = Debug ]; then N=8; else N=25; fi
+          loop() {  # label, runs, env...
+            local label=$1 n=$2; shift 2
+            declare -A c=()
+            for i in $(seq 1 $n); do
+              env "$@" timeout 600 "$exe" fcc.py > out.txt 2>&1; rc=$?
+              c[$rc]=$(( ${c[$rc]:-0} + 1 ))
+              if [ $rc != 0 ]; then echo "--- $label run $i rc=$rc"; tail -c 1500 out.txt; echo; fi
+            done
+            local s=""; for k in "${!c[@]}"; do s="$s rc$k:${c[$k]}"; done
+            echo "=== SUMMARY $label:$s"
+            echo "$label:$s" >> summary.txt
+          }
+          loop "limit1M" $N PROTOCORE_HEAP_LIMIT_CELLS=1000000
+          loop "limit1M+poison" $N PROTOCORE_HEAP_LIMIT_CELLS=1000000 PROTOCORE_GC_POISON=1
+          loop "limit4M" $N PROTOCORE_HEAP_LIMIT_CELLS=4000000
+          loop "nolimit" 5 PROTOCORE_GC_POISON=1
+          cat summary.txt
+          cat summary.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Analyze dumps
+        if: always()
+        shell: pwsh
+        working-directory: protoPython
+        run: |
+          $cdb = 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe'
+          if (-not (Test-Path $cdb)) { Write-Host "no cdb"; Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10' -Directory; exit 0 }
+          $exeDir = Split-Path (Resolve-Path (Get-ChildItem -Recurse -Filter protopy.exe build | Select-Object -First 1).FullName)
+          $sym = "$exeDir;$env:GITHUB_WORKSPACE\prefix\bin;$env:GITHUB_WORKSPACE\protoCore\build;srv*C:\symcache*https://msdl.microsoft.com/download/symbols"
+          $dumps = Get-ChildItem C:\dumps -Filter *.dmp -ErrorAction SilentlyContinue | Select-Object -First 4
+          Write-Host "dumps: $($dumps.Count)"
+          foreach ($d in $dumps) {
+            Write-Host "===== DUMP $($d.Name)"
+            & $cdb -z $d.FullName -y $sym -lines -c ".ecxr; kP 40; !analyze -v; ~*kb 25; q" 2>&1 | Select-Object -Last 400
+          }
+      - name: Stacks under cdb
+        if: always()
+        shell: pwsh
+        working-directory: protoPython
+        run: |
+          $cdb = 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe'
+          if (-not (Test-Path $cdb)) { exit 0 }
+          $env:PATH = "$env:GITHUB_WORKSPACE\prefix\bin;$env:PATH"
+          $exe = (Get-ChildItem -Recurse -Filter protopy.exe build | Select-Object -First 1).FullName
+          $exeDir = Split-Path $exe
+          $sym = "$exeDir;$env:GITHUB_WORKSPACE\prefix\bin;$env:GITHUB_WORKSPACE\protoCore\build"
+          $env:PROTOCORE_HEAP_LIMIT_CELLS = '1000000'
+          $hits = 0
+          for ($i = 1; $i -le 15 -and $hits -lt 2; $i++) {
+            $out = & $cdb -g -G -y $sym -lines -c ".echo CDB-BREAK; .lastevent; .ecxr; r; kP 50; ~*kb 30; q" $exe fcc.py 2>&1
+            if ($out -match 'CDB-BREAK') { $hits++; Write-Host "===== cdb run $i"; $out | Select-Object -Last 500 }
+          }
+          Write-Host "cdb breaks: $hits"
