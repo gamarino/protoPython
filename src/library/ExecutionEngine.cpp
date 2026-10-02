@@ -37,7 +37,8 @@ struct FunctionMetaCache {
     int kwonly;
     int automatic_count;
     bool is_generator;
-    // True when no OP_BUILD_FUNCTION or OP_BUILD_CLASS appear in the native bytecode.
+    // True when no OP_BUILD_FUNCTION or OP_BUILD_CLASS appear in the native bytecode
+    // and the function does not name _getframe / currentframe (frame introspection).
     // Safe to skip frame construction when this is true and the function has no closures.
     bool no_inner_functions;
     // True when no OP_LOAD_DEREF appears in the native bytecode.
@@ -246,10 +247,20 @@ struct FrameScope {
     FrameScope(const proto::ProtoObject* frame) : oldFrame(PythonEnvironment::getCurrentFrame()) {
         PythonEnvironment::setCurrentFrame(frame);
     }
+    /** Also records which context runs `frame`, so f_locals can read the
+     *  activation's fast locals (see PythonEnvironment::LiveFrame). */
+    FrameScope(const proto::ProtoObject* frame, proto::ProtoContext* ctx)
+        : oldFrame(PythonEnvironment::getCurrentFrame()), live{frame, ctx, nullptr}, linked(frame != nullptr) {
+        PythonEnvironment::setCurrentFrame(frame);
+        if (linked) PythonEnvironment::pushLiveFrame(&live);
+    }
     ~FrameScope() {
+        if (linked) PythonEnvironment::popLiveFrame(&live);
         PythonEnvironment::setCurrentFrame(oldFrame);
     }
     const proto::ProtoObject* oldFrame;
+    PythonEnvironment::LiveFrame live{nullptr, nullptr, nullptr};
+    bool linked = false;
 };
 
 struct GlobalsScope {
@@ -700,10 +711,13 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         bindVar(kwargIdx, kwDict);
     }
 
-    // f_locals is only read by locals()/vars() and sys._getframe(). Skip for CO_OPTIMIZED
-    // functions (params in slots) to save 1 AVL-tree op in the common hot path.
+    // A non-CO_OPTIMIZED function keeps its locals on the frame itself; record
+    // that under an internal key (read by zero-argument super()).  It is not
+    // the Python-visible `f_locals`, which framePrototype computes on demand
+    // as a mapping of the local variables.  Skipped for CO_OPTIMIZED
+    // functions (params in slots) to save 1 AVL-tree op in the hot path.
     if (env && !(co_flags & CO_OPTIMIZED)) {
-        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFLocalsString(), frame));
+        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFrameNamespaceString(), frame));
     }
 
     if (isGenerator) {
@@ -1408,7 +1422,20 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
         // reference.  Reusing them keeps the two decisions from drifting apart
         // and saves a second scan of the whole bytecode.
         const int* nativeBc_val = scannedNativeBc;
-        const bool no_inner_functions_val = nbScanned && !hasBuildOp;
+        // A function that names sys._getframe or inspect.currentframe asks
+        // for its own frame (or its caller's through f_back), so it must not
+        // run frameless: count it with the functions that need a frame.
+        // Over-detection (an unrelated `currentframe` name) only costs a frame.
+        bool introspectsFrames = false;
+        if (co_names_val) {
+            const proto::ProtoObject* getframeS = PythonEnvironment::getInternedString(ctx, "_getframe")->asObject(ctx);
+            const proto::ProtoObject* currentframeS = PythonEnvironment::getInternedString(ctx, "currentframe")->asObject(ctx);
+            for (proto::proto_ulong ni = 0; ni < co_names_val->getSize(ctx) && !introspectsFrames; ++ni) {
+                const proto::ProtoObject* nm = co_names_val->getAt(ctx, static_cast<int>(ni));
+                introspectsFrames = (nm == getframeS || nm == currentframeS);
+            }
+        }
+        const bool no_inner_functions_val = nbScanned && !hasBuildOp && !introspectsFrames;
         const bool no_load_deref_val = nbScanned && !hasDerefOp;
 
         // Closure status, as the object graph actually is: the call path reads
@@ -4014,7 +4041,7 @@ const proto::ProtoObject* executeBytecodeRange(
     // of that.
     const bool diag_local = get_env_diag();
 
-    FrameScope fscope(frame);
+    FrameScope fscope(frame, ctx);
     proto::proto_ulong n = bytecode->getSize(ctx);
     if (n == 0) {
         if (diag_local) {

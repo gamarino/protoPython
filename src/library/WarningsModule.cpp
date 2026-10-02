@@ -52,6 +52,25 @@ static const proto::ProtoObject* py_warnings_warn(
         if (nameAttr && nameAttr->isString(context)) {
             nameAttr->asString(context)->toUTF8String(context, catStr);
         }
+        // CPython's default warning filters always ignore these categories
+        // (and their subclasses); this module installs no filters, so apply
+        // that part of the defaults here.  `import site` with a setuptools
+        // nspkg .pth otherwise prints importlib's "sys.path_hooks is empty"
+        // ImportWarning.
+        if (env) {
+            const proto::ProtoObject* mro = env->getAttribute(context, category, env->getMroString());
+            const proto::ProtoTuple* mroT = mro ? mro->asTuple(context) : nullptr;
+            for (proto::proto_ulong i = 0; mroT && i < mroT->getSize(context); ++i) {
+                const proto::ProtoObject* base = mroT->getAt(context, static_cast<int>(i));
+                const proto::ProtoObject* bn = base ? env->getAttribute(context, base, env->getNameString()) : nullptr;
+                std::string baseName;
+                if (bn && bn->isString(context)) bn->asString(context)->toUTF8String(context, baseName);
+                if (baseName == "ImportWarning" || baseName == "PendingDeprecationWarning"
+                    || baseName == "ResourceWarning") {
+                    return PROTO_NONE;
+                }
+            }
+        }
     }
 
     // Actually emit the warning. Previously this function computed

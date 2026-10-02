@@ -285,6 +285,114 @@ static const proto::ProtoObject* py_frame_repr(
     return PythonEnvironment::getInternedString(context, buf)->asObject(context);
 }
 
+/** Frame attributes that are runtime bookkeeping, never local variables. */
+static bool isFrameBookkeepingName(const std::string& nm) {
+    return nm == "f_back" || nm == "f_code" || nm == "f_globals" || nm == "f_locals"
+        || nm == "f_lineno" || nm == "f_lasti" || nm == "f_trace" || nm == "f_builtins"
+        || nm == "__frame_namespace__" || nm == "__exec_caller_frame__"
+        || nm == "__closure_frames__" || nm == "__data__" || nm == "__keys__";
+}
+
+namespace {
+struct FrameLocalsSnapshot {
+    proto::ProtoContext* ctx;
+    const proto::ProtoObject* unbound;
+    const proto::ProtoSparseList* data;
+    const proto::ProtoList* keys;
+
+    void add(const proto::ProtoString* name, const proto::ProtoObject* value) {
+        if (!name || !value || value == unbound) return;
+        proto::proto_ulong h = name->getHash(ctx);
+        if (!data->has(ctx, h)) keys = keys->appendLast(ctx, name->asObject(ctx));
+        data = data->setAt(ctx, h, value);
+    }
+};
+}
+
+/** Adds the local variables of `frame` to `snap`: for an exec() frame first
+ *  those of the function that called exec(), then the fast locals of a
+ *  running CO_OPTIMIZED activation, then the variables stored on the frame. */
+static void collectFrameLocals(proto::ProtoContext* context, PythonEnvironment* env,
+                               const proto::ProtoObject* frame, FrameLocalsSnapshot& snap, int depth) {
+    if (!frame || frame == PROTO_NONE || depth > 8) return;
+    if (frame->hasOwnAttribute(context, env->getExecCallerFrameString()) == PROTO_TRUE) {
+        collectFrameLocals(context, env,
+            frame->getOwnAttributeDirect(context, env->getExecCallerFrameString()), snap, depth + 1);
+    }
+    const proto::ProtoObject* code = frame->getAttribute(context, env->getFCodeString());
+    proto::ProtoContext* live = PythonEnvironment::findLiveFrameContext(frame);
+    if (live && code && code != PROTO_NONE) {
+        const proto::ProtoObject* flags = code->getAttribute(context, env->getCoFlagsString());
+        const proto::ProtoObject* vn = code->getAttribute(context, env->getCoVarnamesString());
+        const proto::ProtoTuple* varnames = vn ? vn->asTuple(context) : nullptr;
+        if (flags && flags->isInteger(context) && (flags->asLong(context) & CO_OPTIMIZED) && varnames) {
+            proto::ProtoObject** slots = const_cast<proto::ProtoObject**>(live->getAutomaticLocals());
+            proto::proto_ulong n = varnames->getSize(context);
+            proto::proto_ulong nSlots = live->getAutomaticLocalsCount();
+            if (n > nSlots) n = nSlots;
+            for (proto::proto_ulong i = 0; slots && i < n; ++i) {
+                const proto::ProtoObject* nm = varnames->getAt(context, static_cast<int>(i));
+                if (nm && nm->isString(context)) snap.add(nm->asString(context), slots[i]);
+            }
+        }
+    }
+    const proto::ProtoSparseList* own = frame->getOwnAttributes(context);
+    if (!own) return;
+    auto* it = const_cast<proto::ProtoSparseListIterator*>(own->getIterator(context));
+    while (it && it->hasNext(context)) {
+        const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(it->nextKey(context));
+        const proto::ProtoObject* val = it->nextValue(context);
+        if (keyObj && keyObj->isString(context)) {
+            std::string nm;
+            keyObj->asString(context)->toUTF8String(context, nm);
+            if (!isFrameBookkeepingName(nm)) snap.add(keyObj->asString(context), val);
+        }
+        it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
+    }
+}
+
+/** frame.f_locals: a dict snapshot of the frame's local variables.
+ *  Module frames (the module object) and class bodies store their namespace
+ *  as an own f_locals attribute, which shadows this getter.  CPython 3.13+
+ *  returns a write-through FrameLocalsProxy for function frames; this
+ *  runtime returns a snapshot (see docs/PYTHON_COMPATIBILITY.md). */
+static const proto::ProtoObject* py_frame_get_locals(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* positionalParameters, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* frame = (positionalParameters && positionalParameters->getSize(context) > 0)
+        ? positionalParameters->getAt(context, 0) : self;
+    if (!env || !env->getDictPrototype() || !frame) return PROTO_NONE;
+    FrameLocalsSnapshot snap{context, env->getUnboundSentinel(), context->newSparseList(), context->newList()};
+    collectFrameLocals(context, env, frame, snap, 0);
+    proto::ProtoObject* d = const_cast<proto::ProtoObject*>(env->getDictPrototype()->newChild(context, true));
+    d->setAttribute(context, env->getDataString(), snap.data->asObject(context));
+    d->setAttribute(context, env->getKeysString(), snap.keys->asObject(context));
+    return d;
+}
+
+/** frame.f_lineno: the runtime records the executing line only when an
+ *  exception is raised, so a frame reports the first line of its code
+ *  object (co_firstlineno) -- an approximation, documented as such. */
+static const proto::ProtoObject* py_frame_get_lineno(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* positionalParameters, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* frame = (positionalParameters && positionalParameters->getSize(context) > 0)
+        ? positionalParameters->getAt(context, 0) : self;
+    if (env && frame) {
+        const proto::ProtoObject* code = frame->getAttribute(context, env->getFCodeString());
+        if (code && code != PROTO_NONE) {
+            const proto::ProtoObject* first = code->getAttribute(context,
+                PythonEnvironment::getInternedString(context, "co_firstlineno"));
+            if (first && first->isInteger(context)) return first;
+        }
+    }
+    return context->fromInteger(0);
+}
+
 extern const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
@@ -16299,6 +16407,7 @@ thread_local std::vector<proto::ProtoRootSet::Handle> PythonEnvironment::s_activ
 thread_local int PythonEnvironment::s_recursionDepth = 0;
 thread_local bool PythonEnvironment::s_inRecursionError = false;
 thread_local const proto::ProtoObject* PythonEnvironment::s_currentFrame = nullptr;
+thread_local const PythonEnvironment::LiveFrame* PythonEnvironment::s_liveFrames = nullptr;
 std::thread::id PythonEnvironment::s_mainThreadId;
 thread_local const proto::ProtoObject* PythonEnvironment::s_currentGlobals = nullptr;
 thread_local const proto::ProtoObject* PythonEnvironment::s_currentCodeObject = nullptr;
@@ -16388,6 +16497,23 @@ void PythonEnvironment::setCurrentFrame(const proto::ProtoObject* frame) {
 
 const proto::ProtoObject* PythonEnvironment::getCurrentFrame() {
     return s_currentFrame;
+}
+
+void PythonEnvironment::pushLiveFrame(LiveFrame* entry) {
+    entry->previous = s_liveFrames;
+    s_liveFrames = entry;
+}
+
+void PythonEnvironment::popLiveFrame(LiveFrame* entry) {
+    s_liveFrames = entry->previous;
+}
+
+proto::ProtoContext* PythonEnvironment::findLiveFrameContext(const proto::ProtoObject* frame) {
+    if (!frame) return nullptr;
+    for (const LiveFrame* e = s_liveFrames; e; e = e->previous) {
+        if (e->frame == frame) return e->context;
+    }
+    return nullptr;
 }
 
 void PythonEnvironment::setCurrentGlobals(const proto::ProtoObject* globals) {
@@ -18050,6 +18176,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     f_code = PythonEnvironment::getInternedString(rootContext_, "f_code");
     f_globals = PythonEnvironment::getInternedString(rootContext_, "f_globals");
     f_locals = PythonEnvironment::getInternedString(rootContext_, "f_locals");
+    frameNamespace = PythonEnvironment::getInternedString(rootContext_, "__frame_namespace__");
+    execCallerFrame = PythonEnvironment::getInternedString(rootContext_, "__exec_caller_frame__");
     // The captured-variables frame list is runtime bookkeeping, kept under
     // an internal key; the Python-visible `function.__closure__` (None or a
     // tuple of cells) is a getset descriptor on functionPrototype.
@@ -19275,6 +19403,21 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     framePrototype = framePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "frame")->asObject(rootContext_));
     framePrototype = framePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_frame_repr));
     framePrototype = framePrototype->setAttribute(rootContext_, py_module, builtinsVal);
+    // Computed frame attributes, as getset descriptors (see py_frame_get_locals).
+    {
+        struct { const char* name; proto::ProtoMethod fget; } frameGetters[] = {
+            {"f_locals", py_frame_get_locals},
+            {"f_lineno", py_frame_get_lineno},
+        };
+        for (const auto& g : frameGetters) {
+            proto::ProtoObject* descr = const_cast<proto::ProtoObject*>(getSetDescriptorPrototype->newChild(rootContext_, true));
+            descr->setAttribute(rootContext_, py_class, getSetDescriptorPrototype);
+            descr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fget"), rootContext_->fromMethod(nullptr, g.fget));
+            descr->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, g.name)->asObject(rootContext_));
+            descr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__objclass__"), framePrototype);
+            framePrototype = framePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, g.name), descr);
+        }
+    }
     // Q-75: __mro__ for frame.
     {
         const proto::ProtoString* mroS = PythonEnvironment::getInternedString(rootContext_, "__mro__");
@@ -22723,6 +22866,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         addRoot((f_code)->asObject(rootContext_));
         addRoot((f_globals)->asObject(rootContext_));
         addRoot((f_locals)->asObject(rootContext_));
+        addRoot((frameNamespace)->asObject(rootContext_));
+        addRoot((execCallerFrame)->asObject(rootContext_));
         addRoot((__closure__)->asObject(rootContext_));
         addRoot((gi_code)->asObject(rootContext_));
         addRoot((gi_frame)->asObject(rootContext_));
@@ -23096,6 +23241,9 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                             mutableMod->setAttribute(ctx, getFCodeString(), codeObj);
                             mutableMod->setAttribute(ctx, getFGlobalsString(), mutableMod);
                             mutableMod->setAttribute(ctx, getFLocalsString(), mutableMod);
+                            // The runtime does not track the executing line of a
+                            // module body; report its first line, as frames do.
+                            mutableMod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "f_lineno"), ctx->fromInteger(1));
 
                             const proto::ProtoObject* oldGlobals = getCurrentGlobals();
                             setCurrentGlobals(mutableMod);

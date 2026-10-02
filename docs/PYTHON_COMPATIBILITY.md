@@ -55,3 +55,23 @@ The most fundamental difference from CPython is the **absence of the Global Inte
 1. **Memory Management**: Uses `protoCore`'s hybrid GC and context-based promotion rather than simple reference counting. `sys.getrefcount` is not supported.
 2. **C API**: The CPython C API is not supported. protoPython contains an HPy-style C++ extension API, not binary compatible with the HPy universal ABI, whose modules `import` loads; see [HPY_DEVELOPER_GUIDE.md](HPY_DEVELOPER_GUIDE.md).
 3. **Known semantic gaps**: frozen dataclasses, some introspection (`types.FunctionType` with a closure, `inspect.getclosurevars`), a few error messages and reprs, and `gc.collect()` being a no-op. The maintained list is in [CPYTHON_CONFORMANCE.md](CPYTHON_CONFORMANCE.md#known-divergences-pending).
+4. **Frame objects** (`sys._getframe()`, `inspect.currentframe()`, `f_back`):
+   - `f_locals` at module level is the module namespace, the same object as
+     `f_globals` and `globals()`, as in CPython. In a function it is a **snapshot
+     dict** of the local variables taken when the attribute is read; CPython 3.13+
+     returns a write-through `FrameLocalsProxy`, so writing to it does not change
+     the function's variables here. Cell variables of a function whose locals live
+     in fast slots may be missing from the snapshot.
+   - `exec(source)` without explicit namespaces runs, inside a function, in a frame
+     of its own whose `f_back` is the calling function (so the setuptools
+     `*-nspkg.pth` line `sys._getframe(1).f_locals['sitedir']` works). It reads the
+     function's variables; names it binds stay in that frame and are not visible to
+     the function afterwards, as with CPython 3.13+'s snapshot semantics.
+   - `f_lineno` is the first line of the frame's code object (`co_firstlineno`; 1
+     for a module): the runtime records the executing line only when an exception
+     is raised.
+   - Small functions that build no inner functions or classes run without a frame
+     object, so they do not appear in the `f_back` chain, and `sys._getframe()`
+     called from such a function's callee skips it. A function that names
+     `_getframe` or `currentframe` always gets a frame, so the common
+     `sys._getframe(n)` and `inspect.currentframe()` patterns see their callers.

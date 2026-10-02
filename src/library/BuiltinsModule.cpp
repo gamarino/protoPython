@@ -2948,6 +2948,7 @@ static const proto::ProtoObject* py_dir(
                     "__qualname__", "__wrapped__", "__annotations__",
                     "f_back", "f_code", "f_globals", "f_locals",
                     "f_lineno", "f_lasti", "f_trace", "f_builtins",
+                    "__frame_namespace__", "__exec_caller_frame__",
                 };
                 std::vector<std::string> names;
                 auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
@@ -4341,6 +4342,24 @@ static bool super_obj_is_valid(proto::ProtoContext* context,
 // CPython-visible arg N is at index N+1 here: 0-arg `super()` is
 // size<=1 (just [cls]); `super(type)` is [cls,type]; `super(type,obj)`
 // is [cls,type,obj].
+/** The object holding a scope's variables as attributes: a function frame's
+ *  internal namespace (the frame itself for non-CO_OPTIMIZED functions,
+ *  inherited through closure parents), or the f_locals that module and class
+ *  body "frames" store as an own attribute.  nullptr when the variables live in
+ *  fast slots, where framePrototype's computed f_locals would be found. */
+static const proto::ProtoObject* frameNamespaceOf(
+    proto::ProtoContext* context, PythonEnvironment* env, const proto::ProtoObject* frame) {
+    if (!env || !frame) return nullptr;
+    const proto::ProtoObject* ns = frame->getAttribute(context, env->getFrameNamespaceString());
+    if (ns && ns != PROTO_NONE) return ns;
+    ns = frame->getAttribute(context, env->getFLocalsString());
+    if (!ns || ns == PROTO_NONE) return nullptr;
+    if (env->getGetSetDescriptorPrototype() && env->getType(context, ns) == env->getGetSetDescriptorPrototype()) {
+        return nullptr;
+    }
+    return ns;
+}
+
 static const proto::ProtoObject* py_super_new(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -4378,7 +4397,7 @@ static const proto::ProtoObject* py_super_new(
            if (get_env_diag()) fprintf(stderr, "DEBUG: py_super found obj in fast locals: %p\n", (void*)obj);
        }
        
-       const proto::ProtoObject* locals = frame->getAttribute(context, env->getFLocalsString());
+       const proto::ProtoObject* locals = frameNamespaceOf(context, env, frame);
 
        if (locals && locals != PROTO_NONE) {
            bool foundArg = false;
@@ -4439,7 +4458,7 @@ static const proto::ProtoObject* py_super_new(
                const proto::ProtoObject* curr = worklist[idx++];
                
                // 1. Check frame locals (fast locals usually include freevars)
-               const proto::ProtoObject* locals = curr->getAttribute(context, env->getFLocalsString());
+               const proto::ProtoObject* locals = frameNamespaceOf(context, env, curr);
                if (locals && locals != PROTO_NONE) {
                      if (get_env_diag()) fprintf(stderr, "DEBUG: py_super BFS checking locals of scope %p\n", (void*)curr);
                      // Fix: locals is a ProtoObject (dict or frame), not a SparseList directly.
@@ -4747,18 +4766,31 @@ static const proto::ProtoObject* py_exec(
         if (env) globals = const_cast<proto::ProtoObject*>(env->getGlobals());
     }
     if (!globals) globals = const_cast<proto::ProtoObject*>(context->newObject(false));
+    // CPython: bare `exec(src)` in a function runs in the caller's globals
+    // and locals, in a frame of its own whose f_back is the caller (the
+    // setuptools nspkg .pth line reads sys._getframe(1).f_locals['sitedir']
+    // from site.addpackage).  The current frame is the calling function's
+    // namespace, but trust it only while it belongs to the running code
+    // object: module-level code has no frame of its own and leaf functions
+    // push none.  The exec frame inherits the caller's variables through its
+    // parent link; names it binds stay in the exec frame, as CPython 3.13+
+    // binds them in a snapshot that the function never sees.
+    proto::ProtoObject* execFrame = nullptr;
     if (!locals && callerNamespace) {
-        // CPython: bare `exec(src)` runs in the caller's globals AND locals.
-        // As in py_eval, the current frame is the calling function's
-        // namespace, but trust it only while it belongs to the running code
-        // object: module-level code has no frame of its own and leaf
-        // functions push none.
         PythonEnvironment* fenv = PythonEnvironment::fromContext(context);
         const proto::ProtoObject* callerFrame = PythonEnvironment::getCurrentFrame();
-        if (fenv && callerFrame && callerFrame != PROTO_NONE
+        // At module level the "frame" is the module itself: the code runs
+        // directly in it, binding the module's globals.
+        if (fenv && callerFrame && callerFrame != PROTO_NONE && callerFrame != globals
             && callerFrame->getAttribute(context, fenv->getFCodeString())
                    == PythonEnvironment::getCurrentCodeObject()) {
-            locals = const_cast<proto::ProtoObject*>(callerFrame);
+            execFrame = const_cast<proto::ProtoObject*>(context->newObject(true));
+            execFrame = const_cast<proto::ProtoObject*>(execFrame->addParent(context, callerFrame));
+            execFrame = const_cast<proto::ProtoObject*>(execFrame->setAttribute(context, fenv->getFCodeString(), codeObj));
+            execFrame = const_cast<proto::ProtoObject*>(execFrame->setAttribute(context, fenv->getFGlobalsString(), globals));
+            execFrame = const_cast<proto::ProtoObject*>(execFrame->setAttribute(context, fenv->getFBackString(), callerFrame));
+            execFrame = const_cast<proto::ProtoObject*>(execFrame->setAttribute(context, fenv->getExecCallerFrameString(), callerFrame));
+            locals = execFrame;
         }
     }
     if (!locals) locals = globals;
@@ -4774,8 +4806,11 @@ static const proto::ProtoObject* py_exec(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     proto::ProtoObject* frame = locals;
     bool wrappedLocals = false;
-    if (env && locals != globals) {
-        const proto::ProtoObject* dataObj = locals->getAttribute(context, env->getDataString());
+    if (env && locals != globals && !execFrame) {
+        // Only a mapping that owns its storage: every object inherits a
+        // __data__ from objectPrototype.
+        const proto::ProtoObject* dataObj = locals->hasOwnAttribute(context, env->getDataString()) == PROTO_TRUE
+            ? locals->getAttribute(context, env->getDataString()) : nullptr;
         const proto::ProtoSparseList* localsData = dataObj ? dataObj->asSparseList(context) : nullptr;
         if (localsData) {
             const proto::ProtoString* keysS = PythonEnvironment::getInternedString(context, "__keys__");
@@ -4790,6 +4825,10 @@ static const proto::ProtoObject* py_exec(
                 mirror = const_cast<proto::ProtoObject*>(mirror->addParent(context, env->getFramePrototype()));
             }
             mirror = const_cast<proto::ProtoObject*>(mirror->setAttribute(context, env->getFGlobalsString(), globals));
+            mirror = const_cast<proto::ProtoObject*>(mirror->setAttribute(context, env->getFCodeString(), codeObj));
+            if (const proto::ProtoObject* callerFrame = PythonEnvironment::getCurrentFrame()) {
+                mirror = const_cast<proto::ProtoObject*>(mirror->setAttribute(context, env->getFBackString(), callerFrame));
+            }
             if (keys) {
                 proto::proto_ulong n = keys->getSize(context);
                 for (proto::proto_ulong i = 0; i < n; ++i) {

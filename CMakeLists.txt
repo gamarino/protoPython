@@ -420,6 +420,13 @@ set_tests_properties(protopy_import_site PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# Frame f_locals / f_lineno / f_back, exec() frames and the setuptools nspkg .pth line.
+add_test(NAME protopy_frame_f_locals
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/frame_f_locals.py)
+set_tests_properties(protopy_frame_f_locals PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # io.open_code opens in binary, as site.addpackage expects of a .pth file.
 add_test(NAME protopy_io_open_code
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/io_open_code.py)
