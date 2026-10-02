@@ -18,6 +18,17 @@ else()
     add_compile_options(-fno-delete-null-pointer-checks)
     set(PROTOPYTHON_DEBUG_INFO_FLAG -g)
 endif()
+# Abort when a ProtoContext is chained onto a context that is not live on the
+# calling thread, or destroyed while it is not the innermost one
+# (include/protoPython/MemoryManager.hpp). On in Debug builds; the walk it does
+# per call is too slow for release builds.
+option(PROTOPY_CHECK_CONTEXT_CHAIN
+    "Check every ProtoContext protoPython creates against the thread's context chain" OFF)
+if(PROTOPY_CHECK_CONTEXT_CHAIN)
+    add_compile_definitions(PROTOPY_CHECK_CONTEXT_CHAIN)
+else()
+    add_compile_definitions($<$<CONFIG:Debug>:PROTOPY_CHECK_CONTEXT_CHAIN>)
+endif()
 if(WIN32)
     # Windows has no rpath: a program finds its DLLs next to itself, so every
     # executable and DLL of the build goes to one directory.
@@ -573,13 +584,12 @@ set_tests_properties(protopy_tempfile_roundtrip PROPERTIES
     TIMEOUT 120
     LABELS "regression_gate")
 # Unclosed files release their descriptor when collected (under a heap limit, so
-# protoCore collects). Exit 77 (skipped) on Windows: see the test's header.
+# protoCore collects).
 add_test(NAME protopy_file_close_on_collect
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/file_close_on_collect.py)
 set_tests_properties(protopy_file_close_on_collect PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     ENVIRONMENT "PROTOCORE_HEAP_LIMIT_CELLS=1000000"
-    SKIP_RETURN_CODE 77
     TIMEOUT 120
     LABELS "regression_gate")
 # Objects held only by running frames survive heap-limited collections: every

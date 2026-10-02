@@ -2,6 +2,7 @@
 #include <protoPython/DiagUtils.h>
 #include <protoPython/ExecutionEngine.h>
 #include <protoPython/PythonEnvironment.h>
+#include <protoPython/MemoryManager.hpp>
 #include <protoCore.h>
 // <algorithm> for std::reverse (compileBinOp). GCC 13 happens to reach it
 // transitively through another header; GCC 14 does not, so a Fedora 41 build
@@ -5710,7 +5711,9 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
         localNames = localNames->appendLast(ctx, name);
     }
     
-    proto::ProtoContext* subCtx = new proto::ProtoContext(ctx->space, ctx, nullptr, localNames, nullptr, nullptr);
+    // Chained onto the thread's current context, not onto `ctx`: see
+    // chainParent (MemoryManager.hpp).
+    proto::ProtoContext* subCtx = new proto::ProtoContext(ctx->space, chainParent(ctx), nullptr, localNames, nullptr, nullptr);
     proto::ProtoContext* execCtx = subCtx;
     PythonEnvironment::setCurrentContext(execCtx);
 
@@ -5734,6 +5737,7 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     if (subCtx) {
         PythonEnvironment::setCurrentContext(oldCtx);
         subCtx->returnValue = result;
+        checkInnermost(subCtx);
         delete subCtx;
     }
     return result;

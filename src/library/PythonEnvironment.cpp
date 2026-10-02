@@ -16768,12 +16768,27 @@ bool PythonEnvironment::pendingExceptionFlagOutOfLine() { return s_pendingExcFla
 
 #endif
 
+// The context an environment's root context is chained onto: the calling
+// thread's current context, as for every context protoPython creates
+// (chainParent, MemoryManager.hpp).
+//
+// protoCore attaches a context created without a parent on the main OS thread
+// to the main thread (ProtoContext's constructor compares the thread id with
+// ProtoSpace::mainThreadId) and makes it current -- but with no `previous`, so
+// the context that was current (the space's own root context, or an outer
+// environment's) dropped off the chain the collector walks, and destroying
+// the environment left no context current on the main thread. On any other
+// thread a parent-less context belongs to no thread, and stays parent-less.
+static proto::ProtoContext* rootContextParent(proto::ProtoSpace* space) {
+    if (space && space->rootContext && space->rootContext->thread
+            && space->mainThreadId == std::this_thread::get_id())
+        return space->rootContext->thread->getCurrentContext();
+    return nullptr;
+}
+
 PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::vector<std::string>& searchPaths,
                                      const std::vector<std::string>& argv) : space_(getProcessSpace()),
-                                     // protoCore auto-detects the main OS thread in ProtoContext's constructor
-                                     // (compares std::this_thread::get_id() against ProtoSpace::mainThreadId).
-                                     // No need to pass rootContext as `previous` — the inheritance is implicit.
-                                     rootContext_(new proto::ProtoContext(space_, nullptr)),
+                                     rootContext_(new proto::ProtoContext(space_, rootContextParent(space_))),
                                      argv_(argv), stdLibPath_(stdLibPath), sysModule(nullptr), builtinsModule(nullptr), exceptionsModule(nullptr) {
     if (get_env_diag()) {
         fflush(stderr);
