@@ -1905,6 +1905,26 @@ static const proto::ProtoObject* py_object_repr(
     // Basic <object at 0x...> repr
     std::string name = "object";
     const proto::ProtoObject* cls = env ? env->getType(context, self) : self->getAttribute(context, PythonEnvironment::getInternalString(context, "__class__"));
+    // A Python function: CPython's func_repr, "<function QUALNAME at 0x...>".
+    if (env && cls && cls == env->getFunctionPrototype() && self != cls) {
+        const proto::ProtoString* qnS = PythonEnvironment::getInternedString(context, "__qualname__");
+        const proto::ProtoObject* qn = self->hasOwnAttribute(context, qnS) == PROTO_TRUE
+            ? self->getAttribute(context, qnS) : nullptr;
+        if (!qn || !qn->isString(context)) {
+            qn = self->hasOwnAttribute(context, env->getNameString()) == PROTO_TRUE
+                ? self->getAttribute(context, env->getNameString()) : nullptr;
+        }
+        if (qn && qn->isString(context)) {
+            std::string qualname;
+            qn->asString(context)->toUTF8String(context, qualname);
+            char addr[32];
+            snprintf(addr, sizeof(addr), "0x%llx",
+                     static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(self)));
+            // Not interned: the text carries an address and is used once.
+            return proto::ProtoString::fromUTF8String(context,
+                ("<function " + qualname + " at " + addr + ">").c_str())->asObject(context);
+        }
+    }
     if (cls) {
         const proto::ProtoObject* clsName = cls->getAttribute(context, env ? env->getNameString() : PythonEnvironment::getInternalString(context, "__name__"));
         if (clsName && clsName->isString(context)) {
@@ -23161,6 +23181,41 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
     mod = mutableModObj;
     const_cast<proto::ProtoObject*>(modWrapper)->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "val"), mod);
 
+    // A PEP 420 namespace package (PythonModuleProvider gives it __file__ None
+    // and a __path__) has no code to run.  It becomes a module object as an
+    // executed module does, and is registered in sys.modules and bound on its
+    // parent package, so that importing its submodules binds them on it.
+    if (!willExec && isPackageModule
+        && mutableModObj->hasOwnAttribute(ctx, fileDunderKey) == PROTO_TRUE
+        && mutableModObj->getAttribute(ctx, fileDunderKey) == PROTO_NONE) {
+        const proto::ProtoObject* nsMod = mutableModObj;
+        if (modulePrototype) nsMod = nsMod->addParent(ctx, modulePrototype);
+        nsMod = initDictStorage(ctx, nsMod);
+        if (modulePrototype) nsMod = nsMod->setAttribute(ctx, getClassString(), modulePrototype);
+        proto::ProtoObject* ns = const_cast<proto::ProtoObject*>(nsMod);
+        ns->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "items"), ctx->fromMethod(ns, py_module_items));
+        ns->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "keys"), ctx->fromMethod(ns, py_module_keys));
+        ns->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "update"), ctx->fromMethod(ns, py_module_update));
+        ns->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "copy"), ctx->fromMethod(ns, py_module_copy));
+        ns->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__dict__"), ns);
+        const_cast<proto::ProtoObject*>(modWrapper)->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "val"), ns);
+        ensureModuleInSysModules(ctx, moduleName, ns);
+        const size_t lastDot = moduleName.find_last_of('.');
+        if (lastDot != std::string::npos && sysModule) {
+            const proto::ProtoObject* modules = sysModule->getAttribute(ctx, modulesS);
+            const proto::ProtoObject* dataAttr = (modules && modules != PROTO_NONE)
+                ? modules->getAttribute(ctx, dataString) : nullptr;
+            const proto::ProtoSparseList* dict = (dataAttr && dataAttr != PROTO_NONE) ? dataAttr->asSparseList(ctx) : nullptr;
+            const proto::proto_ulong h = PythonEnvironment::getInternedString(ctx, moduleName.substr(0, lastDot).c_str())->getHash(ctx);
+            const proto::ProtoObject* parentMod = (dict && dict->has(ctx, h)) ? dict->getAt(ctx, h) : nullptr;
+            if (parentMod && parentMod != PROTO_NONE) {
+                const_cast<proto::ProtoObject*>(parentMod)->setAttribute(ctx,
+                    PythonEnvironment::getInternedString(ctx, moduleName.substr(lastDot + 1).c_str()), ns);
+            }
+        }
+        mod = ns;
+    }
+
     if (willExec) {
         std::string path;
         fileObj->asString(ctx)->toUTF8String(ctx, path);
@@ -23466,7 +23521,10 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
         }
     }
     if (executionHook) executionHook(moduleName, 1);
-    runExitHandlers();
+    // atexit handlers run once, at interpreter shutdown (protopy's main and
+    // runRepl call runExitHandlers), not at the end of each module: running
+    // them here fired every handler registered so far at the end of the next
+    // import, while the program was still running.
     return exitRequested_ != 0 ? -3 : 0;
 }
 
@@ -23792,6 +23850,70 @@ std::string PythonEnvironment::formatException(const proto::ProtoObject* exc, co
     }
 
     return out;
+}
+
+void PythonEnvironment::writeUnraisableReport(proto::ProtoContext* ctx, const proto::ProtoObject* exc,
+                                              const std::string& errMsg, const proto::ProtoObject* obj) {
+    // CPython's write_unraisable_exc_file (Python/errors.c).
+    std::string text;
+    if (obj && obj != PROTO_NONE) {
+        text = (errMsg.empty() ? std::string("Exception ignored in") : errMsg) + ": "
+            + reprObject(ctx, obj) + "\n";
+        if (hasPendingException()) clearPendingException();
+    } else if (!errMsg.empty()) {
+        text = errMsg + ":\n";
+    }
+    if (exc && exc != PROTO_NONE) {
+        text += formatException(exc);
+        if (hasPendingException()) clearPendingException();
+    }
+    if (!text.empty() && text.back() != '\n') text += "\n";
+
+    // The report goes to sys.stderr, so a program that redirected it sees it.
+    const proto::ProtoObject* stream = sysModule
+        ? sysModule->getAttribute(ctx, getInternedString(ctx, "stderr")) : nullptr;
+    const proto::ProtoObject* write = (stream && stream != PROTO_NONE)
+        ? getAttribute(ctx, stream, getInternedString(ctx, "write"), false) : nullptr;
+    if (write && write != PROTO_NONE) {
+        callObject(write, {getInternedString(ctx, text.c_str())->asObject(ctx)});
+        if (!hasPendingException()) {
+            const proto::ProtoObject* flush = getAttribute(ctx, stream, getInternedString(ctx, "flush"), false);
+            if (flush && flush != PROTO_NONE) callObject(flush, {});
+            if (hasPendingException()) clearPendingException();
+            return;
+        }
+        clearPendingException();
+    }
+    std::cerr << text << std::flush;
+}
+
+void PythonEnvironment::reportUnraisable(proto::ProtoContext* ctx, const proto::ProtoObject* exc,
+                                         const std::string& errMsg, const proto::ProtoObject* obj) {
+    if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
+    // A hook the program installed receives an UnraisableHookArgs-shaped
+    // object; the default hook (sys.__unraisablehook__) is this report.
+    const proto::ProtoObject* hook = sysModule
+        ? sysModule->getAttribute(ctx, getInternedString(ctx, "unraisablehook")) : nullptr;
+    const proto::ProtoObject* defaultHook = sysModule
+        ? sysModule->getAttribute(ctx, getInternedString(ctx, "__unraisablehook__")) : nullptr;
+    if (hook && hook != PROTO_NONE && hook != defaultHook) {
+        const proto::ProtoObject* args = objectPrototype ? objectPrototype->newChild(ctx, true) : ctx->newObject(true);
+        const proto::ProtoObject* excType = (exc && exc != PROTO_NONE) ? getType(ctx, exc) : nullptr;
+        const proto::ProtoObject* tb = (exc && exc != PROTO_NONE)
+            ? exc->getAttribute(ctx, getInternedString(ctx, "__traceback__")) : nullptr;
+        args = args->setAttribute(ctx, getInternedString(ctx, "exc_type"), excType ? excType : PROTO_NONE);
+        args = args->setAttribute(ctx, getInternedString(ctx, "exc_value"), exc ? exc : PROTO_NONE);
+        args = args->setAttribute(ctx, getInternedString(ctx, "exc_traceback"), tb ? tb : PROTO_NONE);
+        args = args->setAttribute(ctx, getInternedString(ctx, "err_msg"),
+            errMsg.empty() ? PROTO_NONE : getInternedString(ctx, errMsg.c_str())->asObject(ctx));
+        args = args->setAttribute(ctx, getInternedString(ctx, "object"), obj ? obj : PROTO_NONE);
+        callObject(hook, {args});
+        if (!hasPendingException()) return;
+        // CPython reports a failing hook and then the original exception.
+        const proto::ProtoObject* hookExc = takePendingException();
+        writeUnraisableReport(ctx, hookExc, "Exception ignored in sys.unraisablehook", hook);
+    }
+    writeUnraisableReport(ctx, exc, errMsg, obj);
 }
 
 void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {

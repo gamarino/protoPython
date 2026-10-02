@@ -1,7 +1,7 @@
 #include <protoPython/AtexitModule.h>
 #include <protoPython/PythonEnvironment.h>
 #include <protoCore.h>
-#include <cstdio>
+#include <string>
 
 // Real atexit implementation. Replaces a fully stubbed module
 // (register/unregister/_run_exitfuncs were all `(void)posArgs;
@@ -59,30 +59,10 @@ static const proto::ProtoObject* py_register(
     const proto::ProtoList* entry = ctx->newList();
     entry = entry->appendLast(ctx, callable);
     entry = entry->appendLast(ctx, hargs->asObject(ctx));
-    // We can't easily round-trip a sparse-list kwargs through a list
-    // attribute, so wrap it as an external pointer that owns no
-    // memory (the sparse list itself is GC-managed). Fall back to a
-    // null marker when no kwargs were provided.
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (kwargs && env) {
-        // Store as a regular dict-shaped object so the run path can
-        // re-extract it. We materialise a list of (key, value) pairs.
-        const proto::ProtoList* kwList = ctx->newList();
-        // Iterate the SparseList's entries via its iterator.
-        const proto::ProtoSparseListIterator* it = kwargs->getIterator(ctx);
-        while (it && it->hasNext(ctx)) {
-            const proto::ProtoObject* val = it->nextValue(ctx);
-            proto::proto_ulong key = it->nextKey(ctx);
-            it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(ctx);
-            const proto::ProtoList* pair = ctx->newList();
-            pair = pair->appendLast(ctx, ctx->fromInteger(static_cast<proto::proto_long>(key)));
-            pair = pair->appendLast(ctx, val);
-            kwList = kwList->appendLast(ctx, pair->asObject(ctx));
-        }
-        entry = entry->appendLast(ctx, kwList->asObject(ctx));
-    } else {
-        entry = entry->appendLast(ctx, ctx->newList()->asObject(ctx));
-    }
+    // The keyword arguments are kept as the sparse list the call received
+    // (keys are interned-name hashes), so the handler is called with them
+    // unchanged. An entry without keyword arguments stores None.
+    entry = entry->appendLast(ctx, kwargs ? kwargs->asObject(ctx) : PROTO_NONE);
 
     // Append to the module's handler list (creating it on first use).
     const proto::ProtoObject* listObj = handlers_get_list(ctx, self);
@@ -147,15 +127,20 @@ static const proto::ProtoObject* py_run_exitfuncs(
         const proto::ProtoList* args = argsObj ? argsObj->asList(ctx) : nullptr;
         if (!args) args = ctx->newList();
 
-        // CPython swallows exceptions from atexit handlers and prints
-        // a traceback to stderr (PyTraceBack_Here). We print a short
-        // diagnostic and continue so a single broken handler can't
-        // block the rest from running.
-        invokePythonCallable(ctx, callable, args, nullptr);
+        const proto::ProtoObject* kwObj = el->getSize(ctx) >= 3 ? el->getAt(ctx, 2) : nullptr;
+        const proto::ProtoSparseList* kwargs =
+            (kwObj && kwObj != PROTO_NONE) ? kwObj->asSparseList(ctx) : nullptr;
+
+        // CPython reports an exception raised by a handler through
+        // sys.unraisablehook ("Exception ignored in atexit callback
+        // <repr>:" and the traceback) and goes on with the next handler.
+        invokePythonCallable(ctx, callable, args, kwargs);
         if (env && env->hasPendingException()) {
-            std::fprintf(stderr,
-                "atexit: handler raised an exception; continuing.\n");
-            env->clearPendingException();
+            const proto::ProtoObject* exc = env->takePendingException();
+            std::string errMsg = "Exception ignored in atexit callback "
+                + PythonEnvironment::reprObject(ctx, callable);
+            if (env->hasPendingException()) env->clearPendingException();
+            env->reportUnraisable(ctx, exc, errMsg);
         }
     }
 

@@ -113,6 +113,42 @@ onwards. Commit hashes are given for reference.
 
 ### Fixed
 
+- **atexit handlers ran at the end of the next import.** `PythonEnvironment::
+  executeModule` ran every registered handler when any module finished
+  executing, so a handler registered by `weakref.finalize` (for example
+  `tempfile.TemporaryDirectory`'s) fired while the program was still running
+  as soon as another module was imported, such as `importlib.util` from a `.pth`
+  line processed by `site.addsitedir`. protopy now runs them once at
+  interpreter exit, also after `SystemExit`, an unhandled exception and in
+  `-c` programs (which never ran them). A handler that raises is reported as
+  in CPython, through `sys.unraisablehook` (now a real default hook rather
+  than a no-op): `Exception ignored in atexit callback <function f at 0x...>:`
+  and the traceback, instead of `atexit: handler raised an exception;
+  continuing.`; keyword arguments given to `atexit.register` are passed to the
+  handler (they were dropped). The bundled `gc` module named `isenabled` as
+  `is_enabled`, so `weakref.finalize`'s exit handler raised `AttributeError`
+  whenever a finalizer was alive at exit; `disable()`/`enable()` now change
+  what `isenabled()` reports. Functions have CPython's repr, `<function
+  qualname at 0x...>` (tests `protopy_atexit_callback_error`,
+  `protopy_pth_importlib_empty_home`, `protopy_weakref_finalize_at_exit`).
+- **Path-based import machinery.** `sys.path_hooks` was empty, so
+  `importlib.machinery.PathFinder.find_spec` found nothing: a setuptools
+  `*-nspkg.pth` namespace package became an empty placeholder module, and
+  `pkgutil.iter_modules` and other users of path hooks did not work.
+  `sys.path_hooks` now holds `zipimport.zipimporter` and `FileFinder`'s hook
+  (for `.py` source files) and `sys.path_importer_cache` caches the
+  finders; both are filled by importing `importlib` on their first use.
+  importlib's bootstrap modules are also registered as `_frozen_importlib`
+  and `_frozen_importlib_external`, so `import zipimport` works. Fixed on the
+  way: `posix.fspath` (used by importlib's path functions), `compile()` of
+  `bytes` source, `sys.dont_write_bytecode`, `_imp.extension_suffixes()`
+  returning a real list, and weak references to classes (which
+  `functools.singledispatch`, used by `pkgutil.iter_modules`, needs). `_imp`
+  no longer has a `create_dynamic` that only raised `ImportError`. The native
+  importer imports PEP 420 namespace packages, and also searches a parent
+  package's `__path__` for its submodules. See
+  `docs/PYTHON_COMPATIBILITY.md`, "Import system" (test
+  `protopy_import_path_hooks`).
 - **Windows ZIP is self-contained.** Like protoST, protoScala, protoClojure
   and protoJS, the ZIP (and the NSIS installer, built only when `makensis` is
   found) now bundles protoCore's DLL, copied from the linked `protoCore` target

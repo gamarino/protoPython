@@ -1,13 +1,27 @@
-"""Minimal dummy gc module for protoPython."""
+"""The gc module for protoPython.
 
-def is_enabled():
-    return True
+protoCore's collector runs concurrently and is not driven from Python: these
+functions keep CPython's API so that library code using it runs. enable() and
+disable() record the state isenabled() reports; they do not pause protoCore's
+collector.
+"""
+
+_enabled = True
+
+
+def isenabled():
+    """Return True if automatic collection is enabled (see the module note)."""
+    return _enabled
+
 
 def enable():
-    pass
+    global _enabled
+    _enabled = True
+
 
 def disable():
-    pass
+    global _enabled
+    _enabled = False
 
 def collect(generation=2):
     return 0

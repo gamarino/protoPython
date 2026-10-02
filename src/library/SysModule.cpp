@@ -595,17 +595,68 @@ static const proto::ProtoObject* sys_addaudithook(
     return PROTO_NONE;
 }
 
-// STRUCT-316: PEP 524 unraisablehook + breakpointhook stubs.
-//
-// CPython's sys.unraisablehook(unraisable) is the default handler
-// invoked when an exception is raised but cannot be propagated —
-// typically during garbage collection or __del__.  Stdlib paths
-// (asyncio, threading) introspect its existence on import.
-// protoPython has no callback chain wired through GC yet, so this
-// is a no-op accepting any positional args.
+// sys.__getattr__(name) (PEP 562): creates sys.path_hooks and
+// sys.path_importer_cache on their first read.  CPython fills them at startup
+// with the zipimporter hook and importlib's FileFinder hook, which needs
+// importlib; the `import` statement here resolves modules natively and never
+// reads them, so importlib is imported only when a program asks for them.
+// The empty list and dict are stored first, so importlib (which appends its
+// hooks to them while it initialises) finds them.  Any other missing name
+// raises AttributeError, as for every module.
+static const proto::ProtoObject* sys_module_getattr(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoObject* sysMod = env ? env->getSysModule() : nullptr;
+    if (!env || !sysMod || !args || args->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* nameObj = args->getAt(ctx, 0);
+    std::string name;
+    if (nameObj && nameObj->isString(ctx)) nameObj->asString(ctx)->toUTF8String(ctx, name);
+    if (name != "path_hooks" && name != "path_importer_cache") {
+        env->raiseAttributeErrorWithMessage(ctx, sysMod,
+            "module 'sys' has no attribute '" + name + "'", name);
+        return nullptr;
+    }
+    proto::ProtoObject* mutableSys = const_cast<proto::ProtoObject*>(sysMod);
+    const proto::ProtoString* hooksS = PythonEnvironment::getInternedString(ctx, "path_hooks");
+    const proto::ProtoString* cacheS = PythonEnvironment::getInternedString(ctx, "path_importer_cache");
+    if (sysMod->hasOwnAttribute(ctx, hooksS) != PROTO_TRUE) {
+        // A mutable list instance: importlib and programs append to it.
+        proto::ProtoObject* hooks = const_cast<proto::ProtoObject*>(env->getListPrototype()->newChild(ctx, true));
+        hooks->setAttribute(ctx, env->getDataString(), ctx->newList()->asObject(ctx));
+        mutableSys->setAttribute(ctx, hooksS, hooks);
+    }
+    if (sysMod->hasOwnAttribute(ctx, cacheS) != PROTO_TRUE) {
+        const proto::ProtoObject* cache = env->getDictPrototype()
+            ? env->getDictPrototype()->newChild(ctx, true) : ctx->newObject(true);
+        mutableSys->setAttribute(ctx, cacheS, env->initDictStorage(ctx, cache));
+    }
+    if (!env->resolveModule("importlib", ctx) && env->hasPendingException()) return nullptr;
+    return sysMod->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, name.c_str()));
+}
+
+// sys.unraisablehook(unraisable): the default handler for an exception that
+// cannot propagate (an atexit callback, a __del__ method).  It writes the
+// report CPython's default hook writes to sys.stderr, from the attributes of
+// its UnraisableHookArgs argument: exc_value, err_msg and object.
+// PythonEnvironment::reportUnraisable calls a program-installed hook instead.
 static const proto::ProtoObject* sys_unraisablehook(
-    proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env || !args || args->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* unraisable = args->getAt(ctx, 0);
+    auto field = [&](const char* name) -> const proto::ProtoObject* {
+        const proto::ProtoObject* v = env->getAttribute(ctx, unraisable,
+            PythonEnvironment::getInternedString(ctx, name), false);
+        if (!v && env->hasPendingException()) env->clearPendingException();
+        return (v && v != PROTO_NONE) ? v : nullptr;
+    };
+    std::string errMsg;
+    if (const proto::ProtoObject* m = field("err_msg")) {
+        if (m->isString(ctx)) m->asString(ctx)->toUTF8String(ctx, errMsg);
+    }
+    env->writeUnraisableReport(ctx, field("exc_value"), errMsg, field("object"));
     return PROTO_NONE;
 }
 
@@ -865,6 +916,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
 
     // sys.pycache_prefix: None means use default __pycache__ dirs (we don't write .pyc files)
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "pycache_prefix"), PROTO_NONE);
+    // sys.dont_write_bytecode: protoPython writes no .pyc files, and
+    // importlib's SourceFileLoader reads this before caching bytecode.
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "dont_write_bytecode"), PROTO_TRUE);
 
     // sys.path (empty for now, PythonEnvironment will populate it)
     const proto::ProtoObject* pathList = ctx->newList()->asObject(ctx);
@@ -887,19 +941,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "meta_path"), metaPathList);
     }
 
-    // sys.path_hooks — list of path hook factories (empty)
-    {
-        const proto::ProtoObject* pathHooksList = ctx->newList()->asObject(ctx);
-        if (env && env->getListPrototype()) pathHooksList = pathHooksList->addParent(ctx, env->getListPrototype());
-        sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "path_hooks"), pathHooksList);
-    }
-
-    // sys.path_importer_cache — empty dict
-    {
-        const proto::ProtoObject* picObj = env && env->getDictPrototype() ? env->getDictPrototype()->newChild(ctx, true) : ctx->newObject(false);
-        if (env) picObj = env->initDictStorage(ctx, picObj);
-        sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "path_importer_cache"), picObj);
-    }
+    // sys.path_hooks and sys.path_importer_cache are created on first use by
+    // sys_module_getattr below, which imports importlib to fill them.
+    sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__getattr__"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_module_getattr));
 
     // sys.argv
     const proto::ProtoList* argvList = ctx->newList();
@@ -1124,11 +1169,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     });
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "thread_info"), thread_info);
 
-    // STRUCT-316: unraisablehook and breakpointhook stubs.
-    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "unraisablehook"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_unraisablehook));
-    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__unraisablehook__"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_unraisablehook));
+    // sys.unraisablehook (the default report) and the breakpointhook stub.
+    // One object under both names: `sys.unraisablehook is
+    // sys.__unraisablehook__` until a program installs its own hook.
+    {
+        const proto::ProtoObject* hook = ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_unraisablehook);
+        sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "unraisablehook"), hook);
+        sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__unraisablehook__"), hook);
+    }
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "breakpointhook"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_breakpointhook));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__breakpointhook__"),

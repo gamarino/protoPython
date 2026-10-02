@@ -373,6 +373,22 @@ static bool parseArgs(int argc, char* argv[], CliOptions& opts, std::string& err
     return true;
 }
 
+// Waits for the program's worker threads (at most 5 s), so the environment
+// stays alive while they run, and then runs the atexit handlers: CPython runs
+// them once, at interpreter shutdown, whether the program ended normally,
+// through SystemExit or with an unhandled exception (which is reported first).
+void finishInterpreter(protoPython::PythonEnvironment& env) {
+    auto* space = env.getSpace();
+    if (space) {
+        int count = 0;
+        while (space->runningThreads.load() > 1 && count < 100) {
+            usleep(50000);
+            count++;
+        }
+    }
+    env.runExitHandlers();
+}
+
 int executeModule(protoPython::PythonEnvironment& env, const std::string& moduleName, bool asMain = false) {
     int ret = env.executeModule(moduleName, asMain);
     if (ret == -1) {
@@ -387,21 +403,12 @@ int executeModule(protoPython::PythonEnvironment& env, const std::string& module
         } else {
             std::cerr << "protopy: module '" << moduleName << "' exited with runtime error" << std::endl;
         }
+        finishInterpreter(env);
         return EXIT_RUNTIME;
     }
+    finishInterpreter(env);
     if (ret == -3)
         return env.getExitRequested();
-
-    // Wait for worker threads to finish so env stays alive during their execution
-    auto* space = env.getSpace();
-    if (space) {
-        int count = 0;
-        while (space->runningThreads.load() > 1 && count < 100) { // Max 5s wait for stress tests
-            usleep(50000);
-            count++;
-        }
-    }
-
     return EXIT_OK;
 }
 
@@ -496,12 +503,6 @@ int main(int argc, char* argv[]) {
             env.enableDefaultTrace();
         }
         int ret = env.executeString(options.commandLine, "<string>");
-        
-        auto* space = env.getSpace();
-        if (space) {
-            int count = 0;
-            while (space->runningThreads.load() > 1 && count < 100) { usleep(50000); count++; }
-        }
 
         if (ret == -2) {
             const proto::ProtoObject* exc = env.takePendingException();
@@ -510,12 +511,16 @@ int main(int argc, char* argv[]) {
                 // as in script execution (PythonEnvironment::executeModule).
                 std::ostringstream excOut;
                 env.handleException(exc, nullptr, excOut);
-                if (excOut.str().empty())
+                if (excOut.str().empty()) {
+                    finishInterpreter(env);
                     return env.getExitRequested();
+                }
                 std::cerr << "protopy: unhandled exception in -c execution:\n" << excOut.str();
             }
+            finishInterpreter(env);
             return EXIT_RUNTIME;
         }
+        finishInterpreter(env);
         return EXIT_OK;
     }
 

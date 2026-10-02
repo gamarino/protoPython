@@ -47,6 +47,14 @@ else:
         pass
     sys.modules['importlib._bootstrap_external'] = _bootstrap_external
 
+# protoPython: importlib is not frozen into the interpreter.  Register the
+# source modules under the names CPython gives the frozen ones (zipimport and
+# importlib.abc import them), then install the path hooks CPython installs at
+# startup.
+sys.modules.setdefault('_frozen_importlib', _bootstrap)
+sys.modules.setdefault('_frozen_importlib_external', _bootstrap_external)
+_bootstrap_external._install_path_hooks()
+
 # To simplify imports in test code
 _pack_uint32 = _bootstrap_external._pack_uint32
 _unpack_uint32 = _bootstrap_external._unpack_uint32

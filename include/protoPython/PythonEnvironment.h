@@ -1073,6 +1073,26 @@ public:
     std::string formatException(const proto::ProtoObject* exc, const proto::ProtoObject* frame = nullptr);
 
     /**
+     * @brief Reports an exception that cannot propagate, as CPython's
+     * PyErr_FormatUnraisable does: through `sys.unraisablehook` when a
+     * program installed one, otherwise with the default report.
+     *
+     * @param errMsg The report's first line without the trailing colon, e.g.
+     *        "Exception ignored in atexit callback <function f at 0x...>".
+     * @param obj The object the exception relates to, or nullptr.
+     */
+    void reportUnraisable(proto::ProtoContext* ctx, const proto::ProtoObject* exc,
+                          const std::string& errMsg, const proto::ProtoObject* obj = nullptr);
+
+    /**
+     * @brief Writes the default `sys.unraisablehook` report to `sys.stderr`:
+     * "<errMsg>: <repr(obj)>" or "<errMsg>:", then the traceback and the
+     * exception line.
+     */
+    void writeUnraisableReport(proto::ProtoContext* ctx, const proto::ProtoObject* exc,
+                               const std::string& errMsg, const proto::ProtoObject* obj);
+
+    /**
      * @brief Formats a traceback starting from the given context (Step 1329).
      */
     std::string formatTraceback(const proto::ProtoContext* ctx, const proto::ProtoObject* exc = nullptr);

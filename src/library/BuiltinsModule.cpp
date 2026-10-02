@@ -3349,9 +3349,32 @@ static const proto::ProtoObject* py_compile(
     (void)keywordParameters;
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* sourceObj = positionalParameters->getAt(context, 0);
-    if (!sourceObj->isString(context)) return PROTO_NONE;
+    if (!sourceObj->isString(context)) {
+        // Source given as bytes (importlib's SourceLoader passes the file's
+        // bytes): decoded as UTF-8, the default source encoding.  A UTF-8
+        // byte order mark is dropped.  Coding declarations naming another
+        // encoding are not honoured.
+        PythonEnvironment* benv = PythonEnvironment::fromContext(context);
+        const proto::ProtoObject* bytesProto = benv ? benv->getBytesPrototype() : nullptr;
+        const proto::ProtoObject* srcType = benv ? benv->getType(context, sourceObj) : nullptr;
+        bool isBytes = bytesProto && srcType == bytesProto;
+        if (!isBytes && srcType && bytesProto) {
+            const proto::ProtoObject* mro = srcType->getAttribute(context, benv->getMroString());
+            const proto::ProtoTuple* mroT = (mro && mro != PROTO_NONE) ? mro->asTuple(context) : nullptr;
+            for (proto::proto_ulong i = 0; mroT && i < mroT->getSize(context) && !isBytes; ++i) {
+                isBytes = mroT->getAt(context, static_cast<int>(i)) == bytesProto;
+            }
+        }
+        if (!isBytes) return PROTO_NONE;
+        const proto::ProtoObject* decode = benv->getAttribute(context, sourceObj,
+            PythonEnvironment::getInternedString(context, "decode"), false);
+        if (!decode || decode == PROTO_NONE) return PROTO_NONE;
+        sourceObj = benv->callObject(decode, {PythonEnvironment::getInternedString(context, "utf-8")->asObject(context)});
+        if (!sourceObj || !sourceObj->isString(context)) return sourceObj ? PROTO_NONE : nullptr;
+    }
     std::string source;
     sourceObj->asString(context)->toUTF8String(context, source);
+    if (source.compare(0, 3, "\xEF\xBB\xBF") == 0) source.erase(0, 3);
     std::string filename = "<string>";
     if (positionalParameters->getSize(context) >= 2) {
         const proto::ProtoObject* fn = positionalParameters->getAt(context, 1);

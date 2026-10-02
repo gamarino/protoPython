@@ -1556,6 +1556,39 @@ def _set_bootstrap_module(_bootstrap_module):
     _bootstrap = _bootstrap_module
 
 
+def _install_path_hooks():
+    """protoPython: install the path hooks CPython installs at startup.
+
+    The interpreter's `import` statement resolves modules natively and does
+    not consult sys.meta_path, sys.path_hooks or sys.path_importer_cache, so
+    PathFinder is not added to sys.meta_path (importlib.import_module would
+    otherwise load modules a second way).  The hooks serve the code that uses
+    the path-based machinery directly: PathFinder.find_spec (the setuptools
+    nspkg .pth line), pkgutil and importlib.util.  importlib's __init__ calls
+    this when it is first imported; sys's module __getattr__ imports importlib
+    on the first read of sys.path_hooks or sys.path_importer_cache.  zipimport
+    calls it again when it was imported first and its hook was still missing.
+    Running it more than once adds nothing twice.
+    """
+    hooks = sys.path_hooks
+    if not any(getattr(hook, '__name__', None) == 'path_hook_for_FileFinder'
+               for hook in hooks):
+        # No SourcelessFileLoader: protoPython writes no bytecode files and
+        # cannot run CPython's, so a .pyc file is not a module here.
+        loaders = [(loader, suffixes)
+                   for loader, suffixes in _get_supported_file_loaders()
+                   if loader is not SourcelessFileLoader]
+        hooks.append(FileFinder.path_hook(*loaders))
+    try:
+        import zipimport
+        zipimporter = zipimport.zipimporter
+    except (ImportError, AttributeError):
+        # zipimport is still being imported; it calls this function again.
+        return
+    if zipimporter not in hooks:
+        hooks.insert(0, zipimporter)
+
+
 def _install(_bootstrap_module):
     """Install the path-based import components."""
     _set_bootstrap_module(_bootstrap_module)

@@ -75,3 +75,38 @@ The most fundamental difference from CPython is the **absence of the Global Inte
      called from such a function's callee skips it. A function that names
      `_getframe` or `currentframe` always gets a frame, so the common
      `sys._getframe(n)` and `inspect.currentframe()` patterns see their callers.
+5. **Import system**: the `import` statement resolves modules natively
+   (native modules, protopyc-compiled modules, HPy extensions, then `.py`
+   files on `sys.path`) and does not consult `sys.meta_path`,
+   `sys.path_hooks` or `sys.path_importer_cache`.
+   - `sys.meta_path` is empty: `PathFinder` is not on it, so
+     `importlib.util.find_spec(name)` answers `None` for a module that has not
+     been imported (`import_module` falls back to the native importer).
+   - `sys.path_hooks` holds `zipimport.zipimporter` and
+     `FileFinder.path_hook(...)` for source files (`.py`) only. No
+     `SourcelessFileLoader`: protoPython writes no `.pyc` files and cannot run
+     CPython's. No `ExtensionFileLoader`: extension modules are imported only
+     by the `import` statement (`_imp` has no `create_dynamic`, as on a
+     CPython built without dynamic loading). `sys.path_importer_cache`
+     caches the finders. Both are created, and `importlib` imported to fill
+     them, on their first use (a module `__getattr__` on `sys`); CPython fills
+     them at startup.
+   - Namespace packages (PEP 420) are imported natively: a directory without
+     `__init__.py` found on `sys.path` becomes a namespace package when no
+     module or regular package of that name is found anywhere on the path.
+     Its `__path__` is a plain list of the portions found at import time
+     (CPython's `_NamespacePath` also follows later `sys.path` changes), and
+     its `__spec__` is a plain object with `origin` None and
+     `submodule_search_locations` the same list. A submodule is also searched
+     for in its parent package's `__path__`.
+   - `compile()` accepts source as `bytes`, decoded as UTF-8; a coding
+     declaration naming another encoding is not honoured.
+   - No `.pyc` files are written (`sys.dont_write_bytecode` is True).
+6. **Interpreter exit**: `atexit` handlers run once, when the program ends
+   (normally, through `SystemExit` or after an unhandled exception is
+   reported). A handler that raises is reported through `sys.unraisablehook`
+   as `Exception ignored in atexit callback <function f at 0x...>:` followed
+   by the traceback, and the remaining handlers run. An application that
+   embeds `PythonEnvironment` calls `runExitHandlers()` at shutdown.
+   `gc.disable()`/`gc.enable()` only change what `gc.isenabled()` reports;
+   protoCore's collector keeps running.

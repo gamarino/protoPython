@@ -4,6 +4,7 @@
 #include <protoPython/StructSequence.h>
 #include <protoCore.h>
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -324,6 +325,108 @@ static const proto::ProtoObject* py_getenv(
     if (val) return PythonEnvironment::getInternedString(ctx, val)->asObject(ctx);
     if (posArgs->getSize(ctx) >= 2) return posArgs->getAt(ctx, 1);
     return PROTO_NONE;
+}
+
+// posix.fspath(path): CPython's os.fspath.  A str or bytes object (or an
+// instance of a subclass) is returned unchanged; an os.PathLike object gives
+// the str or bytes its __fspath__() returns.  importlib's path machinery
+// calls it as _os.fspath.  os.py keeps its own pure-Python fspath because
+// this function is not in the module's star-export list.
+static const proto::ProtoObject* py_os_fspath(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return PROTO_NONE;
+    if (!posArgs || posArgs->getSize(ctx) != 1) {
+        env->raiseTypeError(ctx, "fspath() takes exactly one argument");
+        return nullptr;
+    }
+    auto typeName = [&](const proto::ProtoObject* obj) {
+        std::string name = "object";
+        const proto::ProtoObject* type = env->getType(ctx, obj);
+        const proto::ProtoObject* n = type ? type->getAttribute(ctx, env->getNameString()) : nullptr;
+        if (n && n->isString(ctx)) n->asString(ctx)->toUTF8String(ctx, name);
+        return name;
+    };
+    auto isStrOrBytes = [&](const proto::ProtoObject* obj) {
+        if (obj->isString(ctx)) return true;
+        if (obj->isInteger(ctx) || obj->isFloat(ctx) || obj->isBoolean(ctx) || obj == PROTO_NONE) return false;
+        const proto::ProtoObject* type = env->getType(ctx, obj);
+        const proto::ProtoObject* mro = type ? type->getAttribute(ctx, env->getMroString()) : nullptr;
+        const proto::ProtoTuple* mroT = (mro && mro != PROTO_NONE) ? mro->asTuple(ctx) : nullptr;
+        for (proto::proto_ulong i = 0; mroT && i < mroT->getSize(ctx); ++i) {
+            const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(i));
+            if (base == env->getStrPrototype() || base == env->getBytesPrototype()) return true;
+        }
+        return type == env->getStrPrototype() || type == env->getBytesPrototype();
+    };
+    const proto::ProtoObject* path = posArgs->getAt(ctx, 0);
+    if (!path) path = PROTO_NONE;
+    if (isStrOrBytes(path)) return path;
+    const proto::ProtoObject* method = (path != PROTO_NONE)
+        ? env->getAttribute(ctx, path, PythonEnvironment::getInternedString(ctx, "__fspath__"), false)
+        : nullptr;
+    if (!method || method == PROTO_NONE) {
+        if (env->hasPendingException()) env->clearPendingException();
+        env->raiseTypeError(ctx, "expected str, bytes or os.PathLike object, not " + typeName(path));
+        return nullptr;
+    }
+    const proto::ProtoObject* result = env->callObject(method, {});
+    if (!result) return nullptr;
+    if (!isStrOrBytes(result)) {
+        env->raiseTypeError(ctx, "expected " + typeName(path) + ".__fspath__() to return str or bytes, not "
+            + typeName(result));
+        return nullptr;
+    }
+    return result;
+}
+
+// nt._path_splitroot(path) -> (root, rest): the part of a Windows path up to
+// and including its root ("C:\\", "C:", "\\", "\\\\server\\share\\") and the
+// rest, as ntpath.splitroot divides it; '/' counts as a separator.
+// importlib's Windows path functions (_path_join, _path_isabs) call it.
+// Defined on every platform so it is compiled everywhere; registered on
+// Windows only, as in CPython.
+[[maybe_unused]] static const proto::ProtoObject* py_nt_path_splitroot(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    std::string p;
+    if (!posArgs || posArgs->getSize(ctx) != 1
+        || !PythonEnvironment::fsPathArgument(ctx, posArgs->getAt(ctx, 0), p)) {
+        if (env && !env->hasPendingException())
+            env->raiseTypeError(ctx, "_path_splitroot() argument must be str or os.PathLike");
+        return nullptr;
+    }
+    std::string n = p;
+    std::replace(n.begin(), n.end(), '/', '\\');
+    size_t split = 0;
+    if (n.compare(0, 1, "\\") == 0) {
+        if (n.compare(0, 2, "\\\\") == 0) {
+            // UNC: \\server\share\ (or \\?\UNC\server\share\).
+            std::string head = n.substr(0, 8);
+            std::transform(head.begin(), head.end(), head.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+            const size_t start = (head == "\\\\?\\UNC\\") ? 8 : 2;
+            const size_t index = n.find('\\', start);
+            const size_t index2 = index == std::string::npos ? std::string::npos : n.find('\\', index + 1);
+            split = index2 == std::string::npos ? n.size() : index2 + 1;
+        } else {
+            split = 1;
+        }
+    } else if (n.size() >= 2 && n[1] == ':') {
+        split = (n.size() >= 3 && n[2] == '\\') ? 3 : 2;
+    }
+    const proto::ProtoList* pair = ctx->newList()
+        ->appendLast(ctx, proto::ProtoString::fromUTF8String(ctx, p.substr(0, split).c_str())->asObject(ctx))
+        ->appendLast(ctx, proto::ProtoString::fromUTF8String(ctx, p.substr(split).c_str())->asObject(ctx));
+    return ctx->newTupleFromList(pair)->asObject(ctx);
 }
 
 static const proto::ProtoObject* py_getcwd(
@@ -2538,6 +2641,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_unsetenv));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getcwd"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getcwd));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "fspath"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_fspath));
+#if defined(_WIN32)
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_path_splitroot"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_nt_path_splitroot));
+#endif
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "readlink"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_readlink));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "symlink"),
