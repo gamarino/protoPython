@@ -531,7 +531,17 @@ int main(int argc, char* argv[]) {
 
     if (!options.scriptPath.empty()) {
         std::vector<std::string> scriptPaths = searchPaths;
-        scriptPaths.insert(scriptPaths.begin(), dirName(options.scriptPath));
+        // The script is found through its directory made absolute, so its
+        // __file__ is absolute, as CPython's __main__.__file__ since 3.9:
+        // the current directory joined with the path as given, without
+        // resolving `..` or links on POSIX (std::filesystem::absolute, like
+        // CPython's _Py_abspath), normalized on Windows (GetFullPathNameW in
+        // both). sys.argv[0] keeps the path as given.
+        std::error_code absError;
+        const std::filesystem::path absScript =
+            std::filesystem::absolute(std::filesystem::path(options.scriptPath), absError);
+        scriptPaths.insert(scriptPaths.begin(),
+                           dirName(absError ? options.scriptPath : absScript.string()));
         if (options.dryRun || options.bytecodeOnly) {
             return fileExists(options.scriptPath) ? EXIT_OK : EXIT_RESOLVE;
         }

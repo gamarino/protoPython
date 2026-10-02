@@ -18,6 +18,17 @@ else()
     add_compile_options(-fno-delete-null-pointer-checks)
     set(PROTOPYTHON_DEBUG_INFO_FLAG -g)
 endif()
+# Abort when a ProtoContext is chained onto a context that is not live on the
+# calling thread, or destroyed while it is not the innermost one
+# (include/protoPython/MemoryManager.hpp). On in Debug builds; the walk it does
+# per call is too slow for release builds.
+option(PROTOPY_CHECK_CONTEXT_CHAIN
+    "Check every ProtoContext protoPython creates against the thread's context chain" OFF)
+if(PROTOPY_CHECK_CONTEXT_CHAIN)
+    add_compile_definitions(PROTOPY_CHECK_CONTEXT_CHAIN)
+else()
+    add_compile_definitions($<$<CONFIG:Debug>:PROTOPY_CHECK_CONTEXT_CHAIN>)
+endif()
 if(WIN32)
     # Windows has no rpath: a program finds its DLLs next to itself, so every
     # executable and DLL of the build goes to one directory.
@@ -573,13 +584,57 @@ set_tests_properties(protopy_tempfile_roundtrip PROPERTIES
     TIMEOUT 120
     LABELS "regression_gate")
 # Unclosed files release their descriptor when collected (under a heap limit, so
-# protoCore collects). Exit 77 (skipped) on Windows: see the test's header.
+# protoCore collects).
 add_test(NAME protopy_file_close_on_collect
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/file_close_on_collect.py)
 set_tests_properties(protopy_file_close_on_collect PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     ENVIRONMENT "PROTOCORE_HEAP_LIMIT_CELLS=1000000"
-    SKIP_RETURN_CODE 77
+    TIMEOUT 120
+    LABELS "regression_gate")
+# seek/tell/seekable/readable/writable on every kind of file object; source
+# lines in traceback.format_exc() (tokenize.open rewinds the file).
+add_test(NAME protopy_file_seek_tell
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/file_seek_tell.py)
+set_tests_properties(protopy_file_seek_tell PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "file_seek_tell: ok"
+    TIMEOUT 120
+    LABELS "regression_gate")
+# Functions with annotations have an __annotate__ function (PEP 649/749), so
+# functools.singledispatch's plain @register works.
+add_test(NAME protopy_function_annotate
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/function_annotate.py)
+set_tests_properties(protopy_function_annotate PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "function_annotate: ok"
+    TIMEOUT 120
+    LABELS "regression_gate")
+# __main__.__file__ is absolute and sys.argv[0] is the path as given (the
+# script is run by a relative path); `-c` code has no __main__.__file__.
+add_test(NAME protopy_main_file_absolute
+    COMMAND $<TARGET_FILE:protopy> test/regression/main_file_absolute.py)
+set_tests_properties(protopy_main_file_absolute PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "main_file_absolute: ok"
+    TIMEOUT 120
+    LABELS "regression_gate")
+add_test(NAME protopy_c_main_has_no_file
+    COMMAND $<TARGET_FILE:protopy> -c
+            "import __main__, sys; assert not hasattr(__main__, '__file__'), __main__.__file__; assert sys.argv[0] == '-c', sys.argv; print('c_main_has_no_file: ok')")
+set_tests_properties(protopy_c_main_has_no_file PROPERTIES
+    PASS_REGULAR_EXPRESSION "c_main_has_no_file: ok"
+    TIMEOUT 120
+    LABELS "regression_gate")
+# Objects held only by running frames survive heap-limited collections: every
+# context is chained onto the thread's current one (MemoryManager.hpp). The
+# cross-platform workflow runs it repeatedly.
+add_test(NAME protopy_heap_limit_live_frames
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/heap_limit_live_frames.py)
+set_tests_properties(protopy_heap_limit_live_frames PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    ENVIRONMENT "PROTOCORE_HEAP_LIMIT_CELLS=1000000"
+    PASS_REGULAR_EXPRESSION "heap_limit_live_frames: ok"
     TIMEOUT 120
     LABELS "regression_gate")
 # Directories of files that were written and never closed can be removed.

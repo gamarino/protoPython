@@ -16768,12 +16768,27 @@ bool PythonEnvironment::pendingExceptionFlagOutOfLine() { return s_pendingExcFla
 
 #endif
 
+// The context an environment's root context is chained onto: the calling
+// thread's current context, as for every context protoPython creates
+// (chainParent, MemoryManager.hpp).
+//
+// protoCore attaches a context created without a parent on the main OS thread
+// to the main thread (ProtoContext's constructor compares the thread id with
+// ProtoSpace::mainThreadId) and makes it current -- but with no `previous`, so
+// the context that was current (the space's own root context, or an outer
+// environment's) dropped off the chain the collector walks, and destroying
+// the environment left no context current on the main thread. On any other
+// thread a parent-less context belongs to no thread, and stays parent-less.
+static proto::ProtoContext* rootContextParent(proto::ProtoSpace* space) {
+    if (space && space->rootContext && space->rootContext->thread
+            && space->mainThreadId == std::this_thread::get_id())
+        return space->rootContext->thread->getCurrentContext();
+    return nullptr;
+}
+
 PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::vector<std::string>& searchPaths,
                                      const std::vector<std::string>& argv) : space_(getProcessSpace()),
-                                     // protoCore auto-detects the main OS thread in ProtoContext's constructor
-                                     // (compares std::this_thread::get_id() against ProtoSpace::mainThreadId).
-                                     // No need to pass rootContext as `previous` — the inheritance is implicit.
-                                     rootContext_(new proto::ProtoContext(space_, nullptr)),
+                                     rootContext_(new proto::ProtoContext(space_, rootContextParent(space_))),
                                      argv_(argv), stdLibPath_(stdLibPath), sysModule(nullptr), builtinsModule(nullptr), exceptionsModule(nullptr) {
     if (get_env_diag()) {
         fflush(stderr);
@@ -22322,13 +22337,6 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     sysModule = sysModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__dict__"), sysModule);
     registerNativeModule(nativeProviderPtr, "sys", [this](proto::ProtoContext* ctx) { return sysModule; });
 
-    // _io module
-    const proto::ProtoObject* ioModule = io::initialize(rootContext_);
-    if (modulePrototype) {
-        ioModule = ioModule->addParent(rootContext_, modulePrototype);
-        ioModule = ioModule->setAttribute(rootContext_, py_class, modulePrototype);
-    }
-    registerNativeModule(nativeProviderPtr, "_io", [ioModule](proto::ProtoContext*) { return ioModule; });
 
     // Other native modules
     registerNativeModule(nativeProviderPtr, "_collections", [this](proto::ProtoContext* ctx) { return collections::initialize(ctx, this); });
@@ -22445,6 +22453,24 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     bytesWarningType = exceptionsModule->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "BytesWarning"));
     resourceWarningType = exceptionsModule->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "ResourceWarning"));
     encodingWarningType = exceptionsModule->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "EncodingWarning"));
+
+    // _io module. After the exception types: its UnsupportedOperation is the
+    // exceptions module's (OSError, ValueError) class, and its
+    // BlockingIOError is the builtin one.
+    const proto::ProtoObject* ioModule = io::initialize(rootContext_);
+    {
+        if (modulePrototype) {
+            ioModule = ioModule->addParent(rootContext_, modulePrototype);
+            ioModule = ioModule->setAttribute(rootContext_, py_class, modulePrototype);
+        }
+        const proto::ProtoString* unsupportedS = PythonEnvironment::getInternedString(rootContext_, "UnsupportedOperation");
+        const proto::ProtoObject* unsupported = exceptionsModule->getAttribute(rootContext_, unsupportedS);
+        if (unsupported && unsupported != PROTO_NONE)
+            ioModule = ioModule->setAttribute(rootContext_, unsupportedS, unsupported);
+        if (blockingIOErrorType && blockingIOErrorType != PROTO_NONE)
+            ioModule = ioModule->setAttribute(rootContext_, blockingIOErrorS, blockingIOErrorType);
+        registerNativeModule(nativeProviderPtr, "_io", [ioModule](proto::ProtoContext*) { return ioModule; });
+    }
 
     // Expose common exceptions in builtins using cached strings
     if (builtinsModule) {
@@ -22983,8 +23009,9 @@ const proto::ProtoObject* PythonEnvironment::getGlobals() const {
 
 // Returns the __main__ module that executeString and runRepl run code in.
 // When sys.modules has no __main__ yet, it is created as a mutable child of
-// builtins, named __main__, with __file__ = fileName, and registered in
-// sys.modules. It must be mutable: STORE_NAME and IMPORT_NAME update a mutable
+// builtins, named __main__, and registered in sys.modules. It has __file__ =
+// fileName unless fileName is a pseudo-name such as "<string>" (`-c`) or
+// "<stdin>" (the REPL): CPython's __main__ has no __file__ then. It must be mutable: STORE_NAME and IMPORT_NAME update a mutable
 // namespace in place, whereas setAttribute on an immutable object returns a
 // new object and the binding would be lost after each statement.
 static const proto::ProtoObject* ensureMainModule(PythonEnvironment* env,
@@ -22998,7 +23025,9 @@ static const proto::ProtoObject* ensureMainModule(PythonEnvironment* env,
         const proto::ProtoString* mainName = PythonEnvironment::getInternedString(context, "__main__");
         mod = builtinsModule->newChild(context, true);
         mod = mod->setAttribute(context, PythonEnvironment::getInternedString(context, "__name__"), mainName->asObject(context));
-        mod = mod->setAttribute(context, PythonEnvironment::getInternedString(context, "__file__"), PythonEnvironment::getInternedString(context, fileName.c_str())->asObject(context));
+        const bool pseudoName = !fileName.empty() && fileName.front() == '<' && fileName.back() == '>';
+        if (!pseudoName)
+            mod = mod->setAttribute(context, PythonEnvironment::getInternedString(context, "__file__"), PythonEnvironment::getInternedString(context, fileName.c_str())->asObject(context));
 
         // Add to sys.modules (attribute lookup + dict __data__ for Python-side access)
         const proto::ProtoObject* modules = sysModule->getAttribute(context, PythonEnvironment::getInternedString(context, "modules"));

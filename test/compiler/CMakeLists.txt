@@ -67,3 +67,13 @@ add_test(NAME protopyc_portable_ints
 set_tests_properties(protopyc_portable_ints PROPERTIES
     TIMEOUT 300
     LABELS "regression_gate")
+
+# break / continue in a loop's else clause target the enclosing loop in a
+# module built by protopyc.
+add_test(NAME protopyc_loop_else
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/protopyc_loop_else.sh
+            $<TARGET_FILE:protopyc> $<TARGET_FILE:protopy>
+            ${CMAKE_CURRENT_SOURCE_DIR}/loop_else_probe.py)
+set_tests_properties(protopyc_loop_else PROPERTIES
+    TIMEOUT 300
+    LABELS "regression_gate")

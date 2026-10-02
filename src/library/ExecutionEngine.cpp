@@ -1154,6 +1154,54 @@ static const proto::ProtoObject* py_function_get(proto::ProtoContext* ctx,
 }
 
 /** Create a callable object with __code__, __globals__, and __call__. */
+// A function's __annotate__ (PEP 649 / 749), bound to its annotations dict.
+//
+// protoPython evaluates annotations when the function is defined, so there is
+// nothing left to defer: Format.VALUE (1) and Format.FORWARDREF (3) return a
+// new dict of the evaluated annotations, and Format.STRING (4) renders them
+// with annotationlib.annotations_to_string. Every other format, including
+// VALUE_WITH_FAKE_GLOBALS (2), raises NotImplementedError. CPython's
+// compiler-generated __annotate__ supports VALUE (and fake globals) only and
+// annotationlib.call_annotate_function derives FORWARDREF and STRING from its
+// code object, which this native callable does not have; through
+// call_annotate_function and annotationlib.get_annotations the results are
+// the same. Bound to the dict, not to the function: a function holding a
+// method bound to itself would form a cycle of mutable objects, which
+// protoCore never reclaims.
+static const proto::ProtoObject* functionAnnotate(proto::ProtoContext* ctx, const proto::ProtoObject* annotations,
+                                                  const proto::ParentLink*, const proto::ProtoList* args,
+                                                  const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return PROTO_NONE;
+    if (!args || args->getSize(ctx) != 1) {
+        env->raiseTypeError(ctx, "__annotate__() takes exactly one argument (format)");
+        return nullptr;
+    }
+    const proto::ProtoObject* formatObj = args->getAt(ctx, 0);
+    if (formatObj && !formatObj->isInteger(ctx)) {
+        // An IntEnum member such as annotationlib.Format.VALUE.
+        formatObj = env->callMethod(formatObj, "__index__", {});
+        if (!formatObj) return nullptr;
+    }
+    const long long format = (formatObj && formatObj->isInteger(ctx)) ? formatObj->asLong(ctx) : -1;
+    const proto::ProtoObject* builtins = env->getBuiltins();
+    if (format == 1 || format == 3) {
+        const proto::ProtoObject* dictType = builtins->getAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "dict"));
+        return env->callObject(dictType, {annotations});
+    }
+    if (format == 4) {
+        const proto::ProtoObject* annotationlib = env->importModule("annotationlib");
+        if (!annotationlib || annotationlib == PROTO_NONE) return nullptr;
+        return env->callMethod(annotationlib, "annotations_to_string", {annotations});
+    }
+    const proto::ProtoObject* notImplemented = builtins->getAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "NotImplementedError"));
+    const proto::ProtoObject* exc = notImplemented ? env->callObject(notImplemented, {}) : nullptr;
+    if (exc && exc != PROTO_NONE) env->raiseException(exc);
+    return nullptr;
+}
+
 static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const proto::ProtoObject* codeObj, proto::ProtoObject* globalsFrame, const proto::ProtoObject* closureFrame = nullptr, const proto::ProtoObject* defaults = nullptr, const proto::ProtoObject* kwDefaults = nullptr) {
     if (!ctx || !codeObj || !globalsFrame) return nullptr;
     if (!ctx || !codeObj || !globalsFrame) return nullptr;
@@ -8271,6 +8319,11 @@ const proto::ProtoObject* executeBytecodeRange(
                         PythonEnvironment::getInternedString(ctx, "__annotations__");
                     fn = const_cast<proto::ProtoObject*>(
                         fn->setAttribute(ctx, annKey, annotations));
+                    // A function with annotations has an __annotate__
+                    // function; functionPrototype's None stays for the rest.
+                    fn = const_cast<proto::ProtoObject*>(fn->setAttribute(ctx,
+                        PythonEnvironment::getInternedString(ctx, "__annotate__"),
+                        ctx->fromMethod(const_cast<proto::ProtoObject*>(annotations), functionAnnotate)));
                     stack.back() = fn;
                 }
                 // Stack right now (top to bottom):

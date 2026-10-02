@@ -12,6 +12,10 @@
 #include <new>
 #include <cstddef>
 #include <algorithm>
+#if defined(PROTOPY_CHECK_CONTEXT_CHAIN)
+#include <cstdio>
+#include <cstdlib>
+#endif
 
 namespace protoPython {
 
@@ -24,8 +28,67 @@ inline void promote(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
 }
 
 /**
+ * The context a new ProtoContext must name as its `previous`: the calling
+ * thread's current context.
+ *
+ * protoCore's root scan starts at each thread's current context and follows
+ * `previous`, and ~ProtoContext makes `previous` current again. A context
+ * created with any other `previous` hides every context between the two --
+ * their operand stacks, locals and young generations -- from each collection
+ * while it lives, and when it is destroyed it leaves an outer context current
+ * while inner frames are still executing, so those frames stay invisible to
+ * the collector until they return. Under a heap limit that freed live objects.
+ *
+ * Native code is routinely handed a context that is not the current one: the
+ * interpreter's thread-local context (PythonEnvironment::getCurrentContext,
+ * which function calls do not update), a generator's resumer, the context a
+ * native method was called with before it re-entered Python. So the parent is
+ * taken from the thread, and `ctx` only says which thread (or, for a context
+ * without a thread, which space). See test/library/TestContextChain.cpp.
+ */
+inline proto::ProtoContext* chainParent(proto::ProtoContext* ctx) {
+    if (!ctx) return ctx;
+    proto::ProtoContext* current = ctx->thread
+        ? ctx->thread->getCurrentContext()
+        : (ctx->space ? ctx->space->mainContext : nullptr);
+#if defined(PROTOPY_CHECK_CONTEXT_CHAIN)
+    // The context handed in must still be live on this thread: current, or
+    // an ancestor of it. Anything else is a dangling or foreign context.
+    bool live = false;
+    for (proto::ProtoContext* c = current; c; c = c->previous)
+        if (c == ctx) { live = true; break; }
+    if (!live) {
+        std::fprintf(stderr, "protoPython: context %p handed to a new context is not on the "
+                             "thread's chain (current %p)\n", (void*)ctx, (void*)current);
+        std::abort();
+    }
+#endif
+    return current ? current : ctx;
+}
+
+/**
+ * Checks, in builds with PROTOPY_CHECK_CONTEXT_CHAIN, that `ctx` is the
+ * thread's current context: contexts are destroyed in the reverse order of
+ * their creation, so the one being destroyed must be the innermost.
+ */
+inline void checkInnermost(proto::ProtoContext* ctx) {
+#if defined(PROTOPY_CHECK_CONTEXT_CHAIN)
+    proto::ProtoContext* current = ctx->thread
+        ? ctx->thread->getCurrentContext()
+        : (ctx->space ? ctx->space->mainContext : nullptr);
+    if (current != ctx) {
+        std::fprintf(stderr, "protoPython: destroying context %p, but the thread's current "
+                             "context is %p\n", (void*)ctx, (void*)current);
+        std::abort();
+    }
+#else
+    (void)ctx;
+#endif
+}
+
+/**
  * RAII scope for a callee ProtoContext. On construction, pushes a new context
- * (parent = caller); on destruction, restores the thread's current context to parent
+ * (parent = the thread's current context, see chainParent); on destruction, restores the thread's current context to parent
  * and destroys the callee context (GC and promotion run in ~ProtoContext).
  *
  * Small-buffer optimisation (SBO): for functions with <= SBO_SLOTS local variables,
@@ -66,7 +129,7 @@ public:
                  const proto::ProtoList* args,
                  const proto::ProtoSparseList* kwargs,
                  size_t totalSlots = 0)
-        : parent_(parent ? parent : PythonEnvironment::getCurrentContext()),
+        : parent_(chainParent(parent ? parent : PythonEnvironment::getCurrentContext())),
           ctx_(nullptr) {
         // Prepare the external slot buffer when the count fits in SBO_SLOTS.
         const proto::ProtoObject** extSlots = nullptr;
@@ -85,6 +148,7 @@ public:
 
     ~ContextScope() {
         if (ctx_) {
+            checkInnermost(ctx_);
             // Explicit destructor — context lives in ctxStorage_, not on heap.
             ctx_->~ProtoContext();
             ctx_ = nullptr;

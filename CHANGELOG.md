@@ -113,6 +113,53 @@ onwards. Commit hashes are given for reference.
 
 ### Fixed
 
+- **Collection under a heap limit freed objects of running frames.** With
+  `PROTOCORE_HEAP_LIMIT_CELLS` set, about one Windows run in ten of a workload
+  that opens files while allocating crashed or read a live module-level string
+  back as NUL bytes (CI run 36994197731: `protopy_heap_limit_live_frames`
+  segfaulted on its second run). `ContextScope` and `runCodeObject` named the
+  context they were handed as the new context's `previous`. protoCore's root
+  scan starts at the thread's current context and follows `previous`, and
+  native code is routinely handed a context that is not current (the
+  interpreter's thread-local context, which function calls do not update; a
+  generator's resumer): the new context hid the frames in between from every
+  collection and, once destroyed, left an outer context current while those
+  frames still ran. New contexts are now chained onto the thread's current
+  context (`chainParent`, `include/protoPython/MemoryManager.hpp`). A
+  `PythonEnvironment`'s root context, created without a parent, is chained onto
+  the context current on the main thread, so destroying it no longer leaves no
+  context current (the mismatches at startup and exit). Builds with
+  `PROTOPY_CHECK_CONTEXT_CHAIN` (on in Debug) abort on a context handed a
+  context that is not live on its thread or destroyed out of order; the whole
+  suite passes with it. `protopy_file_close_on_collect` runs on Windows again,
+  and the cross-platform workflow runs it and `protopy_heap_limit_live_frames`
+  25 times each. Tests: `test_context_chain`, `protopy_heap_limit_live_frames`.
+- **Read-mode files had no `seek`/`tell`.** `open(path)` and `open(path, "rb")`
+  objects had no `seek`, `tell`, `readable`, `writable` or `seekable` (so
+  `tokenize.open` failed and `traceback.format_exc()` printed no source lines),
+  read `n` bytes instead of `n` characters in text mode, accepted `write`, and
+  read nothing after `close()` instead of raising `ValueError`. They now follow
+  CPython; a text-mode `tell()` cookie is a byte offset in the decoded text.
+  Also: append mode starts at the end of the file; `sys.stdin`/`stdout`/`stderr`
+  have `fileno`, `readable`, `writable`, `seekable`, `isatty`, `tell` and
+  `seek`; `StringIO.seekable()`; `fileno()` of `StringIO`/`BytesIO` raises
+  `io.UnsupportedOperation`, which is now a real exception class
+  (`OSError`, `ValueError`) rather than a stub object. Test:
+  `protopy_file_seek_tell`.
+- **Functions had `__annotate__ = None`**, so `functools.singledispatch`'s
+  plain `@f.register` on an annotated function raised `TypeError`. A function
+  with annotations now has an `__annotate__` (PEP 649/749) returning its
+  annotations for `Format.VALUE` and `FORWARDREF` and their strings for
+  `STRING`. Test: `protopy_function_annotate`.
+- **protopyc: `break`/`continue` in a loop's `else:` clause** acted on the
+  finished loop, as the interpreter did before `23f4f85b`. Test:
+  `protopyc_loop_else`.
+- **`__main__.__file__` was the relative path given** (`sub/m.py`,
+  `./m.py`). It is absolute, as in CPython since 3.9 (the current directory
+  joined with the path, unnormalized on POSIX); `sys.argv[0]` keeps the path
+  as given. `-c` code and the REPL no longer get `__main__.__file__ =
+  "<string>"`/`"<stdin>"`: CPython's `__main__` has none. Tests:
+  `protopy_main_file_absolute`, `protopy_c_main_has_no_file`.
 - **`weakref.WeakKeyDictionary` never found its keys.** `weakref.ref` objects
   had no `__hash__`/`__eq__`, so `ref(obj)` built for a lookup was never equal
   to the `ref(obj)` stored as the key: `get`/`in`/`[]` missed, setting a key
@@ -212,9 +259,8 @@ onwards. Commit hashes are given for reference.
   - A file object that is never closed releases its descriptor when it is
     collected (it never did); Windows deletes with POSIX semantics where NTFS
     has them. Files still close on `close()`/`with`/collection, not on losing
-    their last reference (documented) (`protopy_file_close_on_collect`,
-    skipped on Windows where heap-limited collection crashes independently of
-    this change -- see INSTALLATION.md; `protopy_unclosed_files_directory_cleanup`).
+    their last reference (documented) (`protopy_file_close_on_collect`;
+    `protopy_unclosed_files_directory_cleanup`).
   - `time.gmtime`/`localtime`/`ctime` and `datetime` timestamp conversions
     before 1970 and after 3000 no longer dereference a null `struct tm`:
     UTC conversions work for every year, local ones raise `OSError` where

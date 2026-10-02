@@ -48,7 +48,7 @@ The most fundamental difference from CPython is the **absence of the Global Inte
 
 - **Object Model**: Objects are 64-byte aligned cells in a `ProtoSpace`.
 - **Recursion**: Managed limit via `sys.setrecursionlimit`.
-- **Tracebacks**: each entry carries the running code object's file and function name and the line that raised, for functions, module code, imported modules and `exec`/`eval` (`File "<string>"`) or `compile()` code. The uncaught-exception report prints the source line under each entry, as CPython does. `traceback.format_exc()` and friends print the entries without source lines: they read source through `linecache` and `tokenize.open`, which needs `seek()` on a file opened for reading, and read-mode file objects do not have it yet. There are no column ranges (`~~^^` markers): code objects have no `co_positions()`.
+- **Tracebacks**: each entry carries the running code object's file and function name and the line that raised, for functions, module code, imported modules and `exec`/`eval` (`File "<string>"`) or `compile()` code. The uncaught-exception report prints the source line under each entry, as CPython does. `traceback.format_exc()` and friends print them too. There are no column ranges (`~~^^` markers): code objects have no `co_positions()`.
 
 ## Notable Differences from CPython
 
@@ -118,9 +118,28 @@ The most fundamental difference from CPython is the **absence of the Global Inte
    CPython: a reference hashes like its referent and two references to equal
    live objects are equal, so `WeakKeyDictionary`, `WeakValueDictionary`,
    `WeakSet` and `functools.singledispatch`'s dispatch cache work.
-8. **Function annotations (PEP 649)**: a function's `__annotations__` is
-   evaluated when the function is defined and its `__annotate__` is `None`
-   (modules and classes do get an `__annotate__`). Code that reads
-   `__annotate__` to decide whether a function is annotated, such as
-   `functools.singledispatch`'s `@f.register` on an annotated function, does
-   not see the annotations; pass the type explicitly (`@f.register(int)`).
+8. **Function annotations (PEP 649/749)**: a function's annotations are
+   evaluated when the function is defined, not deferred. A function with
+   annotations has an `__annotate__` that returns them for `Format.VALUE` and
+   `Format.FORWARDREF` (already evaluated: an annotation naming an undefined
+   name leaves `__annotations__` empty instead of producing a `ForwardRef`) and
+   renders them with `annotationlib.annotations_to_string` for `Format.STRING`
+   (not the source text); `VALUE_WITH_FAKE_GLOBALS` raises
+   `NotImplementedError`. CPython's compiler-generated `__annotate__` supports
+   `VALUE` only and `annotationlib.call_annotate_function` derives the other
+   formats; through that function and `annotationlib.get_annotations` the
+   results agree. A function without annotations has `__annotate__` None, as
+   in CPython, and `functools.singledispatch`'s `@f.register` works.
+9. **Files opened for reading** (`open(path)`, `open(path, "rb")`) are read
+   whole when opened and keep no descriptor (protoCore collects only under a
+   heap limit, so an unclosed descriptor would otherwise stay open until
+   exit). `seek`, `tell`, `readable`, `writable` and `seekable` behave as in
+   CPython; a text-mode `tell()` cookie is a byte offset into the decoded,
+   newline-translated text (CPython's is the file offset plus decoder state;
+   both are opaque). `fileno()` raises `OSError` (no descriptor), and changes
+   made to the file after `open()` are not seen. Writing and read-write modes
+   work through a descriptor, as in CPython.
+10. **`__main__.__file__`** is absolute for a script, as in CPython 3.9+, and
+   absent for `-c` code and the REPL. `sys.path[0]` is the standard library
+   directory rather than the script's directory (the script's directory comes
+   next), and `-m` does not search the current directory.
