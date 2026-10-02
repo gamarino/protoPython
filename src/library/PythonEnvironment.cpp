@@ -22470,6 +22470,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         if (blockingIOErrorType && blockingIOErrorType != PROTO_NONE)
             ioModule = ioModule->setAttribute(rootContext_, blockingIOErrorS, blockingIOErrorType);
         registerNativeModule(nativeProviderPtr, "_io", [ioModule](proto::ProtoContext*) { return ioModule; });
+        // sys.stdin is a file object of this module.
+        const proto::ProtoObject* stdinObj = io::makeStandardInput(rootContext_, ioModule);
+        sysModule = sysModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "stdin"), stdinObj);
+        sysModule = sysModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__stdin__"), stdinObj);
     }
 
     // Expose common exceptions in builtins using cached strings
@@ -23067,6 +23071,23 @@ int PythonEnvironment::executeString(const std::string& source, const std::strin
         }
     }
     return result;
+}
+
+void PythonEnvironment::setSysPath(const std::vector<std::string>& beforeStdlib,
+                                   const std::vector<std::string>& afterStdlib) {
+    proto::ProtoContext* ctx = rootContext_;
+    const proto::ProtoObject* pathObj = sysModule ? sysModule->getAttribute(ctx, pathS) : nullptr;
+    if (!pathObj || pathObj == PROTO_NONE) return;
+    std::vector<std::string> entries(beforeStdlib);
+    entries.push_back(stdLibPath_.empty() ? std::string("../lib/python3.14") : stdLibPath_);
+    entries.insert(entries.end(), afterStdlib.begin(), afterStdlib.end());
+    const proto::ProtoList* list = ctx->newList();
+    for (const auto& e : entries) {
+        const proto::ProtoObject* strObj = PythonEnvironment::getInternedString(ctx, e.c_str())->asObject(ctx);
+        if (strPrototype) strObj = strObj->addParent(ctx, strPrototype);
+        list = list->appendLast(ctx, strObj);
+    }
+    pathObj->setAttribute(ctx, dataString, list->asObject(ctx));
 }
 
 int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain, proto::ProtoContext* ctx) {

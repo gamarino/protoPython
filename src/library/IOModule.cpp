@@ -8,6 +8,7 @@
 #include <sstream>
 #include <string>
 #include <iostream>
+#include <streambuf>
 #include <fstream>
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
 #include <fcntl.h>
@@ -146,6 +147,9 @@ struct FdOwner {
     bool closefd;
     std::string readAhead;  // bytes read from fd but not yet consumed
     bool eof = false;       // the last read returned 0 bytes
+#if defined(_WIN32)
+    wchar_t pendingSurrogate = 0;  // console input: first half of a UTF-16 pair
+#endif
 };
 
 // Runs on protoCore's collector thread.
@@ -178,6 +182,13 @@ static bool io_flag(proto::ProtoContext* ctx, const proto::ProtoObject* self, co
 
 static long long io_lseek(int fd, long long offset, int whence) {
 #if defined(_WIN32)
+    // Only a disk file has a position: lseek on a console or a pipe does not
+    // fail on Windows (sys.stdin over a pipe would report a position).
+    const HANDLE h = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
+    if (h == INVALID_HANDLE_VALUE || GetFileType(h) != FILE_TYPE_DISK) {
+        errno = ESPIPE;
+        return -1;
+    }
     return _lseeki64(fd, offset, whence);
 #else
     return static_cast<long long>(::lseek(fd, static_cast<off_t>(offset), whence));
@@ -194,20 +205,76 @@ static void io_raise_closed(proto::ProtoContext* ctx) {
     }
 }
 
-// One read(2) of up to `n` bytes, outside the managed region (it may block).
+#if defined(_WIN32)
+// A read of a Windows console (CPython's _WindowsConsoleIO): ReadConsoleW,
+// converted to UTF-8, so non-ASCII input arrives intact whatever the console's
+// code pages (a byte read returns the input code page's encoding, and
+// characters outside it are lost). Ctrl+Z at the start of a read is end of
+// file. Returns the byte count, 0 at end of file, -1 with `err` set; -2 when
+// the descriptor is not a console (it is read as a file).
+static long long io_read_console(FdOwner* owner, char* buf, size_t n, int& err) {
+    const HANDLE h = reinterpret_cast<HANDLE>(_get_osfhandle(owner->fd));
+    DWORD mode = 0;
+    if (h == INVALID_HANDLE_VALUE || GetFileType(h) != FILE_TYPE_CHAR || !GetConsoleMode(h, &mode)) return -2;
+    // A UTF-16 unit becomes at most 3 UTF-8 bytes (a pair, 4 for 2 units).
+    const size_t units = std::max<size_t>(2, std::min<size_t>(n / 3, 8192));
+    std::wstring wide(units, L'\0');
+    size_t have = 0;
+    if (owner->pendingSurrogate) wide[have++] = owner->pendingSurrogate;
+    owner->pendingSurrogate = 0;
+    for (;;) {
+        DWORD count = 0;
+        if (!ReadConsoleW(h, &wide[have], static_cast<DWORD>(units - have), &count, nullptr)) {
+            err = EIO;
+            return -1;
+        }
+        if (count == 0 || (have == 0 && wide[0] == 0x1A)) return 0;
+        have += count;
+        // A pair split between two reads waits for its second half.
+        if (wide[have - 1] >= 0xD800 && wide[have - 1] <= 0xDBFF) {
+            owner->pendingSurrogate = wide[--have];
+            if (have == 0) continue;
+        }
+        break;
+    }
+    const int bytes = WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(have), nullptr, 0,
+                                          nullptr, nullptr);
+    std::string utf8(static_cast<size_t>(bytes > 0 ? bytes : 0), '\0');
+    if (bytes > 0)
+        WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(have), utf8.data(), bytes, nullptr, nullptr);
+    // Only a read of fewer than 3 bytes can get more than it asked for: the
+    // rest is read ahead (the caller's read-ahead buffer is empty then).
+    const size_t take = std::min(n, utf8.size());
+    std::memcpy(buf, utf8.data(), take);
+    owner->readAhead.insert(0, utf8, take, std::string::npos);
+    return static_cast<long long>(take);
+}
+#endif
+
+// One read of up to `n` bytes from the owner's descriptor (ReadConsoleW on a
+// Windows console). Touches no protoCore object, so it may run outside the
+// managed region. Returns the count, 0 at end of file; -1 with `err` set.
+static long long io_read_raw(FdOwner* owner, char* buf, size_t n, int& err) {
+#if defined(_WIN32)
+    const long long console = io_read_console(owner, buf, n, err);
+    if (console != -2) return console;
+    const long long got = ::read(owner->fd, buf, static_cast<unsigned>(n > 0x7fffffff ? 0x7fffffff : n));
+#else
+    const long long got = static_cast<long long>(::read(owner->fd, buf, n));
+#endif
+    err = (got < 0) ? errno : 0;
+    return got;
+}
+
+// One read of up to `n` bytes, outside the managed region (it may block).
 // Returns the count, 0 at end of file; -1 with OSError pending.
-static long long io_read_once(proto::ProtoContext* ctx, int fd, char* buf, size_t n) {
+static long long io_read_once(proto::ProtoContext* ctx, FdOwner* owner, char* buf, size_t n) {
     for (;;) {
         long long got;
         int err = 0;
         {
             proto::ProtoContext::UnmanagedScope u(ctx);
-#if defined(_WIN32)
-            got = ::read(fd, buf, static_cast<unsigned>(n > 0x7fffffff ? 0x7fffffff : n));
-#else
-            got = static_cast<long long>(::read(fd, buf, n));
-#endif
-            err = (got < 0) ? errno : 0;
+            got = io_read_raw(owner, buf, n, err);
         }
         if (got >= 0) return got;
         if (err == EINTR) continue;
@@ -220,7 +287,7 @@ static long long io_read_once(proto::ProtoContext* ctx, int fd, char* buf, size_
 // exception pending; sets eof at end of file.
 static bool io_fill(proto::ProtoContext* ctx, FdOwner* owner) {
     char chunk[8192];
-    const long long got = io_read_once(ctx, owner->fd, chunk, sizeof(chunk));
+    const long long got = io_read_once(ctx, owner, chunk, sizeof(chunk));
     if (got < 0) return false;
     if (got == 0) owner->eof = true;
     else owner->readAhead.append(chunk, static_cast<size_t>(got));
@@ -283,7 +350,7 @@ static bool io_fd_read(proto::ProtoContext* ctx, FdOwner* owner, bool text, bool
     if (!text) {
         if (owner->readAhead.empty()) {
             out.resize(static_cast<size_t>(n));
-            const long long got = io_read_once(ctx, owner->fd, &out[0], static_cast<size_t>(n));
+            const long long got = io_read_once(ctx, owner, &out[0], static_cast<size_t>(n));
             if (got < 0) return false;
             out.resize(static_cast<size_t>(got));
             return true;
@@ -316,6 +383,7 @@ static bool io_fd_read(proto::ProtoContext* ctx, FdOwner* owner, bool text, bool
     out.assign(owner->readAhead, 0, i);
     owner->readAhead.erase(0, i);
     if (universal) io_translate_universal(out);
+    if (out.empty()) owner->eof = false;  // reported once, as in readline
     return true;
 }
 
@@ -346,10 +414,36 @@ static bool io_fd_readline(proto::ProtoContext* ctx, FdOwner* owner, bool univer
             out.swap(buf);
             buf.clear();
             if (universal) io_translate_universal(out);
+            // End of file is reported once: the next call reads again, so a
+            // terminal can go on after Ctrl+D (Ctrl+Z on Windows).
+            if (out.empty()) owner->eof = false;
             return true;
         }
         if (!io_fill(ctx, owner)) return false;
     }
+}
+
+// readline(size): the length of the first `limit` characters (text: whole
+// UTF-8 sequences) or bytes (binary) of `line`; all of it when `limit` is
+// negative.
+static size_t io_line_cut(bool text, long long limit, const std::string& line) {
+    if (limit < 0 || static_cast<size_t>(limit) >= line.size()) return line.size();
+    if (!text) return static_cast<size_t>(limit);
+    size_t cut = 0;
+    for (long long chars = 0; cut < line.size() && chars < limit; ++chars) {
+        ++cut;
+        while (cut < line.size() && (static_cast<unsigned char>(line[cut]) & 0xC0) == 0x80) ++cut;
+    }
+    return cut;
+}
+
+// readline(size) on a descriptor file: what is past the limit goes back to
+// the front of the read-ahead buffer.
+static void io_limit_line(FdOwner* owner, bool text, long long limit, std::string& line) {
+    const size_t cut = io_line_cut(text, limit, line);
+    if (cut >= line.size()) return;
+    owner->readAhead.insert(0, line, cut, std::string::npos);
+    line.resize(cut);
 }
 
 // The Python value of bytes read from a descriptor file: str in text mode,
@@ -561,27 +655,52 @@ static std::string io_consume_line(const proto::ProtoObject* self,
 // The next line of a descriptor file, as str or bytes; nullptr with an
 // exception pending.
 static const proto::ProtoObject* io_fd_next_line(proto::ProtoContext* context, const proto::ProtoObject* self,
-                                                 FdOwner* owner, bool& atEnd) {
+                                                 FdOwner* owner, bool& atEnd, long long limit = -1) {
     std::string line;
+    if (limit == 0) return io_fd_result(context, io_flag(context, self, "__text__"), line);
     if (!io_fd_readline(context, owner, io_flag(context, self, "__universal__"), line)) return nullptr;
     atEnd = line.empty();
-    return io_fd_result(context, io_flag(context, self, "__text__"), line);
+    const bool text = io_flag(context, self, "__text__");
+    io_limit_line(owner, text, limit, line);
+    return io_fd_result(context, text, line);
 }
 
+static const proto::ProtoObject* io_open_arg(proto::ProtoContext* context, const proto::ProtoList* pos,
+                                             const proto::ProtoSparseList* kw, proto::proto_ulong index,
+                                             const char* name);
+
+// readline(size=-1): at most `size` characters (bytes in binary mode) of the
+// next line; None or a negative size reads the whole line.
 static const proto::ProtoObject* py_io_readline(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList*,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* keywordParameters) {
+    long long limit = -1;
+    const proto::ProtoObject* sizeArg = io_open_arg(context, posArgs, keywordParameters, 0, "size");
+    if (sizeArg && sizeArg != PROTO_NONE) {
+        if (!sizeArg->isInteger(context)) {
+            if (PythonEnvironment* env = PythonEnvironment::fromContext(context))
+                env->raiseTypeError(context, "argument should be integer or None");
+            return nullptr;
+        }
+        limit = sizeArg->asLong(context);
+    }
     if (io_get_fd(context, self) >= 0) {
         if (FdOwner* owner = io_fd_owner(context, self)) {
             bool atEnd = false;
-            return io_fd_next_line(context, self, owner, atEnd);
+            return io_fd_next_line(context, self, owner, atEnd, limit < 0 ? -1 : limit);
         }
     }
     if (io_closed_fd_file(context, self)) return nullptr;
     std::string line = io_consume_line(self, context);
+    // Give back what is past the limit.
+    const size_t cut = io_line_cut(!io_is_binary(context, self), limit, line);
+    if (cut < line.size()) {
+        if (BufferFile* bf = io_buffer_file(context, self)) bf->pos -= line.size() - cut;
+        line.resize(cut);
+    }
     return io_read_result(context, self, line);
 }
 
@@ -946,13 +1065,17 @@ static bool io_newline_is_none(proto::ProtoContext* context, const proto::ProtoL
 
 // A file object over an open OS descriptor (see "Descriptor-backed files").
 // It is mutable so that close() records `closed` and the released descriptor
-// on it. `newline` is open()'s argument (nullptr: absent).
+// on it. `newline` is open()'s argument (nullptr: absent). `sharedOwner`, when
+// given, is a descriptor owner that outlives the object (standard input's,
+// shared by sys.stdin and sys.stdin.buffer); otherwise the object owns a new
+// one.
 static const proto::ProtoObject* io_make_fd_file(proto::ProtoContext* context,
                                                  const proto::ProtoObject* ioModule, int fd,
                                                  const std::string& mode,
                                                  const proto::ProtoObject* nameObj,
                                                  bool closefd,
-                                                 const proto::ProtoObject* newline) {
+                                                 const proto::ProtoObject* newline,
+                                                 FdOwner* sharedOwner = nullptr) {
     const proto::ProtoObject* proto = ioModule ? ioModule->getAttribute(context,
         proto::ProtoString::createSymbol(context, "__fd_file_prototype__")) : nullptr;
     const proto::ProtoObject* fileObj = (proto && proto != PROTO_NONE)
@@ -962,7 +1085,8 @@ static const proto::ProtoObject* io_make_fd_file(proto::ProtoContext* context,
         fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, name), value);
     };
     set("__file_fd__", context->fromInteger(fd));
-    set("__fd_owner__", context->fromExternalPointer(new FdOwner{fd, closefd}, fd_owner_finalizer));
+    set("__fd_owner__", sharedOwner ? context->fromExternalPointer(sharedOwner)
+                                    : context->fromExternalPointer(new FdOwner{fd, closefd}, fd_owner_finalizer));
     set("mode", PythonEnvironment::getInternedString(context, mode.c_str())->asObject(context));
     set("name", nameObj);
     set("buffering", context->fromInteger(-1));  // the default
@@ -1633,6 +1757,60 @@ static const proto::ProtoObject* py_sio_read(
     return PythonEnvironment::getInternedString(ctx, out.c_str())->asObject(ctx);
 }
 
+// StringIO.readline(size=-1): the next line ("\n"-terminated; newline
+// translation is not modelled), at most `size` characters of it.
+static const proto::ProtoObject* py_sio_readline(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    std::string buf = sio_get_buf(ctx, self);
+    proto::proto_long pos = sio_get_pos(ctx, self);
+    if (pos < 0) pos = 0;
+    long long limit = -1;
+    if (args && args->getSize(ctx) > 0) {
+        const proto::ProtoObject* a = args->getAt(ctx, 0);
+        if (a && a->isInteger(ctx)) limit = a->asLong(ctx);
+    }
+    std::string line;
+    if (static_cast<size_t>(pos) < buf.size()) {
+        const size_t nl = buf.find('\n', static_cast<size_t>(pos));
+        const size_t end = nl == std::string::npos ? buf.size() : nl + 1;
+        line = buf.substr(static_cast<size_t>(pos), end - static_cast<size_t>(pos));
+        line.resize(io_line_cut(true, limit, line));
+    }
+    sio_set_state(ctx, self, buf, pos + static_cast<proto::proto_long>(line.size()));
+    return PythonEnvironment::newStr(ctx, line);
+}
+
+static const proto::ProtoObject* py_sio_readlines(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoList* lines = ctx->newList();
+    const proto::ProtoList* noArgs = ctx->newList();
+    for (;;) {
+        const proto::ProtoObject* line = py_sio_readline(ctx, self, nullptr, noArgs, nullptr);
+        if (!line || !line->isString(ctx) || line->asString(ctx)->getSize(ctx) == 0) break;
+        lines = lines->appendLast(ctx, line);
+    }
+    return PythonEnvironment::wrapList(ctx, lines);
+}
+
+static const proto::ProtoObject* py_sio_iter(
+    proto::ProtoContext*, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return self;
+}
+
+static const proto::ProtoObject* py_sio_next(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoObject* line = py_sio_readline(ctx, self, nullptr, ctx->newList(), nullptr);
+    if (line && line->isString(ctx) && line->asString(ctx)->getSize(ctx) == 0) {
+        if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx)) env->raiseStopIteration(ctx);
+        return nullptr;
+    }
+    return line;
+}
+
 static const proto::ProtoObject* py_sio_seek(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* args, const proto::ProtoSparseList*) {
@@ -1789,6 +1967,91 @@ static const proto::ProtoObject* py_io_text_encoding(
     return PythonEnvironment::getInternedString(ctx, utf8Mode ? "utf-8" : "locale")->asObject(ctx);
 }
 
+// sys.stdin: CPython's TextIOWrapper over descriptor 0 (UTF-8, errors
+// "strict"; newline "\n" on POSIX, universal newlines on Windows, as CPython's
+// create_stdio), with a binary `buffer`. Both read through one read-ahead
+// buffer, which lives as long as the process: input() reads through
+// sys.stdin, so lines are consumed in order whichever reads them. Closing
+// either leaves descriptor 0 open (closefd=False). On a Windows console the
+// reads are ReadConsoleW (io_read_console).
+// Standard input's descriptor owner: one per process, never released.
+static FdOwner* io_stdin_owner() {
+    static FdOwner* const owner = new FdOwner{0, false};
+    return owner;
+}
+
+namespace {
+// std::cin's buffer in protopy (standardInputBuffer): it reads through
+// standard input's read-ahead buffer, so the REPL, input() and sys.stdin
+// consume one stream in order. "\r\n" reads as "\n".
+class StandardInputBuffer : public std::streambuf {
+protected:
+    int_type underflow() override {
+        FdOwner* owner = io_stdin_owner();
+        for (;;) {
+            if (owner->fd < 0) return traits_type::eof();
+            std::string& buf = owner->readAhead;
+            if (!buf.empty() && (buf[0] != '\r' || buf.size() > 1 || owner->eof)) {
+                if (buf[0] == '\r' && buf.size() > 1 && buf[1] == '\n') buf.erase(0, 1);
+                return traits_type::to_int_type(buf[0]);
+            }
+            if (buf.empty() && owner->eof) {
+                owner->eof = false;  // reported once, as in readline
+                return traits_type::eof();
+            }
+            char chunk[8192];
+            int err = 0;
+            const long long got = io_read_raw(owner, chunk, sizeof(chunk), err);
+            if (got < 0) {
+                if (err == EINTR) continue;
+                return traits_type::eof();
+            }
+            if (got == 0) owner->eof = true;
+            else buf.append(chunk, static_cast<size_t>(got));
+        }
+    }
+    int_type uflow() override {
+        const int_type c = underflow();
+        if (!traits_type::eq_int_type(c, traits_type::eof())) io_stdin_owner()->readAhead.erase(0, 1);
+        return c;
+    }
+};
+} // namespace
+
+std::streambuf* standardInputBuffer() {
+    static StandardInputBuffer buffer;
+    return &buffer;
+}
+
+const proto::ProtoObject* makeStandardInput(proto::ProtoContext* ctx, const proto::ProtoObject* ioModule) {
+    FdOwner* const owner = io_stdin_owner();
+    const proto::ProtoObject* name = PythonEnvironment::getInternedString(ctx, "<stdin>")->asObject(ctx);
+#if defined(_WIN32)
+    const proto::ProtoObject* newline = nullptr;
+#else
+    const proto::ProtoObject* newline = PythonEnvironment::getInternedString(ctx, "\n")->asObject(ctx);
+#endif
+    const proto::ProtoObject* text = io_make_fd_file(ctx, ioModule, 0, "r", name, false, newline, owner);
+    const proto::ProtoObject* binary = io_make_fd_file(ctx, ioModule, 0, "rb", name, false, nullptr, owner);
+    const bool tty =
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
+        ::isatty(0) != 0;
+#else
+        false;
+#endif
+    auto set = [&](const proto::ProtoObject* obj, const char* attr, const proto::ProtoObject* value) {
+        obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, attr), value);
+    };
+    set(text, "encoding", PythonEnvironment::getInternedString(ctx, "utf-8")->asObject(ctx));
+    set(text, "errors", PythonEnvironment::getInternedString(ctx, "strict")->asObject(ctx));
+    set(text, "newlines", PROTO_NONE);
+    set(text, "line_buffering", tty ? PROTO_TRUE : PROTO_FALSE);
+    set(text, "write_through", PROTO_FALSE);
+    set(text, "buffer", binary);
+    set(binary, "raw", binary);
+    return text;
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* ioMod = ctx->newObject(false);
     
@@ -1922,6 +2185,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
             ctx->fromMethod(nullptr, py_sio_getvalue));
         sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "read"),
             ctx->fromMethod(nullptr, py_sio_read));
+        sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "readline"),
+            ctx->fromMethod(nullptr, py_sio_readline));
+        sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "readlines"),
+            ctx->fromMethod(nullptr, py_sio_readlines));
+        sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__iter__"),
+            ctx->fromMethod(nullptr, py_sio_iter));
+        sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__next__"),
+            ctx->fromMethod(nullptr, py_sio_next));
         sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "seek"),
             ctx->fromMethod(nullptr, py_sio_seek));
         sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tell"),

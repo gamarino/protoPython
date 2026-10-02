@@ -1178,14 +1178,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         return f;
     };
 
-    const proto::ProtoObject* stdin_obj = create_dummy_file(0);
+    // sys.stdin and sys.__stdin__ are a real file object over descriptor 0,
+    // set once the _io module exists (io::makeStandardInput, called from
+    // PythonEnvironment's initialization).
     const proto::ProtoObject* stdout_obj = create_dummy_file(1);
     const proto::ProtoObject* stderr_obj = create_dummy_file(2);
 
-    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "stdin"), stdin_obj);
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "stdout"), stdout_obj);
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "stderr"), stderr_obj);
-    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__stdin__"), stdin_obj);
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__stdout__"), stdout_obj);
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__stderr__"), stderr_obj);
 
