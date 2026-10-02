@@ -3,8 +3,15 @@ name: Cross-platform
 # macOS and Windows. Linux is ci.yml's (the add_subdirectory configuration, with
 # protoCore's own suite). This workflow adds the two platforms nobody here can
 # run locally, against an INSTALLED protoCore package -- the supported mode on
-# Windows -- with GoogleTest fetched so the C++ suites run too. protoCore is
-# pinned like ci.yml's.
+# Windows -- with GoogleTest fetched so the C++ suites run too. protoCore refs,
+# exactly:
+#   * macOS and the first Windows job build protoCore 2.9.4 (tag v2.9.4, commit
+#     9cb0ef54), as ci.yml does on Linux;
+#   * the "floor" Windows job builds protoCore 2.7.0 (tag v2.7.0, commit
+#     fc5d79db), PROTOCORE_MIN_VERSION in CMakeLists.txt, the oldest release
+#     protoPython accepts.  It is the repository's only floor job.  (No macOS
+#     floor job: below 2.8.0 protoCore's threads get 512 KiB stacks there,
+#     ProtoSpace::setThreadStackBytes.)
 
 on:
   push:
@@ -21,8 +28,6 @@ concurrency:
 
 env:
   PROTOCORE_REPO: numaes/protoCore
-  # protoCore 2.9.2 (tag v2.9.2), as ci.yml.
-  PROTOCORE_REF: 01f4c730983c8af233db0616f64e241a7d39df7e
   # As in ci.yml: cases whose verdict is a clock never gate.
   CLOCK_DEPENDENT_TESTS: '^(protopy_dict_key_hash|conformance_isolate\..*|conformance\.isolate\..*)$'
 
@@ -37,8 +42,17 @@ jobs:
         include:
           - name: macOS (Apple clang, arm64)
             os: macos-14
+            # protoCore 2.9.4 (tag v2.9.4)
+            protocore_ref: 9cb0ef540826ee6c3162998db84ddf48464d6e2a
           - name: Windows (MSVC, x64)
             os: windows-2022
+            # protoCore 2.9.4 (tag v2.9.4)
+            protocore_ref: 9cb0ef540826ee6c3162998db84ddf48464d6e2a
+          - name: Windows (MSVC, x64), protoCore 2.7.0 floor
+            os: windows-2022
+            # THE FLOOR JOB, the only one: protoCore 2.7.0 (tag v2.7.0),
+            # PROTOCORE_MIN_VERSION in CMakeLists.txt
+            protocore_ref: fc5d79db4f89f8a6eb473a52766b1908140a19d1
     defaults:
       run:
         shell: bash
@@ -52,7 +66,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ env.PROTOCORE_REPO }}
-          ref: ${{ env.PROTOCORE_REF }}
+          ref: ${{ matrix.protocore_ref }}
           path: protoCore
 
       - name: Dependencies (macOS)
