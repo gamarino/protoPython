@@ -36,8 +36,10 @@ assert finder.path == root, finder.path
 if sys.implementation.name == "protopython":
     # Only source files: no .pyc loader (protoPython cannot run CPython
     # bytecode) and no extension loader (the import statement loads those).
+    # SOURCE_SUFFIXES is ['.py'], plus '.pyw' on Windows.
     suffixes = sorted(suffix for suffix, _ in finder._loaders)
-    assert suffixes == [".py"], suffixes
+    assert suffixes == sorted(importlib.machinery.SOURCE_SUFFIXES), suffixes
+    assert ".pyc" not in suffixes and ".so" not in suffixes, suffixes
 
 # PEP 420: a namespace package whose portions live in two sys.path entries.
 write("left/protopy_ns_probe/alpha.py", "VALUE = 'alpha'\n")
