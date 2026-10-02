@@ -4348,16 +4348,26 @@ static bool super_obj_is_valid(proto::ProtoContext* context,
  *  body "frames" store as an own attribute.  nullptr when the variables live in
  *  fast slots, where framePrototype's computed f_locals would be found. */
 static const proto::ProtoObject* frameNamespaceOf(
-    proto::ProtoContext* context, PythonEnvironment* env, const proto::ProtoObject* frame) {
-    if (!env || !frame) return nullptr;
+    proto::ProtoContext* context, PythonEnvironment* env, const proto::ProtoObject* frame, int depth = 0) {
+    if (!env || !frame || frame == PROTO_NONE || depth > 16) return nullptr;
     const proto::ProtoObject* ns = frame->getAttribute(context, env->getFrameNamespaceString());
     if (ns && ns != PROTO_NONE) return ns;
     ns = frame->getAttribute(context, env->getFLocalsString());
     if (!ns || ns == PROTO_NONE) return nullptr;
-    if (env->getGetSetDescriptorPrototype() && env->getType(context, ns) == env->getGetSetDescriptorPrototype()) {
-        return nullptr;
+    if (!env->getGetSetDescriptorPrototype() || env->getType(context, ns) != env->getGetSetDescriptorPrototype()) {
+        return ns;
     }
-    return ns;
+    // The lookup reached framePrototype's computed f_locals before an f_locals
+    // stored further up (a closure frame's parent class-body namespace, say):
+    // search the other parents for a stored one.
+    if (frame->hasOwnAttribute(context, env->getFLocalsString()) == PROTO_TRUE) return nullptr;
+    const proto::ProtoList* parents = frame->getParents(context);
+    for (proto::proto_ulong i = 0; parents && i < parents->getSize(context); ++i) {
+        const proto::ProtoObject* p = parents->getAt(context, static_cast<int>(i));
+        if (!p || p == env->getFramePrototype()) continue;
+        if (const proto::ProtoObject* found = frameNamespaceOf(context, env, p, depth + 1)) return found;
+    }
+    return nullptr;
 }
 
 static const proto::ProtoObject* py_super_new(
