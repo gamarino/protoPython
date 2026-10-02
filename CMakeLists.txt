@@ -626,6 +626,25 @@ set_tests_properties(protopy_c_main_has_no_file PROPERTIES
     PASS_REGULAR_EXPRESSION "c_main_has_no_file: ok"
     TIMEOUT 120
     LABELS "regression_gate")
+# sys.stdin and input() read standard input as CPython does: protopy runs with
+# its standard input redirected from files (test/regression/cli_stdin.cmake).
+add_test(NAME protopy_cli_stdin
+    COMMAND ${CMAKE_COMMAND} -DPROTOPY=$<TARGET_FILE:protopy>
+            -DWORK=${CMAKE_CURRENT_BINARY_DIR}/cli_stdin_work
+            -P ${CMAKE_SOURCE_DIR}/test/regression/cli_stdin.cmake)
+set_tests_properties(protopy_cli_stdin PROPERTIES
+    PASS_REGULAR_EXPRESSION "cli_stdin: ok"
+    TIMEOUT 180
+    LABELS "regression_gate")
+# sys.path[0] for a script, -m and -c, and -P (test/regression/cli_sys_path.cmake).
+add_test(NAME protopy_cli_sys_path
+    COMMAND ${CMAKE_COMMAND} -DPROTOPY=$<TARGET_FILE:protopy>
+            -DWORK=${CMAKE_CURRENT_BINARY_DIR}/cli_sys_path_work
+            -P ${CMAKE_SOURCE_DIR}/test/regression/cli_sys_path.cmake)
+set_tests_properties(protopy_cli_sys_path PROPERTIES
+    PASS_REGULAR_EXPRESSION "cli_sys_path: ok"
+    TIMEOUT 180
+    LABELS "regression_gate")
 # Objects held only by running frames survive heap-limited collections: every
 # context is chained onto the thread's current one (MemoryManager.hpp). The
 # cross-platform workflow runs it repeatedly.
