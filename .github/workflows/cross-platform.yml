@@ -21,7 +21,8 @@ concurrency:
 
 env:
   PROTOCORE_REPO: numaes/protoCore
-  PROTOCORE_REF: fc5d79db4f89f8a6eb473a52766b1908140a19d1
+  # protoCore 2.9.2 (tag v2.9.2), as ci.yml.
+  PROTOCORE_REF: 01f4c730983c8af233db0616f64e241a7d39df7e
   # As in ci.yml: cases whose verdict is a clock never gate.
   CLOCK_DEPENDENT_TESTS: '^(protopy_dict_key_hash|conformance_isolate\..*|conformance\.isolate\..*)$'
 

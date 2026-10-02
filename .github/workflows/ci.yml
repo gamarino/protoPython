@@ -49,9 +49,11 @@ concurrency:
 
 env:
   PROTOCORE_REPO: numaes/protoCore
-  # protoCore 2.7.0 (tag v2.7.0), SOVERSION 3: the first with proto::proto_long,
-  # which protoPython's sources use.  Bump deliberately.
-  PROTOCORE_REF: ${{ github.event_name == 'schedule' && 'master' || 'fc5d79db4f89f8a6eb473a52766b1908140a19d1' }}
+  # protoCore 2.9.2 (tag v2.9.2), SOVERSION 3: a context anchors its return
+  # value before it is popped, the collector-side half of the heap-limit fix
+  # whose protoPython half chains every context onto the thread's current one.
+  # The CMake floor stays 2.7.0 (proto::proto_long).  Bump deliberately.
+  PROTOCORE_REF: ${{ github.event_name == 'schedule' && 'master' || '01f4c730983c8af233db0616f64e241a7d39df7e' }}
   # The clock-dependent cases in this combined suite.  protoPython's own:
   #   protopy_dict_key_hash          assert elapsed < 20.0 for 20000 dict inserts
   #                                  (test/regression/dict_key_hash.py:124)
