@@ -80,6 +80,13 @@ try:
 except OSError as e:
     print("file_close_on_collect: %s at step %r: errno %r, filename %r"
           % (type(e).__name__, step, e.errno, e.filename))
+    # Locate a failure of the constructor itself.
+    for name, probe in (("gettempdir", tempfile.gettempdir), ("mkdtemp", tempfile.mkdtemp),
+                        ("getcwd", os.getcwd)):
+        try:
+            print("  %s -> %r" % (name, probe()))
+        except OSError as inner:
+            print("  %s raised %s errno %r filename %r" % (name, type(inner).__name__, inner.errno, inner.filename))
     raise
 assert not os.path.exists(td), "TemporaryDirectory left " + td
 
