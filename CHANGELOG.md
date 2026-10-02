@@ -680,6 +680,12 @@ measured on the development machine at the time. Full reports are in
   direct read the same workload runs 6.3 % fewer instructions than before
   that fix, and the pyperformance subset and `attr_lookup` are unchanged.
 
+- Chaining every context onto the thread's current context (`f84ec514`)
+  costs at most 0.82 % instructions on call-heavy benchmarks (fib), with
+  cycle differences of both signs within layout noise; under the 3 %
+  threshold, so it stays as is. Measured with `benchmarks/perf_stat_ab.py`;
+  report: `benchmarks/reports/2026-10-02-context-chain-cost.md`.
+
 ### Repository and documentation
 
 - Build trees, profiler output and debug logs are no longer tracked

@@ -53,8 +53,8 @@ ctest --test-dir build_release --output-on-failure
 ```
 
 On 2026-10-02 this configuration (protoCore built from `../protoCore`, its own
-suite registered too) has 707 tests in CI; against an installed protoCore,
-protoPython's own suite has 182.
+suite registered too) has 709 tests in CI; against an installed protoCore,
+protoPython's own suite has 184.
 
 ### Using an installed protoCore
 
