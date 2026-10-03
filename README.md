@@ -29,7 +29,7 @@ protoPython provides three components:
 
 - **Version:** 1.0.0 (`CMakeLists.txt`, tag `v1.0.0`).
 - **Maturity:** not production ready. The project is open for community review.
-- **Tests:** the CTest suite has 711 tests when it builds protoCore from `../protoCore` (protoPython's own plus protoCore's suite); all 699 gating tests pass in a Release build against protoCore 2.9.4, the version CI pins (CI, 2026-10-02; the 12 clock-dependent cases run in a separate, informational job).
+- **Tests:** the CTest suite has 765 tests when it builds protoCore from `../protoCore` (protoPython's own plus protoCore's suite); all 753 gating tests pass in a Release build against protoCore 2.10.2, the version CI pins (CI run 37108135923, 2026-10-03; the 12 clock-dependent cases run in a separate, informational job).
 - **protopy:** under active conformance work (see below).
 - **protopyc:** experimental, with known limitations. Several correctness bugs in
   generated code were fixed in 2026 (for example, loop-target scoping and thread
