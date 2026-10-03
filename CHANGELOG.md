@@ -69,6 +69,12 @@ onwards. Commit hashes are given for reference.
 
 ### Changed
 
+- **CI builds protoCore 2.10.2** (tag `v2.10.2`, commit `b7f6d82a`) in the
+  Linux job and the macOS and Windows jobs, instead of 2.9.4; the Windows
+  floor job stays on 2.7.0. No source change was needed: the full CTest suite
+  (765 tests, protoCore's suite included) passes locally against 2.10.2 built
+  from `../protoCore`. protoPython does not enable protoCore's adaptive heap.
+
 - **`protopy` with no target runs the program on standard input** when standard
   input is not a terminal (`echo 'print(1)' | protopy`), and starts the REPL
   when it is, as CPython does; it used to print the usage text and exit with
