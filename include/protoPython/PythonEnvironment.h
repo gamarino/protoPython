@@ -576,6 +576,11 @@ public:
     // slow path so the user-defined hook actually intercepts every
     // access, including own-instance attribute lookups.
     static constexpr uint32_t PYFLAG_HAS_CUSTOM_GETATTR    = 1u << 4;
+    // Set when any MRO entry other than object/type owns __setattr__: an
+    // attribute write must dispatch it (OP_STORE_ATTR's fast path and the
+    // attribute write groups decline).  Invalidated with the other dunder
+    // flags when a class gains __setattr__ (STRUCT-247).
+    static constexpr uint32_t PYFLAG_HAS_CUSTOM_SETATTR    = 1u << 5;
     static constexpr uint32_t PYFLAG_COMPUTED              = 1u << 31;
 
     /** Fast read of cached flags; returns 0 when not yet computed. */

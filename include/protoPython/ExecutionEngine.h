@@ -300,6 +300,20 @@ constexpr int OP_INC_FAST_K = 213;
  *  for the jump address.  Loop guard `while a < b: ...`. */
 constexpr int OP_LT_FAST_FAST_JF = 214;
 
+/** Attribute write groups (Compiler::tryCompileAttrGroup).  A run of
+ *  `p.a = x; p.b = y; ...` statements on one parameter, whose values after
+ *  the first cannot run code, compiles to
+ *      <x> LOAD_FAST p STORE_ATTR_GROUP <y> LOAD_FAST p ... STORE_ATTR_GROUP_END
+ *  and is published as ONE new version of `p` (ProtoObject::setAttributes).
+ *  arg = (descriptor constant index << 5) | position in the run; the
+ *  descriptor is the tuple (count, co_names index per write..., slots of the
+ *  parameters the later values read...).  At position 0 the engine decides
+ *  once whether the run applies; when it does, each write keeps its value on
+ *  the stack and the last publishes them all; otherwise every write is
+ *  STORE_ATTR's own. */
+constexpr int OP_STORE_ATTR_GROUP = 215;
+constexpr int OP_STORE_ATTR_GROUP_END = 216;
+
 /**
  * @brief Executes a range of bytecode (one basic block). No per-instruction
  *        scheduler dispatch; runs until pc exits [pcStart, pcEnd] or RETURN_VALUE.

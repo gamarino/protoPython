@@ -24469,6 +24469,7 @@ uint32_t PythonEnvironment::ensureClassFlags(proto::ProtoContext* ctx,
         const proto::ProtoObject* mroAttr = getAttribute(ctx, cls, mroString, false);
         if (mroAttr) mroT = mroAttr->asTuple(ctx);
     }
+    const proto::ProtoString* setattrDunderS = getInternedString(ctx, "__setattr__");
     auto probe = [&](const proto::ProtoObject* base) {
         if (!base || base == PROTO_NONE) return;
         if (slotsString && base->hasOwnAttribute(ctx, slotsString) == PROTO_TRUE) {
@@ -24493,6 +24494,10 @@ uint32_t PythonEnvironment::ensureClassFlags(proto::ProtoContext* ctx,
         if (getattributeDunderString && base != objectPrototype && base != typePrototype
                 && base->hasOwnAttribute(ctx, getattributeDunderString) == PROTO_TRUE) {
             flags |= PYFLAG_HAS_CUSTOM_GETATTR;
+        }
+        if (base != objectPrototype && base != typePrototype
+                && base->hasOwnAttribute(ctx, setattrDunderS) == PROTO_TRUE) {
+            flags |= PYFLAG_HAS_CUSTOM_SETATTR;
         }
     };
     probe(cls);

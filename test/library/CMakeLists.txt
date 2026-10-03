@@ -73,6 +73,15 @@ set_tests_properties(test_compiler PROPERTIES TIMEOUT 60)
 # A finished thread, and a dropped function object, must leave nothing
 # reachable.  Measures marked cells, so it gets its own process: sharing one with
 # tests that allocate would let another test decide its verdict.
+# Attribute write groups: cells per construction and a snapshot reader on
+# another thread, groups on vs off.  Its own executable (it reads the heap).
+add_executable(test_attr_write_groups TestAttrWriteGroups.cpp)
+target_link_libraries(test_attr_write_groups PRIVATE protoPython protoCore gtest_main)
+target_compile_definitions(test_attr_write_groups
+    PRIVATE STDLIB_PATH="${CMAKE_SOURCE_DIR}/lib/python3.14")
+add_test(NAME test_attr_write_groups COMMAND test_attr_write_groups)
+set_tests_properties(test_attr_write_groups PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE)
+
 add_executable(test_thread_state_released TestThreadStateReleased.cpp)
 target_link_libraries(test_thread_state_released
     PRIVATE protoPython protoCore gtest_main)

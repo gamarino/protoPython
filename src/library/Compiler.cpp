@@ -8,6 +8,8 @@
 // transitively through another header; GCC 14 does not, so a Fedora 41 build
 // fails without this include. Named explicitly rather than relied upon.
 #include <algorithm>
+#include <atomic>
+#include <cstdlib>
 #include <iostream>
 
 namespace protoPython {
@@ -162,6 +164,14 @@ static int stackEffect(int op, int arg) {
             return -1;
         case OP_STORE_ATTR:  // pops value + object
             return -2;
+        // Attribute write groups: a write but the last pops the object and
+        // keeps its value; the last pops the object, its value and the
+        // values the run kept (arg & 31 of them).  The engine's per-write
+        // fallback pops less, never more.
+        case OP_STORE_ATTR_GROUP:
+            return -1;
+        case OP_STORE_ATTR_GROUP_END:
+            return -((arg & 31) + 2);
         case OP_STORE_SUBSCR: // pops value + key + container
             return -3;
 
@@ -3788,10 +3798,150 @@ static void collectCapturedNamesImpl(ASTNode* node, const std::unordered_set<std
     }
 }
 
+// ---------------------------------------------------------------------------
+// Attribute write groups
+//
+// Every `p.name = value` on an ordinary instance publishes a new version of
+// `p` into protoCore's mutable table (a new immutable snapshot plus a path
+// copy in the table).  `self.x = x; self.y = y; self.items = []` therefore
+// publishes three versions, and another thread can see the first without the
+// others.  When nothing between the writes can run code, nobody can observe
+// `p` between them, so the run is compiled as the immutable-style program it
+// is equivalent to: compute the values in order, derive the new version from
+// the current one, publish it once (ProtoObject::setAttributes).  Other
+// threads see the whole run or none of it.
+//
+// A run is two to 16 consecutive statements `p.name = value` on the same
+// parameter `p` (in practice `self`).  The first value runs before the run
+// starts, so it may be anything; the later ones must be inert
+// (attrGroupInertValue): they cannot call, read an attribute, look up a
+// global, or raise.  `__class__` and `__dict__` are never grouped.  The engine
+// checks at the run's first write that every write would be a plain instance
+// write (no __setattr__ override, data descriptor or __slots__ on the type
+// chain, not a class or a module) and that the parameters read are bound;
+// otherwise every write is STORE_ATTR's own (ExecutionEngine.cpp, "Attribute
+// write groups").  Which writes of a run survive if the thread is terminated
+// in the middle of it is indeterminate.
+// ---------------------------------------------------------------------------
+
+namespace {
+std::atomic<bool>& attrWriteGroupsFlag() {
+    static std::atomic<bool> flag{[] {
+        const char* v = std::getenv("PROTOPY_ATTR_GROUPS");
+        return !(v && std::string(v) == "off");
+    }()};
+    return flag;
+}
+}  // namespace
+
+void Compiler::setAttrWriteGroups(bool on) { attrWriteGroupsFlag().store(on); }
+bool Compiler::attrWriteGroups() { return attrWriteGroupsFlag().load(); }
+
+bool Compiler::attrGroupParamSlot(const std::string& rawName, int& slot) const {
+    const std::string id = mangleIdentifier(rawName);
+    if (forceMapped_ || nonlocalNames_.count(id) || globalNames_.count(id)) return false;
+    if (!boundParams_.count(id)) return false;
+    auto it = localSlotMap_.find(id);
+    if (it == localSlotMap_.end()) return false;
+    slot = it->second;
+    return true;
+}
+
+bool Compiler::attrGroupStatement(ASTNode* stmt, std::string& receiver,
+                                  std::string& attr) const {
+    auto* a = dynamic_cast<AssignNode*>(stmt);
+    if (!a || a->targets.size() != 1 || !a->value) return false;
+    auto* att = dynamic_cast<AttributeNode*>(a->targets[0].get());
+    if (!att) return false;
+    auto* nm = dynamic_cast<NameNode*>(att->value.get());
+    int slot = 0;
+    if (!nm || !attrGroupParamSlot(nm->id, slot)) return false;
+    attr = mangleIdentifier(att->attr);
+    if (attr == "__class__" || attr == "__dict__") return false;
+    receiver = mangleIdentifier(nm->id);
+    return true;
+}
+
+bool Compiler::attrGroupInertValue(ASTNode* e, std::vector<int>& paramSlots) const {
+    if (!e) return false;
+    if (dynamic_cast<ConstantNode*>(e)) return true;
+    if (auto* nm = dynamic_cast<NameNode*>(e)) {
+        int slot = 0;
+        if (!attrGroupParamSlot(nm->id, slot)) return false;
+        paramSlots.push_back(slot);
+        return true;
+    }
+    if (auto* u = dynamic_cast<UnaryOpNode*>(e)) {
+        auto* c = dynamic_cast<ConstantNode*>(u->operand.get());
+        return c && (u->op == TokenType::Minus || u->op == TokenType::Plus)
+            && (c->constType == ConstantNode::ConstType::Int
+                || c->constType == ConstantNode::ConstType::Float);
+    }
+    if (auto* l = dynamic_cast<ListLiteralNode*>(e)) {
+        for (auto& el : l->elements) if (!attrGroupInertValue(el.get(), paramSlots)) return false;
+        return true;
+    }
+    if (auto* t = dynamic_cast<TupleLiteralNode*>(e)) {
+        for (auto& el : t->elements) if (!attrGroupInertValue(el.get(), paramSlots)) return false;
+        return true;
+    }
+    if (auto* d = dynamic_cast<DictLiteralNode*>(e)) {
+        if (d->keys.size() != d->values.size()) return false;
+        for (size_t k = 0; k < d->keys.size(); ++k) {
+            // A constant key hashes without running code; `**x` has no key.
+            auto* key = dynamic_cast<ConstantNode*>(d->keys[k].get());
+            if (!key || !attrGroupInertValue(d->values[k].get(), paramSlots)) return false;
+        }
+        return true;
+    }
+    return false;
+}
+
+size_t Compiler::tryCompileAttrGroup(SuiteNode* n, size_t i) {
+    if (!attrWriteGroups() || !isFunctionScope_ || isClassBody_ || forceMapped_) return 0;
+    std::string receiver, attr;
+    if (!attrGroupStatement(n->statements[i].get(), receiver, attr)) return 0;
+    std::vector<std::string> attrs{attr};
+    std::vector<int> paramSlots;
+    size_t j = i + 1;
+    while (j < n->statements.size() && j - i < 16) {
+        std::string r, a;
+        if (!attrGroupStatement(n->statements[j].get(), r, a) || r != receiver) break;
+        std::vector<int> slots;
+        if (!attrGroupInertValue(static_cast<AssignNode*>(n->statements[j].get())->value.get(), slots))
+            break;
+        paramSlots.insert(paramSlots.end(), slots.begin(), slots.end());
+        attrs.push_back(a);
+        ++j;
+    }
+    const size_t count = j - i;
+    if (count < 2) return 0;
+    // The run's descriptor, a constant: (count, name index..., parameter slot...).
+    const proto::ProtoList* desc = ctx_->newList()->appendLast(ctx_, ctx_->fromInteger(static_cast<int>(count)));
+    for (const auto& a : attrs) desc = desc->appendLast(ctx_, ctx_->fromInteger(addName(a)));
+    for (int s : paramSlots) desc = desc->appendLast(ctx_, ctx_->fromInteger(s));
+    const int descIdx = addConstant(ctx_->newTupleFromList(desc)->asObject(ctx_));
+    for (size_t k = 0; k < count; ++k) {
+        auto* a = static_cast<AssignNode*>(n->statements[i + k].get());
+        auto* att = static_cast<AttributeNode*>(a->targets[0].get());
+        setLineNumber(a->line);
+        if (!compileNode(a->value.get())) return 0;
+        if (!compileNode(att->value.get())) return 0;
+        setLineNumber(a->line);
+        emit(k + 1 < count ? OP_STORE_ATTR_GROUP : OP_STORE_ATTR_GROUP_END,
+             descIdx * 32 + static_cast<int>(k));
+    }
+    return count;
+}
+
 bool Compiler::compileSuite(SuiteNode* n) {
     if (!n) return false;
     if (n->statements.empty()) return true;
     for (size_t i = 0; i < n->statements.size(); ++i) {
+        if (size_t run = tryCompileAttrGroup(n, i); run > 0) {
+            i += run - 1;
+            continue;
+        }
         // CPython: the first bare string literal of a function body is the
         // docstring. Capture it BEFORE compileNode emits the LOAD_CONST so
         // we can also stamp it onto the resulting code object as `co_doc`
@@ -4281,6 +4431,12 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     // inherit the class name to avoid false super() rewrites.
     if (isClassBody_ || classAnnotationScope_) bodyCompiler.currentClassName_ = currentClassName_;
     bodyCompiler.classAnnotationScope_ = n->isAnnotationScope && isClassBody_;
+    // Parameters are bound at entry: attribute write groups may read them
+    // (tryCompileAttrGroup; the engine still checks they were not deleted).
+    for (const auto& p : params) bodyCompiler.boundParams_.insert(bodyCompiler.mangleIdentifier(p));
+    for (const auto& kw : n->kwonlyargs) bodyCompiler.boundParams_.insert(bodyCompiler.mangleIdentifier(kw));
+    if (!n->vararg.empty()) bodyCompiler.boundParams_.insert(bodyCompiler.mangleIdentifier(n->vararg));
+    if (!n->kwarg.empty()) bodyCompiler.boundParams_.insert(bodyCompiler.mangleIdentifier(n->kwarg));
     bodyCompiler.classCellScope_ = classCell && !ownsClassName;
 
     // CPython qualname rules for nested defs:

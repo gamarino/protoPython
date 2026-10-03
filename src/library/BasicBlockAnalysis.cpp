@@ -15,6 +15,7 @@ static bool opHasArg(int op) {
     return (op == OP_LOAD_CONST || op == OP_LOAD_NAME || op == OP_STORE_NAME ||
             op == OP_LOAD_FAST || op == OP_STORE_FAST ||
             op == OP_CALL_FUNCTION || op == OP_LOAD_ATTR || op == OP_STORE_ATTR ||
+            op == OP_STORE_ATTR_GROUP || op == OP_STORE_ATTR_GROUP_END ||
             op == OP_BUILD_LIST || op == OP_BUILD_MAP || op == OP_BUILD_TUPLE ||
             op == OP_UNPACK_SEQUENCE || op == OP_LOAD_GLOBAL || op == OP_STORE_GLOBAL ||
             op == OP_BUILD_SLICE || op == OP_FOR_ITER || op == OP_POP_JUMP_IF_FALSE ||
