@@ -110,7 +110,7 @@ libraries from the build tree without `LD_LIBRARY_PATH`. See
 #### Windows (MSVC)
 
 protoPython builds and runs natively on Windows with Visual Studio 2022, against
-an installed protoCore (2.7.0 or newer). From an "x64 Native Tools Command Prompt":
+an installed protoCore (2.11.0 or newer). From an "x64 Native Tools Command Prompt":
 
 ```bat
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=<protocore-prefix>
