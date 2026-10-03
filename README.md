@@ -29,7 +29,7 @@ protoPython provides three components:
 
 - **Version:** 1.0.0 (`CMakeLists.txt`, tag `v1.0.0`).
 - **Maturity:** not production ready. The project is open for community review.
-- **Tests:** the CTest suite has 765 tests when it builds protoCore from `../protoCore` (protoPython's own plus protoCore's suite); all 753 gating tests pass in a Release build against protoCore 2.10.2, the version CI pins (CI run 37108135923, 2026-10-03; the 12 clock-dependent cases run in a separate, informational job).
+- **Tests:** the CTest suite has 789 tests when it builds protoCore from `../protoCore` (protoPython's own plus protoCore's suite); all 777 gating tests pass in a Release build against protoCore 2.12.0, the version CI pins (CI run 37144998080, 2026-10-03; the 12 clock-dependent cases run in a separate, informational job).
 - **protopy:** under active conformance work (see below).
 - **protopyc:** experimental, with known limitations. Several correctness bugs in
   generated code were fixed in 2026 (for example, loop-target scoping and thread
@@ -110,7 +110,7 @@ libraries from the build tree without `LD_LIBRARY_PATH`. See
 #### Windows (MSVC)
 
 protoPython builds and runs natively on Windows with Visual Studio 2022, against
-an installed protoCore (2.7.0 or newer). From an "x64 Native Tools Command Prompt":
+an installed protoCore (2.11.0 or newer). From an "x64 Native Tools Command Prompt":
 
 ```bat
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=<protocore-prefix>

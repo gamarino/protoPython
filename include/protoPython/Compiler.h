@@ -31,6 +31,14 @@ public:
      *  classes pass their value to sys.displayhook instead of dropping it. */
     void setInteractive(bool on) { interactive_ = on; }
 
+    /** Attribute write groups (tryCompileAttrGroup): a run of
+     *  `p.a = x; p.b = y` statements published as one new version of `p`.
+     *  On by default; PROTOPY_ATTR_GROUPS=off in the environment turns them
+     *  off, and setAttrWriteGroups changes it for code compiled afterwards
+     *  (the tests compare both paths in one process). */
+    static void setAttrWriteGroups(bool on);
+    static bool attrWriteGroups();
+
     const proto::ProtoTuple* getConstants();
     const proto::ProtoTuple* getNames();
     const proto::ProtoTuple* getBytecode();
@@ -196,6 +204,25 @@ private:
     bool isFunctionScope_ = false;
     bool isAsyncFunction_ = false;  // PC2: tracking for yield-from check (PEP 525)
     bool forceMapped_ = false;
+    /** Mangled names of the function's parameters (positional, keyword-only,
+     *  *args, **kwargs): bound at entry, so a write group may read them. Empty
+     *  outside a `def` body. */
+    std::unordered_set<std::string> boundParams_;
+    /** Attribute write groups. When statements[i] starts a run of two or more
+     *  `p.name = value` statements on the same parameter `p`, where every value
+     *  after the first can neither run code nor raise, emits the run with
+     *  OP_STORE_ATTR_GROUP / OP_STORE_ATTR_GROUP_END and answers the number of
+     *  statements consumed; otherwise emits nothing and answers 0. */
+    size_t tryCompileAttrGroup(SuiteNode* n, size_t i);
+    /** `p.name = value` with a single target, `p` a parameter held in a fast
+     *  slot: the receiver's mangled name and the attribute's mangled name. */
+    bool attrGroupStatement(ASTNode* stmt, std::string& receiver, std::string& attr) const;
+    /** A value a run may compute after its first statement: a constant, a
+     *  negated numeric constant, a parameter (its slot is appended to
+     *  `paramSlots`; the engine checks it is bound), and list, tuple and
+     *  dict displays of such values (dict keys constants). */
+    bool attrGroupInertValue(ASTNode* e, std::vector<int>& paramSlots) const;
+    bool attrGroupParamSlot(const std::string& rawName, int& slot) const;
     /** Captured docstring of the function body, if its first statement is a
      *  bare string literal. compileFunctionDef reads this after compiling
      *  the body to stamp `co_doc` on the resulting code object so

@@ -5,13 +5,12 @@ name: Cross-platform
 # run locally, against an INSTALLED protoCore package -- the supported mode on
 # Windows -- with GoogleTest fetched so the C++ suites run too. protoCore refs,
 # exactly:
-#   * macOS and the first Windows job build protoCore 2.10.2 (tag v2.10.2, commit
-#     b7f6d82a), as ci.yml does on Linux;
-#   * the "floor" Windows job builds protoCore 2.7.0 (tag v2.7.0, commit
-#     fc5d79db), PROTOCORE_MIN_VERSION in CMakeLists.txt, the oldest release
-#     protoPython accepts.  It is the repository's only floor job.  (No macOS
-#     floor job: below 2.8.0 protoCore's threads get 512 KiB stacks there,
-#     ProtoSpace::setThreadStackBytes.)
+#   * macOS and the first Windows job build protoCore 2.12.0 (tag v2.12.0, commit
+#     f969d151), as ci.yml does on Linux;
+#   * the "floor" Windows job builds protoCore 2.11.0 (tag v2.11.0, commit
+#     69b56afe), PROTOCORE_MIN_VERSION in CMakeLists.txt, the oldest release
+#     protoPython accepts (ProtoObject::setAttributes).  It is the repository's
+#     only floor job.
 
 on:
   push:
@@ -42,17 +41,17 @@ jobs:
         include:
           - name: macOS (Apple clang, arm64)
             os: macos-14
-            # protoCore 2.10.2 (tag v2.10.2)
-            protocore_ref: b7f6d82a3960cb74e070e053aa644ec2f79c7fc2
+            # protoCore 2.12.0 (tag v2.12.0)
+            protocore_ref: f969d151408e753786acffa581a9c8cfe0aa7dfa
           - name: Windows (MSVC, x64)
             os: windows-2022
-            # protoCore 2.10.2 (tag v2.10.2)
-            protocore_ref: b7f6d82a3960cb74e070e053aa644ec2f79c7fc2
-          - name: Windows (MSVC, x64), protoCore 2.7.0 floor
+            # protoCore 2.12.0 (tag v2.12.0)
+            protocore_ref: f969d151408e753786acffa581a9c8cfe0aa7dfa
+          - name: Windows (MSVC, x64), protoCore 2.11.0 floor
             os: windows-2022
-            # THE FLOOR JOB, the only one: protoCore 2.7.0 (tag v2.7.0),
+            # THE FLOOR JOB, the only one: protoCore 2.11.0 (tag v2.11.0),
             # PROTOCORE_MIN_VERSION in CMakeLists.txt
-            protocore_ref: fc5d79db4f89f8a6eb473a52766b1908140a19d1
+            protocore_ref: 69b56afeee00d843d74f8e67d3add317bc1ce5d3
     defaults:
       run:
         shell: bash

@@ -83,6 +83,8 @@ static bool opcodeHasArg(int op) {
         case OP_JUMP_FORWARD:
         case OP_LOAD_ATTR:
         case OP_STORE_ATTR:
+        case OP_STORE_ATTR_GROUP:
+        case OP_STORE_ATTR_GROUP_END:
         case OP_BUILD_LIST:
         case OP_BUILD_MAP:
         case OP_BUILD_TUPLE:
@@ -128,6 +130,106 @@ static bool opcodeHasArg(int op) {
 }
 
 
+
+// Does the type chain of an instance whose type is `directType` (class flags
+// `typeFlags`, from ensureClassFlags) intercept the assignment
+// `obj.<nameS> = value`, so that OP_STORE_ATTR's direct write would be wrong?
+// It does when
+//   * `directType` owns an attribute named `nameS` (the slow path decides what
+//     it is, as it always did);
+//   * a class on the chain defines `__setattr__` (PYFLAG_HAS_CUSTOM_SETATTR);
+//   * a class on the chain holds a data descriptor named `nameS` (an object
+//     whose own chain answers `__set__` or `__delete__`: property, a
+//     descriptor instance, a member of `__slots__`).
+// The descriptor is found by protoCore's own parent-chain walk
+// (hasAttribute / getAttribute, served by the per-thread attribute cache):
+// the chain of a Python class is its MRO.
+static bool typeChainInterceptsStore(proto::ProtoContext* ctx, PythonEnvironment* env,
+                                     const proto::ProtoObject* directType, uint32_t typeFlags,
+                                     const proto::ProtoString* nameS) {
+    if (typeFlags & PythonEnvironment::PYFLAG_HAS_CUSTOM_SETATTR) return true;
+    if (directType->hasOwnAttribute(ctx, nameS) == PROTO_TRUE) return true;
+    if (directType->hasAttribute(ctx, nameS) == PROTO_TRUE) {
+        const proto::ProtoObject* d = directType->getAttribute(ctx, nameS);
+        // Only an object cell can be a descriptor; a class stored as a class
+        // attribute is not one, whatever methods it defines.
+        if (d && d != PROTO_NONE && (reinterpret_cast<uintptr_t>(d) & 0x3F) == 0
+                && !env->isActuallyAClass(ctx, d)) {
+            const proto::ProtoString* setS = env->getSetDunderString();
+            static const proto::ProtoString* const delS =  // interned: perennial
+                PythonEnvironment::getInternedString(ctx, "__delete__");
+            if ((setS && d->hasAttribute(ctx, setS) == PROTO_TRUE)
+                    || d->hasAttribute(ctx, delS) == PROTO_TRUE)
+                return true;
+        }
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// Attribute write groups
+//
+// Compiler::tryCompileAttrGroup turns a run `p.a = x; p.b = y; ...` whose
+// values after the first cannot run code or raise into OP_STORE_ATTR_GROUP
+// ... OP_STORE_ATTR_GROUP_END.  At the run's first write the engine checks,
+// once, that every write of the run would be OP_STORE_ATTR's plain instance
+// write (attrGroupApplies).  When it is, each write keeps its value on the
+// operand stack and the last one publishes the whole run as one new version
+// of `p` (ProtoObject::setAttributes): one snapshot and one publication
+// instead of one per name, atomic to other threads.  Otherwise every write of
+// the run is OP_STORE_ATTR's own, unchanged.
+//
+// Equivalence with the per-write path rests on: (1) between the check and
+// the publication nothing runs that could observe `p` -- the later values are
+// constants, bound parameters and displays of them, and the bytecode loop
+// delivers no Python signal handler while a run is pending (CPython checks for
+// signals only at calls and backward jumps, never between two stores either);
+// (2) no write can have an effect beyond storing its value -- no
+// `__setattr__` override, data descriptor or `__slots__` on the type chain,
+// and the receiver is neither a class nor a module; (3) nothing in the run
+// can raise.  A write by another thread between the check and the
+// publication is ordered before or after the whole run, as it could be
+// ordered around a single write.  Which writes of a run survive if the thread
+// is terminated in the middle of it is indeterminate.
+// ---------------------------------------------------------------------------
+static bool attrGroupApplies(proto::ProtoContext* ctx, PythonEnvironment* env,
+                             const proto::ProtoObject* obj, const proto::ProtoTuple* names,
+                             const proto::ProtoTuple* desc) {
+    if (!env || !names || !desc || !obj || obj == PROTO_NONE) return false;
+    // An object cell: not a tagged value (SmallInteger, string, ...).
+    if ((reinterpret_cast<uintptr_t>(obj) & 0x3F) != 0) return false;
+    if (obj->isString(ctx) || obj->isInteger(ctx) || obj->isBoolean(ctx) || obj->isFloat(ctx))
+        return false;
+    const proto::ProtoObject* directType = obj->getFirstParent(ctx);
+    if (!directType || directType == PROTO_NONE || directType == env->getTypePrototype())
+        return false;
+    if (directType == env->getModulePrototype() || obj == env->getBuiltinsModule()) return false;
+    if (env->isActuallyAClass(ctx, obj)) return false;
+    const uint32_t typeFlags = env->ensureClassFlags(ctx, directType);
+    if (typeFlags & PythonEnvironment::PYFLAG_HAS_SLOTS) return false;
+    const proto::proto_ulong descSize = desc->getSize(ctx);
+    if (descSize < 1) return false;
+    const proto::proto_ulong n = static_cast<proto::proto_ulong>(desc->getAt(ctx, 0)->asLong(ctx));
+    if (n < 2 || n > 16 || descSize < 1 + n) return false;
+    for (proto::proto_ulong k = 0; k < n; ++k) {
+        const proto::proto_long idx = desc->getAt(ctx, static_cast<int>(1 + k))->asLong(ctx);
+        if (idx < 0 || static_cast<proto::proto_ulong>(idx) >= names->getSize(ctx)) return false;
+        const proto::ProtoObject* nameObj = names->getAt(ctx, static_cast<int>(idx));
+        if (!proto::ProtoObject::isStringTagFast(nameObj)) return false;
+        if (typeChainInterceptsStore(ctx, env, directType, typeFlags, nameObj->asString(ctx)))
+            return false;
+    }
+    // The parameters the later values read: `del p` leaves the unbound
+    // sentinel, and reading it raises UnboundLocalError.
+    const proto::ProtoObject* unbound = env->getUnboundSentinel();
+    const unsigned int nSlots = ctx->getAutomaticLocalsCount();
+    for (proto::proto_ulong k = 1 + n; k < descSize; ++k) {
+        const proto::proto_long slot = desc->getAt(ctx, static_cast<int>(k))->asLong(ctx);
+        if (slot < 0 || static_cast<unsigned int>(slot) >= nSlots) return false;
+        if (unbound && ctx->getAutomaticLocal(static_cast<unsigned int>(slot)) == unbound) return false;
+    }
+    return true;
+}
 
 RecursionScope::RecursionScope(PythonEnvironment* env, proto::ProtoContext* ctx) : env_(env), ctx_(ctx) {
     if (!env_) return;
@@ -4178,6 +4280,9 @@ const proto::ProtoObject* executeBytecodeRange(
     // parked.  Polling every 256 opcodes keeps the fast path branch-only
     // while bounding pause-acquisition latency to a few µs.
     unsigned int sp_ctr = 0;
+    // Attribute write group in progress (see "Attribute write groups"):
+    // 0 none, 1 grouped (values held on the stack), 2 written per write.
+    int attrGroupState = 0;
     // Slot index of the instruction executed last: the one that raised when
     // an exception is found pending at the top of the loop.
     proto::proto_ulong lastPc = pcStart;
@@ -4192,7 +4297,9 @@ const proto::ProtoObject* executeBytecodeRange(
             // a known-good state. The branch is a single volatile
             // load when nothing is pending — measured cost is < 0.1%
             // on bench_pidigits.
-            if (signal_module::hasPendingSignal()) {
+            // Not while an attribute write group holds unpublished writes:
+            // the handler could observe the receiver between them.
+            if (attrGroupState != 1 && signal_module::hasPendingSignal()) {
                 signal_module::checkAndDeliverPendingSignals(ctx, env);
                 if (env && env->hasPendingException()) {
                     // The handler raised (e.g. KeyboardInterrupt). Let
@@ -7155,7 +7262,60 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             }
         } break;
+        case OP_STORE_ATTR_GROUP:
+        case OP_STORE_ATTR_GROUP_END: {
+            // A write of an attribute write group (see "Attribute write
+            // groups" above).  arg = (descriptor constant << 5) | position.
+            const int pos = arg & 31;
+            const int descIdx = arg >> 5;
+            const proto::ProtoTuple* desc = nullptr;
+            if (constants && static_cast<proto::proto_ulong>(descIdx) < constants->getSize(ctx)) {
+                const proto::ProtoObject* d = constants->getAt(ctx, descIdx);
+                desc = d ? d->asTuple(ctx) : nullptr;
+            }
+            if (!desc || stack.size() < 2) { attrGroupState = 0; i = next_i; continue; }
+            if (pos == 0)
+                attrGroupState = attrGroupApplies(ctx, env, stack.back(), names, desc) ? 1 : 2;
+            const int n = static_cast<int>(desc->getAt(ctx, 0)->asLong(ctx));
+            const int nameIdx = static_cast<int>(desc->getAt(ctx, 1 + pos)->asLong(ctx));
+            if (attrGroupState == 1 && op == OP_STORE_ATTR_GROUP) {
+                stack.pop_back();  // the receiver; the value stays for the last write
+                break;
+            }
+            if (attrGroupState == 1 && stack.size() >= static_cast<size_t>(n) + 1) {
+                // [v0 .. v(n-1), obj]: publish the run as one version.
+                attrGroupState = 0;
+                const proto::ProtoObject* oldObj = stack.back();
+                const proto::ProtoString* groupNames[16];
+                const proto::ProtoObject* groupValues[16];
+                for (int k = 0; k < n; ++k) {
+                    const int idx = static_cast<int>(desc->getAt(ctx, 1 + k)->asLong(ctx));
+                    groupNames[k] = names->getAt(ctx, idx)->asString(ctx);
+                    // Values stay rooted on the operand stack until popped below.
+                    groupValues[k] = stack[stack.top - 1 - n + k];
+                }
+                const proto::ProtoObject* newObj =
+                    oldObj->setAttributes(ctx, static_cast<unsigned>(n), groupNames, groupValues);
+                if (newObj && newObj != oldObj) {
+                    syncModuleIdentity(ctx, env, oldObj, newObj);
+                    const proto::ProtoObject** slots = ctx->getAutomaticLocals();
+                    if (slots) {
+                        unsigned int nSlots = ctx->getAutomaticLocalsCount();
+                        for (unsigned int s = 0; s < nSlots; ++s) {
+                            if (slots[s] == oldObj) slots[s] = newObj;
+                        }
+                    }
+                }
+                for (int k = 0; k <= n; ++k) stack.pop_back();
+                break;
+            }
+            // Per write: exactly OP_STORE_ATTR.
+            if (op == OP_STORE_ATTR_GROUP_END) attrGroupState = 0;
+            arg = nameIdx << 1;
+            goto store_attr_body;
+        }
         case OP_STORE_ATTR: {
+        store_attr_body:
             int nameIdx = arg >> 1;
             if (names && stack.size() >= 2 && static_cast<proto::proto_ulong>(nameIdx) < names->getSize(ctx)) {
                 const proto::ProtoObject* obj = stack.back();
@@ -7246,18 +7406,16 @@ const proto::ProtoObject* executeBytecodeRange(
                             // the per-name fallback.  Bail to slow
                             // path on a hit; the slow path then
                             // dispatches __set__ correctly.
-                            bool noDescr = directType->hasOwnAttribute(ctx, nameS) != PROTO_TRUE;
-                            // Bail to slow path when the type defines an
-                            // own __setattr__ override (CPython's data
-                            // descriptor for "__setattr__ has been
-                            // overridden").  env->setAttribute then
-                            // dispatches the user's hook with
-                            // (obj, name, value).
-                            const proto::ProtoString* setattrS =
-                                protoPython::PythonEnvironment::getInternedString(ctx, "__setattr__");
-                            bool hasSetattrOverride =
-                                directType->hasOwnAttribute(ctx, setattrS) == PROTO_TRUE;
-                            if (noSlots && noDescr && !hasSetattrOverride) {
+                            //
+                            // The same holds for a `__setattr__` override
+                            // and for a data descriptor INHERITED from a
+                            // base class: the type's own attributes are not
+                            // enough, so the whole chain is consulted
+                            // (typeChainInterceptsStore).  env->setAttribute
+                            // then dispatches the hook or the descriptor.
+                            const bool intercepted =
+                                typeChainInterceptsStore(ctx, env, directType, flags, nameS);
+                            if (noSlots && !intercepted) {
                                 newObj = const_cast<proto::ProtoObject*>(obj)->setAttribute(ctx, nameS, val);
                                 fastStoreTaken = true;
                                 // A module attribute is a global of that module

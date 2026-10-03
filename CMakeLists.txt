@@ -86,14 +86,16 @@ set(PROTOPYTHON_STDLIB_INSTALL_PARENT "${CMAKE_INSTALL_LIBDIR}/protoPython")
 #      ../protoCore with add_subdirectory(). Used only when no installed package
 #      was found and no prefix was named; refused by -DPROTOCORE_REQUIRE_PACKAGE=ON.
 #
-# The version floor is 2.7: protoPython spells protoCore's 64-bit integers
+# The version floor is 2.11: attribute write groups publish a run of writes to
+# one object with ProtoObject::setAttributes, which protoCore first provides in
+# 2.11.0. Before that the floor was 2.7: protoPython spells protoCore's 64-bit integers
 # proto::proto_long / proto::proto_ulong (and PROTO_L / PROTO_UL), which first
 # exist in protoCore 2.7.0; they are long / unsigned long on Linux and macOS and
 # long long on Windows. (Before that the floor was 2.0: no other protoCore API
 # newer than 2.0.0 is used.) The ceiling is the next major, because protoCore's
 # major version and its soname move together; the SOVERSION is asserted below.
-set(PROTOCORE_MIN_VERSION      "2.7")
-set(PROTOCORE_MIN_VERSION_FULL "2.7.0")
+set(PROTOCORE_MIN_VERSION      "2.11")
+set(PROTOCORE_MIN_VERSION_FULL "2.11.0")
 set(PROTOCORE_NEXT_MAJOR       "3.0.0")
 set(PROTOCORE_ABI_SOVERSION    "3")
 option(PROTOCORE_REQUIRE_PACKAGE
@@ -173,6 +175,17 @@ else()
             "SOVERSION ${PROTOCORE_ABI_SOVERSION}.")
     endif()
     unset(_protoCore_sibling_soversion)
+    # The sibling tree's version is not visible here; probe for the newest API
+    # the sources use instead (ProtoObject::setAttributes, protoCore 2.11.0).
+    file(STRINGS "${PROTOCORE_DIR}/headers/protoCore.h" _protoCore_setAttributes
+         REGEX "setAttributes\\(")
+    if(NOT _protoCore_setAttributes)
+        message(FATAL_ERROR
+            "The sibling protoCore at ${PROTOCORE_DIR} predates "
+            "ProtoObject::setAttributes (protoCore 2.11.0); protoPython needs "
+            "protoCore ${PROTOCORE_MIN_VERSION_FULL} or later.")
+    endif()
+    unset(_protoCore_setAttributes)
     get_filename_component(PROTOPYTHON_PROTOCORE_INCLUDE_DIR
         "${PROTOCORE_DIR}/headers" ABSOLUTE)
     set(PROTOPYTHON_PROTOCORE_EXTERNAL FALSE)
@@ -375,6 +388,26 @@ set_tests_properties(protopy_dict_mutation_threads PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# obj.name = value honours a __setattr__ override and a data descriptor that
+# the object's class inherits, not only the ones the class defines itself.
+add_test(NAME protopy_store_attr_inherited_hooks
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/store_attr_inherited_hooks.py)
+set_tests_properties(protopy_store_attr_inherited_hooks PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
+# A run of attribute writes is published as one version; the program's
+# meaning is the same with the groups on and off.
+add_test(NAME protopy_attr_write_groups
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/attr_write_groups.py)
+add_test(NAME protopy_attr_write_groups_off
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/attr_write_groups.py)
+set_tests_properties(protopy_attr_write_groups protopy_attr_write_groups_off PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
+set_tests_properties(protopy_attr_write_groups_off PROPERTIES
+    ENVIRONMENT "PROTOPY_ATTR_GROUPS=off")
 # dict keys are found through the key hash alone; inserting keys is linear.
 add_test(NAME protopy_dict_key_hash
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/dict_key_hash.py)

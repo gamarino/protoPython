@@ -2,7 +2,7 @@
 
 This is the reference for every opcode defined in
 [`include/protoPython/ExecutionEngine.h`](../include/protoPython/ExecutionEngine.h):
-114 opcodes with codes from 100 to 214. Code 167 is not used.
+116 opcodes with codes from 100 to 216. Code 167 is not used.
 
 ## Instruction format
 
@@ -24,6 +24,28 @@ fused opcodes 212-214. Each packs two operand indices, each at most 255, into th
 argument. The other six slots of the replaced window are filled with `NOP`, so the
 offsets of later instructions and all jump targets are unchanged. Setting the
 environment variable `PROTOPY_NO_PEEPHOLE=1` disables the pass.
+
+## Attribute write groups
+
+`Compiler::tryCompileAttrGroup` compiles a run of two to 16 statements
+`p.name = value` on the same parameter `p` (in practice `self`), whose values after
+the first are constants, negated numeric constants, parameters, or list, tuple and
+dict displays of them, to `OP_STORE_ATTR_GROUP` ... `OP_STORE_ATTR_GROUP_END`
+(215, 216) instead of `OP_STORE_ATTR`. The argument is `(d << 5) | position`, where
+`co_consts[d]` is the run's descriptor `(count, co_names index per write...,
+parameter slot...)`. At the first write the engine checks once that every write
+would be `OP_STORE_ATTR`'s plain instance write: the receiver is an ordinary
+instance (not a class, a module or a tagged value), its type has no `__slots__` and
+owns no attribute of a written name, and no class on its type chain defines
+`__setattr__` or holds a data descriptor of a written name; and the parameters the
+run reads are bound. Then each
+write leaves its value on the stack and `OP_STORE_ATTR_GROUP_END` publishes them
+with one `ProtoObject::setAttributes` (protoCore 2.11.0): one new version of the
+object, which another thread sees whole or not at all. Otherwise every write is
+`OP_STORE_ATTR`'s own. While a run holds unpublished writes the loop does not run
+Python signal handlers (CPython runs them only at calls and backward jumps).
+`PROTOPY_ATTR_GROUPS=off` turns runs off. If a thread is terminated in the middle
+of a run, which of its writes survive is indeterminate.
 
 ## Opcode table
 
@@ -146,6 +168,8 @@ environment variable `PROTOPY_NO_PEEPHOLE=1` disables the pass.
 | 212 | `OP_ACC_FAST_FAST` | Fused `LOAD_FAST a; LOAD_FAST b; INPLACE_ADD; STORE_FAST a`; `arg` is `(a << 8) \| b`. |
 | 213 | `OP_INC_FAST_K` | Fused `LOAD_FAST i; LOAD_CONST k; INPLACE_ADD; STORE_FAST i` for a small-integer constant `k`; `arg` is `(i << 8) \| k`. |
 | 214 | `OP_LT_FAST_FAST_JF` | Fused `LOAD_FAST a; LOAD_FAST b; COMPARE_OP <; POP_JUMP_IF_FALSE target`; `arg` is `(a << 8) \| b`, and the jump target stays in the argument slot of the last replaced instruction. |
+| 215 | `OP_STORE_ATTR_GROUP` | A write of an attribute write group, not its last: with the run grouped, pop the object and keep the value; otherwise `OP_STORE_ATTR`. `arg` is `(descriptor << 5) \| position`. |
+| 216 | `OP_STORE_ATTR_GROUP_END` | The last write of a group: with the run grouped, pop the object and the run's values and publish them as one version (`setAttributes`); otherwise `OP_STORE_ATTR`. |
 
 ## Tests
 

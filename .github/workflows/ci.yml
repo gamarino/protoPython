@@ -49,13 +49,12 @@ concurrency:
 
 env:
   PROTOCORE_REPO: numaes/protoCore
-  # protoCore 2.10.2 (tag v2.10.2, commit b7f6d82a), SOVERSION 3: the latest
-  # release; its suite runs clean under ThreadSanitizer, with
-  # conformance::releaseFlagRaised(). The adaptive heap it ships is NOT enabled.
-  # The minimum CMakeLists.txt declares (PROTOCORE_MIN_VERSION, 2.7.0) is
+  # protoCore 2.12.0 (tag v2.12.0, commit f969d151), SOVERSION 3: the latest
+  # release. The adaptive heap it ships is NOT enabled.
+  # The minimum CMakeLists.txt declares (PROTOCORE_MIN_VERSION, 2.11.0) is
   # tested by one job only, the floor job in cross-platform.yml (Windows).
   # Bump this deliberately.
-  PROTOCORE_REF: ${{ github.event_name == 'schedule' && 'master' || 'b7f6d82a3960cb74e070e053aa644ec2f79c7fc2' }}
+  PROTOCORE_REF: ${{ github.event_name == 'schedule' && 'master' || 'f969d151408e753786acffa581a9c8cfe0aa7dfa' }}
   # The clock-dependent cases in this combined suite.  protoPython's own:
   #   protopy_dict_key_hash          assert elapsed < 20.0 for 20000 dict inserts
   #                                  (test/regression/dict_key_hash.py:124)

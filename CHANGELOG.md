@@ -19,6 +19,45 @@ onwards. Commit hashes are given for reference.
 
 ### Added
 
+- **Attribute write groups: a run of `self.a = ...; self.b = ...` is published
+  as one version of the object.** Each attribute write on an ordinary instance
+  publishes a new version into protoCore's mutable table (a new snapshot plus
+  a path copy in the table). The compiler now turns a run of two to 16
+  statements `p.name = value` on the same parameter `p` whose values after
+  the first are constants, negated numeric constants, parameters, or list,
+  tuple and dict displays of them (`Compiler::tryCompileAttrGroup`) into
+  `OP_STORE_ATTR_GROUP` ... `OP_STORE_ATTR_GROUP_END` (215, 216); the engine
+  publishes the run once with `ProtoObject::setAttributes` (protoCore 2.11.0).
+  The program's meaning does not change; another thread sees the whole run or
+  none of it. A call, an attribute read, a global, arithmetic or any other
+  expression ends a run, and `__class__` / `__dict__` are never grouped.
+  - *Guards* (once, at the run's first write): the receiver is an ordinary
+    instance (not a class, a module or a tagged value), its type has no
+    `__slots__` and owns no attribute of a written name, no class on the chain
+    defines `__setattr__` or holds a data descriptor of a written name, and the
+    parameters the run reads are bound (`del p` leaves them unbound).
+    Otherwise every write is `OP_STORE_ATTR`'s own. While a run holds
+    unpublished writes the loop delivers no Python signal handler (CPython
+    runs them only at calls and backward jumps). If a thread is terminated in
+    the middle of a run, which of its writes survive is indeterminate.
+    `PROTOPY_ATTR_GROUPS=off` turns runs off. protopyc-compiled modules are
+    not affected (they do not use this bytecode).
+  - *Measured* (a five-attribute `__init__`, 50,000 constructions, no
+    collection during the measurement; Release, protoCore 2.12.0): 119 to 142
+    cells per construction per write, 83 to 89 grouped. A protoCore thread
+    taking snapshots of an object while `self.a = k; self.b = k; self.c = k`
+    runs 100,000 times saw 11.8 million torn snapshots of 19.9 million per
+    write and none of 9.8 million grouped. In `lib/python3.14`, 4,893 of the
+    20,773 attribute-assignment statements fall in 1,630 such runs (an AST
+    count with the compiler's rules).
+  - *Tests*: `protopy_attr_write_groups` and `protopy_attr_write_groups_off`
+    run `test/regression/attr_write_groups.py` (every value is CPython's) with
+    the groups on and off: own and inherited `__setattr__` (one observing the
+    earlier writes), own and inherited properties and descriptors,
+    `__slots__`, class and module receivers, a deleted parameter; with the
+    guard removed it fails. `test_attr_write_groups` measures the cells and
+    the snapshot reader.
+
 - **Windows (MSVC):** protopy builds, passes its test suite (see
   `docs/INSTALLATION.md` for the current count) and
   runs scripts, `-c` programs and the REPL natively on Windows 11 with Visual
@@ -68,6 +107,12 @@ onwards. Commit hashes are given for reference.
   (`5cf365ce`).
 
 ### Changed
+
+- **protoCore 2.11.0 is required** (was 2.7.0): attribute write groups use
+  `ProtoObject::setAttributes`. A sibling `../protoCore` without it is refused
+  at configure time. CI builds protoCore 2.12.0 (tag `v2.12.0`, `f969d151`) on
+  Linux, macOS and Windows, and the 2.11.0 floor (`69b56afe`) in the Windows
+  floor job. protoPython does not enable protoCore's adaptive heap.
 
 - **CI builds protoCore 2.10.2** (tag `v2.10.2`, commit `b7f6d82a`) in the
   Linux job and the macOS and Windows jobs, instead of 2.9.4; the Windows
@@ -134,6 +179,16 @@ onwards. Commit hashes are given for reference.
   are marked as reserved: never emitted and not handled.
 
 ### Fixed
+
+- **`obj.name = value` bypassed a `__setattr__` or a data descriptor inherited
+  from a base class.** `OP_STORE_ATTR`'s fast path wrote the attribute
+  directly unless the instance's own class owned `__setattr__` or an attribute
+  of that name, so `class B(A)` with `A.__setattr__`, or a property defined on
+  `A`, was ignored for instances of `B` (CPython calls them). The fast path
+  now asks protoCore's parent-chain lookup (one `getAttribute` /
+  `hasAttribute` walk, served by the attribute cache) whether a class on the
+  chain defines `__setattr__` or holds a data descriptor of that name
+  (`typeChainInterceptsStore`). Test: `protopy_store_attr_inherited_hooks`.
 
 - **`io.StringIO` counted UTF-8 bytes.** `read(n)` returned `n` bytes, splitting
   multi-byte characters, and `tell()`/`seek()` were byte offsets. Positions are
