@@ -108,6 +108,15 @@ onwards. Commit hashes are given for reference.
 
 ### Changed
 
+- **CI builds protoCore 2.14.1** (tag `v2.14.1`, commit `94951559`) in the
+  Linux job and the macOS and Windows jobs, instead of 2.12.0: the
+  collector's control law (2.13.0), the sweep's helper threads (2.14.0) and
+  the thread-exit quorum fix (2.14.1). The Windows floor job stays on 2.11.0.
+  No source change was needed: the full CTest suite (823 tests, protoCore's
+  2.14.1 suite included) passes locally against 2.14.1 built from
+  `../protoCore` (ldd-verified). protoPython does not enable protoCore's
+  adaptive heap.
+
 - **protoCore 2.11.0 is required** (was 2.7.0): attribute write groups use
   `ProtoObject::setAttributes`. A sibling `../protoCore` without it is refused
   at configure time. CI builds protoCore 2.12.0 (tag `v2.12.0`, `f969d151`) on
