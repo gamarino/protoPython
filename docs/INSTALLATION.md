@@ -52,8 +52,8 @@ build is needed.
 ctest --test-dir build_release --output-on-failure
 ```
 
-On 2026-10-03 this configuration (protoCore 2.12.0 built from `../protoCore`, its
-own suite registered too) has 789 tests in CI; against an installed protoCore,
+On 2026-10-04 this configuration (protoCore 2.14.1 built from `../protoCore`, its
+own suite registered too) has 823 tests in CI; against an installed protoCore,
 protoPython's own suite has 189 on macOS and 186 on Windows.
 
 ### Using an installed protoCore
@@ -313,11 +313,11 @@ through CMake's `InstallRequiredSystemLibraries`, so the unpacked `protopy.exe`
 runs without protoCore or the Visual C++ Redistributable installed. `cmake
 --install` copies the same DLLs into `<prefix>/bin`.
 
-In CI on 2026-10-03 (branch `feature/write-groups`, runs 37144998080 and
-37144999555), with protoCore 2.12.0 at `f969d151`, the ref every push and
+In CI on 2026-10-04 (branch `ci/protocore-2.14.1`, runs 37169398524 and
+37169400081), with protoCore 2.14.1 at `94951559`, the ref every push and
 pull-request job pins, the 182 gating tests of the 186 registered pass on Windows
 (MSVC, `windows-2022`), the 185 of 189 on macOS (Apple clang, `macos-14`), and the
-777 of 789 of the Linux job, which also registers protoCore's own suite; the same
+811 of 823 of the Linux job, which also registers protoCore's own suite; the same
 Windows run built the ZIP and the NSIS installer and ran the unpacked
 `protopy.exe` with only the system directories on `PATH`. A second Windows job
 builds protoCore 2.11.0 (`69b56afe`), the minimum `CMakeLists.txt` accepts, and
