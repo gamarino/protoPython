@@ -385,6 +385,14 @@ set_tests_properties(protopy_frame_survives_collection PROPERTIES
     ENVIRONMENT "PROTOCORE_GC_CONTEXT_THRESHOLD=200;PROTOCORE_HEAP_LIMIT_CELLS=1500000"
     TIMEOUT 300
     LABELS "regression_gate")
+# A call's f_back is its caller's frame, also after the caller called something
+# else (the callee's frame used to stay current after it returned).
+add_test(NAME protopy_frame_f_back_after_return
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/frame_f_back_after_return.py)
+set_tests_properties(protopy_frame_f_back_after_return PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
 # set mutators called from parallel threads must not lose or duplicate items.
 add_test(NAME protopy_set_mutation_threads
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/set_mutation_threads.py)
