@@ -17,6 +17,18 @@ onwards. Commit hashes are given for reference.
 > (`9fa74ad1`), after the `v1.0.0` tag, and has no matching tag or CMake
 > version.
 
+### Changed — CI on protoCore 2.14.5 (2026-10-11)
+
+- **CI builds protoCore 2.14.5** (tag `v2.14.5`, commit `063c6d55`) on Linux,
+  macOS and the first Windows job instead of 2.14.3: the controller's
+  out-of-memory rule uses the live set, the collector's registries outlive
+  static destruction and protoCore's clock-dependent cases skip themselves in
+  this add_subdirectory configuration (2.14.4); an embedder exits
+  LeakSanitizer-clean (2.14.5). The Windows floor job stays on 2.11.0. No
+  source change was needed: 857/857 locally in Release, and under
+  AddressSanitizer with leak detection on, no report (855/857; the two
+  memory-measuring tests need `quarantine_size_mb=1`).
+
 ### Added
 
 - **Attribute write groups: a run of `self.a = ...; self.b = ...` is published

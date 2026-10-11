@@ -52,8 +52,8 @@ build is needed.
 ctest --test-dir build_release --output-on-failure
 ```
 
-On 2026-10-11 this configuration (protoCore 2.14.3 built from `../protoCore`, its
-own suite registered too) has 842 tests in CI; against an installed protoCore,
+On 2026-10-11 this configuration (protoCore 2.14.5 built from `../protoCore`, its
+own suite registered too) has 857 tests; against an installed protoCore,
 protoPython's own suite has 195 on macOS and 192 on Windows.
 
 ### Using an installed protoCore
