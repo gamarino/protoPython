@@ -158,19 +158,29 @@ onwards. Commit hashes are given for reference.
     - Chains of class instances: bounded, not a leak. Acyclic chains of
       mutables drain one level per cycle, so 50-deep chains rise to about
       1.9 M cells within 30 cycles and stay there for the next 400.
-  - Measured (DEV12 notebook, synthetic; before and after builds of the same
-    tree against protoCore 2.14.2; medians of 3, interleaved; wall s / peak
-    RSS MB): `list_append_loop` 0.55 / 393 -> 0.39 / 146; `binary_trees` (9)
-    3.78 / 1645 -> 3.65 / 553; `sieve` (50000) 1.29 / 951 -> 1.02 / 245;
-    `fannkuch` 6.08 / 3271 -> 3.96 / 136; `mandelbrot` 6.02 / 2071 ->
-    4.79 / 136; `adaptive_heap_garbage.py` 20000 rounds 6.80 / 5432 ->
-    8.96 / 209 (**+32 % wall**, the one regression above 10 %: a loop that
-    keeps nothing and that the old default never collected now pays for
-    about 80 cycles); `int_sum_loop`, `str_concat_loop`, `range_iterate`,
-    `attr_lookup`, `call_recursion`, `fib`, `nqueens` and `richards_lite`
-    run no cycle and are within -2 to +6 % (run-to-run noise). Tuples are
-    interned and never collected, as documented. The test uses the flat
-    shape.
+  - Measured on 2026-10-11 (DEV12 notebook, synthetic). Builds: main with the
+    GC fixes ("before", no controller) and this branch ("after"), both against
+    protoCore 2.14.3. Medians of 3, interleaved, every run's output verified;
+    wall s / peak RSS MB:
+    - `list_append_loop` 0.53 / 394 -> 0.40 / 147
+    - `binary_trees` (9) 3.65 / 1646 -> 3.55 / 553
+    - `sieve` (50000) 1.26 / 951 -> 1.03 / 188
+    - `fannkuch` 6.04 / 3272 -> 3.95 / 137
+    - `mandelbrot` 6.02 / 2072 -> 4.76 / 136
+    - `adaptive_heap_garbage.py`, 20000 rounds: 6.70 / 5433 -> 9.93 / 208
+      (**+48 % wall**; the before runs themselves spread over 6.66-9.15 s).
+      A loop that keeps nothing, which the old default never collected, now
+      pays for its cycles.
+    - A list comprehension in a 20,000-iteration loop: before, 11 GB peak RSS,
+      and earlyoom killed 2 of 3 runs (the one that finished took 15.32 s);
+      after, 22.17 s / 139 MB (**+45 % wall** against that run).
+    - `int_sum_loop`, `str_concat_loop`, `range_iterate`, `attr_lookup`,
+      `call_recursion`, `fib`, `nqueens` and `richards_lite` run no cycle and
+      are within -1 to +8 % (run-to-run noise).
+    The GC fixes themselves cost nothing measurable without the controller:
+    the previous main against this main, both with no limit, is within -7 to
+    +4 % on the same workloads. Tuples are interned and never collected, as
+    documented.
 
 - **CI builds protoCore 2.14.3** (tag `v2.14.3`, commit `0923b3e4`) in the
   Linux job and the macOS and Windows jobs, instead of 2.14.2.  2.14.3 changes
