@@ -762,17 +762,28 @@ function (2 of 10 runs failed before the fix).
 
 Both are in the CHANGELOG, "Fixed", with tests.
 
-**Found and filed, not fixed: protopyc-generated code** (issue #2). A compiled
-function runs in its caller's context, keeps every local in a C++ variable,
-and emits `ctx->safepoint()` at loop heads. That call submits the *caller's*
-young generation while the caller is in the middle of `OP_CALL`, and while the
-compiled locals are reachable only from C++. Under any heap limit a module with
-an allocating `while` loop crashes in its caller (6 of 6 runs at 1.5 M cells).
-The fix is a context of its own for each compiled call, with its locals in
-automatic slots, which is a code-generator change. protopyc is experimental
-(README).
+**Found, filed and fixed: protopyc-generated code** (issue #2). A compiled
+function ran in its caller's context, kept every local in a C++ variable,
+and emitted `ctx->safepoint()` at loop heads. That call submitted the *caller's*
+young generation while the caller was in the middle of `OP_CALL`, and while the
+compiled locals were reachable only from C++. Under any heap limit a module with
+an allocating `while` loop crashed in its caller (6 of 6 runs at 1.5 M cells,
+and 6 of 6 under the default adaptive controller). Fixed 2026-10-11 in the code
+generator: every compiled callable (function, generator, lambda, module
+initializer) runs in its own context through `ContextScope`; its locals are
+references to automatic slots; the value of every non-constant expression node
+is stored in a temporary slot as it is computed; a `for` loop's iterator, a
+caught exception and a class's bases and namespace are kept in slots; the
+temporaries are cleared at each loop safepoint; the result is promoted to the
+caller. Safepoints are emitted only at statement-level loop heads, where no
+temporary of the running statement is live; comprehension loops have none.
+Within one expression, C++ variables of the generated lambdas (a list being
+built, an accumulator) hold cells of the callable's own young generation, which
+protects them because nothing submits that generation before the statement's
+next loop head. Test: `protopyc_gc_rooting` (fails before the fix with wrong
+results and SIGSEGV, also under AddressSanitizer).
 
-**Reviewed:** agent, 2026-09-25; frame and protopyc paragraphs 2026-10-10 —
+**Reviewed:** agent, 2026-09-25; frame paragraph 2026-10-10; protopyc paragraph 2026-10-11 —
 **pending maintainer review.**
 
 ### C5 — Which structure is rule 5 measured on, and why?

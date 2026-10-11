@@ -35,9 +35,15 @@ protoPython provides three components:
   generated code were fixed in 2026 (for example, loop-target scoping and thread
   globals in commit `eab663bd`, and `and`/`or` lowering in commit `1084f969`);
   check the results of compiled modules against `protopy` before relying on them.
-  Generated code is not safe against garbage collection yet: once collections
-  run, a compiled module with an allocating loop can crash
-  ([issue #2](https://github.com/gamarino/protoPython/issues/2)).
+  Since 2026-10-11 generated code keeps every object it uses visible to the
+  collector: each compiled call runs in its own context with its locals and
+  temporaries in automatic slots
+  ([issue #2](https://github.com/gamarino/protoPython/issues/2); before that a
+  compiled module with an allocating loop crashed once collections ran, which
+  protopy's adaptive heap controller makes the default). Known gaps, unrelated
+  to collection: compiled generators fail at run time, and a class defined in a
+  compiled module cannot be instantiated from its functions (`NameError` on the
+  class name).
 
 ### CPython conformance
 
@@ -301,43 +307,36 @@ records of their date, not current figures. Keep in mind:
 
 `protopyc` lowers each Python expression to C++ that calls the protoPython runtime.
 For arithmetic on two operands, `CppGenerator::generateBinOp` emits a lambda that
-checks whether both operands are small integers, computes the result inline, and
-otherwise falls back to `env->binaryOp`, the runtime's generic binary-operation entry
-point. Multiplication uses `__builtin_mul_overflow` so that an overflowing product
-takes the fallback path.
+checks whether both operands are protoCore small integers, computes the result inline
+with 64-bit integers (products through `protoPython::checkedMul64`), and otherwise falls
+back to `env->binaryOp`, the runtime's generic binary-operation entry point.
 
-The generator code, from `src/compiler/CppGenerator.cpp` (lines 590–613):
+Each compiled function runs in a context of its own and keeps its locals and the value
+of every expression node in that context's automatic slots, so the collector sees
+them (`docs/PROTOPYC_SPECIFICATION.md`, section 4). For `i < n` in a `while` loop,
+protopyc emits:
 
 ```cpp
-    if (arithOp) {
-        *out_ << "([&]() -> const proto::ProtoObject* {\n";
-        *out_ << "        const proto::ProtoObject* __a = ";
-        if (!generateNode(n->left.get())) return false;
-        *out_ << ";\n";
-        *out_ << "        const proto::ProtoObject* __b = ";
-        if (!generateNode(n->right.get())) return false;
-        *out_ << ";\n";
-        *out_ << "        if (__a && __b && __a->isInteger(ctx) && __b->isInteger(ctx)) {\n";
-        *out_ << "            long __va = __a->asLong(ctx);\n";
-        *out_ << "            long __vb = __b->asLong(ctx);\n";
-        if (needsOverflowGuard) {
-            *out_ << "            long __vr;\n";
-            *out_ << "            if (!__builtin_mul_overflow(__va, __vb, &__vr)) return ctx->fromInteger(__vr);\n";
-        } else {
-            *out_ << "            return ctx->fromInteger(__va " << arithOp << " __vb);\n";
+const proto::ProtoObject* py_func_build_1(proto::ProtoContext* __callerCtx, ...) {
+    protoPython::ContextScope __scope(__callerCtx->space, __callerCtx, nullptr, nullptr, nullptr, nullptr, 5);
+    proto::ProtoContext* ctx = __scope.context();
+    const proto::ProtoObject** __slot = ctx->getAutomaticLocals();
+    ...
+    const proto::ProtoObject*& local_i = __slot[0];
+    const proto::ProtoObject*& local_n = __slot[2];
+    ...
+while (env->isTrue((__slot[3] = (([&]() -> const proto::ProtoObject* {
+        const proto::ProtoObject* __a = local_i;
+        const proto::ProtoObject* __b = local_n;
+        if (__a && __b && proto::isSmallInt(__a) && proto::isSmallInt(__b)) {
+            return (proto::asSmallInt(__a) < proto::asSmallInt(__b)) ? PROTO_TRUE : PROTO_FALSE;
         }
-        *out_ << "        }\n";
-        *out_ << "        return ";
-        emitFallback();
-        *out_ << ";\n";
-        *out_ << "    })()";
-        return true;
-    }
+        return env->binaryOp(__a, protoPython::TokenType::Less, __b);
+    })())))) {
+    std::fill(__slot + 3, __slot + __nslots, PROTO_NONE);
+    ctx->safepoint();
+    ...
 ```
-
-`arithOp` is set for `+`, `-` and `*`; `needsOverflowGuard` is set only for `*`.
-Comparisons (`==`, `!=`, `<`, `<=`, `>`, `>=`) follow the same pattern in the branch
-that follows.
 
 ---
 

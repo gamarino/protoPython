@@ -63,7 +63,7 @@ a `Makefile` path contains whitespace, or `make` fails.
 
 Every generated file defines `extern "C" void* proto_module_init()`, which obtains the
 current context with `protoPython::PythonEnvironment::getCurrentContext()` and runs the
-module body.
+module body in a context of its own, chained to it (section 4, "Garbage collection").
 
 `CompiledModuleProvider` (`src/library/CompiledModuleProvider.cpp`) loads these
 libraries. It is one of the module providers that `PythonEnvironment` registers with
@@ -105,6 +105,29 @@ compiler diagnostics and native debuggers (GDB, LLDB) can point at Python source
     keys in insertion order in a `ProtoList` (`__keys__`), on an object whose parent is
     the `dict` prototype;
   - tuple literals are built as a list and converted with `ctx->newTupleFromList`.
+- **Garbage collection.** Generated code keeps every object it still uses where
+  protoCore's collector sees it (protoCore `docs/EMBEDDER-CONFORMANCE.md`, rule 3):
+  - every compiled callable (function, generator and its continuation, lambda, and the
+    module initializer) runs in its own `ProtoContext`, opened by
+    `protoPython::ContextScope` and chained to the thread's current context, and its
+    result is promoted to the caller's context, as the interpreter does for a call;
+  - its locals live in that context's automatic slots: `local_<name>` is a C++
+    reference to a slot;
+  - the value of every expression node except constants and locals is stored in a
+    temporary slot as it is computed, and a `for` loop's iterator, a caught exception,
+    a class's bases and namespace are kept in slots for as long as they are used;
+  - `ctx->safepoint()` is emitted only at the head of `while` and `for` loops, where
+    no temporary of the running statement is live; it clears the temporary slots
+    first, so they do not retain what the previous iteration computed. Comprehension
+    loops emit no safepoint: their garbage becomes collectable at the enclosing
+    loop's next safepoint or when the callable returns.
+
+  Before this (protoPython issue #2), compiled code ran in its caller's context, held
+  its locals only in C++ variables and called `safepoint()` on the caller's context: a
+  compiled module with an allocating loop gave wrong results or crashed once
+  collections ran, and with protopy's adaptive heap controller collections always
+  run. Each compiled call now pays for a context, as an interpreted call does:
+  `fib(27)` took about 0.11-0.14 s instead of 0.07-0.08 s (Release, 2026-10-11).
 
 ## 5. Not implemented
 

@@ -277,6 +277,43 @@ onwards. Commit hashes are given for reference.
 
 ### Fixed
 
+- **protopyc: compiled code was not safe against garbage collection**
+  ([issue #2](https://github.com/gamarino/protoPython/issues/2)). A compiled
+  function ran in its caller's context, kept its locals and temporaries only in
+  C++ variables, and called `ctx->safepoint()` at loop heads, which hands the
+  *caller's* young generation to the collector while the caller is in the
+  middle of a call and while the compiled locals are reachable only from C++
+  (protoCore's embedder rule 3). Once collections ran, a compiled module with an
+  allocating loop gave wrong results or crashed in its caller; with protopy's
+  adaptive heap controller collections always run, so this hit the default
+  configuration. Its garbage was also not collectable while it ran: it stayed
+  in the caller's young generation, which is a root. The code generator now
+  runs every compiled callable (function, generator, lambda, module
+  initializer) in its own context through `protoPython::ContextScope`, keeps
+  its locals in that context's automatic slots (`local_<name>` is a reference
+  to a slot), stores the value of every non-constant expression node in a
+  temporary slot, keeps loop iterators, caught exceptions and class
+  namespaces in slots, clears the temporary slots at each loop safepoint, and
+  promotes the result to the caller as `runUserFunctionCall` does
+  (`docs/PROTOPYC_SPECIFICATION.md`, section 4). Each compiled call now pays
+  for a context, as an interpreted one does: `fib(27)` 0.11-0.14 s instead of
+  0.07-0.08 s.
+  - Tests: `protopyc_gc_rooting` compiles `test/compiler/gc_rooting_probe.py`
+    (an allocating `while` loop, `for` loops, a closure called per iteration,
+    list/dict/set comprehensions and a generator expression, an exception
+    raised and caught per iteration, a lambda, string building, and a
+    module-level loop) and checks every result under a 1.5 M-cell limit with
+    a 200-cell context threshold, under the same limit with the default
+    threshold, and under the default adaptive controller. Before the fix it
+    failed on the first configuration (wrong results, then SIGSEGV); the issue's
+    reproduction failed 6 of 6 runs in each of those configurations, and a
+    1,000,000-iteration allocating `for` loop returned 100,340 instead of
+    2,000,000 even under a 20 M-cell limit.
+  - Also fixed on the way: a generator's continuation called
+    `env->isStopIteration(val)`, which does not exist, so no module with a
+    `yield` compiled. It now compiles, but a compiled generator still fails at
+    run time (its parameters read as `None`), a separate defect from this one.
+
 - **A nested function lost the variables of its enclosing function once
   collections ran** (`NameError: name 'target' is not defined`, intermittent).
   The frame of a running Python call was referenced only from C++: the
