@@ -4254,9 +4254,19 @@ const proto::ProtoObject* executeBytecodeRange(
     }
 
     unsigned int nSlots = ctx->getAutomaticLocalsCount();
+    // A context with no automatic slots at all gets them here, so that the
+    // operand stack and the frame anchor below are GC roots.  Code compiled by
+    // this runtime always asks for slots (Compiler.cpp); this covers contexts
+    // built elsewhere.  Only an empty context is resized: a context that has
+    // slots may be running an outer activation whose stack points into them.
+    if (nSlots == 0) {
+        ctx->resizeAutomaticLocals(static_cast<unsigned int>(stackOffset) + 4096u + 1u);
+        nSlots = ctx->getAutomaticLocalsCount();
+    }
     const proto::ProtoObject** allSlots = ctx->getAutomaticLocals();
 
-    // Fallback stack for contexts without pre-allocated slots (e.g. some unit tests)
+    // Fallback stack for contexts whose few slots cannot hold the stack. It is
+    // not scanned by the collector.
     std::vector<const proto::ProtoObject*> fallbackStack;
     const proto::ProtoObject** stackBase = nullptr;
     size_t stackCap = 0;
@@ -8390,7 +8400,16 @@ const proto::ProtoObject* executeBytecodeRange(
                         PythonEnvironment::getInternedString(ctx, "co_freevars"));
                     if (fvObj && fvObj != PROTO_NONE) coFreevars = fvObj->asTuple(ctx);
                 }
-                if (outerCodeAttr && outerCodeAttr != PROTO_NONE) {
+                // Only a CO_OPTIMIZED outer keeps its locals in slots.  A mapped
+                // outer has slots too (its operand stack), whose low entries are
+                // not locals: copying them would shadow the live bindings on the
+                // frame with placeholders.
+                bool outerOptimized = false;
+                if (outerCodeAttr && outerCodeAttr != PROTO_NONE && env) {
+                    const proto::ProtoObject* of = outerCodeAttr->getAttribute(ctx, env->getCoFlagsString());
+                    outerOptimized = of && of->isInteger(ctx) && (of->asLong(ctx) & CO_OPTIMIZED);
+                }
+                if (outerOptimized) {
                     const proto::ProtoObject* coVarnamesObj = outerCodeAttr->getAttribute(ctx, env ? env->getCoVarnamesString() : PythonEnvironment::getInternedString(ctx, "co_varnames"));
                     if (coVarnamesObj && coVarnamesObj != PROTO_NONE) {
                         const proto::ProtoTuple* coVarnames = coVarnamesObj->asTuple(ctx);

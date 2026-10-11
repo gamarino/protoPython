@@ -4488,7 +4488,14 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     }
 
     if (!bodyCompiler.compileNode(n->body.get())) return false;
-    if (!forceMapped) automatic_count += bodyCompiler.getMaxStack() + 128;
+    // A mapped function keeps its locals on its frame, not in slots, but its
+    // operand stack (above co_varnames) and its frame anchor must still be in
+    // automatic slots: they are the only GC roots executeBytecodeRange gives
+    // them.  With 0 slots the interpreter ran the stack in a std::vector the
+    // collector never scans, and the young values on it, the frame among them,
+    // were freed once the context's young generation was submitted.
+    if (forceMapped) automatic_count = static_cast<int>(varnamesOrdered.size());
+    automatic_count += bodyCompiler.getMaxStack() + 128;
 
     int noneIdx = bodyCompiler.addConstant(PROTO_NONE);
     bodyCompiler.emit(OP_LOAD_CONST, noneIdx);
@@ -4750,7 +4757,14 @@ bool Compiler::compileLambda(LambdaNode* n) {
     if (!bodyCompiler.compileNode(n->body.get())) return false;
     bodyCompiler.emit(OP_RETURN_VALUE);
     bodyCompiler.applyPatches();
-    if (!forceMapped) automatic_count += bodyCompiler.getMaxStack() + 128;
+    // A mapped function keeps its locals on its frame, not in slots, but its
+    // operand stack (above co_varnames) and its frame anchor must still be in
+    // automatic slots: they are the only GC roots executeBytecodeRange gives
+    // them.  With 0 slots the interpreter ran the stack in a std::vector the
+    // collector never scans, and the young values on it, the frame among them,
+    // were freed once the context's young generation was submitted.
+    if (forceMapped) automatic_count = static_cast<int>(varnamesOrdered.size());
+    automatic_count += bodyCompiler.getMaxStack() + 128;
 
     std::vector<const proto::ProtoObject*> varnamesVec;
     varnamesVec.reserve(varnamesOrdered.size());
@@ -4939,7 +4953,14 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
     bodyCompiler.emit(OP_RETURN_VALUE);
 
     bodyCompiler.applyPatches();
-    if (!forceMapped) automatic_count += bodyCompiler.getMaxStack() + 128;
+    // A mapped function keeps its locals on its frame, not in slots, but its
+    // operand stack (above co_varnames) and its frame anchor must still be in
+    // automatic slots: they are the only GC roots executeBytecodeRange gives
+    // them.  With 0 slots the interpreter ran the stack in a std::vector the
+    // collector never scans, and the young values on it, the frame among them,
+    // were freed once the context's young generation was submitted.
+    if (forceMapped) automatic_count = static_cast<int>(varnamesOrdered.size());
+    automatic_count += bodyCompiler.getMaxStack() + 128;
 
     std::vector<const proto::ProtoObject*> varnamesVec;
     varnamesVec.reserve(varnamesOrdered.size());

@@ -2874,7 +2874,13 @@ static const proto::ProtoObject* py_dir(
             const proto::ProtoObject* ac = code->getAttribute(context, coAutoS);
             const proto::ProtoTuple* vnT = vn ? vn->asTuple(context) : nullptr;
             long long ncAutomatic = (ac && ac->isInteger(context)) ? ac->asLong(context) : 0;
-            if (vnT && ncAutomatic > 0) {
+            // Fast slots hold locals only in a CO_OPTIMIZED function: a mapped
+            // function has slots too (its operand stack), but its locals live
+            // on its frame.
+            const proto::ProtoObject* cf = code->getAttribute(context,
+                PythonEnvironment::getInternedString(context, "co_flags"));
+            const bool optimized = cf && cf->isInteger(context) && (cf->asLong(context) & CO_OPTIMIZED);
+            if (vnT && ncAutomatic > 0 && optimized) {
                 std::vector<std::string> names;
                 const proto::ProtoObject** locals = context->getAutomaticLocals();
                 proto::proto_ulong nVars = vnT->getSize(context);
