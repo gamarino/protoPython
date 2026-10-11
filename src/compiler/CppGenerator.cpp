@@ -2208,11 +2208,11 @@ bool CppGenerator::emitYieldStatement(ASTNode* node, ASTNode* target) {
         *out_ << "const proto::ProtoObject* __yf_res_" << k << " = PROTO_NONE;\n";
         *out_ << "while (true) {\n";
         *out_ << "    proto::ProtoObject* __sub = const_cast<proto::ProtoObject*>(__slot[" << itSlot << "]);\n";
-        *out_ << "    const proto::ProtoObject* __in = PROTO_NONE;\n";
+        *out_ << "    const proto::ProtoObject* __yf_in = PROTO_NONE;\n";
         *out_ << "    bool __advance = true;\n";
         *out_ << "    if (__resume != 0) {\n";
         *out_ << "        __resume = 0;\n";
-        *out_ << "        __in = __sent;\n";
+        *out_ << "        __yf_in = __sent;\n";
         *out_ << "        if (__throw) {\n";
         *out_ << "            const proto::ProtoObject* __t = __throw;\n";
         *out_ << "            __throw = nullptr;\n";
@@ -2228,8 +2228,8 @@ bool CppGenerator::emitYieldStatement(ASTNode* node, ASTNode* target) {
         *out_ << "    if (__advance) {\n";
         *out_ << "        const proto::ProtoObject* __sm = __sub->getAttribute(ctx, env->getSendString());\n";
         *out_ << "        if (__sm && __sm != PROTO_NONE) {\n";
-        *out_ << "            __slot[" << valSlot << "] = __sub->call(ctx, nullptr, env->getSendString(), __sub, ctx->newList()->appendLast(ctx, __in), nullptr);\n";
-        *out_ << "        } else if (__in != PROTO_NONE) {\n";
+        *out_ << "            __slot[" << valSlot << "] = __sub->call(ctx, nullptr, env->getSendString(), __sub, ctx->newList()->appendLast(ctx, __yf_in), nullptr);\n";
+        *out_ << "        } else if (__yf_in != PROTO_NONE) {\n";
         *out_ << "            env->raiseTypeError(ctx, \"can't send non-None value to a plain iterator\");\n";
         *out_ << "            throw __PyUnwind{};\n";
         *out_ << "        } else {\n";
