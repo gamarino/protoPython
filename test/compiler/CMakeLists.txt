@@ -77,3 +77,16 @@ add_test(NAME protopyc_loop_else
 set_tests_properties(protopyc_loop_else PROPERTIES
     TIMEOUT 300
     LABELS "regression_gate")
+
+# Code protopyc generates keeps every live object visible to the collector:
+# compiled modules with allocating loops run correctly while collections run
+# (protoPython issue #2).
+add_test(NAME protopyc_gc_rooting
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/protopyc_gc_rooting.sh
+            $<TARGET_FILE:protopyc> $<TARGET_FILE:protopy>
+            ${CMAKE_CURRENT_SOURCE_DIR}/gc_rooting_probe.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/gc_rooting_driver.py
+            ${CMAKE_CURRENT_BINARY_DIR}/gc_rooting)
+set_tests_properties(protopyc_gc_rooting PROPERTIES
+    TIMEOUT 900
+    LABELS "regression_gate")
