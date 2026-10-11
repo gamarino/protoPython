@@ -127,9 +127,64 @@ compiler diagnostics and native debuggers (GDB, LLDB) can point at Python source
   compiled module with an allocating loop gave wrong results or crashed once
   collections ran, and with protopy's adaptive heap controller collections always
   run. Each compiled call now pays for a context, as an interpreted call does:
-  `fib(27)` took about 0.11-0.14 s instead of 0.07-0.08 s (Release, 2026-10-11).
+  `fib(27)` took about 0.11-0.14 s instead of 0.07-0.08 s (Release, 2026-10-11);
+  since the self-recursive call skips the entry point (below), 0.075-0.078 s
+  (protoCore 2.14.4).
+- **Callables and their module.** Every compiled callable (function, generator
+  function and its continuation, lambda) is a native method bound to an immutable
+  *function storage* object: `__module_ns__`, the namespace of the module that
+  defined it (the current globals at the definition), and the values of its free
+  variables, captured at the definition. The callable's entry point enters that
+  namespace with `protoPython::ModuleNamespaceScope` (current frame and globals) for
+  as long as it runs, so its module-level names resolve in its own module whoever
+  calls it, as an interpreted function's do through `__globals__`; then it runs the
+  body. Called as a function (`f(a)`, `C.m(obj, a)`, a method call from compiled
+  code), it receives its storage as `self`. The interpreter binds a native method
+  found on a class to the instance (`obj.m(a)`), so `self` is then the receiver: the
+  entry point moves it to the front of the arguments, where the prologue expects the
+  method's `self` parameter, and the namespace falls back to the module the file
+  initialized. A self-recursive call by the function's own name calls the body
+  directly. `def` and `class` statements in a function bind function locals; names
+  a class body binds go to the class namespace.
+- **Generators.** A function that contains `yield`, `yield from` or `await` compiles
+  to two callables: the function, which binds its arguments and returns a generator
+  object, and the continuation (`gi_native_callback`), which runs the body to the
+  next yield each time the generator is resumed. `py_generator_send_impl` calls it
+  with the generator, the value sent and, for `throw()` and `close()`, the exception
+  to raise at the suspended yield. State lives in the generator object, where the
+  collector sees it: `gi_pc` is the number of the yield to resume at (0 before the
+  first resumption, -1 once finished), `gi_locals` a list of the continuation's
+  slots (locals, a `for` loop's iterator, a caught exception, set aside
+  exceptions). The yields are numbered in source order; a resumption restores the
+  slots and re-enters the body, and every statement list and `if`, `while`, `for`,
+  `try` and `with` statement on the path to the suspended yield is re-entered
+  without evaluating its test, its iterator or its context expressions again. A
+  `return` finishes the generator with its value in `StopIteration`. `yield from`
+  delegates as the interpreter's `OP_YIELD_FROM` does: `send()` to the
+  sub-iterator (or `__next__` when it has no `send` and the value is `None`),
+  `throw()` and `close()` to its `throw`, and its `StopIteration` value is the
+  result. Inside a generator a statement that leaves an exception pending ends its
+  statement list; a `try` statement runs its handlers and its `finally` clause,
+  which runs with the propagating exception set aside.
 
-## 5. Not implemented
+## 5. Limitations
+
+- A `yield`, `yield from` or `await` must be a statement or the value of an
+  assignment (`x = yield v`); one inside another expression (`f((yield v))`) is
+  rejected at compile time.
+- Outside generators, a statement that raises leaves its exception pending and the
+  rest of its statement list still runs; the exception reaches the caller when the
+  callable returns, or the nearest enclosing `try` statement when its body ends.
+- A `with` statement evaluates its context expressions but calls neither
+  `__enter__` nor `__exit__`, and binds no `as` target.
+- A compiled function that the interpreter binds to an instance has no access to its
+  free variables (they read as `None`); this matters for a method of a class
+  defined inside a function. Its module-level names resolve in the module the file
+  initialized; loading the same library twice under two module names makes both use
+  the second.
+- Generator expressions are evaluated eagerly, as a list.
+
+## 6. Not implemented
 
 An earlier version of this specification described features that `protopyc` does not
 have:

@@ -40,10 +40,11 @@ protoPython provides three components:
   temporaries in automatic slots
   ([issue #2](https://github.com/gamarino/protoPython/issues/2); before that a
   compiled module with an allocating loop crashed once collections ran, which
-  protopy's adaptive heap controller makes the default). Known gaps, unrelated
-  to collection: compiled generators fail at run time, and a class defined in a
-  compiled module cannot be instantiated from its functions (`NameError` on the
-  class name).
+  protopy's adaptive heap controller makes the default). Compiled generators
+  (`send`, `throw`, `close`, `yield from`) and compiled code called from
+  another module (which resolves names in its own module) work since
+  2026-10-11; known limitations are listed in
+  [docs/PROTOPYC_SPECIFICATION.md](docs/PROTOPYC_SPECIFICATION.md), section 5.
 
 ### CPython conformance
 

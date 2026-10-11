@@ -277,6 +277,59 @@ onwards. Commit hashes are given for reference.
 
 ### Fixed
 
+- **protopyc: compiled generators, and compiled code called from another
+  module.** Two defects that `README.md` listed as known gaps of protopyc.
+  - *Generators.* A compiled generator was a `switch` whose `case` labels sat
+    inside the C++ blocks of its loops: a `yield` inside a `for` loop, a `try`
+    statement or an assignment did not compile; the continuation read the
+    generator from `self`, while `py_generator_send_impl` passes it as the
+    first argument, so it restored no parameters (a generator consumed by a
+    compiled `for` loop yielded nothing); `throw()` and `close()` never reached
+    it. The continuation now re-enters the body structurally: the yields are
+    numbered, and each statement list and `if`/`while`/`for`/`try`/`with`
+    statement on the path to the suspended yield is re-entered without
+    evaluating its test, iterator or context expressions again. A suspension
+    stores every slot of the continuation's context (locals, a `for` loop's
+    iterator, a caught exception) in `gi_locals` and the yield's number in
+    `gi_pc`, on the generator object, where the collector sees them.
+    `send()`, `throw()`, `close()` (a `finally` clause runs), the `return`
+    value in `StopIteration` and `yield from` (with `send`/`throw` forwarded
+    as `OP_YIELD_FROM` does) behave as in the interpreter;
+    `py_generator_send_impl` now passes the exception of `throw()` and
+    `close()` to a native generator's callback. A `yield` must be a statement
+    or the value of an assignment; one inside another expression is a
+    compile-time error.
+  - *Module namespace.* Generated code resolves module-level names through
+    the current frame and globals, which were the caller's: a compiled
+    function called from another module raised `NameError` on its own
+    module's classes and functions (a method naming its class, a function
+    calling a function defined later). Every compiled callable is now bound to
+    a storage object recording its module's namespace and its free variables,
+    and enters that namespace while it runs (`protoPython::ModuleNamespaceScope`,
+    which `CompiledModuleProvider` uses for the module initializer too). A
+    compiled function that the interpreter binds to an instance (`obj.m(a)`)
+    receives the receiver first in its arguments, as the prologue expects.
+    `fib(27)` takes 0.075-0.078 s, against 0.078-0.083 s on `5cd5f040`
+    (Release, both against protoCore 2.14.4 built from source, 2026-10-11).
+  - Also: `def` and `class` statements in a function bind function locals; a
+    class body binds names in the class namespace; lambdas keep their
+    parameters in slots and capture enclosing locals as a `def` does; a `for`
+    loop no longer stops at a `None` item or discards an exception raised by
+    its iterator; a `try` statement's `else` clause runs; `except E as name`
+    binds a function local. Inside a generator, a statement that leaves an
+    exception pending ends its statement list (outside generators, compiled
+    code still runs the rest of the list; see `docs/PROTOPYC_SPECIFICATION.md`,
+    section 5).
+  - Tests: `protopyc_generators_classes` compiles
+    `test/compiler/generators_classes_probe.py` and requires the compiled
+    module's output to equal the interpreter's on the same source, under a
+    1.5 M-cell heap limit with a 200-cell context threshold, under the same
+    limit with the default threshold, and under the default adaptive heap
+    controller; `protopyc_emitted_cpp_generators` compiles its C++ with the
+    build's compiler (MSVC on Windows). Against `5cd5f040` the probe did not
+    compile, and smaller probes printed a generator sum of 0 and raised
+    `NameError: name 'Point' is not defined`.
+
 - **protopyc: compiled code was not safe against garbage collection**
   ([issue #2](https://github.com/gamarino/protoPython/issues/2)). A compiled
   function ran in its caller's context, kept its locals and temporaries only in
@@ -311,8 +364,8 @@ onwards. Commit hashes are given for reference.
     2,000,000 even under a 20 M-cell limit.
   - Also fixed on the way: a generator's continuation called
     `env->isStopIteration(val)`, which does not exist, so no module with a
-    `yield` compiled. It now compiles, but a compiled generator still fails at
-    run time (its parameters read as `None`), a separate defect from this one.
+    `yield` compiled. Compiled generators still failed at run time; that is
+    fixed by the entry above.
 
 - **A nested function lost the variables of its enclosing function once
   collections ran** (`NameError: name 'target' is not defined`, intermittent).
