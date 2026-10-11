@@ -115,6 +115,51 @@ private:
     // Collect every `NameNode` identifier referenced under `node` — the
     // raw set of names the body reads, before subtracting locals.
     void collectNameRefs(ASTNode* node, std::unordered_set<std::string>& refs);
+
+    // ---------------------------------------------------------------
+    // GC rooting of generated code (protoPython issue #2).
+    //
+    // Every compiled callable (function, generator, lambda, module
+    // initialiser) runs in its own ProtoContext, opened by a
+    // protoPython::ContextScope, and keeps every object it still uses in
+    // that context's automatic slots, which the collector scans:
+    //   * slots [0, locals): the Python locals, declared as C++ references
+    //     to their slot (`local_<name>`);
+    //   * anchors: values a statement keeps across its body (a for
+    //     loop's iterator, a caught exception, a class namespace);
+    //   * temporaries: the value of every expression node, stored as it
+    //     is computed, so an object a callee returned and nothing else
+    //     references stays visible while the rest of the statement
+    //     allocates.
+    // Temporary slots are never reused within one statement (C++ leaves
+    // the evaluation order of function arguments unspecified), and are
+    // cleared at every statement-level loop safepoint so they do not
+    // retain garbage.  Safepoints are emitted only at statement-level loop
+    // heads, where no temporary of the running statement is live.
+    struct SlotFrame {
+        int anchorTop;
+        int tempTop;
+        int high;
+    };
+    int anchorTop_ = 0;   // first slot above the locals and the live anchors
+    int tempTop_ = 0;     // next free temporary slot in the current statement
+    int slotHigh_ = 0;    // number of slots the current callable declares
+    // Start a callable whose first `reserved` slots hold its locals.
+    SlotFrame enterSlotFrame(int reserved);
+    void leaveSlotFrame(const SlotFrame& saved);
+    int allocTempSlot();
+    int pushAnchor();
+    void popAnchor();
+    // A statement starts: its temporaries begin above the live anchors.
+    void beginStatement() { tempTop_ = anchorTop_; }
+    // Text that opens the callable's context; `callerCtx` names the
+    // context the callable was invoked with.
+    std::string openContextScope(const std::string& callerCtx) const;
+    // A statement-level loop safepoint: clear the temporaries, then let
+    // the collector run.
+    void emitLoopSafepoint();
+    bool generateNodeUnrooted(ASTNode* node);
+    bool needsTempSlot(ASTNode* node) const;
 };
 
 } // namespace protoPython

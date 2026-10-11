@@ -9,10 +9,24 @@ bool CppGenerator::generate(ModuleNode* module, const std::string& filename) {
     body_.str("");
     body_.clear();
 
-    // 1. Module Initialization setup
+    // 1. Module initialisation.  The statements are generated first: the
+    // slot count the module's context declares is known only afterwards.
+    const SlotFrame moduleSlots = enterSlotFrame(0);
+    std::ostringstream moduleBody;
+    out_ = &moduleBody;
+    for (auto& stmt : module->body) {
+        if (stmt->line > 0) emitLineDirective(stmt->line, filename);
+        beginStatement();
+        if (!generateNode(stmt.get())) return false;
+        *out_ << ";\n";
+    }
     out_ = &body_;
+    // The module runs in a context of its own, as a function does, so the
+    // safepoints of its loops submit only what it allocated, never the
+    // importer's young generation (see enterSlotFrame).
     *out_ << "extern \"C\" void* proto_module_init() {\n";
-    *out_ << "    auto* ctx = protoPython::PythonEnvironment::getCurrentContext();\n";
+    *out_ << "    auto* __callerCtx = protoPython::PythonEnvironment::getCurrentContext();\n";
+    *out_ << openContextScope("__callerCtx");
     *out_ << "    auto* env = protoPython::PythonEnvironment::get(ctx);\n";
     *out_ << "    if (protoPython::diagEnabled()) {\n";
     *out_ << "        fprintf(stderr, \"[mod] proto_module_init ctx=%p\\n\", (void*)ctx);\n";
@@ -20,13 +34,8 @@ bool CppGenerator::generate(ModuleNode* module, const std::string& filename) {
     *out_ << "        fprintf(stderr, \"[mod] lookupName('print')=%p\\n\", (void*)p);\n";
     *out_ << "        fflush(stderr);\n";
     *out_ << "    }\n\n";
-
-    for (auto& stmt : module->body) {
-        if (stmt->line > 0) emitLineDirective(stmt->line, filename);
-        if (!generateNode(stmt.get())) return false;
-        *out_ << ";\n";
-    }
-    
+    *out_ << moduleBody.str();
+    leaveSlotFrame(moduleSlots);
     *out_ << "    return nullptr;\n";
     *out_ << "}\n";
 
@@ -35,6 +44,9 @@ bool CppGenerator::generate(ModuleNode* module, const std::string& filename) {
     finalOut_ << "#include <thread>\n";
     finalOut_ << "#include <protoCore.h>\n";
     finalOut_ << "#include <protoPython/PythonEnvironment.h>\n";
+    // protoPython::ContextScope and promote: each compiled callable runs in
+    // its own context.
+    finalOut_ << "#include <protoPython/MemoryManager.hpp>\n";
     finalOut_ << "#include <protoPython/Tokenizer.h>\n";
     // Fixed-width integers and portable overflow checks: `long` is 32 bits on
     // Windows, and __builtin_mul_overflow is GCC/Clang only.
@@ -52,7 +64,110 @@ void CppGenerator::emitLineDirective(int line, const std::string& filename) {
     *out_ << "#line " << line << " \"" << filename << "\"\n";
 }
 
+// ---------------------------------------------------------------------------
+// GC rooting of generated code (protoPython issue #2; protoCore
+// docs/EMBEDDER-CONFORMANCE.md rule 3).
+//
+// protoCore protects a cell held only in a C++ variable while the cell is in
+// its context's young generation; ProtoContext::safepoint() hands that
+// generation to the collector, and from then on only the roots (automatic
+// slots, the mutables table, pinned structures, the young chains not yet
+// submitted) keep a cell alive.  Generated code therefore runs each callable
+// in its own context and keeps what it still uses in that context's slots.
+// The layout is described in CppGenerator.h.
+// ---------------------------------------------------------------------------
+
+CppGenerator::SlotFrame CppGenerator::enterSlotFrame(int reserved) {
+    SlotFrame saved{anchorTop_, tempTop_, slotHigh_};
+    anchorTop_ = reserved;
+    tempTop_ = reserved;
+    slotHigh_ = reserved;
+    return saved;
+}
+
+void CppGenerator::leaveSlotFrame(const SlotFrame& saved) {
+    anchorTop_ = saved.anchorTop;
+    tempTop_ = saved.tempTop;
+    slotHigh_ = saved.high;
+}
+
+int CppGenerator::allocTempSlot() {
+    const int slot = tempTop_++;
+    slotHigh_ = std::max(slotHigh_, tempTop_);
+    return slot;
+}
+
+int CppGenerator::pushAnchor() {
+    // Anchors are taken where no temporary of the current statement is
+    // still needed (a statement's start, or after the body it guards), so
+    // the slot may be one a finished temporary used.
+    const int slot = anchorTop_++;
+    tempTop_ = anchorTop_;
+    slotHigh_ = std::max(slotHigh_, anchorTop_);
+    return slot;
+}
+
+void CppGenerator::popAnchor() {
+    --anchorTop_;
+    tempTop_ = anchorTop_;
+}
+
+std::string CppGenerator::openContextScope(const std::string& callerCtx) const {
+    // The context is chained to the thread's current context (chainParent),
+    // so the collector's root scan reaches its slots; the slot array lives
+    // on the C++ stack for up to ContextScope::SBO_SLOTS slots.
+    std::ostringstream o;
+    const int nSlots = std::max(slotHigh_, 1);
+    o << "    protoPython::ContextScope __scope(" << callerCtx << "->space, " << callerCtx
+      << ", nullptr, nullptr, nullptr, nullptr, " << nSlots << ");\n";
+    o << "    proto::ProtoContext* ctx = __scope.context();\n";
+    o << "    const proto::ProtoObject** __slot = ctx->getAutomaticLocals();\n";
+    o << "    constexpr unsigned __nslots = " << nSlots << ";\n";
+    o << "    (void)__slot; (void)__nslots;\n";
+    return o.str();
+}
+
+void CppGenerator::emitLoopSafepoint() {
+    // No temporary is live at a statement-level loop head: drop the values
+    // the previous iteration left in the temporary slots, so they are not
+    // retained, then submit this context's young generation.  Locals and
+    // anchors are in slots, so everything still in use is reachable.
+    *out_ << "    std::fill(__slot + " << anchorTop_ << ", __slot + __nslots, PROTO_NONE);\n";
+    *out_ << "    ctx->safepoint();\n";
+}
+
+bool CppGenerator::needsTempSlot(ASTNode* node) const {
+    // Constants are tagged values or fresh cells of this context's young
+    // generation, and a function local is its own slot.  A yield or await
+    // lowers to statements, not to an expression.
+    if (dynamic_cast<ConstantNode*>(node)) return false;
+    if (auto* nm = dynamic_cast<NameNode*>(node)) {
+        return std::find(orderedLocalVars_.begin(), orderedLocalVars_.end(), nm->id)
+               == orderedLocalVars_.end();
+    }
+    return dynamic_cast<CallNode*>(node) || dynamic_cast<BinOpNode*>(node) ||
+           dynamic_cast<UnaryOpNode*>(node) || dynamic_cast<AttributeNode*>(node) ||
+           dynamic_cast<SubscriptNode*>(node) || dynamic_cast<ListLiteralNode*>(node) ||
+           dynamic_cast<DictLiteralNode*>(node) || dynamic_cast<TupleLiteralNode*>(node) ||
+           dynamic_cast<SetLiteralNode*>(node) || dynamic_cast<NamedExprNode*>(node) ||
+           dynamic_cast<ConditionalExprNode*>(node) || dynamic_cast<ListCompNode*>(node) ||
+           dynamic_cast<DictCompNode*>(node) || dynamic_cast<SetCompNode*>(node) ||
+           dynamic_cast<GeneratorExpNode*>(node) || dynamic_cast<JoinedStrNode*>(node) ||
+           dynamic_cast<SliceNode*>(node) || dynamic_cast<LambdaNode*>(node);
+}
+
 bool CppGenerator::generateNode(ASTNode* node) {
+    if (!needsTempSlot(node)) return generateNodeUnrooted(node);
+    // Store the value in a temporary slot as it is produced.  The slot is
+    // taken before the children's, which therefore get higher ones.
+    const int slot = allocTempSlot();
+    *out_ << "(__slot[" << slot << "] = (";
+    if (!generateNodeUnrooted(node)) return false;
+    *out_ << "))";
+    return true;
+}
+
+bool CppGenerator::generateNodeUnrooted(ASTNode* node) {
     if (auto* n = dynamic_cast<ConstantNode*>(node)) {
         return generateConstant(n);
     } else if (auto* n = dynamic_cast<NameNode*>(node)) {
@@ -62,6 +177,7 @@ bool CppGenerator::generateNode(ASTNode* node) {
     } else if (auto* n = dynamic_cast<SuiteNode*>(node)) {
         for (auto& stmt : n->statements) {
             if (stmt->line > 0) emitLineDirective(stmt->line, "source.py"); // TODO
+            beginStatement();
             if (!generateNode(stmt.get())) return false;
             *out_ << ";\n";
         }
@@ -465,7 +581,7 @@ bool CppGenerator::generateWhile(WhileNode* n) {
         *out_ << "{\n";
         *out_ << "bool __while_done_" << id << " = false;\n";
         *out_ << "while (true) {\n";
-        *out_ << "    ctx->safepoint();\n";
+        emitLoopSafepoint();
         *out_ << "    if (!env->isTrue(";
         if (!generateNode(n->test.get())) return false;
         *out_ << ")) {\n";
@@ -482,7 +598,7 @@ bool CppGenerator::generateWhile(WhileNode* n) {
         *out_ << "while (env->isTrue(";
         if (!generateNode(n->test.get())) return false;
         *out_ << ")) {\n";
-        *out_ << "    ctx->safepoint();\n";
+        emitLoopSafepoint();
         if (!generateNode(n->body.get())) return false;
         *out_ << ";\n}\n";
     }
@@ -784,58 +900,92 @@ bool CppGenerator::generateFunctionInternal(const std::string& name,
     std::ostringstream funcStream;
     out_ = &funcStream;
 
+    // Every compiled callable runs in a context of its own, with its locals
+    // in that context's automatic slots (see enterSlotFrame).  Its body is
+    // generated first, into `inner`, because the slot count is known only
+    // afterwards; it then runs as a lambda, so a Python `return` leaves the
+    // lambda and the result is promoted to the caller's context before the
+    // scope closes.
+    const std::vector<std::string> slotLocals = orderedLocalVars_;
+    auto emitLocalRefs = [&]() {
+        for (size_t i = 0; i < slotLocals.size(); ++i) {
+            *out_ << "    const proto::ProtoObject*& local_" << slotLocals[i]
+                  << " = __slot[" << i << "];\n";
+        }
+    };
+    auto emitScopedCall = [&](const std::string& cppName, const std::string& innerText,
+                              const char* preamble) {
+        *out_ << "\nconst proto::ProtoObject* " << cppName << "(proto::ProtoContext* __callerCtx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {\n";
+        *out_ << openContextScope("__callerCtx");
+        *out_ << "    auto* env = protoPython::PythonEnvironment::get(ctx);\n";
+        if (preamble) *out_ << preamble;
+        emitLocalRefs();
+        *out_ << "    const proto::ProtoObject* __result = nullptr;\n";
+        *out_ << "    try {\n";
+        *out_ << "        __result = [&]() -> const proto::ProtoObject* {\n";
+        *out_ << innerText;
+        *out_ << "        }();\n";
+        // A value thrown out of the callable (a generator's StopIteration)
+        // is promoted like a returned one.
+        *out_ << "    } catch (const proto::ProtoObject* __thrown) {\n";
+        *out_ << "        protoPython::promote(ctx, __thrown);\n";
+        *out_ << "        throw;\n";
+        *out_ << "    }\n";
+        *out_ << "    protoPython::promote(ctx, __result);\n";
+        *out_ << "    return __result;\n";
+        *out_ << "}\n";
+    };
+
     if (isGenerator) {
         stateCount_ = 0;
         inStateMachine_ = true;
-        
-        // 1. Generate Continuation Function at top level
-        *out_ << "\nconst proto::ProtoObject* " << cppContName << "(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {\n";
-        *out_ << "    auto* env = protoPython::PythonEnvironment::get(ctx);\n";
-        *out_ << "    auto* gen = const_cast<proto::ProtoObject*>(self);\n";
-        
-        // Restore local variables from gi_locals
+
+        // 1. Continuation function at top level.  Each resumption restores
+        // the locals from gi_locals into its slots.
+        const SlotFrame contSlots = enterSlotFrame(static_cast<int>(slotLocals.size()));
+        std::ostringstream contBody;
+        out_ = &contBody;
         *out_ << "    const proto::ProtoSparseList* gi_locals = env->getAttribute(ctx, gen, env->getGiLocalsString())->asSparseList(ctx);\n";
-        int local_idx = 0;
-        for (const auto& loc : orderedLocals) {
-            *out_ << "    const proto::ProtoObject* local_" << loc << " = (gi_locals && " << local_idx << " < gi_locals->getSize(ctx)) ? gi_locals->getAt(ctx, " << local_idx << ") : PROTO_NONE;\n";
-            local_idx++;
+        for (size_t i = 0; i < slotLocals.size(); ++i) {
+            *out_ << "    local_" << slotLocals[i] << " = (gi_locals && " << i << " < gi_locals->getSize(ctx)) ? gi_locals->getAt(ctx, " << i << ") : PROTO_NONE;\n";
         }
-        
         *out_ << "    int pc = env->getAttribute(ctx, gen, env->getGiPCString())->asLong(ctx);\n";
         *out_ << "    if (protoPython::diagEnabled()) { fprintf(stderr, \"[cont] gen=%p pc=%d\\n\", (void*)gen, pc); fflush(stderr); }\n";
         *out_ << "    try {\n";
         *out_ << "        switch (pc) {\n";
         *out_ << "            case 0: \n";
-        
+        beginStatement();
         if (!generateNode(body)) return false;
-        
         *out_ << "                break;\n";
         *out_ << "        }\n";
         *out_ << "    } catch (const proto::ProtoObject* val) {\n";
-        *out_ << "        if (env->isStopIteration(val)) throw val;\n";
+        *out_ << "        if (env->isStopIteration(ctx, val)) throw val;\n";
         *out_ << "        return val;\n";
         *out_ << "    }\n";
-        
-        *out_ << "    gen->setAttribute(ctx, env->getGiPCString(), ctx->fromInteger(-1));\n"; 
+        *out_ << "    gen->setAttribute(ctx, env->getGiPCString(), ctx->fromInteger(-1));\n";
         *out_ << "    env->raiseStopIteration(ctx, PROTO_NONE);\n";
         *out_ << "    return PROTO_NONE;\n";
-        *out_ << "}\n";
+        out_ = &funcStream;
+        emitScopedCall(cppContName, contBody.str(),
+                       "    auto* gen = const_cast<proto::ProtoObject*>(self);\n");
+        leaveSlotFrame(contSlots);
 
-        // 2. Generate Wrapper Function at top level
-        *out_ << "\nconst proto::ProtoObject* " << cppFuncName << "(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {\n";
-        *out_ << "    auto* env = protoPython::PythonEnvironment::get(ctx);\n";
+        // 2. Wrapper function at top level: builds the generator object.
+        const SlotFrame wrapSlots = enterSlotFrame(static_cast<int>(slotLocals.size()));
+        std::ostringstream wrapBody;
+        out_ = &wrapBody;
         *out_ << "    auto* gen = const_cast<proto::ProtoObject*>(ctx->newObject(true));\n";
         *out_ << "    if (env->getGeneratorPrototype()) gen->addParent(ctx, env->getGeneratorPrototype());\n";
         *out_ << "    gen = const_cast<proto::ProtoObject*>(gen->setAttribute(ctx, env->getGiNativeCallbackString(), ctx->fromMethod(nullptr, " << cppContName << ")));\n";
         *out_ << "    gen = const_cast<proto::ProtoObject*>(gen->setAttribute(ctx, env->getGiPCString(), ctx->fromInteger(0)));\n";
         *out_ << "    gen = const_cast<proto::ProtoObject*>(gen->setAttribute(ctx, env->getGiRunningString(), PROTO_FALSE));\n";
-        
+
         // Initial locals
         *out_ << "    const proto::ProtoSparseList* initialLocals = ctx->newSparseList();\n";
-        for (size_t i = 0; i < orderedLocals.size(); ++i) {
+        for (size_t i = 0; i < slotLocals.size(); ++i) {
             *out_ << "    initialLocals = initialLocals->setAt(ctx, " << i << ", PROTO_NONE);\n";
         }
-        
+
         // Bind parameters to initial locals (with defaults aligned to the
         // last N positional params, matching PEP semantics).
         *out_ << "    proto::proto_ulong nPos = args ? args->getSize(ctx) : 0;\n";
@@ -844,9 +994,9 @@ bool CppGenerator::generateFunctionInternal(const std::string& name,
                                             ? parameters.size() - numDefaultsGen
                                             : 0;
         for (size_t i = 0; i < parameters.size(); ++i) {
-             auto it = std::find(orderedLocals.begin(), orderedLocals.end(), parameters[i]);
-             if (it != orderedLocals.end()) {
-                 int idx = static_cast<int>(std::distance(orderedLocals.begin(), it));
+             auto it = std::find(slotLocals.begin(), slotLocals.end(), parameters[i]);
+             if (it != slotLocals.end()) {
+                 int idx = static_cast<int>(std::distance(slotLocals.begin(), it));
                  if (i >= defaultStartGen && defaults) {
                      *out_ << "    initialLocals = initialLocals->setAt(ctx, " << idx
                            << ", (nPos > " << i << ") ? args->getAt(ctx, " << i << ") : ";
@@ -861,23 +1011,28 @@ bool CppGenerator::generateFunctionInternal(const std::string& name,
         }
         *out_ << "    gen = const_cast<proto::ProtoObject*>(gen->setAttribute(ctx, env->getGiLocalsString(), initialLocals->asObject(ctx)));\n";
         *out_ << "    return gen;\n";
-        *out_ << "}\n";
+        out_ = &funcStream;
+        emitScopedCall(cppFuncName, wrapBody.str(), nullptr);
+        leaveSlotFrame(wrapSlots);
 
         inStateMachine_ = false;
     } else {
-        // Standard function logic
-        *out_ << "\nconst proto::ProtoObject* " << cppFuncName << "(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {\n";
-        *out_ << "    auto* env = protoPython::PythonEnvironment::get(ctx);\n";
+        // Standard function logic.
+        const SlotFrame funcSlots = enterSlotFrame(static_cast<int>(slotLocals.size()));
+        std::ostringstream funcBody;
+        out_ = &funcBody;
         *out_ << "    proto::proto_ulong nPos = args ? args->getSize(ctx) : 0;\n";
-        
+
         // Bind parameters.  Trailing parameters may carry default values
         // (PEP-style: defaults align to the LAST N positional params).
+        // Every other local starts as PROTO_NONE, the value ContextScope
+        // gives a fresh slot.
         const size_t numDefaults = defaults ? defaults->size() : 0;
         const size_t defaultStart = parameters.size() > numDefaults
                                         ? parameters.size() - numDefaults
                                         : 0;
         for (size_t i = 0; i < parameters.size(); ++i) {
-             *out_ << "    const proto::ProtoObject* local_" << parameters[i]
+             *out_ << "    local_" << parameters[i]
                    << " = (nPos > " << i << ") ? args->getAt(ctx, " << i << ") : ";
              if (i >= defaultStart && defaults) {
                  if (!generateNode((*defaults)[i - defaultStart].get())) return false;
@@ -886,15 +1041,6 @@ bool CppGenerator::generateFunctionInternal(const std::string& name,
              }
              *out_ << ";\n";
         }
-        // Initialize other locals (skip free vars — they're declared
-        // separately from `self->getAttribute(...)` just below).
-        for (const auto& loc : orderedLocals) {
-            if (freeVars_.count(loc)) continue;
-            bool isParam = std::find(parameters.begin(), parameters.end(), loc) != parameters.end();
-            if (!isParam) {
-                *out_ << "    const proto::ProtoObject* local_" << loc << " = PROTO_NONE;\n";
-            }
-        }
         // Closure-captured variables are passed via `self` (asMethodSelf):
         // at definition time the enclosing scope built a closure storage
         // object holding each free var's current value, and ctx->fromMethod
@@ -902,7 +1048,7 @@ bool CppGenerator::generateFunctionInternal(const std::string& name,
         // body references resolve through `local_<name>` like any other
         // local — generateName remains uniform.
         for (const auto& fv : orderedFreeVars) {
-            *out_ << "    const proto::ProtoObject* local_" << fv
+            *out_ << "    local_" << fv
                   << " = self ? self->getAttribute(ctx, protoPython::PythonEnvironment::getInternedString(ctx, \""
                   << fv << "\")) : PROTO_NONE;\n";
         }
@@ -914,13 +1060,16 @@ bool CppGenerator::generateFunctionInternal(const std::string& name,
         for (const auto& fv : freeVars_) enclosingLocals_.back().insert(fv);
 
         *out_ << "    try {\n";
+        beginStatement();
         if (!generateNode(body)) {
             enclosingLocals_.pop_back();
             return false;
         }
         *out_ << "    } catch (const proto::ProtoObject* retVal) { return retVal; }\n";
         *out_ << "    return PROTO_NONE;\n";
-        *out_ << "}\n";
+        out_ = &funcStream;
+        emitScopedCall(cppFuncName, funcBody.str(), nullptr);
+        leaveSlotFrame(funcSlots);
 
         enclosingLocals_.pop_back();
     }
@@ -976,16 +1125,24 @@ bool CppGenerator::generateClassDef(ClassDefNode* n) {
     *out_ << "\n    // Class definition: " << n->name << "\n";
     *out_ << "    const proto::ProtoObject* class_name_" << n->name << " = ctx->fromUTF8String(\"" << n->name << "\");\n";
     
-    // Bases
+    // Bases.  They and the namespace are used after the class body, which
+    // may loop: each is kept in an anchor slot.
     *out_ << "    std::vector<const proto::ProtoObject*> bases_" << n->name << ";\n";
+    std::vector<int> classAnchors;
     for (auto& b : n->bases) {
-        *out_ << "    bases_" << n->name << ".push_back(";
+        const int baseSlot = pushAnchor();
+        classAnchors.push_back(baseSlot);
+        *out_ << "    __slot[" << baseSlot << "] = ";
         if (!generateNode(b.get())) return false;
-        *out_ << ");\n";
+        *out_ << ";\n";
+        *out_ << "    bases_" << n->name << ".push_back(__slot[" << baseSlot << "]);\n";
     }
 
     // Namespace and Body
+    const int nsSlot = pushAnchor();
+    classAnchors.push_back(nsSlot);
     *out_ << "    auto* ns_" << n->name << " = const_cast<proto::ProtoObject*>(ctx->newObject(true));\n";
+    *out_ << "    __slot[" << nsSlot << "] = ns_" << n->name << ";\n";
     *out_ << "    ns_" << n->name << "->setAttribute(ctx, env->getNameString(), class_name_" << n->name << ");\n";
     *out_ << "    {\n";
     *out_ << "        auto* oldFrame = protoPython::PythonEnvironment::getCurrentFrame();\n";
@@ -1042,6 +1199,7 @@ bool CppGenerator::generateClassDef(ClassDefNode* n) {
     }
 
     *out_ << "    env->storeName(\"" << n->name << "\", var_cls_" << n->name << ");\n";
+    for (size_t i = 0; i < classAnchors.size(); ++i) popAnchor();
     return true;
 }
 
@@ -1344,15 +1502,19 @@ bool CppGenerator::generateNamedExpr(NamedExprNode* n) {
 bool CppGenerator::generateFor(ForNode* n) {
     static int forId = 0;
     int id = forId++;
+    // The iterator lives across the whole loop, safepoints included: it is
+    // kept in an anchor slot, not only in a C++ variable.
+    const int iterSlot = pushAnchor();
     *out_ << "{\n";
-    *out_ << "        auto* __iter_" << id << " = env->iter(";
+    *out_ << "        __slot[" << iterSlot << "] = env->iter(";
     if (!generateNode(n->iter.get())) return false;
     *out_ << ");\n";
+    *out_ << "        const proto::ProtoObject* const& __iter_" << id << " = __slot[" << iterSlot << "];\n";
     // The else clause runs after the loop, outside it (see generateWhile):
     // emitted after the C++ loop, when the iterator was exhausted.
     if (n->orelse) *out_ << "        bool __for_done_" << id << " = false;\n";
     *out_ << "        while (true) {\n";
-    *out_ << "            ctx->safepoint();\n";
+    emitLoopSafepoint();
     *out_ << "            auto* __val_" << id << " = env->next(__iter_" << id << ");\n";
     *out_ << "            if (env->hasPendingException()) {\n";
     *out_ << "                (void)env->takePendingException();\n";
@@ -1390,6 +1552,7 @@ bool CppGenerator::generateFor(ForNode* n) {
     
     if (!generateNode(n->body.get())) return false;
     *out_ << "        }\n";
+    popAnchor();
     if (n->orelse) {
         *out_ << "        if (__for_done_" << id << ") {\n";
         if (!generateNode(n->orelse.get())) return false;
@@ -1402,8 +1565,12 @@ bool CppGenerator::generateFor(ForNode* n) {
 bool CppGenerator::generateTry(TryNode* n) {
     *out_ << "{\n";
     if (!generateNode(n->body.get())) return false;
+    // The caught exception is used across the handlers' bodies, which may
+    // loop: it is kept in an anchor slot.
+    const int excSlot = pushAnchor();
     *out_ << "        if (env->hasPendingException()) {\n";
-    *out_ << "            auto* __exc = env->takePendingException();\n";
+    *out_ << "            __slot[" << excSlot << "] = env->takePendingException();\n";
+    *out_ << "            const proto::ProtoObject* __exc = __slot[" << excSlot << "];\n";
     *out_ << "            bool __handled = false;\n";
     for (auto& h : n->handlers) {
         *out_ << "            if (!__handled";
@@ -1422,6 +1589,7 @@ bool CppGenerator::generateTry(TryNode* n) {
     }
     *out_ << "            if (!__handled) env->raiseException(__exc);\n";
     *out_ << "        }\n";
+    popAnchor();
     if (n->finalbody) {
         *out_ << "        // finally\n";
         if (!generateNode(n->finalbody.get())) return false;
@@ -1487,8 +1655,13 @@ bool CppGenerator::generateImportFrom(ImportFromNode* n) {
 
 bool CppGenerator::generateLambda(LambdaNode* n) {
     if (!n) return false;
-    *out_ << "ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {\n";
-    *out_ << "        auto* env = protoPython::PythonEnvironment::get(ctx);\n";
+    // A lambda runs in a context of its own, like a def (see
+    // generateFunctionInternal); its body is generated first because the
+    // slot count is known only afterwards.
+    const SlotFrame lambdaSlots = enterSlotFrame(0);
+    std::ostream* outerOut = out_;
+    std::ostringstream lambdaBody;
+    out_ = &lambdaBody;
     *out_ << "        // Bind parameters\n";
     *out_ << "        proto::proto_ulong nPos = args ? args->getSize(ctx) : 0;\n";
     {
@@ -1528,10 +1701,19 @@ bool CppGenerator::generateLambda(LambdaNode* n) {
         *out_ << "        env->storeName(\"" << n->kwarg << "\", kaDict);\n";
     }
 
-    *out_ << "        return ";
+    *out_ << "        const proto::ProtoObject* __result = ";
     if (!generateNode(n->body.get())) return false;
     *out_ << ";\n";
+    *out_ << "        protoPython::promote(ctx, __result);\n";
+    *out_ << "        return __result;\n";
+    out_ = outerOut;
+
+    *out_ << "ctx->fromMethod(nullptr, [](proto::ProtoContext* __callerCtx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {\n";
+    *out_ << openContextScope("__callerCtx");
+    *out_ << "        auto* env = protoPython::PythonEnvironment::get(ctx);\n";
+    *out_ << lambdaBody.str();
     *out_ << "    })";
+    leaveSlotFrame(lambdaSlots);
     return true;
 }
 
