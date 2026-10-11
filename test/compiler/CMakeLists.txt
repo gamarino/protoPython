@@ -203,3 +203,14 @@ add_test(NAME protopyc_closures
 set_tests_properties(protopyc_closures PROPERTIES
     TIMEOUT 900
     LABELS "regression_gate")
+
+# A compiled module defining named nested functions in a loop of calls runs
+# in a fixed heap: no cycle of mutable objects is left per call.
+add_test(NAME protopyc_nested_def_memory
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/protopyc_nested_def_memory.sh
+            $<TARGET_FILE:protopyc> $<TARGET_FILE:protopy>
+            ${CMAKE_CURRENT_SOURCE_DIR}/nested_def_probe.py
+            ${CMAKE_CURRENT_BINARY_DIR}/nested_def_memory)
+set_tests_properties(protopyc_nested_def_memory PROPERTIES
+    TIMEOUT 900
+    LABELS "regression_gate")

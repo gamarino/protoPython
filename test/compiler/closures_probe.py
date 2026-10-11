@@ -284,10 +284,15 @@ class Shown:
         return 3
 
 
+class Shown2(Shown):
+    def who(self):
+        return __class__.__name__, super().m()
+
+
 def class_namespace():
     names = sorted(k for k in vars(Shown) if not k.startswith("__"))
     hidden = [k for k in dir(Shown) if "protopyc" in k] + [k for k in Shown.__dict__ if "protopyc" in k]
-    return names, hidden, Shown().m() + Shown().n()
+    return names, hidden, Shown().m() + Shown().n(), Shown2().who()
 
 
 def membership():

@@ -44,3 +44,73 @@ ProtoPython implements a sophisticated prototype-based object model.
 - **Prototype Linkage**: Every object can have one or more parents. Attribute lookup traverses this parent chain.
 - **`co_name` and Introspection**: Code objects store metadata like `co_name` for improved diagnostics and representation.
 - **Standardized Dunder Lookups**: Lookups for `__repr__`, `__str__`, etc., are optimized and standardized in `PythonEnvironment` to handle both built-in and user-defined types efficiently.
+
+## 6. Closures
+
+A variable that a nested scope uses lives in a **cell**: a mutable child of
+`types.CellType` whose own attribute `__cell_contents__` holds the value (no
+attribute: the cell is empty). `PythonEnvironment::newCell`, `cellGet`, `cellSet`
+and `cellClear` are the whole API, shared by the interpreter and by code `protopyc`
+generates. A cell is the only mutable object between a closure and the scope that
+defined the variable: a function holds the cells it closes over (the interpreter
+keeps them in a `ProtoList`, `__closure_cells__`; compiled code in its function
+storage), never the frame that created them.
+
+**Why.** Until 2026-10-11 a nested function closed over the whole frame of its
+enclosing call: the function held the frame and the frame held the function as a
+local, a cycle between two mutable objects, and protoCore never collects such a
+cycle (protoCore `docs/MemoryModel.md`, section 7: the mutables table is a GC root
+and an entry is released only when its handle is finalized). Every call of a
+function that defined a named nested function left one cycle behind (a loop
+calling a function that defines a recursive inner function reached a peak RSS of
+0.53 GB after 20,000 calls and 3.0 GB after 80,000, under the adaptive
+controller; now 0.15 GB after either), and a loop of such calls exhausted any fixed
+heap. Free variables
+were also found by walking frames by name, at every read.
+
+**Layout.** The compiler resolves, for every function-like scope, its cell
+variables (locals and parameters a nested scope uses) and its free variables
+(`co_cellvars`, `co_freevars`). A cell variable keeps its cell in its own
+`co_varnames` slot, so the function stays `CO_OPTIMIZED`; the free variables take
+the slots after `co_varnames` (`co_nlocalsplus` says where the operand stack
+starts). At a call, after the arguments are bound, the free-variable slots receive
+the function's cells and each cell variable's slot a new cell holding its parameter
+value, or an empty one (`setupClosureSlots`). `LOAD_DEREF`, `STORE_DEREF` and
+`DELETE_DEREF` take a slot; `LOAD_CLOSURE` pushes the cell itself, and
+`BUILD_FUNCTION` takes the closure's cells from below the code object. A scope is
+compiled again with exactly the cells its nested scopes asked for, so the first
+estimate of the analysis never has to be exact. A class body has no `co_varnames`:
+its free variables (its own, and those it passes on to its methods) come first,
+`LOAD_CLASSDEREF` reads the namespace before the cell, and the methods' `__class__`
+is the class body's own cell, which it leaves in the namespace as `__classcell__`;
+`type.__new__` fills it with the class before `__init_subclass__` runs
+(`PythonEnvironment::applyClassCell`).
+
+**A cell is never a tuple.** protoCore interns tuples, and an interned tuple is
+perennial (protoCore embedder rule 5): a tuple of a call's cells would keep them,
+and what they hold, for the life of the process. The cells travel in a `ProtoList`.
+
+**Recursive nested functions.** `def f(): def g(n): ... g(n - 1) ...` would close
+`cell(g) -> g -> closure -> cell(g)`, a cycle through the cell. When the `def` is
+the only binding of its name anywhere in the enclosing scope (no other assignment,
+`del`, `global` or `nonlocal` of it, no decorator, not inside a loop), the name
+always denotes the function inside its body, so the function binds its own name to
+itself at entry instead of closing over the cell (`co_selfref`); the cell, if a
+sibling still needs one, holds the function without being held by it.
+`g.__closure__` still shows a cell for the name (a fresh one holding `g`), and
+`co_freevars` lists it, as in CPython.
+
+**What still forms a cycle, by what the program means.** Mutually recursive
+nested functions (`even` calls `odd`, `odd` calls `even`), a decorated recursive
+nested function (the cell holds the wrapper, which holds the function), a
+recursive nested function that rebinds its own name, and a class (its `__mro__`
+holds the class, and its methods' `__class__` cell holds it too). Each is one cycle
+per definition, retained for the life of the space. `ProtoSpace::findMutableCycles`
+counts them (`test/library/TestMutableCycles.cpp`).
+
+**Introspection.** `f.__closure__`, `cell.cell_contents` (read and write),
+`types.CellType(x)`, `frame.f_locals` and `locals()` (a snapshot dict in a function,
+as CPython 3.13 returns) include cell and free variables; so do `eval()` and
+`exec()` without explicit namespaces. Deviations: writing the `__closure__` cell of
+a recursive function's own name does not change what its body calls, and
+`f.__closure__ is f.__closure__` is false for such a function.

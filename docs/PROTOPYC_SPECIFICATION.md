@@ -135,13 +135,15 @@ compiler diagnostics and native debuggers (GDB, LLDB) can point at Python source
 - **Callables and their module.** Every compiled callable (function, generator
   function and its continuation, lambda) is a native method bound to an immutable
   *function storage* object: `__module_ns__`, the namespace of the module that
-  defined it (the current globals at the definition), and the values of its free
-  variables, captured at the definition. The callable's entry point enters that
-  namespace with `protoPython::ModuleNamespaceScope` (current frame and globals) for
-  as long as it runs, so its module-level names resolve in its own module whoever
-  calls it, as an interpreted function's do through `__globals__`; then it runs the
-  body. Called as a function (`f(a)`, `C.m(obj, a)`), it receives its storage as
-  `self`. Found on a class through an instance, it binds as a Python function does
+  defined it (the current globals at the definition), the cells of its free
+  variables (below) and its default values, evaluated once at the definition
+  (`__defaults__`, a list for the last positional parameters, and `__kwdefaults__`
+  for keyword-only ones). The callable's entry point enters that namespace with
+  `protoPython::ModuleNamespaceScope` (current frame and globals) for as long as it
+  runs, so its module-level names resolve in its own module whoever calls it, as an
+  interpreted function's do through `__globals__`; then it runs the body. Called as
+  a function (`f(a)`, `C.m(obj, a)`), it receives its storage as `self`. Found on a
+  class through an instance, it binds as a Python function does
   (`PythonEnvironment::isCompiledFunction` recognizes it by the storage's own
   `__module_ns__`; `bindNativeMethod` binds it): `obj.m(a)` calls it with the storage
   as `self` and `obj` as its first argument, wherever the interpreter binds a method
@@ -151,22 +153,59 @@ compiler diagnostics and native debuggers (GDB, LLDB) can point at Python source
   their free variables however they are called. Where a runtime path still rebinds
   the native method to the instance, `self` is the receiver: the entry point moves it
   to the front of the arguments and finds the storage through the receiver's class,
-  under the key a `def` in a class body also binds (`__protopyc_fs_<C++ name>__`);
+  under a key a `def` in a class body also binds (`__protopyc_fs_<C++ name>__`; it is
+  runtime bookkeeping, which `vars(cls)`, `cls.__dict__` and `dir()` do not show);
   without one, it falls back to the namespace of the module the file initialized,
-  with its free variables `None`. A self-recursive call by the function's own name
-  calls the body directly. `def` and `class` statements in a function bind function
-  locals; names a class body binds go to the class namespace. Free variables are
-  transitive, as in Python: a function captures the enclosing functions' variables
-  that the functions nested in it use.
+  and its free variables read as unbound. `def` and `class` statements in a function
+  bind function locals; names a class body binds go to the class namespace.
+- **Scopes and closures.** `CppGenerator::buildScopes` builds a symbol table before
+  any code is emitted: for the module, each `def`, each lambda and each class body,
+  the names it binds (assignment, augmented assignment, `for` targets, `with ... as`,
+  `except ... as`, imports, `def` and `class`, `del`, walrus, `match` captures), the
+  names it declares `global` or `nonlocal`, and the names it reads. Free variables
+  are resolved through the enclosing functions, skipping class bodies as Python
+  does, and passed through the scopes in between; a function's cell variables are
+  its locals that a nested scope uses. (Comprehensions belong to the scope that
+  contains them, since protopyc emits them inline.) A function's slots hold its
+  parameters first (positional, keyword-only, `*args`, `**kwargs`), then its other
+  locals, then its free variables. A cell variable holds a cell in its slot
+  (`PythonEnvironment::newCell`, the interpreter's cell); a free variable holds the
+  cell it closes over, read from the function storage at entry. The storage keeps
+  cells, never values, so a read sees the variable's current binding (late
+  binding), `nonlocal` writes and `del` reach the scope that defined it, and an
+  empty cell raises `NameError` or `UnboundLocalError` with CPython's message. A
+  class body reads a free variable from its namespace when the namespace binds it,
+  else from the cell. A recursive `def` whose name only that `def` binds in its
+  scope (not decorated, not inside a loop) calls its body directly when it calls
+  itself by name, and does not capture its own name unless its body uses the name
+  other than as a plain call, or a scope nested in it does: so it closes no cycle
+  between mutable objects (the cell, the method, its storage) and a loop of calls
+  defining it runs in a bounded heap. A rebound or decorated name is called through
+  its binding, as Python does.
+- **Arguments.** A call binds as CPython binds (`PythonEnvironment::bindArguments`,
+  the same binding the interpreter uses, `bindArgumentsCore`): positional and
+  keyword arguments, the defaults stored at the definition, keyword-only and
+  positional-only parameters, `*args` (a tuple) and `**kwargs` (a dict in call
+  order), and CPython's `TypeError`s (missing, too many, unexpected keyword,
+  multiple values, positional-only passed as keyword). A call with exactly the
+  positional parameters of a function without keyword-only parameters, `*args` or
+  `**kwargs` binds them directly. Tuple and list targets unpack as CPython does
+  (`a, b = v`, `a, *rest = v`, in assignments and `for` loops).
 - **Attributes.** `obj.name` reads through `PythonEnvironment::loadAttr`, the read
   the interpreter's `LOAD_ATTR` and `getattr()` do: data descriptors,
   `__getattribute__`, instance attributes, non-data descriptors (properties,
   methods bound to `obj`), then `__getattr__`; a missing attribute raises
-  `AttributeError`. `obj.name = value` writes through `storeAttr` (data
-  descriptors, `__setattr__`, `__slots__`), and `obj.m(args)` calls through
-  `callMethod`, which passes `obj` first to a function found on its class and calls
-  anything else as it is. `env->getAttr` / `setAttr`, the raw protoCore read and
-  write generated code used before, remain for embedders.
+  `AttributeError`. An own attribute of an ordinary instance whose type does not
+  override `__getattribute__` and that is not a descriptor is read first through
+  protoCore's per-thread attribute cache, as the interpreter's `LOAD_ATTR` reads it
+  (`PythonEnvironment::ownAttributeFast`). `obj.name = value` writes through
+  `storeAttr` (data descriptors, `__setattr__`, `__slots__`), and `obj.m(args)`
+  calls through `callMethod(ctx, obj, name, {args})` (the name interned once at the
+  call site), which calls a function found on obj's class with `obj` first, without
+  a bound method, as `LOAD_METHOD` and `CALL` do, and anything else as it is. `a in b`
+  and `a not in b` run the interpreter's `COMPARE_OP`. `env->getAttr` / `setAttr`,
+  the raw protoCore read and write generated code used before, remain for
+  embedders.
 - **Classes.** A `class` statement builds its class as the interpreter's
   `BUILD_CLASS` does (`PythonEnvironment::buildClass`, shared by both): PEP 560
   `__mro_entries__`, the metaclass (explicit or derived from the bases) and its
@@ -177,8 +216,10 @@ compiler diagnostics and native debuggers (GDB, LLDB) can point at Python source
   Python class: an interpreted class can derive from it and inherit its methods,
   `super()` reaches its methods, and it can be an exception, an `Enum`, a dataclass
   or have `__slots__`. Zero-argument `super()` in a method is
-  `super(<class>, <first parameter>)`: the method's storage keeps the class's cell, a
-  mutable object that receives the class once the metaclass call returns.
+  `super(<class>, <first parameter>)`, and `__class__` in a method is that class:
+  the method's storage keeps the class's cell, which the class body leaves in its
+  namespace as `__classcell__` and `type.__new__` fills with the class before
+  `__init_subclass__` runs, as in CPython.
 - **Exceptions.** As in the interpreter, an operation that raises leaves its
   exception pending in the `PythonEnvironment`. Generated code reads the address of
   the thread's pending-exception flag once per call
@@ -251,15 +292,22 @@ compiler diagnostics and native debuggers (GDB, LLDB) can point at Python source
 - A `yield`, `yield from` or `await` must be a statement or the value of an
   assignment (`x = yield v`); one inside another expression (`f((yield v))`) is
   rejected at compile time.
-- A compiled `def` binds only positional arguments (and the defaults of the
-  last parameters): keyword arguments, `*args` and `**kwargs` are not bound
-  (`*args` and `**kwargs` read as `None`). A metaclass whose `__new__` takes
-  `**kwargs`, or an `__init_subclass__` given class keywords, therefore cannot be
-  compiled yet.
 - Compiled code adds no traceback entries.
-- A `def` in a class body leaves its storage key (`__protopyc_fs_<C++ name>__`,
-  section 4) in the class namespace, where `vars(cls)` and `dir(cls)` show it.
 - Generator expressions are evaluated eagerly, as a list.
+- Comprehensions run inline in the scope that contains them: their loop
+  variables are that scope's variables (CPython gives a comprehension a scope of
+  its own).
+- A recursive nested function whose body uses its own name other than to call it
+  (`f` passed as a value, `map(f, xs)`), or whose nested scopes use the name, closes
+  over the cell holding it: one cycle between mutable objects per call of the
+  function that defines it, which protoCore never collects (protoCore
+  `docs/MemoryModel.md`, section 7). So do mutually recursive nested functions and a
+  decorated recursive one, as in the interpreter (`docs/INTERNALS_DEEP_DIVE.md`,
+  "Closures").
+- Zero-argument `super()` and `__class__` work in a method (a `def` directly in a
+  class body), not in a function nested in one.
+- A compiled function object has no `__closure__`, `__code__` or `__defaults__`
+  attributes: it is a native method.
 
 ## 6. Not implemented
 

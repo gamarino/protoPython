@@ -50,9 +50,12 @@ protoPython provides three components:
   on an instance. Attribute reads apply Python's rules (descriptors,
   `__getattr__`, `AttributeError`), and compiled classes are built by the
   interpreter's class machinery (their own `__mro__`, metaclasses, `Enum`,
-  dataclasses, interpreted subclasses), also since 2026-10-11; compiled
-  functions do not yet bind keyword arguments, `*args` or `**kwargs`. Known
-  limitations are listed in
+  dataclasses, interpreted subclasses), also since 2026-10-11. Compiled
+  closures hold cells, as the interpreter's do (late binding, `nonlocal`, `del`,
+  recursive nested functions without a cycle per call), and compiled functions
+  bind arguments as CPython does (keywords, defaults evaluated at the
+  definition, keyword-only and positional-only parameters, `*args`, `**kwargs`,
+  CPython's `TypeError`s). Known limitations are listed in
   [docs/PROTOPYC_SPECIFICATION.md](docs/PROTOPYC_SPECIFICATION.md), section 5.
 
 ### CPython conformance
@@ -202,6 +205,22 @@ protoCore's out-of-memory message.
 | `PROTOCORE_ADAPTIVE_HEAP=0` | Turns the controller off: the budget becomes a fixed hard limit. |
 | `PROTOCORE_ADAPTIVE_HEAP_START=budget` | Starts the soft limit at the budget, for a run known to fit. |
 | `PROTOCORE_HEAP_TRACE=1` | Prints one line per collection cycle on standard error. |
+
+Two kinds of object are never collected, by protoCore's design (protoCore
+`docs/MemoryModel.md`, section 7, and embedder rule 5):
+
+- **A cycle among mutable objects.** protoPython creates none per call: closures
+  hold cells, not frames, and a recursive nested function finds itself without
+  a cell (`docs/INTERNALS_DEEP_DIVE.md`, "Closures"). The program's own cycles
+  stay for the life of the process: mutually recursive or decorated recursive
+  nested functions (one cycle per definition), a class (its `__mro__` and
+  `__class__` cell hold it), a list that contains itself.
+- **A tuple.** protoPython's tuples are protoCore tuples, which protoCore interns
+  and never frees, so a tuple keeps what it holds: a loop that builds tuples of
+  new objects (`return (a, b)` of fresh lists, `*args` of fresh objects) grows
+  the heap by those objects for good. Measured: 40,000 calls passing a new list
+  through `*args` keep about 10 cells each. Not fixed: it needs a collectable
+  tuple representation.
 
 Before this default, protopy set no limit and protoCore never started a
 collection by itself, so the heap grew with every allocation. Embedders that

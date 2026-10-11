@@ -151,6 +151,8 @@ private:
     // a first parameter): that parameter, the object zero-argument super()
     // binds to.
     std::string methodSelfParam_;
+    // While a method's body (a def directly in a class body) is emitted.
+    bool inMethod_ = false;
     // __qualname__ prefix of the scope being emitted ("" at module level,
     // "f.<locals>" in function f, "C" in class C).
     std::string qualnamePrefix_;

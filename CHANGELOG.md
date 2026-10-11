@@ -17,6 +17,82 @@ onwards. Commit hashes are given for reference.
 > (`9fa74ad1`), after the `v1.0.0` tag, and has no matching tag or CMake
 > version.
 
+### Changed — closures hold cells, not frames (2026-10-11)
+
+- **A nested function closes over cells, never over the frame that defined it,
+  in the interpreter and in protopyc** (`docs/INTERNALS_DEEP_DIVE.md`,
+  "Closures"). A nested function held its defining frame (a mutable object) and
+  that frame held the function as a local: one cycle between mutable objects per
+  call of the defining function, which protoCore never collects (protoCore
+  `docs/MemoryModel.md`, section 7). A loop calling a function that defines a
+  recursive inner function reached 0.53 GB peak RSS after 20,000 calls and
+  3.0 GB after 80,000 under the adaptive controller, and ran out of any fixed
+  heap; it now stays at 0.15 GB. Free variables were found by walking frames
+  by name at every read.
+  - *Interpreter.* A variable a nested scope uses lives in a cell
+    (`PythonEnvironment::newCell`, `cellGet`, `cellSet`, `cellClear`), kept in
+    the variable's fast slot, so the function stays `CO_OPTIMIZED`; free
+    variables take the slots after `co_varnames` (`co_freevars`,
+    `co_cellvars`, `co_cellslots`, `co_nlocalsplus`). `LOAD_DEREF`,
+    `STORE_DEREF` and the new `DELETE_DEREF` (217) take a slot; `LOAD_CLOSURE`
+    (218) pushes a cell; `BUILD_FUNCTION` takes the closure's cells
+    (`arg >> 8` of them) from below the code object; class bodies read free
+    variables namespace-first with `LOAD_CLASSDEREF` (219). The function keeps
+    its cells in a `ProtoList` (`__closure_cells__`): an interned `ProtoTuple`
+    is perennial (protoCore embedder rule 5). The compiler recompiles a scope
+    with exactly the cells its nested scopes ask for; the four comprehension
+    compilers are one (`compileComprehensionScope`).
+  - *Recursive nested functions.* A `def` that is the only binding of its name
+    in its scope (no decorator, not in a loop) binds its own name to itself at
+    entry instead of closing over the cell holding it, which would close
+    `cell -> function -> closure -> cell`. `__closure__` still shows a cell for
+    the name. Mutual recursion, a decorated recursive function and a class's
+    `__class__` cell remain one cycle per definition, by what the program means.
+  - *Classes.* The methods' `__class__` is the class body's own cell, left in
+    the namespace as `__classcell__` and filled by `type.__new__` before
+    `__init_subclass__` runs (`PythonEnvironment::applyClassCell`), as in
+    CPython; zero-argument `super()` reads it (compiled and at run time). The
+    class-name and `".__class__"` namespace bindings the frame walk needed are
+    gone.
+  - *Introspection.* `frame.f_locals`, `locals()` (now a snapshot dict in a
+    function, as CPython 3.13 returns; it returned the frame object), `eval()`
+    and `exec()` see cell and free variables; empty cells raise CPython's
+    `NameError` / `UnboundLocalError` messages.
+  - *protopyc.* A symbol table (`CppGenerator::buildScopes`) resolves every
+    name of the module, defs, lambdas and class bodies; free variables are
+    cells in the function storage (they were snapshots of the values at the
+    definition: no late binding, `nonlocal` and `del` lost, a recursive nested
+    function read its own name as `None`). A recursive nested def calls its body
+    directly and captures its name only when it uses it as a value.
+  - *Measured* (Release, interleaved, medians of 5; interpreter): a recursive
+    inner `fib(25)` 1.007 s -> 0.070 s; a `nonlocal` counter, 300,000 calls,
+    6.2 s -> 0.58 s; reading a free variable 3.5 s -> 0.84 s; a comprehension
+    capturing a local 9.3 s -> 2.8 s; creating and calling a closure
+    10.8 s -> 7.3 s; `fib(27)` unchanged (0.20 s). In instructions (perf stat),
+    a loop calling a closure: 30,108 M -> 788 M; compiled, the same loop
+    721 M -> 763 M (a cell read where a snapshot was read).
+  - *Tests*: `protopy_closure_semantics` and `_gc` (CPython's output on 50
+    closure cases, also under a 1.5 M-cell limit with a 200-cell context
+    threshold; 86 lines differed before), `protopy_nested_def_bounded_memory`
+    and `protopyc_nested_def_memory` (out of memory under a fixed 2.5 M-cell
+    heap before), `MutableCycles.NamedNestedDefsLeaveNoCycle` (320 -> 1,120
+    handles in cycles before), `protopyc_closures` and
+    `protopyc_emitted_cpp_closures`.
+
+- **Calls bind arguments as CPython does, in both engines**
+  (`PythonEnvironment::bindArgumentsCore`): positional and keyword arguments,
+  defaults, keyword-only and positional-only parameters (`co_posonlyargcount`,
+  stamped with `co_argcount`), `*args`, `**kwargs` in call order, and CPython's
+  `TypeError`s (missing, too many, unexpected keyword, multiple values,
+  positional-only passed as keyword). The interpreter raised none of them (a
+  missing argument read as `None`, an extra one was dropped); compiled code
+  bound positional arguments only and evaluated defaults again at every call
+  (they are now stored with the function at its definition). Two native callers
+  passed a dunder the wrong arguments, hidden until now: `len()` passed the
+  receiver again to a bound `__len__`, and the truth test called an unbound
+  `__bool__` / `__len__` without it. Test: `protopyc_closures` (binding cases,
+  interpreter and compiled).
+
 ### Changed — CI on protoCore 2.14.5 (2026-10-11)
 
 - **CI builds protoCore 2.14.5** (tag `v2.14.5`, commit `063c6d55`) on Linux,
@@ -288,6 +364,42 @@ onwards. Commit hashes are given for reference.
   are marked as reserved: never emitted and not handled.
 
 ### Fixed
+
+- **list, tuple and dict reprs show every item; a self-containing container
+  shows `[...]` / `{...}`** (2026-10-11). The reprs stopped after 20 items with
+  `, ...`, and a list or dict containing itself recursed until the stack
+  overflowed (a segmentation fault). A per-thread guard (CPython's
+  `Py_ReprEnter`) marks the containers whose repr is being built. The reprs are
+  new strings, no longer interned (an interned string is never collected).
+  Test: `protopy_repr_containers`.
+- **protopyc** (2026-10-11): a method's function-storage key
+  (`__protopyc_fs_<name>__`) no longer shows in `vars(cls)`, `cls.__dict__` or
+  `dir()`; `a in b` / `a not in b` compiled to concatenation (`'a' in 'abc'`
+  was `'aabc'`) and now run the interpreter's `COMPARE_OP`; tuple and list
+  targets unpack (`a, b = v`, `for k, v in ...`; they compiled to nothing);
+  `__class__` in a method is the class; the self-recursive call's argument array
+  was named `__argv`, a macro of the MSVC runtime, so the emitted C++ of a
+  recursive function did not compile on Windows; the generated-code preamble is
+  split into literals under MSVC's 16,380-byte limit (error C2026).
+- **protopyc: compiled attribute reads and method calls cost less**
+  (2026-10-11), recovering most of what `933da717` added. Instructions per
+  300,000 iterations, loop included (perf stat, Release):
+
+  |                | 52620c49 | 5b37c419 | now   |
+  |----------------|---------:|---------:|------:|
+  | method call    | 1,038 M  | 1,405 M  | 876 M |
+  | attribute read |   141 M  |   248 M  | 193 M |
+  | attribute write|   490 M  |   671 M  | 623 M |
+  | fib(25)        |   215 M  |   214 M  | 217 M |
+
+  `loadAttr` first tries the interpreter's `LOAD_ATTR` own-attribute path
+  (`PythonEnvironment::ownAttributeFast`, protoCore's per-thread attribute
+  cache); `callMethod(ctx, obj, name, {args})` takes a name interned at the call
+  site and calls a function found on the class with `obj` first, without a bound
+  method; `storeAttr(ctx, ...)` takes the context, and the store check (shared
+  with the interpreter's `STORE_ATTR`) answers a name no class holds with one
+  lookup instead of two. What remains above `52620c49` is the attribute
+  protocol itself, which that build did not apply.
 
 - **Interpreter: `finally` runs however a `try` statement is left; exceptions
   are chained** (2026-10-11). The compiler protected only the body with the
@@ -627,9 +739,9 @@ onwards. Commit hashes are given for reference.
     comprehension in a 20,000-iteration loop went from 161 K to 1.27 M live
     cells over 189 cycles, and now stays at 158-190 K. 60,000 calls of
     `scale` drove the live set to 2.99 M cells (at the ceiling).
-  - Not changed: a named nested def stored in such a frame still forms one
-    cycle per call of its defining function. That cycle is structural to the
-    whole-frame capture of closures. Chains of instances (`n = Node(j, n)`, 50
+  - Not changed then: a named nested def stored in such a frame still formed
+    one cycle per call of its defining function, structural to the whole-frame
+    capture of closures (closures over cells removed it, 2026-10-11, above). Chains of instances (`n = Node(j, n)`, 50
     deep) were also checked: the live set rises to about 1.9 M cells within
     30 cycles and stays flat for the next 400. That is acyclic mutable chains
     draining one level per cycle, not a leak.

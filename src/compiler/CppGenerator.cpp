@@ -1165,6 +1165,9 @@ bool CppGenerator::generateName(NameNode* n) {
 }
 
 std::string CppGenerator::nameRead(const std::string& name) const {
+    // `__class__` in a method: the class, from the cell its storage keeps.
+    if (name == "__class__" && inMethod_ && nameKind(name) == NameKind::Global)
+        return "__classFromCell(ctx, env, __fs)";
     // A name is read as the current scope resolves it (buildScopes): a
     // function's local is its slot (`local_<name>`), a cell or free variable
     // the contents of the cell in its slot (an empty one raises), a class
@@ -2005,6 +2008,8 @@ bool CppGenerator::generateDef(DefNode* n, bool isAsync) {
     // method; the qualified name of what the body defines continues this one.
     const std::string oldMethodSelfParam = methodSelfParam_;
     methodSelfParam_ = (isMethod && !n->parameters.empty()) ? n->parameters[0] : std::string();
+    const bool oldInMethod = inMethod_;
+    inMethod_ = isMethod;
     const std::string oldQualnamePrefix = qualnamePrefix_;
     const std::string qualname = qualnamePrefix_.empty() ? name : qualnamePrefix_ + "." + name;
     qualnamePrefix_ = qualname + ".<locals>";
@@ -2215,6 +2220,7 @@ bool CppGenerator::generateDef(DefNode* n, bool isAsync) {
     currentFuncName_ = oldCurrentFuncName;
     currentFuncCppName_ = oldCurrentFuncCppName;
     methodSelfParam_ = oldMethodSelfParam;
+    inMethod_ = oldInMethod;
     qualnamePrefix_ = oldQualnamePrefix;
     ctl_ = std::move(oldCtl);
     returnSlot_ = oldReturnSlot;
@@ -3095,6 +3101,7 @@ bool CppGenerator::generateLambda(LambdaNode* n) {
     const std::string oldCurrentFuncName = currentFuncName_;
     const std::string oldCurrentFuncCppName = currentFuncCppName_;
     const std::string oldMethodSelfParam = methodSelfParam_;
+    const bool oldInMethod = inMethod_;
     ScopeInfo* const oldScope = scope_;
     const std::string qualname = qualnamePrefix_.empty() ? std::string("<lambda>") : qualnamePrefix_ + ".<lambda>";
     orderedLocalVars_ = layout;
@@ -3104,8 +3111,10 @@ bool CppGenerator::generateLambda(LambdaNode* n) {
     currentFuncName_.clear();
     currentFuncCppName_.clear();
     methodSelfParam_.clear();
+    inMethod_ = false;
     scope_ = lscope;
     auto restore = [&]() {
+        inMethod_ = oldInMethod;
         orderedLocalVars_ = oldOrderedLocals;
         localVars_ = oldLocalVars;
         inStateMachine_ = oldInStateMachine;

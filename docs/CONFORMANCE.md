@@ -486,6 +486,16 @@ removal will be recorded rather than silent.
 
 ### 4. What IS structural: `__closure_frames__`, and only it
 
+> **Superseded on 2026-10-11.** The edge was structural to the *representation*,
+> not to Python: closures now hold cells (`docs/INTERNALS_DEEP_DIVE.md`,
+> "Closures"), the `__closure_frames__` shape is gone (`TestMutableCycles.cpp`
+> asserts 0 for it and for `__closure_cells__`), and a named nested def leaves no
+> cycle per call (`MutableCycles.NamedNestedDefsLeaveNoCycle`: 320 -> 1,120 handles
+> in cycles over 40 calls before, unchanged after). What a closure still closes is
+> the cycle the program means: mutually recursive nested functions, a decorated
+> recursive one, and the class cell of a class. The analysis below is kept as the
+> record of why the edge looked necessary.
+
 `OP_LOAD_DEREF` walks it (`ExecutionEngine.cpp:6361-6366`) to find the cell for a
 free variable. **Verified by mutation, not asserted:** deleting the edge
 (`ExecutionEngine.cpp:1323`) and rebuilding makes the smallest possible closure fail
@@ -560,8 +570,8 @@ The remaining two dominant shapes are **incidental with named, open blockers**:
 
 A positive declaration is a claim that every cycle the scan finds is what the program
 MEANS, "so that a snapshot would be the wrong answer"
-(`protoCoreConformance.h:201-219`). Of protoPython's four dominant shapes, **one is
-structural and three are not**: `__mro__` (6,671), `f_locals` (3,909) and the
+(`protoCoreConformance.h:201-219`). Of protoPython's four dominant shapes, **one was
+believed structural and has since been removed (section 4), and three are not**: `__mro__` (6,671), `f_locals` (3,909) and the
 `super()` proxy's MethodCell (6,223) are avoidable, the last of them now
 demonstrably so. Together that is **16,803 of the 22,433**. A number large enough to
 make the case Pass would assert that all of them are necessary — and would go on
