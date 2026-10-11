@@ -151,23 +151,9 @@ onwards. Commit hashes are given for reference.
 - **CI builds protoCore 2.14.2** (tag `v2.14.2`, commit `17bc118e`) in the
   Linux job and the macOS and Windows jobs, instead of 2.14.1: the collector
   adjustments (the multi-cursor sweep engages only when it pays; the adaptive
-  controller's live-set floor). The Windows floor job stays on 2.11.0. No
-  source change was needed: the full CTest suite (836 tests, protoCore's
-  2.14.2 suite included) passes locally against 2.14.2 built from
-  `../protoCore` (ldd-verified). protoPython does not enable protoCore's
-  adaptive heap: enabling it (branch `feat/adaptive-heap`) exposed a
-  pre-existing defect -- a nested function intermittently loses the
-  variables of its enclosing function (`NameError`) once a collection cycle
-  runs, reproduced under a fixed heap limit on the previous build as well --
-  so the adoption waits for the maintainer. CI on the branch: cross-platform
-  38104391156 green (Windows 182, macOS 185, the 2.11.0 floor 182); CI
-  38104389529 green on its second attempt -- the first failed on one of
-  protoCore's own tests run in this suite
-  (`AdaptiveHeapSteady.HeapStaysFarBelowTheGarbageVolume`: heap 15.2 M cells
-  against a bound of 10 M on the runner) and, in the informational job, on
-  `conformance_isolate.heap.ceiling_progress` with `NameError: name 'd' is not
-  defined` -- the same closure defect, under that case's heap ceiling,
-  without the controller.
+  controller's live-set floor). The Windows floor job stays on 2.11.0. The
+  full CTest suite (839 tests, protoCore's 2.14.2 suite included) passes
+  locally against 2.14.2 built from `../protoCore` (ldd-verified).
 
 - **CI builds protoCore 2.14.1** (tag `v2.14.1`, commit `94951559`) in the
   Linux job and the macOS and Windows jobs, instead of 2.12.0: the
