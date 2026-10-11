@@ -1624,6 +1624,17 @@ bool CppGenerator::generateBinOp(BinOpNode* n) {
         *out_ << ")) ? PROTO_TRUE : PROTO_FALSE)";
         return true;
     }
+    // `a in b` / `a not in b`: the interpreter's COMPARE_OP 6 / 7
+    // (__contains__, else iteration).  They fell through to binaryOp,
+    // which concatenated: `"a" in "abc"` was "aabc".
+    if (n->op == TokenType::In || n->op == TokenType::NotIn) {
+        *out_ << "__ck(__pexc, env->compareOperation(ctx, ";
+        if (!generateNode(n->left.get())) return false;
+        *out_ << ", ";
+        if (!generateNode(n->right.get())) return false;
+        *out_ << ", " << (n->op == TokenType::In ? 6 : 7) << "))";
+        return true;
+    }
 
     // Short-circuit boolean operators.  The parser puts `and` / `or`
     // into a BinOpNode (rather than a separate BoolOpNode), so the

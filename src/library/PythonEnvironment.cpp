@@ -793,7 +793,10 @@ static const proto::ProtoObject* py_mappingproxy_getitem(
              }
 
              if (sKey && data->hasOwnAttribute(context, sKey) == PROTO_TRUE) {
-                 const proto::ProtoObject* res = data->getOwnAttributeDirect(context, sKey);
+                 std::string nmKey;
+                 sKey->toUTF8String(context, nmKey);
+                 const bool hidden = nmKey.compare(0, 14, "__protopyc_fs_") == 0;
+                 const proto::ProtoObject* res = hidden ? nullptr : data->getOwnAttributeDirect(context, sKey);
                  if (res) return res;
              }
 
@@ -5311,6 +5314,33 @@ std::string PythonEnvironment::reprObject(proto::ProtoContext* context, const pr
     return "<object>";
 }
 
+namespace {
+// Containers whose repr is being built on this thread (CPython's
+// Py_ReprEnter / Py_ReprLeave): a container met again while its own repr is
+// being built is shown as `[...]`, `(...)` or `{...}`.  Only identity is
+// compared; the pointers are never dereferenced.
+thread_local std::vector<const proto::ProtoObject*> t_reprActive;
+
+struct ReprGuard {
+    bool recursive = false;
+    explicit ReprGuard(const proto::ProtoObject* obj) {
+        for (const proto::ProtoObject* p : t_reprActive) {
+            if (p == obj) { recursive = true; return; }
+        }
+        t_reprActive.push_back(obj);
+    }
+    ~ReprGuard() { if (!recursive) t_reprActive.pop_back(); }
+    ReprGuard(const ReprGuard&) = delete;
+    ReprGuard& operator=(const ReprGuard&) = delete;
+};
+
+// A repr is a new string, not an interned one: interned strings are never
+// collected.
+const proto::ProtoObject* reprResult(proto::ProtoContext* context, const std::string& out) {
+    return PythonEnvironment::newStr(context, out);
+}
+}  // namespace
+
 static const proto::ProtoObject* py_list_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -5330,20 +5360,16 @@ static const proto::ProtoObject* py_list_repr(
     }
     if (!list) return PythonEnvironment::getInternedString(context, "[]")->asObject(context);
 
+    ReprGuard guard(self);
+    if (guard.recursive) return PythonEnvironment::getInternedString(context, "[...]")->asObject(context);
     proto::proto_ulong size = list->getSize(context);
-    proto::proto_ulong limit = 20;
     std::string out = "[";
-    for (proto::proto_ulong i = 0; i < size && i < limit; ++i) {
+    for (proto::proto_ulong i = 0; i < size; ++i) {
         if (i > 0) out += ", ";
-        const proto::ProtoObject* item = list->getAt(context, static_cast<int>(i));
-        std::string r = PythonEnvironment::reprObject(context, item);
-        if (get_env_diag()) {
-        }
-        out += r;
+        out += PythonEnvironment::reprObject(context, list->getAt(context, static_cast<int>(i)));
     }
-    if (size > limit) out += ", ...";
     out += "]";
-    return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
+    return reprResult(context, out);
 }
 
 static const proto::ProtoObject* py_list_str(
@@ -5378,17 +5404,17 @@ static const proto::ProtoObject* py_tuple_repr(
         return PythonEnvironment::getInternedString(context, "()")->asObject(context);
     }
 
+    ReprGuard guard(self);
+    if (guard.recursive) return PythonEnvironment::getInternedString(context, "(...)")->asObject(context);
     proto::proto_ulong size = list->getSize(context);
-    proto::proto_ulong limit = 20;
     std::string out = "(";
-    for (proto::proto_ulong i = 0; i < size && i < limit; ++i) {
+    for (proto::proto_ulong i = 0; i < size; ++i) {
         if (i > 0) out += ", ";
         out += PythonEnvironment::reprObject(context, list->getAt(context, static_cast<int>(i)));
     }
     if (size == 1) out += ",";
-    if (size > limit) out += ", ...";
     out += ")";
-    return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
+    return reprResult(context, out);
 }
 
 static const proto::ProtoObject* py_tuple_eq(
@@ -14848,10 +14874,11 @@ static const proto::ProtoObject* py_dict_repr(
     const proto::ProtoSparseList* dict = data && data->asSparseList(context) ? data->asSparseList(context) : nullptr;
     if (!dict) return PythonEnvironment::getInternedString(context, "{}")->asObject(context);
 
+    ReprGuard guard(self);
+    if (guard.recursive) return PythonEnvironment::getInternedString(context, "{...}")->asObject(context);
     proto::proto_ulong size = keys->getSize(context);
-    proto::proto_ulong limit = 20;
     std::string out = "{";
-    for (proto::proto_ulong i = 0; i < size && i < limit; ++i) {
+    for (proto::proto_ulong i = 0; i < size; ++i) {
         if (i > 0) out += ", ";
         const proto::ProtoObject* key = keys->getAt(context, static_cast<int>(i));
         // Use dictKeyHash to look up the stored value — matches the
@@ -14864,9 +14891,8 @@ static const proto::ProtoObject* py_dict_repr(
         out += ": ";
         out += PythonEnvironment::reprObject(context, value);
     }
-    if (size > limit) out += ", ...";
     out += "}";
-    return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
+    return reprResult(context, out);
 }
 
 static const proto::ProtoObject* py_dict_str(
@@ -15235,6 +15261,10 @@ static bool clsNeedsMetaSlotSynthesis(proto::ProtoContext* ctx,
 }
 
 static bool isProtopyClassInternalName(const std::string& nm) {
+    // A method protopyc compiled keeps its function storage in its class
+    // under a key of its own (docs/PROTOPYC_SPECIFICATION.md, section 4):
+    // runtime bookkeeping, not a class attribute.
+    if (nm.compare(0, 14, "__protopyc_fs_") == 0) return true;
     return nm == "__mro__"
         || nm == "__bases__"
         || nm == "__base__"

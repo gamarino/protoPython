@@ -428,6 +428,11 @@ public:
                            const proto::ProtoObject* const* defaultValues, unsigned nDefaults,
                            const proto::ProtoSparseList* kwDefaults, const proto::ProtoObject** out);
 
+    /** The interpreter's COMPARE_OP for generated code: op 0-5 rich
+     *  comparisons, 6 `in`, 7 `not in`, 8 `is`, 9 `is not`. */
+    const proto::ProtoObject* compareOperation(proto::ProtoContext* ctx, const proto::ProtoObject* a,
+                                               const proto::ProtoObject* b, int op);
+
     /** True when `value` is a function protopyc compiled: a native method
      *  bound to its function storage (an object with an own `__module_ns__`;
      *  see docs/PROTOPYC_SPECIFICATION.md). Such a function binds to an

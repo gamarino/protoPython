@@ -22,6 +22,8 @@ init_subclass super ['local+registry']
 generator closure (100, [201, 202])
 generator nonlocal ([1, 2], [1, 2])
 lambda chain 115
+class namespace (['m', 'n', 'x'], [], 5)
+membership (True, False, False, ['xpz'], True, True, True)
 binding 0 (1, 2, 3, 4)
 binding 1 (1, 5, 6, 4)
 binding 2 (9, 2, 3, 0)

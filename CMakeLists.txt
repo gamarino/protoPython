@@ -1427,6 +1427,14 @@ set_tests_properties(protopy_nested_def_bounded_memory PROPERTIES
     ENVIRONMENT "PROTOCORE_HEAP_LIMIT_CELLS=2500000;PROTOCORE_ADAPTIVE_HEAP=0"
     TIMEOUT 600
     LABELS "regression_gate")
+# list, tuple and dict reprs show every item, and a self-containing one shows
+# [...] / {...} (a per-thread recursion guard) instead of overflowing the stack.
+add_test(NAME protopy_repr_containers
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/repr_containers.py)
+set_tests_properties(protopy_repr_containers PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
 # The module type is <class 'module'>; its class attributes are not module globals.
 add_test(NAME protopy_module_type
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/module_type.py)

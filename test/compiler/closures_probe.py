@@ -4,6 +4,8 @@
 # recursion, class bodies, generators; calls bind positional and keyword
 # arguments, defaults (evaluated at the definition), keyword-only and
 # positional-only parameters, *args and **kwargs, with CPython's TypeErrors.
+# A compiled class shows no function-storage key in vars() / dir(), and `in`
+# tests membership.
 
 
 def late():
@@ -273,6 +275,27 @@ def binding():
     return out
 
 
+# --- what a compiled class shows, and membership tests ------------------------
+class Shown:
+    x = 1
+    def m(self):
+        return 2
+    def n(self):
+        return 3
+
+
+def class_namespace():
+    names = sorted(k for k in vars(Shown) if not k.startswith("__"))
+    hidden = [k for k in dir(Shown) if "protopyc" in k] + [k for k in Shown.__dict__ if "protopyc" in k]
+    return names, hidden, Shown().m() + Shown().n()
+
+
+def membership():
+    words = ["ab", "cd", "xpz"]
+    return ("a" in "abc", "z" in "abc", "p" not in "xpz", [w for w in words if "p" in w],
+            3 in [1, 2, 3], 4 not in (1, 2), "k" in {"k": 1})
+
+
 def run():
     print("late", late())
     print("counter", counter())
@@ -298,5 +321,7 @@ def run():
     print("generator closure", generator_closure())
     print("generator nonlocal", generator_nonlocal())
     print("lambda chain", lambda_chain())
+    print("class namespace", class_namespace())
+    print("membership", membership())
     for k, r in enumerate(binding()):
         print("binding", k, r)

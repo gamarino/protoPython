@@ -3195,6 +3195,8 @@ static const proto::ProtoObject* py_dir(
             for (const auto& iv : internalNames) {
                 if (n == iv) return true;
             }
+            // The function storage of a method protopyc compiled.
+            if (n.compare(0, 14, "__protopyc_fs_") == 0) return true;
             if (!isClass) {
                 for (const auto& cv : classOnlyNames) {
                     if (n == cv) return true;

@@ -4376,6 +4376,11 @@ static void raiseUnboundFastLocal(proto::ProtoContext* ctx, PythonEnvironment* e
         "cannot access local variable '" + nStr + "' where it is not associated with a value");
 }
 
+const proto::ProtoObject* PythonEnvironment::compareOperation(proto::ProtoContext* ctx, const proto::ProtoObject* a,
+                                                             const proto::ProtoObject* b, int op) {
+    return compareOp(ctx, a, b, op);
+}
+
 // `class name(*bases, **kwds): body`: everything OP_BUILD_CLASS does around
 // running the body (PEP 560 __mro_entries__, the metaclass and its
 // __prepare__, the namespace's __name__ / __module__, the metaclass call and
