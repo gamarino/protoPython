@@ -72,6 +72,20 @@ set_tests_properties(protopyc_emitted_cpp_python_classes PROPERTIES
     TIMEOUT 300
     LABELS "regression_gate")
 
+# The same for closures and argument binding (closures_probe).
+add_test(NAME protopyc_emitted_cpp_closures
+    COMMAND ${CMAKE_COMMAND}
+            -DPROTOPYC=$<TARGET_FILE:protopyc>
+            -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/closures_probe.py
+            -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/emitted_cpp_closures
+            -DCXX=${CMAKE_CXX_COMPILER}
+            "-DINCLUDE_DIRS=${PROJECT_SOURCE_DIR}/include;${PROTOPYTHON_PROTOCORE_INCLUDE_DIR}"
+            -DMSVC=${_emitted_msvc}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_emitted_cpp.cmake)
+set_tests_properties(protopyc_emitted_cpp_closures PROPERTIES
+    TIMEOUT 300
+    LABELS "regression_gate")
+
 # protopyc builds a module with a C++ compiler and make, through a bash script;
 # that path is Linux/macOS only, and so are these targets.
 if(WIN32)
@@ -173,5 +187,19 @@ add_test(NAME protopyc_python_classes
             ${CMAKE_CURRENT_SOURCE_DIR}/python_classes.expected
             ${CMAKE_CURRENT_BINARY_DIR}/python_classes)
 set_tests_properties(protopyc_python_classes PROPERTIES
+    TIMEOUT 900
+    LABELS "regression_gate")
+
+# Closures over cells and CPython's argument binding in compiled code
+# (closures_probe): the compiled module's output equals CPython's
+# (closures.expected), also while collections run; so does the interpreter's.
+add_test(NAME protopyc_closures
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/protopyc_closures.sh
+            $<TARGET_FILE:protopyc> $<TARGET_FILE:protopy>
+            ${CMAKE_CURRENT_SOURCE_DIR}/closures_probe.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/closures_driver.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/closures.expected
+            ${CMAKE_CURRENT_BINARY_DIR}/closures)
+set_tests_properties(protopyc_closures PROPERTIES
     TIMEOUT 900
     LABELS "regression_gate")

@@ -382,6 +382,52 @@ public:
     void applyClassCell(proto::ProtoContext* ctx, const proto::ProtoObject* ns, const proto::ProtoObject* cls);
     const proto::ProtoString* getCellContentsString() const { return cellContents_; }
 
+    /** The signature of a function protopyc compiled, for bindArguments.
+     *  `names` lists the parameters in slot order: the positional ones (the
+     *  first nPosOnly of them positional-only), the keyword-only ones, then
+     *  *args and **kwargs when present. */
+    struct CompiledSignature {
+        const char* qualname;
+        unsigned nPositional;
+        unsigned nPosOnly;
+        unsigned nKwOnly;
+        bool hasVarargs;
+        bool hasKwargs;
+        const char* const* names;
+    };
+    /** Binds a call's arguments to a compiled function's parameters as
+     *  CPython does: positional arguments, keyword arguments, the defaults
+     *  of the last positional parameters (the `__defaults__` list in the
+     *  function storage `fs`) and of keyword-only ones (`__kwdefaults__`),
+     *  extra positional arguments in a tuple (*args), extra keywords in a
+     *  dict in call order (**kwargs).  Writes the values to `out` in the
+     *  order of `sig.names` (slots of the running context, so the collector
+     *  sees them).  Returns false with TypeError pending, with CPython's
+     *  message, when the call does not fit the signature. */
+    bool bindArguments(proto::ProtoContext* ctx, const CompiledSignature& sig,
+                       const proto::ProtoList* args, const proto::ProtoSparseList* kwargs,
+                       const proto::ProtoObject* fs, const proto::ProtoObject** out);
+    /** The binding both the interpreter and compiled code use: the
+     *  parameters' names in slot order (positional, keyword-only, *args,
+     *  **kwargs), the default values of the last positional parameters, and
+     *  the keyword-only defaults keyed by the name's hash. */
+    struct ArgumentSpec {
+        // The function's qualified name, for messages: a C string, or else
+        // a str object (read only when a message needs it).
+        const char* qualnameC;
+        const proto::ProtoObject* qualnameObj;
+        unsigned nPositional;
+        unsigned nPosOnly;
+        unsigned nKwOnly;
+        bool hasVarargs;
+        bool hasKwargs;
+        const proto::ProtoString* const* names;
+    };
+    bool bindArgumentsCore(proto::ProtoContext* ctx, const ArgumentSpec& spec,
+                           const proto::ProtoList* args, const proto::ProtoSparseList* kwargs,
+                           const proto::ProtoObject* const* defaultValues, unsigned nDefaults,
+                           const proto::ProtoSparseList* kwDefaults, const proto::ProtoObject** out);
+
     /** True when `value` is a function protopyc compiled: a native method
      *  bound to its function storage (an object with an own `__module_ns__`;
      *  see docs/PROTOPYC_SPECIFICATION.md). Such a function binds to an

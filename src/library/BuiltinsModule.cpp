@@ -440,7 +440,12 @@ static const proto::ProtoObject* py_len(
             // `len(A())` falling through to the "no len()" raise.
             // invokeCallable handles both forms uniformly via its
             // own asMethod / __code__ probe; trust it.
-            const proto::ProtoList* args = context->newList()->appendLast(context, obj);
+            // A method the lookup already bound to `obj` (a bound method,
+            // whose own __self__ is obj) takes no further argument; a plain
+            // function found on the instance takes obj.
+            const bool bound = env && env->getSelfDunderString() &&
+                lenMethod->hasOwnAttribute(context, env->getSelfDunderString()) == PROTO_TRUE;
+            const proto::ProtoList* args = bound ? context->newList() : context->newList()->appendLast(context, obj);
             const proto::ProtoObject* res = ::protoPython::invokePythonCallable(context, lenMethod, args, nullptr);
             if (!res) return nullptr;  // exception already pending
             if (res != PROTO_NONE) {

@@ -1,0 +1,39 @@
+late 2
+counter (3, 3, 3)
+loop closures [2, 2, 2]
+default capture [0, 1, 2]
+rec outer 7
+rec value [3, 2, 1, 0]
+rec identity True
+mutual (True, True)
+rebound second
+decorated (24, [4, 3, 2, 1])
+recursive generator [4, 3, 2, 1]
+unbound free ("cannot access free variable 'v' where it is not associated with a value in enclosing scope", 1)
+delete cell cannot access free variable 'z' where it is not associated with a value in enclosing scope
+cell params (10, 3) (20, 7)
+pass through x1
+deep nonlocal (5, 5)
+class body ('class-a', 'outer-b', ('outer-a', 'outer-b'))
+class method late 2
+class method nonlocal 5
+super in function derived+base
+init_subclass super ['local+registry']
+generator closure (100, [201, 202])
+generator nonlocal ([1, 2], [1, 2])
+lambda chain 115
+binding 0 (1, 2, 3, 4)
+binding 1 (1, 5, 6, 4)
+binding 2 (9, 2, 3, 0)
+binding 3 (1, (2, 3), [('y', 2), ('z', 1)])
+binding 4 (7, (), [])
+binding 5 (1, 2, 3)
+binding 6 (1, 2)
+binding 7 (1, 3, (5,), 6, [('u', 7)])
+binding 8 kw() missing 1 required positional argument: 'a'
+binding 9 kw() takes from 1 to 2 positional arguments but 3 positional arguments (and 1 keyword-only argument) were given
+binding 10 kw() got an unexpected keyword argument 'e'
+binding 11 kw() got multiple values for argument 'a'
+binding 12 kw() missing 1 required keyword-only argument: 'd'
+binding 13 posonly() got some positional-only arguments passed as keyword arguments: 'a, b'
+binding 14 star() missing 1 required positional argument: 'a'

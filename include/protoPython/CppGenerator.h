@@ -6,6 +6,8 @@
 #include <iostream>
 #include <sstream>
 #include <unordered_set>
+#include <unordered_map>
+#include <set>
 #include <vector>
 #include <memory>
 
@@ -16,6 +18,43 @@ public:
     explicit CppGenerator(std::ostream& out) : finalOut_(out) {}
     
     bool generate(ModuleNode* module, const std::string& filename);
+
+    // ---------------------------------------------------------------
+    // Scopes: protopyc's symbol table (built by buildScopes, CppGenerator.cpp).
+    // A scope is the module, a def, a lambda or a class body; comprehensions
+    // belong to the scope that contains them (they are emitted inline).
+    //
+    // A function's variables live in its context's slots: its parameters
+    // first (positional, keyword-only, *args, **kwargs), then its other
+    // locals, then its free variables.  A cell variable (a local a nested
+    // scope uses) holds a cell in its slot (PythonEnvironment::newCell); a
+    // free variable holds the cell it closes over, taken from the function
+    // storage, which keeps the cells, never values: reads see the current
+    // binding (late binding) and `nonlocal` writes reach the defining scope.
+    struct ScopeInfo {
+        enum class Kind { Module, Function, Class };
+        Kind kind = Kind::Module;
+        const ASTNode* node = nullptr;
+        ScopeInfo* parent = nullptr;
+        std::string name;
+        std::unordered_set<std::string> bound;        // bound here (parameters included)
+        std::unordered_map<std::string, int> bindCount;
+        std::unordered_set<std::string> globals;      // declared global
+        std::unordered_set<std::string> nonlocals;    // declared nonlocal
+        std::unordered_set<std::string> used;         // read here
+        std::unordered_set<std::string> nonCallUsed;  // read other than as `name(args)`
+        std::vector<ScopeInfo*> children;
+        bool isDef = false;      // a def (not a lambda)
+        bool decorated = false;
+        bool inLoop = false;     // the def is inside a loop of its scope
+        // Resolved:
+        std::unordered_set<std::string> cells;        // locals a nested scope closes over
+        std::set<std::string> frees;                  // closed over from enclosing functions
+        // A recursive def that the name binds only once: calls by name run
+        // its body directly, and the name is not captured unless needed.
+        bool selfCalls = false;
+    };
+    enum class NameKind { Local, Cell, Free, Global, ClassLocal, ClassFree };
     
     // Collectors
     void collectLocals(ASTNode* node, std::unordered_set<std::string>& locals);
@@ -41,14 +80,14 @@ private:
     bool generateContinue(ContinueNode* n);
     bool generateFunctionDef(FunctionDefNode* n);
     bool generateAsyncFunctionDef(AsyncFunctionDefNode* n);
-    bool generateFunctionInternal(const std::string& name,
-                                 const std::vector<std::string>& parameters,
-                                 const std::string& vararg,
-                                 const std::string& kwarg,
-                                 ASTNode* body,
-                                 const std::vector<std::unique_ptr<ASTNode>>& decorator_list,
-                                 bool isAsync,
-                                 const std::vector<std::unique_ptr<ASTNode>>* defaults = nullptr);
+    // A def (or async def): its body as a compiled callable, then its
+    // storage, defaults and decorators in the enclosing scope.
+    template <class DefNode> bool generateDef(DefNode* n, bool isAsync);
+    // The argument binding, cells and free variables at a callable's entry.
+    bool emitPrologue(const ScopeInfo* s, const std::vector<std::string>& params,
+                      const std::vector<std::string>& layout, const std::string& qualname,
+                      size_t nPositional, int nPosOnly, size_t nKwOnly,
+                      bool hasVarargs, bool hasKwargs, const std::string& indent);
     bool generateReturn(ReturnNode* n);
     bool generateYield(YieldNode* n);
     bool generateAwait(AwaitNode* n);
@@ -223,6 +262,20 @@ private:
     bool emitWithItems(WithNode* n, size_t index, bool resumable);
     // The source file, for #line directives.
     std::string filename_;
+
+    // Scopes (see ScopeInfo above).
+    std::vector<std::unique_ptr<ScopeInfo>> scopeStore_;
+    std::unordered_map<const ASTNode*, ScopeInfo*> scopeOf_;
+    ScopeInfo* scope_ = nullptr;   // the scope whose code is being emitted
+    void buildScopes(ModuleNode* module);
+    NameKind nameKind(const std::string& name) const;
+    // Reading, binding and deleting a name in the current scope, as its
+    // kind requires: a slot, a cell, the class namespace or the module.
+    std::string nameRead(const std::string& name) const;
+    void emitDeleteName(const std::string& name);
+    // The slot layout of a function scope: parameters in signature order,
+    // then the other locals (sorted), then the free variables (sorted).
+    std::vector<std::string> slotLayout(const ScopeInfo* s, const std::vector<std::string>& params) const;
 };
 
 } // namespace protoPython

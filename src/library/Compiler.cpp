@@ -4422,6 +4422,14 @@ const proto::ProtoObject* Compiler::stampClosureLayout(const proto::ProtoObject*
     return codeObj;
 }
 
+const proto::ProtoObject* Compiler::stampArgCounts(const proto::ProtoObject* codeObj, int nPositional, int nPosOnly) {
+    if (!codeObj || codeObj == PROTO_NONE) return codeObj;
+    codeObj = codeObj->setAttribute(ctx_, PythonEnvironment::getInternedString(ctx_, "co_argcount"),
+                                    ctx_->fromInteger(nPositional));
+    return codeObj->setAttribute(ctx_, PythonEnvironment::getInternedString(ctx_, "co_posonlyargcount"),
+                                 ctx_->fromInteger(nPosOnly));
+}
+
 void Compiler::emitLoadClosure(const std::string& name) {
     requestedClosure_.insert(name);
     if (isClassBody_ && name == "__class__" && classCellSlot_ >= 0) {
@@ -4778,6 +4786,7 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     // from enclosing function scopes; with co_cellvars, co_cellslots and
     // co_selfref, the closure layout the call path sets up.
     codeObj = stampClosureLayout(codeObj, varnamesOrdered, cellVars, {}, {}, freeVars, selfRef, selfRefCell);
+    codeObj = stampArgCounts(codeObj, nparams, n->posonlyargcount);
     // Stamp `co_doc` on the code object when the body's first statement was
     // a string literal; ExecutionEngine reads it to populate `fn.__doc__`.
     if (!bodyCompiler.capturedDocstring_.empty()) {
@@ -5055,6 +5064,7 @@ bool Compiler::compileLambda(LambdaNode* n) {
     const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), PythonEnvironment::getInternedString(ctx_, filename_.c_str()), co_varnames, nparams, kwonlyargcount, automatic_count, co_flags, bodyCompiler.isGenerator_, PythonEnvironment::getInternedString(ctx_, "<lambda>"), bodyCompiler.firstLine_, co_lnotab);
     if (!codeObj) return false;
     codeObj = stampClosureLayout(codeObj, varnamesOrdered, cellVars, {}, {}, freeVars, std::string(), false);
+    codeObj = stampArgCounts(codeObj, nparams, n->posonlyargcount);
     int make_fn_flags = emitClosureCells(freeVars, std::string());
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
@@ -5285,6 +5295,7 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
     const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), PythonEnvironment::getInternedString(ctx_, filename_.c_str()), co_varnames, nparams, kwonlyargcount, automatic_count, co_flags, bodyCompiler.isGenerator_, PythonEnvironment::getInternedString(ctx_, n->name.c_str()), bodyCompiler.firstLine_, co_lnotab);
     if (!codeObj) return false;
     codeObj = stampClosureLayout(codeObj, varnamesOrdered, cellVars, {}, {}, freeVars, selfRef, selfRefCell);
+    codeObj = stampArgCounts(codeObj, nparams, n->posonlyargcount);
     int make_fn_flags = emitClosureCells(freeVars, selfRef);
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);

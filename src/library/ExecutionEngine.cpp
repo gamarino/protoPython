@@ -777,199 +777,64 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         if (im_func && im_func != PROTO_NONE) codeOwner = im_func;
     }
     
-    // 1. Positional arguments
-    for (proto::proto_ulong i = 0; i < (proto::proto_ulong)nparams_count && i < argCount; ++i) {
-        bindVar(static_cast<int>(i), args->getAt(calleeCtx, static_cast<int>(i)));
-    }
-
-    // 1b. Positional / keyword argument conflict.  A parameter already
-    // filled by a positional argument must not also receive a keyword
-    // argument of the same name — CPython raises "got multiple values
-    // for argument".  Without this check the duplicate keyword was
-    // silently dropped: the **kwargs collection loop below skips any
-    // name that matches a bound parameter, so `f(1, foo=2)` for
-    // `def f(foo, *a, **kw)` lost the foo=2 keyword and raised nothing.
-    if (kwargs && kwargs->getSize(calleeCtx) > 0 && co_varnames) {
-        proto::proto_ulong boundPositional = (argCount < (proto::proto_ulong)nparams_count)
-            ? argCount : (proto::proto_ulong)nparams_count;
-        for (proto::proto_ulong i = 0; i < boundPositional; ++i) {
-            const proto::ProtoObject* paramName = co_varnames->getAt(calleeCtx, static_cast<int>(i));
-            if (!paramName || !paramName->isString(calleeCtx)) continue;
-            if (kwargs->has(calleeCtx, paramName->getHash(calleeCtx))) {
-                std::string pn, fn = "function";
-                paramName->asString(calleeCtx)->toUTF8String(calleeCtx, pn);
-                const proto::ProtoObject* cnObj = codeObj->getAttribute(calleeCtx,
-                    env ? env->getCoNameString() : PythonEnvironment::getInternedString(calleeCtx, "co_name"));
-                if (cnObj && cnObj->isString(calleeCtx)) cnObj->asString(calleeCtx)->toUTF8String(calleeCtx, fn);
-                if (env) env->raiseTypeError(calleeCtx,
-                    fn + "() got multiple values for argument '" + pn + "'");
-                return nullptr;
+    // Arguments, bound as CPython binds them (PythonEnvironment::
+    // bindArgumentsCore, shared with compiled code): positional and keyword
+    // arguments, the defaults of the last positional parameters
+    // (__defaults__) and of the keyword-only ones (__kwdefaults__),
+    // positional-only parameters, *args and **kwargs, and CPython's
+    // TypeErrors.  The values go to the parameter slots (a mapped function
+    // has them too), then a mapped function's onto its frame.
+    if (env && co_varnames && slots) {
+        const unsigned nParamSlots = static_cast<unsigned>(nparams_count + kwonly_count)
+            + ((co_flags & CO_VARARGS) ? 1u : 0u) + ((co_flags & CO_VARKEYWORDS) ? 1u : 0u);
+        if (nParamSlots > nSlots || nParamSlots > co_varnames->getSize(calleeCtx)) return nullptr;
+        const proto::ProtoString* namesBuf[16];
+        std::vector<const proto::ProtoString*> namesHeap;
+        const proto::ProtoString** names = namesBuf;
+        if (nParamSlots > 16) { namesHeap.resize(nParamSlots); names = namesHeap.data(); }
+        for (unsigned pi = 0; pi < nParamSlots; ++pi) {
+            const proto::ProtoObject* nm = co_varnames->getAt(calleeCtx, static_cast<int>(pi));
+            names[pi] = (nm && nm->isString(calleeCtx)) ? nm->asString(calleeCtx) : env->getNameString();
+        }
+        const proto::ProtoObject* posOnlyObj = codeObj->getAttribute(calleeCtx,
+            PythonEnvironment::getInternedString(calleeCtx, "co_posonlyargcount"));
+        const unsigned nPosOnly = (posOnlyObj && posOnlyObj->isInteger(calleeCtx))
+            ? static_cast<unsigned>(posOnlyObj->asLong(calleeCtx)) : 0u;
+        const proto::ProtoObject* qualnameObj = codeOwner->getAttribute(calleeCtx,
+            PythonEnvironment::getInternedString(calleeCtx, "__qualname__"));
+        PythonEnvironment::ArgumentSpec spec{nullptr, qualnameObj, static_cast<unsigned>(nparams_count), nPosOnly,
+                                             static_cast<unsigned>(kwonly_count), (co_flags & CO_VARARGS) != 0,
+                                             (co_flags & CO_VARKEYWORDS) != 0, names};
+        // __defaults__: a tuple of the last positional parameters' values.
+        // (Read when the positional arguments do not fill the parameters,
+        // or overflow them: the message names how many have defaults.)
+        const proto::ProtoObject* defaultsObj = (argCount != static_cast<proto::proto_ulong>(nparams_count))
+            ? codeOwner->getAttribute(calleeCtx, env->getDefaultsString()) : nullptr;
+        const proto::ProtoTuple* defaults = (defaultsObj && defaultsObj != PROTO_NONE && defaultsObj->isTuple(calleeCtx))
+            ? defaultsObj->asTuple(calleeCtx) : nullptr;
+        const proto::ProtoObject* defaultsBuf[16];
+        std::vector<const proto::ProtoObject*> defaultsHeap;
+        const proto::ProtoObject** defaultValues = defaultsBuf;
+        const unsigned nDefaults = defaults ? static_cast<unsigned>(defaults->getSize(calleeCtx)) : 0u;
+        if (nDefaults > 16) { defaultsHeap.resize(nDefaults); defaultValues = defaultsHeap.data(); }
+        for (unsigned di = 0; di < nDefaults; ++di) defaultValues[di] = defaults->getAt(calleeCtx, static_cast<int>(di));
+        // __kwdefaults__: a dict, its values keyed by the name's hash.
+        const proto::ProtoSparseList* kwDefaults = nullptr;
+        if (kwonly_count > 0) {
+            const proto::ProtoObject* kwDefaultsObj = self->getAttribute(calleeCtx, env->getKwdefaultsString());
+            const proto::ProtoObject* data = (kwDefaultsObj && kwDefaultsObj != PROTO_NONE)
+                ? kwDefaultsObj->getAttribute(calleeCtx, env->getDataString()) : nullptr;
+            kwDefaults = (data && data != PROTO_NONE) ? data->asSparseList(calleeCtx) : nullptr;
+        }
+        if (!env->bindArgumentsCore(calleeCtx, spec, args, kwargs, defaultValues, nDefaults, kwDefaults,
+                                    const_cast<const proto::ProtoObject**>(slots))) {
+            return nullptr;
+        }
+        if (!(co_flags & CO_OPTIMIZED)) {
+            for (unsigned pi = 0; pi < nParamSlots; ++pi) {
+                if (!isCellSlot(static_cast<int>(pi))) bindVar(static_cast<int>(pi), slots[pi]);
             }
         }
-    }
-
-    // 2. Keyword arguments mapped to positional parameters and defaults if missing
-    if (argCount < (proto::proto_ulong)nparams_count) {
-        const proto::ProtoString* defaults_name = env ? env->getDefaultsString() : PythonEnvironment::getInternedString(calleeCtx, "__defaults__");
-        const proto::ProtoObject* defaultsObj = codeOwner->getAttribute(calleeCtx, defaults_name);
-        bool has_defaults = (defaultsObj && defaultsObj != PROTO_NONE && defaultsObj->isTuple(calleeCtx));
-        const proto::ProtoTuple* defaults = has_defaults ? defaultsObj->asTuple(calleeCtx) : nullptr;
-        int num_defaults = defaults ? (int)defaults->getSize(calleeCtx) : 0;
-
-        int defaults_start_at = nparams_count - num_defaults;
-
-        for (int i = (int)argCount; i < nparams_count; ++i) {
-            bool bound = false;
-            if (co_varnames && i < (int)co_varnames->getSize(calleeCtx) && kwargs) {
-                const proto::ProtoObject* paramName = co_varnames->getAt(calleeCtx, i);
-                if (paramName) {
-                    proto::proto_ulong key = paramName->getHash(calleeCtx);
-                    if (kwargs->has(calleeCtx, key)) {
-                        bindVar(i, kwargs->getAt(calleeCtx, key));
-                        bound = true;
-                    }
-                }
-            }
-            // If not found in kwargs, see if it has a default value
-            if (!bound && defaults && i >= defaults_start_at) {
-                const proto::ProtoObject* val = defaults->getAt(calleeCtx, i - defaults_start_at);
-                bindVar(i, val);
-            }
-        }
-    }
-
-    // 3. Keyword-only arguments
-    const proto::ProtoString* kwdefaults_name = env ? env->getKwdefaultsString() : PythonEnvironment::getInternedString(calleeCtx, "__kwdefaults__");
-    const proto::ProtoObject* kwDefaultsObj = self->getAttribute(calleeCtx, kwdefaults_name);
-
-    for (int i = 0; i < kwonly_count; ++i) {
-        int slotIdx = nparams_count + i;
-        if (co_varnames && slotIdx < (int)co_varnames->getSize(calleeCtx)) {
-            const proto::ProtoObject* paramName = co_varnames->getAt(calleeCtx, slotIdx);
-            if (!paramName) continue;
-            
-            proto::proto_ulong key = paramName->getHash(calleeCtx);
-            const proto::ProtoObject* val = (kwargs && kwargs->has(calleeCtx, key)) ? kwargs->getAt(calleeCtx, key) : nullptr;
-            
-            if (val) {
-                bindVar(slotIdx, val);
-            } else if (kwDefaultsObj && kwDefaultsObj != PROTO_NONE) {
-                // Check kw-defaults
-                const proto::ProtoString* dataName = env ? env->getDataString() : PythonEnvironment::getInternedString(calleeCtx, "__data__");
-                const proto::ProtoObject* data = kwDefaultsObj->getAttribute(calleeCtx, dataName);
-                if (data && data->asSparseList(calleeCtx)) {
-                    const proto::ProtoSparseList* sl = data->asSparseList(calleeCtx);
-                    if (sl->has(calleeCtx, key)) {
-                        val = sl->getAt(calleeCtx, key);
-                        if (val) {
-                            bindVar(slotIdx, val);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // 4. *args
-    if (co_flags & CO_VARARGS) {
-        int varargIdx = nparams_count + kwonly_count;
-        const proto::ProtoList* starArgs = calleeCtx->newList();
-        if (argCount > (proto::proto_ulong)nparams_count) {
-            for (proto::proto_ulong i = nparams_count; i < argCount; ++i) {
-                starArgs = starArgs->appendLast(calleeCtx, args->getAt(calleeCtx, static_cast<int>(i)));
-            }
-        }
-        const proto::ProtoObject* tup = calleeCtx->newTupleFromList(starArgs)->asObject(calleeCtx);
-        bindVar(varargIdx, tup);
-    }
-
-    // 5. **kwargs
-    if (co_flags & CO_VARKEYWORDS) {
-        int kwargIdx = nparams_count + kwonly_count + ((co_flags & CO_VARARGS) ? 1 : 0);
-        proto::ProtoObject* kwDict = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
-        if (get_env_diag()) {
-            fprintf(stderr, "DEBUG runUserFunctionCall: env=%p dictProto=%p\n", (void*)env, (void*)(env ? env->getDictPrototype() : nullptr));
-            fflush(stderr);
-        }
-        if (env && env->getDictPrototype()) kwDict = const_cast<proto::ProtoObject*>(kwDict->addParent(calleeCtx, env->getDictPrototype()));
-
-        const proto::ProtoString* dataName = env ? env->getDataString() : PythonEnvironment::getInternedString(calleeCtx, "__data__");
-        const proto::ProtoString* keysName = env ? env->getKeysString() : PythonEnvironment::getInternedString(calleeCtx, "__keys__");
-
-        const proto::ProtoSparseList* data = calleeCtx->newSparseList();
-        const proto::ProtoList* keysList = calleeCtx->newList();
-
-        // Build a hash→nameObject map from the caller's kwNames tuple so we can
-        // populate __keys__ (the list of actual key string objects) alongside __data__.
-        const proto::ProtoTuple* kwNamesTuple = env ? env->getCurrentKwNames() : nullptr;
-
-        if (kwargs) {
-            // Iterate the caller's kwNames tuple (CALL ORDER), looking up
-            // each key's value in the SparseList. Iterating the SparseList
-            // directly would surface keys in hash order, which collapses
-            // CPython's "**kwargs preserves insertion order" guarantee
-            // (PEP 468). When kwNames is unavailable (defensive fallback),
-            // fall back to SparseList iteration; the result is still
-            // populated, just possibly out of insertion order.
-            if (kwNamesTuple) {
-                proto::proto_ulong n = kwNamesTuple->getSize(calleeCtx);
-                for (proto::proto_ulong ni = 0; ni < n; ++ni) {
-                    const proto::ProtoObject* nm = kwNamesTuple->getAt(calleeCtx, static_cast<int>(ni));
-                    if (!nm) continue;
-                    proto::proto_ulong key = nm->getHash(calleeCtx);
-                    if (!kwargs->has(calleeCtx, key)) continue;
-                    const proto::ProtoObject* val = kwargs->getAt(calleeCtx, key);
-
-                    bool alreadyBound = false;
-                    for (proto::proto_ulong i = 0; i < (proto::proto_ulong)(nparams_count + kwonly_count); ++i) {
-                        const proto::ProtoObject* paramName = co_varnames->getAt(calleeCtx, static_cast<int>(i));
-                        if (paramName && paramName->getHash(calleeCtx) == key) {
-                            alreadyBound = true;
-                            break;
-                        }
-                    }
-                    if (!alreadyBound) {
-                        data = data->setAt(calleeCtx, key, val);
-                        keysList = keysList->appendLast(calleeCtx, nm);
-                    }
-                }
-            } else {
-                auto it = kwargs->getIterator(calleeCtx);
-                while (it && it->hasNext(calleeCtx)) {
-                    proto::proto_ulong key = it->nextKey(calleeCtx);
-                    const proto::ProtoObject* val = it->nextValue(calleeCtx);
-
-                    bool alreadyBound = false;
-                    for (proto::proto_ulong i = 0; i < (proto::proto_ulong)(nparams_count + kwonly_count); ++i) {
-                        const proto::ProtoObject* paramName = co_varnames->getAt(calleeCtx, static_cast<int>(i));
-                        if (paramName && paramName->getHash(calleeCtx) == key) {
-                            alreadyBound = true;
-                            break;
-                        }
-                    }
-                    if (!alreadyBound) {
-                        data = data->setAt(calleeCtx, key, val);
-                    }
-                    it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(calleeCtx);
-                }
-            }
-        }
-        kwDict->setAttribute(calleeCtx, dataName, data->asObject(calleeCtx));
-        kwDict->setAttribute(calleeCtx, keysName, keysList->asObject(calleeCtx));
-        if (get_env_diag()) {
-             const proto::ProtoList* keys = keysList;
-             proto::proto_ulong size = keys ? keys->getSize(calleeCtx) : 0;
-             fprintf(stderr, "DEBUG runUserFunctionCall: kwDict populated with %llu keys\n", static_cast<unsigned long long>(size));
-             for (proto::proto_ulong i = 0; i < size; ++i) {
-                 const proto::ProtoObject* k = keys->getAt(calleeCtx, static_cast<int>(i));
-                 std::string ks = env ? env->reprObject(calleeCtx, k) : "???";
-                 fprintf(stderr, "  key[%llu]=%s\n", static_cast<unsigned long long>(i), ks.c_str());
-             }
-             std::string r = env ? env->reprObject(calleeCtx, kwDict) : "???";
-             fprintf(stderr, "DEBUG runUserFunctionCall: kwDict repr=%s\n", r.c_str());
-             fflush(stderr);
-        }
-        bindVar(kwargIdx, kwDict);
     }
 
     // Cells and free variables, once every parameter is bound.
@@ -1204,7 +1069,9 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
         && cacheNoInnerFunctions && (co_flags & CO_OPTIMIZED)
         && kwonly_count == 0 && !(co_flags & CO_VARARGS) && !(co_flags & CO_VARKEYWORDS)
         && (!kwargs || !kwargs->getSize(ctx))
-        && rawArgCount >= (proto::proto_ulong)nparams_count; // fall back to full path when defaults needed
+        // Exactly the positional parameters: defaults, or the TypeError for
+        // a wrong count, are the full path's.
+        && rawArgCount == (proto::proto_ulong)nparams_count;
 
     if (!useSlotFastPath) {
         // Build a temporary ProtoList and call the full implementation.

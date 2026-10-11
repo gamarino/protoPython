@@ -29443,6 +29443,200 @@ void PythonEnvironment::chainPendingException(const proto::ProtoObject* context)
     chainException(ctx, peekPendingException(), context);
 }
 
+namespace {
+// "'a'", "'a' and 'b'", "'a', 'b', and 'c'": CPython's list of missing names.
+std::string quotedNameList(const std::vector<std::string>& names) {
+    std::string out;
+    for (size_t i = 0; i < names.size(); ++i) {
+        if (i > 0) out += (names.size() == 2) ? " and " : (i + 1 == names.size() ? ", and " : ", ");
+        out += "'" + names[i] + "'";
+    }
+    return out;
+}
+}  // namespace
+
+bool PythonEnvironment::bindArgumentsCore(proto::ProtoContext* ctx, const ArgumentSpec& sig,
+                                          const proto::ProtoList* args, const proto::ProtoSparseList* kwargs,
+                                          const proto::ProtoObject* const* defaultValues, unsigned nDefaults,
+                                          const proto::ProtoSparseList* kwDefaults, const proto::ProtoObject** out) {
+    // The name for a message, read only when one is raised.
+    auto fnameOf = [&]() {
+        std::string fname;
+        if (sig.qualnameC) {
+            fname = sig.qualnameC;
+        } else if (sig.qualnameObj && sig.qualnameObj->isString(ctx)) {
+            sig.qualnameObj->asString(ctx)->toUTF8String(ctx, fname);
+        } else {
+            fname = "function";
+        }
+        return fname + "()";
+    };
+    const unsigned nPos = sig.nPositional;
+    const unsigned nKw = sig.nKwOnly;
+    const unsigned varargsIdx = nPos + nKw;
+    const unsigned kwargsIdx = varargsIdx + (sig.hasVarargs ? 1u : 0u);
+    const unsigned nParams = kwargsIdx + (sig.hasKwargs ? 1u : 0u);
+    for (unsigned i = 0; i < nParams; ++i) out[i] = nullptr;
+    const proto::proto_ulong argc = args ? args->getSize(ctx) : 0;
+    const proto::ProtoString* const* names = sig.names;
+    auto nameOf = [&](unsigned i) { std::string n; names[i]->toUTF8String(ctx, n); return n; };
+
+    // Positional arguments, the extra ones into *args.
+    for (proto::proto_ulong i = 0; i < argc && i < nPos; ++i) out[i] = args->getAt(ctx, static_cast<int>(i));
+    if (sig.hasVarargs) {
+        const proto::ProtoList* extra = ctx->newList();
+        for (proto::proto_ulong i = nPos; i < argc; ++i) extra = extra->appendLast(ctx, args->getAt(ctx, static_cast<int>(i)));
+        out[varargsIdx] = ctx->newTupleFromList(extra)->asObject(ctx);
+    }
+    // **kwargs: a dict of the keywords no parameter takes, in call order.
+    proto::ProtoObject* kwDict = nullptr;
+    const proto::ProtoSparseList* kwData = nullptr;
+    const proto::ProtoList* kwKeys = nullptr;
+    if (sig.hasKwargs) {
+        kwDict = const_cast<proto::ProtoObject*>(getDictPrototype()->newChild(ctx, true));
+        kwData = ctx->newSparseList();
+        kwKeys = ctx->newList();
+        out[kwargsIdx] = kwDict;
+    }
+
+    // Keyword arguments, in call order: the names this call received (the
+    // keyword-names stack may belong to an enclosing call: only names this
+    // call's keywords hold count).
+    std::vector<std::string> posOnlyAsKeyword;
+    if (kwargs && kwargs->getSize(ctx) > 0) {
+        std::vector<const proto::ProtoObject*> kwNames;
+        if (const proto::ProtoTuple* stacked = getCurrentKwNames()) {
+            for (proto::proto_ulong i = 0; i < stacked->getSize(ctx); ++i) {
+                const proto::ProtoObject* k = stacked->getAt(ctx, static_cast<int>(i));
+                if (k && k->isString(ctx) && kwargs->has(ctx, k->getHash(ctx))) kwNames.push_back(k);
+            }
+        }
+        // A keyword whose name is not on the stack can still bind a
+        // parameter by its hash; it cannot be named in a message or a dict.
+        size_t named = kwNames.size();
+        for (unsigned i = sig.nPosOnly; i < nPos + nKw && named < kwargs->getSize(ctx); ++i) {
+            const proto::proto_ulong h = names[i]->getHash(ctx);
+            bool listed = false;
+            for (const auto* k : kwNames) if (k->getHash(ctx) == h) { listed = true; break; }
+            if (!listed && kwargs->has(ctx, h)) { kwNames.push_back(names[i]->asObject(ctx)); ++named; }
+        }
+        for (const proto::ProtoObject* k : kwNames) {
+            const proto::proto_ulong h = k->getHash(ctx);
+            const proto::ProtoObject* value = kwargs->getAt(ctx, h);
+            std::string kname;
+            k->asString(ctx)->toUTF8String(ctx, kname);
+            int target = -1;
+            for (unsigned i = sig.nPosOnly; i < nPos + nKw; ++i) {
+                if (names[i]->getHash(ctx) == h) { target = static_cast<int>(i); break; }
+            }
+            if (target < 0) {
+                if (sig.hasKwargs) {
+                    kwData = kwData->setAt(ctx, h, value);
+                    kwKeys = kwKeys->appendLast(ctx, k);
+                    continue;
+                }
+                bool posOnly = false;
+                for (unsigned i = 0; i < sig.nPosOnly; ++i) if (names[i]->getHash(ctx) == h) posOnly = true;
+                if (posOnly) { posOnlyAsKeyword.push_back(kname); continue; }
+                raiseTypeError(ctx, fnameOf() + " got an unexpected keyword argument '" + kname + "'");
+                return false;
+            }
+            if (out[target]) {
+                raiseTypeError(ctx, fnameOf() + " got multiple values for argument '" + kname + "'");
+                return false;
+            }
+            out[target] = value;
+        }
+        if (!posOnlyAsKeyword.empty()) {
+            std::string list;
+            for (size_t i = 0; i < posOnlyAsKeyword.size(); ++i) list += (i ? ", " : "") + posOnlyAsKeyword[i];
+            raiseTypeError(ctx, fnameOf() + " got some positional-only arguments passed as keyword arguments: '" + list + "'");
+            return false;
+        }
+    }
+    if (kwDict) {
+        kwDict->setAttribute(ctx, getDataString(), kwData->asObject(ctx));
+        kwDict->setAttribute(ctx, getKeysString(), kwKeys->asObject(ctx));
+    }
+
+
+    // Too many positional arguments.
+    if (!sig.hasVarargs && argc > nPos) {
+        unsigned kwGiven = 0;
+        for (unsigned i = nPos; i < nPos + nKw; ++i) if (out[i]) ++kwGiven;
+        std::string takes;
+        if (nDefaults > 0) {
+            takes = "from " + std::to_string(nPos - std::min(nDefaults, nPos)) + " to " + std::to_string(nPos) +
+                    " positional arguments";
+        } else {
+            takes = std::to_string(nPos) + (nPos == 1 ? " positional argument" : " positional arguments");
+        }
+        std::string given = std::to_string(argc);
+        if (kwGiven > 0) {
+            given += (argc == 1 ? " positional argument" : " positional arguments");
+            given += " (and " + std::to_string(kwGiven) + (kwGiven == 1 ? " keyword-only argument)" : " keyword-only arguments)");
+            given += " were given";
+        } else {
+            given += (argc == 1 ? " was given" : " were given");
+        }
+        raiseTypeError(ctx, fnameOf() + " takes " + takes + " but " + given);
+        return false;
+    }
+
+    // Missing positional parameters take their defaults.
+    std::vector<std::string> missing;
+    for (unsigned i = 0; i < nPos; ++i) {
+        if (out[i]) continue;
+        const unsigned firstDefault = nPos - std::min(nDefaults, nPos);
+        if (nDefaults > 0 && i >= firstDefault) {
+            out[i] = defaultValues[i - firstDefault];
+            continue;
+        }
+        missing.push_back(nameOf(i));
+    }
+    if (!missing.empty()) {
+        raiseTypeError(ctx, fnameOf() + " missing " + std::to_string(missing.size()) + " required positional argument" +
+                       (missing.size() == 1 ? "" : "s") + ": " + quotedNameList(missing));
+        return false;
+    }
+    // Keyword-only parameters take theirs.
+    for (unsigned i = nPos; i < nPos + nKw; ++i) {
+        if (out[i]) continue;
+        const proto::proto_ulong h = names[i]->getHash(ctx);
+        if (kwDefaults && kwDefaults->has(ctx, h)) {
+            out[i] = kwDefaults->getAt(ctx, h);
+            continue;
+        }
+        missing.push_back(nameOf(i));
+    }
+    if (!missing.empty()) {
+        raiseTypeError(ctx, fnameOf() + " missing " + std::to_string(missing.size()) + " required keyword-only argument" +
+                       (missing.size() == 1 ? "" : "s") + ": " + quotedNameList(missing));
+        return false;
+    }
+    return true;
+}
+
+bool PythonEnvironment::bindArguments(proto::ProtoContext* ctx, const CompiledSignature& sig,
+                                      const proto::ProtoList* args, const proto::ProtoSparseList* kwargs,
+                                      const proto::ProtoObject* fs, const proto::ProtoObject** out) {
+    const unsigned nParams = sig.nPositional + sig.nKwOnly + (sig.hasVarargs ? 1u : 0u) + (sig.hasKwargs ? 1u : 0u);
+    std::vector<const proto::ProtoString*> names(nParams);
+    for (unsigned i = 0; i < nParams; ++i) names[i] = getInternedString(ctx, sig.names[i]);
+    ArgumentSpec spec{sig.qualname ? sig.qualname : "function", nullptr, sig.nPositional, sig.nPosOnly, sig.nKwOnly,
+                      sig.hasVarargs, sig.hasKwargs, names.data()};
+    // Defaults stored with the function at its definition (a list).
+    const proto::ProtoObject* dObj = fs ? fs->getAttribute(ctx, getInternedString(ctx, "__defaults__")) : nullptr;
+    const proto::ProtoList* defaults = (dObj && dObj != PROTO_NONE && !dObj->isString(ctx)) ? dObj->asList(ctx) : nullptr;
+    std::vector<const proto::ProtoObject*> defaultValues;
+    for (proto::proto_ulong i = 0; defaults && i < defaults->getSize(ctx); ++i)
+        defaultValues.push_back(defaults->getAt(ctx, static_cast<int>(i)));
+    const proto::ProtoObject* kdObj = fs ? fs->getAttribute(ctx, getInternedString(ctx, "__kwdefaults__")) : nullptr;
+    const proto::ProtoSparseList* kwDefaults = (kdObj && kdObj != PROTO_NONE) ? kdObj->asSparseList(ctx) : nullptr;
+    return bindArgumentsCore(ctx, spec, args, kwargs, defaultValues.data(), static_cast<unsigned>(defaultValues.size()),
+                             kwDefaults, out);
+}
+
 bool PythonEnvironment::isCompiledFunction(proto::ProtoContext* ctx, const proto::ProtoObject* value) const {
     if (!value || !value->isMethod(ctx)) return false;
     const proto::ProtoObject* storage = value->asMethodSelf(ctx);
@@ -30091,20 +30285,25 @@ bool PythonEnvironment::isTrue(const proto::ProtoObject* obj) {
         return res->isInteger(ctx);  // a LargeInteger length is never zero
     };
 
+    // The chain lookup finds a Python function on the class unbound: it
+    // takes the object as its first argument (a bound method, whose own
+    // __self__ is set, already has it).
+    auto callDunder = [&](const proto::ProtoObject* method) -> const proto::ProtoObject* {
+        if (method->asMethod(ctx)) return method->asMethod(ctx)(ctx, obj, nullptr, getEmptyList(), nullptr);
+        const bool bound = getSelfDunderString() &&
+            method->hasOwnAttribute(ctx, getSelfDunderString()) == PROTO_TRUE;
+        return bound ? callObject(method, {}) : callObject(method, {obj});
+    };
     const proto::ProtoString* boolS = boolString ? boolString : PythonEnvironment::getInternedString(ctx, "__bool__");
     const proto::ProtoObject* boolMethod = obj->getAttribute(ctx, boolS);
     if (boolMethod && boolMethod != PROTO_NONE) {
-        const proto::ProtoObject* res = boolMethod->asMethod(ctx)
-            ? boolMethod->asMethod(ctx)(ctx, obj, nullptr, getEmptyList(), nullptr)
-            : callObject(boolMethod, {});
+        const proto::ProtoObject* res = callDunder(boolMethod);
         if (res) return res == PROTO_TRUE || (res->isBoolean(ctx) && res->asBoolean(ctx));
     }
     const proto::ProtoString* lenS = lenString ? lenString : PythonEnvironment::getInternedString(ctx, "__len__");
     const proto::ProtoObject* lenMethod = obj->getAttribute(ctx, lenS);
     if (lenMethod && lenMethod != PROTO_NONE) {
-        const proto::ProtoObject* res = lenMethod->asMethod(ctx)
-            ? lenMethod->asMethod(ctx)(ctx, obj, nullptr, getEmptyList(), nullptr)
-            : callObject(lenMethod, {});
+        const proto::ProtoObject* res = callDunder(lenMethod);
         if (res) return truthFromLength(res);
     }
 

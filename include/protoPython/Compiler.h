@@ -310,6 +310,9 @@ private:
      *  in it may bind its own name (recursiveDefSelfBinds). */
     ASTNode* scopeBody_ = nullptr;
     std::unordered_set<std::string> scopeParams_;
+    /** co_argcount (positional parameters) and co_posonlyargcount, read by
+     *  the argument binding and by inspect. */
+    const proto::ProtoObject* stampArgCounts(const proto::ProtoObject* codeObj, int nPositional, int nPosOnly);
     /** Push the cell holding `name` (LOAD_CLOSURE) for a closure tuple. */
     void emitLoadClosure(const std::string& name);
     /** Push the cells of a nested scope whose co_freevars are `freevars`,
