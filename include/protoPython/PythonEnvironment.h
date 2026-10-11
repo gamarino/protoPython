@@ -356,6 +356,32 @@ public:
                         const proto::ProtoObject* context);
     void chainPendingException(const proto::ProtoObject* context);
 
+    /** Closure cells (docs/INTERNALS_DEEP_DIVE.md, "Closures").  A cell is
+     *  the one mutable box a nested scope shares with the scope that binds the
+     *  variable: a mutable child of `types.CellType` whose own attribute
+     *  `__cell_contents__` holds the value (absent when the cell is empty).
+     *  Functions reference cells, never frames, so a closure closes no cycle
+     *  through the frame that created it.  `newCell(ctx, nullptr)` makes an
+     *  empty cell without publishing anything; `cellGet` answers nullptr for
+     *  an empty cell or for an object that is not a cell.  The caller roots
+     *  a new cell (a fast slot, the operand stack) before it allocates
+     *  again. */
+    const proto::ProtoObject* newCell(proto::ProtoContext* ctx, const proto::ProtoObject* value) const;
+    const proto::ProtoObject* cellGet(proto::ProtoContext* ctx, const proto::ProtoObject* cell) const {
+        return cell ? cell->getOwnAttributeDirect(ctx, cellContents_) : nullptr;
+    }
+    void cellSet(proto::ProtoContext* ctx, const proto::ProtoObject* cell, const proto::ProtoObject* value) const;
+    /** Empties `cell` (`del x` of a cell variable). */
+    void cellClear(proto::ProtoContext* ctx, const proto::ProtoObject* cell) const;
+    bool isCell(proto::ProtoContext* ctx, const proto::ProtoObject* obj) const;
+    /** CPython's `__classcell__` protocol: when the class body namespace `ns`
+     *  holds the methods' `__class__` cell under `__classcell__`, fill it
+     *  with `cls` and remove the name from the class.  type.__new__ does it
+     *  before __init_subclass__ runs; buildClass again after the metaclass
+     *  call, for a metaclass that did not go through type.__new__. */
+    void applyClassCell(proto::ProtoContext* ctx, const proto::ProtoObject* ns, const proto::ProtoObject* cls);
+    const proto::ProtoString* getCellContentsString() const { return cellContents_; }
+
     /** True when `value` is a function protopyc compiled: a native method
      *  bound to its function storage (an object with an own `__module_ns__`;
      *  see docs/PROTOPYC_SPECIFICATION.md). Such a function binds to an
@@ -859,6 +885,23 @@ public:
     static void popLiveFrame(LiveFrame* entry);
     /** @brief Context of the running activation of `frame` on this thread, or nullptr. */
     static proto::ProtoContext* findLiveFrameContext(const proto::ProtoObject* frame);
+    /** Calls `fn(name, value)` for each bound local of a running activation
+     *  of `code` whose fast slots are `slots`: the co_varnames slots of a
+     *  CO_OPTIMIZED function, the cell variables of any function (through
+     *  their cells), then the free variables (through their cells; a
+     *  recursive def's own name directly). */
+    void forEachFastLocal(proto::ProtoContext* ctx, const proto::ProtoObject* code,
+                          const proto::ProtoObject* const* slots, unsigned int nSlots,
+                          const std::function<void(const proto::ProtoString*, const proto::ProtoObject*)>& fn) const;
+    /** The namespace eval(), exec() and locals() see for a running function
+     *  frame: the frame itself, or, when the function has cell or free
+     *  variables (which live in cells, not on the frame), a child of the
+     *  frame holding their current values. */
+    const proto::ProtoObject* frameNamespaceWithCells(proto::ProtoContext* ctx, const proto::ProtoObject* frame);
+    /** A new dict of the local variables of a running function frame (cell
+     *  and free variables included): frame.f_locals, and locals() in a
+     *  function, as CPython 3.13+ snapshots them. */
+    const proto::ProtoObject* frameLocalsSnapshot(proto::ProtoContext* ctx, const proto::ProtoObject* frame);
 
     /**
      * @brief Sets the current globals for the current thread.
@@ -1089,6 +1132,9 @@ public:
 
     void raiseValueError(proto::ProtoContext* context, const proto::ProtoObject* msg);
     void raiseNameError(proto::ProtoContext* context, const std::string& name);
+    /** NameError for reading or deleting an empty free variable (CPython's
+     *  "cannot access free variable ..." message; `name` attribute set). */
+    void raiseFreeVariableError(proto::ProtoContext* context, const std::string& name);
     void raiseUnboundLocalError(proto::ProtoContext* context, const std::string& msg);
     void raiseAttributeError(proto::ProtoContext* context, const proto::ProtoObject* obj, const std::string& attr);
     /**
@@ -1629,6 +1675,7 @@ private:
     const proto::ProtoString* setDunderString{nullptr};
     const proto::ProtoString* delDunderString{nullptr};
     const proto::ProtoString* __closure__{nullptr};
+    const proto::ProtoString* cellContents_{nullptr};
     const proto::ProtoString* __defaults__{nullptr};
     const proto::ProtoString* __kwdefaults__{nullptr};
     

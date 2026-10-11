@@ -4,6 +4,7 @@
 #include <protoPython/Parser.h>
 #include <protoPython/ExecutionEngine.h>
 #include <protoCore.h>
+#include <cstdint>
 #include <vector>
 #include <string>
 #include <unordered_map>
@@ -164,6 +165,11 @@ private:
     /** Counter for `__match_tmp_<n>` temp names. Reset per match stmt. */
     int matchTmpCounter_ = 0;
     bool compileComprehension(const std::vector<Comprehension>& generators, size_t index, std::function<bool()> innerBody);
+    bool compileComprehensionScope(const char* scopeName, std::vector<Comprehension>& generators,
+                                   const std::vector<ASTNode*>& exprs, bool isGenExpr,
+                                   const std::function<void(Compiler&)>& emitStart,
+                                   const std::function<bool(Compiler&, int)>& emitElement,
+                                   const std::function<void(Compiler&)>& emitEnd);
     bool compileWithItems(const std::vector<WithItem>& items, size_t index, ASTNode* body);
     bool compileSuite(SuiteNode* n);
     enum class TargetCtx { Load, Store, Delete };
@@ -195,10 +201,11 @@ private:
     std::unordered_map<std::string, int> localSlotMap_;
     /** Names that the enclosing function defines as locals/parameters, *regardless* of
      *  whether they live in CO_OPTIMIZED slots or on the frame.  Nested-scope compilers
-     *  consult this set (in addition to localSlotMap_) when deciding whether a name should
-     *  be emitted as LOAD_DEREF / STORE_DEREF — needed when the outer is forceMapped (its
-     *  localSlotMap_ is empty) but the inner still needs to walk the outer's frame via
-     *  the closure-frame parent chain to read/update the live value. */
+     *  consult this set (in addition to localSlotMap_) when deciding whether a name is
+     *  one of the enclosing function's variables, which they then read through a cell
+     *  (LOAD_DEREF / STORE_DEREF) — needed when the outer is forceMapped (its
+     *  localSlotMap_ is empty) or the variable is a cell variable (not in
+     *  localSlotMap_ either). */
     std::unordered_set<std::string> definedLocals_;
     bool isGenerator_ = false;
     bool isClassBody_ = false;
@@ -255,6 +262,84 @@ private:
      *  class cell, read with LOAD_DEREF from the class namespace, where
      *  BUILD_CLASS stores the class it creates. */
     bool classCellScope_ = false;
+    // ---- Closures: cells, free variables, recursive nested defs -----------
+    //
+    // A variable a nested scope uses lives in a cell (PythonEnvironment::
+    // newCell).  Each function-like scope lays out its fast slots as
+    //     [co_varnames ...][co_freevars ...][operand stack ...]
+    // A cell variable (a local or parameter some nested scope captures)
+    // keeps its cell in its own co_varnames slot; a free variable keeps the
+    // cell taken from the function's closure in the slot after co_varnames.
+    // LOAD_DEREF / STORE_DEREF / DELETE_DEREF take that slot; LOAD_CLOSURE
+    // pushes the cell itself to build a nested function's closure tuple.
+    // A class body has no co_varnames: its free variables come first and its
+    // `__class__` cell (for the methods' zero-argument super()) after them.
+
+    /** Slot of every name this scope reads through a cell: its own cell
+     *  variables and its free variables. */
+    std::unordered_map<std::string, int> derefSlot_;
+    /** The names among derefSlot_ that are this scope's own cell variables. */
+    std::unordered_set<std::string> cellVars_;
+    /** A recursive nested def's own name: the function binds it to itself in
+     *  its free-variable slot at entry instead of closing over the defining
+     *  scope's cell, which would close a cycle (cell -> function -> closure
+     *  -> cell) that protoCore never collects.  Read with LOAD_FAST, or with
+     *  LOAD_DEREF when a scope nested in the function captures the name too
+     *  (selfRefCell_: the entry then makes a cell holding the function). */
+    std::string selfRefName_;
+    int selfRefSlot_ = -1;
+    bool selfRefCell_ = false;
+    /** Names a nested scope asked LOAD_CLOSURE for that this scope holds in
+     *  no cell; the scope that compiles this one recompiles it with them. */
+    std::unordered_set<std::string> missingClosure_;
+    /** Every name a nested scope asked LOAD_CLOSURE for. */
+    std::unordered_set<std::string> requestedClosure_;
+    bool missingSelfCell_ = false;
+    /** Function scope: its first parameter (the receiver zero-argument
+     *  super() passes), or empty. */
+    std::string firstParam_;
+    /** Class body: the slot of its `__class__` cell, and whether a method
+     *  (or a scope nested in one) closed over it. */
+    int classCellSlot_ = -1;
+    bool classCellUsed_ = false;
+    /** Class body: names it binds (read with LOAD_NAME, not LOAD_CLASSDEREF),
+     *  and names it declares nonlocal. */
+    std::unordered_set<std::string> classBound_;
+    std::unordered_set<std::string> classNonlocal_;
+    /** Function scope: its body and parameter names, consulted when a def
+     *  in it may bind its own name (recursiveDefSelfBinds). */
+    ASTNode* scopeBody_ = nullptr;
+    std::unordered_set<std::string> scopeParams_;
+    /** Push the cell holding `name` (LOAD_CLOSURE) for a closure tuple. */
+    void emitLoadClosure(const std::string& name);
+    /** Push the cells of a nested scope whose co_freevars are `freevars`,
+     *  leaving out `selfRef` (a recursive def's own name), and answer the
+     *  OP_BUILD_FUNCTION argument bits that count them. */
+    int emitClosureCells(const std::vector<std::string>& freevars, const std::string& selfRef);
+    /** True when `def <n->name>` in this function scope may bind its own
+     *  name to itself at entry: the def is the only binding of that name
+     *  anywhere in the scope, it is undecorated, not generic and not inside
+     *  a loop, so inside the function the name always denotes the function. */
+    template <class DefNode> bool recursiveDefSelfBinds(DefNode* n) const;
+    /** Configure `body` (the compiler of a function-like scope whose fast
+     *  locals are `varnames`) to read `cellVars` and `freeVars` through
+     *  cells, `selfRef` (if not empty) through its free-variable slot. */
+    static void configureClosureSlots(Compiler& body, const std::vector<std::string>& varnames,
+                                      const std::unordered_set<std::string>& cellVars,
+                                      const std::vector<std::string>& freeVars,
+                                      const std::string& selfRef, bool selfRefCell);
+    /** Stamp the closure layout on a code object: co_freevars, co_cellvars,
+     *  co_cellslots (slots made into cells at entry), co_selfref (index in
+     *  co_freevars, or absent) and co_nlocalsplus (slots before the operand
+     *  stack). */
+    const proto::ProtoObject* stampClosureLayout(const proto::ProtoObject* codeObj,
+                                                 const std::vector<std::string>& varnames,
+                                                 const std::unordered_set<std::string>& cellVars,
+                                                 const std::vector<std::int32_t>& extraCellSlots,
+                                                 const std::vector<std::string>& extraCellNames,
+                                                 const std::vector<std::string>& freeVars,
+                                                 const std::string& selfRef, bool selfRefCell);
+
     int bytecodeOffset() const;
     /** Record a jump arg slot to be patched later with target (bytecode list index). */
     void addPatch(int argSlotIndex, int targetBytecodeIndex);
@@ -338,10 +423,13 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     int firstlineno = 0,
     const proto::ProtoTuple* lnotab = nullptr);
 
-/** Run a code object with the given frame. Returns execution result. */
+/** Run a code object with the given frame. Returns execution result.
+ *  `closure` (a class body's) holds the cells for its free variables, in
+ *  co_freevars order; its co_cellslots get fresh empty cells. */
 const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoObject* codeObj,
-    proto::ProtoObject*& frame);
+    proto::ProtoObject*& frame,
+    const proto::ProtoList* closure = nullptr);
 
 } // namespace protoPython
 

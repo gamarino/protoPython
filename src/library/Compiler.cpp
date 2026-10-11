@@ -144,6 +144,7 @@ static int stackEffect(int op, int arg) {
         // Loads (+1)
         case OP_LOAD_CONST: case OP_LOAD_NAME: case OP_LOAD_GLOBAL:
         case OP_LOAD_FAST:  case OP_LOAD_DEREF:
+        case OP_LOAD_CLOSURE: case OP_LOAD_CLASSDEREF:
         case OP_DUP_TOP:    case OP_PUSH_NULL:
         case OP_BUILD_RAW_LIST:
             return 1;
@@ -180,10 +181,14 @@ static int stackEffect(int op, int arg) {
         case OP_UNARY_NOT:      case OP_UNARY_INVERT:
         case OP_GET_ITER:       case OP_LIST_TO_TUPLE:
         case OP_GET_LEN:        // reserved: never emitted
-        case OP_BUILD_FUNCTION:
         case OP_GET_AWAITABLE:  case OP_GET_AITER:
         case OP_GET_YIELD_FROM_ITER:
             return 0;
+
+        // BUILD_FUNCTION pops its closure cells (and, uncounted here, its
+        // defaults and annotations: an overestimate is safe).
+        case OP_BUILD_FUNCTION:
+            return -(arg >> BUILD_FUNCTION_CELLS_SHIFT);
 
         // PD1: GET_ANEXT keeps the aiter on the stack and pushes the
         // awaitable on top — net +1.  Was previously falling through
@@ -838,12 +843,24 @@ bool Compiler::compileCall(CallNode* n) {
     // which works for module-level classes but is fragile for
     // classes-in-functions.  A fully correct __class__ cell mechanism
     // (CPython's __classcell__) is deferred to a future round.
-    if (isFunctionScope_ && !currentClassName_.empty() && n->args.empty() && n->keywords.empty()) {
+    if (isFunctionScope_ && !currentClassName_.empty() && n->args.empty() && n->keywords.empty()
+            && !firstParam_.empty()) {
         if (auto* nameN = dynamic_cast<NameNode*>(n->func.get())) {
             if (nameN->id == "super") {
+                // CPython's super(__class__, <first argument>): the class
+                // the class statement created (the `__class__` cell), not
+                // whatever its name is bound to now.
                 if (!emitNameOp("super", TargetCtx::Load, /*pushNull=*/true)) return false;
-                if (!emitNameOp(currentClassName_, TargetCtx::Load)) return false;
-                emit(OP_LOAD_FAST, 0);
+                if (derefSlot_.count("__class__")) {
+                    if (!emitNameOp("__class__", TargetCtx::Load)) return false;
+                } else {
+                    // The scope analysis missed this call: ask the enclosing
+                    // compile for the cell (the method is compiled again with
+                    // `__class__` free); meanwhile name the class.
+                    missingClosure_.insert("__class__");
+                    if (!emitNameOp(currentClassName_, TargetCtx::Load)) return false;
+                }
+                if (!emitNameOp(firstParam_, TargetCtx::Load)) return false;
                 emit(OP_CALL_FUNCTION, 2);
                 return true;
             }
@@ -1248,19 +1265,38 @@ bool Compiler::emitNameOp(const std::string& rawId, TargetCtx ctx, bool pushNull
     // bytecode emission, so the compiler treats `_C__name` and
     // `__name` as the same identifier consistently.
     const std::string id = mangleIdentifier(rawId);
-    if (nonlocalNames_.count(id)) {
-        // In a method (or a scope nested in one) `__class__` is the implicit
-        // class cell.  BUILD_CLASS stores the class in the class namespace
-        // under ".__class__": the closure walk also visits prototype objects,
-        // and each of them owns a `__class__` of its own.
-        const bool classCellRead = classCellScope_ && id == "__class__";
-        int idx = addName(classCellRead ? ".__class__" : id);
-        int op = OP_LOAD_DEREF;
-        if (ctx == TargetCtx::Store) op = OP_STORE_DEREF;
-        // For function calls, push NULL marker before the callable (3.11+ calling convention)
-        if (ctx == TargetCtx::Load && pushNull) emit(OP_PUSH_NULL, 0);
-        emit(op, idx);
-        return true;
+    // Cell and free variables (Compiler.h, "Closures").
+    auto derefIt = derefSlot_.find(id);
+    if (derefIt == derefSlot_.end() && id != rawId) derefIt = derefSlot_.find(rawId);
+    if (isClassBody_) {
+        // A class body reads a free variable from its namespace when the
+        // namespace binds it, else from the cell (LOAD_CLASSDEREF); a name
+        // the body itself binds is the namespace's alone (LOAD_NAME), unless
+        // the body declared it nonlocal.
+        if (derefIt != derefSlot_.end() && classNonlocal_.count(id)) {
+            if (ctx == TargetCtx::Load && pushNull) emit(OP_PUSH_NULL, 0);
+            emit(ctx == TargetCtx::Load ? OP_LOAD_DEREF
+                 : ctx == TargetCtx::Store ? OP_STORE_DEREF : OP_DELETE_DEREF, derefIt->second);
+            return true;
+        }
+        if (ctx == TargetCtx::Load && derefIt != derefSlot_.end() && !classBound_.count(id)) {
+            if (pushNull) emit(OP_PUSH_NULL, 0);
+            emit(OP_LOAD_CLASSDEREF, derefIt->second);
+            return true;
+        }
+    } else {
+        if (selfRefSlot_ >= 0 && !selfRefCell_ && id == selfRefName_ && ctx == TargetCtx::Load) {
+            // A recursive def's own name: the function itself, bound at entry.
+            if (pushNull) emit(OP_PUSH_NULL, 0);
+            emit(OP_LOAD_FAST, selfRefSlot_);
+            return true;
+        }
+        if (derefIt != derefSlot_.end()) {
+            if (ctx == TargetCtx::Load && pushNull) emit(OP_PUSH_NULL, 0);
+            emit(ctx == TargetCtx::Load ? OP_LOAD_DEREF
+                 : ctx == TargetCtx::Store ? OP_STORE_DEREF : OP_DELETE_DEREF, derefIt->second);
+            return true;
+        }
     }
     if (!forceMapped_) {
         auto it = localSlotMap_.find(id);
@@ -1794,63 +1830,149 @@ static bool compHasInternalYield(const std::vector<Comprehension>& gens, ASTNode
     return false;
 }
 
-bool Compiler::compileListComp(ListCompNode* n) {
-    if (!n) return false;
-    if (compHasInternalYield(n->generators, n->elt.get())) return false;
-
-    // Python 3: List comprehensions have their own scope.
-    // Emit using the 3.11+ [NULL, callable, arg] calling convention so the inner
-    // CALL_FUNCTION 1 always finds the NULL marker at the right stack position,
-    // regardless of what the outer call frame has pushed.
-    // Sequence: PUSH_NULL, LOAD_CONST(code), BUILD_FUNCTION, eval_iter, GET_ITER, CALL_FUNCTION 1
-
-    Compiler bodyCompiler(ctx_, filename_);
-    bodyCompiler.localSlotMap_[".0"] = 0;
-    bodyCompiler.globalNames_ = globalNames_;
-    bodyCompiler.isFunctionScope_ = true;
-    // A comprehension is a function scope: inside a method it sees the class cell.
-    bodyCompiler.classCellScope_ = classCellScope_ || isClassBody_ || classAnnotationScope_;
-
-    // Collect locals and nonlocals for comprehension scope
+// A list, set or dict comprehension or a generator expression is a function
+// scope of its own, called on the spot with the first iterator.  Emitted with
+// the 3.11+ [NULL, callable, arg] calling convention so the CALL_FUNCTION 1
+// always finds the NULL marker at the right stack position, regardless of
+// what the outer call frame has pushed:
+//     PUSH_NULL, [closure tuple], LOAD_CONST(code), BUILD_FUNCTION,
+//     <first iterator>, GET_ITER, CALL_FUNCTION 1
+// `exprs` are the element expressions (the element, or the key and value);
+// `emitStart` builds the accumulator, `emitElement` adds one element to it and
+// `emitEnd` leaves the result on the stack.
+bool Compiler::compileComprehensionScope(const char* scopeName, std::vector<Comprehension>& generators,
+        const std::vector<ASTNode*>& exprs, bool isGenExpr,
+        const std::function<void(Compiler&)>& emitStart,
+        const std::function<bool(Compiler&, int)>& emitElement,
+        const std::function<void(Compiler&)>& emitEnd) {
+    // Collect locals and nonlocals for the comprehension scope.
     std::unordered_set<std::string> compLocals;
-    for (const auto& gen : n->generators) collectDefinedNames(gen.target.get(), compLocals);
-    
+    for (const auto& gen : generators) collectDefinedNames(gen.target.get(), compLocals);
     std::unordered_set<std::string> compUsed;
-    for (const auto& gen : n->generators) {
-        collectUsedNames(gen.iter.get(), compUsed);
+    for (size_t gi = 0; gi < generators.size(); ++gi) {
+        const auto& gen = generators[gi];
+        // The first iterator is evaluated in the enclosing scope.
+        if (gi > 0) collectUsedNames(gen.iter.get(), compUsed);
         collectUsedNames(gen.target.get(), compUsed);
         for (const auto& i : gen.ifs) collectUsedNames(i.get(), compUsed);
     }
-    collectUsedNames(n->elt.get(), compUsed);
-    
+    for (ASTNode* e : exprs) collectUsedNames(e, compUsed);
     bool isAsync = false;
-    for (const auto& gen : n->generators) if (gen.is_async) { isAsync = true; break; }
+    for (const auto& gen : generators) if (gen.is_async) { isAsync = true; break; }
 
+    // Free variables: names used and not bound here that the directly
+    // enclosing scope can close over (a local, a cell or free variable of
+    // an enclosing function).  Anything else resolves via LOAD_GLOBAL
+    // (module-level globals, builtins, etc.).  definedLocals_ covers an
+    // enclosing function that is forceMapped (its localSlotMap_ is empty).
+    std::unordered_set<std::string> compFree;
     for (const auto& name : compUsed) {
-        if (!compLocals.count(name) && !bodyCompiler.globalNames_.count(name)) {
-            // Only capture as a nonlocal (LOAD_DEREF) if the name is actually a
-            // local or nonlocal in the directly enclosing function scope.
-            // Names not found in the enclosing locals/nonlocals resolve via
-            // LOAD_GLOBAL (module-level globals, builtins, etc.).
-            // definedLocals_ covers the case where the enclosing function is
-            // forceMapped (its localSlotMap_ is empty) but still defines the
-            // name as a local on the frame.
-            if (localSlotMap_.count(name) || definedLocals_.count(name) || nonlocalNames_.count(name)) {
-                bodyCompiler.nonlocalNames_.insert(name);
-            }
+        if (compLocals.count(name) || globalNames_.count(name)) continue;
+        if (localSlotMap_.count(name) || definedLocals_.count(name) || nonlocalNames_.count(name) ||
+                derefSlot_.count(name)) {
+            compFree.insert(name);
         }
     }
-
     std::vector<std::string> orderedLocals = {".0"};
-    int slot = 1;
-    for (const auto& name : compLocals) {
-        if (bodyCompiler.localSlotMap_.find(name) == bodyCompiler.localSlotMap_.end()) {
-            bodyCompiler.localSlotMap_[name] = slot++;
-            orderedLocals.push_back(name);
-        }
-    }
-    for (const auto& name : orderedLocals) bodyCompiler.definedLocals_.insert(name);
+    for (const auto& name : compLocals)
+        if (name != ".0") orderedLocals.push_back(name);
+    std::unordered_map<std::string, int> slotMap;
+    for (size_t i = 0; i < orderedLocals.size(); ++i) slotMap[orderedLocals[i]] = static_cast<int>(i);
+    std::vector<std::string> freeVars(compFree.begin(), compFree.end());
+    std::sort(freeVars.begin(), freeVars.end());
+    std::unordered_set<std::string> cellVars;
 
+    // The first iterator is evaluated in the enclosing scope and passed in
+    // as `.0`.
+    auto oldIter = std::move(generators[0].iter);
+    auto itNode = std::make_unique<NameNode>();
+    itNode->id = ".0";
+    generators[0].iter = std::move(itNode);
+    struct RestoreIter {
+        std::vector<Comprehension>& gens;
+        std::unique_ptr<ASTNode>& saved;
+        ~RestoreIter() { gens[0].iter = std::move(saved); }
+    } restoreIter{generators, oldIter};
+
+    std::unique_ptr<Compiler> bodyHolder;
+    for (int attempt = 0; ; ++attempt) {
+        bodyHolder.reset(new Compiler(ctx_, filename_));
+        Compiler& body = *bodyHolder;
+        body.isGenerator_ = isGenExpr;
+        body.globalNames_ = globalNames_;
+        body.isFunctionScope_ = true;
+        // A comprehension is a function scope: inside a method it sees the class cell.
+        body.classCellScope_ = classCellScope_ || isClassBody_ || classAnnotationScope_;
+        body.nonlocalNames_ = compFree;
+        body.localSlotMap_ = slotMap;
+        for (const auto& c : cellVars) body.localSlotMap_.erase(c);
+        configureClosureSlots(body, orderedLocals, cellVars, freeVars, std::string(), false);
+        for (const auto& name : orderedLocals) body.definedLocals_.insert(name);
+        emitStart(body);
+        const int nGen = static_cast<int>(generators.size());
+        if (!body.compileComprehension(generators, 0, [&]() { return emitElement(body, nGen); })) return false;
+        if (attempt < 4) {
+            bool again = false;
+            for (const auto& m : body.missingClosure_) {
+                if (slotMap.count(m)) { if (cellVars.insert(m).second) again = true; }
+                else if (compFree.insert(m).second) {
+                    freeVars.push_back(m);
+                    std::sort(freeVars.begin(), freeVars.end());
+                    again = true;
+                }
+            }
+            for (auto it = cellVars.begin(); it != cellVars.end(); ) {
+                if (!body.requestedClosure_.count(*it)) { it = cellVars.erase(it); again = true; }
+                else ++it;
+            }
+            if (again) continue;
+        }
+        break;
+    }
+    Compiler& body = *bodyHolder;
+    emitEnd(body);
+    body.emit(OP_RETURN_VALUE);
+    body.applyPatches();
+
+    std::vector<const proto::ProtoObject*> varnamesVec;
+    varnamesVec.reserve(orderedLocals.size());
+    for (const auto& name : orderedLocals)
+        varnamesVec.push_back(PythonEnvironment::getInternedString(ctx_, name.c_str())->asObject(ctx_));
+    const proto::ProtoTuple* co_varnames = ctx_->newTuple(varnamesVec);
+
+    int flags = CO_OPTIMIZED | CO_NEWLOCALS;
+    if (isAsync) flags |= 256; // CO_COROUTINE (CPython 0x100, matches inspect.CO_COROUTINE)
+    // Slots for the operand stack too: a stack held in a std::vector is not
+    // a GC root (executeBytecodeRange).
+    const int automatic = static_cast<int>(orderedLocals.size() + freeVars.size()) + body.getMaxStack() + 128;
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_,
+        body.getConstants(), body.getNames(), body.getBytecode(),
+        PythonEnvironment::getInternedString(ctx_, filename_.c_str()),
+        co_varnames, 1, 0, automatic, flags, isGenExpr,
+        PythonEnvironment::getInternedString(ctx_, scopeName),
+        body.getFirstLine(), body.getLnotab());
+    if (!codeObj) return false;
+    codeObj = stampClosureLayout(codeObj, orderedLocals, cellVars, {}, {}, freeVars, std::string(), false);
+
+    emit(OP_PUSH_NULL);
+    const int fnFlags = emitClosureCells(freeVars, std::string());
+    emit(OP_LOAD_CONST, addConstant(codeObj));
+    emit(OP_BUILD_FUNCTION, fnFlags);
+    if (!compileNode(restoreIter.saved.get())) return false;
+    emit(OP_GET_ITER);
+    emit(OP_CALL_FUNCTION, 1);
+
+    if (isAsync) {
+        emit(OP_GET_AWAITABLE);
+        emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
+        emit(OP_YIELD_FROM);
+    }
+    return true;
+}
+
+bool Compiler::compileListComp(ListCompNode* n) {
+    if (!n) return false;
+    if (compHasInternalYield(n->generators, n->elt.get())) return false;
     // Listcomp accumulator: use a raw ProtoList (not a wrapped
     // `list` instance) for the duration of the body. The wrapped
     // variant goes through `__data__` setAttribute on a mutable
@@ -1862,361 +1984,58 @@ bool Compiler::compileListComp(ListCompNode* n) {
     // accepts a bare ProtoList on the stack. We wrap once at body-
     // end via OP_WRAP_RAW_LIST so callers continue to receive a
     // proper Python list.
-    bodyCompiler.emit(OP_BUILD_RAW_LIST, 0);
-
-    auto oldIter = std::move(n->generators[0].iter);
-    auto itNode = std::make_unique<NameNode>();
-    itNode->id = ".0";
-    n->generators[0].iter = std::move(itNode);
-
-    int nGen = static_cast<int>(n->generators.size());
-    auto innerOk = bodyCompiler.compileComprehension(n->generators, 0, [&]() {
-        if (!bodyCompiler.compileNode(n->elt.get())) return false;
-        bodyCompiler.emit(OP_LIST_APPEND, nGen + 1);
-        return true;
-    });
-
-    n->generators[0].iter = std::move(oldIter);
-    if (!innerOk) return false;
-
-    bodyCompiler.emit(OP_WRAP_RAW_LIST, 0);
-    bodyCompiler.emit(OP_RETURN_VALUE);
-    bodyCompiler.applyPatches();
-    
-    // Create code object
-    std::vector<const proto::ProtoObject*> varnamesVec;
-    varnamesVec.reserve(orderedLocals.size());
-    for (const auto& name : orderedLocals)
-        varnamesVec.push_back(PythonEnvironment::getInternedString(ctx_, name.c_str())->asObject(ctx_));
-    const proto::ProtoTuple* co_varnames = ctx_->newTuple(varnamesVec);
-    
-    int flags = CO_OPTIMIZED | CO_NEWLOCALS;
-    if (isAsync) flags |= 256; // CO_COROUTINE (CPython 0x100, matches inspect.CO_COROUTINE)
-
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, 
-        bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), 
-        PythonEnvironment::getInternedString(ctx_, filename_.c_str()), 
-        co_varnames, 1, 0, static_cast<int>(orderedLocals.size()), 
-        flags, false, 
-        PythonEnvironment::getInternedString(ctx_, "<listcomp>"),
-        bodyCompiler.getFirstLine(), bodyCompiler.getLnotab());
-    // 3.11+ calling convention: [NULL, callable, arg]
-    emit(OP_PUSH_NULL);
-    emit(OP_LOAD_CONST, addConstant(codeObj));
-    emit(OP_BUILD_FUNCTION, 0);
-    if (!compileNode(n->generators[0].iter.get())) return false;
-    emit(OP_GET_ITER);
-    emit(OP_CALL_FUNCTION, 1);
-
-    if (isAsync) {
-        emit(OP_GET_AWAITABLE);
-        emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
-        emit(OP_YIELD_FROM);
-    }
-
-    return true;
+    return compileComprehensionScope("<listcomp>", n->generators, {n->elt.get()}, false,
+        [](Compiler& b) { b.emit(OP_BUILD_RAW_LIST, 0); },
+        [n](Compiler& b, int nGen) {
+            if (!b.compileNode(n->elt.get())) return false;
+            b.emit(OP_LIST_APPEND, nGen + 1);
+            return true;
+        },
+        [](Compiler& b) { b.emit(OP_WRAP_RAW_LIST, 0); });
 }
 
 bool Compiler::compileDictComp(DictCompNode* n) {
     if (!n) return false;
     if (compHasInternalYield(n->generators, n->key.get(), n->value.get())) return false;
-
-    // Emit using 3.11+ [NULL, callable, arg] calling convention — see compileListComp.
-
-    Compiler bodyCompiler(ctx_, filename_);
-    bodyCompiler.localSlotMap_[".0"] = 0;
-    bodyCompiler.globalNames_ = globalNames_;
-    bodyCompiler.isFunctionScope_ = true;
-    // A comprehension is a function scope: inside a method it sees the class cell.
-    bodyCompiler.classCellScope_ = classCellScope_ || isClassBody_ || classAnnotationScope_;
-
-    // Collect locals and nonlocals for comprehension scope
-    std::unordered_set<std::string> compLocals;
-    for (const auto& gen : n->generators) collectDefinedNames(gen.target.get(), compLocals);
-    
-    std::unordered_set<std::string> compUsed;
-    for (const auto& gen : n->generators) {
-        collectUsedNames(gen.iter.get(), compUsed);
-        collectUsedNames(gen.target.get(), compUsed);
-        for (const auto& i : gen.ifs) collectUsedNames(i.get(), compUsed);
-    }
-    collectUsedNames(n->key.get(), compUsed);
-    collectUsedNames(n->value.get(), compUsed);
-    
-    bool isAsync = false;
-    for (const auto& gen : n->generators) if (gen.is_async) { isAsync = true; break; }
-    
-    for (const auto& name : compUsed) {
-        if (!compLocals.count(name) && !bodyCompiler.globalNames_.count(name)) {
-            if (localSlotMap_.count(name) || definedLocals_.count(name) || nonlocalNames_.count(name)) {
-                bodyCompiler.nonlocalNames_.insert(name);
-            }
-        }
-    }
-
-    std::vector<std::string> orderedLocals = {".0"};
-    int slot = 1;
-    for (const auto& name : compLocals) {
-        if (bodyCompiler.localSlotMap_.find(name) == bodyCompiler.localSlotMap_.end()) {
-            bodyCompiler.localSlotMap_[name] = slot++;
-            orderedLocals.push_back(name);
-        }
-    }
-    for (const auto& name : orderedLocals) bodyCompiler.definedLocals_.insert(name);
-
-    bodyCompiler.emit(OP_BUILD_MAP, 0);
-    
-    auto oldIter = std::move(n->generators[0].iter);
-    auto itNode = std::make_unique<NameNode>();
-    itNode->id = ".0";
-    n->generators[0].iter = std::move(itNode);
-    
-    int nGen = static_cast<int>(n->generators.size());
-    auto innerOk = bodyCompiler.compileComprehension(n->generators, 0, [&]() {
-        if (!bodyCompiler.compileNode(n->value.get())) return false;
-        if (!bodyCompiler.compileNode(n->key.get())) return false;
-        // MAP_ADD needs nGen+2: the stack during body is [map, iter1..iterN, value, key],
-        // so the accumulator is 2 positions deeper than for LIST_APPEND/SET_ADD (which
-        // push only 1 item before the instruction).
-        bodyCompiler.emit(OP_MAP_ADD, nGen + 2);
-        return true;
-    });
-    
-    n->generators[0].iter = std::move(oldIter);
-    if (!innerOk) return false;
-    
-    bodyCompiler.emit(OP_RETURN_VALUE);
-    bodyCompiler.applyPatches();
-    
-    std::vector<const proto::ProtoObject*> varnamesVec;
-    varnamesVec.reserve(orderedLocals.size());
-    for (const auto& name : orderedLocals)
-        varnamesVec.push_back(PythonEnvironment::getInternedString(ctx_, name.c_str())->asObject(ctx_));
-    const proto::ProtoTuple* co_varnames = ctx_->newTuple(varnamesVec);
-    
-    int flags = CO_OPTIMIZED | CO_NEWLOCALS;
-    if (isAsync) flags |= 256; // CO_COROUTINE (CPython 0x100, matches inspect.CO_COROUTINE)
-
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, 
-        bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), 
-        PythonEnvironment::getInternedString(ctx_, filename_.c_str()), 
-        co_varnames, 1, 0, static_cast<int>(orderedLocals.size()), 
-        flags, false, 
-        PythonEnvironment::getInternedString(ctx_, "<dictcomp>"),
-        bodyCompiler.getFirstLine(), bodyCompiler.getLnotab());
-    // 3.11+ calling convention: [NULL, callable, arg]
-    emit(OP_PUSH_NULL);
-    emit(OP_LOAD_CONST, addConstant(codeObj));
-    emit(OP_BUILD_FUNCTION, 0);
-    if (!compileNode(n->generators[0].iter.get())) return false;
-    emit(OP_GET_ITER);
-    emit(OP_CALL_FUNCTION, 1);
-
-    if (isAsync) {
-        emit(OP_GET_AWAITABLE);
-        emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
-        emit(OP_YIELD_FROM);
-    }
-
-    return true;
+    return compileComprehensionScope("<dictcomp>", n->generators, {n->key.get(), n->value.get()}, false,
+        [](Compiler& b) { b.emit(OP_BUILD_MAP, 0); },
+        [n](Compiler& b, int nGen) {
+            if (!b.compileNode(n->value.get())) return false;
+            if (!b.compileNode(n->key.get())) return false;
+            // MAP_ADD needs nGen+2: the stack during body is [map, iter1..iterN, value, key],
+            // so the accumulator is 2 positions deeper than for LIST_APPEND/SET_ADD (which
+            // push only 1 item before the instruction).
+            b.emit(OP_MAP_ADD, nGen + 2);
+            return true;
+        },
+        [](Compiler&) {});
 }
 
 bool Compiler::compileSetComp(SetCompNode* n) {
     if (!n) return false;
     if (compHasInternalYield(n->generators, n->elt.get())) return false;
-
-    // Emit using 3.11+ [NULL, callable, arg] calling convention — see compileListComp.
-
-    Compiler bodyCompiler(ctx_, filename_);
-    bodyCompiler.localSlotMap_[".0"] = 0;
-    bodyCompiler.globalNames_ = globalNames_;
-    bodyCompiler.isFunctionScope_ = true;
-    // A comprehension is a function scope: inside a method it sees the class cell.
-    bodyCompiler.classCellScope_ = classCellScope_ || isClassBody_ || classAnnotationScope_;
-
-    // Collect locals and nonlocals for comprehension scope
-    std::unordered_set<std::string> compLocals;
-    for (const auto& gen : n->generators) collectDefinedNames(gen.target.get(), compLocals);
-    
-    std::unordered_set<std::string> compUsed;
-    for (const auto& gen : n->generators) {
-        collectUsedNames(gen.iter.get(), compUsed);
-        collectUsedNames(gen.target.get(), compUsed);
-        for (const auto& i : gen.ifs) collectUsedNames(i.get(), compUsed);
-    }
-    collectUsedNames(n->elt.get(), compUsed);
-    
-    bool isAsync = false;
-    for (const auto& gen : n->generators) if (gen.is_async) { isAsync = true; break; }
-    
-    for (const auto& name : compUsed) {
-        if (!compLocals.count(name) && !bodyCompiler.globalNames_.count(name)) {
-            if (localSlotMap_.count(name) || definedLocals_.count(name) || nonlocalNames_.count(name)) {
-                bodyCompiler.nonlocalNames_.insert(name);
-            }
-        }
-    }
-
-    std::vector<std::string> orderedLocals = {".0"};
-    int slot = 1;
-    for (const auto& name : compLocals) {
-        if (bodyCompiler.localSlotMap_.find(name) == bodyCompiler.localSlotMap_.end()) {
-            bodyCompiler.localSlotMap_[name] = slot++;
-            orderedLocals.push_back(name);
-        }
-    }
-    for (const auto& name : orderedLocals) bodyCompiler.definedLocals_.insert(name);
-
-    bodyCompiler.emit(OP_BUILD_SET, 0);
-    
-    auto oldIter = std::move(n->generators[0].iter);
-    auto itNode = std::make_unique<NameNode>();
-    itNode->id = ".0";
-    n->generators[0].iter = std::move(itNode);
-    
-    int nGen = static_cast<int>(n->generators.size());
-    auto innerOk = bodyCompiler.compileComprehension(n->generators, 0, [&]() {
-        if (!bodyCompiler.compileNode(n->elt.get())) return false;
-        bodyCompiler.emit(OP_SET_ADD, nGen + 1);
-        return true;
-    });
-    
-    n->generators[0].iter = std::move(oldIter);
-    if (!innerOk) return false;
-    
-    bodyCompiler.emit(OP_RETURN_VALUE);
-    bodyCompiler.applyPatches();
-    
-    std::vector<const proto::ProtoObject*> varnamesVec;
-    varnamesVec.reserve(orderedLocals.size());
-    for (const auto& name : orderedLocals)
-        varnamesVec.push_back(PythonEnvironment::getInternedString(ctx_, name.c_str())->asObject(ctx_));
-    const proto::ProtoTuple* co_varnames = ctx_->newTuple(varnamesVec);
-    
-    int flags = CO_OPTIMIZED | CO_NEWLOCALS;
-    if (isAsync) flags |= 256; // CO_COROUTINE (CPython 0x100, matches inspect.CO_COROUTINE)
-
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, 
-        bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), 
-        PythonEnvironment::getInternedString(ctx_, filename_.c_str()), 
-        co_varnames, 1, 0, static_cast<int>(orderedLocals.size()), 
-        flags, false, 
-        PythonEnvironment::getInternedString(ctx_, "<setcomp>"),
-        bodyCompiler.getFirstLine(), bodyCompiler.getLnotab());
-    // 3.11+ calling convention: [NULL, callable, arg]
-    emit(OP_PUSH_NULL);
-    emit(OP_LOAD_CONST, addConstant(codeObj));
-    emit(OP_BUILD_FUNCTION, 0);
-    if (!compileNode(n->generators[0].iter.get())) return false;
-    emit(OP_GET_ITER);
-    emit(OP_CALL_FUNCTION, 1);
-
-    if (isAsync) {
-        emit(OP_GET_AWAITABLE);
-        emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
-        emit(OP_YIELD_FROM);
-    }
-
-    return true;
+    return compileComprehensionScope("<setcomp>", n->generators, {n->elt.get()}, false,
+        [](Compiler& b) { b.emit(OP_BUILD_SET, 0); },
+        [n](Compiler& b, int nGen) {
+            if (!b.compileNode(n->elt.get())) return false;
+            b.emit(OP_SET_ADD, nGen + 1);
+            return true;
+        },
+        [](Compiler&) {});
 }
 
 bool Compiler::compileGeneratorExp(GeneratorExpNode* n) {
     if (!n) return false;
     if (compHasInternalYield(n->generators, n->elt.get())) return false;
-
-    // Emit using 3.11+ [NULL, callable, arg] calling convention — see compileListComp.
-
-    Compiler bodyCompiler(ctx_, filename_);
-    bodyCompiler.isGenerator_ = true;
-    bodyCompiler.localSlotMap_[".0"] = 0;
-    bodyCompiler.globalNames_ = globalNames_;
-    bodyCompiler.isFunctionScope_ = true;
-    // A comprehension is a function scope: inside a method it sees the class cell.
-    bodyCompiler.classCellScope_ = classCellScope_ || isClassBody_ || classAnnotationScope_;
-    
-    // Collect locals and nonlocals for generator expression scope
-    std::unordered_set<std::string> compLocals;
-    for (const auto& gen : n->generators) collectDefinedNames(gen.target.get(), compLocals);
-    
-    std::unordered_set<std::string> compUsed;
-    for (const auto& gen : n->generators) {
-        collectUsedNames(gen.iter.get(), compUsed);
-        collectUsedNames(gen.target.get(), compUsed);
-        for (const auto& i : gen.ifs) collectUsedNames(i.get(), compUsed);
-    }
-    collectUsedNames(n->elt.get(), compUsed);
-    
-    bool isAsync = false;
-    for (const auto& gen : n->generators) if (gen.is_async) { isAsync = true; break; }
-    
-    for (const auto& name : compUsed) {
-        if (!compLocals.count(name) && !bodyCompiler.globalNames_.count(name)) {
-            if (localSlotMap_.count(name) || definedLocals_.count(name) || nonlocalNames_.count(name)) {
-                bodyCompiler.nonlocalNames_.insert(name);
-            }
-        }
-    }
-
-    std::vector<std::string> orderedLocals = {".0"};
-    int slot = 1;
-    for (const auto& name : compLocals) {
-        if (bodyCompiler.localSlotMap_.find(name) == bodyCompiler.localSlotMap_.end()) {
-            bodyCompiler.localSlotMap_[name] = slot++;
-            orderedLocals.push_back(name);
-        }
-    }
-    for (const auto& name : orderedLocals) bodyCompiler.definedLocals_.insert(name);
-
-    auto oldIter = std::move(n->generators[0].iter);
-    auto itNode = std::make_unique<NameNode>();
-    itNode->id = ".0";
-    n->generators[0].iter = std::move(itNode);
-
-    auto innerOk = bodyCompiler.compileComprehension(n->generators, 0, [&]() {
-        if (!bodyCompiler.compileNode(n->elt.get())) return false;
-        bodyCompiler.emit(OP_YIELD_VALUE);
-        bodyCompiler.emit(OP_POP_TOP);
-        return true;
-    });
-    
-    n->generators[0].iter = std::move(oldIter);
-    if (!innerOk) return false;
-    
-    bodyCompiler.emit(OP_LOAD_CONST, bodyCompiler.addConstant(PROTO_NONE));
-    bodyCompiler.emit(OP_RETURN_VALUE);
-    bodyCompiler.applyPatches();
-    
-    std::vector<const proto::ProtoObject*> varnamesVec;
-    varnamesVec.reserve(orderedLocals.size());
-    for (const auto& name : orderedLocals)
-        varnamesVec.push_back(PythonEnvironment::getInternedString(ctx_, name.c_str())->asObject(ctx_));
-    const proto::ProtoTuple* co_varnames = ctx_->newTuple(varnamesVec);
-    
-    int flags = CO_OPTIMIZED | CO_NEWLOCALS;
-    if (isAsync) flags |= 256; // CO_COROUTINE (CPython 0x100, matches inspect.CO_COROUTINE)
-
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, 
-        bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), 
-        PythonEnvironment::getInternedString(ctx_, filename_.c_str()), 
-        co_varnames, 1, 0, static_cast<int>(orderedLocals.size()) + bodyCompiler.getMaxStack() + 128,
-        flags, true,
-        PythonEnvironment::getInternedString(ctx_, "<genexpr>"),
-        bodyCompiler.getFirstLine(), bodyCompiler.getLnotab());
-    // 3.11+ calling convention: [NULL, callable, arg]
-    emit(OP_PUSH_NULL);
-    emit(OP_LOAD_CONST, addConstant(codeObj));
-    emit(OP_BUILD_FUNCTION, 0);
-    if (!compileNode(n->generators[0].iter.get())) return false;
-    emit(OP_GET_ITER);
-    emit(OP_CALL_FUNCTION, 1);
-
-    if (isAsync) {
-        emit(OP_GET_AWAITABLE);
-        emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
-        emit(OP_YIELD_FROM);
-    }
-
-    return true;
+    return compileComprehensionScope("<genexpr>", n->generators, {n->elt.get()}, true,
+        [](Compiler&) {},
+        [n](Compiler& b, int) {
+            if (!b.compileNode(n->elt.get())) return false;
+            b.emit(OP_YIELD_VALUE);
+            b.emit(OP_POP_TOP);
+            return true;
+        },
+        [](Compiler& b) { b.emit(OP_LOAD_CONST, b.addConstant(PROTO_NONE)); });
 }
 
 bool Compiler::compileComprehension(const std::vector<Comprehension>& generators, size_t index, std::function<bool()> innerBody) {
@@ -3275,11 +3094,10 @@ static void collectDefinedNames(ASTNode* node, std::unordered_set<std::string>& 
 // Walk a function body and collect the set of free variables of every
 // nested function-like scope (def, async def, lambda, list/set/dict
 // comprehension, generator expression).  These are names that the
-// nested scope reads but does not itself define; if any of them match
-// the outer's own locals or parameters, the outer must store its
-// locals on the frame (forceMapped) so the nested scope's
-// closure-frame parent walk reads the live value rather than a stale
-// snapshot taken at BUILD_FUNCTION time.
+// nested scope reads but does not itself define; those of them that are
+// the outer's own locals or parameters are its cell variables (a first
+// estimate: the compile loop then keeps exactly the cells the nested
+// scopes ask for; see Compiler.h, "Closures").
 //
 // This walker is deliberately strict — it only descends into nested
 // scope-creating nodes, never into bare references — so the result is
@@ -4285,6 +4103,362 @@ static void collectAnnotatedNames(ASTNode* node, std::unordered_set<std::string>
     // global/nonlocal decls of the same name.
 }
 
+// ---------------------------------------------------------------------------
+// Closures (Compiler.h, "Closures").
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Does the subtree bind `name` anywhere except as the name of the definition
+// `except`?  Deliberately deep and conservative: it descends into nested
+// scopes too (a binding there may be a `nonlocal` one), counts declarations
+// (`global`, `nonlocal`, `x: T`) and deletions as bindings, and answers yes
+// for any node it does not know, so a node type added later can only turn
+// the recursive-def self binding off, never make it wrong.
+bool bindsNameElsewhere(ASTNode* node, const std::string& name, const ASTNode* except);
+
+bool patternBindsName(MatchPatternNode* p, const std::string& name, const ASTNode* except) {
+    if (!p) return false;
+    if (dynamic_cast<MatchSingletonPatternNode*>(p)) return false;
+    if (auto* v = dynamic_cast<MatchValuePatternNode*>(p)) return bindsNameElsewhere(v->value.get(), name, except);
+    if (auto* st = dynamic_cast<MatchStarPatternNode*>(p)) return st->name == name;
+    if (auto* sq = dynamic_cast<MatchSequencePatternNode*>(p)) {
+        for (auto& e : sq->patterns) if (patternBindsName(e.get(), name, except)) return true;
+        return false;
+    }
+    if (auto* mp = dynamic_cast<MatchMappingPatternNode*>(p)) {
+        if (mp->rest == name) return true;
+        for (auto& k : mp->keys) if (bindsNameElsewhere(k.get(), name, except)) return true;
+        for (auto& e : mp->patterns) if (patternBindsName(e.get(), name, except)) return true;
+        return false;
+    }
+    if (auto* cp = dynamic_cast<MatchClassPatternNode*>(p)) {
+        if (bindsNameElsewhere(cp->cls.get(), name, except)) return true;
+        for (auto& e : cp->args) if (patternBindsName(e.get(), name, except)) return true;
+        for (auto& kv : cp->kwargs) if (patternBindsName(kv.second.get(), name, except)) return true;
+        return false;
+    }
+    if (auto* as = dynamic_cast<MatchAsPatternNode*>(p)) {
+        return as->name == name || patternBindsName(as->pattern.get(), name, except);
+    }
+    if (auto* orp = dynamic_cast<MatchOrPatternNode*>(p)) {
+        for (auto& e : orp->alternatives) if (patternBindsName(e.get(), name, except)) return true;
+        return false;
+    }
+    return true;
+}
+
+// A target position (assignment, `for`, `with ... as`, `del`, walrus).
+bool targetBindsName(ASTNode* t, const std::string& name, const ASTNode* except) {
+    if (!t) return false;
+    if (auto* nm = dynamic_cast<NameNode*>(t)) return nm->id == name;
+    if (auto* tup = dynamic_cast<TupleLiteralNode*>(t)) {
+        for (auto& e : tup->elements) if (targetBindsName(e.get(), name, except)) return true;
+        return false;
+    }
+    if (auto* lst = dynamic_cast<ListLiteralNode*>(t)) {
+        for (auto& e : lst->elements) if (targetBindsName(e.get(), name, except)) return true;
+        return false;
+    }
+    if (auto* st = dynamic_cast<StarredNode*>(t)) return targetBindsName(st->value.get(), name, except);
+    return bindsNameElsewhere(t, name, except);
+}
+
+template <class Fn>
+bool defBindsName(Fn* fn, const std::string& name, const ASTNode* except) {
+    if (fn != except && fn->name == name) return true;
+    for (const auto& p : fn->parameters) if (p == name) return true;
+    for (const auto& p : fn->kwonlyargs) if (p == name) return true;
+    if (fn->vararg == name || fn->kwarg == name) return true;
+    for (auto& tp : fn->type_params) if (tp && tp->name == name) return true;
+    for (auto& d : fn->decorator_list) if (bindsNameElsewhere(d.get(), name, except)) return true;
+    for (auto& d : fn->defaults) if (bindsNameElsewhere(d.get(), name, except)) return true;
+    for (auto& d : fn->kw_defaults) if (bindsNameElsewhere(d.get(), name, except)) return true;
+    for (auto& a : fn->parameter_annotations) if (bindsNameElsewhere(a.second.get(), name, except)) return true;
+    if (bindsNameElsewhere(fn->returns.get(), name, except)) return true;
+    return bindsNameElsewhere(fn->body.get(), name, except);
+}
+
+bool comprehensionBindsName(const std::vector<Comprehension>& gens, const std::string& name, const ASTNode* except) {
+    for (const auto& g : gens) {
+        if (targetBindsName(g.target.get(), name, except)) return true;
+        if (bindsNameElsewhere(g.iter.get(), name, except)) return true;
+        for (const auto& c : g.ifs) if (bindsNameElsewhere(c.get(), name, except)) return true;
+    }
+    return false;
+}
+
+bool bindsNameElsewhere(ASTNode* node, const std::string& name, const ASTNode* except) {
+    if (!node) return false;
+    auto any = [&](std::initializer_list<ASTNode*> nodes) {
+        for (ASTNode* n : nodes) if (bindsNameElsewhere(n, name, except)) return true;
+        return false;
+    };
+    auto anyOf = [&](const std::vector<std::unique_ptr<ASTNode>>& nodes) {
+        for (const auto& n : nodes) if (bindsNameElsewhere(n.get(), name, except)) return true;
+        return false;
+    };
+    if (dynamic_cast<ConstantNode*>(node) || dynamic_cast<NameNode*>(node) || dynamic_cast<PassNode*>(node)
+            || dynamic_cast<BreakNode*>(node) || dynamic_cast<ContinueNode*>(node)) return false;
+    if (auto* s = dynamic_cast<SuiteNode*>(node)) return anyOf(s->statements);
+    if (auto* m = dynamic_cast<ModuleNode*>(node)) return anyOf(m->body);
+    if (auto* b = dynamic_cast<BinOpNode*>(node)) return any({b->left.get(), b->right.get()});
+    if (auto* u = dynamic_cast<UnaryOpNode*>(node)) return any({u->operand.get()});
+    if (auto* c = dynamic_cast<CondExprNode*>(node)) return any({c->body.get(), c->cond.get(), c->orelse.get()});
+    if (auto* c = dynamic_cast<ConditionalExprNode*>(node)) return any({c->body.get(), c->test.get(), c->orelse.get()});
+    if (auto* st = dynamic_cast<StarredNode*>(node)) return any({st->value.get()});
+    if (auto* call = dynamic_cast<CallNode*>(node)) {
+        if (bindsNameElsewhere(call->func.get(), name, except) || anyOf(call->args)) return true;
+        for (auto& kw : call->keywords) if (bindsNameElsewhere(kw.second.get(), name, except)) return true;
+        return false;
+    }
+    if (auto* a = dynamic_cast<AttributeNode*>(node)) return any({a->value.get()});
+    if (auto* sb = dynamic_cast<SubscriptNode*>(node)) return any({sb->value.get(), sb->index.get()});
+    if (auto* sl = dynamic_cast<SliceNode*>(node)) return any({sl->start.get(), sl->stop.get(), sl->step.get()});
+    if (auto* l = dynamic_cast<ListLiteralNode*>(node)) return anyOf(l->elements);
+    if (auto* t = dynamic_cast<TupleLiteralNode*>(node)) return anyOf(t->elements);
+    if (auto* st = dynamic_cast<SetLiteralNode*>(node)) return anyOf(st->elements);
+    if (auto* d = dynamic_cast<DictLiteralNode*>(node)) return anyOf(d->keys) || anyOf(d->values);
+    if (auto* fv = dynamic_cast<FormattedValueNode*>(node)) return any({fv->value.get()});
+    if (auto* js = dynamic_cast<JoinedStrNode*>(node)) return anyOf(js->values);
+    if (auto* ne = dynamic_cast<NamedExprNode*>(node))
+        return targetBindsName(ne->target.get(), name, except) || any({ne->value.get()});
+    if (auto* lc = dynamic_cast<ListCompNode*>(node))
+        return comprehensionBindsName(lc->generators, name, except) || any({lc->elt.get()});
+    if (auto* sc = dynamic_cast<SetCompNode*>(node))
+        return comprehensionBindsName(sc->generators, name, except) || any({sc->elt.get()});
+    if (auto* ge = dynamic_cast<GeneratorExpNode*>(node))
+        return comprehensionBindsName(ge->generators, name, except) || any({ge->elt.get()});
+    if (auto* dc = dynamic_cast<DictCompNode*>(node))
+        return comprehensionBindsName(dc->generators, name, except) || any({dc->key.get(), dc->value.get()});
+    if (auto* lam = dynamic_cast<LambdaNode*>(node)) {
+        for (const auto& p : lam->parameters) if (p == name) return true;
+        for (const auto& p : lam->kwonlyargs) if (p == name) return true;
+        if (lam->vararg == name || lam->kwarg == name) return true;
+        return anyOf(lam->defaults) || anyOf(lam->kw_defaults) || any({lam->body.get()});
+    }
+    if (auto* aw = dynamic_cast<AwaitNode*>(node)) return any({aw->value.get()});
+    if (auto* y = dynamic_cast<YieldNode*>(node)) return any({y->value.get()});
+    if (auto* r = dynamic_cast<ReturnNode*>(node)) return any({r->value.get()});
+    if (auto* r = dynamic_cast<RaiseNode*>(node)) return any({r->exc.get(), r->cause.get()});
+    if (auto* a = dynamic_cast<AssertNode*>(node)) return any({a->test.get(), a->msg.get()});
+    if (auto* as = dynamic_cast<AssignNode*>(node)) {
+        for (auto& t : as->targets) if (targetBindsName(t.get(), name, except)) return true;
+        return any({as->value.get()});
+    }
+    if (auto* aug = dynamic_cast<AugAssignNode*>(node))
+        return targetBindsName(aug->target.get(), name, except) || any({aug->value.get()});
+    if (auto* ann = dynamic_cast<AnnAssignNode*>(node))
+        return targetBindsName(ann->target.get(), name, except) || any({ann->annotation.get(), ann->value.get()});
+    if (auto* f = dynamic_cast<ForNode*>(node))
+        return targetBindsName(f->target.get(), name, except) || any({f->iter.get(), f->body.get(), f->orelse.get()});
+    if (auto* f = dynamic_cast<AsyncForNode*>(node))
+        return targetBindsName(f->target.get(), name, except) || any({f->iter.get(), f->body.get(), f->orelse.get()});
+    if (auto* w = dynamic_cast<WhileNode*>(node)) return any({w->test.get(), w->body.get(), w->orelse.get()});
+    if (auto* iff = dynamic_cast<IfNode*>(node)) return any({iff->test.get(), iff->body.get(), iff->orelse.get()});
+    if (auto* w = dynamic_cast<WithNode*>(node)) {
+        for (auto& it : w->items)
+            if (bindsNameElsewhere(it.context_expr.get(), name, except) || targetBindsName(it.optional_vars.get(), name, except))
+                return true;
+        return any({w->body.get()});
+    }
+    if (auto* w = dynamic_cast<AsyncWithNode*>(node)) {
+        for (auto& it : w->items)
+            if (bindsNameElsewhere(it.context_expr.get(), name, except) || targetBindsName(it.optional_vars.get(), name, except))
+                return true;
+        return any({w->body.get()});
+    }
+    if (auto* t = dynamic_cast<TryNode*>(node)) {
+        if (any({t->body.get(), t->orelse.get(), t->finalbody.get()})) return true;
+        for (auto& h : t->handlers)
+            if (h.name == name || bindsNameElsewhere(h.type.get(), name, except) || bindsNameElsewhere(h.body.get(), name, except))
+                return true;
+        return false;
+    }
+    if (auto* d = dynamic_cast<DeleteNode*>(node)) {
+        for (auto& t : d->targets) if (targetBindsName(t.get(), name, except)) return true;
+        return false;
+    }
+    if (auto* g = dynamic_cast<GlobalNode*>(node)) {
+        for (const auto& n : g->names) if (n == name) return true;
+        return false;
+    }
+    if (auto* nl = dynamic_cast<NonlocalNode*>(node)) {
+        for (const auto& n : nl->names) if (n == name) return true;
+        return false;
+    }
+    if (auto* imp = dynamic_cast<ImportNode*>(node)) {
+        std::string bound = imp->isAs ? imp->alias : imp->moduleName.substr(0, imp->moduleName.find('.'));
+        return bound == name;
+    }
+    if (auto* imp = dynamic_cast<ImportFromNode*>(node)) {
+        for (const auto& item : imp->names) {
+            const std::string& bound = item.second.empty() ? item.first : item.second;
+            if (bound == name || item.first == "*") return true;
+        }
+        return false;
+    }
+    if (auto* fn = dynamic_cast<FunctionDefNode*>(node)) return defBindsName(fn, name, except);
+    if (auto* fn = dynamic_cast<AsyncFunctionDefNode*>(node)) return defBindsName(fn, name, except);
+    if (auto* cd = dynamic_cast<ClassDefNode*>(node)) {
+        if (cd->name == name) return true;
+        for (auto& tp : cd->type_params) if (tp && tp->name == name) return true;
+        if (anyOf(cd->bases) || anyOf(cd->decorator_list)) return true;
+        for (auto& kw : cd->keywords) if (bindsNameElsewhere(kw.second.get(), name, except)) return true;
+        return any({cd->body.get()});
+    }
+    if (auto* ta = dynamic_cast<TypeAliasNode*>(node)) {
+        if (ta->name == name) return true;
+        for (auto& tp : ta->type_params) if (tp && tp->name == name) return true;
+        return any({ta->value.get()});
+    }
+    if (auto* tp = dynamic_cast<TypeParamNode*>(node)) return tp->name == name;
+    if (auto* m = dynamic_cast<MatchNode*>(node)) {
+        if (bindsNameElsewhere(m->subject.get(), name, except)) return true;
+        for (auto& c : m->cases) {
+            if (!c) continue;
+            if (patternBindsName(c->pattern.get(), name, except) || any({c->guard.get(), c->body.get()}))
+                return true;
+        }
+        return false;
+    }
+    if (auto* p = dynamic_cast<MatchPatternNode*>(node)) return patternBindsName(p, name, except);
+    return true;  // a node this walker does not know: assume it binds
+}
+
+}  // namespace
+
+template <class DefNode>
+bool Compiler::recursiveDefSelfBinds(DefNode* n) const {
+    if (!n || !isFunctionScope_ || isClassBody_ || !scopeBody_) return false;
+    // A def run more than once per call of the scope rebinds the name, and
+    // an earlier function must then see the later one.
+    if (!loopStack_.empty()) return false;
+    // A decorator's result, not the function, is what the name holds.
+    if (!n->decorator_list.empty() || !n->type_params.empty()) return false;
+    const std::string& name = n->name;
+    if (globalNames_.count(name) || nonlocalNames_.count(name) || scopeParams_.count(name)) return false;
+    // Private-name mangling would make the binding's spelling differ.
+    if (!currentClassName_.empty() && name.size() > 2 && name[0] == '_' && name[1] == '_') return false;
+    return !bindsNameElsewhere(scopeBody_, name, n);
+}
+
+void Compiler::configureClosureSlots(Compiler& body, const std::vector<std::string>& varnames,
+                                     const std::unordered_set<std::string>& cellVars,
+                                     const std::vector<std::string>& freeVars,
+                                     const std::string& selfRef, bool selfRefCell) {
+    body.derefSlot_.clear();
+    body.cellVars_.clear();
+    for (size_t i = 0; i < varnames.size(); ++i) {
+        if (cellVars.count(varnames[i])) {
+            body.derefSlot_[varnames[i]] = static_cast<int>(i);
+            body.cellVars_.insert(varnames[i]);
+        }
+    }
+    body.selfRefName_.clear();
+    body.selfRefSlot_ = -1;
+    body.selfRefCell_ = false;
+    for (size_t j = 0; j < freeVars.size(); ++j) {
+        const int slot = static_cast<int>(varnames.size() + j);
+        if (!selfRef.empty() && freeVars[j] == selfRef) {
+            body.selfRefName_ = selfRef;
+            body.selfRefSlot_ = slot;
+            body.selfRefCell_ = selfRefCell;
+            if (selfRefCell) body.derefSlot_[selfRef] = slot;
+            continue;
+        }
+        body.derefSlot_[freeVars[j]] = slot;
+    }
+}
+
+const proto::ProtoObject* Compiler::stampClosureLayout(const proto::ProtoObject* codeObj,
+                                                       const std::vector<std::string>& varnames,
+                                                       const std::unordered_set<std::string>& cellVars,
+                                                       const std::vector<std::int32_t>& extraCellSlots,
+                                                       const std::vector<std::string>& extraCellNames,
+                                                       const std::vector<std::string>& freeVars,
+                                                       const std::string& selfRef, bool selfRefCell) {
+    if (!codeObj || codeObj == PROTO_NONE) return codeObj;
+    auto str = [&](const std::string& s) {
+        return PythonEnvironment::getInternedString(ctx_, s.c_str())->asObject(ctx_);
+    };
+    std::vector<const proto::ProtoObject*> freeVec;
+    for (const auto& fv : freeVars) freeVec.push_back(str(fv));
+    // CPython lists cell variables sorted by name; cellSlots gives each one's slot.
+    std::vector<std::string> cellNames;
+    std::vector<const proto::ProtoObject*> cellSlots;
+    for (size_t i = 0; i < varnames.size(); ++i)
+        if (cellVars.count(varnames[i])) cellNames.push_back(varnames[i]);
+    std::sort(cellNames.begin(), cellNames.end());
+    for (const auto& c : cellNames)
+        for (size_t i = 0; i < varnames.size(); ++i)
+            if (varnames[i] == c) { cellSlots.push_back(ctx_->fromInteger(static_cast<int>(i))); break; }
+    for (size_t k = 0; k < extraCellSlots.size(); ++k) {
+        cellSlots.push_back(ctx_->fromInteger(extraCellSlots[k]));
+        if (k < extraCellNames.size()) cellNames.push_back(extraCellNames[k]);
+    }
+    std::vector<const proto::ProtoObject*> cellVec;
+    for (const auto& c : cellNames) cellVec.push_back(str(c));
+    codeObj = codeObj->setAttribute(ctx_, PythonEnvironment::getInternedString(ctx_, "co_freevars"),
+                                    ctx_->newTuple(freeVec)->asObject(ctx_));
+    codeObj = codeObj->setAttribute(ctx_, PythonEnvironment::getInternedString(ctx_, "co_cellvars"),
+                                    ctx_->newTuple(cellVec)->asObject(ctx_));
+    codeObj = codeObj->setAttribute(ctx_, PythonEnvironment::getInternedString(ctx_, "co_cellslots"),
+                                    ctx_->newTuple(cellSlots)->asObject(ctx_));
+    int nLocalsPlus = static_cast<int>(varnames.size() + freeVars.size());
+    for (std::int32_t s : extraCellSlots) if (s + 1 > nLocalsPlus) nLocalsPlus = s + 1;
+    codeObj = codeObj->setAttribute(ctx_, PythonEnvironment::getInternedString(ctx_, "co_nlocalsplus"),
+                                    ctx_->fromInteger(nLocalsPlus));
+    if (!selfRef.empty()) {
+        for (size_t j = 0; j < freeVars.size(); ++j) {
+            if (freeVars[j] != selfRef) continue;
+            codeObj = codeObj->setAttribute(ctx_, PythonEnvironment::getInternedString(ctx_, "co_selfref"),
+                                            ctx_->fromInteger(static_cast<int>(j)));
+            codeObj = codeObj->setAttribute(ctx_, PythonEnvironment::getInternedString(ctx_, "co_selfref_cell"),
+                                            selfRefCell ? PROTO_TRUE : PROTO_FALSE);
+            break;
+        }
+    }
+    return codeObj;
+}
+
+void Compiler::emitLoadClosure(const std::string& name) {
+    requestedClosure_.insert(name);
+    if (isClassBody_ && name == "__class__" && classCellSlot_ >= 0) {
+        classCellUsed_ = true;
+        emit(OP_LOAD_CLOSURE, classCellSlot_);
+        return;
+    }
+    if (!selfRefName_.empty() && name == selfRefName_) {
+        if (selfRefCell_) {
+            emit(OP_LOAD_CLOSURE, selfRefSlot_);
+        } else {
+            // A nested scope captures the function's own name: recompile the
+            // function with its self binding held in a cell.
+            missingSelfCell_ = true;
+            emit(OP_LOAD_CLOSURE, -1);
+        }
+        return;
+    }
+    auto it = derefSlot_.find(name);
+    if (it != derefSlot_.end()) {
+        emit(OP_LOAD_CLOSURE, it->second);
+        return;
+    }
+    missingClosure_.insert(name);
+    emit(OP_LOAD_CLOSURE, -1);
+}
+
+int Compiler::emitClosureCells(const std::vector<std::string>& freevars, const std::string& selfRef) {
+    int n = 0;
+    for (const auto& fv : freevars) {
+        if (!selfRef.empty() && fv == selfRef) continue;
+        emitLoadClosure(fv);
+        ++n;
+    }
+    return n << BUILD_FUNCTION_CELLS_SHIFT;
+}
+
 bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     if (!n) return false;
     // Consumed on entry so nothing compiled below inherits it.
@@ -4363,36 +4537,11 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
         }
     }
 
-    // PG: zero-arg super() inside a method emits an implicit load of
-    // the enclosing class name, but that load is generated at code
-    // emission time and not visible to collectCapturedNames.  If this
-    // function is a class method (isClassBody_ outer) and the
-    // currentClassName_ is bound in an enclosing scope, explicitly add
-    // it to bodyNonlocals so emitNameOp picks LOAD_DEREF over
-    // LOAD_GLOBAL.  Module-level classes still resolve fine via
-    // LOAD_GLOBAL.  The def wrapped by a PEP 695 annotation scope in a
-    // class body is a method too.
-    if ((isClassBody_ || classAnnotationScope_) && !currentClassName_.empty()) {
-        const std::string& cn = currentClassName_;
-        bool isLocal = false;
-        for (const auto& p : params) if (p == cn) isLocal = true;
-        for (const auto& kw : n->kwonlyargs) if (kw == cn) isLocal = true;
-        if (n->vararg == cn) isLocal = true;
-        if (n->kwarg == cn) isLocal = true;
-        for (const auto& l : localsOrdered) if (l == cn) isLocal = true;
-        if (!isLocal) {
-            bool isInOuterScope = localSlotMap_.count(cn) || definedLocals_.count(cn) || nonlocalNames_.count(cn);
-            if (isInOuterScope) bodyNonlocals.insert(cn);
-        }
-    }
-
     // Zero-argument `__class__`: in a method, or in any scope nested in one,
     // a free `__class__` is the implicit cell CPython fills with the class
-    // the class statement creates.  BUILD_CLASS stores that class in the
-    // class namespace (under ".__class__", see emitNameOp), and every
-    // method's closure frame chains to that namespace, so LOAD_DEREF finds
-    // the right class (also for classes defined in functions and for nested
-    // classes), where LOAD_GLOBAL found the module's own `__class__`.
+    // the class statement creates: the class body's own `__class__` cell,
+    // which buildClass fills (`__classcell__`).  zero-argument super() reads
+    // it too.
     const bool classCell = isClassBody_ || classAnnotationScope_ || classCellScope_;
     // A function binding `__class__` itself shadows the cell for its body and
     // for the scopes nested in it.
@@ -4406,33 +4555,14 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     std::string dynamicReason = getDynamicLocalsReason(n->body.get());
     bool forceMapped = !dynamicReason.empty();
 
-    // Cell semantics for closures: if any nested scope (def, lambda,
-    // comprehension, generator-exp) reads a name that this function
-    // defines as a local/parameter, route this function's locals to
-    // the frame's attribute table.  The inner closure's frame chains
-    // to this frame as a parent, so its LOAD_DEREF walks up and
-    // observes mutations live — which is the cell semantics CPython
-    // gives via explicit cell objects.
-    if (!forceMapped) {
-        std::unordered_set<std::string> innerFrees;
-        collectNestedScopeFreeVarsImpl(n->body.get(), innerFrees);
-        bool capturesOwnLocal = false;
-        for (const auto& name : innerFrees) {
-            if (combinedGlobals.count(name)) continue;
-            for (const auto& l : localsOrdered) if (l == name) { capturesOwnLocal = true; break; }
-            if (capturesOwnLocal) break;
-            for (const auto& p : params) if (p == name) { capturesOwnLocal = true; break; }
-            if (capturesOwnLocal) break;
-            for (const auto& kw : n->kwonlyargs) if (kw == name) { capturesOwnLocal = true; break; }
-            if (capturesOwnLocal) break;
-            if (!n->vararg.empty() && name == n->vararg) { capturesOwnLocal = true; break; }
-            if (!n->kwarg.empty()  && name == n->kwarg)  { capturesOwnLocal = true; break; }
-        }
-        if (capturesOwnLocal) {
-            dynamicReason = "captured-by-inner-closure";
-            forceMapped = true;
-        }
-    }
+    // Cell variables: the locals and parameters a nested scope (def, lambda,
+    // comprehension, generator expression, class body) reads or writes.
+    // Each lives in a cell kept in its own fast slot, so the function stays
+    // CO_OPTIMIZED; a nested function closes over the cell, never over this
+    // function's frame.  This first estimate is checked against the cells
+    // the nested scopes actually ask for (see the compile loop below).
+    std::unordered_set<std::string> innerFrees;
+    collectNestedScopeFreeVarsImpl(n->body.get(), innerFrees);
 
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG COMPILER: FunctionDef '%s' forceMapped=%d dynamicReason='%s' captured_size=%zu\n",
@@ -4489,11 +4619,47 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     }
     int kwonlyargcount = static_cast<int>(n->kwonlyargs.size());
 
-    Compiler bodyCompiler(ctx_, filename_);
+    // CPython qualname rules for nested defs:
+    //   class C:        prefix=""        → method qualname "C.method"
+    //     def method:   prefix="C"
+    //       def inner:  prefix="C.method.<locals>" → "C.method.<locals>.inner"
+    // Build *this* function's qualname from the current prefix, then push
+    // "<thisQualname>.<locals>" as the prefix the body sees so any nested
+    // defs inside compose correctly.
+    // A `global`-declared name binds at module scope, so CPython gives
+    // it a bare __qualname__ with no enclosing `<locals>` prefix.
+    std::string fnQualname = (qualnamePrefix_.empty() || globalNames_.count(n->name))
+        ? n->name
+        : qualnamePrefix_ + "." + n->name;
+
+    // The closure layout (Compiler.h, "Closures").  A recursive nested def
+    // binds its own name to itself at entry instead of closing over this
+    // scope's cell for it (recursiveDefSelfBinds).
+    std::unordered_set<std::string> cellVars;
+    for (const auto& v : varnamesOrdered)
+        if (innerFrees.count(v) && !combinedGlobals.count(v)) cellVars.insert(v);
+    std::vector<std::string> freeVars(bodyNonlocals.begin(), bodyNonlocals.end());
+    std::sort(freeVars.begin(), freeVars.end());
+    const std::string selfRef = (bodyNonlocals.count(n->name) && recursiveDefSelfBinds(n)) ? n->name : std::string();
+    bool selfRefCell = false;
+
+    std::unique_ptr<Compiler> bodyHolder;
+    for (int attempt = 0; ; ++attempt) {
+    bodyHolder.reset(new Compiler(ctx_, filename_));
+    Compiler& bodyCompiler = *bodyHolder;
     bodyCompiler.globalNames_ = globalNames_;
     for (const auto& g : bodyGlobals) bodyCompiler.globalNames_.insert(g);
     bodyCompiler.nonlocalNames_ = bodyNonlocals;
     bodyCompiler.localSlotMap_ = slotMap;
+    // A cell variable's slot holds its cell: it is never LOAD_FAST's.
+    for (const auto& c : cellVars) bodyCompiler.localSlotMap_.erase(c);
+    configureClosureSlots(bodyCompiler, varnamesOrdered, cellVars, freeVars, selfRef, selfRefCell);
+    bodyCompiler.scopeBody_ = n->body.get();
+    bodyCompiler.scopeParams_.insert(params.begin(), params.end());
+    bodyCompiler.scopeParams_.insert(n->kwonlyargs.begin(), n->kwonlyargs.end());
+    if (!n->vararg.empty()) bodyCompiler.scopeParams_.insert(n->vararg);
+    if (!n->kwarg.empty()) bodyCompiler.scopeParams_.insert(n->kwarg);
+    if (!params.empty()) bodyCompiler.firstParam_ = params[0];
     // Track defined locals independent of physical storage (slot vs frame).
     for (const auto& v : varnamesOrdered) bodyCompiler.definedLocals_.insert(v);
     bodyCompiler.isFunctionScope_ = true;
@@ -4510,19 +4676,6 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     if (!n->vararg.empty()) bodyCompiler.boundParams_.insert(bodyCompiler.mangleIdentifier(n->vararg));
     if (!n->kwarg.empty()) bodyCompiler.boundParams_.insert(bodyCompiler.mangleIdentifier(n->kwarg));
     bodyCompiler.classCellScope_ = classCell && !ownsClassName;
-
-    // CPython qualname rules for nested defs:
-    //   class C:        prefix=""        → method qualname "C.method"
-    //     def method:   prefix="C"
-    //       def inner:  prefix="C.method.<locals>" → "C.method.<locals>.inner"
-    // Build *this* function's qualname from the current prefix, then push
-    // "<thisQualname>.<locals>" as the prefix the body sees so any nested
-    // defs inside compose correctly.
-    // A `global`-declared name binds at module scope, so CPython gives
-    // it a bare __qualname__ with no enclosing `<locals>` prefix.
-    std::string fnQualname = (qualnamePrefix_.empty() || globalNames_.count(n->name))
-        ? n->name
-        : qualnamePrefix_ + "." + n->name;
     // A PEP 695 annotation scope does not show in qualnames: `def f[T]` is
     // "f", not "<generic parameters of f>.<locals>.f".
     bodyCompiler.qualnamePrefix_ = n->isAnnotationScope ? qualnamePrefix_ : fnQualname + ".<locals>";
@@ -4532,7 +4685,8 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     // initialised to PROTO_NONE, which is indistinguishable from an
     // explicit `x = None` — but CPython requires that reading an
     // annotated-but-never-assigned local raises UnboundLocalError, not
-    // returns None.  LOAD_FAST detects this sentinel and raises.
+    // returns None.  LOAD_FAST detects this sentinel and raises.  (A cell
+    // variable starts as an empty cell, which LOAD_DEREF reports itself.)
     if (!forceMapped) {
         std::unordered_set<std::string> annOnly;
         collectAnnotationOnlyLocals(n->body.get(), annOnly);
@@ -4560,14 +4714,43 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     }
 
     if (!bodyCompiler.compileNode(n->body.get())) return false;
+    // The nested scopes have asked for their cells now.  A local one asked
+    // for that is not a cell variable becomes one; a cell variable nobody
+    // asked for (the name of a recursive def that binds itself) goes back
+    // to being a plain local; a self binding a nested scope closes over is
+    // held in a cell.  The layout converges in at most two more passes:
+    // what the nested scopes ask for does not depend on it.
+    if (attempt < 4) {
+        bool again = false;
+        for (const auto& m : bodyCompiler.missingClosure_) {
+            bool isOwn = false;
+            for (const auto& v : varnamesOrdered) if (v == m) { isOwn = true; break; }
+            if (isOwn) { if (cellVars.insert(m).second) again = true; }
+            else if (bodyNonlocals.insert(m).second) {
+                freeVars.push_back(m);
+                std::sort(freeVars.begin(), freeVars.end());
+                again = true;
+            }
+        }
+        for (auto it = cellVars.begin(); it != cellVars.end(); ) {
+            if (!bodyCompiler.requestedClosure_.count(*it)) { it = cellVars.erase(it); again = true; }
+            else ++it;
+        }
+        if (bodyCompiler.missingSelfCell_ && !selfRefCell) { selfRefCell = true; again = true; }
+        if (again) continue;
+    }
+    break;
+    }
+    Compiler& bodyCompiler = *bodyHolder;
     // A mapped function keeps its locals on its frame, not in slots, but its
-    // operand stack (above co_varnames) and its frame anchor must still be in
-    // automatic slots: they are the only GC roots executeBytecodeRange gives
-    // them.  With 0 slots the interpreter ran the stack in a std::vector the
-    // collector never scans, and the young values on it, the frame among them,
-    // were freed once the context's young generation was submitted.
+    // cells, its free variables, its operand stack (above co_varnames and
+    // the free variables) and its frame anchor must still be in automatic
+    // slots: they are the only GC roots executeBytecodeRange gives them.
+    // With 0 slots the interpreter ran the stack in a std::vector the
+    // collector never scans, and the young values on it, the frame among
+    // them, were freed once the context's young generation was submitted.
     if (forceMapped) automatic_count = static_cast<int>(varnamesOrdered.size());
-    automatic_count += bodyCompiler.getMaxStack() + 128;
+    automatic_count += static_cast<int>(freeVars.size()) + bodyCompiler.getMaxStack() + 128;
 
     int noneIdx = bodyCompiler.addConstant(PROTO_NONE);
     bodyCompiler.emit(OP_LOAD_CONST, noneIdx);
@@ -4591,22 +4774,10 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
 
     const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), PythonEnvironment::getInternedString(ctx_, filename_.c_str()), co_varnames_list, nparams, kwonlyargcount, automatic_count, co_flags, bodyCompiler.isGenerator_, PythonEnvironment::getInternedString(ctx_, n->name.c_str()), bodyCompiler.firstLine_, co_lnotab);
     if (!codeObj) return false;
-    // Stamp `co_freevars` — the exact set of names this function (and its
-    // nested scopes) close over from enclosing *function* scopes.
-    // bodyNonlocals already excludes this function's own params/locals
-    // (the `isLocal` filter above), so OP_BUILD_FUNCTION can snapshot
-    // ONLY these names from the outer frame instead of blindly copying
-    // every outer local — the blind copy leaks an enclosing `self` into
-    // a nested method's closure frame and shadows the real binding.
-    {
-        std::vector<const proto::ProtoObject*> freeVec;
-        freeVec.reserve(bodyNonlocals.size());
-        for (const auto& fv : bodyNonlocals)
-            freeVec.push_back(PythonEnvironment::getInternedString(ctx_, fv.c_str())->asObject(ctx_));
-        codeObj = codeObj->setAttribute(ctx_,
-            PythonEnvironment::getInternedString(ctx_, "co_freevars"),
-            ctx_->newTuple(freeVec)->asObject(ctx_));
-    }
+    // co_freevars: the names this function and its nested scopes close over
+    // from enclosing function scopes; with co_cellvars, co_cellslots and
+    // co_selfref, the closure layout the call path sets up.
+    codeObj = stampClosureLayout(codeObj, varnamesOrdered, cellVars, {}, {}, freeVars, selfRef, selfRefCell);
     // Stamp `co_doc` on the code object when the body's first statement was
     // a string literal; ExecutionEngine reads it to populate `fn.__doc__`.
     if (!bodyCompiler.capturedDocstring_.empty()) {
@@ -4623,10 +4794,12 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     codeObj = codeObj->setAttribute(ctx_,
         PythonEnvironment::getInternedString(ctx_, "co_qualname"),
         PythonEnvironment::getInternedString(ctx_, fnQualname.c_str())->asObject(ctx_));
+    // The closure (the cells of freeVars, in order, without the self
+    // binding), then the code object.
+    int make_fn_flags = emitClosureCells(freeVars, selfRef);
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
 
-    int make_fn_flags = 0;
     if (!n->defaults.empty()) {
         for (auto& d : n->defaults) {
             if (!compileNode(d.get())) return false;
@@ -4781,7 +4954,6 @@ bool Compiler::compileLambda(LambdaNode* n) {
         if (lambdaUsed.count("__class__")) bodyNonlocals.insert("__class__");
     }
 
-    const bool forceMapped = false; // Lambdas never have dynamic locals access like locals() or exec()
     std::vector<std::string> varnamesOrdered;
     // 1. Positional Parameters
     for (const auto& p : params) {
@@ -4805,39 +4977,64 @@ bool Compiler::compileLambda(LambdaNode* n) {
         if (!alreadyIn) varnamesOrdered.push_back(n->kwarg);
     }
     
+    // A lambda is never mapped: it has no statements, so no locals() or exec().
     std::unordered_map<std::string, int> slotMap;
-    int automatic_count = 0;
-    if (!forceMapped) {
-        for (size_t i = 0; i < varnamesOrdered.size(); ++i) {
-            slotMap[varnamesOrdered[i]] = static_cast<int>(i);
-        }
-        automatic_count = static_cast<int>(varnamesOrdered.size()); // finalized after body compilation
+    for (size_t i = 0; i < varnamesOrdered.size(); ++i) {
+        slotMap[varnamesOrdered[i]] = static_cast<int>(i);
     }
+    int automatic_count = static_cast<int>(varnamesOrdered.size()); // finalized after body compilation
 
     int nparams = static_cast<int>(params.size());
     int kwonlyargcount = static_cast<int>(n->kwonlyargs.size());
 
-    Compiler bodyCompiler(ctx_, filename_);
+    std::unordered_set<std::string> innerFrees;
+    collectNestedScopeFreeVarsImpl(n->body.get(), innerFrees);
+    std::unordered_set<std::string> cellVars;
+    for (const auto& v : varnamesOrdered) if (innerFrees.count(v)) cellVars.insert(v);
+    std::vector<std::string> freeVars(bodyNonlocals.begin(), bodyNonlocals.end());
+    std::sort(freeVars.begin(), freeVars.end());
+
+    std::unique_ptr<Compiler> bodyHolder;
+    for (int attempt = 0; ; ++attempt) {
+    bodyHolder.reset(new Compiler(ctx_, filename_));
+    Compiler& bodyCompiler = *bodyHolder;
     bodyCompiler.globalNames_ = globalNames_;
     for (const auto& g : bodyGlobals) bodyCompiler.globalNames_.insert(g);
     bodyCompiler.nonlocalNames_ = bodyNonlocals;
     bodyCompiler.localSlotMap_ = slotMap;
+    for (const auto& c : cellVars) bodyCompiler.localSlotMap_.erase(c);
+    configureClosureSlots(bodyCompiler, varnamesOrdered, cellVars, freeVars, std::string(), false);
     for (const auto& v : varnamesOrdered) bodyCompiler.definedLocals_.insert(v);
     bodyCompiler.isFunctionScope_ = true;
     if (isClassBody_) bodyCompiler.currentClassName_ = currentClassName_;
+    if (!params.empty()) bodyCompiler.firstParam_ = params[0];
     bodyCompiler.classCellScope_ = classCell && !ownsClassName;
 
     if (!bodyCompiler.compileNode(n->body.get())) return false;
+    if (attempt < 4) {
+        bool again = false;
+        for (const auto& m : bodyCompiler.missingClosure_) {
+            bool isOwn = false;
+            for (const auto& v : varnamesOrdered) if (v == m) { isOwn = true; break; }
+            if (isOwn) { if (cellVars.insert(m).second) again = true; }
+            else if (bodyNonlocals.insert(m).second) {
+                freeVars.push_back(m);
+                std::sort(freeVars.begin(), freeVars.end());
+                again = true;
+            }
+        }
+        for (auto it = cellVars.begin(); it != cellVars.end(); ) {
+            if (!bodyCompiler.requestedClosure_.count(*it)) { it = cellVars.erase(it); again = true; }
+            else ++it;
+        }
+        if (again) continue;
+    }
+    break;
+    }
+    Compiler& bodyCompiler = *bodyHolder;
     bodyCompiler.emit(OP_RETURN_VALUE);
     bodyCompiler.applyPatches();
-    // A mapped function keeps its locals on its frame, not in slots, but its
-    // operand stack (above co_varnames) and its frame anchor must still be in
-    // automatic slots: they are the only GC roots executeBytecodeRange gives
-    // them.  With 0 slots the interpreter ran the stack in a std::vector the
-    // collector never scans, and the young values on it, the frame among them,
-    // were freed once the context's young generation was submitted.
-    if (forceMapped) automatic_count = static_cast<int>(varnamesOrdered.size());
-    automatic_count += bodyCompiler.getMaxStack() + 128;
+    automatic_count += static_cast<int>(freeVars.size()) + bodyCompiler.getMaxStack() + 128;
 
     std::vector<const proto::ProtoObject*> varnamesVec;
     varnamesVec.reserve(varnamesOrdered.size());
@@ -4845,8 +5042,7 @@ bool Compiler::compileLambda(LambdaNode* n) {
         varnamesVec.push_back(PythonEnvironment::getInternedString(ctx_, name.c_str())->asObject(ctx_));
     const proto::ProtoTuple* co_varnames = ctx_->newTuple(varnamesVec);
         
-    int co_flags = CO_NEWLOCALS;
-    if (!forceMapped) co_flags |= CO_OPTIMIZED;
+    int co_flags = CO_NEWLOCALS | CO_OPTIMIZED;
     if (!captured.empty()) co_flags |= CO_NESTED;
     // The call path binds *args / **kwargs, and leaves their slots out of the
     // locals it marks unbound, only when these flags are set.
@@ -4858,21 +5054,11 @@ bool Compiler::compileLambda(LambdaNode* n) {
 
     const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), PythonEnvironment::getInternedString(ctx_, filename_.c_str()), co_varnames, nparams, kwonlyargcount, automatic_count, co_flags, bodyCompiler.isGenerator_, PythonEnvironment::getInternedString(ctx_, "<lambda>"), bodyCompiler.firstLine_, co_lnotab);
     if (!codeObj) return false;
-    // Stamp `co_freevars` as compileFunctionDef does: OP_BUILD_FUNCTION
-    // snapshots exactly these names, and `__closure__` has one cell per name.
-    {
-        std::vector<const proto::ProtoObject*> freeVec;
-        freeVec.reserve(bodyNonlocals.size());
-        for (const auto& fv : bodyNonlocals)
-            freeVec.push_back(PythonEnvironment::getInternedString(ctx_, fv.c_str())->asObject(ctx_));
-        codeObj = codeObj->setAttribute(ctx_,
-            PythonEnvironment::getInternedString(ctx_, "co_freevars"),
-            ctx_->newTuple(freeVec)->asObject(ctx_));
-    }
+    codeObj = stampClosureLayout(codeObj, varnamesOrdered, cellVars, {}, {}, freeVars, std::string(), false);
+    int make_fn_flags = emitClosureCells(freeVars, std::string());
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
 
-    int make_fn_flags = 0;
     if (!n->defaults.empty()) {
         for (auto& d : n->defaults) {
             if (!compileNode(d.get())) return false;
@@ -4968,6 +5154,7 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
 
     std::string dynamicReason = getDynamicLocalsReason(n->body.get());
     const bool forceMapped = !dynamicReason.empty();
+    // Cell variables and free variables: see compileFunctionDef.
 
     std::vector<std::string> varnamesOrdered;
     // 1. Positional Parameters
@@ -5010,15 +5197,61 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
     int nparams = static_cast<int>(params.size());
     int kwonlyargcount = static_cast<int>(n->kwonlyargs.size());
 
-    Compiler bodyCompiler(ctx_, filename_);
+    std::unordered_set<std::string> innerFrees;
+    collectNestedScopeFreeVarsImpl(n->body.get(), innerFrees);
+    std::unordered_set<std::string> cellVars;
+    for (const auto& v : varnamesOrdered)
+        if (innerFrees.count(v) && !combinedGlobals.count(v)) cellVars.insert(v);
+    std::vector<std::string> freeVars(bodyNonlocals.begin(), bodyNonlocals.end());
+    std::sort(freeVars.begin(), freeVars.end());
+    const std::string selfRef = (bodyNonlocals.count(n->name) && recursiveDefSelfBinds(n)) ? n->name : std::string();
+    bool selfRefCell = false;
+
+    std::unique_ptr<Compiler> bodyHolder;
+    for (int attempt = 0; ; ++attempt) {
+    bodyHolder.reset(new Compiler(ctx_, filename_));
+    Compiler& bodyCompiler = *bodyHolder;
     bodyCompiler.globalNames_ = globalNames_;
     for (const auto& g : bodyGlobals) bodyCompiler.globalNames_.insert(g);
     bodyCompiler.nonlocalNames_ = bodyNonlocals;
     bodyCompiler.localSlotMap_ = slotMap;
+    for (const auto& c : cellVars) bodyCompiler.localSlotMap_.erase(c);
+    configureClosureSlots(bodyCompiler, varnamesOrdered, cellVars, freeVars, selfRef, selfRefCell);
+    for (const auto& v : varnamesOrdered) bodyCompiler.definedLocals_.insert(v);
+    bodyCompiler.scopeBody_ = n->body.get();
+    bodyCompiler.scopeParams_.insert(params.begin(), params.end());
+    bodyCompiler.scopeParams_.insert(n->kwonlyargs.begin(), n->kwonlyargs.end());
+    if (!n->vararg.empty()) bodyCompiler.scopeParams_.insert(n->vararg);
+    if (!n->kwarg.empty()) bodyCompiler.scopeParams_.insert(n->kwarg);
+    if (!params.empty()) bodyCompiler.firstParam_ = params[0];
+    if (isClassBody_ || classAnnotationScope_) bodyCompiler.currentClassName_ = currentClassName_;
     bodyCompiler.isFunctionScope_ = true;
+    bodyCompiler.forceMapped_ = forceMapped;
     bodyCompiler.isAsyncFunction_ = true;  // PC2
     bodyCompiler.classCellScope_ = classCell && !ownsClassName;
     if (!bodyCompiler.compileNode(n->body.get())) return false;
+    if (attempt < 4) {
+        bool again = false;
+        for (const auto& m : bodyCompiler.missingClosure_) {
+            bool isOwn = false;
+            for (const auto& v : varnamesOrdered) if (v == m) { isOwn = true; break; }
+            if (isOwn) { if (cellVars.insert(m).second) again = true; }
+            else if (bodyNonlocals.insert(m).second) {
+                freeVars.push_back(m);
+                std::sort(freeVars.begin(), freeVars.end());
+                again = true;
+            }
+        }
+        for (auto it = cellVars.begin(); it != cellVars.end(); ) {
+            if (!bodyCompiler.requestedClosure_.count(*it)) { it = cellVars.erase(it); again = true; }
+            else ++it;
+        }
+        if (bodyCompiler.missingSelfCell_ && !selfRefCell) { selfRefCell = true; again = true; }
+        if (again) continue;
+    }
+    break;
+    }
+    Compiler& bodyCompiler = *bodyHolder;
 
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx_);
     int noneIdx = bodyCompiler.addConstant(env ? env->getNonePrototype() : PROTO_NONE);
@@ -5027,13 +5260,11 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
 
     bodyCompiler.applyPatches();
     // A mapped function keeps its locals on its frame, not in slots, but its
-    // operand stack (above co_varnames) and its frame anchor must still be in
+    // cells, free variables, operand stack and frame anchor must still be in
     // automatic slots: they are the only GC roots executeBytecodeRange gives
-    // them.  With 0 slots the interpreter ran the stack in a std::vector the
-    // collector never scans, and the young values on it, the frame among them,
-    // were freed once the context's young generation was submitted.
+    // them (see compileFunctionDef).
     if (forceMapped) automatic_count = static_cast<int>(varnamesOrdered.size());
-    automatic_count += bodyCompiler.getMaxStack() + 128;
+    automatic_count += static_cast<int>(freeVars.size()) + bodyCompiler.getMaxStack() + 128;
 
     std::vector<const proto::ProtoObject*> varnamesVec;
     varnamesVec.reserve(varnamesOrdered.size());
@@ -5053,10 +5284,11 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
 
     const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), PythonEnvironment::getInternedString(ctx_, filename_.c_str()), co_varnames, nparams, kwonlyargcount, automatic_count, co_flags, bodyCompiler.isGenerator_, PythonEnvironment::getInternedString(ctx_, n->name.c_str()), bodyCompiler.firstLine_, co_lnotab);
     if (!codeObj) return false;
+    codeObj = stampClosureLayout(codeObj, varnamesOrdered, cellVars, {}, {}, freeVars, selfRef, selfRefCell);
+    int make_fn_flags = emitClosureCells(freeVars, selfRef);
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
 
-    int make_fn_flags = 0;
     if (!n->defaults.empty()) {
         for (auto& d : n->defaults) {
             if (!compileNode(d.get())) return false;
@@ -5395,67 +5627,42 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     }
     
     // 3. Body
-    Compiler bodyCompiler(ctx_, filename_);
-    bodyCompiler.globalNames_ = globalNames_;
-    bodyCompiler.nonlocalNames_ = nonlocalNames_;
-    bodyCompiler.isClassBody_ = true;
-    bodyCompiler.currentClassName_ = n->name;
-    // A class body is not a function: a `__class__` read in it (or in a class
-    // nested directly in it) only sees the cell of an enclosing method.
-    bodyCompiler.classCellScope_ = classCellScope_;
-    // PI: compute and propagate __qualname__ prefix for nested classes.
     // A `global`-declared class binds at module scope, so CPython gives
     // it a bare __qualname__ with no enclosing `<locals>` prefix.
     std::string thisQualname = (qualnamePrefix_.empty() || globalNames_.count(n->name))
         ? n->name
         : qualnamePrefix_ + "." + n->name;
-    bodyCompiler.qualnamePrefix_ = thisQualname;
-    // Emit __qualname__ at the start of the class body so BUILD_CLASS
-    // can pick it up (overrides the default `__name__` qualname).
-    {
-        int qnameIdx = bodyCompiler.addConstant(
-            PythonEnvironment::getInternedString(ctx_, thisQualname.c_str())->asObject(ctx_));
-        bodyCompiler.emit(OP_LOAD_CONST, qnameIdx);
-        bodyCompiler.emitNameOp("__qualname__", TargetCtx::Store);
-    }
 
-    // PH: implicitly capture the class's own name as a free variable
-    // of the class body so methods can resolve zero-arg `super()`
-    // (rewritten as `super(<ClassName>, self)`) via LOAD_DEREF.  The
-    // outer-scope STORE_FAST that binds the class runs only after
-    // BUILD_CLASS finishes, but BUILD_CLASS post-step writes the new
-    // class into `ns` under the class's own name, so the closure walk
-    // (innerCF.parent → ns) finds it.
     // classBodyFreevars accumulates every name this class body closes
-    // over from an enclosing function scope; it is stamped onto the
-    // body code object as `co_freevars` so OP_BUILD_FUNCTION snapshots
-    // exactly these — not every enclosing local (which would leak an
-    // enclosing `self` into a nested method's closure frame).
-    std::unordered_set<std::string> classBodyFreevars;
-    if (localSlotMap_.count(n->name) || definedLocals_.count(n->name) || nonlocalNames_.count(n->name)) {
-        bodyCompiler.nonlocalNames_.insert(n->name);
-        classBodyFreevars.insert(n->name);
-    }
-
-    // PG: capture free variables from the enclosing function scope.
-    // Without this, references to enclosing locals (e.g. `x = D()`
-    // where D is a class defined in the same function) fall through to
-    // LOAD_NAME and fail because the class namespace dict, globals,
-    // and builtins all lack the binding.
+    // over from an enclosing function scope: names used directly in
+    // class-level statements, and the free variables of the scopes nested
+    // in it (methods), which a class body passes through to them.  Each
+    // is a free variable of the body code object (co_freevars), read with
+    // LOAD_CLASSDEREF unless the body binds the name.
     //
-    // The class body's free variables are (1) names used directly in
-    // class-level statements plus (2) the free variables of nested
-    // method/comprehension scopes.  collectUsedNames is *deep* — it
-    // descends into nested function bodies and adds their parameters —
-    // so using it raw treats a method parameter like `self` as a
-    // class-body free var and makes the class wrongly capture the
-    // enclosing function's `self`.  Use collectNestedScopeFreeVarsImpl
-    // (which computes each nested scope's free vars against that
-    // scope's own bindings) for (2), and a shallow per-statement scan
-    // for (1) that does NOT descend into nested def/class bodies.
+    // collectUsedNames is *deep* — it descends into nested function bodies
+    // and adds their parameters — so using it raw treats a method
+    // parameter like `self` as a class-body free var and makes the class
+    // wrongly capture the enclosing function's `self`.  Use
+    // collectNestedScopeFreeVarsImpl (which computes each nested scope's
+    // free vars against that scope's own bindings) for the methods, and a
+    // shallow per-statement scan for the class-level statements that does
+    // NOT descend into nested def/class bodies.
+    std::unordered_set<std::string> classBodyFreevars;
+    std::unordered_set<std::string> bodyDefined;
+    collectDefinedNames(n->body.get(), bodyDefined);
+    std::unordered_set<std::string> bodyNonlocalDecls;
+    {
+        std::unordered_set<std::string> ignoredGlobals;
+        std::vector<std::string> ignoredLocals;
+        collectLocalsFromBody(n->body.get(), ignoredGlobals, bodyNonlocalDecls, ignoredLocals);
+    }
     {
         std::unordered_set<std::string> bodyUsed;
         collectNestedScopeFreeVarsImpl(n->body.get(), bodyUsed);
+        // `__class__` in a method is the class body's own cell; read in the
+        // class body itself it is an enclosing method's.
+        bodyUsed.erase("__class__");
         if (auto* suite = dynamic_cast<SuiteNode*>(n->body.get())) {
             for (auto& st : suite->statements) {
                 ASTNode* s = st.get();
@@ -5478,22 +5685,46 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
         } else {
             collectUsedNames(n->body.get(), bodyUsed);
         }
-        std::unordered_set<std::string> bodyDefined;
-        collectDefinedNames(n->body.get(), bodyDefined);
         for (const auto& name : bodyUsed) {
-            if (bodyDefined.count(name) || globalNames_.count(name) ||
-                bodyCompiler.nonlocalNames_.count(name)) {
-                continue;
-            }
-            // Only treat as nonlocal if the enclosing scope actually has
-            // it as a local or nonlocal — i.e. it can be closed over via
-            // a cell.  Names not in the outer scope are globals/builtins
-            // and resolve via LOAD_NAME → globals → builtins as before.
-            if (localSlotMap_.count(name) || definedLocals_.count(name) || nonlocalNames_.count(name)) {
-                bodyCompiler.nonlocalNames_.insert(name);
+            if (globalNames_.count(name)) continue;
+            // Only an enclosing function's local or free variable can be
+            // closed over; anything else is a global or a builtin, and
+            // resolves via LOAD_NAME -> globals -> builtins as before.
+            if (localSlotMap_.count(name) || definedLocals_.count(name) || nonlocalNames_.count(name) ||
+                    derefSlot_.count(name)) {
                 classBodyFreevars.insert(name);
             }
         }
+        for (const auto& name : bodyNonlocalDecls) classBodyFreevars.insert(name);
+    }
+
+    std::unique_ptr<Compiler> bodyHolder;
+    std::vector<std::string> classFreeVars(classBodyFreevars.begin(), classBodyFreevars.end());
+    std::sort(classFreeVars.begin(), classFreeVars.end());
+    for (int attempt = 0; ; ++attempt) {
+    bodyHolder.reset(new Compiler(ctx_, filename_));
+    Compiler& bodyCompiler = *bodyHolder;
+    bodyCompiler.globalNames_ = globalNames_;
+    bodyCompiler.nonlocalNames_ = nonlocalNames_;
+    for (const auto& fv : classFreeVars) bodyCompiler.nonlocalNames_.insert(fv);
+    bodyCompiler.isClassBody_ = true;
+    bodyCompiler.currentClassName_ = n->name;
+    // A class body is not a function: a `__class__` read in it (or in a class
+    // nested directly in it) only sees the cell of an enclosing method.
+    bodyCompiler.classCellScope_ = classCellScope_;
+    bodyCompiler.qualnamePrefix_ = thisQualname;
+    for (size_t j = 0; j < classFreeVars.size(); ++j)
+        bodyCompiler.derefSlot_[classFreeVars[j]] = static_cast<int>(j);
+    bodyCompiler.classCellSlot_ = static_cast<int>(classFreeVars.size());
+    bodyCompiler.classBound_ = bodyDefined;
+    bodyCompiler.classNonlocal_ = bodyNonlocalDecls;
+    // Emit __qualname__ at the start of the class body so BUILD_CLASS
+    // can pick it up (overrides the default `__name__` qualname).
+    {
+        int qnameIdx = bodyCompiler.addConstant(
+            PythonEnvironment::getInternedString(ctx_, thisQualname.c_str())->asObject(ctx_));
+        bodyCompiler.emit(OP_LOAD_CONST, qnameIdx);
+        bodyCompiler.emitNameOp("__qualname__", TargetCtx::Store);
     }
 
     // If the class body contains any annotations, initialise __annotations__ = {} first.
@@ -5509,31 +5740,53 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     }
 
     if (!bodyCompiler.compileNode(n->body.get())) return false;
+    // A free variable a method needs that the analysis above missed: pass
+    // it through too, and compile the body again.
+    if (attempt < 4) {
+        bool again = false;
+        for (const auto& m : bodyCompiler.missingClosure_) {
+            if (m == "__class__") continue;
+            if (classBodyFreevars.insert(m).second) {
+                classFreeVars.push_back(m);
+                std::sort(classFreeVars.begin(), classFreeVars.end());
+                again = true;
+            }
+        }
+        if (again) continue;
+    }
+    break;
+    }
+    Compiler& bodyCompiler = *bodyHolder;
+    // The methods' `__class__` cell (zero-argument super()): handed to
+    // buildClass, which fills it with the class the metaclass returns, as
+    // CPython's type.__new__ does with `__classcell__`.
+    std::vector<std::int32_t> classCellSlots;
+    std::vector<std::string> classCellNames;
+    if (bodyCompiler.classCellUsed_) {
+        bodyCompiler.emit(OP_LOAD_CLOSURE, bodyCompiler.classCellSlot_);
+        bodyCompiler.emitNameOp("__classcell__", TargetCtx::Store);
+        classCellSlots.push_back(bodyCompiler.classCellSlot_);
+        classCellNames.push_back("__class__");
+    }
     bodyCompiler.emit(OP_RETURN_VALUE);
     bodyCompiler.applyPatches();
-    
+
+    const int classLocalsPlus = static_cast<int>(classFreeVars.size()) + 1;
     const proto::ProtoObject* codeObj = makeCodeObject(ctx_,
         bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(),
         PythonEnvironment::getInternedString(ctx_, filename_.c_str()),
-        nullptr, 0, 0, 0, 0, bodyCompiler.isGenerator_,
+        nullptr, 0, 0, classLocalsPlus + bodyCompiler.getMaxStack() + 128, 0, bodyCompiler.isGenerator_,
         PythonEnvironment::getInternedString(ctx_, n->name.c_str()),
         bodyCompiler.getFirstLine(), bodyCompiler.getLnotab());
     if (!codeObj) return false;
-    // Stamp `co_freevars` so OP_BUILD_FUNCTION snapshots only the names
-    // this class body actually closes over from enclosing function
-    // scopes — not every enclosing local.
-    {
-        std::vector<const proto::ProtoObject*> freeVec;
-        freeVec.reserve(classBodyFreevars.size());
-        for (const auto& fv : classBodyFreevars)
-            freeVec.push_back(PythonEnvironment::getInternedString(ctx_, fv.c_str())->asObject(ctx_));
-        codeObj = codeObj->setAttribute(ctx_,
-            PythonEnvironment::getInternedString(ctx_, "co_freevars"),
-            ctx_->newTuple(freeVec)->asObject(ctx_));
-    }
+    codeObj = stampClosureLayout(codeObj, {}, {}, classCellSlots, classCellNames, classFreeVars, std::string(), false);
+    // co_nlocalsplus covers the cell slot even when no method used it.
+    codeObj = codeObj->setAttribute(ctx_, PythonEnvironment::getInternedString(ctx_, "co_nlocalsplus"),
+                                    ctx_->fromInteger(classLocalsPlus));
+    const int classFnFlags = emitClosureCells(classFreeVars, std::string());
     int coIdx = addConstant(codeObj);
     emit(OP_LOAD_CONST, coIdx);
-    emit(OP_BUILD_FUNCTION, 0);
+    emit(OP_BUILD_FUNCTION, classFnFlags);
     
     // 4. Build
     emit(OP_BUILD_CLASS);
@@ -5925,7 +6178,8 @@ struct CodeObjectScope {
 
 const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoObject* codeObj,
-    proto::ProtoObject*& frame) {
+    proto::ProtoObject*& frame,
+    const proto::ProtoList* closure) {
     if (!ctx || !codeObj || !frame) {
         if (get_env_diag()) {
             fprintf(stderr, "DEBUG: runCodeObject early return: ctx=%p codeObj=%p frame=%p\n", (void*)ctx, (void*)codeObj, (void*)frame);
@@ -5976,6 +6230,41 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     PythonEnvironment::setCurrentContext(execCtx);
 
     proto::proto_ulong stackOffset = (co_varnames && co_varnames->asTuple(execCtx)) ? co_varnames->asTuple(execCtx)->getSize(execCtx) : 0;
+    // Free variables and cells (a class body's; Compiler.h, "Closures"): the
+    // free variables take the closure's cells in the slots after
+    // co_varnames, each co_cellslots slot an empty cell, and the operand
+    // stack starts after them (co_nlocalsplus).
+    {
+        PythonEnvironment* env = PythonEnvironment::fromContext(execCtx);
+        const proto::ProtoObject* nlp = codeObj->getAttribute(execCtx,
+            PythonEnvironment::getInternedString(execCtx, "co_nlocalsplus"));
+        if (nlp && nlp->isInteger(execCtx) && static_cast<proto::proto_ulong>(nlp->asLong(execCtx)) > stackOffset) {
+            const proto::proto_ulong nVar = stackOffset;
+            stackOffset = static_cast<proto::proto_ulong>(nlp->asLong(execCtx));
+            proto::ProtoObject** slots = const_cast<proto::ProtoObject**>(execCtx->getAutomaticLocals());
+            const unsigned int nSlots = execCtx->getAutomaticLocalsCount();
+            if (env && slots) {
+                const proto::ProtoObject* fv = codeObj->getAttribute(execCtx,
+                    PythonEnvironment::getInternedString(execCtx, "co_freevars"));
+                const proto::ProtoTuple* freevars = (fv && fv != PROTO_NONE) ? fv->asTuple(execCtx) : nullptr;
+                const proto::proto_ulong nFree = freevars ? freevars->getSize(execCtx) : 0;
+                const proto::proto_ulong nCells = closure ? closure->getSize(execCtx) : 0;
+                for (proto::proto_ulong j = 0; j < nFree && nVar + j < nSlots; ++j) {
+                    const proto::ProtoObject* cell = (j < nCells) ? closure->getAt(execCtx, static_cast<int>(j)) : nullptr;
+                    slots[nVar + j] = const_cast<proto::ProtoObject*>(cell ? cell : env->newCell(execCtx, nullptr));
+                }
+                const proto::ProtoObject* cs = codeObj->getAttribute(execCtx,
+                    PythonEnvironment::getInternedString(execCtx, "co_cellslots"));
+                const proto::ProtoTuple* cellSlots = (cs && cs != PROTO_NONE) ? cs->asTuple(execCtx) : nullptr;
+                for (proto::proto_ulong k = 0; cellSlots && k < cellSlots->getSize(execCtx); ++k) {
+                    const proto::ProtoObject* idx = cellSlots->getAt(execCtx, static_cast<int>(k));
+                    if (idx && idx->isInteger(execCtx) && idx->asLong(execCtx) >= 0
+                            && static_cast<unsigned int>(idx->asLong(execCtx)) < nSlots)
+                        slots[idx->asLong(execCtx)] = const_cast<proto::ProtoObject*>(env->newCell(execCtx, nullptr));
+                }
+            }
+        }
+    }
 
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG: runCodeObject co_code size=%llu co_consts size=%llu stackOffset=%llu\n",

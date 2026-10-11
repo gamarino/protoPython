@@ -123,7 +123,7 @@ TEST(MutableCycles, TheProbesShapesArePresentAndAttributable)
                 static_cast<unsigned long long>((proto::proto_ulong) after.cycles.size()),
                 static_cast<unsigned long long>(handlesInCycles(before)), static_cast<unsigned long long>(handlesInCycles(after)), static_cast<unsigned long long>(after.cellsVisited));
     for (const char* hop : {".__mro__", ".f_locals", ".__getattr__",
-                            ".__closure_frames__"})
+                            ".__closure_cells__"})
         std::printf("[ CYCLES   ]   %-22s %llu -> %llu\n", hop,
                     static_cast<unsigned long long>(countShape(before, hop)), static_cast<unsigned long long>(countShape(after, hop)));
     std::fflush(stdout);
@@ -149,18 +149,16 @@ TEST(MutableCycles, TheProbesShapesArePresentAndAttributable)
            "the retention fix docs/CONFORMANCE.md rule 13 filed: change this "
            "expectation to 0 and close that entry";
 
-    // One closure in the probe, so exactly one `__closure_frames__` cycle:
-    // createUserFunction installs the closure frame, whose parent is the
-    // defining frame, on the function, and the defining frame (mapped, since
-    // the closure captures its local) holds the function as a local.  Until
-    // 2026-10-10 OP_BUILD_FUNCTION also bound the function's name in the
-    // closure frame itself, a second edge that made the same cycle for every
-    // comprehension and lambda (ComprehensionsAndLambdasLeaveNoCycle).
-    EXPECT_EQ(countShape(after, ".__closure_frames__"), 1u)
-        << "the closure the probe builds no longer holds its defining frame.  "
-           "OP_LOAD_DEREF walks __closure_frames__ at ExecutionEngine.cpp:6361, so "
-           "if this edge is genuinely gone the free variable must resolve some "
-           "other way and that path needs its own test";
+    // One closure in the probe, and no cycle from it.  Until 2026-10-11 a
+    // function held its defining frame (`__closure_frames__`) and that frame,
+    // mapped because the closure captured one of its locals, held the
+    // function: one cycle per call of the defining function.  A function now
+    // holds the cells it closes over (`__closure_cells__`), and a cell holds a
+    // value, never the frame or the function that created it.
+    EXPECT_EQ(countShape(after, ".__closure_frames__"), 0u)
+        << "a function still holds its defining frame";
+    EXPECT_EQ(countShape(after, ".__closure_cells__"), 0u)
+        << "the probe's closure is in a cycle through its cells";
 
     // The probe runs two class bodies, each of which aliases its namespace object
     // as its own f_locals (ExecutionEngine.cpp:8740).  Measured as one cycle, not
@@ -199,11 +197,8 @@ TEST(MutableCycles, TheProbesShapesArePresentAndAttributable)
 // (161 K -> 1.27 M cells over 189 cycles under the adaptive controller).
 //
 // Measured on handles inside cycles, not on a shape: the functions below are
-// dropped after use, so nothing they build may stay in a cycle.  A NAMED
-// nested def is deliberately absent: its mapped defining frame holds it as a
-// local while its closure chains to that frame, a cycle that the whole-frame
-// capture of closures implies and this test does not claim to remove
-// (docs/CONFORMANCE.md, rule 13).
+// dropped after use, so nothing they build may stay in a cycle.  Named nested
+// defs are covered by NamedNestedDefsLeaveNoCycle.
 TEST(MutableCycles, ComprehensionsAndLambdasLeaveNoCycle)
 {
     protoPython::PythonEnvironment env(STDLIB_PATH);
@@ -247,6 +242,78 @@ TEST(MutableCycles, ComprehensionsAndLambdasLeaveNoCycle)
     ASSERT_EQ(env.executeString("assert _mc_recursive() == [0, 1, 2, 3, 4]\n",
                                 "<mutable-cycles:recursive>"),
               0);
+}
+
+// A named nested def stored as a local of the call that defines it, and the
+// closures and classes defined in such calls, leave no cycle.  With closures
+// that held their defining frame, every call of a function defining a named
+// nested function left one cycle between mutable objects (the frame held the
+// function as a local, the function held the frame), which protoCore never
+// collects: a loop of such calls exhausted any fixed heap.  Closures now hold
+// cells; a recursive nested def binds its own name to itself on entry
+// instead of closing over the cell that holds it (Compiler.h, "Closures").
+//
+// Not covered, because they are cycles by what the program means and stay
+// (docs/INTERNALS_DEEP_DIVE.md, "Closures"): mutually recursive nested
+// functions, a decorated recursive nested function, and a class defined in a
+// call (a class's __mro__ holds the class).
+TEST(MutableCycles, NamedNestedDefsLeaveNoCycle)
+{
+    protoPython::PythonEnvironment env(STDLIB_PATH);
+    proto::ProtoContext* ctx = env.getContext();
+    ASSERT_NE(ctx, nullptr);
+    proto::ProtoSpace* space = env.getSpace();
+    ASSERT_NE(space, nullptr);
+
+    auto inCycles = [&]() {
+        const proto::MutableGraphReport r = space->findMutableCycles(ctx);
+        EXPECT_FALSE(r.truncated) << "the scan ran out of cell budget";
+        return handlesInCycles(r);
+    };
+
+    ASSERT_EQ(env.executeString(
+                  "def _nd_plain(k):\n"
+                  "    def get():\n"
+                  "        return k\n"
+                  "    return get()\n"
+                  "def _nd_recursive(k):\n"
+                  "    def rec(n):\n"
+                  "        return k if n == 0 else rec(n - 1)\n"
+                  "    return rec(3)\n"
+                  "def _nd_recursive_comprehension(k):\n"
+                  "    def depth(t):\n"
+                  "        return 1 + max([depth(c) for c in t], default=0)\n"
+                  "    return depth([[[]]]) + k\n"
+                  "def _nd_recursive_generator(k):\n"
+                  "    def walk(n):\n"
+                  "        if n:\n"
+                  "            yield n\n"
+                  "            yield from walk(n - 1)\n"
+                  "    return sum(walk(3)) + k\n"
+                  "def _nd_nonlocal(k):\n"
+                  "    total = 0\n"
+                  "    def add(v):\n"
+                  "        nonlocal total\n"
+                  "        total += v\n"
+                  "    add(k)\n"
+                  "    return total\n"
+                  "def _nd_returned(k):\n"
+                  "    x = [k]\n"
+                  "    return lambda: x[0]\n"
+                  "def _nd_run(n):\n"
+                  "    t = 0\n"
+                  "    for i in range(n):\n"
+                  "        t += _nd_plain(i) + _nd_recursive(i) + _nd_recursive_comprehension(i)\n"
+                  "        t += _nd_recursive_generator(i) + _nd_nonlocal(i) + _nd_returned(i)()\n"
+                  "    return t\n",
+                  "<mutable-cycles:nested-def-define>"),
+              0);
+    const proto::proto_ulong base = inCycles();
+    ASSERT_EQ(env.executeString("assert _nd_run(40) == sum(6 * i + 9 for i in range(40))\n",
+                                "<mutable-cycles:nested-def-run>"),
+              0);
+    EXPECT_EQ(inCycles(), base)
+        << "calls defining named nested functions left mutable handles in a cycle";
 }
 
 // A function whose locals a nested scope captures keeps them on its (mutable)

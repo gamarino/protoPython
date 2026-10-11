@@ -290,7 +290,7 @@ static bool isFrameBookkeepingName(const std::string& nm) {
     return nm == "f_back" || nm == "f_code" || nm == "f_globals" || nm == "f_locals"
         || nm == "f_lineno" || nm == "f_lasti" || nm == "f_trace" || nm == "f_builtins"
         || nm == "__frame_namespace__" || nm == "__exec_caller_frame__"
-        || nm == "__closure_frames__" || nm == "__data__" || nm == "__keys__";
+        || nm == "__closure_cells__" || nm == "__data__" || nm == "__keys__";
 }
 
 namespace {
@@ -309,9 +309,79 @@ struct FrameLocalsSnapshot {
 };
 }
 
+void PythonEnvironment::forEachFastLocal(proto::ProtoContext* ctx, const proto::ProtoObject* code,
+        const proto::ProtoObject* const* slots, unsigned int nSlots,
+        const std::function<void(const proto::ProtoString*, const proto::ProtoObject*)>& fn) const {
+    if (!code || code == PROTO_NONE || !slots) return;
+    const proto::ProtoObject* flags = code->getAttribute(ctx, getCoFlagsString());
+    const bool optimized = flags && flags->isInteger(ctx) && (flags->asLong(ctx) & CO_OPTIMIZED);
+    const proto::ProtoObject* vn = code->getAttribute(ctx, getCoVarnamesString());
+    const proto::ProtoTuple* varnames = (vn && vn != PROTO_NONE) ? vn->asTuple(ctx) : nullptr;
+    const proto::proto_ulong nVar = varnames ? varnames->getSize(ctx) : 0;
+    std::vector<bool> isCellSlot(nVar, false);
+    const proto::ProtoObject* cs = code->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_cellslots"));
+    const proto::ProtoTuple* cellSlots = (cs && cs != PROTO_NONE) ? cs->asTuple(ctx) : nullptr;
+    for (proto::proto_ulong k = 0; cellSlots && k < cellSlots->getSize(ctx); ++k) {
+        const proto::ProtoObject* idx = cellSlots->getAt(ctx, static_cast<int>(k));
+        if (idx && idx->isInteger(ctx) && idx->asLong(ctx) >= 0
+                && static_cast<proto::proto_ulong>(idx->asLong(ctx)) < nVar)
+            isCellSlot[static_cast<size_t>(idx->asLong(ctx))] = true;
+    }
+    auto bound = [&](const proto::ProtoObject* v) { return v && v != unboundSentinel_; };
+    for (proto::proto_ulong i = 0; i < nVar && i < nSlots; ++i) {
+        const proto::ProtoObject* nm = varnames->getAt(ctx, static_cast<int>(i));
+        if (!nm || !nm->isString(ctx)) continue;
+        if (isCellSlot[i]) {
+            const proto::ProtoObject* v = cellGet(ctx, slots[i]);
+            if (bound(v)) fn(nm->asString(ctx), v);
+        } else if (optimized && bound(slots[i])) {
+            fn(nm->asString(ctx), slots[i]);
+        }
+    }
+    const proto::ProtoObject* fv = code->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_freevars"));
+    const proto::ProtoTuple* freevars = (fv && fv != PROTO_NONE) ? fv->asTuple(ctx) : nullptr;
+    if (!freevars) return;
+    const proto::ProtoObject* sr = code->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_selfref"));
+    const long selfRef = (sr && sr->isInteger(ctx)) ? static_cast<long>(sr->asLong(ctx)) : -1;
+    const bool selfRefCell = code->getAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "co_selfref_cell")) == PROTO_TRUE;
+    for (proto::proto_ulong j = 0; j < freevars->getSize(ctx) && nVar + j < nSlots; ++j) {
+        const proto::ProtoObject* nm = freevars->getAt(ctx, static_cast<int>(j));
+        if (!nm || !nm->isString(ctx)) continue;
+        const proto::ProtoObject* slotVal = slots[nVar + j];
+        const proto::ProtoObject* v = (static_cast<long>(j) == selfRef && !selfRefCell) ? slotVal : cellGet(ctx, slotVal);
+        if (bound(v)) fn(nm->asString(ctx), v);
+    }
+}
+
+const proto::ProtoObject* PythonEnvironment::frameNamespaceWithCells(proto::ProtoContext* ctx,
+                                                                     const proto::ProtoObject* frame) {
+    if (!frame || frame == PROTO_NONE) return frame;
+    proto::ProtoContext* live = findLiveFrameContext(frame);
+    const proto::ProtoObject* code = frame->getAttribute(ctx, getFCodeString());
+    if (!live || !code || code == PROTO_NONE) return frame;
+    const proto::ProtoObject* cv = code->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_cellvars"));
+    const proto::ProtoObject* fv = code->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_freevars"));
+    const bool hasCells = (cv && cv != PROTO_NONE && cv->asTuple(ctx) && cv->asTuple(ctx)->getSize(ctx) > 0)
+        || (fv && fv != PROTO_NONE && fv->asTuple(ctx) && fv->asTuple(ctx)->getSize(ctx) > 0);
+    const proto::ProtoObject* flags = code->getAttribute(ctx, getCoFlagsString());
+    const bool optimized = flags && flags->isInteger(ctx) && (flags->asLong(ctx) & CO_OPTIMIZED);
+    if (!hasCells || optimized) return frame;
+    // A snapshot, as CPython's locals() in a function: the frame's own
+    // variables through the parent link, the cells' current values here.
+    const proto::ProtoObject* ns = ctx->newObject(true);
+    ns = ns->addParent(ctx, frame);
+    forEachFastLocal(ctx, code, live->getAutomaticLocals(), live->getAutomaticLocalsCount(),
+        [&](const proto::ProtoString* name, const proto::ProtoObject* value) {
+            ns->setAttribute(ctx, name, value);
+        });
+    return ns;
+}
+
 /** Adds the local variables of `frame` to `snap`: for an exec() frame first
  *  those of the function that called exec(), then the fast locals of a
- *  running CO_OPTIMIZED activation, then the variables stored on the frame. */
+ *  running activation (cells and free variables included), then the
+ *  variables stored on the frame. */
 static void collectFrameLocals(proto::ProtoContext* context, PythonEnvironment* env,
                                const proto::ProtoObject* frame, FrameLocalsSnapshot& snap, int depth) {
     if (!frame || frame == PROTO_NONE || depth > 8) return;
@@ -322,19 +392,8 @@ static void collectFrameLocals(proto::ProtoContext* context, PythonEnvironment* 
     const proto::ProtoObject* code = frame->getAttribute(context, env->getFCodeString());
     proto::ProtoContext* live = PythonEnvironment::findLiveFrameContext(frame);
     if (live && code && code != PROTO_NONE) {
-        const proto::ProtoObject* flags = code->getAttribute(context, env->getCoFlagsString());
-        const proto::ProtoObject* vn = code->getAttribute(context, env->getCoVarnamesString());
-        const proto::ProtoTuple* varnames = vn ? vn->asTuple(context) : nullptr;
-        if (flags && flags->isInteger(context) && (flags->asLong(context) & CO_OPTIMIZED) && varnames) {
-            proto::ProtoObject** slots = const_cast<proto::ProtoObject**>(live->getAutomaticLocals());
-            proto::proto_ulong n = varnames->getSize(context);
-            proto::proto_ulong nSlots = live->getAutomaticLocalsCount();
-            if (n > nSlots) n = nSlots;
-            for (proto::proto_ulong i = 0; slots && i < n; ++i) {
-                const proto::ProtoObject* nm = varnames->getAt(context, static_cast<int>(i));
-                if (nm && nm->isString(context)) snap.add(nm->asString(context), slots[i]);
-            }
-        }
+        env->forEachFastLocal(context, code, live->getAutomaticLocals(), live->getAutomaticLocalsCount(),
+            [&](const proto::ProtoString* name, const proto::ProtoObject* value) { snap.add(name, value); });
     }
     const proto::ProtoSparseList* own = frame->getOwnAttributes(context);
     if (!own) return;
@@ -370,6 +429,11 @@ static const proto::ProtoObject* py_frame_get_locals(
     d->setAttribute(context, env->getDataString(), snap.data->asObject(context));
     d->setAttribute(context, env->getKeysString(), snap.keys->asObject(context));
     return d;
+}
+
+const proto::ProtoObject* PythonEnvironment::frameLocalsSnapshot(proto::ProtoContext* ctx,
+                                                                 const proto::ProtoObject* frame) {
+    return py_frame_get_locals(ctx, frame, nullptr, nullptr, nullptr);
 }
 
 /** frame.f_lineno: the runtime records the executing line only when an
@@ -1269,57 +1333,78 @@ static const proto::ProtoObject* py_module_del_name(
     return PROTO_NONE;
 }
 
-// function.__closure__ and types.CellType.  protoPython keeps the variables
-// a function closes over in one closure frame (the internal
-// getClosureString() list).  A cell names one of those variables: it holds
-// the frame and the name, and `cell_contents` reads or writes the binding
-// the function itself reaches through LOAD_DEREF.
-static const proto::ProtoObject* makeCell(proto::ProtoContext* ctx, PythonEnvironment* env,
-                                          const proto::ProtoObject* frame,
-                                          const proto::ProtoObject* nameObj) {
-    proto::ProtoObject* cell = const_cast<proto::ProtoObject*>(
-        env->getCellPrototype()->newChild(ctx, true));
-    cell->setAttribute(ctx, env->getClassString(), env->getCellPrototype());
-    cell->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__cell_frame__"), frame);
-    cell->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__cell_name__"), nameObj);
+// Closure cells and function.__closure__.
+//
+// A variable that a nested scope uses lives in a cell: a mutable child of
+// types.CellType whose own `__cell_contents__` attribute holds the value (no
+// attribute: the cell is empty).  The scope that binds the variable keeps the
+// cell in a fast slot, every function closing over it keeps it in its
+// `__closure_cells__` list, and LOAD_DEREF / STORE_DEREF read and write it.
+// (A list, not a tuple: protoCore interns tuples and an interned tuple is
+// perennial, so a tuple of a call's cells would never be collected.)
+// A cell is the only mutable object on that path: a function references
+// cells, never the frame that created them, so defining a function in a call
+// closes no cycle through the frame (protoCore docs/MemoryModel.md, section 7).
+const proto::ProtoObject* PythonEnvironment::newCell(proto::ProtoContext* ctx,
+                                                      const proto::ProtoObject* value) const {
+    // An empty cell is never written, so it has no entry in the mutables
+    // table until its variable is first bound.  Between the two allocations
+    // the new handle is held only here: the critical section keeps the
+    // context from submitting its young chain (which protects it) and the
+    // thread from parking for a collection (protoCore embedder rule 3).  The
+    // caller roots the result before it allocates again.
+    proto::ProtoContext::CriticalSection holdYoung(ctx);
+    const proto::ProtoObject* cell = cellPrototype->newChild(ctx, true);
+    if (value) cell->setAttribute(ctx, cellContents_, value);
     return cell;
 }
 
-static bool cellParts(proto::ProtoContext* ctx, const proto::ProtoObject* cell,
-                      const proto::ProtoObject*& frame, const proto::ProtoString*& name) {
-    const proto::ProtoString* frameS = PythonEnvironment::getInternedString(ctx, "__cell_frame__");
-    const proto::ProtoString* nameS = PythonEnvironment::getInternedString(ctx, "__cell_name__");
-    if (!cell || cell->hasOwnAttribute(ctx, frameS) != PROTO_TRUE
-        || cell->hasOwnAttribute(ctx, nameS) != PROTO_TRUE) return false;
-    frame = cell->getOwnAttributeDirect(ctx, frameS);
-    const proto::ProtoObject* nameObj = cell->getOwnAttributeDirect(ctx, nameS);
-    if (!frame || frame == PROTO_NONE || !nameObj || !nameObj->isString(ctx)) return false;
-    name = nameObj->asString(ctx);
-    return true;
+void PythonEnvironment::cellSet(proto::ProtoContext* ctx, const proto::ProtoObject* cell,
+                                const proto::ProtoObject* value) const {
+    if (cell) cell->setAttribute(ctx, cellContents_, value);
 }
 
-// The object holding a cell's binding: the closure frame when the variable
-// was captured at definition time, otherwise the enclosing scope that still
-// owns it (a variable bound after the inner def, the class namespace's
-// `__class__`).  Module globals and classes are not enclosing function
-// scopes and never back a cell.  nullptr means the cell is empty.
-static const proto::ProtoObject* cellHolder(proto::ProtoContext* ctx, PythonEnvironment* env,
-                                            const proto::ProtoObject* frame,
-                                            const proto::ProtoString* name) {
-    auto bound = [&](const proto::ProtoObject* o) {
-        if (o->hasOwnAttribute(ctx, name) != PROTO_TRUE) return false;
-        const proto::ProtoObject* v = o->getOwnAttributeDirect(ctx, name);
-        return v && v != env->getUnboundSentinel();
-    };
-    if (bound(frame)) return frame;
-    const proto::ProtoList* parents = frame->getParents(ctx);
-    for (proto::proto_ulong i = 0; parents && i < parents->getSize(ctx); ++i) {
-        const proto::ProtoObject* p = parents->getAt(ctx, static_cast<int>(i));
-        if (!p || p == PROTO_NONE || p == env->getFramePrototype()) continue;
-        if (env->getType(ctx, p) == env->getModulePrototype() || env->isActuallyAClass(ctx, p)) continue;
-        if (bound(p)) return p;
+void PythonEnvironment::cellClear(proto::ProtoContext* ctx, const proto::ProtoObject* cell) const {
+    if (cell && cell->hasOwnAttribute(ctx, cellContents_) == PROTO_TRUE)
+        const_cast<proto::ProtoObject*>(cell)->removeAttribute(ctx, cellContents_);
+}
+
+bool PythonEnvironment::isCell(proto::ProtoContext* ctx, const proto::ProtoObject* obj) const {
+    // Cells are object cells (pointer tag 0); tagged values never are.
+    if (!obj || !cellPrototype || (reinterpret_cast<uintptr_t>(obj) & 0x3F) != 0) return false;
+    return obj->getFirstParent(ctx) == cellPrototype;
+}
+
+void PythonEnvironment::applyClassCell(proto::ProtoContext* ctx, const proto::ProtoObject* ns,
+                                       const proto::ProtoObject* cls) {
+    if (!ns || ns == PROTO_NONE || !cls || cls == PROTO_NONE) return;
+    const proto::ProtoString* classCellS = PythonEnvironment::getInternedString(ctx, "__classcell__");
+    const proto::ProtoObject* classCell = nullptr;
+    if (ns->hasOwnAttribute(ctx, classCellS) == PROTO_TRUE) {
+        classCell = ns->getOwnAttributeDirect(ctx, classCellS);
+    } else if (ns->hasOwnAttribute(ctx, getDataString()) == PROTO_TRUE) {
+        const proto::ProtoObject* data = ns->getOwnAttributeDirect(ctx, getDataString());
+        const proto::ProtoSparseList* sl = (data && data != PROTO_NONE) ? data->asSparseList(ctx) : nullptr;
+        if (sl && sl->has(ctx, classCellS->getHash(ctx))) classCell = sl->getAt(ctx, classCellS->getHash(ctx));
     }
-    return nullptr;
+    if (!classCell || !isCell(ctx, classCell)) return;
+    if (cellGet(ctx, classCell) != cls) cellSet(ctx, classCell, cls);
+    if (cls->hasOwnAttribute(ctx, classCellS) == PROTO_TRUE) {
+        const_cast<proto::ProtoObject*>(cls)->removeAttribute(ctx, classCellS);
+        const proto::ProtoObject* keysObj = cls->hasOwnAttribute(ctx, getKeysString()) == PROTO_TRUE
+            ? cls->getOwnAttributeDirect(ctx, getKeysString()) : nullptr;
+        const proto::ProtoList* keys = (keysObj && keysObj != PROTO_NONE) ? keysObj->asList(ctx) : nullptr;
+        if (keys) {
+            const proto::ProtoList* kept = ctx->newList();
+            bool removed = false;
+            for (proto::proto_ulong i = 0; i < keys->getSize(ctx); ++i) {
+                const proto::ProtoObject* k = keys->getAt(ctx, static_cast<int>(i));
+                if (k == classCellS->asObject(ctx)) { removed = true; continue; }
+                kept = kept->appendLast(ctx, k);
+            }
+            if (removed) cls->setAttribute(ctx, getKeysString(), kept->asObject(ctx));
+        }
+    }
 }
 
 static const proto::ProtoObject* py_cell_get_contents(
@@ -1327,16 +1412,13 @@ static const proto::ProtoObject* py_cell_get_contents(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoObject* frame = nullptr;
-    const proto::ProtoString* name = nullptr;
-    const proto::ProtoObject* holder = (env && cellParts(context, self, frame, name))
-        ? cellHolder(context, env, frame, name) : nullptr;
-    if (!holder) {
+    const proto::ProtoObject* v = env ? env->cellGet(context, self) : nullptr;
+    if (!v) {
         if (env) env->raiseValueError(context,
             PythonEnvironment::getInternedString(context, "Cell is empty")->asObject(context));
         return nullptr;
     }
-    return holder->getOwnAttributeDirect(context, name);
+    return v;
 }
 
 static const proto::ProtoObject* py_cell_set_contents(
@@ -1346,24 +1428,17 @@ static const proto::ProtoObject* py_cell_set_contents(
     const proto::ProtoList* args,
     const proto::ProtoSparseList*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoObject* frame = nullptr;
-    const proto::ProtoString* name = nullptr;
-    if (!env || !args || args->getSize(context) < 2 || !cellParts(context, self, frame, name)) {
-        return PROTO_NONE;
-    }
-    const proto::ProtoObject* value = args->getAt(context, 1);
-    // Write where the binding lives, so every closure sharing it (all the
-    // methods of a class share the namespace's `__class__`) sees the new
-    // value.  A holder that is not mutable in place falls back to the
-    // closure frame, which is.
-    const proto::ProtoObject* holder = cellHolder(context, env, frame, name);
-    if (holder && holder != frame && holder->setAttribute(context, name, value) == holder) {
-        return PROTO_NONE;
-    }
-    frame->setAttribute(context, name, value);
+    if (!env || !args || args->getSize(context) < 2) return PROTO_NONE;
+    env->cellSet(context, self, args->getAt(context, 1));
     return PROTO_NONE;
 }
 
+/** function.__closure__: None, or a tuple with one cell per name in
+ *  `co_freevars`.  The cells are the function's own `__closure_cells__`,
+ *  except for the name a recursive nested function binds to itself
+ *  (`co_selfref`, see FunctionMetaCache::selfRef): that function holds no cell
+ *  for its own name -- the cell would close a cycle through the function --
+ *  so the tuple shows a fresh cell holding the function. */
 static const proto::ProtoObject* py_function_get_closure(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -1376,23 +1451,33 @@ static const proto::ProtoObject* py_function_get_closure(
     const proto::ProtoTuple* freevars = (fvObj && fvObj != PROTO_NONE) ? fvObj->asTuple(context) : nullptr;
     if (!freevars || freevars->getSize(context) == 0) return PROTO_NONE;
     const proto::ProtoObject* closure = self->getAttribute(context, env->getClosureString());
-    const proto::ProtoList* frames = (closure && closure != PROTO_NONE) ? closure->asList(context) : nullptr;
-    if (!frames && closure && closure != PROTO_NONE) {
-        const proto::ProtoObject* data = closure->getAttribute(context, env->getDataString());
-        frames = data ? data->asList(context) : nullptr;
+    const proto::ProtoList* cells = (closure && closure != PROTO_NONE && !closure->isString(context))
+        ? closure->asList(context) : nullptr;
+    const proto::proto_ulong nFree = freevars->getSize(context);
+    const proto::proto_ulong nCells = cells ? cells->getSize(context) : 0;
+    long selfRef = -1;
+    if (nCells + 1 == nFree) {
+        const proto::ProtoObject* sr = code->getAttribute(context,
+            PythonEnvironment::getInternedString(context, "co_selfref"));
+        if (sr && sr->isInteger(context)) selfRef = static_cast<long>(sr->asLong(context));
     }
-    const proto::ProtoObject* frame = (frames && frames->getSize(context) > 0) ? frames->getAt(context, 0) : nullptr;
-    if (!frame || frame == PROTO_NONE) return PROTO_NONE;
-    const proto::ProtoList* cells = context->newList();
-    for (proto::proto_ulong i = 0; i < freevars->getSize(context); ++i) {
-        cells = cells->appendLast(context,
-            makeCell(context, env, frame, freevars->getAt(context, static_cast<int>(i))));
+    const proto::ProtoList* out = context->newList();
+    proto::proto_ulong k = 0;
+    for (proto::proto_ulong i = 0; i < nFree; ++i) {
+        const proto::ProtoObject* cell = nullptr;
+        if (static_cast<long>(i) == selfRef) {
+            cell = env->newCell(context, self);
+        } else if (k < nCells) {
+            cell = cells->getAt(context, static_cast<int>(k++));
+        } else {
+            cell = env->newCell(context, nullptr);
+        }
+        out = out->appendLast(context, cell);
     }
-    return context->newTupleFromList(cells)->asObject(context);
+    return context->newTupleFromList(out)->asObject(context);
 }
 
-// cell.__new__, i.e. types.CellType([contents]): a standalone cell whose
-// binding lives in a fresh holder object.
+// cell.__new__, i.e. types.CellType([contents]).
 static const proto::ProtoObject* py_cell_new(
     proto::ProtoContext* context,
     const proto::ProtoObject*,
@@ -1408,10 +1493,7 @@ static const proto::ProtoObject* py_cell_new(
         env->raiseTypeError(context, "cell expected at most 1 argument, got " + std::to_string(n - start));
         return nullptr;
     }
-    const proto::ProtoString* contentsS = PythonEnvironment::getInternedString(context, "cell_contents");
-    proto::ProtoObject* holder = const_cast<proto::ProtoObject*>(context->newObject(true));
-    if (n > start) holder->setAttribute(context, contentsS, posArgs->getAt(context, static_cast<int>(start)));
-    return makeCell(context, env, holder, contentsS->asObject(context));
+    return env->newCell(context, n > start ? posArgs->getAt(context, static_cast<int>(start)) : nullptr);
 }
 
 static const proto::ProtoObject* py_cell_repr(
@@ -1419,15 +1501,11 @@ static const proto::ProtoObject* py_cell_repr(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoObject* frame = nullptr;
-    const proto::ProtoString* name = nullptr;
-    const proto::ProtoObject* holder = (env && cellParts(context, self, frame, name))
-        ? cellHolder(context, env, frame, name) : nullptr;
+    const proto::ProtoObject* v = env ? env->cellGet(context, self) : nullptr;
     char buf[256];
-    if (!holder) {
+    if (!v) {
         snprintf(buf, sizeof(buf), "<cell at %p: empty>", (void*)self);
     } else {
-        const proto::ProtoObject* v = holder->getOwnAttributeDirect(context, name);
         const proto::ProtoObject* tp = env->getType(context, v);
         const proto::ProtoObject* tn = tp ? tp->getAttribute(context, env->getNameString()) : nullptr;
         std::string typeName = "object";
@@ -17026,6 +17104,18 @@ void PythonEnvironment::raiseNameError(proto::ProtoContext* ctx, const std::stri
     }
 }
 
+void PythonEnvironment::raiseFreeVariableError(proto::ProtoContext* ctx, const std::string& name) {
+    if (!nameErrorType) return;
+    const std::string msg = "cannot access free variable '" + name +
+        "' where it is not associated with a value in enclosing scope";
+    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx));
+    const proto::ProtoObject* exc = invokePythonCallable(ctx, nameErrorType, args, nullptr);
+    if (exc) {
+        exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "name"), PythonEnvironment::getInternedString(ctx, name.c_str())->asObject(ctx));
+        setPendingException(exc);
+    }
+}
+
 void PythonEnvironment::raiseUnboundLocalError(proto::ProtoContext* ctx, const std::string& msg) {
     if (!unboundLocalErrorType) {
         // Fallback during bootstrap before exceptions are registered.
@@ -18246,10 +18336,11 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     f_locals = PythonEnvironment::getInternedString(rootContext_, "f_locals");
     frameNamespace = PythonEnvironment::getInternedString(rootContext_, "__frame_namespace__");
     execCallerFrame = PythonEnvironment::getInternedString(rootContext_, "__exec_caller_frame__");
-    // The captured-variables frame list is runtime bookkeeping, kept under
-    // an internal key; the Python-visible `function.__closure__` (None or a
-    // tuple of cells) is a getset descriptor on functionPrototype.
-    __closure__ = PythonEnvironment::getInternedString(rootContext_, "__closure_frames__");
+    // A function's cells are runtime bookkeeping, kept under an internal
+    // key; the Python-visible `function.__closure__` (None or a tuple of
+    // cells) is a getset descriptor on functionPrototype.
+    __closure__ = PythonEnvironment::getInternedString(rootContext_, "__closure_cells__");
+    cellContents_ = PythonEnvironment::getInternedString(rootContext_, "__cell_contents__");
     __defaults__ = PythonEnvironment::getInternedString(rootContext_, "__defaults__");
     __kwdefaults__ = PythonEnvironment::getInternedString(rootContext_, "__kwdefaults__");
     co_name = PythonEnvironment::getInternedString(rootContext_, "co_name");
@@ -21991,7 +22082,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         cellPrototype = cellPrototype->setAttribute(rootContext_, mroS,
             rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
     }
-    // Closure cells (see makeCell): `cell_contents` is a getset reading and
+    // Closure cells (see newCell): `cell_contents` is a getset reading and
     // writing the binding, `types.CellType(x)` builds a standalone cell.
     {
         const proto::ProtoString* ccS = PythonEnvironment::getInternedString(rootContext_, "cell_contents");

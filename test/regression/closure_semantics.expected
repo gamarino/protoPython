@@ -1,0 +1,53 @@
+late binding 2
+nonlocal shared (3, 3, 3)
+loop late binding [2, 2, 2]
+default capture [0, 1, 2]
+comprehension lambdas [2, 2, 2]
+recursive inner 7
+recursive value ([3, 2, 1, 0], 'walk', ('walk',))
+recursion via comprehension 3
+recursive identity (True, True)
+mutual recursion (True, True)
+rebound recursion second
+decorated recursion (24, [4, 3, 2, 1])
+recursive generator [4, 3, 2, 1]
+recursive def in loop [(1, 0), (1, 0)]
+unbound free ("cannot access free variable 'v' where it is not associated with a value in enclosing scope", 1)
+unbound cell ("cannot access local variable 'w' where it is not associated with a value", 2)
+deleted cell cannot access free variable 'z' where it is not associated with a value in enclosing scope
+nonlocal del UnboundLocalError
+cell params (10, (2,), 4, {'c': 5})
+pass-through ('x1', ('x',), ('x',))
+deep nonlocal (5, 5)
+class body ('class-a', 'outer-b', ('outer-a', 'outer-b'))
+class method late binding 2
+class method nonlocal 5
+super in function ('derived+base', ('__class__',))
+class cell rebound True
+module class cell (True, 'super')
+comprehension capture ([0, 10, 20], {0: 10, 1: 10}, 33)
+generator closure (100, [101, 102])
+generator nonlocal ([1, 2], [1, 2])
+coroutine closure (42, [21])
+introspection (('a', 'b'), ('a', 'b'), ['cell', 'cell'], [1, 2])
+cell write ('new', 'new')
+f_locals with free vars (3, [('a', 1), ('b', 2)])
+locals with cells [('c', 3)]
+eval with cells (5, 4)
+cell type True
+recursive name deleted cannot access free variable 'r' where it is not associated with a value in enclosing scope
+recursive with sibling (3, ('rec',), ('rec',))
+recursive in branches ('a', 'b')
+recursive outlives outer (5, 3, True)
+async recursive 4
+class namespace ('outer', 'outer', False, False)
+classcell hidden (True, False, False)
+nested class closures (11, 12)
+class in loop [(2, 'K', False), (2, 'K', False), (2, 'K', True)]
+nested comprehensions [[0, 0], [0, 2], [0, 4]]
+genexp late binding [100, 101, 102]
+comprehension cell [1, 1, 1, 1]
+lambda chain 115
+exec and eval (42, 1, 41)
+nonlocal through class (2, 3)
+closure semantics done

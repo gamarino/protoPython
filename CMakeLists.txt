@@ -1393,6 +1393,40 @@ set_tests_properties(protopy_closure_cells PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# Closures as CPython runs them (closure_semantics.expected is CPython's
+# output): cells shared by the defining scope and the closures (late binding,
+# nonlocal, del), recursive and mutually recursive nested functions, class
+# bodies (their free variables, the methods' __class__ cell, zero-argument
+# super()), comprehensions, generators, coroutines, __closure__, f_locals,
+# locals() and eval() in a function with cells.  Also under a heap limit with
+# collections forced at every safepoint.
+add_test(NAME protopy_closure_semantics
+    COMMAND ${CMAKE_COMMAND} -DPROTOPY=$<TARGET_FILE:protopy>
+            -DSCRIPT=${CMAKE_SOURCE_DIR}/test/regression/closure_semantics.py
+            -DEXPECTED=${CMAKE_SOURCE_DIR}/test/regression/closure_semantics.expected
+            -P ${CMAKE_SOURCE_DIR}/test/regression/compare_output.cmake)
+add_test(NAME protopy_closure_semantics_gc
+    COMMAND ${CMAKE_COMMAND} -DPROTOPY=$<TARGET_FILE:protopy>
+            -DSCRIPT=${CMAKE_SOURCE_DIR}/test/regression/closure_semantics.py
+            -DEXPECTED=${CMAKE_SOURCE_DIR}/test/regression/closure_semantics.expected
+            "-DENV=PROTOCORE_HEAP_LIMIT_CELLS=1500000;PROTOCORE_GC_CONTEXT_THRESHOLD=200"
+            -P ${CMAKE_SOURCE_DIR}/test/regression/compare_output.cmake)
+set_tests_properties(protopy_closure_semantics protopy_closure_semantics_gc PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
+# Defining a named nested function (plain, recursive, nonlocal, capturing in a
+# comprehension, returned) leaves nothing once the call returns: a loop of
+# such calls runs in a fixed 2.5 M-cell heap.  Closures held the defining
+# frame, a cycle of mutable objects per call that protoCore never collects;
+# this ran out of memory.
+add_test(NAME protopy_nested_def_bounded_memory
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/nested_def_bounded_memory.py 20000)
+set_tests_properties(protopy_nested_def_bounded_memory PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    ENVIRONMENT "PROTOCORE_HEAP_LIMIT_CELLS=2500000;PROTOCORE_ADAPTIVE_HEAP=0"
+    TIMEOUT 600
+    LABELS "regression_gate")
 # The module type is <class 'module'>; its class attributes are not module globals.
 add_test(NAME protopy_module_type
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/module_type.py)

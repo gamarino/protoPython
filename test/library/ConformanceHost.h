@@ -235,9 +235,10 @@ public:
     //   * one zero-arg `super()`    -> `__getattr__ -> MethodCell` self (the proxy
     //                                  binds py_super_getattr to itself,
     //                                  BuiltinsModule.cpp:4283)
-    //   * one closure              -> `__closure_frames__` (the defining frame
-    //                                  holds the function as a local, and the
-    //                                  function's closure chains to that frame)
+    //   * one closure              -> no cycle since 2026-10-11 (a function
+    //                                  holds the cells it closes over, not its
+    //                                  defining frame); kept as a check that
+    //                                  it stays so
     //
     // The return value is a DECLARATION of how many mutables the probe built, and
     // it is read back out of the interpreter rather than hard-coded: a probe whose
@@ -284,9 +285,10 @@ public:
             "\n"
             "_conf_shapes = (_ConfMroB().tag(),) + _conf_use_closure()\n"
             // Two class objects, two class-body namespaces, one super proxy and
-            // one closure frame: the six mutables whose cycles this probe exists
-            // to put in front of the detector.
-            "_conf_mutables_built = 6\n";
+            // the closure's function and cell: mutables this probe puts in
+            // front of the detector (the closure's two are no longer in a
+            // cycle; see above).
+            "_conf_mutables_built = 7\n";
     }
 
     // declaredMutableCycles() is deliberately NOT overridden, so it stays -1 and
@@ -296,9 +298,11 @@ public:
     // claim that every cycle the scan finds is what the program MEANS.  Of
     // protoPython's four dominant shapes, ONE is and three are not:
     //
-    //   * `__closure_frames__` IS structural.  Verified by deleting the edge
-    //     (ExecutionEngine.cpp:1323): the smallest closure then fails outright with
-    //     `NameError: name 'nonlocal n not found' is not defined`.
+    //   * `__closure_frames__` was believed structural (deleting the edge broke
+    //     the smallest closure) and was NOT: it was the whole-frame capture of
+    //     closures.  With closures over cells (2026-10-11) it is gone, and a
+    //     named nested def leaves no cycle per call (TestMutableCycles.cpp,
+    //     NamedNestedDefsLeaveNoCycle).
     //   * `__mro__` self (6,671 of 22,433) is a documented cache whose non-cycling
     //     replacement already ships (py_type_get_mro behind a getset descriptor
     //     bound to nullptr, PythonEnvironment.cpp:19216-19223); still stored only

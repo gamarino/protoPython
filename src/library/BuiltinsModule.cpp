@@ -2831,8 +2831,13 @@ static const proto::ProtoObject* py_dir(
                 const proto::ProtoObject** locals = context->getAutomaticLocals();
                 proto::proto_ulong nVars = vnT->getSize(context);
                 proto::proto_ulong n = std::min<proto::proto_ulong>(nVars, (proto::proto_ulong)ncAutomatic);
+                PythonEnvironment* cellEnv = PythonEnvironment::fromContext(context);
                 for (proto::proto_ulong i = 0; i < n; ++i) {
                     const proto::ProtoObject* val = locals ? locals[i] : nullptr;
+                    // A cell variable is bound when its cell is not empty.
+                    if (cellEnv && val && cellEnv->isCell(context, val)) {
+                        val = cellEnv->cellGet(context, val);
+                    }
                     // protoCore initializes fast slots with PROTO_NONE to
                     // signal "unbound" (there is no separate sentinel as
                     // in CPython).  Skip PROTO_NONE so `r = dir()` does
@@ -2895,7 +2900,7 @@ static const proto::ProtoObject* py_dir(
                     // bare dir() output so test_descr.test_dir's
                     // assertEqual(dir(), ['junk', 'self']) sees only
                     // user-bound locals.
-                    "__closure_frames__", "__code__", "__defaults__",
+                    "__closure_cells__", "__code__", "__defaults__",
                     "__globals__", "__kwdefaults__", "__module__",
                     "__qualname__", "__wrapped__", "__annotations__",
                     "f_back", "f_code", "f_globals", "f_locals",
@@ -3633,7 +3638,12 @@ static const proto::ProtoObject* py_eval(
         // locals live on the frame as attributes), so the frame IS the
         // caller's local namespace.  Without this, `eval("c[x]")` where
         // c/x are function locals raises NameError.
+        // Its cell and free variables live in cells, not on the frame:
+        // frameNamespaceWithCells adds their values.
         const proto::ProtoObject* callerFrame = PythonEnvironment::getCurrentFrame();
+        PythonEnvironment* fenv = PythonEnvironment::fromContext(context);
+        if (fenv && callerFrame && callerFrame != PROTO_NONE)
+            callerFrame = fenv->frameNamespaceWithCells(context, callerFrame);
         locals = (callerFrame && callerFrame != PROTO_NONE)
             ? const_cast<proto::ProtoObject*>(callerFrame) : globals;
     }
@@ -4468,19 +4478,34 @@ static const proto::ProtoObject* py_super_new(
     const proto::ProtoObject* obj = nullptr;
 
     if (positionalParameters->getSize(context) <= 1) {
-       // 0-arg super(): deduce from frame
+       // 0-arg super(): CPython's super(__class__, <first argument>).  The
+       // running function's `__class__` free variable is a cell in its fast
+       // slots (after co_varnames); its first argument is slot 0, held in a
+       // cell when a nested scope captures it.
        PythonEnvironment* env = PythonEnvironment::fromContext(context);
-       const proto::ProtoObject* frame = env ? env->getCurrentFrame() : nullptr;
-       if (!frame) return PROTO_NONE;
-       
-       // Get first argument (self/cls) from locals
-       // Check fast locals (slots) first if available
-       if (context->getAutomaticLocalsCount() > 0 && context->getAutomaticLocals()) {
+       if (env && context->getAutomaticLocalsCount() > 0 && context->getAutomaticLocals()) {
            obj = context->getAutomaticLocals()[0];
-           if (get_env_diag()) fprintf(stderr, "DEBUG: py_super found obj in fast locals: %p\n", (void*)obj);
+           if (obj && env->isCell(context, obj)) obj = env->cellGet(context, obj);
+           const proto::ProtoObject* code = PythonEnvironment::getCurrentCodeObject();
+           const proto::ProtoObject* fv = code ? code->getAttribute(context,
+               PythonEnvironment::getInternedString(context, "co_freevars")) : nullptr;
+           const proto::ProtoTuple* freevars = (fv && fv != PROTO_NONE) ? fv->asTuple(context) : nullptr;
+           const proto::ProtoObject* vn = code ? code->getAttribute(context, env->getCoVarnamesString()) : nullptr;
+           const proto::proto_ulong nVar = (vn && vn != PROTO_NONE && vn->asTuple(context)) ? vn->asTuple(context)->getSize(context) : 0;
+           const proto::ProtoObject* classS = env->getClassString()->asObject(context);
+           for (proto::proto_ulong j = 0; freevars && j < freevars->getSize(context); ++j) {
+               if (freevars->getAt(context, static_cast<int>(j)) != classS) continue;
+               if (nVar + j < context->getAutomaticLocalsCount())
+                   type = env->cellGet(context, context->getAutomaticLocals()[nVar + j]);
+               break;
+           }
        }
+       const proto::ProtoObject* frame = env ? env->getCurrentFrame() : nullptr;
+       if (!frame && !(type && obj)) return PROTO_NONE;
        
-       const proto::ProtoObject* locals = frameNamespaceOf(context, env, frame);
+       if (get_env_diag()) fprintf(stderr, "DEBUG: py_super found obj in fast locals: %p\n", (void*)obj);
+       
+       const proto::ProtoObject* locals = (type && obj && obj != PROTO_NONE) ? nullptr : frameNamespaceOf(context, env, frame);
 
        if (locals && locals != PROTO_NONE) {
            bool foundArg = false;
@@ -4873,7 +4898,10 @@ static const proto::ProtoObject* py_exec(
             && callerFrame->getAttribute(context, fenv->getFCodeString())
                    == PythonEnvironment::getCurrentCodeObject()) {
             execFrame = const_cast<proto::ProtoObject*>(context->newObject(true));
-            execFrame = const_cast<proto::ProtoObject*>(execFrame->addParent(context, callerFrame));
+            // The caller's cell and free variables live in cells, not on
+            // its frame: inherit them through a snapshot of their values.
+            execFrame = const_cast<proto::ProtoObject*>(execFrame->addParent(context,
+                fenv->frameNamespaceWithCells(context, callerFrame)));
             execFrame = const_cast<proto::ProtoObject*>(execFrame->setAttribute(context, fenv->getFCodeString(), codeObj));
             execFrame = const_cast<proto::ProtoObject*>(execFrame->setAttribute(context, fenv->getFGlobalsString(), globals));
             execFrame = const_cast<proto::ProtoObject*>(execFrame->setAttribute(context, fenv->getFBackString(), callerFrame));
@@ -5017,6 +5045,13 @@ static const proto::ProtoObject* py_locals(proto::ProtoContext* ctx, const proto
     if (!f || f == PROTO_NONE) {
          return py_globals(ctx, self, parentLink, nullptr, nullptr);
     }
+    // In a function (whose locals live on its frame: a function that calls
+    // locals() is compiled mapped), a snapshot dict of its variables, cells
+    // and free variables included, as CPython 3.13+ returns.  At module and
+    // class level the frame is the namespace itself.
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env && f->hasOwnAttribute(ctx, env->getFrameNamespaceString()) == PROTO_TRUE)
+        return env->frameLocalsSnapshot(ctx, f);
     return f;
 }
 
@@ -7665,14 +7700,9 @@ const proto::ProtoObject* py_type(
         // types.new_class(), metaclass calls and class statements all run
         // the hook exactly once (OP_BUILD_CLASS no longer calls it).
         if (env) {
-            // A class statement's namespace (OP_BUILD_CLASS gives it an own
-            // f_locals) must bind the class name before the hook runs:
-            // methods of a class defined inside a function reach the class
-            // for zero-arg super() through it, and hooks may instantiate it.
-            if (dict && name && name->isString(context)
-                && dict->hasOwnAttribute(context, env->getFLocalsString()) == PROTO_TRUE) {
-                dict->setAttribute(context, name->asString(context), targetClass);
-            }
+            // The methods' `__class__` cell (zero-argument super()) holds
+            // the class before the hook runs, which may instantiate it.
+            if (dict) env->applyClassCell(context, dict, targetClass);
             // The kw-names stack can belong to an enclosing keyword call:
             // keep only the names this call actually received.
             const proto::ProtoTuple* hookNames = nullptr;

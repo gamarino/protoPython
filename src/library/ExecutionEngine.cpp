@@ -37,15 +37,21 @@ struct FunctionMetaCache {
     int kwonly;
     int automatic_count;
     bool is_generator;
-    // True when no OP_BUILD_FUNCTION or OP_BUILD_CLASS appear in the native bytecode
-    // and the function does not name _getframe / currentframe (frame introspection).
-    // Safe to skip frame construction when this is true and the function has no closures.
+    // True when the function runs without a frame of its own: its bytecode
+    // has no OP_BUILD_FUNCTION / OP_BUILD_CLASS (what it defines may look
+    // for it as f_back) and it does not name _getframe / currentframe (frame
+    // introspection).  The frame is never captured: a function closes over
+    // cells.
     bool no_inner_functions;
-    // True when no OP_LOAD_DEREF appears in the native bytecode.
-    // Safe to skip closure frame lookup even if __closure__ is present.
-    bool no_load_deref;
-    // True when __closure__ is a non-empty list at BUILD_FUNCTION time.
-    bool hasClosure;
+    // Closure layout (Compiler.h, "Closures"), from the code object.
+    bool selfRefCell;          // the self binding is held in a cell
+    int32_t selfRef;           // index in co_freevars of a recursive def's own name, or -1
+    uint32_t nFree;            // len(co_freevars)
+    uint32_t nCellSlots;       // len(co_cellslots)
+    uint32_t nLocalsPlus;      // slots before the operand stack: co_varnames, then free variables
+    // The function's own closure cells (`__closure_cells__`), kept alive by
+    // the function; nullptr when it has none.
+    const proto::ProtoList* closure;
     // Raw pointers — safe because codeObj and globalsObj are kept alive by the
     // function object's own __code__ / __globals__ attributes.
     const proto::ProtoObject* codeObj;
@@ -62,8 +68,117 @@ struct FunctionMetaCache {
     // Followed in memory by flat arrays:
     //   const proto::ProtoObject* nativeConsts[nConsts]
     //   const proto::ProtoObject* nativeNames[nNames]
+    //   int32_t cellSlots[nCellSlots]
     // Access via: reinterpret_cast<const proto::ProtoObject**>(cache + 1)
+    const int32_t* cellSlots() const {
+        return reinterpret_cast<const int32_t*>(
+            reinterpret_cast<const proto::ProtoObject* const*>(this + 1) + nConsts + nNames);
+    }
 };
+
+/** The closure layout of a call, from a function's FunctionMetaCache or, when
+ *  it has none, from its code object. */
+struct ClosureLayout {
+    uint32_t nVarnames = 0;
+    uint32_t nFree = 0;
+    int32_t selfRef = -1;
+    bool selfRefCell = false;
+    const proto::ProtoList* closure = nullptr;
+    const int32_t* cellSlots = nullptr;
+    uint32_t nCellSlots = 0;
+    std::vector<int32_t> ownedCellSlots;  // backing store for the code-object path
+
+    static ClosureLayout fromCache(const FunctionMetaCache* c) {
+        ClosureLayout l;
+        l.nVarnames = c->nVarnames;
+        l.nFree = c->nFree;
+        l.selfRef = c->selfRef;
+        l.selfRefCell = c->selfRefCell;
+        l.closure = c->closure;
+        l.cellSlots = c->cellSlots();
+        l.nCellSlots = c->nCellSlots;
+        return l;
+    }
+    static ClosureLayout fromCode(proto::ProtoContext* ctx, PythonEnvironment* env,
+                                  const proto::ProtoObject* codeObj, const proto::ProtoObject* fn) {
+        ClosureLayout l;
+        if (!codeObj || codeObj == PROTO_NONE) return l;
+        const proto::ProtoObject* vn = codeObj->getAttribute(ctx, env->getCoVarnamesString());
+        l.nVarnames = (vn && vn->asTuple(ctx)) ? static_cast<uint32_t>(vn->asTuple(ctx)->getSize(ctx)) : 0;
+        const proto::ProtoObject* fv = codeObj->getAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "co_freevars"));
+        l.nFree = (fv && fv != PROTO_NONE && fv->asTuple(ctx)) ? static_cast<uint32_t>(fv->asTuple(ctx)->getSize(ctx)) : 0;
+        const proto::ProtoObject* sr = codeObj->getAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "co_selfref"));
+        if (sr && sr->isInteger(ctx)) l.selfRef = static_cast<int32_t>(sr->asLong(ctx));
+        l.selfRefCell = codeObj->getAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "co_selfref_cell")) == PROTO_TRUE;
+        const proto::ProtoObject* cs = codeObj->getAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "co_cellslots"));
+        if (cs && cs != PROTO_NONE && cs->asTuple(ctx)) {
+            const proto::ProtoTuple* t = cs->asTuple(ctx);
+            for (proto::proto_ulong i = 0; i < t->getSize(ctx); ++i) {
+                const proto::ProtoObject* v = t->getAt(ctx, static_cast<int>(i));
+                if (v && v->isInteger(ctx)) l.ownedCellSlots.push_back(static_cast<int32_t>(v->asLong(ctx)));
+            }
+        }
+        l.cellSlots = l.ownedCellSlots.data();
+        l.nCellSlots = static_cast<uint32_t>(l.ownedCellSlots.size());
+        if (fn && env->getClosureString()) {
+            const proto::ProtoObject* c = fn->getAttribute(ctx, env->getClosureString());
+            if (c && c != PROTO_NONE && !c->isString(ctx)) l.closure = c->asList(ctx);
+        }
+        return l;
+    }
+};
+
+/** A call's cells and free variables (Compiler.h, "Closures"), set up after
+ *  its parameters are bound: each free-variable slot receives the cell from
+ *  the function's closure (a recursive def's own name, the function itself,
+ *  in a cell when the layout says so), and each cell variable's slot a new
+ *  cell holding the parameter bound there, or an empty one.  Every cell
+ *  goes into its slot as soon as it exists, so the collector sees it. */
+static void setupClosureSlots(proto::ProtoContext* ctx, PythonEnvironment* env,
+                              proto::ProtoObject** slots, unsigned int nSlots,
+                              const ClosureLayout& layout, const proto::ProtoObject* fn,
+                              proto::proto_ulong nParamSlots) {
+    if (!slots || !env) return;
+    if (layout.nFree > 0) {
+        const proto::proto_ulong nCells = layout.closure ? layout.closure->getSize(ctx) : 0;
+        // A closure missing the self binding's cell is the usual case; a
+        // full one comes from types.FunctionType(code, globals, closure=...).
+        const bool selfOmitted = layout.selfRef >= 0 && nCells + 1 == layout.nFree;
+        proto::proto_ulong k = 0;
+        for (uint32_t j = 0; j < layout.nFree; ++j) {
+            const unsigned int slot = layout.nVarnames + j;
+            if (slot >= nSlots) break;
+            if (static_cast<int32_t>(j) == layout.selfRef) {
+                if (selfOmitted) {
+                    slots[slot] = const_cast<proto::ProtoObject*>(layout.selfRefCell ? env->newCell(ctx, fn) : fn);
+                    continue;
+                }
+                const proto::ProtoObject* given = (k < nCells) ? layout.closure->getAt(ctx, static_cast<int>(k++)) : nullptr;
+                if (layout.selfRefCell) {
+                    slots[slot] = const_cast<proto::ProtoObject*>(given ? given : env->newCell(ctx, nullptr));
+                } else {
+                    // Read with LOAD_FAST: the cell's value as of the call.
+                    const proto::ProtoObject* v = given ? env->cellGet(ctx, given) : nullptr;
+                    slots[slot] = const_cast<proto::ProtoObject*>(v ? v : env->getUnboundSentinel());
+                }
+                continue;
+            }
+            const proto::ProtoObject* cell = (k < nCells) ? layout.closure->getAt(ctx, static_cast<int>(k++)) : nullptr;
+            slots[slot] = const_cast<proto::ProtoObject*>(cell ? cell : env->newCell(ctx, nullptr));
+        }
+    }
+    for (uint32_t c = 0; c < layout.nCellSlots; ++c) {
+        const int32_t idx = layout.cellSlots[c];
+        if (idx < 0 || static_cast<unsigned int>(idx) >= nSlots) continue;
+        const proto::ProtoObject* v = slots[idx];
+        if (static_cast<proto::proto_ulong>(idx) >= nParamSlots || v == env->getUnboundSentinel()) v = nullptr;
+        slots[idx] = const_cast<proto::ProtoObject*>(env->newCell(ctx, v));
+    }
+}
 
 static bool areSameClassesVM(proto::ProtoContext* context, const proto::ProtoObject* c1, const proto::ProtoObject* c2) {
     return c1 == c2;
@@ -104,6 +219,9 @@ static bool opcodeHasArg(int op) {
         case OP_BUILD_STRING:
         case OP_LOAD_DEREF:
         case OP_STORE_DEREF:
+        case OP_DELETE_DEREF:
+        case OP_LOAD_CLOSURE:
+        case OP_LOAD_CLASSDEREF:
         case OP_SETUP_FINALLY:
         case OP_SETUP_WITH:
         case OP_SETUP_ASYNC_WITH:
@@ -464,8 +582,9 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
 
     bool cacheHit = false;
     bool cacheNoInnerFunctions = false;
-    bool cacheNoLoadDeref = false;
     proto::proto_ulong nVarnames = 0;
+    proto::proto_ulong nLocalsPlus = 0;
+    const FunctionMetaCache* metaCache = nullptr;
     if (env && env->getFnMetaCacheString()) {
         const proto::ProtoObject* cacheAttr = self->getAttribute(ctx, env->getFnMetaCacheString());
         if (cacheAttr && cacheAttr != PROTO_NONE) {
@@ -473,6 +592,7 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
             if (cacheData) {
                 const FunctionMetaCache* cache =
                     reinterpret_cast<const FunctionMetaCache*>(cacheData);
+                metaCache              = cache;
                 codeObj                = cache->codeObj;
                 globalsObj             = cache->globalsObj;
                 co_flags               = cache->co_flags;
@@ -480,10 +600,10 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
                 kwonly_count           = cache->kwonly;
                 automatic_count        = cache->automatic_count;
                 nVarnames              = cache->nVarnames;
+                nLocalsPlus            = cache->nLocalsPlus;
                 isGenerator            = cache->is_generator;
                 co_varnames            = cache->co_varnames;
                 cacheNoInnerFunctions  = cache->no_inner_functions;
-                cacheNoLoadDeref       = cache->no_load_deref;
                 cacheHit = true;
             }
         }
@@ -514,6 +634,9 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         const proto::ProtoObject* isGenObj = (env && env->getCoIsGeneratorString())
             ? codeObj->getAttribute(ctx, env->getCoIsGeneratorString()) : nullptr;
         isGenerator = isGenObj && isGenObj->isBoolean(ctx) && isGenObj->asBoolean(ctx);
+        const proto::ProtoObject* nlp = codeObj->getAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "co_nlocalsplus"));
+        nLocalsPlus = (nlp && nlp->isInteger(ctx)) ? static_cast<proto::proto_ulong>(nlp->asLong(ctx)) : nVarnames;
     }
 
     if (!codeObj || codeObj == PROTO_NONE) return PROTO_NONE;
@@ -539,52 +662,31 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     proto::proto_ulong argCount = args->getSize(calleeCtx);
 
     // 5. Build Execution Frame (for locals()/sys._getframe)
-    // CO_OPTIMIZED functions with no closure and not generators never access the frame
-    // in the hot path (LOAD_FAST/STORE_FAST use slots). Skip the ~4 AVL-tree object
-    // allocations to reduce per-call GC pressure — the dominant cost in deep recursion.
-    const proto::ProtoObject* closure = env ? self->getAttribute(calleeCtx, env->getClosureString()) : nullptr;
-    // An empty closure tuple/list means no captured variables — treat as no closure.
-    const proto::ProtoList* closureList0 = closure ? closure->asList(calleeCtx) : nullptr;
-    bool hasClosure = closure && closure != PROTO_NONE
-        && closureList0 && closureList0->getSize(calleeCtx) > 0;
-    // Also skip frame when cacheNoLoadDeref: even if closure exists, the function never
-    // accesses it via LOAD_DEREF, so the closure frame is unused during execution.
+    // CO_OPTIMIZED functions that are not generators, define no class and do
+    // not introspect frames never access the frame in the hot path
+    // (LOAD_FAST/STORE_FAST use slots, LOAD_DEREF/STORE_DEREF the cells in
+    // slots). Skip the ~4 AVL-tree object allocations to reduce per-call GC
+    // pressure — the dominant cost in deep recursion.
     //
     // Re-enabling the V97-era frame-skip optimisation. b35bf811 disabled it
     // unconditionally to support sys._getframe()/traceback introspection, but every
     // call to a CO_OPTIMIZED leaf function (e.g. fib) then paid 4-5 cell
     // allocations per call. Profiles of call_recursion (fib(25), 242k calls)
     // showed 90% of time in ProtoContext destruction + cell free-list refilling;
-    // frame setup was the upstream amplifier. Functions that never build inner
-    // functions/classes and either have no closure or never LOAD_DEREF do not
-    // observably need a frame in the hot path; introspection can be added back
+    // frame setup was the upstream amplifier.  Introspection can be added back
     // lazily (build the frame on demand when sys._getframe() / traceback walks
     // actually request it) without paying for it on every call.
-    bool skipFrame = env && (co_flags & CO_OPTIMIZED) && !isGenerator && cacheNoInnerFunctions
-        && (!hasClosure || cacheNoLoadDeref);
+    bool skipFrame = env && (co_flags & CO_OPTIMIZED) && !isGenerator && cacheNoInnerFunctions;
     proto::ProtoObject* frame = nullptr;
     if (!skipFrame) {
         // For forceMapped (non-CO_OPTIMIZED) functions the frame holds the
-        // locals as own attributes; nested closures take this frame as a
-        // parent and rely on subsequent STORE_NAMEs being visible
-        // through the parent walk.  An immutable frame would force every
-        // STORE_NAME into a copy-on-write that breaks the parent linkage,
-        // so build the frame mutable in that case.
+        // locals as own attributes, and STORE_NAME writes them there: an
+        // immutable frame would turn every STORE_NAME into a copy-on-write,
+        // so build it mutable in that case.  A frame references no function
+        // and no closure: nested functions close over cells.
         bool framMutable = !(co_flags & CO_OPTIMIZED);
         frame = const_cast<proto::ProtoObject*>(calleeCtx->newObject(framMutable));
         if (env) {
-            if (hasClosure) {
-                // closureList0 is already validated non-null and non-empty above.
-                if (closureList0) {
-                    const proto::ProtoObject* outerFrame = closureList0->getAt(calleeCtx, 0);
-                    if (outerFrame && outerFrame != PROTO_NONE) {
-                        frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, outerFrame));
-                    }
-                } else {
-                    frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, closure));
-                }
-                frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getClosureString(), closure));
-            }
             frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, env->getFramePrototype()));
             frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFCodeString(), codeObj));
             frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFGlobalsString(), globalsObj));
@@ -595,6 +697,15 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
             }
         }
     }
+
+    // The closure layout of this call (cells and free variables).
+    ClosureLayout closureLayout = metaCache ? ClosureLayout::fromCache(metaCache)
+        : (env ? ClosureLayout::fromCode(calleeCtx, env, codeObj, self) : ClosureLayout());
+    auto isCellSlot = [&](int idx) {
+        for (uint32_t c = 0; c < closureLayout.nCellSlots; ++c)
+            if (closureLayout.cellSlots[c] == idx) return true;
+        return false;
+    };
 
     // Bind parameters
     unsigned int nSlots = calleeCtx->getAutomaticLocalsCount();
@@ -635,7 +746,9 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
             fprintf(stderr, "DEBUG: bindVar idx=%d param=%s val=%s (ptr=%p) co_flags=%d slots=%p frame=%p\n", idx, pn.c_str(), valRepr.c_str(), (void*)val, co_flags, (void*)slots, (void*)frame);
             fflush(stderr);
         }
-        if ((co_flags & CO_OPTIMIZED) && slots && idx < (int)nSlots) {
+        if (((co_flags & CO_OPTIMIZED) || isCellSlot(idx)) && slots && idx < (int)nSlots) {
+            // A cell variable's parameter lands in its slot even in a mapped
+            // function: setupClosureSlots puts it in the cell.
             slots[idx] = const_cast<proto::ProtoObject*>(val);
         } else if (frame && co_varnames && idx < (int)co_varnames->getSize(calleeCtx)) {
             const proto::ProtoObject* nameObj = co_varnames->getAt(calleeCtx, idx);
@@ -859,6 +972,13 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         bindVar(kwargIdx, kwDict);
     }
 
+    // Cells and free variables, once every parameter is bound.
+    {
+        const proto::proto_ulong nParamSlots = static_cast<proto::proto_ulong>(nparams_count + kwonly_count)
+            + ((co_flags & CO_VARARGS) ? 1 : 0) + ((co_flags & CO_VARKEYWORDS) ? 1 : 0);
+        setupClosureSlots(calleeCtx, env, slots, nSlots, closureLayout, codeOwner, nParamSlots);
+    }
+
     // A non-CO_OPTIMIZED function keeps its locals on the frame itself; record
     // that under an internal key (read by zero-argument super()).  It is not
     // the Python-visible `f_locals`, which framePrototype computes on demand
@@ -994,7 +1114,8 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         }
 
         if (bytecode && consts) {
-            proto::proto_ulong stackOffset = co_varnames ? co_varnames->getSize(calleeCtx) : 0;
+            // The operand stack starts after the locals and free variables.
+            proto::proto_ulong stackOffset = nLocalsPlus;
             result = executeBytecodeRange(calleeCtx, consts, bytecode, names, frame, 0, bytecode->getSize(calleeCtx), stackOffset,
                 nullptr, nullptr, nullptr, 0, nullptr, nativeBc);
         } else {
@@ -1028,14 +1149,13 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
     int co_flags = 0, nparams_count = 0, kwonly_count = 0, automatic_count = 0;
     bool isGenerator = false;
     bool cacheNoInnerFunctions = false;
-    bool cacheNoLoadDeref = false;
     const proto::ProtoTuple* co_varnames = nullptr;
     // Extended cached fields (Opt 2).
     const proto::ProtoTuple* cached_bytecode = nullptr;
     const proto::ProtoTuple* cached_consts   = nullptr;
     const proto::ProtoTuple* cached_names    = nullptr;
     const int*               cached_nativeBc = nullptr;
-    bool                     cached_hasClosure = false;
+    const FunctionMetaCache* metaCache = nullptr;
     uint32_t                 cached_nConsts = 0;
     uint32_t                 cached_nNames  = 0;
     const proto::ProtoObject** cached_nativeConsts = nullptr;
@@ -1060,13 +1180,12 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
                 isGenerator           = cache->is_generator;
                 co_varnames           = cache->co_varnames;
                 cacheNoInnerFunctions = cache->no_inner_functions;
-                cacheNoLoadDeref      = cache->no_load_deref;
+                metaCache             = cache;
                 // Extended fields cached at BUILD_FUNCTION time.
                 cached_bytecode       = cache->co_bytecode;
                 cached_consts         = cache->co_consts_tuple;
                 cached_names          = cache->co_names_tuple;
                 cached_nativeBc       = cache->nativeBc;
-                cached_hasClosure     = cache->hasClosure;
                 cached_nConsts        = cache->nConsts;
                 cached_nNames         = cache->nNames;
                 cached_nativeConsts   = reinterpret_cast<const proto::ProtoObject**>(
@@ -1077,14 +1196,11 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
         }
     }
 
-    // For any non-trivial case (generator, closure, kwargs, kwonly args, varargs, no cache),
-    // fall back to the full implementation via a temporary ProtoList.
-    // Use the cached hasClosure flag instead of a getAttribute call on the hot path.
-    bool hasClosure = cacheHit ? cached_hasClosure : false;
-
-    // cacheNoLoadDeref: safe to skip closure frame even when hasClosure — the function
-    // never accesses captured variables via LOAD_DEREF during execution.
-    bool useSlotFastPath = cacheHit && !isGenerator && (!hasClosure || cacheNoLoadDeref)
+    // For any non-trivial case (generator, kwargs, kwonly args, varargs, defaults
+    // needed, a frame needed, no cache), fall back to the full implementation
+    // via a temporary ProtoList.  Closures take the fast path: their cells
+    // are set up from the cache below.
+    bool useSlotFastPath = cacheHit && !isGenerator
         && cacheNoInnerFunctions && (co_flags & CO_OPTIMIZED)
         && kwonly_count == 0 && !(co_flags & CO_VARARGS) && !(co_flags & CO_VARKEYWORDS)
         && (!kwargs || !kwargs->getSize(ctx))
@@ -1127,18 +1243,24 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
             slots[vi] = const_cast<proto::ProtoObject*>(env->getUnboundSentinel());
     }
 
+    // Cells and free variables (positional parameters only on this path).
+    if (metaCache && (metaCache->nFree || metaCache->nCellSlots)) {
+        setupClosureSlots(calleeCtx, env, slots, nSlots, ClosureLayout::fromCache(metaCache), self,
+                          static_cast<proto::proto_ulong>(nparams_count));
+    }
+
     // Frame creation: only when actually needed.
     //
-    // For CO_OPTIMIZED leaf functions with no closure / no LOAD_DEREF / no inner
-    // function or class definitions, the frame is never observed during normal
-    // execution (LOAD_FAST/STORE_FAST use slots, no LOAD_DEREF needs f_back, no
-    // BUILD_FUNCTION needs f_globals). sys._getframe() and traceback walks are
-    // the only consumers; both can be supported lazily on demand without paying
-    // for a full frame on every call. Profiles of call_recursion (fib(25), 242k
-    // calls) showed 90% of time was the frame-newObject path here; gating it
-    // restores the V97-era hot-call path.
-    bool skipFrame = env && (co_flags & CO_OPTIMIZED) && !isGenerator && cacheNoInnerFunctions
-        && (!hasClosure || cacheNoLoadDeref);
+    // For CO_OPTIMIZED functions that define no class and do not introspect
+    // frames, the frame is never observed during normal execution
+    // (LOAD_FAST/STORE_FAST use slots, LOAD_DEREF/STORE_DEREF the cells in
+    // slots, BUILD_FUNCTION reads the current globals). sys._getframe() and
+    // traceback walks are the only consumers; both can be supported lazily on
+    // demand without paying for a full frame on every call. Profiles of
+    // call_recursion (fib(25), 242k calls) showed 90% of time was the
+    // frame-newObject path here; gating it restores the V97-era hot-call path.
+    // (This path only runs functions that need no frame; see useSlotFastPath.)
+    bool skipFrame = env && (co_flags & CO_OPTIMIZED) && !isGenerator && cacheNoInnerFunctions;
     // Only a call that builds a frame makes it current (below).
     CurrentFrameRestore frameRestore(!skipFrame);
     proto::ProtoObject* frame = nullptr;
@@ -1176,7 +1298,8 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
         const int* nativeBc               = cached_nativeBc;
 
         if (bytecode && consts) {
-            proto::proto_ulong stackOffset = co_varnames ? co_varnames->getSize(calleeCtx) : 0;
+            proto::proto_ulong stackOffset = metaCache ? metaCache->nLocalsPlus
+                                                       : (co_varnames ? co_varnames->getSize(calleeCtx) : 0);
             result = executeBytecodeRange(calleeCtx, consts, bytecode, names, frame,
                                           0, bytecode->getSize(calleeCtx), stackOffset,
                                           nullptr, nullptr, nullptr, 0, nullptr, nativeBc,
@@ -1360,7 +1483,10 @@ static const proto::ProtoObject* functionAnnotate(proto::ProtoContext* ctx, cons
     return nullptr;
 }
 
-static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const proto::ProtoObject* codeObj, proto::ProtoObject* globalsFrame, const proto::ProtoObject* closureFrame = nullptr, const proto::ProtoObject* defaults = nullptr, const proto::ProtoObject* kwDefaults = nullptr) {
+/** A new Python function for `codeObj`.  `closure` is the list of cells it
+ *  closes over, one per name in co_freevars except a recursive def's own name
+ *  (co_selfref), or nullptr when it has none. */
+static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const proto::ProtoObject* codeObj, proto::ProtoObject* globalsFrame, const proto::ProtoList* closure = nullptr, const proto::ProtoObject* defaults = nullptr, const proto::ProtoObject* kwDefaults = nullptr) {
     if (!ctx || !codeObj || !globalsFrame) return nullptr;
     if (!ctx || !codeObj || !globalsFrame) return nullptr;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -1450,38 +1576,18 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
             fn = fn->setAttribute(ctx, modS, PROTO_NONE);
         }
     }
-    // Does this function need to hold on to the frame it was created in?
-    //
-    // Only if its own body can READ a free variable (OP_LOAD_DEREF), or can
-    // define something that will (OP_BUILD_FUNCTION / OP_BUILD_CLASS, for a
-    // nested def / class that needs the chain).  For every other function the
-    // reference is dead weight -- and a permanent leak, because it closes a
-    // reference CYCLE BETWEEN TWO MUTABLE OBJECTS:
-    //
-    //     fn    --__closure_frames__-->  frame     (installed just below)
-    //     frame --co_name-------------->  fn       (OP_BUILD_FUNCTION binds the
-    //                                               new function's name in the
-    //                                               frame that defines it)
-    //
-    // protoCore keeps a mutable object's live state in
-    // `ProtoSpace::mutableRoot[mutable_ref % 256]`; the collector traces that
-    // table as a mark ROOT, and releases an entry only once the handle cell has
-    // been finalized (protoCore/docs/GarbageCollector.md, "Phase 5b").  In a
-    // cycle each handle stays marked through the other object's shard entry, so
-    // neither is ever finalized and neither entry is ever released.  Measured
-    // with a workload whose only variable is the number of function objects
-    // created: ~62 marked cells retained per function object, for ever, flat
-    // across 30 further collection cycles.  Dropping the edge where it cannot be
-    // used takes that to ~1 cell.
-    //
-    // This is also the graph agreeing with a decision the CALL path already
-    // takes: `runUserFunctionCall` skips the closure frame when the function has
-    // one but its bytecode holds no OP_LOAD_DEREF (`cacheNoLoadDeref`).
-    //
-    // When the native bytecode is not available the answer is "yes" -- a
-    // conservative extra reference costs memory, a missing one would break
-    // name resolution.
-    bool nbScanned = false, hasBuildOp = false, hasDerefOp = false;
+    // The function keeps the cells it closes over, never a frame: a cell is
+    // the only mutable object between it and the scope that defined it, so
+    // defining a function in a call closes no cycle through that call's frame
+    // (protoCore docs/MemoryModel.md, section 7; Compiler.h, "Closures").
+    // `__closure__` (None or a tuple of cells) is computed from this.
+    if (closure && env && closure->getSize(ctx) > 0) {
+        fn = fn->setAttribute(ctx, env->getClosureString(), closure->asObject(ctx));
+    }
+    // Opcode census of the native bytecode, for the frame decision below:
+    // a function that defines a function or a class keeps a frame, so that
+    // what it runs (a nested function, a class body) finds it as f_back.
+    bool nbScanned = false, hasClassOp = false;
     const int* scannedNativeBc = nullptr;
     if (env && codeObj && env->getCoNativeBytecodeString()) {
         const proto::ProtoObject* nbObj =
@@ -1494,54 +1600,11 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
                     nbObj->asByteBuffer(ctx)->getSize(ctx) / sizeof(int);
                 for (size_t bi = 0; bi < nbLen; bi += 2) {
                     const int op = scannedNativeBc[bi];
-                    if (op == OP_BUILD_FUNCTION || op == OP_BUILD_CLASS) hasBuildOp = true;
-                    if (op == OP_LOAD_DEREF) hasDerefOp = true;
+                    if (op == OP_BUILD_CLASS || op == OP_BUILD_FUNCTION) hasClassOp = true;
                 }
                 nbScanned = true;
             }
         }
-    }
-    // THE CRITERION IS `co_freevars`, NOT THE OPCODE CENSUS, and the difference
-    // is not academic: `def f(): nonlocal a` has a free variable and emits no
-    // OP_LOAD_DEREF at all, because it never reads `a`.  Gating on the opcode
-    // dropped that function's frame, `f.__closure__` came back None, and
-    // `types.py`'s `_cell_factory` -- which is exactly that shape -- computed the
-    // wrong `types.CellType` (caught by `protopy_closure_cells`).
-    //
-    // The compiler stamps `co_freevars` with "the exact set of names this
-    // function AND ITS NESTED SCOPES close over from enclosing function scopes"
-    // (Compiler.cpp), so a non-empty tuple is the authoritative answer and
-    // covers reads, writes and nested definitions alike.  `hasBuildOp` stays as
-    // a conservative belt for a code object that carries no `co_freevars`, and
-    // an unavailable answer means yes.
-    bool freevarsKnown = false;
-    proto::proto_ulong nFreeVars = 0;
-    if (codeObj) {
-        const proto::ProtoObject* fvObj = codeObj->getAttribute(ctx,
-            PythonEnvironment::getInternedString(ctx, "co_freevars"));
-        if (fvObj && fvObj != PROTO_NONE) {
-            if (const proto::ProtoTuple* fv = fvObj->asTuple(ctx)) {
-                nFreeVars = fv->getSize(ctx);
-                freevarsKnown = true;
-            }
-        }
-    }
-    const bool needsClosureFrame = !freevarsKnown || nFreeVars > 0
-                                || !nbScanned || hasBuildOp || hasDerefOp;
-
-    if (closureFrame && env && needsClosureFrame) {
-        // Wrap as a proper Python list (with __data__ + __class__) so
-        // Python-side `len(f.__closure__)`, indexing, and repr work.
-        const proto::ProtoList* closureTuple = ctx->newList()->appendLast(ctx, closureFrame);
-        const proto::ProtoObject* closureWrapped = closureTuple->asObject(ctx);
-        if (env->getListPrototype()) {
-            proto::ProtoObject* w = const_cast<proto::ProtoObject*>(ctx->newObject(true));
-            w = const_cast<proto::ProtoObject*>(w->setAttribute(ctx, env->getDataString(), closureWrapped));
-            w = const_cast<proto::ProtoObject*>(w->addParent(ctx, env->getListPrototype()));
-            w = const_cast<proto::ProtoObject*>(w->setAttribute(ctx, env->getClassString(), env->getListPrototype()));
-            closureWrapped = w;
-        }
-        fn = fn->setAttribute(ctx, env->getClosureString(), closureWrapped);
     }
     if (defaults && env) {
         fn = fn->setAttribute(ctx, env->getDefaultsString(), defaults);
@@ -1623,10 +1686,8 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
             ? codeObj->getAttribute(ctx, env->getCoCodeString()) : nullptr;
         const proto::ProtoTuple* co_bytecode_val = codeObjTupleObj ? codeObjTupleObj->asTuple(ctx) : nullptr;
 
-        // Native bytecode and its opcode census were resolved once above, where
-        // they also decided whether this function keeps a closure-frame
-        // reference.  Reusing them keeps the two decisions from drifting apart
-        // and saves a second scan of the whole bytecode.
+        // Native bytecode and its opcode census were resolved once above.
+        // Reusing them saves a second scan of the whole bytecode.
         const int* nativeBc_val = scannedNativeBc;
         // A function that names sys._getframe or inspect.currentframe asks
         // for its own frame (or its caller's through f_back), so it must not
@@ -1641,23 +1702,24 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
                 introspectsFrames = (nm == getframeS || nm == currentframeS);
             }
         }
-        const bool no_inner_functions_val = nbScanned && !hasBuildOp && !introspectsFrames;
-        const bool no_load_deref_val = nbScanned && !hasDerefOp;
+        const bool no_inner_functions_val = nbScanned && !hasClassOp && !introspectsFrames;
 
-        // Closure status, as the object graph actually is: the call path reads
-        // this flag instead of looking the attribute up, so it must agree with
-        // whether `__closure_frames__` was installed and not merely with whether
-        // a frame was passed in.
-        const bool hasClosure_val = (closureFrame != nullptr) && needsClosureFrame;
+        // The closure layout, from the code object (Compiler::stampClosureLayout).
+        const ClosureLayout layout = ClosureLayout::fromCode(ctx, env, codeObj, nullptr);
+        const proto::ProtoObject* nlpObj = codeObj->getAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "co_nlocalsplus"));
+        const uint32_t nVarnames_val = co_varnames_val ? static_cast<uint32_t>(co_varnames_val->getSize(ctx)) : 0;
 
         // Compute flat array sizes.
         uint32_t nConsts_val = co_consts_val ? static_cast<uint32_t>(co_consts_val->getSize(ctx)) : 0;
         uint32_t nNames_val  = co_names_val  ? static_cast<uint32_t>(co_names_val->getSize(ctx))  : 0;
 
-        // Allocate variable-length buffer: struct + two flat pointer arrays.
+        // Allocate variable-length buffer: struct + two flat pointer arrays
+        // + the cell slots.
         size_t totalBytes = sizeof(FunctionMetaCache)
             + (static_cast<size_t>(nConsts_val) + static_cast<size_t>(nNames_val))
-              * sizeof(const proto::ProtoObject*);
+              * sizeof(const proto::ProtoObject*)
+            + static_cast<size_t>(layout.nCellSlots) * sizeof(int32_t);
         char* buf = new char[totalBytes];
         FunctionMetaCache* cache = new(buf) FunctionMetaCache{};
 
@@ -1665,11 +1727,16 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
         cache->nparams            = nparams_val;
         cache->kwonly             = kwonly_val;
         cache->automatic_count    = automatic_val;
-        cache->nVarnames          = co_varnames_val ? static_cast<uint32_t>(co_varnames_val->getSize(ctx)) : 0;
+        cache->nVarnames          = nVarnames_val;
         cache->is_generator       = is_generator_val;
         cache->no_inner_functions = no_inner_functions_val;
-        cache->no_load_deref      = no_load_deref_val;
-        cache->hasClosure         = hasClosure_val;
+        cache->selfRef            = layout.selfRef;
+        cache->selfRefCell        = layout.selfRefCell;
+        cache->nFree              = layout.nFree;
+        cache->nCellSlots         = layout.nCellSlots;
+        cache->nLocalsPlus        = (nlpObj && nlpObj->isInteger(ctx))
+            ? static_cast<uint32_t>(nlpObj->asLong(ctx)) : nVarnames_val;
+        cache->closure            = (closure && closure->getSize(ctx) > 0) ? closure : nullptr;
         cache->codeObj            = codeObj;
         cache->globalsObj         = globalsObj;
         cache->co_varnames        = co_varnames_val;
@@ -1687,6 +1754,9 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
             nativeConsts[i2] = co_consts_val->getAt(ctx, static_cast<int>(i2));
         for (uint32_t i2 = 0; i2 < nNames_val; ++i2)
             nativeNames[i2] = co_names_val->getAt(ctx, static_cast<int>(i2));
+        int32_t* cellSlotsOut = const_cast<int32_t*>(cache->cellSlots());
+        for (uint32_t i2 = 0; i2 < layout.nCellSlots; ++i2)
+            cellSlotsOut[i2] = layout.cellSlots[i2];
 
         const proto::ProtoObject* cacheObj = ctx->fromBuffer(
             totalBytes, buf, true);
@@ -3300,6 +3370,10 @@ const proto::ProtoObject* py_generator_send_impl(
         const proto::ProtoObject* co_varnames_obj = codeObj->getAttribute(ctx, env->getCoVarnamesString());
         const proto::ProtoTuple* co_varnames = co_varnames_obj ? co_varnames_obj->asTuple(ctx) : nullptr;
         stackOffset = co_varnames ? co_varnames->getSize(ctx) : 0;
+        // The operand stack starts after the locals and the free variables.
+        const proto::ProtoObject* nlpObj = codeObj->getAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "co_nlocalsplus"));
+        if (nlpObj && nlpObj->isInteger(ctx)) stackOffset = static_cast<proto::proto_ulong>(nlpObj->asLong(ctx));
         const proto::ProtoObject* co_automatic_obj = codeObj->getAttribute(ctx, env->getCoAutomaticCountString());
         int automatic_count = (co_automatic_obj && co_automatic_obj->isInteger(ctx)) ? static_cast<int>(co_automatic_obj->asLong(ctx)) : 0;
         
@@ -4357,6 +4431,69 @@ static const proto::ProtoObject* runningCodeObject(proto::ProtoContext* ctx, Pyt
 
 // Raises UnboundLocalError for fast-local slot `idx`, naming the variable
 // from the running code object's co_varnames.
+/** The name of the cell or free variable in fast slot `slot` of the running
+ *  code object: co_varnames[slot] for a cell variable, co_freevars[slot -
+ *  len(co_varnames)] for a free variable (isFree).  nullptr when unknown. */
+static const proto::ProtoString* derefSlotName(proto::ProtoContext* ctx, PythonEnvironment* env,
+                                               int slot, bool& isFree) {
+    isFree = true;
+    const proto::ProtoObject* codeObj = PythonEnvironment::getCurrentCodeObject();
+    if (!codeObj || slot < 0) return nullptr;
+    const proto::ProtoObject* vn = codeObj->getAttribute(ctx, env->getCoVarnamesString());
+    const proto::ProtoTuple* varnames = (vn && vn != PROTO_NONE) ? vn->asTuple(ctx) : nullptr;
+    const proto::proto_ulong nVar = varnames ? varnames->getSize(ctx) : 0;
+    const proto::ProtoObject* nameObj = nullptr;
+    if (static_cast<proto::proto_ulong>(slot) < nVar) {
+        isFree = false;
+        nameObj = varnames->getAt(ctx, slot);
+    } else {
+        const proto::ProtoObject* fv = codeObj->getAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "co_freevars"));
+        const proto::ProtoTuple* freevars = (fv && fv != PROTO_NONE) ? fv->asTuple(ctx) : nullptr;
+        const proto::proto_ulong j = static_cast<proto::proto_ulong>(slot) - nVar;
+        if (freevars && j < freevars->getSize(ctx)) nameObj = freevars->getAt(ctx, static_cast<int>(j));
+    }
+    return (nameObj && proto::ProtoObject::isStringTagFast(nameObj)) ? nameObj->asString(ctx) : nullptr;
+}
+
+/** Reading or deleting an empty cell: CPython's messages. */
+static void raiseEmptyCell(proto::ProtoContext* ctx, PythonEnvironment* env, int slot) {
+    bool isFree = true;
+    const proto::ProtoString* nameS = derefSlotName(ctx, env, slot, isFree);
+    std::string nStr = "?";
+    if (nameS) nameS->toUTF8String(ctx, nStr);
+    if (isFree) {
+        env->raiseFreeVariableError(ctx, nStr);
+    } else {
+        env->raiseUnboundLocalError(ctx,
+            "cannot access local variable '" + nStr + "' where it is not associated with a value");
+    }
+}
+
+/** A class body's own binding of `nameS` in its namespace `ns`, or nullptr:
+ *  an own attribute of the namespace, or, for a namespace __prepare__
+ *  returned (EnumDict and the like), its __getitem__ (KeyError: absent). */
+static const proto::ProtoObject* classNamespaceLookup(proto::ProtoContext* ctx, PythonEnvironment* env,
+                                                      const proto::ProtoObject* ns, const proto::ProtoString* nameS) {
+    if (ns->hasOwnAttribute(ctx, nameS) == PROTO_TRUE) return ns->getOwnAttributeDirect(ctx, nameS);
+    const proto::ProtoObject* nsType = env->getType(ctx, ns);
+    if (nsType == env->getDictPrototype()) {
+        const proto::ProtoObject* cls = ns->proto::ProtoObject::getAttribute(ctx, env->getClassString());
+        if (cls && cls != PROTO_NONE) nsType = cls;
+    }
+    if (!nsType || nsType == PROTO_NONE || nsType == env->getDictPrototype() || nsType == env->getModulePrototype())
+        return nullptr;
+    const proto::ProtoObject* getitem = env->getAttribute(ctx, nsType, env->getGetItemString(), false);
+    if (!getitem || getitem == PROTO_NONE) return nullptr;
+    const proto::ProtoObject* val = invokeDunder(ctx, ns, env->getGetItemString(),
+                                                 ctx->newList()->appendLast(ctx, nameS->asObject(ctx)));
+    if (env->hasPendingException()) {
+        env->clearPendingException();
+        return nullptr;
+    }
+    return (val && val != PROTO_NONE) ? val : nullptr;
+}
+
 static void raiseUnboundFastLocal(proto::ProtoContext* ctx, PythonEnvironment* env, int idx) {
     std::string nStr = "?";
     const proto::ProtoObject* codeObj = PythonEnvironment::getCurrentCodeObject();
@@ -5193,24 +5330,10 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
             *anchor = targetClass;
         }
 
-        // PG: also write the just-built class into `ns`
-        // under its own name so methods inside the body —
-        // whose closure chains walk parent → ns — resolve
-        // zero-arg super() correctly.  Without this,
-        // methods of a class defined inside another
-        // function can't reach the class (the enclosing
-        // STORE_FAST runs only after BUILD_CLASS finishes).
-        if (name && name->isString(ctx)) {
-            ns->setAttribute(ctx, name->asString(ctx), targetClass);
-        }
-        // The implicit `__class__` cell of the methods: the compiler
-        // reads `__class__` in a method as LOAD_DEREF ".__class__", a
-        // name that, unlike `__class__`, no prototype object on the
-        // closure walk owns.  Unconditional (the STRUCT-219 guard
-        // above only protects the namespace's own `__class__`).
-        if (env && ns && ns != PROTO_NONE) {
-            ns->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, ".__class__"), targetClass);
-        }
+        // The methods' `__class__` cell (zero-argument super(), a free
+        // `__class__`): type.__new__ filled it; a metaclass that built the
+        // class some other way leaves it to this.
+        if (env) env->applyClassCell(ctx, ns, targetClass);
 
         // __init_subclass__ is not called here: as in CPython it
         // runs at the end of type.__new__ (py_type ->
@@ -5781,8 +5904,8 @@ const proto::ProtoObject* executeBytecodeRange(
                                         && pv->asMethod(ctx) == val->asMethod(ctx)));
                             };
                             // `__class__` and `__dict__` are never names reached this
-                            // way: the class cell is ".__class__", and a module's own
-                            // __dict__ is the module itself.
+                            // way: the class cell is a cell (LOAD_DEREF), and a
+                            // module's own __dict__ is the module itself.
                             const proto::ProtoString* dictDunderS = env->getDictDunderString();
                             const bool objectAttributeName = nameS == env->getClassString()
                                 || (dictDunderS && nameS == dictDunderS);
@@ -7607,224 +7730,54 @@ const proto::ProtoObject* executeBytecodeRange(
             for (int j = 0; j < arg; ++j) stack.pop_back();
             stack.push_back(res);
         } break;
+        // Cell and free variables (Compiler.h, "Closures"): arg is the fast
+        // slot holding the cell.
         case OP_LOAD_DEREF: {
-            if (names && frame && static_cast<proto::proto_ulong>(arg) < names->getSize(ctx)) {
-                const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
-                if (nameObj && proto::ProtoObject::isStringTagFast(nameObj)) {
-                    const proto::ProtoString* nameS = nameObj->asString(ctx);
-                    proto::proto_ulong h = nameObj->getHash(ctx);
-                    if (diag_local) {
-                    }
-                    const proto::ProtoObject* val = PROTO_NONE;
-
-                    const proto::ProtoList* worklist = ctx->newList();
-                    worklist = worklist->appendLast(ctx, frame);
-                    // We must track the worklist itself! Put it on stack temporarily.
-                    stack.push_back(worklist->asObject(ctx));
-                    
-                    bool found = false;
-                    std::unordered_set<const proto::ProtoObject*> visited;
-                    while (worklist->getSize(ctx) > 0) {
-                        const proto::ProtoObject* curr = worklist->getAt(ctx, static_cast<int>(worklist->getSize(ctx) - 1));
-                        worklist = worklist->removeAt(ctx, static_cast<int>(worklist->getSize(ctx)) - 1);
-                        stack[stack.top - 1] = worklist->asObject(ctx); // Update root
-
-                        if (!curr || curr == PROTO_NONE || visited.count(curr)) continue;
-                        visited.insert(curr);
-
-                        // protoCore convention: getAttribute returns
-                        // PROTO_NONE for missing attrs, NOT nullptr (only
-                        // nullptr is "invalid input").  We can't tell
-                        // "stored None" from "missing" via getAttribute
-                        // alone — gate on hasOwnAttribute first so we
-                        // only accept genuine own-attribute hits.  The
-                        // worklist still walks up via __closure__ /
-                        // parents, so an inherited cell is reached on
-                        // a later iteration.
-                        if (curr->hasOwnAttribute(ctx, nameS) == PROTO_TRUE) {
-                            val = curr->getOwnAttributeDirect(ctx, nameS);
-                            if (val) { found = true; break; }
-                        }
-
-                    if (env) {
-                        const proto::ProtoObject* closureAttr = curr->getAttribute(ctx, env->getClosureString());
-                        if (closureAttr && closureAttr != PROTO_NONE) {
-                            if (closureAttr->asList(ctx)) {
-                                const proto::ProtoList* l = closureAttr->asList(ctx);
-                                for (proto::proto_ulong i = 0; i < l->getSize(ctx); ++i) {
-                                    worklist = worklist->appendLast(ctx, l->getAt(ctx, static_cast<int>(i)));
-                                    stack[stack.top - 1] = worklist->asObject(ctx);
-                                }
-                            } else if (closureAttr->asTuple(ctx)) {
-                                const proto::ProtoTuple* t = closureAttr->asTuple(ctx);
-                                for (proto::proto_ulong i = 0; i < t->getSize(ctx); ++i) {
-                                    worklist = worklist->appendLast(ctx, t->getAt(ctx, static_cast<int>(i)));
-                                    stack[stack.top - 1] = worklist->asObject(ctx);
-                                }
-                            } else {
-                                worklist = worklist->appendLast(ctx, closureAttr);
-                                stack[stack.top - 1] = worklist->asObject(ctx);
-                            }
-                        }
-                    }
-
-                    // STRUCT-303: read __data__ as an OWN attribute only,
-                    // not via getAttribute which walks the parent chain.
-                    // Walking the chain here lets a class-body's
-                    // namespace dict (whose storage uses __data__) shadow
-                    // any closer cell with the same name — exactly what
-                    // happens to a method whose parameter name matches a
-                    // class-scope local that has a __data__-backed dict.
-                    // The worklist already adds parents in a later step,
-                    // so each frame in the chain still gets its own own-
-                    // __data__ inspection in turn.
-                    const proto::ProtoString* dName = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
-                    const proto::ProtoObject* dataObj =
-                        (curr->hasOwnAttribute(ctx, dName) == PROTO_TRUE)
-                            ? curr->getOwnAttributeDirect(ctx, dName)
-                            : nullptr;
-                    if (dataObj && dataObj->asSparseList(ctx)) {
-                        // PG: ProtoSparseList::getAt returns PROTO_NONE for
-                        // missing keys, not nullptr.  Without the explicit
-                        // has() check, a class namespace with a __data__
-                        // dict reports any missing closure variable as
-                        // None, masking the real value in the cell chain.
-                        const proto::ProtoSparseList* sl = dataObj->asSparseList(ctx);
-                        if (sl->has(ctx, h)) {
-                            val = sl->getAt(ctx, h);
-                            if (val != nullptr) { found = true; break; }
-                        }
-                    }
-
-                    // STRUCT-303: walk parents in REVERSE order so the
-                    // FIRST parent (closest scope, e.g. closureFrame
-                    // captured at BUILD_FUNCTION time) is popped FIRST
-                    // from the LIFO worklist and inspected before
-                    // class-namespace ancestors that protoCore's
-                    // getParents() returns as transitively-flattened
-                    // descendants.  Without this reversal, a method's
-                    // free variable could resolve to a class-namespace
-                    // entry with the same name BEFORE the closure cell
-                    // that legitimately holds the parameter binding —
-                    // exactly what broke `class A: def callback(self,
-                    // callback, ...): self.make(callback, ...)` style
-                    // patterns inside contextlib.ExitStack.callback +
-                    // subprocess._close_pipe_fds.
-                    const proto::ProtoList* parents = curr->getParents(ctx);
-                    if (parents) {
-                        for (proto::proto_long j = static_cast<proto::proto_long>(parents->getSize(ctx)) - 1; j >= 0; --j) {
-                            worklist = worklist->appendLast(ctx, parents->getAt(ctx, static_cast<int>(j)));
-                            stack[stack.top - 1] = worklist->asObject(ctx);
-                        }
-                    }
-                }
-                stack.pop_back(); // Remove worklist
-                    if (!found && env) {
-                        val = env->resolveGlobalName(nameS, ctx);
-                        if (val != nullptr) found = true;
-                    }
-                    if (!found) {
-                        if (env) {
-                            std::string* sPtr = new std::string();
-                            nameS->toUTF8String(ctx, *sPtr);
-                            std::unique_ptr<std::string> sGuard(sPtr);
-                            env->raiseNameError(ctx, *sPtr);
-                            continue;
-                        }
-                    }
-                    stack.push_back(val);
-                }
+            const proto::ProtoObject* val = env ? env->cellGet(ctx, ctx->getAutomaticLocal(static_cast<unsigned int>(arg))) : nullptr;
+            if (!val) {
+                if (env) raiseEmptyCell(ctx, env, arg);
+                i = next_i;
+                continue;
             }
+            stack.push_back(val);
         } break;
         case OP_STORE_DEREF: {
-            if (names && stack.size() >= 1 && static_cast<proto::proto_ulong>(arg) < names->getSize(ctx)) {
-                const proto::ProtoObject* val = stack.back();
-                stack.pop_back();
-                const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
-                if (nameObj && proto::ProtoObject::isStringTagFast(nameObj)) {
-                    const proto::ProtoString* nameS = nameObj->asString(ctx);
-                    proto::proto_ulong h = nameObj->getHash(ctx);
-                    
-                    const proto::ProtoList* worklist = ctx->newList();
-                    worklist = worklist->appendLast(ctx, frame);
-                    stack.push_back(worklist->asObject(ctx));
-                    
-                    bool found = false;
-                    std::unordered_set<const proto::ProtoObject*> visited;
-                    while (worklist->getSize(ctx) > 0) {
-                        const proto::ProtoObject* curr = worklist->getAt(ctx, static_cast<int>(worklist->getSize(ctx) - 1));
-                        worklist = worklist->removeAt(ctx, static_cast<int>(worklist->getSize(ctx)) - 1);
-                        stack[stack.top - 1] = worklist->asObject(ctx);
-                        
-                        if (!curr || curr == PROTO_NONE || visited.count(curr)) continue;
-                        visited.insert(curr);
-
-                        // The binding is where LOAD_DEREF reads it: the first
-                        // object of the walk that OWNS the name.  getAttribute
-                        // walks the parent chain and returns PROTO_NONE (not
-                        // nullptr) for a missing name, so testing it matched the
-                        // running function's own frame every time: `nonlocal n;
-                        // n += 1` bound a new n there and the enclosing scope
-                        // never saw the write.
-                        if (curr->hasOwnAttribute(ctx, nameS) == PROTO_TRUE) {
-                            curr->setAttribute(ctx, nameS, val);
-                            found = true;
-                            break;
-                        }
-                        const proto::ProtoString* dName = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
-                        const proto::ProtoObject* dataObj =
-                            (curr->hasOwnAttribute(ctx, dName) == PROTO_TRUE)
-                                ? curr->getOwnAttributeDirect(ctx, dName)
-                                : nullptr;
-                        if (dataObj && dataObj->asSparseList(ctx)) {
-                            const proto::ProtoSparseList* sl = dataObj->asSparseList(ctx);
-                            if (sl->has(ctx, h)) {
-                                curr->setAttribute(ctx, dName, sl->setAt(ctx, h, val)->asObject(ctx));
-                                found = true;
-                                break;
-                            }
-                        }
-                        if (env) {
-                            const proto::ProtoObject* closureAttr = curr->getAttribute(ctx, env->getClosureString());
-                            if (closureAttr && closureAttr != PROTO_NONE) {
-                                if (closureAttr->asList(ctx)) {
-                                    const proto::ProtoList* l = closureAttr->asList(ctx);
-                                    for (proto::proto_ulong i = 0; i < l->getSize(ctx); ++i) {
-                                        worklist = worklist->appendLast(ctx, l->getAt(ctx, static_cast<int>(i)));
-                                        stack[stack.top - 1] = worklist->asObject(ctx);
-                                    }
-                                } else if (closureAttr->asTuple(ctx)) {
-                                    const proto::ProtoTuple* t = closureAttr->asTuple(ctx);
-                                    for (proto::proto_ulong i = 0; i < t->getSize(ctx); ++i) {
-                                        worklist = worklist->appendLast(ctx, t->getAt(ctx, static_cast<int>(i)));
-                                        stack[stack.top - 1] = worklist->asObject(ctx);
-                                    }
-                                } else {
-                                    worklist = worklist->appendLast(ctx, closureAttr);
-                                    stack[stack.top - 1] = worklist->asObject(ctx);
-                                }
-                            }
-                        }
-                        // Parents in reverse, as LOAD_DEREF walks them (STRUCT-303):
-                        // the closest scope is popped first, so a store and a load
-                        // of the same name resolve to the same binding.
-                        const proto::ProtoList* parents = curr->getParents(ctx);
-                        if (parents) {
-                            for (proto::proto_long j = static_cast<proto::proto_long>(parents->getSize(ctx)) - 1; j >= 0; --j) {
-                                worklist = worklist->appendLast(ctx, parents->getAt(ctx, static_cast<int>(j)));
-                                stack[stack.top - 1] = worklist->asObject(ctx);
-                            }
-                        }
-                    }
-                    stack.pop_back(); // Remove worklist
-                    if (!found) {
-                        if (env) {
-                            std::string s; nameS->toUTF8String(ctx, s);
-                            env->raiseNameError(ctx, "nonlocal " + s + " not found");
-                        }
-                    }
-                }
+            if (stack.empty()) { i = next_i; continue; }
+            if (env) env->cellSet(ctx, ctx->getAutomaticLocal(static_cast<unsigned int>(arg)), stack.back());
+            stack.pop_back();
+        } break;
+        case OP_DELETE_DEREF: {
+            const proto::ProtoObject* cell = ctx->getAutomaticLocal(static_cast<unsigned int>(arg));
+            if (!env || !env->cellGet(ctx, cell)) {
+                if (env) raiseEmptyCell(ctx, env, arg);
+                i = next_i;
+                continue;
             }
+            env->cellClear(ctx, cell);
+        } break;
+        case OP_LOAD_CLOSURE: {
+            // The cell itself, for a nested function's closure tuple.  -1: the
+            // compiler found no cell for the name (an empty one stands in).
+            const proto::ProtoObject* cell = (arg >= 0) ? ctx->getAutomaticLocal(static_cast<unsigned int>(arg)) : nullptr;
+            if (!cell && env) cell = env->newCell(ctx, nullptr);
+            stack.push_back(cell ? cell : PROTO_NONE);
+        } break;
+        case OP_LOAD_CLASSDEREF: {
+            // A class body reads a free variable from its namespace when the
+            // namespace binds the name, else from the cell.
+            const proto::ProtoObject* val = nullptr;
+            if (env && frame) {
+                bool isFree = true;
+                const proto::ProtoString* nameS = derefSlotName(ctx, env, arg, isFree);
+                if (nameS) val = classNamespaceLookup(ctx, env, frame, nameS);
+            }
+            if (!val && env) val = env->cellGet(ctx, ctx->getAutomaticLocal(static_cast<unsigned int>(arg)));
+            if (!val) {
+                if (env && !env->hasPendingException()) raiseEmptyCell(ctx, env, arg);
+                i = next_i;
+                continue;
+            }
+            stack.push_back(val);
         } break;
         case OP_JUMP_ABSOLUTE: {
             if (arg >= 0 && static_cast<proto::proto_ulong>(arg) < n) {
@@ -9345,16 +9298,19 @@ const proto::ProtoObject* executeBytecodeRange(
             // (newObject, addParent, setAttribute, …) must be reachable from
             // a GC root.  The operand stack lives inside automaticLocals, so
             // anything sitting in a stack slot is rooted; values held only
-            // in C++ locals are NOT.  We therefore read codeObj/defaults/
-            // kwDefaults/annotations *without* popping — pop_back only
-            // decrements top, so the slots still hold the values and the
-            // root scan still sees them.  Pushing closureFrame later goes
-            // ON TOP of these slots, not over them.  Pops happen at the
+            // in C++ locals are NOT.  We therefore read the closure, codeObj,
+            // defaults, kwDefaults and annotations *without* popping —
+            // pop_back only decrements top, so the slots still hold the
+            // values and the root scan still sees them.  Pops happen at the
             // very end, after every allocation has completed.
+            //
+            // Stack, bottom to top: [closure cells (arg >> 8 of them)] code
+            // [defaults (0x01)] [kw defaults (0x02)] [annotations (0x04)].
             int extras = 0;
             if (arg & 0x04) extras++;
             if (arg & 0x02) extras++;
             if (arg & 0x01) extras++;
+            const int below = arg >> BUILD_FUNCTION_CELLS_SHIFT;
             const proto::ProtoObject* annotations = nullptr;
             const proto::ProtoObject* kwDefaults = nullptr;
             const proto::ProtoObject* defaults = nullptr;
@@ -9363,196 +9319,29 @@ const proto::ProtoObject* executeBytecodeRange(
             if (arg & 0x02) { kwDefaults = stack[stack.top - 1 - peekIdx++]; }
             if (arg & 0x01) { defaults = stack[stack.top - 1 - peekIdx++]; }
 
-            if (stack.size() > static_cast<size_t>(extras) && frame) {
+            if (stack.size() > static_cast<size_t>(extras + below)) {
                 const proto::ProtoObject* codeObj = stack[stack.top - 1 - extras];
-                // codeObj stays in its stack slot for the entire op; no pop
-                // here.  See the GC discipline comment above.
+                // The cells, in a ProtoList (not a tuple: see
+                // BUILD_FUNCTION_CELLS_SHIFT).
+                // Held on the operand stack while the function is built (a
+                // GC root; protoCore embedder rule 3).
+                const proto::ProtoList* closure = nullptr;
+                if (below) {
+                    closure = ctx->newList(static_cast<unsigned>(below),
+                        &stack[stack.top - 1 - extras - below]);
+                    stack.push_back(closure->asObject(ctx));
+                }
                 if (diag_local) {
-                    int line = -1;
-                    const proto::ProtoObject* lineObj = codeObj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_firstlineno"));
-                    if (lineObj && lineObj->isInteger(ctx)) line = (int)lineObj->asLong(ctx);
-                    fprintf(stderr, "DEBUG: OP_BUILD_FUNCTION PC=%llu arg=0x%llx codeObj=%p (line %d) defaults=%p kwDefaults=%p\n", static_cast<unsigned long long>(i), static_cast<unsigned long long>((proto::proto_ulong)arg), (void*)codeObj, line, (void*)defaults, (void*)kwDefaults);
+                    fprintf(stderr, "DEBUG: OP_BUILD_FUNCTION PC=%llu arg=0x%llx codeObj=%p defaults=%p kwDefaults=%p\n", static_cast<unsigned long long>(i), static_cast<unsigned long long>((proto::proto_ulong)arg), (void*)codeObj, (void*)defaults, (void*)kwDefaults);
                     fflush(stderr);
                 }
-
-                // Build the closure frame.  Push it onto the stack as a GC
-                // guard *before* the next allocation so that the protoCore
-                // threshold trigger cannot lose it via a chain submission.
-                // closureFrame must stay rooted across addParent, getAttribute,
-                // and the snapshot loop.  Updates to the C++ local and the
-                // stack slot are kept in sync via stack.back() = closureFrame.
-                proto::ProtoObject* closureFrame = const_cast<proto::ProtoObject*>(ctx->newObject(true));
-                stack.push_back(closureFrame);
-                closureFrame = const_cast<proto::ProtoObject*>(closureFrame->addParent(ctx, frame));
-                stack.back() = closureFrame;
-                // The frame stores the code object as f_code (not __code__)
-                const proto::ProtoString* codeKey = env ? env->getFCodeString() : PythonEnvironment::getInternedString(ctx, "f_code");
-                const proto::ProtoObject* outerCodeAttr = frame->getAttribute(ctx, codeKey);
-                // `co_freevars` (stamped by the compiler) is the exact set of
-                // names this new function — and its nested scopes — close
-                // over from enclosing function scopes.  When present, snapshot
-                // ONLY those names: blindly copying every outer local leaks an
-                // enclosing `self` into a nested method's closure frame and
-                // shadows the real binding during the LOAD_DEREF walk.  When
-                // absent (older code-object shapes), fall back to the legacy
-                // copy-everything behaviour.
-                const proto::ProtoTuple* coFreevars = nullptr;
-                {
-                    const proto::ProtoObject* fvObj = codeObj->getAttribute(ctx,
-                        PythonEnvironment::getInternedString(ctx, "co_freevars"));
-                    if (fvObj && fvObj != PROTO_NONE) coFreevars = fvObj->asTuple(ctx);
-                }
-                // Only a CO_OPTIMIZED outer keeps its locals in slots.  A mapped
-                // outer has slots too (its operand stack), whose low entries are
-                // not locals: copying them would shadow the live bindings on the
-                // frame with placeholders.
-                bool outerOptimized = false;
-                if (outerCodeAttr && outerCodeAttr != PROTO_NONE && env) {
-                    const proto::ProtoObject* of = outerCodeAttr->getAttribute(ctx, env->getCoFlagsString());
-                    outerOptimized = of && of->isInteger(ctx) && (of->asLong(ctx) & CO_OPTIMIZED);
-                }
-                if (outerOptimized) {
-                    const proto::ProtoObject* coVarnamesObj = outerCodeAttr->getAttribute(ctx, env ? env->getCoVarnamesString() : PythonEnvironment::getInternedString(ctx, "co_varnames"));
-                    if (coVarnamesObj && coVarnamesObj != PROTO_NONE) {
-                        const proto::ProtoTuple* coVarnames = coVarnamesObj->asTuple(ctx);
-                        if (coVarnames) {
-                            const proto::ProtoObject** outerSlots = ctx->getAutomaticLocals();
-                            unsigned int outerNSlots = ctx->getAutomaticLocalsCount();
-                            for (unsigned int j = 0; j < coVarnames->getSize(ctx); ++j) {
-                                const proto::ProtoObject* vnameObj = coVarnames->getAt(ctx, j);
-                                if (proto::ProtoObject::isStringTagFast(vnameObj)) {
-                                    const proto::ProtoString* vname = vnameObj->asString(ctx);
-                                    // Skip outer locals the new function does not
-                                    // actually close over (when co_freevars is known).
-                                    if (coFreevars) {
-                                        bool needed = false;
-                                        for (proto::proto_ulong fi = 0; fi < coFreevars->getSize(ctx); ++fi) {
-                                            const proto::ProtoObject* fvn = coFreevars->getAt(ctx, static_cast<int>(fi));
-                                            if (fvn && fvn->isString(ctx) &&
-                                                fvn->asString(ctx)->cmp_to_string(ctx, vname) == 0) {
-                                                needed = true; break;
-                                            }
-                                        }
-                                        if (!needed) continue;
-                                    }
-                                    // A CO_OPTIMIZED outer keeps its locals in automatic
-                                    // slots the closure cannot reach, so their current
-                                    // values are copied into closureFrame.  A frame-mapped
-                                    // (forceMapped) outer has no slots: its binding is an
-                                    // own attribute of `frame`, closureFrame's parent, and
-                                    // LOAD_DEREF / STORE_DEREF find it there live — they
-                                    // accept only own attributes and pop the closest
-                                    // parent first, so a class-body namespace further up
-                                    // (a method's `callback` parameter inside `class A:
-                                    // def callback(self, callback, ...)`, STRUCT-303)
-                                    // cannot shadow it.  Copying the frame's attribute too
-                                    // gave the closure a private snapshot: `nonlocal`
-                                    // rebinds and later assignments in the outer were
-                                    // never shared.
-                                    const proto::ProtoObject* val = (j < outerNSlots) ? outerSlots[j] : nullptr;
-                                    // An outer local that is not bound yet has no value to capture.
-                                    if (val && env && val == env->getUnboundSentinel()) val = nullptr;
-                                    // For CO_OPTIMIZED slots, PROTO_NONE is a legitimate
-                                    // bound value (e.g. `boundary=None` parameter).  Accept.
-
-                                    if (val) {
-                                        closureFrame = const_cast<proto::ProtoObject*>(closureFrame->setAttribute(ctx, vname, val));
-                                        stack.back() = closureFrame; // Keep GC root updated
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                // Pop closureFrame.  pop_back only decrements top — slot[top]
-                // still holds closureFrame, so the GC root scan continues to
-                // reach it through the entire createUserFunction call below
-                // (which performs many allocations).
-                stack.pop_back();
-
-                proto::ProtoObject* fn = createUserFunction(ctx, codeObj, const_cast<proto::ProtoObject*>(PythonEnvironment::getCurrentGlobals()), closureFrame, defaults, kwDefaults);
+                proto::ProtoObject* fn = createUserFunction(ctx, codeObj, const_cast<proto::ProtoObject*>(PythonEnvironment::getCurrentGlobals()), closure, defaults, kwDefaults);
                 // Push fn as a GC guard immediately.  Subsequent setAttribute
                 // calls allocate (potentially crossing the per-context
                 // threshold and submitting the young chain) and may return a
-                // new fn pointer; we keep stack.back() in sync.  Without this
-                // guard the C++-local fn is unrooted and a chain submission
-                // can leave its underlying cell in dirtySegments where the
-                // next sweep would free it.
+                // new fn pointer; we keep stack.back() in sync.
                 if (fn) {
                     stack.push_back(fn);
-                }
-                if (fn && env) {
-                    const proto::ProtoObject* nameAttr = codeObj->getAttribute(ctx,
-                        PythonEnvironment::getInternedString(ctx, "co_name"));
-                    // Bind the function's own name in its closure frame only
-                    // when the function, or a scope nested in it, reads that
-                    // name as a free variable: a recursive nested function,
-                    // whose outer slot is not assigned yet when the frame's
-                    // values are copied above.  The binding closes the cycle
-                    //   closureFrame -[.name]-> fn -[.__closure_frames__]-> closureFrame
-                    // between two mutables, which protoCore never collects
-                    // (docs/CONFORMANCE.md, rule 13).  For a comprehension,
-                    // a lambda or any non-recursive nested def nothing reads
-                    // the binding, and the cycle leaked one closure per
-                    // EXECUTION (a comprehension in a loop: about 55 cells per
-                    // iteration, for ever).  `<listcomp>`, `<lambda>`,
-                    // `<genexpr>` and the like are not identifiers, so no code
-                    // can read them; comprehensions carry no co_freevars, so
-                    // this test is what covers them.  Otherwise, without
-                    // co_freevars the answer stays "bind", as before.
-                    bool nameIsFree = true;
-                    if (nameAttr && nameAttr->isString(ctx)) {
-                        std::string nm;
-                        nameAttr->asString(ctx)->toUTF8String(ctx, nm);
-                        if (!nm.empty() && nm[0] == '<') nameIsFree = false;
-                    }
-                    if (nameIsFree && coFreevars && nameAttr && nameAttr->isString(ctx)) {
-                        nameIsFree = false;
-                        const proto::ProtoString* nm = nameAttr->asString(ctx);
-                        for (proto::proto_ulong fi = 0; fi < coFreevars->getSize(ctx); ++fi) {
-                            const proto::ProtoObject* fvn = coFreevars->getAt(ctx, static_cast<int>(fi));
-                            if (fvn && fvn->isString(ctx) &&
-                                fvn->asString(ctx)->cmp_to_string(ctx, nm) == 0) {
-                                nameIsFree = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (nameIsFree && nameAttr && nameAttr->isString(ctx)) {
-                        const proto::ProtoObject* updatedFrame =
-                            const_cast<proto::ProtoObject*>(closureFrame)->setAttribute(
-                                ctx, nameAttr->asString(ctx), fn);
-                        // Refresh the function's closure reference only when it
-                        // HAS one.  createUserFunction omits it for a function
-                        // whose body can neither read a free variable nor define
-                        // anything that could, precisely to avoid the mutable
-                        // fn <-> frame cycle protoCore cannot reclaim; putting it
-                        // back here would reintroduce that cycle for every such
-                        // function defined inside another one.
-                        const bool fnKeepsClosure = env->getClosureString() &&
-                            fn->hasOwnAttribute(ctx, env->getClosureString()) == PROTO_TRUE;
-                        if (updatedFrame != closureFrame && fnKeepsClosure) {
-                            // Not in-place: rebuild closure tuple so fn sees the updated frame.
-                            // Wrap as Python list so len/repr/indexing work on f.__closure__.
-                            const proto::ProtoList* newClosure =
-                                ctx->newList()->appendLast(ctx, updatedFrame);
-                            const proto::ProtoObject* closureWrapped = newClosure->asObject(ctx);
-                            if (env->getListPrototype()) {
-                                proto::ProtoObject* w = const_cast<proto::ProtoObject*>(ctx->newObject(true));
-                                w = const_cast<proto::ProtoObject*>(w->setAttribute(ctx, env->getDataString(), closureWrapped));
-                                w = const_cast<proto::ProtoObject*>(w->addParent(ctx, env->getListPrototype()));
-                                w = const_cast<proto::ProtoObject*>(w->setAttribute(ctx, env->getClassString(), env->getListPrototype()));
-                                closureWrapped = w;
-                            }
-                            fn = const_cast<proto::ProtoObject*>(fn->setAttribute(
-                                ctx, env->getClosureString(), closureWrapped));
-                            stack.back() = fn;
-                        }
-                    }
-                }
-                if (diag_local) {
-                    fprintf(stderr, "DEBUG: OP_BUILD_FUNCTION finished createUserFunction fn=%p\n", (void*)fn);
-                    fflush(stderr);
                 }
                 if (fn && annotations) {
                     // Attach the annotations dict produced by the compile-time
@@ -9573,21 +9362,14 @@ const proto::ProtoObject* executeBytecodeRange(
                         ctx->fromMethod(const_cast<proto::ProtoObject*>(annotations), functionAnnotate)));
                     stack.back() = fn;
                 }
-                // Stack right now (top to bottom):
-                //   fn (guard)
-                //   annotations? kwDefaults? defaults? codeObj   (the original
-                //                                                 operands we
-                //                                                 deliberately
-                //                                                 did not pop)
-                //
-                // Result of OP_BUILD_FUNCTION must leave fn at the top of the
-                // operand stack, with the original operands removed.  Pop fn,
-                // then pop the originals, then push fn back.  No allocations
-                // happen in this sequence so fn-in-C++-local is safe.
+                // Result: fn at the top of the operand stack, the operands
+                // removed.  No allocation happens in this sequence, so fn in a
+                // C++ local is safe.
                 if (fn) {
                     stack.pop_back();  // pop fn guard
                 }
-                for (int i = 0; i < extras + 1; ++i) {
+                if (closure) stack.pop_back();  // pop the closure guard
+                for (int k = 0; k < extras + 1 + below; ++k) {
                     if (stack.top > 0) stack.pop_back();
                 }
                 if (fn) {
@@ -9596,7 +9378,7 @@ const proto::ProtoObject* executeBytecodeRange(
             }
         } break;
         case OP_BUILD_CLASS: {
-            if (stack.size() >= 4 && frame) {
+            if (stack.size() >= 4) {
                 // Robust detection: in modern bytecode, the function result of MAKE_FUNCTION
                 // might have been pushed with a NULL marker if it was meant to be called.
                 // But in BUILD_CLASS opcode (legacy path), we expect items directly.
@@ -9641,24 +9423,18 @@ const proto::ProtoObject* executeBytecodeRange(
                             const proto::ProtoString* callS = env ? env->getCallString() : protoPython::PythonEnvironment::getInternalString(ctx, "__call__");
                             const proto::ProtoString* codeS = env ? env->getCodeString() : protoPython::PythonEnvironment::getInternalString(ctx, "__code__");
                             const proto::ProtoObject* codeObj = body->getAttribute(ctx, codeS);
-                            // PG: propagate the body function's __closure__ to the
-                            // class namespace so LOAD_DEREF inside the class body
-                            // can walk the enclosing-scope cells.  Without this,
-                            // `class C: y = x` (with x defined in an enclosing
-                            // function) sees x as None.
-                            if (env && body) {
-                                const proto::ProtoObject* bodyClosure = body->getAttribute(ctx, env->getClosureString());
-                                if (bodyClosure && bodyClosure != PROTO_NONE) {
-                                    ns = const_cast<proto::ProtoObject*>(
-                                        ns->setAttribute(ctx, env->getClosureString(), bodyClosure));
-                                    *nsAnchor = ns;
-                                }
-                            }
+                            // The cells the class body closes over (its free
+                            // variables, and the ones it passes on to its
+                            // methods): the body function's own closure.
+                            const proto::ProtoObject* bodyClosure = (env && env->getClosureString())
+                                ? body->getAttribute(ctx, env->getClosureString()) : nullptr;
+                            const proto::ProtoList* closureCells = (bodyClosure && bodyClosure != PROTO_NONE)
+                                ? bodyClosure->asList(ctx) : nullptr;
                             if (codeObj && codeObj != PROTO_NONE) {
                                 if (diag_local) fprintf(stderr, "DEBUG OP_BUILD_CLASS: before body run ns=%p\n", (void*)ns);
                                 // The class body is a Python-level scope of its own.
                                 PythonEnvironment::pushScopeGlobals(PythonEnvironment::getCurrentGlobals());
-                                runCodeObject(ctx, codeObj, ns);
+                                runCodeObject(ctx, codeObj, ns, closureCells);
                                 PythonEnvironment::popScopeGlobals();
                                 if (env && env->hasPendingException()) {
                                     // Class body raised — let the dispatch loop

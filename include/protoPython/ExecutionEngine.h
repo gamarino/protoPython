@@ -182,9 +182,10 @@ constexpr int OP_SETUP_FINALLY = 177;
 constexpr int OP_POP_BLOCK = 178;
 /** Pop arg values from stack, join into one string, push. */
 constexpr int OP_BUILD_STRING = 179;
-/** Load a variable from an enclosing scope (closure). */
+/** Cell variables and free variables (Compiler.h, "Closures").  arg is a
+ *  fast slot holding a cell: LOAD_DEREF pushes its contents (UnboundLocalError
+ *  or NameError when it is empty), STORE_DEREF sets them. */
 constexpr int OP_LOAD_DEREF = 180;
-/** Store a value into a variable in an enclosing scope (closure). */
 constexpr int OP_STORE_DEREF = 181;
 /** CALL_FUNCTION_EX: pop kwargs (if flag&1), then starargs, then callable. */
 constexpr int OP_CALL_FUNCTION_EX = 182;
@@ -313,6 +314,22 @@ constexpr int OP_LT_FAST_FAST_JF = 214;
  *  STORE_ATTR's own. */
 constexpr int OP_STORE_ATTR_GROUP = 215;
 constexpr int OP_STORE_ATTR_GROUP_END = 216;
+
+/** `del x` of a cell or free variable: empties the cell in slot arg. */
+constexpr int OP_DELETE_DEREF = 217;
+/** Push the cell in slot arg itself (to build a closure tuple); arg -1
+ *  pushes a fresh empty cell. */
+constexpr int OP_LOAD_CLOSURE = 218;
+/** Class body read of a free variable: the class namespace's binding when it
+ *  has one, else the contents of the cell in slot arg (CPython's
+ *  LOAD_FROM_DICT_OR_DEREF). */
+constexpr int OP_LOAD_CLASSDEREF = 219;
+/** OP_BUILD_FUNCTION: arg >> BUILD_FUNCTION_CELLS_SHIFT cells, the new
+ *  function's closure in co_freevars order, lie below the code object.  They
+ *  are kept in a ProtoList, never a ProtoTuple: protoCore interns tuples and
+ *  an interned tuple is perennial, so a tuple of a call's cells would keep
+ *  them for the life of the process. */
+constexpr int BUILD_FUNCTION_CELLS_SHIFT = 8;
 
 /**
  * @brief Executes a range of bytecode (one basic block). No per-instruction
