@@ -748,6 +748,20 @@ context's last automatic slot (CHANGELOG, "Fixed"). Tests:
 the fix), and `gc.host_stress`, whose workload now drains its queue in a nested
 function (2 of 10 runs failed before the fix).
 
+**Found next to it, and fixed (2026-10-10):**
+- *A frame-mapped function's operand stack.* Its context had no automatic
+  slots, so the interpreter ran the stack in a `std::vector` the collector
+  never scans.
+- *Native helpers allocated in an outer activation's context.*
+  `PythonEnvironment::getCurrentContext()` returned the thread-local context,
+  which calls do not update. What iteration and exception helpers allocated
+  inside a call joined the module context's young generation, a root until the
+  module reached its next safepoint. That was over-retention, not
+  use-after-free, but it is the same confusion about which context owns a cell.
+  `getCurrentContext()` now returns the thread's innermost live context.
+
+Both are in the CHANGELOG, "Fixed", with tests.
+
 **Found and filed, not fixed: protopyc-generated code** (issue #2). A compiled
 function runs in its caller's context, keeps every local in a C++ variable,
 and emits `ctx->safepoint()` at loop heads. That call submits the *caller's*

@@ -241,6 +241,46 @@ onwards. Commit hashes are given for reference.
     nested function, so `gc.host_stress` reaches the path: 2 of 10 runs failed
     before the fix, 0 of 10 after.
 
+- **What a function created through native helpers stayed live until it
+  returned.** Several helpers allocate in `PythonEnvironment::getCurrentContext()`:
+  iteration (`env->iter`, `next`), exception construction, the
+  pending-exception slot, and 43 sites with a `s_threadContext` fallback.
+  That function returned the thread-local context, which is set where code
+  starts running (module execution, a new thread) and which calls do not
+  update. So inside a call, the helpers allocated in an *outer* activation's
+  young generation, a GC root until that activation reaches its own safepoint.
+  For a program whose work runs in `main()`, that meant never. Under a fixed
+  2.5 M-cell limit, 120,000 calls of a function that loops over a list, calls
+  `iter`/`next`, raises and catches, or runs a comprehension each exhausted the
+  heap. It now returns the thread's innermost live protoCore context (the one
+  `chainParent` uses), and all of those complete with the live set flat at
+  170-390 K cells. Test: `protopy_helper_garbage_is_collected` (out of memory
+  on the previous build, 5.8 s now). This, more than the cycles below, is the
+  rising live set seen while the adaptive heap was being adopted.
+- **A frame-mapped function's operand stack was not a GC root.** A function
+  whose locals a nested scope captures is compiled frame-mapped with
+  `co_automatic_count` 0. Its context had no slots, so the interpreter kept its
+  operand stack in a `std::vector` the collector never scans, and could not
+  anchor its frame. The compiler now gives it the slots an optimized function
+  gets. Its locals still live on the frame, and the two readers that took
+  "has slots" for "locals are in slots" now test `CO_OPTIMIZED`
+  (`BUILD_FUNCTION`'s copy into the closure frame, and bare `dir()`).
+  The frame self-cycle below had hidden this by keeping every such frame
+  alive: with that cycle removed, `protopy_frame_survives_collection` failed
+  10 of 10 runs until this fix.
+- **`f_back` named the previous callee, not the caller.** A call made its frame
+  the thread's current frame and never restored the caller's, so
+  `[f(), f(), f()]` saw `f_back` names `main, f, f` (CPython: `main` three
+  times). It also chained consecutive frame-mapped calls into one chain of
+  mutable frames that protoCore releases one level per cycle. Test:
+  `protopy_frame_f_back_after_return`.
+- **Each function created added a permanent GC root.** `createUserFunction`
+  pinned the function's metadata cache for the life of the environment: one
+  root per comprehension, lambda or nested def executed, in a set the
+  collector scans inside every stop-the-world pause. The function already
+  holds the cache, and the cache references no cell. Test:
+  `MutableCycles.CreatingAFunctionAddsNoPermanentRoot` (203 roots for 200
+  functions before, 0 after).
 - **Comprehensions, lambdas and calls of closure-making functions were kept
   for ever.** Two edges closed cycles between mutable objects, which protoCore
   never collects (rule 13 in `docs/CONFORMANCE.md`), once per *execution*.
