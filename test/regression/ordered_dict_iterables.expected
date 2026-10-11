@@ -1,0 +1,14 @@
+od gen OrderedDict [(0, 0), (1, 2), (2, 4), (3, 6), (4, 8)]
+od iter OrderedDict [('a', 1), ('b', 2)]
+od zip OrderedDict [('a', 0), ('b', 1), ('c', 2)]
+od map OrderedDict [('b', 1), ('a', 2)]
+od list+kw OrderedDict [('x', 1), ('z', 3)]
+od enumerate OrderedDict [(0, 'x'), (1, 'y')]
+subclass update gen Sub [(0, 0), (1, -1), (2, -2)]
+dict update iter dict [(1, 2), (3, 4)]
+dict update mapping dict [('k1', 'K1'), ('k2', 'K2')]
+dict update proxy dict [('x', 1), ('y', 2)]
+dict update class dict ['a', 'b']
+TypeError for int
+TypeError for NoneType
+od update gen OrderedDict [('a', None), ('b', 0), ('c', None), ('d', 0)]

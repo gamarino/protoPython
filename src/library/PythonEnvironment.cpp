@@ -15790,15 +15790,22 @@ static const proto::ProtoObject* py_dict_update(
     const proto::ProtoList* keys = context->newList();
     const proto::ProtoSparseList* dict = context->newSparseList();
 
-    if (other && other != PROTO_NONE) {
-        // Accept __keys__ / __data__ whether they're own attributes or
-        // inherited.  A mappingproxy (e.g. `cls.__dict__`) doesn't store
-        // them directly but proxies them from the wrapped dict — the
-        // earlier hasOwnAttribute-only check missed those and forced the
-        // mapping proxy through the iterable / keys() path below.
-        const proto::ProtoObject* otherKeysObj = other->getAttribute(context, keysName);
+    // dict.update(None) is a TypeError, as in CPython (env->iter raises it).
+    if (other) {
+        // Copy `other`'s __keys__ / __data__ store directly only when
+        // `other` is a dict: the same two attributes hold a class's
+        // namespace and an instance's __dict__.  Probing them on anything
+        // else (and through the parent chain) copied the namespace of
+        // `object` for a generator, a zip or a MappingProxyType, and the
+        // instance __dict__ of a mapping class with keys() / __getitem__.
+        // Every other source takes the keys() or iteration path below.
+        const bool otherIsDict = env && env->getDictPrototype()
+            && other->isInstanceOf(context, env->getDictPrototype()) == PROTO_TRUE;
+        const proto::ProtoObject* otherKeysObj = otherIsDict && other->hasOwnAttribute(context, keysName) == PROTO_TRUE
+            ? other->getAttribute(context, keysName) : nullptr;
         const proto::ProtoList* otherKeys = otherKeysObj && otherKeysObj->asList(context) ? otherKeysObj->asList(context) : nullptr;
-        const proto::ProtoObject* otherDataObj = other->getAttribute(context, dataName);
+        const proto::ProtoObject* otherDataObj = otherIsDict && other->hasOwnAttribute(context, dataName) == PROTO_TRUE
+            ? other->getAttribute(context, dataName) : nullptr;
         const proto::ProtoSparseList* otherDict = otherDataObj && otherDataObj->asSparseList(context) ? otherDataObj->asSparseList(context) : nullptr;
 
         // Both __keys__ (key list) and __data__ (sparse list) are required:
@@ -15915,7 +15922,16 @@ static const proto::ProtoObject* py_dict_update(
             // list caused the loop above to be skipped entirely.
             const proto::ProtoObject* it = env->iter(other);
             if (!it) {
-                if (env->hasPendingException()) return nullptr;
+                if (!env->hasPendingException()) {
+                    std::string clsName = "object";
+                    if (const proto::ProtoObject* cls = env->getType(context, other)) {
+                        const proto::ProtoObject* nameAttr = cls->getAttribute(context, env->getNameString());
+                        if (nameAttr && nameAttr->isString(context))
+                            nameAttr->asString(context)->toUTF8String(context, clsName);
+                    }
+                    env->raiseTypeError(context, "'" + clsName + "' object is not iterable");
+                }
+                return nullptr;
             }
             if (it) {
                 PythonEnvironment::TransientPin pinIt(env, it);

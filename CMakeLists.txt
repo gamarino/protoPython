@@ -1415,6 +1415,23 @@ set_tests_properties(protopy_closure_semantics protopy_closure_semantics_gc PROP
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# Standard-library behaviour checked against CPython: each <name>.py prints its
+# results and <name>.expected is CPython 3.14's output for the same program.
+#   ordered_dict_iterables: dict.update / OrderedDict / dict subclasses fed by
+#     generators, iterators, zip, mappings with keys(), mappingproxy.
+set(PROTOPY_STDLIB_ORACLE_TESTS
+    ordered_dict_iterables)
+foreach(_t IN LISTS PROTOPY_STDLIB_ORACLE_TESTS)
+    add_test(NAME protopy_${_t}
+        COMMAND ${CMAKE_COMMAND} -DPROTOPY=$<TARGET_FILE:protopy>
+                -DSCRIPT=${CMAKE_SOURCE_DIR}/test/regression/${_t}.py
+                -DEXPECTED=${CMAKE_SOURCE_DIR}/test/regression/${_t}.expected
+                -P ${CMAKE_SOURCE_DIR}/test/regression/compare_output.cmake)
+    set_tests_properties(protopy_${_t} PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        TIMEOUT 120
+        LABELS "regression_gate")
+endforeach()
 # Defining a named nested function (plain, recursive, nonlocal, capturing in a
 # comprehension, returned) leaves nothing once the call returns: a loop of
 # such calls runs in a fixed 2.5 M-cell heap.  Closures held the defining
