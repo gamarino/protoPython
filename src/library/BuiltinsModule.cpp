@@ -1,4 +1,5 @@
 #include <protoPython/BuiltinsModule.h>
+#include <protoPython/CollectionsAbcModule.h>
 #include <protoPython/DiagUtils.h>
 #include <protoPython/Version.h>
 #include <protoPython/PythonEnvironment.h>
@@ -8259,6 +8260,10 @@ static bool py_issubclass_check_single(proto::ProtoContext* context, const proto
             if (res && res != PROTO_FALSE && res != PROTO_NONE) return true;
         }
     }
+
+    // Virtual subclasses of the native collections.abc ABCs (registered
+    // types and one-method subclass hooks).
+    if (protoPython::collections_abc::isVirtualSubclass(context, cls, base)) return true;
 
     return false;
 }

@@ -1419,8 +1419,11 @@ set_tests_properties(protopy_closure_semantics protopy_closure_semantics_gc PROP
 # results and <name>.expected is CPython 3.14's output for the same program.
 #   ordered_dict_iterables: dict.update / OrderedDict / dict subclasses fed by
 #     generators, iterators, zip, mappings with keys(), mappingproxy.
+#   abc_virtual_subclasses: isinstance / issubclass with collections.abc
+#     (registered built-in types, the ABC hierarchy, subclass hooks).
 set(PROTOPY_STDLIB_ORACLE_TESTS
-    ordered_dict_iterables)
+    ordered_dict_iterables
+    abc_virtual_subclasses)
 foreach(_t IN LISTS PROTOPY_STDLIB_ORACLE_TESTS)
     add_test(NAME protopy_${_t}
         COMMAND ${CMAKE_COMMAND} -DPROTOPY=$<TARGET_FILE:protopy>

@@ -1,0 +1,36 @@
+dict Mapping True
+dict MutableMapping True
+dict Sequence False
+str Mapping False
+list Sequence True
+list MutableSequence True
+tuple Sequence True
+tuple MutableSequence False
+str Sequence True
+bytes Sequence True
+range Sequence True
+set Set True
+set MutableSet True
+frozenset Set True
+frozenset MutableSet False
+list Iterable True
+int Iterable False
+list Hashable False
+int Hashable True
+dict Hashable False
+function Callable True
+int Callable False
+type Callable True
+list_iterator Iterator True
+list Iterator False
+dict Sized True
+dict Collection True
+list Reversible True
+dict Container True
+generator Generator True
+generator Iterator True
+issubclass True False True True
+subclass True True False True {'a': 1} 1 True
+before register False
+after register True True False
+hooks True False False

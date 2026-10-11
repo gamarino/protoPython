@@ -2,6 +2,7 @@
 #include <protoPython/DiagUtils.h>
 #include <protoPython/PythonEnvironment.h>
 #include <cstring>
+#include <string>
 #include <protoCore.h>
 
 namespace protoPython {
@@ -381,15 +382,196 @@ static const proto::ProtoObject* py_mutable_mapping_update(
     return env ? env->getNonePrototype() : PROTO_NONE;
 }
 
-/** Minimal register for ABC stub: just return the argument. */
+// ---------------------------------------------------------------------------
+// Virtual subclasses
+//
+// These ABCs are native stand-ins for Lib/_collections_abc.py, so the
+// register() calls that file makes (MutableMapping.register(dict), ...) and
+// ABCMeta's __subclasshook__ never ran: isinstance({}, Mapping) was False,
+// and collections.Counter, which tests isinstance(x, Mapping), counted the
+// keys of a mapping or of **kwargs instead of adding their values.
+//
+// Each ABC owns an `__abc_state__` object (mutable) holding its registry of
+// virtual subclasses.  isVirtualSubclass() is called by issubclass/isinstance
+// only after the ordinary MRO check failed, so the common path pays nothing.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+struct AbcSpec {
+    const char* name;
+    const char* bases[3];   // direct ABC bases (CPython's hierarchy)
+    const char* hook[6];    // methods of a one-trick __subclasshook__, if any
+};
+
+// The hierarchy and subclass hooks of Lib/_collections_abc.py.
+const AbcSpec kAbcSpecs[] = {
+    {"Hashable", {}, {"__hash__"}},
+    {"Awaitable", {}, {"__await__"}},
+    {"Coroutine", {"Awaitable"}, {"__await__", "send", "throw", "close"}},
+    {"AsyncIterable", {}, {"__aiter__"}},
+    {"AsyncIterator", {"AsyncIterable"}, {"__anext__", "__aiter__"}},
+    {"AsyncGenerator", {"AsyncIterator"}, {"__aiter__", "__anext__", "asend", "athrow", "aclose"}},
+    {"Iterable", {}, {"__iter__"}},
+    {"Iterator", {"Iterable"}, {"__iter__", "__next__"}},
+    {"Reversible", {"Iterable"}, {"__reversed__", "__iter__"}},
+    {"Generator", {"Iterator"}, {"__iter__", "__next__", "send", "throw", "close"}},
+    {"Sized", {}, {"__len__"}},
+    {"Container", {}, {"__contains__"}},
+    {"Collection", {"Sized", "Iterable", "Container"}, {"__len__", "__iter__", "__contains__"}},
+    {"Buffer", {}, {"__buffer__"}},
+    {"Callable", {}, {"__call__"}},
+    {"Set", {"Collection"}, {}},
+    {"MutableSet", {"Set"}, {}},
+    {"Mapping", {"Collection"}, {}},
+    {"MutableMapping", {"Mapping"}, {}},
+    {"MappingView", {"Sized"}, {}},
+    {"KeysView", {"MappingView", "Set"}, {}},
+    {"ItemsView", {"MappingView", "Set"}, {}},
+    {"ValuesView", {"MappingView", "Collection"}, {}},
+    {"Sequence", {"Reversible", "Collection"}, {}},
+    {"MutableSequence", {"Sequence"}, {}},
+    {"ByteString", {"Sequence"}, {}},
+};
+
+const AbcSpec* specByName(const std::string& name) {
+    for (const AbcSpec& s : kAbcSpecs)
+        if (name == s.name) return &s;
+    return nullptr;
+}
+
+const proto::ProtoString* stateKey(proto::ProtoContext* ctx) {
+    return PythonEnvironment::getInternedString(ctx, "__abc_state__");
+}
+const proto::ProtoString* registryKey(proto::ProtoContext* ctx) {
+    return PythonEnvironment::getInternedString(ctx, "registry");
+}
+const proto::ProtoString* abcNameKey(proto::ProtoContext* ctx) {
+    return PythonEnvironment::getInternedString(ctx, "name");
+}
+const proto::ProtoString* allKey(proto::ProtoContext* ctx) {
+    return PythonEnvironment::getInternedString(ctx, "all");
+}
+
+// The ABC's own state object, or nullptr for anything that is not one of
+// this module's ABCs (a subclass inherits the attribute; it does not own it).
+const proto::ProtoObject* ownState(proto::ProtoContext* ctx, const proto::ProtoObject* abc) {
+    if (!abc || abc == PROTO_NONE || !abc->isCell(ctx)) return nullptr;
+    if (abc->hasOwnAttribute(ctx, stateKey(ctx)) != PROTO_TRUE) return nullptr;
+    const proto::ProtoObject* st = abc->getOwnAttributeDirect(ctx, stateKey(ctx));
+    return st && st != PROTO_NONE ? st : nullptr;
+}
+
+// `cls` is `base` or has it in its __mro__.
+bool mroContains(proto::ProtoContext* ctx, PythonEnvironment* env,
+                 const proto::ProtoObject* cls, const proto::ProtoObject* base) {
+    if (cls == base) return true;
+    const proto::ProtoObject* mro = env->getAttribute(ctx, cls, env->getMroString(), false);
+    if (env->hasPendingException()) env->clearPendingException();
+    if (!mro || mro == PROTO_NONE) return false;
+    if (const proto::ProtoTuple* t = mro->asTuple(ctx)) {
+        for (proto::proto_ulong i = 0; i < t->getSize(ctx); ++i)
+            if (t->getAt(ctx, static_cast<int>(i)) == base) return true;
+    } else if (const proto::ProtoList* l = mro->asList(ctx)) {
+        for (proto::proto_ulong i = 0; i < l->getSize(ctx); ++i)
+            if (l->getAt(ctx, static_cast<int>(i)) == base) return true;
+    }
+    return false;
+}
+
+// CPython's _check_methods: every method is defined, and not None, in the
+// namespace of a class of cls.__mro__.  Reading the attribute off the class
+// would also find the metaclass's (type.__call__ made every class Callable).
+bool definesAll(proto::ProtoContext* ctx, PythonEnvironment* env,
+                const proto::ProtoObject* cls, const char* const* methods) {
+    if (!methods[0]) return false;
+    const proto::ProtoObject* mro = env->getAttribute(ctx, cls, env->getMroString(), false);
+    if (env->hasPendingException()) env->clearPendingException();
+    const proto::ProtoTuple* mroT = mro && mro != PROTO_NONE ? mro->asTuple(ctx) : nullptr;
+    const proto::ProtoList* mroL = mro && mro != PROTO_NONE && !mroT ? mro->asList(ctx) : nullptr;
+    const proto::proto_ulong n = mroT ? mroT->getSize(ctx) : (mroL ? mroL->getSize(ctx) : 0);
+    for (int i = 0; i < 6 && methods[i]; ++i) {
+        const proto::ProtoString* key = PythonEnvironment::getInternedString(ctx, methods[i]);
+        bool found = false;
+        // cls itself first: some native types (list_iterator) leave
+        // themselves out of their own __mro__.
+        for (proto::proto_ulong j = 0; j <= n && !found; ++j) {
+            const proto::ProtoObject* base = j == 0 ? cls
+                : (mroT ? mroT->getAt(ctx, static_cast<int>(j - 1)) : mroL->getAt(ctx, static_cast<int>(j - 1)));
+            if (!base || base == PROTO_NONE || base->hasOwnAttribute(ctx, key) != PROTO_TRUE) continue;
+            const proto::ProtoObject* m = base->getOwnAttributeDirect(ctx, key);
+            if (!m || m == PROTO_NONE) return false;
+            found = true;
+        }
+        if (!found) return false;
+    }
+    return true;
+}
+
+bool virtualSubclass(proto::ProtoContext* ctx, PythonEnvironment* env,
+                     const proto::ProtoObject* cls, const proto::ProtoObject* abc, int depth) {
+    if (depth > 16) return false;
+    const proto::ProtoObject* st = ownState(ctx, abc);
+    if (!st) return false;
+    if (mroContains(ctx, env, cls, abc)) return true;
+
+    const proto::ProtoObject* regObj = st->getAttribute(ctx, registryKey(ctx));
+    if (const proto::ProtoList* reg = regObj ? regObj->asList(ctx) : nullptr) {
+        for (proto::proto_ulong i = 0; i < reg->getSize(ctx); ++i)
+            if (mroContains(ctx, env, cls, reg->getAt(ctx, static_cast<int>(i)))) return true;
+    }
+
+    std::string name;
+    const proto::ProtoObject* nameObj = st->getAttribute(ctx, abcNameKey(ctx));
+    if (nameObj && nameObj->isString(ctx)) nameObj->asString(ctx)->toUTF8String(ctx, name);
+    const AbcSpec* spec = specByName(name);
+    if (!spec) return false;
+    if (definesAll(ctx, env, cls, spec->hook)) return true;
+
+    // A virtual subclass of a derived ABC is one of this ABC too
+    // (dict is registered with MutableMapping, and so is a Mapping).
+    const proto::ProtoObject* all = st->getAttribute(ctx, allKey(ctx));
+    if (!all || all == PROTO_NONE) return false;
+    for (const AbcSpec& sub : kAbcSpecs) {
+        for (const char* b : sub.bases) {
+            if (!b || name != b) continue;
+            const proto::ProtoObject* subAbc = all->getAttribute(ctx,
+                PythonEnvironment::getInternedString(ctx, sub.name));
+            if (subAbc && virtualSubclass(ctx, env, cls, subAbc, depth + 1)) return true;
+        }
+    }
+    return false;
+}
+
+void addToRegistry(proto::ProtoContext* ctx, const proto::ProtoObject* st,
+                   const proto::ProtoObject* subclass) {
+    const proto::ProtoObject* regObj = st->getAttribute(ctx, registryKey(ctx));
+    const proto::ProtoList* reg = regObj ? regObj->asList(ctx) : nullptr;
+    if (!reg) reg = ctx->newList();
+    reg = reg->appendLast(ctx, subclass);
+    const_cast<proto::ProtoObject*>(st)->setAttribute(ctx, registryKey(ctx), reg->asObject(ctx));
+}
+
+} // namespace
+
+/** ABC.register(subclass): record a virtual subclass; returns the subclass. */
 static const proto::ProtoObject* py_abc_register(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList*) {
-    if (posArgs->getSize(ctx) < 1) return self;
-    return posArgs->getAt(ctx, 0);
+    if (!posArgs || posArgs->getSize(ctx) < 1) return self;
+    // Called through the class (Mapping.register(x)) self is the ABC; as a
+    // plain function (register(Mapping, x)) the ABC comes first.
+    const proto::ProtoObject* abc = self;
+    const proto::ProtoObject* subclass = posArgs->getAt(ctx, 0);
+    if (!ownState(ctx, abc) && posArgs->getSize(ctx) >= 2 && ownState(ctx, subclass)) {
+        abc = subclass;
+        subclass = posArgs->getAt(ctx, 1);
+    }
+    if (const proto::ProtoObject* st = ownState(ctx, abc)) addToRegistry(ctx, st, subclass);
+    return subclass;
 }
 
 /** _check_methods(C, *methods) implementation for internal use by os.py/io.py etc. */
@@ -723,10 +905,21 @@ static const proto::ProtoObject* py_abc_get(
     return def;
 }
 
+bool isVirtualSubclass(proto::ProtoContext* ctx, const proto::ProtoObject* cls,
+                       const proto::ProtoObject* abc) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env || !cls || cls == PROTO_NONE) return false;
+    return virtualSubclass(ctx, env, cls, abc, 0);
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     auto createAbc = [&](const char* name) {
-        proto::ProtoObject* abc = const_cast<proto::ProtoObject*>(ctx->newObject(false));
+        // Mutable, so the object keeps one identity: an immutable one is
+        // replaced by every setAttribute, and the (abc, object) __mro__ built
+        // below named an earlier copy, which then appeared in the MRO of
+        // every class deriving from the ABC instead of the ABC itself.
+        proto::ProtoObject* abc = const_cast<proto::ProtoObject*>(ctx->newObject(true));
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
         
         const proto::ProtoString* s_call = env ? env->getCallString() : PythonEnvironment::getInternedString(ctx, "__call__");
@@ -737,7 +930,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         const proto::ProtoString* s_bases = env ? env->getBasesString() : PythonEnvironment::getInternedString(ctx, "__bases__");
 
         abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_call, ctx->fromMethod(nullptr, py_abc_call)));
-        abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_register, ctx->fromMethod(nullptr, py_abc_register)));
+        abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_register, ctx->fromMethod(abc, py_abc_register)));
         abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_name, PythonEnvironment::getInternedString(ctx, name)->asObject(ctx)));
         
         // Set __class__ to type Prototype
@@ -801,6 +994,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
             }
         }
 
+        // Registry of virtual subclasses (see isVirtualSubclass).
+        const proto::ProtoObject* state = ctx->newObject(true);
+        state = state->setAttribute(ctx, abcNameKey(ctx), PythonEnvironment::getInternedString(ctx, name)->asObject(ctx));
+        state = state->setAttribute(ctx, registryKey(ctx), ctx->newList()->asObject(ctx));
+        abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, stateKey(ctx), state));
+
         return abc;
     };
 
@@ -817,9 +1016,46 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         "Buffer"
     };
 
+    // `all` maps each ABC name to its object, for the walk over derived ABCs.
+    const proto::ProtoObject* all = ctx->newObject(true);
     for (const char* name : names) {
         const proto::ProtoString* sName = PythonEnvironment::getInternedString(ctx, name);
-        mod = mod->setAttribute(ctx, sName, createAbc(name));
+        const proto::ProtoObject* abc = createAbc(name);
+        mod = mod->setAttribute(ctx, sName, abc);
+        all = all->setAttribute(ctx, sName, abc);
+    }
+    for (const char* name : names) {
+        const proto::ProtoObject* abc = mod->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, name));
+        if (const proto::ProtoObject* st = ownState(ctx, abc))
+            const_cast<proto::ProtoObject*>(st)->setAttribute(ctx, allKey(ctx), all);
+    }
+    // The registrations Lib/_collections_abc.py makes for the built-in types.
+    if (env) {
+        auto reg = [&](const char* abcName, const proto::ProtoObject* type) {
+            if (!type || type == PROTO_NONE) return;
+            const proto::ProtoObject* abc = mod->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, abcName));
+            if (const proto::ProtoObject* st = ownState(ctx, abc)) addToRegistry(ctx, st, type);
+        };
+        auto builtin = [&](const char* typeName) -> const proto::ProtoObject* {
+            const proto::ProtoObject* b = env->getBuiltins();
+            return b ? b->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, typeName)) : nullptr;
+        };
+        reg("Mapping", env->getMappingProxyPrototype());
+        reg("MutableMapping", env->getDictPrototype());
+        reg("Sequence", env->getTuplePrototype());
+        reg("Sequence", env->getStrPrototype());
+        reg("Sequence", env->getBytesPrototype());
+        reg("Sequence", builtin("range"));
+        reg("Sequence", builtin("memoryview"));
+        reg("MutableSequence", env->getListPrototype());
+        reg("MutableSequence", builtin("bytearray"));
+        reg("ByteString", env->getBytesPrototype());
+        reg("ByteString", builtin("bytearray"));
+        reg("Set", env->getFrozensetPrototype());
+        reg("MutableSet", env->getSetPrototype());
+        reg("Generator", env->getGeneratorPrototype());
+        reg("Coroutine", env->getCoroutinePrototype());
+        reg("AsyncGenerator", env->getAsyncGeneratorPrototype());
     }
 
     const proto::ProtoObject* checkMethodsFunc = ctx->fromMethod(nullptr, py_check_methods);
