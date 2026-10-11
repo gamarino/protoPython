@@ -1660,10 +1660,14 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
         const proto::ProtoObject* cacheObj = ctx->fromBuffer(
             totalBytes, buf, true);
         if (cacheObj) {
-            // P3 D12: pin the per-function metadata cache in the environment's
-            // ProtoRootSet rather than in ProtoSpace::moduleRoots, which the
-            // collector iterated inside the stop-the-world window.
-            env->pinForever(cacheObj);
+            // Not pinned: the function keeps the cache through this attribute,
+            // and the cache (a byte buffer) references no cell, so a pin kept
+            // nothing else alive.  It used to be pinned for the life of the
+            // environment, one root per function ever created (every
+            // comprehension and lambda executed), in a set the collector scans
+            // inside each stop-the-world pause.  The pointers inside the cache
+            // name the code object, its tuples and the globals, which the
+            // function's __code__ and __globals__ keep alive.
             fn = fn->setAttribute(ctx, env->getFnMetaCacheString(), cacheObj);
         }
     }
