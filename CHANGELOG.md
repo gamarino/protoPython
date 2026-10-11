@@ -108,22 +108,6 @@ onwards. Commit hashes are given for reference.
 
 ### Changed
 
-- **NOT MERGED -- waits for the maintainer.** Enabling the controller makes
-  protopy collect by default, and a collection exposes a defect: a nested
-  function intermittently loses the variables of its enclosing function
-  (`NameError: name 'target' is not defined`). `protopy_list_rewrite_threads`
-  failed on macOS (cross-platform run 38102529735) and fails locally in about
-  1 run of 5. Reproduction, single-threaded (`def race(n): target = [0];
-  def worker(): ... len(target) ...; return worker()`, called 5 times with
-  n = 20000) under `PROTOCORE_HEAP_LIMIT_CELLS=1500000`: it fails on the
-  previous build too (so the defect predates the adoption); with the same
-  protopy binary it fails 0 of 24 runs against protoCore 2.11.0 and 4-9 of 24
-  against 2.12.0, 2.13.0, 2.14.0, 2.14.1 and 2.14.2, and 0 of 24 against
-  2.14.2 with `PROTOCORE_GC_PACING=0` (sweep cursors and helper threads make
-  no difference). So cycles started by 2.12.0's pacing hit it; whether the
-  fault is protoCore's (a paced cycle breaking an invariant) or protoPython's
-  (a closure-frame rooting gap that only paced cycles reach) is not
-  established.
 - **protopy runs protoCore's adaptive heap controller by default.**
   `PythonEnvironment::getProcessSpace` calls `ProtoSpace::enableAdaptiveHeap`
   once, when the process space is created (guarded by
@@ -158,13 +142,22 @@ onwards. Commit hashes are given for reference.
     (`PROTOCORE_ADAPTIVE_HEAP_START=budget` was tried first and timed out on
     the Windows floor job, cross-platform run 38101731627: 2.11.0 does not
     know it).
-  - Observed while writing the bounded-memory test, not yet explained: under
-    the controller's trace, the live set of a loop that builds lists with a
-    list comprehension, or chains of class instances, rises from cycle to
-    cycle (a comprehension inside a function: 21.9 M cells at the 25th
-    cycle of 40000 rounds; 50-instance chains: 0.33 M to 1.9 M cells over
-    20000 rounds), whereas the same loop with explicit `append` stays flat
-    (0.33 M to 0.35 M cells).
+  - Held until the closure defect it exposed was fixed (see "Fixed": a
+    running call's frame was not rooted across the interpreter's own
+    safepoint). With the controller every program collects, so it was hit in
+    the default configuration: `protopy_list_rewrite_threads` failed on macOS
+    (cross-platform run 38102529735) and locally about 1 run in 5.
+  - protopyc-compiled modules collect too now, and code that protopyc
+    generates is not safe against collection: a module with an allocating
+    loop can crash in its caller (issue #2, open). Before the controller this
+    happened only under `PROTOCORE_HEAP_LIMIT_CELLS`.
+  - The rising live set seen under the controller's trace is explained:
+    - Comprehensions: one permanent mutable cycle per execution, fixed (see
+      "Fixed"). A comprehension in a 20,000-iteration loop now stays at
+      158-190 K live cells; it reached 1.27 M before the fix.
+    - Chains of class instances: bounded, not a leak. Acyclic chains of
+      mutables drain one level per cycle, so 50-deep chains rise to about
+      1.9 M cells within 30 cycles and stay there for the next 400.
   - Measured (DEV12 notebook, synthetic; before and after builds of the same
     tree against protoCore 2.14.2; medians of 3, interleaved; wall s / peak
     RSS MB): `list_append_loop` 0.55 / 393 -> 0.39 / 146; `binary_trees` (9)
@@ -178,6 +171,13 @@ onwards. Commit hashes are given for reference.
     run no cycle and are within -2 to +6 % (run-to-run noise). Tuples are
     interned and never collected, as documented. The test uses the flat
     shape.
+
+- **CI builds protoCore 2.14.3** (tag `v2.14.3`, commit `0923b3e4`) in the
+  Linux job and the macOS and Windows jobs, instead of 2.14.2.  2.14.3 changes
+  no library code: `check_static.py` no longer tells a runtime that calls
+  `enableAdaptiveHeap` that it never sets a heap limit, and
+  `ProtoContext::safepoint()` states the rooting obligation whose violation was
+  the closure defect above. The Windows floor job stays on 2.11.0.
 
 - **CI builds protoCore 2.14.2** (tag `v2.14.2`, commit `17bc118e`) in the
   Linux job and the macOS and Windows jobs, instead of 2.14.1: the collector

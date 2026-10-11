@@ -49,12 +49,12 @@ concurrency:
 
 env:
   PROTOCORE_REPO: numaes/protoCore
-  # protoCore 2.14.2 (tag v2.14.2, commit 17bc118e), SOVERSION 3: the latest
+  # protoCore 2.14.3 (tag v2.14.3, commit 0923b3e4), SOVERSION 3: the latest
   # release. protopy enables its adaptive heap controller (README, "Memory").
   # The minimum CMakeLists.txt declares (PROTOCORE_MIN_VERSION, 2.11.0) is
   # tested by one job only, the floor job in cross-platform.yml (Windows).
   # Bump this deliberately.
-  PROTOCORE_REF: ${{ github.event_name == 'schedule' && 'master' || '17bc118e3af265b84fe322901c9e6b9a448a82d3' }}
+  PROTOCORE_REF: ${{ github.event_name == 'schedule' && 'master' || '0923b3e4ac0f816128937be5aaffb5a069e4c55e' }}
   # The clock-dependent cases in this combined suite.  protoPython's own:
   #   protopy_dict_key_hash          assert elapsed < 20.0 for 20000 dict inserts
   #                                  (test/regression/dict_key_hash.py:124)

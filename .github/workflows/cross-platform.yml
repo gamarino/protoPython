@@ -5,8 +5,8 @@ name: Cross-platform
 # run locally, against an INSTALLED protoCore package -- the supported mode on
 # Windows -- with GoogleTest fetched so the C++ suites run too. protoCore refs,
 # exactly:
-#   * macOS and the first Windows job build protoCore 2.14.2 (tag v2.14.2, commit
-#     17bc118e), as ci.yml does on Linux;
+#   * macOS and the first Windows job build protoCore 2.14.3 (tag v2.14.3, commit
+#     0923b3e4), as ci.yml does on Linux;
 #   * the "floor" Windows job builds protoCore 2.11.0 (tag v2.11.0, commit
 #     69b56afe), PROTOCORE_MIN_VERSION in CMakeLists.txt, the oldest release
 #     protoPython accepts (ProtoObject::setAttributes).  It is the repository's
@@ -41,12 +41,12 @@ jobs:
         include:
           - name: macOS (Apple clang, arm64)
             os: macos-14
-            # protoCore 2.14.2 (tag v2.14.2)
-            protocore_ref: 17bc118e3af265b84fe322901c9e6b9a448a82d3
+            # protoCore 2.14.3 (tag v2.14.3)
+            protocore_ref: 0923b3e4ac0f816128937be5aaffb5a069e4c55e
           - name: Windows (MSVC, x64)
             os: windows-2022
-            # protoCore 2.14.2 (tag v2.14.2)
-            protocore_ref: 17bc118e3af265b84fe322901c9e6b9a448a82d3
+            # protoCore 2.14.3 (tag v2.14.3)
+            protocore_ref: 0923b3e4ac0f816128937be5aaffb5a069e4c55e
           - name: Windows (MSVC, x64), protoCore 2.11.0 floor
             os: windows-2022
             # THE FLOOR JOB, the only one: protoCore 2.11.0 (tag v2.11.0),
