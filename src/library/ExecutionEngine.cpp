@@ -5971,60 +5971,11 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoString* enterS = env ? env->getEnterString() : PythonEnvironment::getInternedString(ctx, "__enter__");
             const proto::ProtoString* exitS = env ? env->getExitString() : PythonEnvironment::getInternedString(ctx, "__exit__");
 
-            // STRUCT-204: CPython looks up `__enter__` / `__exit__` via
-            // type-only lookup (TPSLOT_LOOKUP), bypassing
-            // __getattribute__.  Using env->getAttribute on the instance
-            // triggers the custom __getattribute__ hook which fails the
-            // Checker pattern in test_special_method_lookup.  Walk
-            // type(manager).__mro__ for own attrs of `__exit__` /
-            // `__enter__` instead.
+            // STRUCT-204: `__enter__` / `__exit__` are looked up on the type
+            // only, as CPython does (PythonEnvironment::lookupBoundSpecialMethod).
             auto lookupTypeOnly = [&](const proto::ProtoObject* obj, const proto::ProtoString* name) -> const proto::ProtoObject* {
                 if (!env) return obj ? obj->getAttribute(ctx, name) : nullptr;
-                const proto::ProtoObject* cls = env->getType(ctx, obj);
-                if (!cls || cls == PROTO_NONE) return nullptr;
-                const proto::ProtoObject* mroAttr = env->getAttribute(ctx, cls, env->getMroString(), false);
-                const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
-                if (!mroT) return env->getAttribute(ctx, cls, name, false);
-                for (proto::proto_ulong i = 0; i < mroT->getSize(ctx); ++i) {
-                    const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(i));
-                    if (!base || base == PROTO_NONE) continue;
-                    if (base->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
-                        const proto::ProtoObject* v = base->getOwnAttributeDirect(ctx, name);
-                        if (v && v != PROTO_NONE) {
-                            // If v is a descriptor, invoke __get__(obj, cls).
-                            const proto::ProtoString* getDS = PythonEnvironment::getInternedString(ctx, "__get__");
-                            const proto::ProtoObject* vType = env->getType(ctx, v);
-                            const proto::ProtoObject* getM = vType ? env->getAttribute(ctx, vType, getDS, false) : nullptr;
-                            if (getM && getM != PROTO_NONE) {
-                                if (getM->asMethod(ctx)) {
-                                    const proto::ProtoList* args = ctx->newList()
-                                        ->appendLast(ctx, obj)->appendLast(ctx, cls);
-                                    return getM->asMethod(ctx)(ctx,
-                                        const_cast<proto::ProtoObject*>(v), nullptr, args, nullptr);
-                                }
-                                // STRUCT-223: handle Python __get__ as well
-                                // (SpecialDescr pattern).  Pass descriptor as
-                                // implicit self plus (obj, cls).
-                                return env->callObject(getM, {v, obj, cls});
-                            }
-                            return v;
-                        }
-                    }
-                }
-                // Native objects such as `_thread` locks keep their special
-                // methods on a protoCore prototype that is not part of the
-                // Python MRO, so the walk above cannot see them and `with
-                // lock:` ran the body without __enter__/__exit__. Fall back
-                // to the prototype chain for native methods, still ignoring
-                // instance-own attributes as CPython's type-only lookup does.
-                if (obj && obj->hasOwnAttribute(ctx, name) != PROTO_TRUE) {
-                    const proto::ProtoObject* v = obj->getAttribute(ctx, name);
-                    if (v && v != PROTO_NONE && v->isMethod(ctx)) {
-                        if (v->asMethodSelf(ctx) != nullptr) return v;
-                        return ctx->fromMethod(const_cast<proto::ProtoObject*>(obj), v->asMethod(ctx));
-                    }
-                }
-                return nullptr;
+                return env->lookupBoundSpecialMethod(ctx, obj, name);
             };
             const proto::ProtoObject* exitM = lookupTypeOnly(manager, exitS);
             stack.push_back(exitM ? exitM : (const proto::ProtoObject*)PROTO_NONE);

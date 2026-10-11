@@ -336,6 +336,15 @@ public:
 
     bool isActuallyAClass(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
 
+    /** A special method (`__enter__`, `__exit__`, ...) of `obj`, looked up
+     *  on its type only, as CPython's special-method lookup does: the MRO of
+     *  type(obj), with a descriptor's __get__(obj, type) applied, then the
+     *  native methods of obj's prototype chain that are not obj's own
+     *  attributes. nullptr when there is none. Used by the interpreter's
+     *  `with` statement and by code protopyc generates. */
+    const proto::ProtoObject* lookupBoundSpecialMethod(proto::ProtoContext* ctx, const proto::ProtoObject* obj,
+                                                       const proto::ProtoString* name);
+
     /** True when `value`, found under `name` in namespace `ns`, is what every
      *  module inherits as an object (its __class__, or a method of the module
      *  prototype such as keys or __init__) rather than a global name. */
@@ -836,6 +845,14 @@ public:
      */
     static const proto::ProtoObject* getScopeModuleName(proto::proto_ulong depth);
     
+    /** The address of the current thread's pending-exception flag, the
+     *  value hasPendingException() reads. It stays valid while the thread
+     *  runs, so code protopyc generates reads it once per call and then
+     *  tests the flag after each operation without a thread-local lookup
+     *  (a cross-library thread_local access costs a __tls_get_addr call, and
+     *  on Windows needs an exported function). */
+    static const bool* pendingExceptionFlagAddress();
+
     // Windows: thread_local data cannot be imported from a DLL, so outside
     // protoPython.dll (protopy, tests, extension modules) the inline accessors
     // below call these exported functions instead of reading the variables.
