@@ -30,9 +30,10 @@ namespace io {
 // ----- Read-mode files ----------------------------------------------------
 //
 // open() in "r" or "rb" reads the whole file when it is opened and keeps no
-// descriptor: protoPython has no reference counts, and protoCore collects only
-// under a heap limit, so a descriptor of a file read and never closed
-// (`open(p).read()`) would stay open until the process exits. The object reads
+// descriptor: protoPython has no reference counts, and a collection cycle starts
+// only under heap pressure (protoCore's adaptive heap controller, enabled on the
+// process space), so a descriptor of a file read and never closed
+// (`open(p).read()`) could stay open until the process exits. The object reads
 // from this buffer and supports seek/tell over it. In text mode the buffer
 // holds the decoded UTF-8 text after newline translation, and the tell()
 // cookie is a byte offset into it: CPython's cookie is the byte offset in the
@@ -134,9 +135,9 @@ static const proto::ProtoObject* io_read_result(proto::ProtoContext* context, co
 // it at once, and an object that is never closed releases it when the
 // collector reclaims it (the FdOwner finalizer below). CPython closes such a
 // file as soon as its last reference goes; protoPython has no reference
-// counts, so an unclosed file stays open until it is collected -- and
-// protoCore collects only under a configured heap limit
-// (PROTOCORE_HEAP_LIMIT_CELLS) -- or until the process exits.
+// counts, so an unclosed file stays open until it is collected -- and a
+// collection cycle starts only under heap pressure (protoCore's adaptive heap
+// controller, or PROTOCORE_HEAP_LIMIT_CELLS) -- or until the process exits.
 //
 // Reads go through a read-ahead buffer owned with the descriptor (readline
 // reads a block and keeps the rest); writes are unbuffered. Text mode is

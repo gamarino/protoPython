@@ -108,6 +108,46 @@ onwards. Commit hashes are given for reference.
 
 ### Changed
 
+- **protopy runs protoCore's adaptive heap controller by default.**
+  `PythonEnvironment::getProcessSpace` calls `ProtoSpace::enableAdaptiveHeap`
+  once, when the process space is created (guarded by
+  `PROTOCORE_HAS_ADAPTIVE_HEAP`; every protoCore from the 2.11.0 floor has
+  it). Before, protoPython set no heap limit, so protoCore never started a
+  collection by itself and the heap grew with every allocation (the
+  `adaptive_heap_garbage.py` loop of 20000 rounds: 5.6 GB peak RSS). Now the
+  heap budget is 75 % of the smaller of physical memory and the process
+  memory limit (cgroup on Linux, job object on Windows), a soft limit inside
+  it grows only while the program waits for the collector, and **memory is
+  not returned to the operating system**. `PROTOCORE_HEAP_LIMIT_CELLS` sets
+  the budget; `PROTOCORE_ADAPTIVE_HEAP=0` turns the controller off (the
+  budget becomes a fixed hard limit). README, "Memory". Embedders that create
+  their own `proto::ProtoSpace` are not affected.
+  - Tests: `adaptive_heap_on_by_default` (the controller's per-cycle trace
+    appears with no environment set), `adaptive_heap_off_by_env` (only
+    fixed-limit cycles with `PROTOCORE_ADAPTIVE_HEAP=0`) and
+    `adaptive_heap_bounded_memory` (a 1 M-cell budget, about 85 times that in
+    garbage, at least 10 cycles, peak RSS at most 160 MB; measured 73 MB),
+    driven by `test/regression/adaptive_heap_check.py`, which measures the
+    child's peak RSS on Linux, macOS and Windows. The first and third fail
+    against the previous build (no controller line; with the variable set,
+    fixed-limit cycles); the second passes there too, because
+    `PROTOCORE_HEAP_LIMIT_CELLS` alone already applied a fixed limit, so it
+    guards the switch, not the adoption.
+  - `test_attr_write_groups` set a 200 M-cell ceiling so that no collection
+    would run during its measurements; under the controller the soft limit
+    starts at 2 M cells, a cycle started, and its snapshot reader (a native
+    loop without a safepoint) held the stop-the-world forever (timeout). It
+    now also sets `PROTOCORE_ADAPTIVE_HEAP_START=budget`.
+  - Observed while writing the bounded-memory test, not yet explained: under
+    the controller's trace, the live set of a loop that builds lists with a
+    list comprehension, or chains of class instances, rises from cycle to
+    cycle (a comprehension inside a function: 21.9 M cells at the 25th
+    cycle of 40000 rounds; 50-instance chains: 0.33 M to 1.9 M cells over
+    20000 rounds), whereas the same loop with explicit `append` stays flat
+    (0.33 M to 0.35 M cells). Tuples are
+    interned and never collected, as documented. The test uses the flat
+    shape.
+
 - **CI builds protoCore 2.14.2** (tag `v2.14.2`, commit `17bc118e`) in the
   Linux job and the macOS and Windows jobs, instead of 2.14.1: the collector
   adjustments (the multi-cursor sweep engages only when it pays; the adaptive

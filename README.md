@@ -167,6 +167,31 @@ Exit status: `0` on success, `64` for a usage error, `65` when the script or mod
 cannot be resolved, `70` for an unhandled runtime failure, and `n` when the program
 raises `SystemExit(n)` (also with `-c`).
 
+### Memory
+
+`protopy` runs protoCore's adaptive heap controller (protoCore
+[docs/GarbageCollector.md](https://github.com/numaes/protoCore/blob/master/docs/GarbageCollector.md),
+"Adaptive heap controller"). The heap budget is **75 % of the smaller of
+physical memory and the process memory limit** (the cgroup limit on Linux, the
+job object's on Windows); within it, a soft limit starts at 128 MiB of cells and
+grows only while the program waits for the collector, so a program that
+allocates much more than it keeps runs in a bounded heap. **Memory is not
+returned to the operating system**: the resident size stays at the run's
+high-water mark. A program whose live data exceeds the budget stops with
+protoCore's out-of-memory message.
+
+| Environment variable | Effect |
+|---|---|
+| `PROTOCORE_HEAP_LIMIT_CELLS=<hard>` or `<soft>,<hard>` | Sets the budget (and the initial soft limit) in 64-byte cells; `1000000` is about 64 MiB. |
+| `PROTOCORE_ADAPTIVE_HEAP=0` | Turns the controller off: the budget becomes a fixed hard limit. |
+| `PROTOCORE_ADAPTIVE_HEAP_START=budget` | Starts the soft limit at the budget, for a run known to fit. |
+| `PROTOCORE_HEAP_TRACE=1` | Prints one line per collection cycle on standard error. |
+
+Before this default, protopy set no limit and protoCore never started a
+collection by itself, so the heap grew with every allocation. Embedders that
+create their own `proto::ProtoSpace` keep protoCore's default; the controller is
+enabled on the process space `PythonEnvironment` uses.
+
 ### Compile a module with protopyc
 
 ```bash

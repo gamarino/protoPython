@@ -131,9 +131,9 @@ The most fundamental difference from CPython is the **absence of the Global Inte
    results agree. A function without annotations has `__annotate__` None, as
    in CPython, and `functools.singledispatch`'s `@f.register` works.
 9. **Files opened for reading** (`open(path)`, `open(path, "rb")`) are read
-   whole when opened and keep no descriptor (protoCore collects only under a
-   heap limit, so an unclosed descriptor would otherwise stay open until
-   exit). `seek`, `tell`, `readable`, `writable` and `seekable` behave as in
+   whole when opened and keep no descriptor (a collection cycle starts only
+   under heap pressure, so an unclosed descriptor could otherwise stay open
+   until exit). `seek`, `tell`, `readable`, `writable` and `seekable` behave as in
    CPython; a text-mode `tell()` cookie is a byte offset into the decoded,
    newline-translated text (CPython's is the file offset plus decoder state;
    both are opaque). `fileno()` raises `OSError` (no descriptor), and changes

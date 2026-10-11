@@ -285,6 +285,44 @@ if(Python3_FOUND)
     set_tests_properties(conformity_runner_selftest PROPERTIES
         TIMEOUT 60
         LABELS "regression_gate")
+    # protoCore's adaptive heap controller is protopy's default memory policy
+    # (PythonEnvironment::getProcessSpace). The driver reads protoCore's
+    # per-cycle trace (PROTOCORE_HEAP_TRACE=1) from the child's standard error
+    # and measures its peak RSS. Python 3 drives the checks because it measures
+    # a child's peak RSS on Linux, macOS and Windows alike.
+    #
+    # On by default: no limit and no switch in the environment; 10000 rounds
+    # allocate about 40 M cells, well past the controller's initial 2 M-cell
+    # soft limit.
+    add_test(NAME adaptive_heap_on_by_default
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/test/regression/adaptive_heap_check.py
+            --expect on --sentinel "adaptive heap garbage done"
+            --unset PROTOCORE_ADAPTIVE_HEAP --unset PROTOCORE_HEAP_LIMIT_CELLS
+            --unset PROTOCORE_ADAPTIVE_HEAP_START
+            -- $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/adaptive_heap_garbage.py 10000)
+    # Off with PROTOCORE_ADAPTIVE_HEAP=0: the budget becomes a fixed hard limit.
+    add_test(NAME adaptive_heap_off_by_env
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/test/regression/adaptive_heap_check.py
+            --expect off --sentinel "adaptive heap garbage done"
+            --set PROTOCORE_ADAPTIVE_HEAP=0 --set PROTOCORE_HEAP_LIMIT_CELLS=1000000
+            --unset PROTOCORE_ADAPTIVE_HEAP_START
+            -- $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/adaptive_heap_garbage.py 10000)
+    # Bounded memory: a 1 M-cell budget (64 MiB of cells) and 20000 rounds of
+    # garbage, about 85 M cells (before the controller this run's peak RSS was
+    # 5.6 GB, 2026-10-10, Linux); at least 10 cycles, and the peak RSS bounded
+    # by the budget plus the interpreter's own footprint (measured: 73 MB).
+    add_test(NAME adaptive_heap_bounded_memory
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/test/regression/adaptive_heap_check.py
+            --expect on --sentinel "adaptive heap garbage done"
+            --set PROTOCORE_HEAP_LIMIT_CELLS=1000000
+            --unset PROTOCORE_ADAPTIVE_HEAP --unset PROTOCORE_ADAPTIVE_HEAP_START
+            --min-cycles 10 --max-rss-mb 160
+            -- $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/adaptive_heap_garbage.py 20000)
+    set_tests_properties(adaptive_heap_on_by_default adaptive_heap_off_by_env
+        adaptive_heap_bounded_memory PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        TIMEOUT 300
+        LABELS "regression_gate")
 endif()
 # protopy finds the standard library in the installed layout relative to its own
 # directory, is not misled by a ../lib/python3.14 next to the working directory,
@@ -1463,8 +1501,9 @@ set_tests_properties(protopy_hpy_module_basics PROPERTIES
 # 20000 imports and calls of math_hpy.add under a hard heap limit, so the
 # collector really runs while HPy handles are being created and recycled.
 #
-# PROTOCORE_HEAP_LIMIT_CELLS is the only way to make protoCore collect: with no
-# limit it never starts a cycle by itself, it just grows the heap. The limit
+# A small PROTOCORE_HEAP_LIMIT_CELLS makes protoCore collect early: protopy's
+# adaptive heap controller (README, "Memory") would otherwise start its first
+# cycle only at its 128 MiB initial soft limit, which this run never reaches. The limit
 # alone is not enough either — a cycle starts when a thread needs cells the
 # heap cannot supply below the ceiling, so a run that allocates less than the
 # heap it already holds never collects, whatever the ceiling is. At the

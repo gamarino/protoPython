@@ -810,8 +810,11 @@ words. Whether protoPython should keep one is a maintainer decision.
 ## Informational
 
 - **protoPython never calls `setHeapLimits` and installs no
-  `outOfMemoryCallback`**, so no collection cycle starts by itself and rule 8 was
-  unreachable before this case existed. That is also why the rule-8 result is a
+  `outOfMemoryCallback`**, so (until 2026-10-10) no collection cycle started by
+  itself and rule 8 was unreachable before this case existed. Since 2026-10-10
+  the process space runs protoCore's adaptive heap controller (README,
+  "Memory"), which starts cycles under heap pressure within a budget of 75 % of
+  memory; the statements below describe the situation before that change. That is also why the rule-8 result is a
   statement about a ceiling protoPython never sets for itself. The repository already knows this: the
   comment at `CMakeLists.txt:1049-1056` explains that `PROTOCORE_HEAP_LIMIT_CELLS`
   is the only way to make protoCore collect.

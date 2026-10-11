@@ -91,9 +91,10 @@ defect and adds a `test/regression/*.py` test registered in
 - **Files are closed by `close()`, `with`, or collection, not by losing their
   last reference.** CPython closes `open(p, "w").write(s)`'s file at the end
   of the statement (reference counting); protoPython has no reference counts,
-  so such a file keeps its descriptor until the collector reclaims it, and
-  protoCore collects only under a heap limit (`PROTOCORE_HEAP_LIMIT_CELLS`),
-  so by default until the process exits. Its data is on disk at once (writes
+  so such a file keeps its descriptor until the collector reclaims it, and a
+  collection cycle starts only under heap pressure (protoCore's adaptive heap
+  controller, protopy's default since 2026-10-10; README, "Memory"), so a
+  program that allocates little keeps it until the process exits. Its data is on disk at once (writes
   are unbuffered). On Linux, macOS and NTFS (where protoPython deletes and
   renames with POSIX semantics) the file and its directory can still be
   renamed or removed; on FAT, exFAT and network shares a file removed while

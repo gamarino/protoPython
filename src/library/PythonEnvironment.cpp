@@ -16750,8 +16750,27 @@ const proto::ProtoObject* PythonEnvironment::getStopIterationValue(proto::ProtoC
     return PROTO_NONE;
 }
 
+// The process space's memory policy: protoCore's adaptive heap controller
+// (protoCore/docs/GarbageCollector.md, "Adaptive heap controller"). The heap
+// budget H is 75 % of the smaller of physical memory and the process memory
+// limit (cgroup on Linux, job object on Windows); a soft limit inside it grows
+// only while the program waits for the collector. Memory is never returned to
+// the operating system. PROTOCORE_HEAP_LIMIT_CELLS=<hard> or <soft>,<hard> sets
+// the budget in cells, PROTOCORE_ADAPTIVE_HEAP=0 applies the budget as a fixed
+// hard limit instead. Without this call no collection cycle starts by itself
+// and the heap grows without bound.
+static void applyProcessHeapPolicy(proto::ProtoSpace* space) {
+#if defined(PROTOCORE_HAS_ADAPTIVE_HEAP)
+    space->enableAdaptiveHeap();
+#else
+    (void)space;  // protoCore < 2.10: no controller; the space's own default
+#endif
+}
+
 proto::ProtoSpace* PythonEnvironment::getProcessSpace() {
     static proto::ProtoSpace s_processSpace;
+    static const bool s_heapPolicyApplied = (applyProcessHeapPolicy(&s_processSpace), true);
+    (void)s_heapPolicyApplied;
     return &s_processSpace;
 }
 
