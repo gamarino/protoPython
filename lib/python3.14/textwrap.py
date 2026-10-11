@@ -170,7 +170,16 @@ class TextWrapper:
         otherwise.
         """
         if self.break_on_hyphens is True:
-            chunks = self.wordsep_re.split(text)
+            # protoPython: the regular-expression engine (std::regex) has no
+            # lookbehind, which wordsep_re needs, and reports it when the
+            # pattern is first used.  Split on whitespace only (as with
+            # break_on_hyphens=False) rather than fail: textwrap.wrap() and
+            # every argparse help message raised RuntimeError.  Long
+            # hyphenated words are then not broken after a hyphen.
+            try:
+                chunks = self.wordsep_re.split(text)
+            except RuntimeError:
+                chunks = self.wordsep_simple_re.split(text)
         else:
             chunks = self.wordsep_simple_re.split(text)
         chunks = [c for c in chunks if c]

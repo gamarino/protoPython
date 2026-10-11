@@ -1,0 +1,30 @@
+Namespace(x=['1', '2'], y='3')
+ValueError invalid option string 'z_bad': must start with a character '-+'
+usage: tool [-h] [--count COUNT] [--mode {fast,slow}] [--flag] [--quiet |
+            --verbose]
+            [files ...]
+
+Process some files.
+
+positional arguments:
+  files               input files to read
+
+options:
+  -h, --help          show this help message and exit
+  --count, -c COUNT   how many times to repeat each line
+  --mode {fast,slow}  the processing mode
+  --flag              a boolean switch
+  --quiet
+  --verbose
+
+See the manual for more.
+usage: tool [-h] [--count COUNT] [--mode {fast,slow}] [--flag] [--quiet |
+            --verbose]
+            [files ...]
+Namespace(files=['a'], count=5, mode='fast', flag=False, quiet=False, verbose=False)
+['The quick brown fox jumps over', 'the lazy dog The quick brown', 'fox jumps over the lazy dog', 'The quick brown fox jumps over', 'the lazy dog']
+one two
+three four
+five six
+Hello world, [...]
+'a\n  b\nc\n' '> x\n> y\n'

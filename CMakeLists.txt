@@ -1426,12 +1426,14 @@ set_tests_properties(protopy_closure_semantics protopy_closure_semantics_gc PROP
 #   regex_empty_matches: re with patterns that can match empty, classes with
 #     a literal '-', group spans, named groups, Match / Pattern types.
 #   argparse_nargs: argparse nargs variants (they rely on such patterns).
+#   argparse_help: several prefix characters, help and usage output, textwrap.
 set(PROTOPY_STDLIB_ORACLE_TESTS
     ordered_dict_iterables
     abc_virtual_subclasses
     counter_methods
     regex_empty_matches
-    argparse_nargs)
+    argparse_nargs
+    argparse_help)
 foreach(_t IN LISTS PROTOPY_STDLIB_ORACLE_TESTS)
     add_test(NAME protopy_${_t}
         COMMAND ${CMAKE_COMMAND} -DPROTOPY=$<TARGET_FILE:protopy>
