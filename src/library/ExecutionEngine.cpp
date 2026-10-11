@@ -365,6 +365,21 @@ struct FrameScope {
     bool linked = false;
 };
 
+/** Restores the thread's current frame when a call returns.  A call makes its
+ *  frame current for its body; without the restore the caller's next call
+ *  took the previous callee as its f_back, which was wrong and chained every
+ *  frame-mapped call into one chain of mutable frames that the collector
+ *  releases one level per cycle (test/regression/frame_f_back_after_return.py). */
+struct CurrentFrameRestore {
+    explicit CurrentFrameRestore(bool active = true)
+        : saved(active ? PythonEnvironment::getCurrentFrame() : nullptr), active(active) {}
+    ~CurrentFrameRestore() { if (active) PythonEnvironment::setCurrentFrame(saved); }
+    CurrentFrameRestore(const CurrentFrameRestore&) = delete;
+    CurrentFrameRestore& operator=(const CurrentFrameRestore&) = delete;
+    const proto::ProtoObject* saved;
+    bool active;
+};
+
 struct GlobalsScope {
     GlobalsScope(const proto::ProtoObject* globals) : oldGlobals(PythonEnvironment::getCurrentGlobals()) {
         // One entry per Python-level call, for sys._getframemodulename().
@@ -908,6 +923,7 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         return gen;
     }
 
+    CurrentFrameRestore frameRestore;
     if (env) {
         PythonEnvironment::setCurrentFrame(frame);
     }
@@ -1092,6 +1108,8 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
     // restores the V97-era hot-call path.
     bool skipFrame = env && (co_flags & CO_OPTIMIZED) && !isGenerator && cacheNoInnerFunctions
         && (!hasClosure || cacheNoLoadDeref);
+    // Only a call that builds a frame makes it current (below).
+    CurrentFrameRestore frameRestore(!skipFrame);
     proto::ProtoObject* frame = nullptr;
     if (!skipFrame) {
         frame = const_cast<proto::ProtoObject*>(calleeCtx->newObject(false));
