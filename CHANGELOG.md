@@ -108,6 +108,22 @@ onwards. Commit hashes are given for reference.
 
 ### Changed
 
+- **NOT MERGED -- waits for the maintainer.** Enabling the controller makes
+  protopy collect by default, and a collection exposes a defect: a nested
+  function intermittently loses the variables of its enclosing function
+  (`NameError: name 'target' is not defined`). `protopy_list_rewrite_threads`
+  failed on macOS (cross-platform run 38102529735) and fails locally in about
+  1 run of 5. Reproduction, single-threaded (`def race(n): target = [0];
+  def worker(): ... len(target) ...; return worker()`, called 5 times with
+  n = 20000) under `PROTOCORE_HEAP_LIMIT_CELLS=1500000`: it fails on the
+  previous build too (so the defect predates the adoption); with the same
+  protopy binary it fails 0 of 24 runs against protoCore 2.11.0 and 4-9 of 24
+  against 2.12.0, 2.13.0, 2.14.0, 2.14.1 and 2.14.2, and 0 of 24 against
+  2.14.2 with `PROTOCORE_GC_PACING=0` (sweep cursors and helper threads make
+  no difference). So cycles started by 2.12.0's pacing hit it; whether the
+  fault is protoCore's (a paced cycle breaking an invariant) or protoPython's
+  (a closure-frame rooting gap that only paced cycles reach) is not
+  established.
 - **protopy runs protoCore's adaptive heap controller by default.**
   `PythonEnvironment::getProcessSpace` calls `ProtoSpace::enableAdaptiveHeap`
   once, when the process space is created (guarded by
@@ -148,7 +164,18 @@ onwards. Commit hashes are given for reference.
     cycle (a comprehension inside a function: 21.9 M cells at the 25th
     cycle of 40000 rounds; 50-instance chains: 0.33 M to 1.9 M cells over
     20000 rounds), whereas the same loop with explicit `append` stays flat
-    (0.33 M to 0.35 M cells). Tuples are
+    (0.33 M to 0.35 M cells).
+  - Measured (DEV12 notebook, synthetic; before and after builds of the same
+    tree against protoCore 2.14.2; medians of 3, interleaved; wall s / peak
+    RSS MB): `list_append_loop` 0.55 / 393 -> 0.39 / 146; `binary_trees` (9)
+    3.78 / 1645 -> 3.65 / 553; `sieve` (50000) 1.29 / 951 -> 1.02 / 245;
+    `fannkuch` 6.08 / 3271 -> 3.96 / 136; `mandelbrot` 6.02 / 2071 ->
+    4.79 / 136; `adaptive_heap_garbage.py` 20000 rounds 6.80 / 5432 ->
+    8.96 / 209 (**+32 % wall**, the one regression above 10 %: a loop that
+    keeps nothing and that the old default never collected now pays for
+    about 80 cycles); `int_sum_loop`, `str_concat_loop`, `range_iterate`,
+    `attr_lookup`, `call_recursion`, `fib`, `nqueens` and `richards_lite`
+    run no cycle and are within -2 to +6 % (run-to-run noise). Tuples are
     interned and never collected, as documented. The test uses the flat
     shape.
 
