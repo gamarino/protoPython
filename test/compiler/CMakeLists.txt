@@ -28,6 +28,20 @@ add_test(NAME protopyc_emitted_cpp_portable
 set_tests_properties(protopyc_emitted_cpp_portable PROPERTIES
     TIMEOUT 300
     LABELS "regression_gate")
+# The same for generators and classes (the generator continuation, the
+# module-namespace scope of every compiled callable).
+add_test(NAME protopyc_emitted_cpp_generators
+    COMMAND ${CMAKE_COMMAND}
+            -DPROTOPYC=$<TARGET_FILE:protopyc>
+            -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/generators_classes_probe.py
+            -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/emitted_cpp_generators
+            -DCXX=${CMAKE_CXX_COMPILER}
+            "-DINCLUDE_DIRS=${PROJECT_SOURCE_DIR}/include;${PROTOPYTHON_PROTOCORE_INCLUDE_DIR}"
+            -DMSVC=${_emitted_msvc}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_emitted_cpp.cmake)
+set_tests_properties(protopyc_emitted_cpp_generators PROPERTIES
+    TIMEOUT 300
+    LABELS "regression_gate")
 
 # protopyc builds a module with a C++ compiler and make, through a bash script;
 # that path is Linux/macOS only, and so are these targets.
@@ -88,5 +102,17 @@ add_test(NAME protopyc_gc_rooting
             ${CMAKE_CURRENT_SOURCE_DIR}/gc_rooting_driver.py
             ${CMAKE_CURRENT_BINARY_DIR}/gc_rooting)
 set_tests_properties(protopyc_gc_rooting PROPERTIES
+    TIMEOUT 900
+    LABELS "regression_gate")
+
+# Generators and classes in a module built by protopyc behave as the
+# interpreter runs the same source, also while collections run.
+add_test(NAME protopyc_generators_classes
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/protopyc_generators_classes.sh
+            $<TARGET_FILE:protopyc> $<TARGET_FILE:protopy>
+            ${CMAKE_CURRENT_SOURCE_DIR}/generators_classes_probe.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/generators_classes_driver.py
+            ${CMAKE_CURRENT_BINARY_DIR}/generators_classes)
+set_tests_properties(protopyc_generators_classes PROPERTIES
     TIMEOUT 900
     LABELS "regression_gate")
