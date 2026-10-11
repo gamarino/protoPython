@@ -114,6 +114,7 @@ private:
     bool compileImport(ImportNode* n);
     bool compileImportFrom(ImportFromNode* n);
     bool compileTry(TryNode* n);
+    bool compileActiveExceptionClause(ASTNode* body, int baseStack, bool reraiseAfter);
     bool compileRaise(RaiseNode* n);
     bool compileWith(WithNode* n);
     bool compileFunctionDef(FunctionDefNode* n);
@@ -260,10 +261,17 @@ private:
     void applyPatches();
     std::vector<std::pair<int, int>> patches_;
     
-    enum class BlockType { TryFinally, With };
+    /** TryFinally: a SETUP_FINALLY block; leaving it pops the block and runs
+     *  cleanupNode (the finally body), or only pops it when cleanupNode is
+     *  null (the block that routes the body's exceptions to the except
+     *  clauses). With: a with statement. ExceptHandler: an except clause, or
+     *  a finally clause run for an exception, while the exception is active
+     *  (pushed by the engine when it caught it); leaving it pops the
+     *  clause's cleanup block and the active exception (POP_EXCEPT). */
+    enum class BlockType { TryFinally, With, ExceptHandler };
     struct BlockEnv {
         BlockType type;
-        ASTNode* cleanupNode; // ASTNode for finally body. Null for With.
+        ASTNode* cleanupNode; // ASTNode for finally body. Null for With and ExceptHandler.
         // Set true while unwindBlocks is mid-compile for this entry's
         // cleanup. A break/continue/return inside that cleanup body must
         // not re-enter the same finally — that would recurse forever in

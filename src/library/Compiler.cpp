@@ -274,9 +274,11 @@ static int stackEffect(int op, int arg) {
             return 0;
 
         // Exception/cleanup
-        case OP_POP_EXCEPT:
         case OP_WITH_CLEANUP:
             return -1;
+        // Pops the active exception, not an operand.
+        case OP_POP_EXCEPT:
+            return 0;
         case OP_POP_BLOCK: case OP_SETUP_FINALLY:
         case OP_RERAISE:
             return 0;
@@ -1491,11 +1493,13 @@ bool Compiler::compileAnnAssign(AnnAssignNode* n) {
             emit(OP_POP_BLOCK);
             emit(OP_JUMP_ABSOLUTE, 0);
             int doneSlot = bytecodeOffset() - 1;
-            // Handler: drop the 3 exception items from the stack.
+            // Handler: drop the 3 exception items from the stack and the
+            // exception the engine made active.
             addPatch(handlerSlot, bytecodeOffset());
             emit(OP_POP_TOP);
             emit(OP_POP_TOP);
             emit(OP_POP_TOP);
+            emit(OP_POP_EXCEPT);
             addPatch(doneSlot, bytecodeOffset());
         }
     }
@@ -2266,7 +2270,7 @@ bool Compiler::compileComprehension(const std::vector<Comprehension>& generators
         // Not StopAsyncIteration
         int reRaiseTarget = bytecodeOffset();
         addPatch(popJumpSlot + 1, reRaiseTarget);
-        emit(OP_RERAISE, 0);
+        emit(OP_RERAISE, 1);
 
         // Success branch
         int successTarget = bytecodeOffset();
@@ -2366,108 +2370,163 @@ bool Compiler::compileImportFrom(ImportFromNode* n) {
     return true;
 }
 
+// An except clause, or a finally clause run for an exception, while the
+// engine holds the exception it caught as the active one (sys.exc_info(), a
+// bare `raise`). The clause runs under a block of its own: an exception it
+// raises gets the active exception as __context__ (when the engine catches
+// it) and leaves with OP_RERAISE 2, which also pops the active exception, so
+// enclosing clauses (a finally) see it and the active-exception stack stays
+// balanced. return / break / continue leave through unwindBlocks, which pops
+// the block and the active exception (BlockType::ExceptHandler). Completing
+// normally pops both and continues after the clause, or, with
+// reraiseAfter (the finally clause of an exception in transit), re-raises the
+// active exception.
+bool Compiler::compileActiveExceptionClause(ASTNode* body, int baseStack, bool reraiseAfter) {
+    emit(OP_SETUP_FINALLY, 0);
+    int cleanupSlot = bytecodeOffset() - 1;
+    blockEnvStack_.push_back({BlockType::ExceptHandler, nullptr});
+    bool ok = !body || compileNode(body);
+    blockEnvStack_.pop_back();
+    if (!ok) return false;
+    emit(OP_POP_BLOCK);
+    int doneSlot = -1;
+    if (reraiseAfter) {
+        emit(OP_RERAISE, 1);
+    } else {
+        emit(OP_POP_EXCEPT);
+        emit(OP_JUMP_ABSOLUTE, 0);
+        doneSlot = bytecodeOffset() - 1;
+    }
+    // The clause raised: [tb, exc, exc] above baseStack.
+    addPatch(cleanupSlot, bytecodeOffset());
+    currentStack_ = baseStack + 3;
+    emit(OP_RERAISE, 2);
+    if (doneSlot != -1) addPatch(doneSlot, bytecodeOffset());
+    currentStack_ = baseStack;
+    return true;
+}
+
+// try / except / else / finally, laid out as CPython does:
+//
+//       SETUP_FINALLY  L_fexc        (finally clause only)
+//       SETUP_FINALLY  L_handlers    (except clauses only)
+//       <body>
+//       POP_BLOCK
+//       <else>
+//       JUMP           L_exit
+//   L_handlers:                      [tb, exc, exc]; exc is active
+//       <match> ... <clause>         (compileActiveExceptionClause)
+//       JUMP           L_exit
+//       ...
+//       RERAISE 1                    no clause matched
+//   L_exit:
+//       POP_BLOCK
+//       <finally>
+//       JUMP           L_end
+//   L_fexc:                          [tb, exc, exc]; exc is active
+//       <finally>                    (compileActiveExceptionClause, re-raises)
+//   L_end:
+//
+// The finally block covers the body, the except clauses and the else clause,
+// so an exception from any of them runs the finally clause; return / break /
+// continue from any of them run it through unwindBlocks (the TryFinally
+// entry is on blockEnvStack_ while they are compiled).
 bool Compiler::compileTry(TryNode* n) {
     if (!n || !n->body) return false;
-    
-    // Setup exception handler
-    emit(OP_SETUP_FINALLY, 0);
-    int setupFinallySlot = bytecodeOffset() - 1;
-    
-    blockEnvStack_.push_back({BlockType::TryFinally, n->finalbody.get()});
-    
-    if (!compileNode(n->body.get())) return false;
-    
-    blockEnvStack_.pop_back();
-    
-    // No exception: pop the block and jump over handlers
-    emit(OP_POP_BLOCK, 0);
-    emit(OP_JUMP_ABSOLUTE, 0); 
-    int jumpToPostHandlersSlot = bytecodeOffset() - 1;
-    
-    // Exception handler starts here
-    addPatch(setupFinallySlot, bytecodeOffset());
-    
-    std::vector<int> jumpToEndLocations;
-    if (!n->handlers.empty()) {
+    const bool hasHandlers = !n->handlers.empty();
+    ASTNode* finalBody = n->finalbody.get();
+    const int baseStack = currentStack_;
+
+    int fexcSlot = -1;
+    if (finalBody) {
+        emit(OP_SETUP_FINALLY, 0);
+        fexcSlot = bytecodeOffset() - 1;
+    }
+    auto pushFinally = [&]() {
+        if (finalBody) blockEnvStack_.push_back({BlockType::TryFinally, finalBody});
+    };
+    auto popFinally = [&]() {
+        if (finalBody) blockEnvStack_.pop_back();
+    };
+
+    pushFinally();
+    int handlersSlot = -1;
+    if (hasHandlers) {
+        emit(OP_SETUP_FINALLY, 0);
+        handlersSlot = bytecodeOffset() - 1;
+        blockEnvStack_.push_back({BlockType::TryFinally, nullptr});
+    }
+    bool ok = compileNode(n->body.get());
+    if (hasHandlers) blockEnvStack_.pop_back();
+    if (!ok) return false;
+    if (hasHandlers) emit(OP_POP_BLOCK);
+    if (n->orelse && !compileNode(n->orelse.get())) return false;
+    popFinally();
+    std::vector<int> exitSlots;
+    if (hasHandlers) {
+        // Over the except clauses (without them, L_exit is next).
+        emit(OP_JUMP_ABSOLUTE, 0);
+        exitSlots.push_back(bytecodeOffset() - 1);
+    }
+
+    if (hasHandlers) {
+        addPatch(handlersSlot, bytecodeOffset());
+        pushFinally();
         for (auto& h : n->handlers) {
+            currentStack_ = baseStack + 3;   // [tb, exc, exc]
             int nextHandlerSlot = -1;
             if (h.type) {
                 if (!compileNode(h.type.get())) return false;
                 emit(OP_EXCEPTION_MATCH);
-                nextHandlerSlot = bytecodeOffset();
                 emit(OP_POP_JUMP_IF_FALSE, 0);
+                nextHandlerSlot = bytecodeOffset() - 1;
             }
-
-            // Bind exception to name if present
-            // In ProtoPython execution engine, the top of the stack is now Exception (Type), Exception (Value), Traceback (None)
-            // Wait: since we changed OP_EXCEPTION_MATCH to pop ONLY `type`, `Type`, `Value`, `Traceback` are still on the stack.
-            // CPython OP_EXCEPTION_MATCH pops the matching type but NOT the exception itself. 
-            // We need to pop 3 items eventually, but first let's store it if needed.
-            // Top of stack is `exc` (type). Next is `exc` (value). Next is `traceback` (none).
             if (!h.name.empty()) {
-                emit(OP_DUP_TOP); // duplicates `exc` (type)
+                emit(OP_DUP_TOP);
                 if (!emitNameOp(h.name, TargetCtx::Store)) return false;
             }
-
-            // Pop the 3 exception items from the stack since we're handling it
-            emit(OP_POP_TOP, 0); // type
-            emit(OP_POP_TOP, 0); // value
-            emit(OP_POP_TOP, 0); // traceback
-            
-            if (!compileNode(h.body.get())) return false;
-            
-            emit(OP_POP_EXCEPT);
-
-            int endJumpSlot = bytecodeOffset();
-            emit(OP_JUMP_ABSOLUTE, 0); 
-            jumpToEndLocations.push_back(endJumpSlot);
-
-            if (nextHandlerSlot != -1) {
-                addPatch(nextHandlerSlot, bytecodeOffset());
-            }
+            emit(OP_POP_TOP, 0);
+            emit(OP_POP_TOP, 0);
+            emit(OP_POP_TOP, 0);
+            if (!compileActiveExceptionClause(h.body.get(), baseStack, false)) return false;
+            emit(OP_JUMP_ABSOLUTE, 0);
+            exitSlots.push_back(bytecodeOffset() - 1);
+            if (nextHandlerSlot != -1) addPatch(nextHandlerSlot, bytecodeOffset());
         }
-        // If we fall through all handlers, we still need to pop the exception info
-        // wait, OP_RAISE_VARARGS 0 re-raises the active exception. It doesn't use the stack!
-        // but the stack has 3 items left over! We need to pop them.
-        emit(OP_POP_TOP, 0);
-        emit(OP_POP_TOP, 0);
-        emit(OP_POP_TOP, 0);
-        emit(OP_RAISE_VARARGS, 0);
-    } else {
-        // PB5: try/finally without except handlers — pop the 3
-        // exception items, run the `finally` body so its side-effects
-        // happen even when an exception is propagating, then re-raise.
-        emit(OP_POP_TOP, 0);
-        emit(OP_POP_TOP, 0);
-        emit(OP_POP_TOP, 0);
-        if (n->finalbody) {
-            if (!compileNode(n->finalbody.get())) return false;
-        }
-        emit(OP_RAISE_VARARGS, 0);
+        popFinally();
+        // No clause matched: re-raise the exception (and stop treating it
+        // as handled).
+        currentStack_ = baseStack + 3;
+        emit(OP_RERAISE, 1);
+        currentStack_ = baseStack;
     }
 
-    // Successful try jumps here (to Else block)
-    addPatch(jumpToPostHandlersSlot, bytecodeOffset());
-
-    if (n->orelse) {
-        if (!compileNode(n->orelse.get())) return false;
+    for (int slot : exitSlots) addPatch(slot, bytecodeOffset());
+    if (finalBody) {
+        emit(OP_POP_BLOCK);
+        if (!compileNode(finalBody)) return false;
+        emit(OP_JUMP_ABSOLUTE, 0);
+        int endSlot = bytecodeOffset() - 1;
+        addPatch(fexcSlot, bytecodeOffset());
+        currentStack_ = baseStack + 3;
+        emit(OP_POP_TOP, 0);
+        emit(OP_POP_TOP, 0);
+        emit(OP_POP_TOP, 0);
+        if (!compileActiveExceptionClause(finalBody, baseStack, true)) return false;
+        addPatch(endSlot, bytecodeOffset());
     }
-
-    // Handled exceptions (from except blocks) jump here (after Else block)
-    int postElseLabel = bytecodeOffset();
-    for (int locSlot : jumpToEndLocations) {
-        addPatch(locSlot, postElseLabel);
-    }
-
-    if (n->finalbody) {
-        if (!compileNode(n->finalbody.get())) return false;
-    }
+    currentStack_ = baseStack;
     return true;
 }
 
 bool Compiler::compileRaise(RaiseNode* n) {
     if (n->exc) {
         if (!compileNode(n->exc.get())) return false;
+        if (n->cause) {
+            if (!compileNode(n->cause.get())) return false;
+            emit(OP_RAISE_VARARGS, 2);
+            return true;
+        }
         emit(OP_RAISE_VARARGS, 1);
     } else {
         emit(OP_RAISE_VARARGS, 0); // re-raise
@@ -2513,17 +2572,30 @@ bool Compiler::compileWithItems(const std::vector<WithItem>& items, size_t index
     emit(OP_JUMP_ABSOLUTE, 0); // Jump over cleanup
     int jumpOverCleanupSlot = bytecodeOffset() - 1;
     
-    // Cleanup/Exception exit handler
+    // Exception exit: [..., __exit__, exc]; the engine made exc the active
+    // exception. __exit__ runs under a block of its own, so an exception it
+    // raises gets exc as __context__ and leaves with exc no longer active
+    // (OP_RERAISE 2). A true result suppresses exc (POP_EXCEPT); otherwise
+    // it is re-raised (OP_RERAISE 1).
     int cleanupLabel = bytecodeOffset();
     addPatch(setupSlot, cleanupLabel);
+    const int withBase = currentStack_;
+    emit(OP_SETUP_FINALLY, 0);
+    int exitRaisedSlot = bytecodeOffset() - 1;
     emit(OP_WITH_CLEANUP);
+    emit(OP_POP_BLOCK);
     emit(OP_POP_JUMP_IF_TRUE, 0); // if suppressed, jump to done
     int suppressedJumpSlot = bytecodeOffset() - 1;
-    emit(OP_RAISE_VARARGS, 0);
-    
+    emit(OP_RERAISE, 1);
+    addPatch(exitRaisedSlot, bytecodeOffset());
+    currentStack_ = withBase + 3;
+    emit(OP_RERAISE, 2);
+    addPatch(suppressedJumpSlot, bytecodeOffset());
+    currentStack_ = withBase;
+    emit(OP_POP_EXCEPT);
+
     int postWithLabel = bytecodeOffset();
     addPatch(jumpOverCleanupSlot, postWithLabel);
-    addPatch(suppressedJumpSlot, postWithLabel);
     
     return true;
 }
@@ -4631,6 +4703,7 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
         emit(OP_POP_TOP);
         emit(OP_POP_TOP);
         emit(OP_POP_TOP);
+        emit(OP_POP_EXCEPT);
         emit(OP_BUILD_MAP, 0);
         addPatch(doneSlot, bytecodeOffset());
         make_fn_flags |= 0x04;
@@ -5242,13 +5315,15 @@ bool Compiler::compileAsyncWith(AsyncWithNode* n) {
     // [..., aexit_result]
 
     // If aexit_result is truthy, suppress (jump to after_handler);
-    // otherwise re-raise the pending exception via RAISE_VARARGS 0.
+    // otherwise re-raise the exception (OP_RERAISE 1 also stops treating it
+    // as the active exception, as POP_EXCEPT does when it is suppressed).
     emit(OP_POP_JUMP_IF_TRUE, 0);
     int suppressJumpArg = bytecodeOffset() - 1;
-    emit(OP_RAISE_VARARGS, 0);
+    emit(OP_RERAISE, 1);
 
     int suppressTarget = bytecodeOffset();
     addPatch(suppressJumpArg, suppressTarget);
+    emit(OP_POP_EXCEPT);
 
     int endTarget = bytecodeOffset();
     addPatch(endJumpArg, endTarget);
@@ -5669,6 +5744,12 @@ bool Compiler::unwindBlocks(bool isLoopExit, bool hasValueOnStack) {
                 blockEnvStack_[idx].unwinding = false;
                 if (!ok) return false;
             }
+        } else if (type == BlockType::ExceptHandler) {
+            // Leaving an except clause (or a finally clause run for an
+            // exception): drop its cleanup block and the exception it made
+            // active. Neither touches the operand stack.
+            emit(OP_POP_BLOCK);
+            emit(OP_POP_EXCEPT);
         } else if (type == BlockType::With) {
             // A loop opened inside this with-block still owns an iterator on
             // the operand stack, sitting above __exit__:

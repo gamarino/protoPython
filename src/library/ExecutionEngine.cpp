@@ -4183,6 +4183,118 @@ static int updateContextLocation(proto::ProtoContext* ctx, PythonEnvironment* en
 // per-thread current code object when its co_code is `bytecode`, else the
 // frame's f_code when that matches. nullptr when neither does (bytecode run
 // without a code object, e.g. by unit tests).
+// The exception paths below stay out of executeBytecodeRange's dispatch loop:
+// inlined there, they cost the loop about 15% more cycles on a call-heavy
+// benchmark with the same instruction count (code layout).
+#if defined(_MSC_VER)
+#define PROTOPY_EXC_NOINLINE __declspec(noinline)
+#else
+#define PROTOPY_EXC_NOINLINE __attribute__((noinline))
+#endif
+
+// Exception chaining (PEP 3134): `exc` was raised while `context` was being
+// handled, so `exc.__context__` becomes `context`, as CPython's
+// _PyErr_SetObject does. A cycle through `exc` in context's own chain is cut
+// first, so the chain stays finite.
+PROTOPY_EXC_NOINLINE static void setExceptionContext(proto::ProtoContext* ctx, const proto::ProtoObject* exc,
+                                const proto::ProtoObject* context) {
+    if (!exc || !context || context == PROTO_NONE || context == exc) return;
+    if (isEmbeddedValue(ctx, exc) || isEmbeddedValue(ctx, context)) return;
+    const proto::ProtoString* contextS = PythonEnvironment::getInternedString(ctx, "__context__");
+    const proto::ProtoObject* o = context;
+    for (int guard = 0; guard < 10000 && o && o != PROTO_NONE && !isEmbeddedValue(ctx, o); ++guard) {
+        const proto::ProtoObject* next = o->getAttribute(ctx, contextS);
+        if (next == exc) {
+            o->setAttribute(ctx, contextS, PROTO_NONE);
+            break;
+        }
+        o = next;
+    }
+    exc->setAttribute(ctx, contextS, context);
+}
+
+// The engine caught `exc` while `active` was being handled: chain it unless
+// the exception already has a context (it was raised by `raise` in Python
+// code, which set it then, or was caught and chained in an inner frame).
+PROTOPY_EXC_NOINLINE static void chainCaughtException(proto::ProtoContext* ctx, const proto::ProtoObject* exc,
+                                 const proto::ProtoObject* active) {
+    if (!exc || !active || active == exc || isEmbeddedValue(ctx, exc)) return;
+    const proto::ProtoObject* current =
+        exc->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__context__"));
+    if (current && current != PROTO_NONE) return;
+    setExceptionContext(ctx, exc, active);
+}
+
+// Set by OP_RERAISE and a bare `raise`: the exception the dispatch loop finds
+// pending next (at once, in the same frame) is one this frame already caught,
+// so it already has this frame's traceback entry and its context.
+static thread_local bool t_reraising = false;
+
+// A bare `raise` and OP_RERAISE: `exc` is pending again.
+PROTOPY_EXC_NOINLINE static void reraiseException(PythonEnvironment* env, const proto::ProtoObject* exc) {
+    env->setPendingException(exc);
+    t_reraising = true;
+}
+
+// `raise exc` (an instance): chained to the active exception.
+PROTOPY_EXC_NOINLINE static void raiseChainedException(proto::ProtoContext* ctx, PythonEnvironment* env,
+                                                       const proto::ProtoObject* exc) {
+    setExceptionContext(ctx, exc, env->getActiveException());
+    env->setPendingException(exc);
+}
+
+// The dispatch loop caught `exc` in this frame: give it this frame's
+// traceback entry and chain it to the active exception, unless it is one this
+// frame re-raised.
+PROTOPY_EXC_NOINLINE static void noteCaughtException(proto::ProtoContext* ctx, PythonEnvironment* env,
+                                                     const proto::ProtoObject* exc, const proto::ProtoObject* tbFrame,
+                                                     int lasti, int line) {
+    if (t_reraising) {
+        t_reraising = false;
+        return;
+    }
+    env->addTraceback(exc, tbFrame, lasti, line);
+    chainCaughtException(ctx, exc, env->getActiveException());
+}
+
+// OP_RERAISE: re-raise the active exception (the one the innermost running
+// except or finally clause handles) after popping `pops` entries of the
+// active-exception stack: 1 when it leaves its own clause, 2 when a clause
+// raised a new exception (now the active one) while handling another.
+PROTOPY_EXC_NOINLINE static void reraiseActiveException(proto::ProtoContext* ctx, PythonEnvironment* env, int pops) {
+    const proto::ProtoObject* activeExc = env->getActiveException();
+    for (int k = 0; k < pops; ++k) env->popActiveException();
+    if (activeExc) {
+        reraiseException(env, activeExc);
+    } else if (!env->hasPendingException()) {
+        env->raiseRuntimeError(ctx, "No active exception to reraise");
+    }
+}
+
+// `raise exc from cause`: a class is instantiated with no arguments; `from
+// None` clears __cause__; either way __suppress_context__ is set, and the
+// exception is chained to the active one as any raised exception is.
+PROTOPY_EXC_NOINLINE static void raiseExceptionFrom(proto::ProtoContext* ctx, PythonEnvironment* env,
+                                                 const proto::ProtoObject* exc, const proto::ProtoObject* cause) {
+    if (env->isActuallyAClass(ctx, exc)) {
+        exc = invokePythonCallable(ctx, exc, ctx->newList(), nullptr);
+        if (!exc) return;
+    }
+    if (cause && cause != PROTO_NONE && env->isActuallyAClass(ctx, cause)) {
+        cause = invokePythonCallable(ctx, cause, ctx->newList(), nullptr);
+        if (!cause) return;
+    }
+    if (!exc || exc == PROTO_NONE) return;
+    if (!isEmbeddedValue(ctx, exc)) {
+        exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__cause__"),
+                          cause ? cause : PROTO_NONE);
+        exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__suppress_context__"),
+                          PROTO_TRUE);
+    }
+    setExceptionContext(ctx, exc, env->getActiveException());
+    env->setPendingException(exc);
+}
+
 static const proto::ProtoObject* runningCodeObject(proto::ProtoContext* ctx, PythonEnvironment* env,
                                                    const proto::ProtoObject* frame,
                                                    const proto::ProtoTuple* bytecode) {
@@ -4497,7 +4609,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 tbFrame = synth;
             }
-            env->addTraceback(exc, tbFrame, static_cast<int>(lastPc), tbLine);
+            noteCaughtException(ctx, env, exc, tbFrame, static_cast<int>(lastPc), tbLine);
             if (diag_local) {
                 fprintf(stderr, "DEBUG: addTraceback returned. blockStack.empty()=%s\n", blockStack.empty() ? "true" : "false");
                 fflush(stderr);
@@ -5228,9 +5340,14 @@ const proto::ProtoObject* executeBytecodeRange(
             if (!res && env && env->hasPendingException()) continue;
         } break;
         case OP_RERAISE: {
-            // Re-raise the exception on top of block stack
-            if (!env) { i = next_i; continue; }
-            // stub: if we have a pending exception, just continue to trigger handler search
+            // Re-raise the active exception (the one the innermost running
+            // except or finally clause handles) after popping `arg` entries
+            // of the active-exception stack: 1 when it leaves its own
+            // clause, 2 when a clause raised a new exception (the active
+            // one) while handling another. No traceback entry is added: the
+            // exception already has this frame's.
+            if (env) reraiseActiveException(ctx, env, arg);
+            i = next_i;
             continue;
         } break;
         case OP_JUMP_FORWARD: {
@@ -5765,7 +5882,7 @@ const proto::ProtoObject* executeBytecodeRange(
                      stack.pop_back();
                  }
                  if (activeExc) {
-                     if (env) env->setPendingException(activeExc);
+                     if (env) reraiseException(env, activeExc);
                  } else {
                      if (env && !env->hasPendingException()) {
                          env->raiseRuntimeError(ctx, "reraise outside of except block");
@@ -5792,8 +5909,18 @@ const proto::ProtoObject* executeBytecodeRange(
                      if (env && env->isActuallyAClass(ctx, exc)) {
                          exc = invokePythonCallable(ctx, exc, ctx->newList(), nullptr);
                      }
-                     if (env && exc && exc != PROTO_NONE) env->setPendingException(exc);
+                     if (env && exc && exc != PROTO_NONE) raiseChainedException(ctx, env, exc);
                  }
+                 i = next_i;
+                 continue;
+            } else if (arg == 2) {
+                 // raise exc from cause: cause is TOS, exc below it.
+                 if (stack.size() < 2) { i = next_i; continue; }
+                 const proto::ProtoObject* cause = stack.back();
+                 stack.pop_back();
+                 const proto::ProtoObject* exc = stack.back();
+                 stack.pop_back();
+                 if (env) raiseExceptionFrom(ctx, env, exc, cause);
                  i = next_i;
                  continue;
             }

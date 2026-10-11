@@ -1414,6 +1414,15 @@ set_tests_properties(protopy_loop_else_break PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 60
     LABELS "regression_gate")
+# try / except / else / finally as in CPython: the finally clause runs however
+# the statement is left, exceptions raised while handling another are chained,
+# sys.exc_info() is cleared after the statement (every value is CPython's).
+add_test(NAME protopy_try_finally_semantics
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/try_finally_semantics.py)
+set_tests_properties(protopy_try_finally_semantics PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
 # weakref.ref hashes/compares like its referent: WeakKeyDictionary and the
 # singledispatch dispatch cache find their entries.
 add_test(NAME protopy_weakref_identity_keys
