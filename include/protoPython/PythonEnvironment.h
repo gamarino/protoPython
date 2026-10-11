@@ -5,6 +5,7 @@
 #include <protoPython/DiagUtils.h>
 #include <atomic>
 #include <functional>
+#include <initializer_list>
 #include <iostream>
 #include <mutex>
 #include <mutex>
@@ -393,7 +394,7 @@ public:
         unsigned nKwOnly;
         bool hasVarargs;
         bool hasKwargs;
-        const char* const* names;
+        const proto::ProtoString* const* names;   // interned (perennial)
     };
     /** Binds a call's arguments to a compiled function's parameters as
      *  CPython does: positional arguments, keyword arguments, the defaults
@@ -413,9 +414,10 @@ public:
      *  the keyword-only defaults keyed by the name's hash. */
     struct ArgumentSpec {
         // The function's qualified name, for messages: a C string, or else
-        // a str object (read only when a message needs it).
+        // the `__qualname__` of this object (read only when a message needs
+        // it).
         const char* qualnameC;
-        const proto::ProtoObject* qualnameObj;
+        const proto::ProtoObject* qualnameOwner;
         unsigned nPositional;
         unsigned nPosOnly;
         unsigned nKwOnly;
@@ -520,6 +522,19 @@ public:
      * methods see `self` in `args[0]` exactly as their prologue expects.
      */
     const proto::ProtoObject* callMethod(const proto::ProtoObject* obj, const std::string& attr, const std::vector<const proto::ProtoObject*>& args);
+    const proto::ProtoObject* callMethod(const proto::ProtoObject* obj, const proto::ProtoString* name,
+                                         const std::vector<const proto::ProtoObject*>& args);
+    /** callMethod for generated code: the name interned once by the caller,
+     *  the arguments on the C++ stack.  A function found on obj's class is
+     *  called with obj first, without a bound method. */
+    const proto::ProtoObject* callMethod(proto::ProtoContext* ctx, const proto::ProtoObject* obj,
+                                         const proto::ProtoString* name,
+                                         std::initializer_list<const proto::ProtoObject*> args);
+    /** The interpreter's LOAD_ATTR fast path, shared with loadAttr: `out` is
+     *  obj's own attribute `key` when nothing on the Python attribute
+     *  protocol can intercept the read (see the definition). */
+    bool ownAttributeFast(proto::ProtoContext* ctx, const proto::ProtoObject* obj,
+                          const proto::ProtoString* key, const proto::ProtoObject*& out);
     const proto::ProtoObject* callObjectEx(const proto::ProtoObject* callable, 
                                           const std::vector<const proto::ProtoObject*>& args,
                                           const std::vector<std::pair<std::string, const proto::ProtoObject*>>& keywords,
@@ -558,6 +573,9 @@ public:
      *  __slots__). False with an exception pending when it raised. */
     bool storeAttr(const proto::ProtoObject* obj, const char* name, const proto::ProtoObject* value);
     bool storeAttr(const proto::ProtoObject* obj, const proto::ProtoString* name, const proto::ProtoObject* value);
+    /** storeAttr for generated code, which has its context at hand. */
+    bool storeAttr(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name,
+                   const proto::ProtoObject* value);
     bool isTrue(const proto::ProtoObject* obj);
     const proto::ProtoObject* resolveModule(const std::string& nameStr, proto::ProtoContext* ctx = nullptr);
     const proto::ProtoObject* importModule(const std::string& name, int level = 0, const std::vector<std::string>& fromList = {});

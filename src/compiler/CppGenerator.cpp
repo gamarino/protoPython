@@ -1229,9 +1229,11 @@ bool CppGenerator::generateCall(CallNode* n) {
             // class chain — matching the prologue protopyc emits for every
             // generated function (`local_self = args->getAt(0)`).
             if (auto* att = dynamic_cast<AttributeNode*>(n->func.get())) {
-                *out_ << "env->callMethod(";
+                // The name is interned once (internedKey) and the arguments
+                // stay on the C++ stack.
+                *out_ << "env->callMethod(ctx, ";
                 if (!generateNode(att->value.get())) return false;
-                *out_ << ", \"" << att->attr << "\", {";
+                *out_ << ", " << internedKey(att->attr) << ", {";
                 for (size_t i = 0; i < n->args.size(); ++i) {
                     if (i > 0) *out_ << ", ";
                     if (!generateNode(n->args[i].get())) return false;
@@ -1257,7 +1259,8 @@ bool CppGenerator::generateCall(CallNode* n) {
                 if (!currentFuncName_.empty() && nm->id == currentFuncName_ &&
                         nameKind(nm->id) != NameKind::Local && nameKind(nm->id) != NameKind::Cell) {
                     *out_ << "([&]() -> const proto::ProtoObject* {\n";
-                    *out_ << "        const proto::ProtoObject* __argv[] = {";
+                    // Not `__argv`: the MSVC runtime defines it as a macro.
+                    *out_ << "        const proto::ProtoObject* __selfArgs[] = {";
                     for (size_t i = 0; i < n->args.size(); ++i) {
                         if (i > 0) *out_ << ", ";
                         if (!generateNode(n->args[i].get())) return false;
@@ -1268,7 +1271,7 @@ bool CppGenerator::generateCall(CallNode* n) {
                     if (n->args.empty()) *out_ << "nullptr";
                     *out_ << "};\n";
                     *out_ << "        auto* __args = ctx->newList(" << n->args.size()
-                          << "u, __argv);\n";
+                          << "u, __selfArgs);\n";
                     *out_ << "        return " << currentFuncCppName_
                           << "_body(ctx, __fs, nullptr, __args, nullptr, __pexc);\n";
                     *out_ << "    })()";
@@ -1395,7 +1398,7 @@ bool CppGenerator::generateAssignToTarget(ASTNode* target, const std::string& va
     } else if (auto* attrNode = dynamic_cast<AttributeNode*>(target)) {
         // Python's attribute write (data descriptors, __setattr__); an
         // exception it raises is pending, seen after the statement.
-        *out_ << "env->storeAttr(";
+        *out_ << "env->storeAttr(ctx, ";
         if (!generateNode(attrNode->value.get())) return false;
         *out_ << ", " << internedKey(attrNode->attr) << ", " << valueExpr << ")";
         return true;
@@ -1917,14 +1920,29 @@ bool CppGenerator::emitPrologue(const ScopeInfo* s, const std::vector<std::strin
                                 bool hasVarargs, bool hasKwargs, const std::string& indent) {
     static int sigCounter = 0;
     const int id = ++sigCounter;
-    *out_ << indent << "static const char* const __pnames_" << id << "[] = {";
-    for (size_t i = 0; i < params.size(); ++i) *out_ << (i ? ", " : "") << "\"" << params[i] << "\"";
+    // The parameter names, interned once (an interned string is perennial;
+    // a function-local static is initialised once, thread-safely).
+    *out_ << indent << "static const proto::ProtoString* const __pnames_" << id << "[] = {";
+    for (size_t i = 0; i < params.size(); ++i)
+        *out_ << (i ? ", " : "") << "protoPython::PythonEnvironment::getInternedString(ctx, \"" << params[i] << "\")";
     if (params.empty()) *out_ << "nullptr";
     *out_ << "};\n";
     *out_ << indent << "static const protoPython::PythonEnvironment::CompiledSignature __sig_" << id << "{\""
           << escapeCppString(qualname) << "\", " << nPositional << "u, " << nPosOnly << "u, " << nKwOnly << "u, "
           << (hasVarargs ? "true" : "false") << ", " << (hasKwargs ? "true" : "false") << ", __pnames_" << id << "};\n";
-    *out_ << indent << "if (!env->bindArguments(ctx, __sig_" << id << ", args, kwargs, __fs, __slot)) throw __PyUnwind{};\n";
+    const bool simple = nKwOnly == 0 && !hasVarargs && !hasKwargs;
+    if (simple) {
+        // A call with exactly the positional parameters (the common case)
+        // binds them directly; anything else takes bindArguments.
+        *out_ << indent << "if ((!kwargs || kwargs->getSize(ctx) == 0) && args && args->getSize(ctx) == " << nPositional << "u) {\n";
+        for (size_t i = 0; i < nPositional; ++i)
+            *out_ << indent << "    __slot[" << i << "] = args->getAt(ctx, " << i << ");\n";
+        *out_ << indent << "} else if (!env->bindArguments(ctx, __sig_" << id << ", args, kwargs, __fs, __slot)) {\n";
+        *out_ << indent << "    throw __PyUnwind{};\n";
+        *out_ << indent << "}\n";
+    } else {
+        *out_ << indent << "if (!env->bindArguments(ctx, __sig_" << id << ", args, kwargs, __fs, __slot)) throw __PyUnwind{};\n";
+    }
     for (size_t i = 0; i < layout.size(); ++i) {
         const std::string& v = layout[i];
         if (s && s->cells.count(v)) {

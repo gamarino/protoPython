@@ -49,6 +49,7 @@ struct FunctionMetaCache {
     uint32_t nFree;            // len(co_freevars)
     uint32_t nCellSlots;       // len(co_cellslots)
     uint32_t nLocalsPlus;      // slots before the operand stack: co_varnames, then free variables
+    uint32_t nPosOnly;         // co_posonlyargcount
     // The function's own closure cells (`__closure_cells__`), kept alive by
     // the function; nullptr when it has none.
     const proto::ProtoList* closure;
@@ -266,8 +267,10 @@ static bool typeChainInterceptsStore(proto::ProtoContext* ctx, PythonEnvironment
                                      const proto::ProtoObject* directType, uint32_t typeFlags,
                                      const proto::ProtoString* nameS) {
     if (typeFlags & PythonEnvironment::PYFLAG_HAS_CUSTOM_SETATTR) return true;
+    // The common case, a name no class on the chain holds, costs one lookup.
+    if (directType->hasAttribute(ctx, nameS) != PROTO_TRUE) return false;
     if (directType->hasOwnAttribute(ctx, nameS) == PROTO_TRUE) return true;
-    if (directType->hasAttribute(ctx, nameS) == PROTO_TRUE) {
+    {
         const proto::ProtoObject* d = directType->getAttribute(ctx, nameS);
         // Only an object cell can be a descriptor; a class stored as a class
         // attribute is not one, whatever methods it defines.
@@ -296,6 +299,12 @@ bool PythonEnvironment::storeAttr(const proto::ProtoObject* obj, const char* nam
 
 bool PythonEnvironment::storeAttr(const proto::ProtoObject* obj, const proto::ProtoString* nameS, const proto::ProtoObject* value) {
     proto::ProtoContext* ctx = getCurrentContext();
+    if (!ctx) ctx = rootContext_;
+    return storeAttr(ctx, obj, nameS, value);
+}
+
+bool PythonEnvironment::storeAttr(proto::ProtoContext* ctx, const proto::ProtoObject* obj,
+                                  const proto::ProtoString* nameS, const proto::ProtoObject* value) {
     if (!ctx) ctx = rootContext_;
     if (!obj || !nameS) return false;
     if (obj != PROTO_NONE && (reinterpret_cast<uintptr_t>(obj) & 0x3F) == 0 &&
@@ -796,13 +805,16 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
             const proto::ProtoObject* nm = co_varnames->getAt(calleeCtx, static_cast<int>(pi));
             names[pi] = (nm && nm->isString(calleeCtx)) ? nm->asString(calleeCtx) : env->getNameString();
         }
-        const proto::ProtoObject* posOnlyObj = codeObj->getAttribute(calleeCtx,
-            PythonEnvironment::getInternedString(calleeCtx, "co_posonlyargcount"));
-        const unsigned nPosOnly = (posOnlyObj && posOnlyObj->isInteger(calleeCtx))
-            ? static_cast<unsigned>(posOnlyObj->asLong(calleeCtx)) : 0u;
-        const proto::ProtoObject* qualnameObj = codeOwner->getAttribute(calleeCtx,
-            PythonEnvironment::getInternedString(calleeCtx, "__qualname__"));
-        PythonEnvironment::ArgumentSpec spec{nullptr, qualnameObj, static_cast<unsigned>(nparams_count), nPosOnly,
+        unsigned nPosOnly = 0;
+        if (metaCache) {
+            nPosOnly = metaCache->nPosOnly;
+        } else {
+            const proto::ProtoObject* posOnlyObj = codeObj->getAttribute(calleeCtx,
+                PythonEnvironment::getInternedString(calleeCtx, "co_posonlyargcount"));
+            nPosOnly = (posOnlyObj && posOnlyObj->isInteger(calleeCtx))
+                ? static_cast<unsigned>(posOnlyObj->asLong(calleeCtx)) : 0u;
+        }
+        PythonEnvironment::ArgumentSpec spec{nullptr, codeOwner, static_cast<unsigned>(nparams_count), nPosOnly,
                                              static_cast<unsigned>(kwonly_count), (co_flags & CO_VARARGS) != 0,
                                              (co_flags & CO_VARKEYWORDS) != 0, names};
         // __defaults__: a tuple of the last positional parameters' values.
@@ -1604,6 +1616,11 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
         cache->nLocalsPlus        = (nlpObj && nlpObj->isInteger(ctx))
             ? static_cast<uint32_t>(nlpObj->asLong(ctx)) : nVarnames_val;
         cache->closure            = (closure && closure->getSize(ctx) > 0) ? closure : nullptr;
+        {
+            const proto::ProtoObject* po = codeObj->getAttribute(ctx,
+                PythonEnvironment::getInternedString(ctx, "co_posonlyargcount"));
+            cache->nPosOnly = (po && po->isInteger(ctx)) ? static_cast<uint32_t>(po->asLong(ctx)) : 0u;
+        }
         cache->codeObj            = codeObj;
         cache->globalsObj         = globalsObj;
         cache->co_varnames        = co_varnames_val;

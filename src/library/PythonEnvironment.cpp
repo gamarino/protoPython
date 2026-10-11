@@ -29362,12 +29362,55 @@ const proto::ProtoObject* PythonEnvironment::getAttr(const proto::ProtoObject* o
     return obj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, attr.c_str()));
 }
 
+const proto::ProtoObject* PythonEnvironment::callMethod(proto::ProtoContext* ctx, const proto::ProtoObject* obj,
+                                                       const proto::ProtoString* nameS,
+                                                       std::initializer_list<const proto::ProtoObject*> args) {
+    // `obj.name(args)` from compiled code, with the name interned once.  A
+    // function found on obj's class (a function protopyc compiled, or a
+    // Python function), when the type does not override __getattribute__,
+    // is what LOAD_METHOD returns unbound: called with obj first, as the
+    // interpreter's CALL does, without building a bound method.  Anything
+    // else goes through the full read (callMethod below).
+    if (ctx && obj && obj != PROTO_NONE && nameS && args.size() < 15 &&
+            (reinterpret_cast<uintptr_t>(obj) & 0x3F) == 0 && obj->hasOwnAttribute(ctx, nameS) != PROTO_TRUE) {
+        const proto::ProtoObject* raw = obj->getAttribute(ctx, nameS);
+        if (raw && raw != PROTO_NONE) {
+            const bool isMethodCell = raw->isMethod(ctx);
+            const bool compiled = isMethodCell && isCompiledFunction(ctx, raw);
+            const bool pyFunction = !isMethodCell && (reinterpret_cast<uintptr_t>(raw) & 0x3F) == 0 &&
+                raw->getFirstParent(ctx) == getFunctionPrototype();
+            if (compiled || pyFunction) {
+                const proto::ProtoObject* type = getType(ctx, obj);
+                if (type && type != PROTO_NONE && !(ensureClassFlags(ctx, type) & PYFLAG_HAS_CUSTOM_GETATTR)) {
+                    const proto::ProtoObject* argv[16];
+                    argv[0] = obj;
+                    unsigned n = 1;
+                    for (const proto::ProtoObject* a : args) argv[n++] = a;
+                    const proto::ProtoList* argList = ctx->newList(n, argv);
+                    if (compiled) {
+                        return raw->asMethod(ctx)(ctx, raw->asMethodSelf(ctx), nullptr, argList, nullptr);
+                    }
+                    return invokePythonCallable(ctx, raw, argList, nullptr);
+                }
+            }
+        }
+    }
+    return callMethod(obj, nameS, std::vector<const proto::ProtoObject*>(args));
+}
+
 const proto::ProtoObject* PythonEnvironment::callMethod(const proto::ProtoObject* obj,
                                                        const std::string& attr,
                                                        const std::vector<const proto::ProtoObject*>& args) {
     proto::ProtoContext* ctx = getCurrentContext();
     if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
-    const proto::ProtoString* nameS = PythonEnvironment::getInternedString(ctx, attr.c_str());
+    return callMethod(obj, PythonEnvironment::getInternedString(ctx, attr.c_str()), args);
+}
+
+const proto::ProtoObject* PythonEnvironment::callMethod(const proto::ProtoObject* obj,
+                                                       const proto::ProtoString* nameS,
+                                                       const std::vector<const proto::ProtoObject*>& args) {
+    proto::ProtoContext* ctx = getCurrentContext();
+    if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     // `obj.attr(args)`: the attribute as LOAD_ATTR reads it for a call. A
     // function found on obj's class (a Python function or one protopyc
     // compiled) comes back unbound, and obj is passed as its first argument;
@@ -29404,10 +29447,41 @@ const proto::ProtoObject* PythonEnvironment::callMethod(const proto::ProtoObject
     return callObject(method, args);
 }
 
+bool PythonEnvironment::ownAttributeFast(proto::ProtoContext* ctx, const proto::ProtoObject* obj,
+                                         const proto::ProtoString* key, const proto::ProtoObject*& out) {
+    // The interpreter's LOAD_ATTR fast path (ExecutionEngine.cpp): an own
+    // attribute of an ordinary object, read through protoCore's per-thread
+    // attribute cache (getOwnAttributeDirect), when nothing on the Python
+    // protocol can intercept it.  An own attribute cannot shadow a data
+    // descriptor of the type (the descriptor's __set__ would have taken the
+    // write), so it is the answer unless its own type is a descriptor
+    // (__get__: a function, a method, a property stored on the instance) or
+    // the type overrides __getattribute__.  The synthesised dunders and an
+    // own None (indistinguishable from "absent" here) take the full path.
+    if (!obj || obj == PROTO_NONE || (reinterpret_cast<uintptr_t>(obj) & 0x3F) != 0) return false;
+    if (key == getClassString() || key == getMroString() || key == getDictDunderString() ||
+        key == getBasesString() || key == getGetattributeDunderString()) return false;
+    const proto::ProtoObject* own = obj->getOwnAttributeDirect(ctx, key);
+    if (!own || own == PROTO_NONE || own->isMethod(ctx)) return false;
+    const proto::ProtoObject* objType = getType(ctx, obj);
+    if (!objType || objType == PROTO_NONE || (ensureClassFlags(ctx, objType) & PYFLAG_HAS_CUSTOM_GETATTR)) return false;
+    if ((reinterpret_cast<uintptr_t>(own) & 0x3F) == 0) {
+        const proto::ProtoObject* ownType = own->getFirstParent(ctx);
+        if (ownType == getFunctionPrototype()) return false;
+        if (ownType && ownType != PROTO_NONE && (ensureClassFlags(ctx, ownType) & PYFLAG_HAS_GET_DESCR)) return false;
+    }
+    out = own;
+    return true;
+}
+
 const proto::ProtoObject* PythonEnvironment::loadAttr(proto::ProtoContext* ctx, const proto::ProtoObject* obj,
                                                      const proto::ProtoString* key, bool* outIsUnboundFunc) {
     if (outIsUnboundFunc) *outIsUnboundFunc = false;
     if (!obj || !key) return nullptr;
+    {
+        const proto::ProtoObject* own = nullptr;
+        if (ownAttributeFast(ctx, obj, key, own)) return own;
+    }
     // As LOAD_ATTR: only a function found on obj's class is returned unbound;
     // obj's own attributes (a module's functions, a callable stored on the
     // instance) are returned as they are.
@@ -29492,10 +29566,12 @@ bool PythonEnvironment::bindArgumentsCore(proto::ProtoContext* ctx, const Argume
     // The name for a message, read only when one is raised.
     auto fnameOf = [&]() {
         std::string fname;
+        const proto::ProtoObject* q = (!sig.qualnameC && sig.qualnameOwner)
+            ? sig.qualnameOwner->getAttribute(ctx, getInternedString(ctx, "__qualname__")) : nullptr;
         if (sig.qualnameC) {
             fname = sig.qualnameC;
-        } else if (sig.qualnameObj && sig.qualnameObj->isString(ctx)) {
-            sig.qualnameObj->asString(ctx)->toUTF8String(ctx, fname);
+        } else if (q && q != PROTO_NONE && q->isString(ctx)) {
+            q->asString(ctx)->toUTF8String(ctx, fname);
         } else {
             fname = "function";
         }
@@ -29650,11 +29726,8 @@ bool PythonEnvironment::bindArgumentsCore(proto::ProtoContext* ctx, const Argume
 bool PythonEnvironment::bindArguments(proto::ProtoContext* ctx, const CompiledSignature& sig,
                                       const proto::ProtoList* args, const proto::ProtoSparseList* kwargs,
                                       const proto::ProtoObject* fs, const proto::ProtoObject** out) {
-    const unsigned nParams = sig.nPositional + sig.nKwOnly + (sig.hasVarargs ? 1u : 0u) + (sig.hasKwargs ? 1u : 0u);
-    std::vector<const proto::ProtoString*> names(nParams);
-    for (unsigned i = 0; i < nParams; ++i) names[i] = getInternedString(ctx, sig.names[i]);
     ArgumentSpec spec{sig.qualname ? sig.qualname : "function", nullptr, sig.nPositional, sig.nPosOnly, sig.nKwOnly,
-                      sig.hasVarargs, sig.hasKwargs, names.data()};
+                      sig.hasVarargs, sig.hasKwargs, sig.names};
     // Defaults stored with the function at its definition (a list).
     const proto::ProtoObject* dObj = fs ? fs->getAttribute(ctx, getInternedString(ctx, "__defaults__")) : nullptr;
     const proto::ProtoList* defaults = (dObj && dObj != PROTO_NONE && !dObj->isString(ctx)) ? dObj->asList(ctx) : nullptr;
