@@ -16117,29 +16117,13 @@ static const proto::ProtoObject* py_dict_fromkeys(
     const proto::ProtoObject* value = posArgs->getSize(context) >= 2 ? posArgs->getAt(context, 1) : PROTO_NONE;
 
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoList* emptyL = context->newList();
-
-    // Helper: invoke a method with `receiver` as self, supporting both native and Python callables.
-    // Native methods (asMethod() != null) store self=nullptr on the prototype; we must supply receiver.
-    // Python callables (functions with __code__) are invoked via invokeCallable with receiver prepended.
-    auto callMethod = [&](const proto::ProtoObject* method, const proto::ProtoObject* receiver,
-                          const proto::ProtoList* args) -> const proto::ProtoObject* {
-        if (method->asMethod(context)) {
-            return method->asMethod(context)(context, const_cast<proto::ProtoObject*>(receiver), nullptr, args, nullptr);
-        }
-        const proto::ProtoList* selfArgs = context->newList()->appendLast(context, receiver);
-        proto::proto_ulong nargs = args ? args->getSize(context) : 0;
-        for (proto::proto_ulong j = 0; j < nargs; ++j)
-            selfArgs = selfArgs->appendLast(context, args->getAt(context, static_cast<int>(j)));
-        return invokePythonCallable(context, method, selfArgs, nullptr);
-    };
-
-    const proto::ProtoString* iterS = PythonEnvironment::getInternalString(context, "__iter__");
-    const proto::ProtoObject* iterM = iterable->getAttribute(context, iterS);
-    if (!iterM || iterM == PROTO_NONE) {
-        // CPython: dict.fromkeys(non_iterable) raises TypeError.  Silently
-        // returning None hid bugs like `dict.fromkeys(5)` succeeding.
-        if (env) {
+    if (!env) return PROTO_NONE;
+    // env->iter / env->next drive every kind of iterator; a key of None is
+    // a key like any other (iteration used to stop at the first one).
+    const proto::ProtoObject* itObj = env->iter(iterable);
+    if (!itObj) {
+        if (!env->hasPendingException()) {
+            // CPython: dict.fromkeys(non_iterable) raises TypeError.
             std::string clsName = "object";
             const proto::ProtoObject* cls = env->getType(context, iterable);
             if (cls) {
@@ -16152,35 +16136,27 @@ static const proto::ProtoObject* py_dict_fromkeys(
         }
         return nullptr;
     }
-    const proto::ProtoObject* itObj = callMethod(iterM, iterable, emptyL);
-    if (!itObj || itObj == PROTO_NONE) return PROTO_NONE;
-
-    const proto::ProtoString* nextS = PythonEnvironment::getInternalString(context, "__next__");
-    const proto::ProtoObject* nextM = itObj->getAttribute(context, nextS);
-    if (!nextM || nextM == PROTO_NONE) return PROTO_NONE;
+    PythonEnvironment::TransientPin pinIt(env, itObj);
 
     const proto::ProtoList* keysList = context->newList();
     const proto::ProtoSparseList* sparse = context->newSparseList();
     for (;;) {
-        const proto::ProtoObject* key = callMethod(nextM, itObj, emptyL);
-        if (env && env->peekPendingException()) {
-            if (env->isStopIteration(context, env->peekPendingException())) {
-                env->clearPendingException();
-            }
+        const proto::ProtoObject* key = env->next(itObj);
+        if (!key) {
+            if (env->hasPendingException()) return nullptr;
             break;
         }
-        if (!key || key == PROTO_NONE) break;
         proto::proto_ulong hash = dictKeyHash(context, key);
         if (!sparse->has(context, hash)) keysList = keysList->appendLast(context, key);
         sparse = sparse->setAt(context, hash, value);
     }
 
-    const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
-    const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* result = context->newObject(false);
+    // Mutable, like every dict: d[k] = v on an immutable object built a
+    // modified copy and left `d` unchanged.
+    const proto::ProtoObject* result = context->newObject(true);
     result = result->addParent(context, self);
-    result = result->setAttribute(context, keysName, keysList->asObject(context));
-    result = result->setAttribute(context, dataName, sparse->asObject(context));
+    result = result->setAttribute(context, env->getKeysString(), keysList->asObject(context));
+    result = result->setAttribute(context, env->getDataString(), sparse->asObject(context));
     return result;
 }
 

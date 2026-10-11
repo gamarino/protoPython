@@ -56,3 +56,26 @@ for bad in (5, None):
 od = OrderedDict.fromkeys("abc")
 od.update((k, 0) for k in "bd")
 show("od update gen", od)
+
+# dict.fromkeys: the result takes later assignments; None is a key like any
+# other; any iterable.
+class Key:
+    pass
+
+k1, k2 = Key(), Key()
+d = dict.fromkeys([k1, k2])
+d[k2] = "set"
+print("fromkeys assign", d[k1], d[k2], len(d))
+d = dict.fromkeys(["a", None, "b"], 0)
+d["a"] = 1
+del d[None]
+show("fromkeys none key", d)
+show("fromkeys generator", dict.fromkeys(x * 2 for x in range(3)))
+d = dict.fromkeys("ab")
+d.update(c=3)
+d.pop("a")
+show("fromkeys mutate", d)
+try:
+    dict.fromkeys(5)
+except TypeError as e:
+    print("TypeError", e)

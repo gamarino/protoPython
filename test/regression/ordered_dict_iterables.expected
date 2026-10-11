@@ -12,3 +12,8 @@ dict update class dict ['a', 'b']
 TypeError for int
 TypeError for NoneType
 od update gen OrderedDict [('a', None), ('b', 0), ('c', None), ('d', 0)]
+fromkeys assign None set 2
+fromkeys none key dict [('a', 1), ('b', 0)]
+fromkeys generator dict [(0, None), (2, None), (4, None)]
+fromkeys mutate dict [('b', None), ('c', 3)]
+TypeError 'int' object is not iterable
