@@ -140,22 +140,45 @@ compiler diagnostics and native debuggers (GDB, LLDB) can point at Python source
   namespace with `protoPython::ModuleNamespaceScope` (current frame and globals) for
   as long as it runs, so its module-level names resolve in its own module whoever
   calls it, as an interpreted function's do through `__globals__`; then it runs the
-  body. Called as a function (`f(a)`, `C.m(obj, a)`, a method call from compiled
-  code), it receives its storage as `self`. The interpreter binds a native method
-  found on a class to the instance (`obj.m(a)`), so `self` is then the receiver: the
-  entry point moves it to the front of the arguments, where the prologue expects the
-  method's `self` parameter. A `def` in a class body therefore also binds its storage
-  in the class namespace, under a key of its own (`__protopyc_fs_<C++ name>__`), and
-  the entry point finds it through the receiver's class: a method keeps its module
-  namespace and its free variables however it is called, including a method of a
-  class defined inside a function, called on an instance from interpreted code. A
-  callable without a storage there (one attached to a class from outside the class
-  body, or a lambda in a class body) falls back to the namespace of the module the
-  file initialized, with its free variables `None`. A self-recursive call by the
-  function's own name calls the body directly. `def` and `class` statements in a
-  function bind function locals; names a class body binds go to the class namespace.
-  Free variables are transitive, as in Python: a function captures the enclosing
-  functions' variables that the functions nested in it use.
+  body. Called as a function (`f(a)`, `C.m(obj, a)`), it receives its storage as
+  `self`. Found on a class through an instance, it binds as a Python function does
+  (`PythonEnvironment::isCompiledFunction` recognizes it by the storage's own
+  `__module_ns__`; `bindNativeMethod` binds it): `obj.m(a)` calls it with the storage
+  as `self` and `obj` as its first argument, wherever the interpreter binds a method
+  (attribute reads and method calls, `super()`, special-method lookups such as
+  `with`'s, a `__getattribute__` override). So a method, a lambda in a class body and
+  a function attached to a class from outside it keep their module namespace and
+  their free variables however they are called. Where a runtime path still rebinds
+  the native method to the instance, `self` is the receiver: the entry point moves it
+  to the front of the arguments and finds the storage through the receiver's class,
+  under the key a `def` in a class body also binds (`__protopyc_fs_<C++ name>__`);
+  without one, it falls back to the namespace of the module the file initialized,
+  with its free variables `None`. A self-recursive call by the function's own name
+  calls the body directly. `def` and `class` statements in a function bind function
+  locals; names a class body binds go to the class namespace. Free variables are
+  transitive, as in Python: a function captures the enclosing functions' variables
+  that the functions nested in it use.
+- **Attributes.** `obj.name` reads through `PythonEnvironment::loadAttr`, the read
+  the interpreter's `LOAD_ATTR` and `getattr()` do: data descriptors,
+  `__getattribute__`, instance attributes, non-data descriptors (properties,
+  methods bound to `obj`), then `__getattr__`; a missing attribute raises
+  `AttributeError`. `obj.name = value` writes through `storeAttr` (data
+  descriptors, `__setattr__`, `__slots__`), and `obj.m(args)` calls through
+  `callMethod`, which passes `obj` first to a function found on its class and calls
+  anything else as it is. `env->getAttr` / `setAttr`, the raw protoCore read and
+  write generated code used before, remain for embedders.
+- **Classes.** A `class` statement builds its class as the interpreter's
+  `BUILD_CLASS` does (`PythonEnvironment::buildClass`, shared by both): PEP 560
+  `__mro_entries__`, the metaclass (explicit or derived from the bases) and its
+  `__prepare__`; the class body then runs with that namespace as its frame
+  (`__qualname__` is set first, `name: annotation` statements fill
+  `__annotations__`), and the metaclass call makes the class, with its own
+  `__mro__`, `__init_subclass__` and `__set_name__`. A compiled class is therefore a
+  Python class: an interpreted class can derive from it and inherit its methods,
+  `super()` reaches its methods, and it can be an exception, an `Enum`, a dataclass
+  or have `__slots__`. Zero-argument `super()` in a method is
+  `super(<class>, <first parameter>)`: the method's storage keeps the class's cell, a
+  mutable object that receives the class once the metaclass call returns.
 - **Exceptions.** As in the interpreter, an operation that raises leaves its
   exception pending in the `PythonEnvironment`. Generated code reads the address of
   the thread's pending-exception flag once per call
@@ -174,7 +197,11 @@ compiler diagnostics and native debuggers (GDB, LLDB) can point at Python source
     pending. The `else` clause runs when the body raised nothing. The `finally`
     clause runs with the propagating exception set aside in a slot, and that
     exception is pending again afterwards unless the clause raised its own or left
-    by `return`, `break` or `continue`.
+    by `return`, `break` or `continue`. While the `finally` clause runs for an
+    exception, that exception is the active one (`sys.exc_info()`). An
+    exception an `except` or `finally` clause (or an `__exit__` call) raises
+    gets the exception being handled as `__context__` (PEP 3134,
+    `PythonEnvironment::chainPendingException`), as in the interpreter.
   - `return`, `break` and `continue` inside a `try` statement with a `finally`
     clause (in its body, an `except` clause or the `else` clause), or inside a `with`
     statement, store their kind in a slot of that statement (a return value in a slot
@@ -224,25 +251,14 @@ compiler diagnostics and native debuggers (GDB, LLDB) can point at Python source
 - A `yield`, `yield from` or `await` must be a statement or the value of an
   assignment (`x = yield v`); one inside another expression (`f((yield v))`) is
   rejected at compile time.
-- An exception raised in an `except` clause gets no `__context__` (the interpreter
-  does not set it either), and compiled code adds no traceback entries.
-- The interpreter does not run a `finally` clause when an exception or a `return`,
-  `break` or `continue` leaves an `except` or `else` clause of the same `try`
-  statement, nor when no `except` clause matches; compiled code runs it, as CPython
-  does (`test/compiler/exceptions_with_cpython.expected`). The interpreter also
-  ignores the cause of `raise X from Y`.
-- A callable attached to a class from outside its class body, or a lambda in a
-  class body, called on an instance has no access to its free variables (they read
-  as `None`), and its module-level names resolve in the module the file
-  initialized; loading the same library twice under two module names makes both
-  use the second.
-- Attribute reads (`obj.name` outside a call) are plain protoCore lookups
-  (`PythonEnvironment::getAttr`): a missing attribute reads as `None` instead of
-  raising `AttributeError`, and descriptors such as properties are not applied.
-- A class that protopyc compiles has no `__mro__` of its own: a class the
-  interpreter defines with it as a base does not inherit its methods, and the
-  interpreter's `with` statement on one of its instances calls `__enter__` and
-  `__exit__` without the instance (compiled code's `with` binds them).
+- A compiled `def` binds only positional arguments (and the defaults of the
+  last parameters): keyword arguments, `*args` and `**kwargs` are not bound
+  (`*args` and `**kwargs` read as `None`). A metaclass whose `__new__` takes
+  `**kwargs`, or an `__init_subclass__` given class keywords, therefore cannot be
+  compiled yet.
+- Compiled code adds no traceback entries.
+- A `def` in a class body leaves its storage key (`__protopyc_fs_<C++ name>__`,
+  section 4) in the class namespace, where `vars(cls)` and `dir(cls)` show it.
 - Generator expressions are evaluated eagerly, as a list.
 
 ## 6. Not implemented

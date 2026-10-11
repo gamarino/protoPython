@@ -166,6 +166,37 @@ static bool typeChainInterceptsStore(proto::ProtoContext* ctx, PythonEnvironment
     return false;
 }
 
+// `obj.name = value` for generated code: OP_STORE_ATTR's plain instance write
+// when nothing on the type chain intercepts it (no __slots__, __setattr__ or
+// data descriptor of that name; not a class or a module; not __class__ or
+// __dict__), env->setAttribute's full protocol otherwise.
+bool PythonEnvironment::storeAttr(const proto::ProtoObject* obj, const char* name, const proto::ProtoObject* value) {
+    proto::ProtoContext* ctx = getCurrentContext();
+    if (!ctx) ctx = rootContext_;
+    return storeAttr(obj, PythonEnvironment::getInternedString(ctx, name), value);
+}
+
+bool PythonEnvironment::storeAttr(const proto::ProtoObject* obj, const proto::ProtoString* nameS, const proto::ProtoObject* value) {
+    proto::ProtoContext* ctx = getCurrentContext();
+    if (!ctx) ctx = rootContext_;
+    if (!obj || !nameS) return false;
+    if (obj != PROTO_NONE && (reinterpret_cast<uintptr_t>(obj) & 0x3F) == 0 &&
+            nameS != getClassString() && nameS != getDictDunderString()) {
+        const proto::ProtoObject* directType = obj->getFirstParent(ctx);
+        if (directType && directType != PROTO_NONE && directType != getTypePrototype() &&
+                directType != getModulePrototype() && obj != getBuiltinsModule()) {
+            const uint32_t flags = ensureClassFlags(ctx, directType);
+            if ((flags & PYFLAG_HAS_SLOTS) == 0 && !typeChainInterceptsStore(ctx, this, directType, flags, nameS)) {
+                obj->setAttribute(ctx, nameS, value);
+                return true;
+            }
+        }
+    }
+    setAttribute(ctx, obj, nameS, value);
+    if (obj == getBuiltinsModule() || getType(ctx, obj) == getModulePrototype()) invalidateResolveCache();
+    return !hasPendingException();
+}
+
 // ---------------------------------------------------------------------------
 // Attribute write groups
 //
@@ -4196,8 +4227,8 @@ static int updateContextLocation(proto::ProtoContext* ctx, PythonEnvironment* en
 // handled, so `exc.__context__` becomes `context`, as CPython's
 // _PyErr_SetObject does. A cycle through `exc` in context's own chain is cut
 // first, so the chain stays finite.
-PROTOPY_EXC_NOINLINE static void setExceptionContext(proto::ProtoContext* ctx, const proto::ProtoObject* exc,
-                                const proto::ProtoObject* context) {
+void PythonEnvironment::setExceptionContext(proto::ProtoContext* ctx, const proto::ProtoObject* exc,
+                                           const proto::ProtoObject* context) {
     if (!exc || !context || context == PROTO_NONE || context == exc) return;
     if (isEmbeddedValue(ctx, exc) || isEmbeddedValue(ctx, context)) return;
     const proto::ProtoString* contextS = PythonEnvironment::getInternedString(ctx, "__context__");
@@ -4213,16 +4244,26 @@ PROTOPY_EXC_NOINLINE static void setExceptionContext(proto::ProtoContext* ctx, c
     exc->setAttribute(ctx, contextS, context);
 }
 
-// The engine caught `exc` while `active` was being handled: chain it unless
-// the exception already has a context (it was raised by `raise` in Python
-// code, which set it then, or was caught and chained in an inner frame).
-PROTOPY_EXC_NOINLINE static void chainCaughtException(proto::ProtoContext* ctx, const proto::ProtoObject* exc,
-                                 const proto::ProtoObject* active) {
-    if (!exc || !active || active == exc || isEmbeddedValue(ctx, exc)) return;
+void PythonEnvironment::chainException(proto::ProtoContext* ctx, const proto::ProtoObject* exc,
+                                       const proto::ProtoObject* context) {
+    if (!exc || !context || context == exc || isEmbeddedValue(ctx, exc)) return;
     const proto::ProtoObject* current =
         exc->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__context__"));
     if (current && current != PROTO_NONE) return;
-    setExceptionContext(ctx, exc, active);
+    setExceptionContext(ctx, exc, context);
+}
+
+// The dispatch loop's entry points to the above (kept out of line).
+PROTOPY_EXC_NOINLINE static void setExceptionContext(proto::ProtoContext* ctx, const proto::ProtoObject* exc,
+                                                     const proto::ProtoObject* context) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env) env->setExceptionContext(ctx, exc, context);
+}
+
+PROTOPY_EXC_NOINLINE static void chainCaughtException(proto::ProtoContext* ctx, const proto::ProtoObject* exc,
+                                                      const proto::ProtoObject* active) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env) env->chainException(ctx, exc, active);
 }
 
 // Set by OP_RERAISE and a bare `raise`: the exception the dispatch loop finds
@@ -4329,6 +4370,864 @@ static void raiseUnboundFastLocal(proto::ProtoContext* ctx, PythonEnvironment* e
     }
     env->raiseUnboundLocalError(ctx,
         "cannot access local variable '" + nStr + "' where it is not associated with a value");
+}
+
+// `class name(*bases, **kwds): body`: everything OP_BUILD_CLASS does around
+// running the body (PEP 560 __mro_entries__, the metaclass and its
+// __prepare__, the namespace's __name__ / __module__, the metaclass call and
+// the fix-ups after it), shared with classes protopyc compiles. See
+// PythonEnvironment::buildClass in PythonEnvironment.h.
+const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx, const proto::ProtoObject* name,
+                                                        const proto::ProtoObject* bases, const proto::ProtoObject* kwds,
+                                                        const ClassBody& runBody, const proto::ProtoObject** anchor) {
+    const bool diag_local = false;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoString* nameS = env ? env->getNameString() : protoPython::PythonEnvironment::getInternalString(ctx, "__name__");
+    const proto::ProtoString* callS = env ? env->getCallString() : PythonEnvironment::getInternedString(ctx, "__call__");
+    
+    // PEP 560: a base that is not a class but defines
+    // __mro_entries__ (typing's Generic[T]) is replaced by the tuple
+    // that method returns, so metaclass selection, __prepare__ and
+    // the metaclass call all see the resolved bases. The bases as
+    // written are recorded as __orig_bases__ before the metaclass
+    // call. The resolved tuple is a young cell of this context and
+    // the original stays in its caller slot, so both stay reachable.
+    const proto::ProtoObject* origBases = nullptr;
+    if (env && bases && bases != PROTO_NONE && bases->asTuple(ctx)) {
+        const proto::ProtoTuple* baseTuple = bases->asTuple(ctx);
+        const proto::ProtoString* mroEntriesS =
+            PythonEnvironment::getInternedString(ctx, "__mro_entries__");
+        const proto::ProtoList* resolved = ctx->newList();
+        bool changed = false;
+        bool failed = false;
+        for (proto::proto_ulong bi = 0; bi < baseTuple->getSize(ctx); ++bi) {
+            const proto::ProtoObject* base = baseTuple->getAt(ctx, static_cast<int>(bi));
+            const proto::ProtoObject* entries = nullptr;
+            if (base && base != PROTO_NONE && !env->isActuallyAClass(ctx, base)) {
+                entries = env->getAttribute(ctx, base, mroEntriesS, false);
+                if (env->hasPendingException()) env->clearPendingException();
+            }
+            if (!entries || entries == PROTO_NONE) {
+                resolved = resolved->appendLast(ctx, base);
+                continue;
+            }
+            const proto::ProtoObject* result =
+                invokeCallable(ctx, entries, ctx->newList()->appendLast(ctx, bases));
+            if (env->hasPendingException()) { failed = true; break; }
+            const proto::ProtoTuple* resultTuple = result ? result->asTuple(ctx) : nullptr;
+            if (!resultTuple) {
+                env->raiseTypeError(ctx, "__mro_entries__ must return a tuple");
+                failed = true;
+                break;
+            }
+            for (proto::proto_ulong ri = 0; ri < resultTuple->getSize(ctx); ++ri) {
+                resolved = resolved->appendLast(ctx, resultTuple->getAt(ctx, static_cast<int>(ri)));
+            }
+            changed = true;
+        }
+        if (failed) {
+            return nullptr;
+        }
+        if (changed) {
+            origBases = bases;
+            bases = ctx->newTupleFromList(resolved)->asObject(ctx);
+        }
+    }
+
+    // 1. Identify Metaclass
+    const proto::ProtoObject* metaclass = nullptr;
+    if (kwds && kwds != PROTO_NONE) {
+        const proto::ProtoString* kName = PythonEnvironment::getInternedString(ctx, "metaclass");
+        metaclass = kwds->getAttribute(ctx, kName);
+        if (!metaclass || metaclass == PROTO_NONE) {
+            // Try looking in __data__ if it's a dict object
+            const proto::ProtoObject* dataObj = kwds->getAttribute(ctx, env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__"));
+            if (dataObj && dataObj->asSparseList(ctx)) {
+                metaclass = dataObj->asSparseList(ctx)->getAt(ctx, kName->getHash(ctx));
+            }
+        }
+    }
+    // STRUCT-232: when an explicit metaclass is passed,
+    // CPython still verifies it against every base's
+    // metaclass.  Algorithm: among (explicit_meta, *base_metas),
+    // the "winning" metaclass is the unique most-derived one.
+    // It is the resulting class's metaclass — possibly the
+    // explicit one, possibly upgraded to a more-derived base
+    // metaclass, or a TypeError if none is a (non-strict)
+    // subclass of all the others.
+    if (metaclass && metaclass != PROTO_NONE) {
+        const proto::ProtoObject* typeProto2 = env ? env->getTypePrototype() : nullptr;
+        const proto::ProtoObject* objectProto2 = env ? env->getObjectPrototype() : nullptr;
+        auto isSubclassMeta = [&](const proto::ProtoObject* a, const proto::ProtoObject* b) -> bool {
+            if (areSameClassesVM(ctx, a, b)) return true;
+            if (!a || !b) return false;
+            const proto::ProtoObject* mro = env->getAttribute(ctx, a,
+                PythonEnvironment::getInternedString(ctx, "__mro__"), false);
+            const proto::ProtoTuple* mroT = mro ? mro->asTuple(ctx) : nullptr;
+            if (!mroT && mro) {
+                const proto::ProtoObject* d = env->getAttribute(ctx, mro, env->getDataString(), false);
+                if (d) mroT = d->asTuple(ctx);
+            }
+            if (mroT) {
+                for (proto::proto_ulong j = 0; j < mroT->getSize(ctx); ++j) {
+                    if (areSameClassesVM(ctx, mroT->getAt(ctx, static_cast<int>(j)), b)) return true;
+                }
+            }
+            return false;
+        };
+        const proto::ProtoObject* winner = metaclass;
+        // Run the meta-derivation check whenever the
+        // explicit metaclass IS a class (has a __mro__).
+        // A plain non-class callable (e.g. `metaclass=lambda
+        // ...`) bypasses the check entirely — there is no
+        // class hierarchy to reconcile against the bases'
+        // metaclasses.
+        // STRUCT-264: check class-ness via OWN __mro__ (or
+        // by walking type(winner)'s MRO for typePrototype).
+        // A plain function inherits `__mro__` from its type
+        // chain, so the previous unqualified `getAttribute`
+        // probe falsely classified `metaclass=func` as a
+        // class and ran the conflict-detection loop —
+        // raising a spurious "metaclass conflict" for
+        // `class X(object, metaclass=func): pass`.
+        bool winnerIsClass = false;
+        if (winner) {
+            const proto::ProtoString* mroDunder =
+                PythonEnvironment::getInternedString(ctx, "__mro__");
+            if (winner->hasOwnAttribute(ctx, mroDunder) == PROTO_TRUE) {
+                winnerIsClass = true;
+            } else if (winner == typeProto2) {
+                winnerIsClass = true;
+            } else if (env) {
+                const proto::ProtoObject* wType = env->getType(ctx, winner);
+                if (wType && (wType == typeProto2 || isSubclassMeta(wType, typeProto2))) {
+                    winnerIsClass = true;
+                }
+            }
+        }
+        if (winnerIsClass && bases) {
+            const proto::ProtoTuple* tb = bases->asTuple(ctx);
+            const proto::ProtoList* lb = tb ? nullptr : bases->asList(ctx);
+            size_t bn = tb ? tb->getSize(ctx) : (lb ? lb->getSize(ctx) : 0);
+            for (size_t i = 0; i < bn; ++i) {
+                const proto::ProtoObject* b = tb ? tb->getAt(ctx, static_cast<int>(i)) : lb->getAt(ctx, static_cast<int>(i));
+                if (!b || b == PROTO_NONE) continue;
+                const proto::ProtoObject* bm = env->getAttribute(ctx, b,
+                    env->getClassString(), false);
+                if (!bm || bm == PROTO_NONE) bm = env->getType(ctx, b);
+                // STRUCT-234: skip bases whose metaclass
+                // resolves to bare `object` (e.g. plain
+                // `object()` instance passed as a base).
+                if (bm && areSameClassesVM(ctx, bm, objectProto2)) continue;
+                if (!bm) bm = typeProto2;
+                if (!bm) continue;
+                // CPython rule: explicit metaclass W must be a
+                // subclass of every base's metaclass.  If
+                // bm IS a subclass of W, that means W is more
+                // general than bm — and W cannot accommodate
+                // bm-specific behaviour, so conflict.  The
+                // exception is when W == bm exactly (same
+                // class), which is fine.
+                if (isSubclassMeta(winner, bm)) {
+                    // winner already covers this base's meta
+                    continue;
+                }
+                if (isSubclassMeta(bm, winner)) {
+                    // base's meta is more derived than the
+                    // explicit one — CPython upgrades.
+                    winner = bm;
+                    continue;
+                }
+                // Neither is a subclass of the other → conflict
+                env->raiseTypeError(ctx,
+                    "metaclass conflict: the metaclass of a derived class "
+                    "must be a (non-strict) subclass of the metaclasses of "
+                    "all its bases");
+                winner = nullptr;
+                break;
+            }
+        }
+        if (!winner) {
+            // Conflict raised; unwind through the same path
+            // the inferred-metaclass branch uses.
+            return nullptr;
+        }
+        metaclass = winner;
+    }
+    if (!metaclass || metaclass == PROTO_NONE) {
+        // CPython semantics: iterate all bases and find the most derived metaclass.
+        // If multiple independent metaclasses exist, Python throws TypeError, but here we just take the first strictly derived one.
+        const proto::ProtoObject* typeProto = env ? env->getTypePrototype() : nullptr;
+        const proto::ProtoObject* objectProto = env ? env->getObjectPrototype() : nullptr;
+        // STRUCT-233: when no explicit metaclass is given,
+        // CPython initializes the winner from type(base0)
+        // rather than `type`.  Starting from `type` made
+        // `class C(A, B)` raise a spurious metaclass conflict
+        // when A's metaclass is ANotMeta (not a subclass of
+        // type) — neither side is a subtype of the other, so
+        // STRUCT-37's conflict branch fired even though
+        // CPython would correctly resolve to ANotMeta (and
+        // then upgrade to BNotMeta after walking B).
+        const proto::ProtoObject* bestMeta = typeProto;
+        {
+            const proto::ProtoTuple* tbInit = bases ? bases->asTuple(ctx) : nullptr;
+            const proto::ProtoList* lbInit = (tbInit || !bases) ? nullptr : bases->asList(ctx);
+            if (!tbInit && !lbInit && bases) {
+                const proto::ProtoObject* dataA = bases->getAttribute(ctx, env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__"));
+                if (dataA) {
+                    tbInit = dataA->asTuple(ctx);
+                    lbInit = tbInit ? nullptr : dataA->asList(ctx);
+                }
+            }
+            size_t bnInit = tbInit ? tbInit->getSize(ctx) : (lbInit ? lbInit->getSize(ctx) : 0);
+            // Walk to find the first base whose Py_TYPE
+            // (i.e. its metaclass) is non-trivial.  Bases
+            // whose type is exactly `object` (e.g. `object()`
+            // instance) or primitive contribute nothing to
+            // the metaclass winner — CPython lets the
+            // metaclass's own __new__ validate them later.
+            for (size_t i = 0; i < bnInit; ++i) {
+                const proto::ProtoObject* basei = tbInit ? tbInit->getAt(ctx, static_cast<int>(i)) : lbInit->getAt(ctx, static_cast<int>(i));
+                if (!basei || basei == PROTO_NONE || !env) continue;
+                const proto::ProtoObject* m0 = env->getAttribute(ctx, basei, env->getClassString(), false);
+                if (!m0 || m0 == PROTO_NONE) m0 = env->getType(ctx, basei);
+                if (m0 && m0 != PROTO_NONE
+                    && !areSameClassesVM(ctx, m0, objectProto)) {
+                    bestMeta = m0;
+                    break;
+                }
+            }
+        }
+        
+        if (bases) {
+            const proto::ProtoTuple* tupleBases = bases->asTuple(ctx);
+            const proto::ProtoList* listBases = tupleBases ? nullptr : bases->asList(ctx);
+            if (!tupleBases && !listBases) {
+                const proto::ProtoObject* dataAttr = bases->getAttribute(ctx, env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__"));
+                if (dataAttr) {
+                    tupleBases = dataAttr->asTuple(ctx);
+                    listBases = tupleBases ? nullptr : dataAttr->asList(ctx);
+                }
+            }
+            
+            size_t basesSize = tupleBases ? tupleBases->getSize(ctx) : (listBases ? listBases->getSize(ctx) : 0);
+            for (size_t i = 0; i < basesSize; ++i) {
+                const proto::ProtoObject* base = tupleBases ? tupleBases->getAt(ctx, static_cast<int>(i)) : listBases->getAt(ctx, static_cast<int>(i));
+                if (!base || base == PROTO_NONE) continue;
+
+                const proto::ProtoObject* baseMeta = nullptr;
+                if (env) {
+                    baseMeta = env->getAttribute(ctx, base, env->getClassString(), false);
+                    if (!baseMeta || baseMeta == PROTO_NONE) {
+                        baseMeta = env->getType(ctx, base);
+                    }
+                } else {
+                    baseMeta = base->getAttribute(ctx, protoPython::PythonEnvironment::getInternalString(ctx, "__class__"));
+                }
+                // STRUCT-234: skip bases whose metaclass
+                // resolves to bare `object` — these are
+                // typically `object()` instances passed
+                // as bases.  CPython does not let such
+                // instances contribute `type` to the meta
+                // winner, which would otherwise raise a
+                // spurious conflict against the other
+                // user-metaclass bases.  Skipping leaves
+                // the validation to the metaclass's
+                // __new__ when the class is finally
+                // constructed.
+                if (baseMeta && areSameClassesVM(ctx, baseMeta, objectProto)) {
+                    continue;
+                }
+                if (!baseMeta || baseMeta == PROTO_NONE) {
+                    // If a native base accidentally lacks a metaclass, default it to type
+                    baseMeta = typeProto;
+                }
+                // Compute derivation: if baseMeta is a subclass of bestMeta, it becomes the new best
+                if (!areSameClassesVM(ctx, baseMeta, bestMeta) && bestMeta) {
+                    const proto::ProtoObject* mro = env->getAttribute(ctx, baseMeta, PythonEnvironment::getInternedString(ctx, "__mro__"), false);
+                    bool isSub = false;
+                    if (mro) {
+                        const proto::ProtoTuple* mroTuple = mro->asTuple(ctx);
+                        if (!mroTuple) {
+                            const proto::ProtoObject* data = env ? env->getAttribute(ctx, mro, env->getDataString(), false) : mro->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__data__"));
+                            if (data) mroTuple = data->asTuple(ctx);
+                        }
+                        if (mroTuple) {
+                            for (size_t j = 0; j < mroTuple->getSize(ctx); ++j) {
+                                if (areSameClassesVM(ctx, mroTuple->getAt(ctx, static_cast<int>(j)), bestMeta)) {
+                                    isSub = true;
+                                    break;
+                                }
+                            }
+                        } else {
+                            const proto::ProtoList* mroList = mro->asList(ctx);
+                            if (mroList) {
+                                for (proto::proto_ulong j = 0; j < mroList->getSize(ctx); ++j) {
+                                    if (areSameClassesVM(ctx, mroList->getAt(ctx, static_cast<int>(j)), bestMeta)) {
+                                        isSub = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (diag_local) {
+                        std::string bn, bmn, bestn;
+                        const proto::ProtoString* nS = PythonEnvironment::getInternedString(ctx, "__name__");
+                        const proto::ProtoObject* n1 = base->proto::ProtoObject::getAttribute(ctx, nS);
+                        const proto::ProtoObject* n2 = baseMeta->proto::ProtoObject::getAttribute(ctx, nS);
+                        const proto::ProtoObject* n3 = bestMeta->proto::ProtoObject::getAttribute(ctx, nS);
+                        if (n1 && n1->isString(ctx)) n1->asString(ctx)->toUTF8String(ctx, bn);
+                        if (n2 && n2->isString(ctx)) n2->asString(ctx)->toUTF8String(ctx, bmn);
+                        if (n3 && n3->isString(ctx)) n3->asString(ctx)->toUTF8String(ctx, bestn);
+                        fprintf(stderr, "DEBUG METACLASS: base %p (%s) baseMeta %p (%s) bestMeta %p (%s) isSub=%d\n", (void*)base, bn.c_str(), (void*)baseMeta, bmn.c_str(), (void*)bestMeta, bestn.c_str(), isSub);
+                    }
+                    if (isSub) {
+                        bestMeta = baseMeta;
+                    } else {
+                        // STRUCT-37: neither bestMeta is a sub
+                        // of baseMeta (checked above via the
+                        // baseMeta->__mro__ walk) nor is
+                        // baseMeta a sub of bestMeta — verify
+                        // by walking bestMeta's MRO for baseMeta;
+                        // if absent in *both* directions we
+                        // have a metaclass conflict.
+                        bool bestIsSubOfBase = false;
+                        const proto::ProtoObject* bmro = bestMeta->getAttribute(ctx,
+                            PythonEnvironment::getInternedString(ctx, "__mro__"));
+                        const proto::ProtoTuple* bmroT = bmro ? bmro->asTuple(ctx) : nullptr;
+                        if (!bmroT && bmro) {
+                            const proto::ProtoObject* d = env
+                                ? env->getAttribute(ctx, bmro, env->getDataString(), false)
+                                : bmro->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__data__"));
+                            if (d) bmroT = d->asTuple(ctx);
+                        }
+                        if (bmroT) {
+                            for (size_t j = 0; j < bmroT->getSize(ctx); ++j) {
+                                if (areSameClassesVM(ctx, bmroT->getAt(ctx, static_cast<int>(j)), baseMeta)) {
+                                    bestIsSubOfBase = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!bestIsSubOfBase) {
+                            if (env) env->raiseTypeError(ctx,
+                                "metaclass conflict: the metaclass of a derived class "
+                                "must be a (non-strict) subclass of the metaclasses of "
+                                "all its bases");
+                            bestMeta = nullptr;
+                            break;
+                        }
+                    }
+                } else if (!bestMeta && baseMeta) {
+                    bestMeta = baseMeta;
+                }
+            }
+        }
+        if (!bestMeta && env && env->hasPendingException()) {
+            // Metaclass conflict raised — unwind through the
+            // dispatch loop's exception handling.
+            return nullptr;
+        }
+        metaclass = bestMeta;
+    }
+    if (!metaclass || metaclass == PROTO_NONE) {
+        metaclass = env ? env->getTypePrototype() : nullptr;
+    }
+    if (diag_local) {
+    }
+
+    // 2. Metaclass __prepare__
+    if (diag_local) fprintf(stderr, "DEBUG OP_BUILD_CLASS: metaclass=%p (PROTO_NONE=%p)\n", (void*)metaclass, (void*)PROTO_NONE);
+    if (metaclass) {
+        const proto::ProtoObject* mcName = metaclass->getAttribute(ctx, env ? env->getNameString() : protoPython::PythonEnvironment::getInternalString(ctx, "__name__"));
+        if (mcName && mcName->isString(ctx)) {
+            std::string mn; mcName->asString(ctx)->toUTF8String(ctx, mn);
+            if (diag_local) fprintf(stderr, "DEBUG OP_BUILD_CLASS: metaclass name='%s'\n", mn.c_str());
+        }
+    }
+    const proto::ProtoObject* prepareRaw = nullptr;
+    if (metaclass) {
+        // STRUCT-259: pass raiseError=false so a non-class
+        // metaclass (e.g. `class X(metaclass=func): pass`,
+        // where func is a plain function) doesn't raise an
+        // AttributeError when probing for `__prepare__`.
+        // CPython tolerates the absence and falls back to
+        // an empty namespace.
+        prepareRaw = env ? env->getAttribute(ctx, metaclass, PythonEnvironment::getInternedString(ctx, "__prepare__"), false) : metaclass->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__prepare__"));
+    }
+    const proto::ProtoObject* prepareM = prepareRaw;
+    if (diag_local) {
+        fprintf(stderr, "TRACE_PREPARE: metaclass=%p prepareM=%p\n", (void*)metaclass, (void*)prepareM); fflush(stderr);
+    }
+    if (prepareM && prepareM != PROTO_NONE) {
+        const proto::ProtoList* prepareArgs = ctx->newList()->appendLast(ctx, name)->appendLast(ctx, bases);
+        // Use keyword parameters if available
+        const proto::ProtoSparseList* kw = (kwds && kwds->asSparseList(ctx)) ? kwds->asSparseList(ctx) : nullptr;
+        const proto::ProtoObject* nsObj = invokeCallable(ctx, prepareM, prepareArgs, kw);
+        if (diag_local) {
+            fprintf(stderr, "TRACE_PREPARE: invokeCallable returned nsObj=%p\n", (void*)nsObj); fflush(stderr);
+        }
+        if (!nsObj) {
+            // __prepare__ raised — let the dispatch loop see
+            // the pending exception and unwind through the
+            // enclosing SETUP_FINALLY rather than bailing out
+            // of the whole executeBytecodeRange (which would
+            // bypass any try/except wrapping the class def).
+            return nullptr;
+        }
+        // CPython: __prepare__ must return a mapping. Detect
+        // None / non-mapping returns and raise TypeError with
+        // CPython's exact message format. The duck-typed mapping
+        // check is callable `keys` attr; same predicate as
+        // dict()/MappingProxyType() use elsewhere.
+        bool isMapping = (nsObj && nsObj != PROTO_NONE);
+        if (isMapping) {
+            // Reject obvious non-mappings.
+            if (nsObj->asList(ctx) || nsObj->asTuple(ctx) ||
+                nsObj->isString(ctx) || nsObj->isInteger(ctx) ||
+                nsObj->isDouble(ctx) || nsObj->isBoolean(ctx)) {
+                isMapping = false;
+            } else if (env) {
+                const proto::ProtoString* keysS = PythonEnvironment::getInternedString(ctx, "keys");
+                const proto::ProtoObject* keysM = env->getAttribute(ctx, nsObj, keysS, false);
+                if (!keysM || keysM == PROTO_NONE) isMapping = false;
+            }
+        }
+        if (!isMapping) {
+            std::string mcName = "<metaclass>";
+            if (env && metaclass) {
+                // Only use the metaclass __name__ when metaclass is
+                // a real type (carries __mro__ as OWN). An instance
+                // used as a metaclass inherits __mro__ from its
+                // class via the prototype chain, so an OWN check is
+                // required to distinguish.
+                bool isType = (metaclass->hasOwnAttribute(ctx, env->getMroString()) == PROTO_TRUE);
+                if (isType) {
+                    const proto::ProtoObject* mcN = metaclass->getAttribute(ctx, env->getNameString());
+                    if (mcN && mcN->isString(ctx)) mcN->asString(ctx)->toUTF8String(ctx, mcName);
+                }
+            }
+            std::string returnedTypeName = "NoneType";
+            if (env && nsObj && nsObj != PROTO_NONE) {
+                const proto::ProtoObject* cls = env->getType(ctx, nsObj);
+                if (cls) {
+                    const proto::ProtoObject* nm = cls->getAttribute(ctx, env->getNameString());
+                    if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, returnedTypeName);
+                }
+            }
+            std::string msg = mcName + ".__prepare__() must return a mapping, not " + returnedTypeName;
+            if (env) env->raiseTypeError(ctx, msg.c_str());
+            return nullptr;
+        }
+        *anchor = nsObj;
+    } else {
+        *anchor = ctx->newObject(true);
+    }
+    proto::ProtoObject* ns = const_cast<proto::ProtoObject*>(*anchor);
+    
+    // Initialize __keys__ list for the namespace
+    const proto::ProtoString* keysS = env ? env->getKeysString() : protoPython::PythonEnvironment::getInternalString(ctx, "__keys__");
+    if (ns->hasOwnAttribute(ctx, keysS) != PROTO_TRUE) {
+        const proto::ProtoList* keysList = ctx->newList();
+        ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, keysS, keysList->asObject(ctx)));
+    }
+
+    // Setup standard attributes in ns
+    const proto::ProtoString* py_name_s = env ? env->getNameString() : protoPython::PythonEnvironment::getInternalString(ctx, "__name__");
+    const proto::ProtoString* py_module_s = PythonEnvironment::getInternedString(ctx, "__module__");
+    
+    ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, nameS, name));
+    // Add to keys
+    const proto::ProtoObject* keysObj = ns->getAttribute(ctx, keysS);
+    if (keysObj && keysObj->asList(ctx)) {
+        ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, keysS, keysObj->asList(ctx)->appendLast(ctx, nameS->asObject(ctx))->asObject(ctx)));
+    }
+
+    // STRUCT-175 (round 16): class body's __module__ comes
+    // from the enclosing module's `__name__`, not from a
+    // (non-existent) `__module__` in globals.  CPython sets
+    // a class's __module__ to `__name__` of the namespace
+    // it was created in.  protoPython previously read
+    // `globals['__module__']` which is almost always None
+    // — leaving newly-created classes with no __module__
+    // (or with object.__module__ inherited as 'builtins',
+    // breaking pickle's qualname-based class lookup).
+    const proto::ProtoObject* globals = env ? env->getCurrentGlobals() : nullptr;
+    const proto::ProtoObject* moduleName = nullptr;
+    if (globals) {
+        moduleName = globals->getAttribute(ctx, py_name_s);
+        if (!moduleName || moduleName == PROTO_NONE) {
+            moduleName = globals->getAttribute(ctx, py_module_s);
+        }
+    }
+    if (moduleName && moduleName != PROTO_NONE) {
+        ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, py_module_s, moduleName));
+        // Re-fetch keysObj to avoid stale pointer if setAttribute returns new version or updates state
+        keysObj = ns->getAttribute(ctx, keysS);
+        if (keysObj && keysObj->asList(ctx)) {
+            ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, keysS, keysObj->asList(ctx)->appendLast(ctx, py_module_s->asObject(ctx))->asObject(ctx)));
+        }
+    }
+    if (env) {
+        ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, env->getFBackString(), PythonEnvironment::getCurrentFrame()));
+        *anchor = ns;
+        ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, env->getFGlobalsString(), PythonEnvironment::getCurrentGlobals()));
+        *anchor = ns;
+        ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, env->getFLocalsString(), ns));
+        *anchor = ns;
+    }
+
+    // 3. Execute class body
+    if (!runBody(ns)) return nullptr;
+    *anchor = ns;
+
+    // STRUCT-322: CPython places `__classcell__` into the
+    // namespace whenever the class body would build a
+    // `__class__` cell (i.e. uses super()).  protoPython's
+    // compiler doesn't emit that bookkeeping yet, so we
+    // approximate: if `__slots__` declares `__classcell__`,
+    // inject a placeholder so a Meta.__new__ that probes
+    // `assertIn('__classcell__', namespace)` sees it.
+    // Same trick for any `__qualname__` slot — that name
+    // is already in namespace as the class qualname, but
+    // some test patterns look for it via the metaclass
+    // attr kwarg.  The value is PROTO_NONE: callers that
+    // genuinely need the cell (super() resolution) keep
+    // using the protoCore parent-chain plumbing, which is
+    // unaffected.
+    if (env && ns && ns != PROTO_NONE) {
+        const proto::ProtoString* slotsName =
+            PythonEnvironment::getInternedString(ctx, "__slots__");
+        const proto::ProtoObject* slotsObj = ns->getAttribute(ctx, slotsName);
+        if (slotsObj && slotsObj != PROTO_NONE) {
+            // Slots can be tuple, list, or even a single str.
+            const proto::ProtoList* slotsList = nullptr;
+            if (slotsObj->isTuple(ctx)) {
+                slotsList = slotsObj->asTuple(ctx)->asList(ctx);
+            } else {
+                slotsList = slotsObj->asList(ctx);
+            }
+            auto injectIfMissing = [&](const char* slotName) {
+                const proto::ProtoString* k =
+                    PythonEnvironment::getInternedString(ctx, slotName);
+                if (ns->hasOwnAttribute(ctx, k) != PROTO_TRUE) {
+                    ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, k, PROTO_NONE));
+                    // Also append to __keys__ so the dict
+                    // path of `__contains__` / iteration
+                    // sees it.
+                    const proto::ProtoString* keysName = env->getKeysString();
+                    const proto::ProtoObject* keysObj = ns->getAttribute(ctx, keysName);
+                    const proto::ProtoList* keysL = (keysObj && keysObj->asList(ctx))
+                        ? keysObj->asList(ctx) : ctx->newList();
+                    keysL = keysL->appendLast(ctx, k->asObject(ctx));
+                    ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, keysName, keysL->asObject(ctx)));
+                }
+            };
+            if (slotsList) {
+                for (proto::proto_ulong i = 0; i < slotsList->getSize(ctx); ++i) {
+                    const proto::ProtoObject* entry = slotsList->getAt(ctx, static_cast<int>(i));
+                    if (!entry || !entry->isString(ctx)) continue;
+                    std::string s;
+                    entry->asString(ctx)->toUTF8String(ctx, s);
+                    if (s == "__classcell__" || s == "__qualname__") {
+                        injectIfMissing(s.c_str());
+                    }
+                }
+            } else if (slotsObj->isString(ctx)) {
+                std::string s;
+                slotsObj->asString(ctx)->toUTF8String(ctx, s);
+                if (s == "__classcell__" || s == "__qualname__") {
+                    injectIfMissing(s.c_str());
+                }
+            }
+            *anchor = ns;
+        }
+    }
+
+    // PEP 560: CPython's __build_class__ stores the bases as written
+    // in the namespace when __mro_entries__ replaced any of them.
+    if (origBases && env && ns && ns != PROTO_NONE) {
+        const proto::ProtoString* origBasesS =
+            PythonEnvironment::getInternedString(ctx, "__orig_bases__");
+        if (ns->hasOwnAttribute(ctx, origBasesS) != PROTO_TRUE) {
+            ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, origBasesS, origBases));
+            const proto::ProtoString* nsKeysName = env->getKeysString();
+            const proto::ProtoObject* nsKeysObj = ns->getAttribute(ctx, nsKeysName);
+            const proto::ProtoList* nsKeys = (nsKeysObj && nsKeysObj->asList(ctx))
+                ? nsKeysObj->asList(ctx) : ctx->newList();
+            nsKeys = nsKeys->appendLast(ctx, origBasesS->asObject(ctx));
+            ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, nsKeysName, nsKeys->asObject(ctx)));
+            *anchor = ns;
+        }
+    }
+
+    // 4. Invoke metaclass to create the class
+    const proto::ProtoList* mcArgs = ctx->newList()->appendLast(ctx, name)->appendLast(ctx, bases)->appendLast(ctx, ns);
+    // STRUCT-37: strip `metaclass` from kwds before forwarding
+    // to the metaclass call.  CPython's __build_class__
+    // consumes `metaclass` itself (used only to *pick* the
+    // metaclass) and never forwards it.  Passing it through
+    // duplicates it with the metaclass argument resolved
+    // here, yielding `__new__() got multiple values for
+    // argument 'metaclass'` in user metaclasses that don't
+    // accept arbitrary kwargs.  Other kwargs (PEP 487
+    // __init_subclass__ extras like `cls_kw=value`) are
+    // forwarded unchanged.
+    const proto::ProtoSparseList* kw = nullptr;
+    if (kwds && kwds->asSparseList(ctx)) {
+        const proto::ProtoSparseList* rawKw = kwds->asSparseList(ctx);
+        const proto::ProtoString* metaKey =
+            PythonEnvironment::getInternedString(ctx, "metaclass");
+        if (rawKw->has(ctx, metaKey->getHash(ctx))) {
+            kw = rawKw->removeAt(ctx, metaKey->getHash(ctx));
+        } else {
+            kw = rawKw;
+        }
+    }
+    if (diag_local) fprintf(stderr, "DEBUG OP_BUILD_CLASS: calling metaclass=%p\n", (void*)metaclass);
+    // STRUCT-69: thread the kwds dict's __keys__ tuple via
+    // pushKwNames so the inner **kwargs binding in
+    // runUserFunctionCallRaw can recover the key names from
+    // the SparseList (which only stores hashes).  Without
+    // this, user metaclass __new__/__init__ receive empty
+    // kwargs even when caller passed `class C(metaclass=M,
+    // foo=42)`.
+    const proto::ProtoTuple* kwNamesPushed = nullptr;
+    if (env && kw && kwds && kwds != PROTO_NONE) {
+        const proto::ProtoObject* keysObj = kwds->getAttribute(ctx, env->getKeysString());
+        const proto::ProtoList* keysL = keysObj ? keysObj->asList(ctx) : nullptr;
+        if (keysL && keysL->getSize(ctx) > 0) {
+            // Skip 'metaclass' key — same filter as for kw above.
+            const proto::ProtoString* metaKey =
+                PythonEnvironment::getInternedString(ctx, "metaclass");
+            proto::proto_ulong mcHash = metaKey->getHash(ctx);
+            const proto::ProtoList* fk = ctx->newList();
+            for (proto::proto_ulong i = 0; i < keysL->getSize(ctx); ++i) {
+                const proto::ProtoObject* k = keysL->getAt(ctx, static_cast<int>(i));
+                if (k && k->isString(ctx) && k->getHash(ctx) != mcHash) {
+                    fk = fk->appendLast(ctx, k);
+                }
+            }
+            if (fk->getSize(ctx) > 0) {
+                kwNamesPushed = ctx->newTupleFromList(fk);
+                env->pushKwNames(kwNamesPushed);
+            }
+        }
+    }
+    const proto::ProtoObject* targetClass = invokeCallable(ctx, metaclass, mcArgs, kw);
+    if (kwNamesPushed && env) env->popKwNames();
+    if (diag_local) fprintf(stderr, "DEBUG OP_BUILD_CLASS: targetClass=%p\n", (void*)targetClass);
+    
+    if (targetClass && targetClass != PROTO_NONE) {
+        // Set __qualname__ if not set as an *own* attribute (inherited values from
+        // object/type prototypes must not block per-class assignment).
+        const proto::ProtoString* qualnameS = PythonEnvironment::getInternedString(ctx, "__qualname__");
+        const bool hasOwnQN = targetClass->hasOwnAttribute(ctx, qualnameS) == PROTO_TRUE;
+        // STRUCT-324: compute the qualname string we want
+        // `Q1.__qualname__` to report, regardless of whether
+        // `__qualname__` is also a slot (member_descriptor).
+        // The compiler injects the class body's qualname into
+        // ns as a string; fall back to __name__ for top-level
+        // classes when ns has no qualname.
+        const proto::ProtoObject* qnString = nullptr;
+        {
+            const bool nsHasOwnQN = ns ? (ns->hasOwnAttribute(ctx, qualnameS) == PROTO_TRUE) : false;
+            const proto::ProtoObject* nsQN = nsHasOwnQN ? ns->getAttribute(ctx, qualnameS) : nullptr;
+            if (nsQN && nsQN != PROTO_NONE && nsQN->isString(ctx)) qnString = nsQN;
+            else qnString = name;
+        }
+        if (!hasOwnQN) {
+            targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, qualnameS, qnString));
+            *anchor = targetClass;
+        } else {
+            // `__qualname__` already exists as an own attribute.
+            // If it's NOT a string (typically a member_descriptor
+            // from `__slots__ = ['__qualname__']`), park the
+            // qualname string under a private key so the
+            // class-level lookup in env->getAttribute can still
+            // report it.  See STRUCT-324 in
+            // PythonEnvironment::getAttribute.
+            const proto::ProtoObject* curQN = targetClass->getOwnAttributeDirect(ctx, qualnameS);
+            if (curQN && !curQN->isString(ctx)) {
+                const proto::ProtoString* tpQS = PythonEnvironment::getInternedString(ctx, "__tp_qualname__");
+                targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, tpQS, qnString));
+                *anchor = targetClass;
+            }
+        }
+
+        // Guarantee `cls.__annotations__` always exists (CPython invariant).
+        // Propagate from the class namespace if the body declared annotations;
+        // otherwise fall back to an empty dict instance so `inspect`, `typing`,
+        // and dataclasses can read it unconditionally.
+        const proto::ProtoString* annS = PythonEnvironment::getInternedString(ctx, "__annotations__");
+        const bool hasOwnAnn = targetClass->hasOwnAttribute(ctx, annS) == PROTO_TRUE;
+        if (!hasOwnAnn) {
+            const bool nsHasOwnAnn = ns ? (ns->hasOwnAttribute(ctx, annS) == PROTO_TRUE) : false;
+            const proto::ProtoObject* annVal = nsHasOwnAnn ? ns->getAttribute(ctx, annS) : nullptr;
+            if (!annVal || annVal == PROTO_NONE) {
+                // Build a fresh empty dict that looks like a real Python dict
+                // (parent = dictPrototype, __data__ = empty sparse list).
+                const proto::ProtoObject* emptyDict = nullptr;
+                if (env && env->getDictPrototype()) {
+                    emptyDict = env->getDictPrototype()->newChild(ctx, true);
+                    emptyDict = emptyDict->setAttribute(ctx, env->getClassString(), env->getDictPrototype());
+                    emptyDict = emptyDict->setAttribute(ctx, env->getDataString(),
+                                                        ctx->newSparseList()->asObject(ctx));
+                } else {
+                    emptyDict = ctx->newSparseList()->asObject(ctx);
+                }
+                annVal = emptyDict;
+            }
+            targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, annS, annVal));
+            *anchor = targetClass;
+        }
+
+        // Inject __class__ into the class namespace (frame) so methods can interpret it
+        // via closure (parent frame reference).
+        // STRUCT-219: a custom metaclass may store `ns` as an
+        // attribute on the targetClass (e.g. `self.dict = dict`
+        // in M.__new__).  In that case, setting
+        // `ns.__class__ = targetClass` would corrupt the
+        // user's attribute by re-typing the same object as
+        // the metaclass instance.  Detect by scanning
+        // targetClass's __keys__ for any attribute whose
+        // value is `ns`; if found, skip the injection.  The
+        // pattern is rare enough that super() inside such a
+        // class body is not a common use case (the user's
+        // custom __call__ usually replaces the standard
+        // instance constructor anyway).
+        const proto::ProtoString* clsName = env ? env->getClassString() : protoPython::PythonEnvironment::getInternalString(ctx, "__class__");
+        bool nsReachableFromTarget = false;
+        if (env) {
+            const proto::ProtoObject* tcKeys = targetClass->getAttribute(ctx, env->getKeysString());
+            const proto::ProtoList* tcKL = tcKeys ? tcKeys->asList(ctx) : nullptr;
+            if (tcKL) {
+                for (proto::proto_ulong ki = 0; ki < tcKL->getSize(ctx); ++ki) {
+                    const proto::ProtoObject* k = tcKL->getAt(ctx, static_cast<int>(ki));
+                    if (!k || !k->isString(ctx)) continue;
+                    const proto::ProtoObject* v =
+                        targetClass->getAttribute(ctx, k->asString(ctx));
+                    if (v == ns) { nsReachableFromTarget = true; break; }
+                }
+            }
+        }
+        if (!nsReachableFromTarget) {
+            ns->setAttribute(ctx, clsName, targetClass);
+        }
+
+        // PI: __abstractmethods__ is populated by
+        // ABCMeta.__new__ in lib/python3.14/abc.py; the
+        // BUILD_CLASS opcode no longer needs to compute it
+        // for the default-metaclass path.  Inactive block
+        // kept for documentation parallel to PG's hooks.
+        if (false) {
+            const proto::ProtoString* abstractS =
+                PythonEnvironment::getInternedString(ctx, "__isabstractmethod__");
+            const proto::ProtoString* amS =
+                PythonEnvironment::getInternedString(ctx, "__abstractmethods__");
+            const proto::ProtoList* absNames = ctx->newList();
+            // 1. Walk ns's __data__ SparseList (populated by
+            // STORE_NAME during class body execution) for
+            // values declaring __isabstractmethod__.
+            // Recover names from each value's __name__ attr.
+            {
+                // Iterate ns.__keys__ via Python iter protocol
+                // (handles list-CoW state correctly).  For each
+                // name, fetch the value via env->getAttribute
+                // (full chain) and check __isabstractmethod__.
+                const proto::ProtoObject* nsKeys = ns->getAttribute(ctx, env->getKeysString());
+                if (nsKeys && nsKeys != PROTO_NONE) {
+                    const proto::ProtoObject* iter = env->iter(nsKeys);
+                    int safety = 1024;
+                    while (iter && safety-- > 0) {
+                        const proto::ProtoObject* k = env->next(iter);
+                        if (!k) break;
+                        if (k->isString(ctx)) {
+                            const proto::ProtoString* nameS_ = k->asString(ctx);
+                            const proto::ProtoObject* v = env->getAttribute(ctx, ns, nameS_, false);
+                            if (env->hasPendingException()) env->clearPendingException();
+                            if (v && v != PROTO_NONE) {
+                                const proto::ProtoObject* isAbs =
+                                    env->getAttribute(ctx, v, abstractS, false);
+                                if (env->hasPendingException()) env->clearPendingException();
+                                if (isAbs == PROTO_TRUE) {
+                                    absNames = absNames->appendLast(ctx, k);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // Inherit unimplemented abstract names from bases.
+            const proto::ProtoObject* mro2 = targetClass->getAttribute(ctx,
+                PythonEnvironment::getInternedString(ctx, "__mro__"));
+            const proto::ProtoTuple* mro2T = mro2 ? mro2->asTuple(ctx) : nullptr;
+            if (mro2T) {
+                for (proto::proto_ulong mi = 1; mi < mro2T->getSize(ctx); ++mi) {
+                    const proto::ProtoObject* base = mro2T->getAt(ctx, static_cast<int>(mi));
+                    if (!base || base == PROTO_NONE) continue;
+                    const proto::ProtoObject* baseAm = base->getOwnAttributeDirect(ctx, amS);
+                    if (!baseAm || baseAm == PROTO_NONE) continue;
+                    const proto::ProtoList* bl = baseAm->asList(ctx);
+                    const proto::ProtoTuple* bt = bl ? nullptr : baseAm->asTuple(ctx);
+                    proto::proto_ulong sz = bl ? bl->getSize(ctx) : (bt ? bt->getSize(ctx) : 0);
+                    for (proto::proto_ulong bi = 0; bi < sz; ++bi) {
+                        const proto::ProtoObject* bn = bl ? bl->getAt(ctx, static_cast<int>(bi)) : bt->getAt(ctx, static_cast<int>(bi));
+                        if (!bn || !bn->isString(ctx)) continue;
+                        // Check if this class has a concrete override.
+                        const proto::ProtoObject* override_ = targetClass->getOwnAttributeDirect(ctx, bn->asString(ctx));
+                        bool overrides = override_ && override_ != PROTO_NONE;
+                        if (overrides) {
+                            const proto::ProtoObject* isAbs = override_->getAttribute(ctx, abstractS);
+                            if (isAbs != PROTO_TRUE) continue;  // concrete override
+                        }
+                        if (!absNames->has(ctx, bn)) {
+                            absNames = absNames->appendLast(ctx, bn);
+                        }
+                    }
+                }
+            }
+            const_cast<proto::ProtoObject*>(targetClass)->setAttribute(
+                ctx, amS, absNames->asObject(ctx));
+            *anchor = targetClass;
+        }
+
+        // PG: also write the just-built class into `ns`
+        // under its own name so methods inside the body —
+        // whose closure chains walk parent → ns — resolve
+        // zero-arg super() correctly.  Without this,
+        // methods of a class defined inside another
+        // function can't reach the class (the enclosing
+        // STORE_FAST runs only after BUILD_CLASS finishes).
+        if (name && name->isString(ctx)) {
+            ns->setAttribute(ctx, name->asString(ctx), targetClass);
+        }
+        // The implicit `__class__` cell of the methods: the compiler
+        // reads `__class__` in a method as LOAD_DEREF ".__class__", a
+        // name that, unlike `__class__`, no prototype object on the
+        // closure walk owns.  Unconditional (the STRUCT-219 guard
+        // above only protects the namespace's own `__class__`).
+        if (env && ns && ns != PROTO_NONE) {
+            ns->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, ".__class__"), targetClass);
+        }
+
+        // __init_subclass__ is not called here: as in CPython it
+        // runs at the end of type.__new__ (py_type ->
+        // invokeInitSubclass), so a metaclass calling
+        // super().__new__, type(name, bases, ns) and
+        // types.new_class() all run it exactly once.  A raised
+        // exception makes the metaclass call return nullptr and
+        // unwinds below.
+    }
+
+    if (env && env->hasPendingException()) {
+        // The metaclass call or __init_subclass__ raised: let the
+        // dispatch loop unwind through the enclosing handlers, as the
+        // class-body path above does.
+        return nullptr;
+    }
+    return targetClass ? targetClass : PROTO_NONE;
 }
 
 const proto::ProtoObject* executeBytecodeRange(
@@ -8727,907 +9626,69 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 
                 PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-                const proto::ProtoString* nameS = env ? env->getNameString() : protoPython::PythonEnvironment::getInternalString(ctx, "__name__");
-                const proto::ProtoString* callS = env ? env->getCallString() : PythonEnvironment::getInternedString(ctx, "__call__");
-                
-                // PEP 560: a base that is not a class but defines
-                // __mro_entries__ (typing's Generic[T]) is replaced by the tuple
-                // that method returns, so metaclass selection, __prepare__ and
-                // the metaclass call all see the resolved bases. The bases as
-                // written are recorded as __orig_bases__ before the metaclass
-                // call. The resolved tuple is a young cell of this context and
-                // the original stays in its stack slot, so both stay reachable.
-                const proto::ProtoObject* origBases = nullptr;
-                if (env && bases && bases != PROTO_NONE && bases->asTuple(ctx)) {
-                    const proto::ProtoTuple* baseTuple = bases->asTuple(ctx);
-                    const proto::ProtoString* mroEntriesS =
-                        PythonEnvironment::getInternedString(ctx, "__mro_entries__");
-                    const proto::ProtoList* resolved = ctx->newList();
-                    bool changed = false;
-                    bool failed = false;
-                    for (proto::proto_ulong bi = 0; bi < baseTuple->getSize(ctx); ++bi) {
-                        const proto::ProtoObject* base = baseTuple->getAt(ctx, static_cast<int>(bi));
-                        const proto::ProtoObject* entries = nullptr;
-                        if (base && base != PROTO_NONE && !env->isActuallyAClass(ctx, base)) {
-                            entries = env->getAttribute(ctx, base, mroEntriesS, false);
-                            if (env->hasPendingException()) env->clearPendingException();
-                        }
-                        if (!entries || entries == PROTO_NONE) {
-                            resolved = resolved->appendLast(ctx, base);
-                            continue;
-                        }
-                        const proto::ProtoObject* result =
-                            invokeCallable(ctx, entries, ctx->newList()->appendLast(ctx, bases));
-                        if (env->hasPendingException()) { failed = true; break; }
-                        const proto::ProtoTuple* resultTuple = result ? result->asTuple(ctx) : nullptr;
-                        if (!resultTuple) {
-                            env->raiseTypeError(ctx, "__mro_entries__ must return a tuple");
-                            failed = true;
-                            break;
-                        }
-                        for (proto::proto_ulong ri = 0; ri < resultTuple->getSize(ctx); ++ri) {
-                            resolved = resolved->appendLast(ctx, resultTuple->getAt(ctx, static_cast<int>(ri)));
-                        }
-                        changed = true;
-                    }
-                    if (failed) {
-                        i = next_i;
-                        continue;
-                    }
-                    if (changed) {
-                        origBases = bases;
-                        bases = ctx->newTupleFromList(resolved)->asObject(ctx);
-                    }
-                }
-
-                // 1. Identify Metaclass
-                const proto::ProtoObject* metaclass = nullptr;
-                if (kwds && kwds != PROTO_NONE) {
-                    const proto::ProtoString* kName = PythonEnvironment::getInternedString(ctx, "metaclass");
-                    metaclass = kwds->getAttribute(ctx, kName);
-                    if (!metaclass || metaclass == PROTO_NONE) {
-                        // Try looking in __data__ if it's a dict object
-                        const proto::ProtoObject* dataObj = kwds->getAttribute(ctx, env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__"));
-                        if (dataObj && dataObj->asSparseList(ctx)) {
-                            metaclass = dataObj->asSparseList(ctx)->getAt(ctx, kName->getHash(ctx));
-                        }
-                    }
-                }
-                // STRUCT-232: when an explicit metaclass is passed,
-                // CPython still verifies it against every base's
-                // metaclass.  Algorithm: among (explicit_meta, *base_metas),
-                // the "winning" metaclass is the unique most-derived one.
-                // It is the resulting class's metaclass — possibly the
-                // explicit one, possibly upgraded to a more-derived base
-                // metaclass, or a TypeError if none is a (non-strict)
-                // subclass of all the others.
-                if (metaclass && metaclass != PROTO_NONE) {
-                    const proto::ProtoObject* typeProto2 = env ? env->getTypePrototype() : nullptr;
-                    const proto::ProtoObject* objectProto2 = env ? env->getObjectPrototype() : nullptr;
-                    auto isSubclassMeta = [&](const proto::ProtoObject* a, const proto::ProtoObject* b) -> bool {
-                        if (areSameClassesVM(ctx, a, b)) return true;
-                        if (!a || !b) return false;
-                        const proto::ProtoObject* mro = env->getAttribute(ctx, a,
-                            PythonEnvironment::getInternedString(ctx, "__mro__"), false);
-                        const proto::ProtoTuple* mroT = mro ? mro->asTuple(ctx) : nullptr;
-                        if (!mroT && mro) {
-                            const proto::ProtoObject* d = env->getAttribute(ctx, mro, env->getDataString(), false);
-                            if (d) mroT = d->asTuple(ctx);
-                        }
-                        if (mroT) {
-                            for (proto::proto_ulong j = 0; j < mroT->getSize(ctx); ++j) {
-                                if (areSameClassesVM(ctx, mroT->getAt(ctx, static_cast<int>(j)), b)) return true;
-                            }
-                        }
-                        return false;
-                    };
-                    const proto::ProtoObject* winner = metaclass;
-                    // Run the meta-derivation check whenever the
-                    // explicit metaclass IS a class (has a __mro__).
-                    // A plain non-class callable (e.g. `metaclass=lambda
-                    // ...`) bypasses the check entirely — there is no
-                    // class hierarchy to reconcile against the bases'
-                    // metaclasses.
-                    // STRUCT-264: check class-ness via OWN __mro__ (or
-                    // by walking type(winner)'s MRO for typePrototype).
-                    // A plain function inherits `__mro__` from its type
-                    // chain, so the previous unqualified `getAttribute`
-                    // probe falsely classified `metaclass=func` as a
-                    // class and ran the conflict-detection loop —
-                    // raising a spurious "metaclass conflict" for
-                    // `class X(object, metaclass=func): pass`.
-                    bool winnerIsClass = false;
-                    if (winner) {
-                        const proto::ProtoString* mroDunder =
-                            PythonEnvironment::getInternedString(ctx, "__mro__");
-                        if (winner->hasOwnAttribute(ctx, mroDunder) == PROTO_TRUE) {
-                            winnerIsClass = true;
-                        } else if (winner == typeProto2) {
-                            winnerIsClass = true;
-                        } else if (env) {
-                            const proto::ProtoObject* wType = env->getType(ctx, winner);
-                            if (wType && (wType == typeProto2 || isSubclassMeta(wType, typeProto2))) {
-                                winnerIsClass = true;
-                            }
-                        }
-                    }
-                    if (winnerIsClass && bases) {
-                        const proto::ProtoTuple* tb = bases->asTuple(ctx);
-                        const proto::ProtoList* lb = tb ? nullptr : bases->asList(ctx);
-                        size_t bn = tb ? tb->getSize(ctx) : (lb ? lb->getSize(ctx) : 0);
-                        for (size_t i = 0; i < bn; ++i) {
-                            const proto::ProtoObject* b = tb ? tb->getAt(ctx, static_cast<int>(i)) : lb->getAt(ctx, static_cast<int>(i));
-                            if (!b || b == PROTO_NONE) continue;
-                            const proto::ProtoObject* bm = env->getAttribute(ctx, b,
-                                env->getClassString(), false);
-                            if (!bm || bm == PROTO_NONE) bm = env->getType(ctx, b);
-                            // STRUCT-234: skip bases whose metaclass
-                            // resolves to bare `object` (e.g. plain
-                            // `object()` instance passed as a base).
-                            if (bm && areSameClassesVM(ctx, bm, objectProto2)) continue;
-                            if (!bm) bm = typeProto2;
-                            if (!bm) continue;
-                            // CPython rule: explicit metaclass W must be a
-                            // subclass of every base's metaclass.  If
-                            // bm IS a subclass of W, that means W is more
-                            // general than bm — and W cannot accommodate
-                            // bm-specific behaviour, so conflict.  The
-                            // exception is when W == bm exactly (same
-                            // class), which is fine.
-                            if (isSubclassMeta(winner, bm)) {
-                                // winner already covers this base's meta
-                                continue;
-                            }
-                            if (isSubclassMeta(bm, winner)) {
-                                // base's meta is more derived than the
-                                // explicit one — CPython upgrades.
-                                winner = bm;
-                                continue;
-                            }
-                            // Neither is a subclass of the other → conflict
-                            env->raiseTypeError(ctx,
-                                "metaclass conflict: the metaclass of a derived class "
-                                "must be a (non-strict) subclass of the metaclasses of "
-                                "all its bases");
-                            winner = nullptr;
-                            break;
-                        }
-                    }
-                    if (!winner) {
-                        // Conflict raised; unwind through the same path
-                        // the inferred-metaclass branch uses.
-                        if (stack.size() >= 5) {
-                            for (int k = 0; k < 5; ++k) stack.pop_back();
-                        }
-                        continue;
-                    }
-                    metaclass = winner;
-                }
-                if (!metaclass || metaclass == PROTO_NONE) {
-                    // CPython semantics: iterate all bases and find the most derived metaclass.
-                    // If multiple independent metaclasses exist, Python throws TypeError, but here we just take the first strictly derived one.
-                    const proto::ProtoObject* typeProto = env ? env->getTypePrototype() : nullptr;
-                    const proto::ProtoObject* objectProto = env ? env->getObjectPrototype() : nullptr;
-                    // STRUCT-233: when no explicit metaclass is given,
-                    // CPython initializes the winner from type(base0)
-                    // rather than `type`.  Starting from `type` made
-                    // `class C(A, B)` raise a spurious metaclass conflict
-                    // when A's metaclass is ANotMeta (not a subclass of
-                    // type) — neither side is a subtype of the other, so
-                    // STRUCT-37's conflict branch fired even though
-                    // CPython would correctly resolve to ANotMeta (and
-                    // then upgrade to BNotMeta after walking B).
-                    const proto::ProtoObject* bestMeta = typeProto;
-                    {
-                        const proto::ProtoTuple* tbInit = bases ? bases->asTuple(ctx) : nullptr;
-                        const proto::ProtoList* lbInit = (tbInit || !bases) ? nullptr : bases->asList(ctx);
-                        if (!tbInit && !lbInit && bases) {
-                            const proto::ProtoObject* dataA = bases->getAttribute(ctx, env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__"));
-                            if (dataA) {
-                                tbInit = dataA->asTuple(ctx);
-                                lbInit = tbInit ? nullptr : dataA->asList(ctx);
-                            }
-                        }
-                        size_t bnInit = tbInit ? tbInit->getSize(ctx) : (lbInit ? lbInit->getSize(ctx) : 0);
-                        // Walk to find the first base whose Py_TYPE
-                        // (i.e. its metaclass) is non-trivial.  Bases
-                        // whose type is exactly `object` (e.g. `object()`
-                        // instance) or primitive contribute nothing to
-                        // the metaclass winner — CPython lets the
-                        // metaclass's own __new__ validate them later.
-                        for (size_t i = 0; i < bnInit; ++i) {
-                            const proto::ProtoObject* basei = tbInit ? tbInit->getAt(ctx, static_cast<int>(i)) : lbInit->getAt(ctx, static_cast<int>(i));
-                            if (!basei || basei == PROTO_NONE || !env) continue;
-                            const proto::ProtoObject* m0 = env->getAttribute(ctx, basei, env->getClassString(), false);
-                            if (!m0 || m0 == PROTO_NONE) m0 = env->getType(ctx, basei);
-                            if (m0 && m0 != PROTO_NONE
-                                && !areSameClassesVM(ctx, m0, objectProto)) {
-                                bestMeta = m0;
-                                break;
-                            }
-                        }
-                    }
-                    
-                    if (bases) {
-                        const proto::ProtoTuple* tupleBases = bases->asTuple(ctx);
-                        const proto::ProtoList* listBases = tupleBases ? nullptr : bases->asList(ctx);
-                        if (!tupleBases && !listBases) {
-                            const proto::ProtoObject* dataAttr = bases->getAttribute(ctx, env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__"));
-                            if (dataAttr) {
-                                tupleBases = dataAttr->asTuple(ctx);
-                                listBases = tupleBases ? nullptr : dataAttr->asList(ctx);
-                            }
-                        }
-                        
-                        size_t basesSize = tupleBases ? tupleBases->getSize(ctx) : (listBases ? listBases->getSize(ctx) : 0);
-                        for (size_t i = 0; i < basesSize; ++i) {
-                            const proto::ProtoObject* base = tupleBases ? tupleBases->getAt(ctx, static_cast<int>(i)) : listBases->getAt(ctx, static_cast<int>(i));
-                            if (!base || base == PROTO_NONE) continue;
-
-                            const proto::ProtoObject* baseMeta = nullptr;
-                            if (env) {
-                                baseMeta = env->getAttribute(ctx, base, env->getClassString(), false);
-                                if (!baseMeta || baseMeta == PROTO_NONE) {
-                                    baseMeta = env->getType(ctx, base);
+                if (!env) { i = next_i; continue; }
+                // The namespace, then the class, lives in a slot above the
+                // four operands.
+                stack.push_back(PROTO_NONE);
+                const proto::ProtoObject** nsAnchor = &stack.back();
+                const proto::ProtoObject* targetClass = env->buildClass(ctx, name, bases, kwds,
+                    [ctx, env, body, nsAnchor, diag_local](proto::ProtoObject*& ns) -> bool {
+                        // Captured by value: a by-reference capture would take the
+                        // address of the dispatch loop's locals and keep them out of
+                        // registers for the whole loop.
+                        // 3. Execute class body
+                        if (body) {
+                            const proto::ProtoString* callS = env ? env->getCallString() : protoPython::PythonEnvironment::getInternalString(ctx, "__call__");
+                            const proto::ProtoString* codeS = env ? env->getCodeString() : protoPython::PythonEnvironment::getInternalString(ctx, "__code__");
+                            const proto::ProtoObject* codeObj = body->getAttribute(ctx, codeS);
+                            // PG: propagate the body function's __closure__ to the
+                            // class namespace so LOAD_DEREF inside the class body
+                            // can walk the enclosing-scope cells.  Without this,
+                            // `class C: y = x` (with x defined in an enclosing
+                            // function) sees x as None.
+                            if (env && body) {
+                                const proto::ProtoObject* bodyClosure = body->getAttribute(ctx, env->getClosureString());
+                                if (bodyClosure && bodyClosure != PROTO_NONE) {
+                                    ns = const_cast<proto::ProtoObject*>(
+                                        ns->setAttribute(ctx, env->getClosureString(), bodyClosure));
+                                    *nsAnchor = ns;
                                 }
-                            } else {
-                                baseMeta = base->getAttribute(ctx, protoPython::PythonEnvironment::getInternalString(ctx, "__class__"));
                             }
-                            // STRUCT-234: skip bases whose metaclass
-                            // resolves to bare `object` — these are
-                            // typically `object()` instances passed
-                            // as bases.  CPython does not let such
-                            // instances contribute `type` to the meta
-                            // winner, which would otherwise raise a
-                            // spurious conflict against the other
-                            // user-metaclass bases.  Skipping leaves
-                            // the validation to the metaclass's
-                            // __new__ when the class is finally
-                            // constructed.
-                            if (baseMeta && areSameClassesVM(ctx, baseMeta, objectProto)) {
-                                continue;
-                            }
-                            if (!baseMeta || baseMeta == PROTO_NONE) {
-                                // If a native base accidentally lacks a metaclass, default it to type
-                                baseMeta = typeProto;
-                            }
-                            // Compute derivation: if baseMeta is a subclass of bestMeta, it becomes the new best
-                            if (!areSameClassesVM(ctx, baseMeta, bestMeta) && bestMeta) {
-                                const proto::ProtoObject* mro = env->getAttribute(ctx, baseMeta, PythonEnvironment::getInternedString(ctx, "__mro__"), false);
-                                bool isSub = false;
-                                if (mro) {
-                                    const proto::ProtoTuple* mroTuple = mro->asTuple(ctx);
-                                    if (!mroTuple) {
-                                        const proto::ProtoObject* data = env ? env->getAttribute(ctx, mro, env->getDataString(), false) : mro->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__data__"));
-                                        if (data) mroTuple = data->asTuple(ctx);
-                                    }
-                                    if (mroTuple) {
-                                        for (size_t j = 0; j < mroTuple->getSize(ctx); ++j) {
-                                            if (areSameClassesVM(ctx, mroTuple->getAt(ctx, static_cast<int>(j)), bestMeta)) {
-                                                isSub = true;
-                                                break;
-                                            }
-                                        }
-                                    } else {
-                                        const proto::ProtoList* mroList = mro->asList(ctx);
-                                        if (mroList) {
-                                            for (proto::proto_ulong j = 0; j < mroList->getSize(ctx); ++j) {
-                                                if (areSameClassesVM(ctx, mroList->getAt(ctx, static_cast<int>(j)), bestMeta)) {
-                                                    isSub = true;
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                    }
+                            if (codeObj && codeObj != PROTO_NONE) {
+                                if (diag_local) fprintf(stderr, "DEBUG OP_BUILD_CLASS: before body run ns=%p\n", (void*)ns);
+                                // The class body is a Python-level scope of its own.
+                                PythonEnvironment::pushScopeGlobals(PythonEnvironment::getCurrentGlobals());
+                                runCodeObject(ctx, codeObj, ns);
+                                PythonEnvironment::popScopeGlobals();
+                                if (env && env->hasPendingException()) {
+                                    // Class body raised — let the dispatch loop
+                                    // unwind through the enclosing SETUP_FINALLY
+                                    // (e.g. `with assertRaises(NameError): class
+                                    // CBad: nonexistent.attr: int = 0`).
+                                    return false;
                                 }
                                 if (diag_local) {
-                                    std::string bn, bmn, bestn;
-                                    const proto::ProtoString* nS = PythonEnvironment::getInternedString(ctx, "__name__");
-                                    const proto::ProtoObject* n1 = base->proto::ProtoObject::getAttribute(ctx, nS);
-                                    const proto::ProtoObject* n2 = baseMeta->proto::ProtoObject::getAttribute(ctx, nS);
-                                    const proto::ProtoObject* n3 = bestMeta->proto::ProtoObject::getAttribute(ctx, nS);
-                                    if (n1 && n1->isString(ctx)) n1->asString(ctx)->toUTF8String(ctx, bn);
-                                    if (n2 && n2->isString(ctx)) n2->asString(ctx)->toUTF8String(ctx, bmn);
-                                    if (n3 && n3->isString(ctx)) n3->asString(ctx)->toUTF8String(ctx, bestn);
-                                    fprintf(stderr, "DEBUG METACLASS: base %p (%s) baseMeta %p (%s) bestMeta %p (%s) isSub=%d\n", (void*)base, bn.c_str(), (void*)baseMeta, bmn.c_str(), (void*)bestMeta, bestn.c_str(), isSub);
+                                    const proto::ProtoObject* keysObj = ns->getAttribute(ctx, env ? env->getKeysString() : protoPython::PythonEnvironment::getInternalString(ctx, "__keys__"));
+                                    const proto::ProtoList* keysList = keysObj ? keysObj->asList(ctx) : nullptr;
+                                    fprintf(stderr, "DEBUG OP_BUILD_CLASS: after body run ns=%p keysSize=%llu\n", (void*)ns, static_cast<unsigned long long>(keysList ? keysList->getSize(ctx) : 0));
                                 }
-                                if (isSub) {
-                                    bestMeta = baseMeta;
-                                } else {
-                                    // STRUCT-37: neither bestMeta is a sub
-                                    // of baseMeta (checked above via the
-                                    // baseMeta->__mro__ walk) nor is
-                                    // baseMeta a sub of bestMeta — verify
-                                    // by walking bestMeta's MRO for baseMeta;
-                                    // if absent in *both* directions we
-                                    // have a metaclass conflict.
-                                    bool bestIsSubOfBase = false;
-                                    const proto::ProtoObject* bmro = bestMeta->getAttribute(ctx,
-                                        PythonEnvironment::getInternedString(ctx, "__mro__"));
-                                    const proto::ProtoTuple* bmroT = bmro ? bmro->asTuple(ctx) : nullptr;
-                                    if (!bmroT && bmro) {
-                                        const proto::ProtoObject* d = env
-                                            ? env->getAttribute(ctx, bmro, env->getDataString(), false)
-                                            : bmro->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__data__"));
-                                        if (d) bmroT = d->asTuple(ctx);
-                                    }
-                                    if (bmroT) {
-                                        for (size_t j = 0; j < bmroT->getSize(ctx); ++j) {
-                                            if (areSameClassesVM(ctx, bmroT->getAt(ctx, static_cast<int>(j)), baseMeta)) {
-                                                bestIsSubOfBase = true;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                    if (!bestIsSubOfBase) {
-                                        if (env) env->raiseTypeError(ctx,
-                                            "metaclass conflict: the metaclass of a derived class "
-                                            "must be a (non-strict) subclass of the metaclasses of "
-                                            "all its bases");
-                                        bestMeta = nullptr;
-                                        break;
-                                    }
-                                }
-                            } else if (!bestMeta && baseMeta) {
-                                bestMeta = baseMeta;
-                            }
-                        }
-                    }
-                    if (!bestMeta && env && env->hasPendingException()) {
-                        // Metaclass conflict raised — unwind through the
-                        // dispatch loop's exception handling.
-                        i = next_i;
-                        continue;
-                    }
-                    metaclass = bestMeta;
-                }
-                if (!metaclass || metaclass == PROTO_NONE) {
-                    metaclass = env ? env->getTypePrototype() : nullptr;
-                }
-                if (diag_local) {
-                }
-
-                // 2. Metaclass __prepare__
-                if (diag_local) fprintf(stderr, "DEBUG OP_BUILD_CLASS: metaclass=%p (PROTO_NONE=%p)\n", (void*)metaclass, (void*)PROTO_NONE);
-                if (metaclass) {
-                    const proto::ProtoObject* mcName = metaclass->getAttribute(ctx, env ? env->getNameString() : protoPython::PythonEnvironment::getInternalString(ctx, "__name__"));
-                    if (mcName && mcName->isString(ctx)) {
-                        std::string mn; mcName->asString(ctx)->toUTF8String(ctx, mn);
-                        if (diag_local) fprintf(stderr, "DEBUG OP_BUILD_CLASS: metaclass name='%s'\n", mn.c_str());
-                    }
-                }
-                const proto::ProtoObject* prepareRaw = nullptr;
-                if (metaclass) {
-                    // STRUCT-259: pass raiseError=false so a non-class
-                    // metaclass (e.g. `class X(metaclass=func): pass`,
-                    // where func is a plain function) doesn't raise an
-                    // AttributeError when probing for `__prepare__`.
-                    // CPython tolerates the absence and falls back to
-                    // an empty namespace.
-                    prepareRaw = env ? env->getAttribute(ctx, metaclass, PythonEnvironment::getInternedString(ctx, "__prepare__"), false) : metaclass->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__prepare__"));
-                }
-                const proto::ProtoObject* prepareM = prepareRaw;
-                if (diag_local) {
-                    fprintf(stderr, "TRACE_PREPARE: metaclass=%p prepareM=%p\n", (void*)metaclass, (void*)prepareM); fflush(stderr);
-                }
-                if (prepareM && prepareM != PROTO_NONE) {
-                    const proto::ProtoList* prepareArgs = ctx->newList()->appendLast(ctx, name)->appendLast(ctx, bases);
-                    // Use keyword parameters if available
-                    const proto::ProtoSparseList* kw = (kwds && kwds->asSparseList(ctx)) ? kwds->asSparseList(ctx) : nullptr;
-                    const proto::ProtoObject* nsObj = invokeCallable(ctx, prepareM, prepareArgs, kw);
-                    if (diag_local) {
-                        fprintf(stderr, "TRACE_PREPARE: invokeCallable returned nsObj=%p\n", (void*)nsObj); fflush(stderr);
-                    }
-                    if (!nsObj) {
-                        // __prepare__ raised — let the dispatch loop see
-                        // the pending exception and unwind through the
-                        // enclosing SETUP_FINALLY rather than bailing out
-                        // of the whole executeBytecodeRange (which would
-                        // bypass any try/except wrapping the class def).
-                        i = next_i;
-                        continue;
-                    }
-                    // CPython: __prepare__ must return a mapping. Detect
-                    // None / non-mapping returns and raise TypeError with
-                    // CPython's exact message format. The duck-typed mapping
-                    // check is callable `keys` attr; same predicate as
-                    // dict()/MappingProxyType() use elsewhere.
-                    bool isMapping = (nsObj && nsObj != PROTO_NONE);
-                    if (isMapping) {
-                        // Reject obvious non-mappings.
-                        if (nsObj->asList(ctx) || nsObj->asTuple(ctx) ||
-                            nsObj->isString(ctx) || nsObj->isInteger(ctx) ||
-                            nsObj->isDouble(ctx) || nsObj->isBoolean(ctx)) {
-                            isMapping = false;
-                        } else if (env) {
-                            const proto::ProtoString* keysS = PythonEnvironment::getInternedString(ctx, "keys");
-                            const proto::ProtoObject* keysM = env->getAttribute(ctx, nsObj, keysS, false);
-                            if (!keysM || keysM == PROTO_NONE) isMapping = false;
-                        }
-                    }
-                    if (!isMapping) {
-                        std::string mcName = "<metaclass>";
-                        if (env && metaclass) {
-                            // Only use the metaclass __name__ when metaclass is
-                            // a real type (carries __mro__ as OWN). An instance
-                            // used as a metaclass inherits __mro__ from its
-                            // class via the prototype chain, so an OWN check is
-                            // required to distinguish.
-                            bool isType = (metaclass->hasOwnAttribute(ctx, env->getMroString()) == PROTO_TRUE);
-                            if (isType) {
-                                const proto::ProtoObject* mcN = metaclass->getAttribute(ctx, env->getNameString());
-                                if (mcN && mcN->isString(ctx)) mcN->asString(ctx)->toUTF8String(ctx, mcName);
-                            }
-                        }
-                        std::string returnedTypeName = "NoneType";
-                        if (env && nsObj && nsObj != PROTO_NONE) {
-                            const proto::ProtoObject* cls = env->getType(ctx, nsObj);
-                            if (cls) {
-                                const proto::ProtoObject* nm = cls->getAttribute(ctx, env->getNameString());
-                                if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, returnedTypeName);
-                            }
-                        }
-                        std::string msg = mcName + ".__prepare__() must return a mapping, not " + returnedTypeName;
-                        if (env) env->raiseTypeError(ctx, msg.c_str());
-                        i = next_i;
-                        continue;
-                    }
-                    stack.push_back(nsObj);
-                } else {
-                    stack.push_back(ctx->newObject(true));
-                }
-                proto::ProtoObject* ns = const_cast<proto::ProtoObject*>(stack.back());
-                
-                // Initialize __keys__ list for the namespace
-                const proto::ProtoString* keysS = env ? env->getKeysString() : protoPython::PythonEnvironment::getInternalString(ctx, "__keys__");
-                if (ns->hasOwnAttribute(ctx, keysS) != PROTO_TRUE) {
-                    const proto::ProtoList* keysList = ctx->newList();
-                    ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, keysS, keysList->asObject(ctx)));
-                }
-
-                // Setup standard attributes in ns
-                const proto::ProtoString* py_name_s = env ? env->getNameString() : protoPython::PythonEnvironment::getInternalString(ctx, "__name__");
-                const proto::ProtoString* py_module_s = PythonEnvironment::getInternedString(ctx, "__module__");
-                
-                ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, nameS, name));
-                // Add to keys
-                const proto::ProtoObject* keysObj = ns->getAttribute(ctx, keysS);
-                if (keysObj && keysObj->asList(ctx)) {
-                    ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, keysS, keysObj->asList(ctx)->appendLast(ctx, nameS->asObject(ctx))->asObject(ctx)));
-                }
-
-                // STRUCT-175 (round 16): class body's __module__ comes
-                // from the enclosing module's `__name__`, not from a
-                // (non-existent) `__module__` in globals.  CPython sets
-                // a class's __module__ to `__name__` of the namespace
-                // it was created in.  protoPython previously read
-                // `globals['__module__']` which is almost always None
-                // — leaving newly-created classes with no __module__
-                // (or with object.__module__ inherited as 'builtins',
-                // breaking pickle's qualname-based class lookup).
-                const proto::ProtoObject* globals = env ? env->getCurrentGlobals() : nullptr;
-                const proto::ProtoObject* moduleName = nullptr;
-                if (globals) {
-                    moduleName = globals->getAttribute(ctx, py_name_s);
-                    if (!moduleName || moduleName == PROTO_NONE) {
-                        moduleName = globals->getAttribute(ctx, py_module_s);
-                    }
-                }
-                if (moduleName && moduleName != PROTO_NONE) {
-                    ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, py_module_s, moduleName));
-                    // Re-fetch keysObj to avoid stale pointer if setAttribute returns new version or updates state
-                    keysObj = ns->getAttribute(ctx, keysS);
-                    if (keysObj && keysObj->asList(ctx)) {
-                        ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, keysS, keysObj->asList(ctx)->appendLast(ctx, py_module_s->asObject(ctx))->asObject(ctx)));
-                    }
-                }
-                if (env) {
-                    ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, env->getFBackString(), PythonEnvironment::getCurrentFrame()));
-                    stack.back() = ns;
-                    ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, env->getFGlobalsString(), PythonEnvironment::getCurrentGlobals()));
-                    stack.back() = ns;
-                    ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, env->getFLocalsString(), ns));
-                    stack.back() = ns;
-                }
-
-                // 3. Execute class body
-                if (body) {
-                    const proto::ProtoString* callS = env ? env->getCallString() : protoPython::PythonEnvironment::getInternalString(ctx, "__call__");
-                    const proto::ProtoString* codeS = env ? env->getCodeString() : protoPython::PythonEnvironment::getInternalString(ctx, "__code__");
-                    const proto::ProtoObject* codeObj = body->getAttribute(ctx, codeS);
-                    // PG: propagate the body function's __closure__ to the
-                    // class namespace so LOAD_DEREF inside the class body
-                    // can walk the enclosing-scope cells.  Without this,
-                    // `class C: y = x` (with x defined in an enclosing
-                    // function) sees x as None.
-                    if (env && body) {
-                        const proto::ProtoObject* bodyClosure = body->getAttribute(ctx, env->getClosureString());
-                        if (bodyClosure && bodyClosure != PROTO_NONE) {
-                            ns = const_cast<proto::ProtoObject*>(
-                                ns->setAttribute(ctx, env->getClosureString(), bodyClosure));
-                            stack.back() = ns;
-                        }
-                    }
-                    if (codeObj && codeObj != PROTO_NONE) {
-                        if (diag_local) fprintf(stderr, "DEBUG OP_BUILD_CLASS: before body run ns=%p\n", (void*)ns);
-                        // The class body is a Python-level scope of its own.
-                        PythonEnvironment::pushScopeGlobals(PythonEnvironment::getCurrentGlobals());
-                        runCodeObject(ctx, codeObj, ns);
-                        PythonEnvironment::popScopeGlobals();
-                        if (env && env->hasPendingException()) {
-                            // Class body raised — let the dispatch loop
-                            // unwind through the enclosing SETUP_FINALLY
-                            // (e.g. `with assertRaises(NameError): class
-                            // CBad: nonexistent.attr: int = 0`).
-                            i = next_i;
-                            continue;
-                        }
-                        if (diag_local) {
-                            const proto::ProtoObject* keysObj = ns->getAttribute(ctx, env ? env->getKeysString() : protoPython::PythonEnvironment::getInternalString(ctx, "__keys__"));
-                            const proto::ProtoList* keysList = keysObj ? keysObj->asList(ctx) : nullptr;
-                            fprintf(stderr, "DEBUG OP_BUILD_CLASS: after body run ns=%p keysSize=%llu\n", (void*)ns, static_cast<unsigned long long>(keysList ? keysList->getSize(ctx) : 0));
-                        }
-                        stack.back() = ns; // ns may have been reallocated by CoW during execution
-                    } else {
-                        const proto::ProtoObject* callM = body->getAttribute(ctx, callS);
-                        if (callM && callM->asMethod(ctx)) {
-                            callM->asMethod(ctx)(ctx, body, nullptr, ctx->newList(), nullptr);
-                            if (env && env->hasPendingException()) { i = next_i; continue; }
-                        }
-                    }
-                }
-
-
-                if (diag_local) {
-                }
-
-                // STRUCT-322: CPython places `__classcell__` into the
-                // namespace whenever the class body would build a
-                // `__class__` cell (i.e. uses super()).  protoPython's
-                // compiler doesn't emit that bookkeeping yet, so we
-                // approximate: if `__slots__` declares `__classcell__`,
-                // inject a placeholder so a Meta.__new__ that probes
-                // `assertIn('__classcell__', namespace)` sees it.
-                // Same trick for any `__qualname__` slot — that name
-                // is already in namespace as the class qualname, but
-                // some test patterns look for it via the metaclass
-                // attr kwarg.  The value is PROTO_NONE: callers that
-                // genuinely need the cell (super() resolution) keep
-                // using the protoCore parent-chain plumbing, which is
-                // unaffected.
-                if (env && ns && ns != PROTO_NONE) {
-                    const proto::ProtoString* slotsName =
-                        PythonEnvironment::getInternedString(ctx, "__slots__");
-                    const proto::ProtoObject* slotsObj = ns->getAttribute(ctx, slotsName);
-                    if (slotsObj && slotsObj != PROTO_NONE) {
-                        // Slots can be tuple, list, or even a single str.
-                        const proto::ProtoList* slotsList = nullptr;
-                        if (slotsObj->isTuple(ctx)) {
-                            slotsList = slotsObj->asTuple(ctx)->asList(ctx);
-                        } else {
-                            slotsList = slotsObj->asList(ctx);
-                        }
-                        auto injectIfMissing = [&](const char* slotName) {
-                            const proto::ProtoString* k =
-                                PythonEnvironment::getInternedString(ctx, slotName);
-                            if (ns->hasOwnAttribute(ctx, k) != PROTO_TRUE) {
-                                ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, k, PROTO_NONE));
-                                // Also append to __keys__ so the dict
-                                // path of `__contains__` / iteration
-                                // sees it.
-                                const proto::ProtoString* keysName = env->getKeysString();
-                                const proto::ProtoObject* keysObj = ns->getAttribute(ctx, keysName);
-                                const proto::ProtoList* keysL = (keysObj && keysObj->asList(ctx))
-                                    ? keysObj->asList(ctx) : ctx->newList();
-                                keysL = keysL->appendLast(ctx, k->asObject(ctx));
-                                ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, keysName, keysL->asObject(ctx)));
-                            }
-                        };
-                        if (slotsList) {
-                            for (proto::proto_ulong i = 0; i < slotsList->getSize(ctx); ++i) {
-                                const proto::ProtoObject* entry = slotsList->getAt(ctx, static_cast<int>(i));
-                                if (!entry || !entry->isString(ctx)) continue;
-                                std::string s;
-                                entry->asString(ctx)->toUTF8String(ctx, s);
-                                if (s == "__classcell__" || s == "__qualname__") {
-                                    injectIfMissing(s.c_str());
-                                }
-                            }
-                        } else if (slotsObj->isString(ctx)) {
-                            std::string s;
-                            slotsObj->asString(ctx)->toUTF8String(ctx, s);
-                            if (s == "__classcell__" || s == "__qualname__") {
-                                injectIfMissing(s.c_str());
-                            }
-                        }
-                        stack.back() = ns;
-                    }
-                }
-
-                // PEP 560: CPython's __build_class__ stores the bases as written
-                // in the namespace when __mro_entries__ replaced any of them.
-                if (origBases && env && ns && ns != PROTO_NONE) {
-                    const proto::ProtoString* origBasesS =
-                        PythonEnvironment::getInternedString(ctx, "__orig_bases__");
-                    if (ns->hasOwnAttribute(ctx, origBasesS) != PROTO_TRUE) {
-                        ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, origBasesS, origBases));
-                        const proto::ProtoString* nsKeysName = env->getKeysString();
-                        const proto::ProtoObject* nsKeysObj = ns->getAttribute(ctx, nsKeysName);
-                        const proto::ProtoList* nsKeys = (nsKeysObj && nsKeysObj->asList(ctx))
-                            ? nsKeysObj->asList(ctx) : ctx->newList();
-                        nsKeys = nsKeys->appendLast(ctx, origBasesS->asObject(ctx));
-                        ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, nsKeysName, nsKeys->asObject(ctx)));
-                        stack.back() = ns;
-                    }
-                }
-
-                // 4. Invoke metaclass to create the class
-                const proto::ProtoList* mcArgs = ctx->newList()->appendLast(ctx, name)->appendLast(ctx, bases)->appendLast(ctx, ns);
-                // STRUCT-37: strip `metaclass` from kwds before forwarding
-                // to the metaclass call.  CPython's __build_class__
-                // consumes `metaclass` itself (used only to *pick* the
-                // metaclass) and never forwards it.  Passing it through
-                // duplicates it with the metaclass argument resolved
-                // here, yielding `__new__() got multiple values for
-                // argument 'metaclass'` in user metaclasses that don't
-                // accept arbitrary kwargs.  Other kwargs (PEP 487
-                // __init_subclass__ extras like `cls_kw=value`) are
-                // forwarded unchanged.
-                const proto::ProtoSparseList* kw = nullptr;
-                if (kwds && kwds->asSparseList(ctx)) {
-                    const proto::ProtoSparseList* rawKw = kwds->asSparseList(ctx);
-                    const proto::ProtoString* metaKey =
-                        PythonEnvironment::getInternedString(ctx, "metaclass");
-                    if (rawKw->has(ctx, metaKey->getHash(ctx))) {
-                        kw = rawKw->removeAt(ctx, metaKey->getHash(ctx));
-                    } else {
-                        kw = rawKw;
-                    }
-                }
-                if (diag_local) fprintf(stderr, "DEBUG OP_BUILD_CLASS: calling metaclass=%p\n", (void*)metaclass);
-                // STRUCT-69: thread the kwds dict's __keys__ tuple via
-                // pushKwNames so the inner **kwargs binding in
-                // runUserFunctionCallRaw can recover the key names from
-                // the SparseList (which only stores hashes).  Without
-                // this, user metaclass __new__/__init__ receive empty
-                // kwargs even when caller passed `class C(metaclass=M,
-                // foo=42)`.
-                const proto::ProtoTuple* kwNamesPushed = nullptr;
-                if (env && kw && kwds && kwds != PROTO_NONE) {
-                    const proto::ProtoObject* keysObj = kwds->getAttribute(ctx, env->getKeysString());
-                    const proto::ProtoList* keysL = keysObj ? keysObj->asList(ctx) : nullptr;
-                    if (keysL && keysL->getSize(ctx) > 0) {
-                        // Skip 'metaclass' key — same filter as for kw above.
-                        const proto::ProtoString* metaKey =
-                            PythonEnvironment::getInternedString(ctx, "metaclass");
-                        proto::proto_ulong mcHash = metaKey->getHash(ctx);
-                        const proto::ProtoList* fk = ctx->newList();
-                        for (proto::proto_ulong i = 0; i < keysL->getSize(ctx); ++i) {
-                            const proto::ProtoObject* k = keysL->getAt(ctx, static_cast<int>(i));
-                            if (k && k->isString(ctx) && k->getHash(ctx) != mcHash) {
-                                fk = fk->appendLast(ctx, k);
-                            }
-                        }
-                        if (fk->getSize(ctx) > 0) {
-                            kwNamesPushed = ctx->newTupleFromList(fk);
-                            env->pushKwNames(kwNamesPushed);
-                        }
-                    }
-                }
-                const proto::ProtoObject* targetClass = invokeCallable(ctx, metaclass, mcArgs, kw);
-                if (kwNamesPushed && env) env->popKwNames();
-                if (diag_local) fprintf(stderr, "DEBUG OP_BUILD_CLASS: targetClass=%p\n", (void*)targetClass);
-                
-                if (targetClass && targetClass != PROTO_NONE) {
-                    // Set __qualname__ if not set as an *own* attribute (inherited values from
-                    // object/type prototypes must not block per-class assignment).
-                    const proto::ProtoString* qualnameS = PythonEnvironment::getInternedString(ctx, "__qualname__");
-                    const bool hasOwnQN = targetClass->hasOwnAttribute(ctx, qualnameS) == PROTO_TRUE;
-                    // STRUCT-324: compute the qualname string we want
-                    // `Q1.__qualname__` to report, regardless of whether
-                    // `__qualname__` is also a slot (member_descriptor).
-                    // The compiler injects the class body's qualname into
-                    // ns as a string; fall back to __name__ for top-level
-                    // classes when ns has no qualname.
-                    const proto::ProtoObject* qnString = nullptr;
-                    {
-                        const bool nsHasOwnQN = ns ? (ns->hasOwnAttribute(ctx, qualnameS) == PROTO_TRUE) : false;
-                        const proto::ProtoObject* nsQN = nsHasOwnQN ? ns->getAttribute(ctx, qualnameS) : nullptr;
-                        if (nsQN && nsQN != PROTO_NONE && nsQN->isString(ctx)) qnString = nsQN;
-                        else qnString = name;
-                    }
-                    if (!hasOwnQN) {
-                        targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, qualnameS, qnString));
-                        stack.back() = targetClass;
-                    } else {
-                        // `__qualname__` already exists as an own attribute.
-                        // If it's NOT a string (typically a member_descriptor
-                        // from `__slots__ = ['__qualname__']`), park the
-                        // qualname string under a private key so the
-                        // class-level lookup in env->getAttribute can still
-                        // report it.  See STRUCT-324 in
-                        // PythonEnvironment::getAttribute.
-                        const proto::ProtoObject* curQN = targetClass->getOwnAttributeDirect(ctx, qualnameS);
-                        if (curQN && !curQN->isString(ctx)) {
-                            const proto::ProtoString* tpQS = PythonEnvironment::getInternedString(ctx, "__tp_qualname__");
-                            targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, tpQS, qnString));
-                            stack.back() = targetClass;
-                        }
-                    }
-
-                    // Guarantee `cls.__annotations__` always exists (CPython invariant).
-                    // Propagate from the class namespace if the body declared annotations;
-                    // otherwise fall back to an empty dict instance so `inspect`, `typing`,
-                    // and dataclasses can read it unconditionally.
-                    const proto::ProtoString* annS = PythonEnvironment::getInternedString(ctx, "__annotations__");
-                    const bool hasOwnAnn = targetClass->hasOwnAttribute(ctx, annS) == PROTO_TRUE;
-                    if (!hasOwnAnn) {
-                        const bool nsHasOwnAnn = ns ? (ns->hasOwnAttribute(ctx, annS) == PROTO_TRUE) : false;
-                        const proto::ProtoObject* annVal = nsHasOwnAnn ? ns->getAttribute(ctx, annS) : nullptr;
-                        if (!annVal || annVal == PROTO_NONE) {
-                            // Build a fresh empty dict that looks like a real Python dict
-                            // (parent = dictPrototype, __data__ = empty sparse list).
-                            const proto::ProtoObject* emptyDict = nullptr;
-                            if (env && env->getDictPrototype()) {
-                                emptyDict = env->getDictPrototype()->newChild(ctx, true);
-                                emptyDict = emptyDict->setAttribute(ctx, env->getClassString(), env->getDictPrototype());
-                                emptyDict = emptyDict->setAttribute(ctx, env->getDataString(),
-                                                                    ctx->newSparseList()->asObject(ctx));
+                                *nsAnchor = ns; // ns may have been reallocated by CoW during execution
                             } else {
-                                emptyDict = ctx->newSparseList()->asObject(ctx);
-                            }
-                            annVal = emptyDict;
-                        }
-                        targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, annS, annVal));
-                        stack.back() = targetClass;
-                    }
-
-                    // Inject __class__ into the class namespace (frame) so methods can interpret it
-                    // via closure (parent frame reference).
-                    // STRUCT-219: a custom metaclass may store `ns` as an
-                    // attribute on the targetClass (e.g. `self.dict = dict`
-                    // in M.__new__).  In that case, setting
-                    // `ns.__class__ = targetClass` would corrupt the
-                    // user's attribute by re-typing the same object as
-                    // the metaclass instance.  Detect by scanning
-                    // targetClass's __keys__ for any attribute whose
-                    // value is `ns`; if found, skip the injection.  The
-                    // pattern is rare enough that super() inside such a
-                    // class body is not a common use case (the user's
-                    // custom __call__ usually replaces the standard
-                    // instance constructor anyway).
-                    const proto::ProtoString* clsName = env ? env->getClassString() : protoPython::PythonEnvironment::getInternalString(ctx, "__class__");
-                    bool nsReachableFromTarget = false;
-                    if (env) {
-                        const proto::ProtoObject* tcKeys = targetClass->getAttribute(ctx, env->getKeysString());
-                        const proto::ProtoList* tcKL = tcKeys ? tcKeys->asList(ctx) : nullptr;
-                        if (tcKL) {
-                            for (proto::proto_ulong ki = 0; ki < tcKL->getSize(ctx); ++ki) {
-                                const proto::ProtoObject* k = tcKL->getAt(ctx, static_cast<int>(ki));
-                                if (!k || !k->isString(ctx)) continue;
-                                const proto::ProtoObject* v =
-                                    targetClass->getAttribute(ctx, k->asString(ctx));
-                                if (v == ns) { nsReachableFromTarget = true; break; }
-                            }
-                        }
-                    }
-                    if (!nsReachableFromTarget) {
-                        ns->setAttribute(ctx, clsName, targetClass);
-                    }
-
-                    // PI: __abstractmethods__ is populated by
-                    // ABCMeta.__new__ in lib/python3.14/abc.py; the
-                    // BUILD_CLASS opcode no longer needs to compute it
-                    // for the default-metaclass path.  Inactive block
-                    // kept for documentation parallel to PG's hooks.
-                    if (false) {
-                        const proto::ProtoString* abstractS =
-                            PythonEnvironment::getInternedString(ctx, "__isabstractmethod__");
-                        const proto::ProtoString* amS =
-                            PythonEnvironment::getInternedString(ctx, "__abstractmethods__");
-                        const proto::ProtoList* absNames = ctx->newList();
-                        // 1. Walk ns's __data__ SparseList (populated by
-                        // STORE_NAME during class body execution) for
-                        // values declaring __isabstractmethod__.
-                        // Recover names from each value's __name__ attr.
-                        {
-                            // Iterate ns.__keys__ via Python iter protocol
-                            // (handles list-CoW state correctly).  For each
-                            // name, fetch the value via env->getAttribute
-                            // (full chain) and check __isabstractmethod__.
-                            const proto::ProtoObject* nsKeys = ns->getAttribute(ctx, env->getKeysString());
-                            if (nsKeys && nsKeys != PROTO_NONE) {
-                                const proto::ProtoObject* iter = env->iter(nsKeys);
-                                int safety = 1024;
-                                while (iter && safety-- > 0) {
-                                    const proto::ProtoObject* k = env->next(iter);
-                                    if (!k) break;
-                                    if (k->isString(ctx)) {
-                                        const proto::ProtoString* nameS_ = k->asString(ctx);
-                                        const proto::ProtoObject* v = env->getAttribute(ctx, ns, nameS_, false);
-                                        if (env->hasPendingException()) env->clearPendingException();
-                                        if (v && v != PROTO_NONE) {
-                                            const proto::ProtoObject* isAbs =
-                                                env->getAttribute(ctx, v, abstractS, false);
-                                            if (env->hasPendingException()) env->clearPendingException();
-                                            if (isAbs == PROTO_TRUE) {
-                                                absNames = absNames->appendLast(ctx, k);
-                                            }
-                                        }
-                                    }
+                                const proto::ProtoObject* callM = body->getAttribute(ctx, callS);
+                                if (callM && callM->asMethod(ctx)) {
+                                    callM->asMethod(ctx)(ctx, body, nullptr, ctx->newList(), nullptr);
+                                    if (env && env->hasPendingException()) { return false; }
                                 }
                             }
                         }
-                        // Inherit unimplemented abstract names from bases.
-                        const proto::ProtoObject* mro2 = targetClass->getAttribute(ctx,
-                            PythonEnvironment::getInternedString(ctx, "__mro__"));
-                        const proto::ProtoTuple* mro2T = mro2 ? mro2->asTuple(ctx) : nullptr;
-                        if (mro2T) {
-                            for (proto::proto_ulong mi = 1; mi < mro2T->getSize(ctx); ++mi) {
-                                const proto::ProtoObject* base = mro2T->getAt(ctx, static_cast<int>(mi));
-                                if (!base || base == PROTO_NONE) continue;
-                                const proto::ProtoObject* baseAm = base->getOwnAttributeDirect(ctx, amS);
-                                if (!baseAm || baseAm == PROTO_NONE) continue;
-                                const proto::ProtoList* bl = baseAm->asList(ctx);
-                                const proto::ProtoTuple* bt = bl ? nullptr : baseAm->asTuple(ctx);
-                                proto::proto_ulong sz = bl ? bl->getSize(ctx) : (bt ? bt->getSize(ctx) : 0);
-                                for (proto::proto_ulong bi = 0; bi < sz; ++bi) {
-                                    const proto::ProtoObject* bn = bl ? bl->getAt(ctx, static_cast<int>(bi)) : bt->getAt(ctx, static_cast<int>(bi));
-                                    if (!bn || !bn->isString(ctx)) continue;
-                                    // Check if this class has a concrete override.
-                                    const proto::ProtoObject* override_ = targetClass->getOwnAttributeDirect(ctx, bn->asString(ctx));
-                                    bool overrides = override_ && override_ != PROTO_NONE;
-                                    if (overrides) {
-                                        const proto::ProtoObject* isAbs = override_->getAttribute(ctx, abstractS);
-                                        if (isAbs != PROTO_TRUE) continue;  // concrete override
-                                    }
-                                    if (!absNames->has(ctx, bn)) {
-                                        absNames = absNames->appendLast(ctx, bn);
-                                    }
-                                }
-                            }
-                        }
-                        const_cast<proto::ProtoObject*>(targetClass)->setAttribute(
-                            ctx, amS, absNames->asObject(ctx));
-                        stack.back() = targetClass;
-                    }
-
-                    // PG: also write the just-built class into `ns`
-                    // under its own name so methods inside the body —
-                    // whose closure chains walk parent → ns — resolve
-                    // zero-arg super() correctly.  Without this,
-                    // methods of a class defined inside another
-                    // function can't reach the class (the enclosing
-                    // STORE_FAST runs only after BUILD_CLASS finishes).
-                    if (name && name->isString(ctx)) {
-                        ns->setAttribute(ctx, name->asString(ctx), targetClass);
-                    }
-                    // The implicit `__class__` cell of the methods: the compiler
-                    // reads `__class__` in a method as LOAD_DEREF ".__class__", a
-                    // name that, unlike `__class__`, no prototype object on the
-                    // closure walk owns.  Unconditional (the STRUCT-219 guard
-                    // above only protects the namespace's own `__class__`).
-                    if (env && ns && ns != PROTO_NONE) {
-                        ns->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, ".__class__"), targetClass);
-                    }
-
-                    // __init_subclass__ is not called here: as in CPython it
-                    // runs at the end of type.__new__ (py_type ->
-                    // invokeInitSubclass), so a metaclass calling
-                    // super().__new__, type(name, bases, ns) and
-                    // types.new_class() all run it exactly once.  A raised
-                    // exception makes the metaclass call return nullptr and
-                    // unwinds below.
-                }
-
-                if (env && env->hasPendingException()) {
-                    // The metaclass call or __init_subclass__ raised: let the
-                    // dispatch loop unwind through the enclosing handlers, as the
-                    // class-body path above does.
+                        return true;
+                    }, nsAnchor);
+                if (!targetClass) {
+                    // The class body, the metaclass or __init_subclass__
+                    // raised: unwind through the enclosing handlers.
                     i = next_i;
                     continue;
                 }
-                if (!targetClass) targetClass = PROTO_NONE;
                 for (int j = 0; j < 5; ++j) stack.pop_back(); // Pop name, bases, kwds, body, ns
                 stack.push_back(targetClass);
             }

@@ -58,6 +58,20 @@ set_tests_properties(protopyc_emitted_cpp_exceptions_with PROPERTIES
     TIMEOUT 300
     LABELS "regression_gate")
 
+# The same for attribute reads, classes and methods (python_classes_probe).
+add_test(NAME protopyc_emitted_cpp_python_classes
+    COMMAND ${CMAKE_COMMAND}
+            -DPROTOPYC=$<TARGET_FILE:protopyc>
+            -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/python_classes_probe.py
+            -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/emitted_cpp_python_classes
+            -DCXX=${CMAKE_CXX_COMPILER}
+            "-DINCLUDE_DIRS=${PROJECT_SOURCE_DIR}/include;${PROTOPYTHON_PROTOCORE_INCLUDE_DIR}"
+            -DMSVC=${_emitted_msvc}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_emitted_cpp.cmake)
+set_tests_properties(protopyc_emitted_cpp_python_classes PROPERTIES
+    TIMEOUT 300
+    LABELS "regression_gate")
+
 # protopyc builds a module with a C++ compiler and make, through a bash script;
 # that path is Linux/macOS only, and so are these targets.
 if(WIN32)
@@ -134,8 +148,8 @@ set_tests_properties(protopyc_generators_classes PROPERTIES
 
 # Exceptions propagate, `with` statements call __enter__/__exit__, and methods
 # of classes defined in functions see their closure, in a module built by
-# protopyc as in the interpreter (CPython where the interpreter does not run a
-# finally clause), also while collections run.
+# protopyc as in the interpreter (and, for the finally clauses of
+# exceptions_with_cpython.expected, as in CPython), also while collections run.
 add_test(NAME protopyc_exceptions_with
     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/protopyc_exceptions_with.sh
             $<TARGET_FILE:protopyc> $<TARGET_FILE:protopy>
@@ -145,5 +159,19 @@ add_test(NAME protopyc_exceptions_with
             ${CMAKE_CURRENT_SOURCE_DIR}/exceptions_with_cpython.expected
             ${CMAKE_CURRENT_BINARY_DIR}/exceptions_with)
 set_tests_properties(protopyc_exceptions_with PROPERTIES
+    TIMEOUT 900
+    LABELS "regression_gate")
+
+# Attribute reads apply Python's rules, compiled classes are Python classes and
+# methods keep their closures, in a module built by protopyc as in CPython
+# (python_classes.expected), also while collections run.
+add_test(NAME protopyc_python_classes
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/protopyc_python_classes.sh
+            $<TARGET_FILE:protopyc> $<TARGET_FILE:protopy>
+            ${CMAKE_CURRENT_SOURCE_DIR}/python_classes_probe.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/python_classes_driver.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/python_classes.expected
+            ${CMAKE_CURRENT_BINARY_DIR}/python_classes)
+set_tests_properties(protopyc_python_classes PROPERTIES
     TIMEOUT 900
     LABELS "regression_gate")

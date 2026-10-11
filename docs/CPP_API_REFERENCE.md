@@ -88,12 +88,14 @@ int main() {
 | Member | Result |
 |--------|--------|
 | `const proto::ProtoObject* importModule(const std::string& name, int level = 0, const std::vector<std::string>& fromList = {})` | Imports a module. |
-| `const proto::ProtoObject* getAttr(const proto::ProtoObject* obj, const std::string& attr)` | Attribute read. |
-| `void setAttr(const proto::ProtoObject* obj, const std::string& attr, const proto::ProtoObject* val)` | Attribute write. |
+| `const proto::ProtoObject* loadAttr(const proto::ProtoObject* obj, const char* name)` | `obj.name` as Python reads it (descriptors, `__getattribute__`, `__getattr__`); `nullptr` with `AttributeError` pending when missing. |
+| `bool storeAttr(const proto::ProtoObject* obj, const char* name, const proto::ProtoObject* value)` | `obj.name = value` as Python writes it (data descriptors, `__setattr__`); `false` with the exception pending when it raised. |
+| `const proto::ProtoObject* getAttr(const proto::ProtoObject* obj, const std::string& attr)` | Raw protoCore attribute read: no descriptors, a missing attribute reads as `None`. |
+| `void setAttr(const proto::ProtoObject* obj, const std::string& attr, const proto::ProtoObject* val)` | Raw protoCore attribute write. |
 | `const proto::ProtoObject* getItem(const proto::ProtoObject* container, const proto::ProtoObject* key, proto::ProtoContext* ctx = nullptr)` | `container[key]`. |
 | `void setItem(const proto::ProtoObject* container, const proto::ProtoObject* key, const proto::ProtoObject* value, proto::ProtoContext* ctx = nullptr)` | `container[key] = value`. |
 | `const proto::ProtoObject* callObject(const proto::ProtoObject* callable, const std::vector<const proto::ProtoObject*>& args)` | Calls a Python callable with positional arguments. |
-| `const proto::ProtoObject* callMethod(const proto::ProtoObject* obj, const std::string& attr, const std::vector<const proto::ProtoObject*>& args)` | Calls a method. |
+| `const proto::ProtoObject* callMethod(const proto::ProtoObject* obj, const std::string& attr, const std::vector<const proto::ProtoObject*>& args)` | `obj.attr(*args)`: the attribute read as for a call (a function found on obj's class receives `obj` first). |
 | `const proto::ProtoObject* iter(const proto::ProtoObject* obj)`, `next(...)` | Iteration protocol. |
 
 `PythonEnvironment::getCurrentContext()` (static) returns the `proto::ProtoContext` of

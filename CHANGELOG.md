@@ -289,6 +289,92 @@ onwards. Commit hashes are given for reference.
 
 ### Fixed
 
+- **Interpreter: `finally` runs however a `try` statement is left; exceptions
+  are chained** (2026-10-11). The compiler protected only the body with the
+  `finally` clause: an exception raised in an `except` or `else` clause, an
+  exception no `except` clause matched, and `return` / `break` / `continue`
+  leaving an `except` or `else` clause skipped it. The stack of exceptions being
+  handled (`sys.exc_info()`, a bare `raise`) was also left unbalanced on those
+  paths and by `with` statements, so `sys.exc_info()` went on reporting a
+  handled exception after the statement, and an exception passing through a
+  `try` statement got a duplicate traceback entry for each clause it crossed.
+  `try` statements are now laid out as CPython lays them out
+  (`Compiler::compileTry`): one block runs the `finally` clause for the body,
+  the `except` clauses and the `else` clause; each `except` clause, and the
+  `finally` clause run for an exception, has a cleanup block of its own
+  (`compileActiveExceptionClause`), and leaving one by `return`, `break` or
+  `continue` pops it and the exception it handles (`BlockType::ExceptHandler`).
+  `OP_RERAISE`, a stub that looped forever, re-raises the active exception and
+  pops it, adding no traceback entry (nor does a bare `raise`). An exception
+  raised while another is handled gets it as `__context__`; `raise X from Y`
+  sets `__cause__` and `__suppress_context__` (the cause was ignored).
+  *Measured* (Release, `perf stat`, interleaved with `52620c49`, on a machine
+  shared with other builds; these numbers include the protopyc changes below,
+  which share `ExecutionEngine.cpp` and `PythonEnvironment.cpp`): `fib(27)`
+  +1% instructions, +8% cycles (median of 8); a `try`/`finally` loop +1.4%
+  instructions, +7% cycles; a raising `try`/`except` loop +1% cycles. Most of
+  the cycle difference is code layout: inlined into the dispatch loop, the new
+  exception paths alone cost `fib` 15-20% more cycles at the same instruction
+  count, so they are out of line, and a by-reference lambda capture in
+  `BUILD_CLASS` added 4% instructions until it captured by value.
+  *Test*: `protopy_try_finally_semantics` (19 cases, every expected value
+  CPython's): 0/19 before, 19/19 after.
+- **protopyc: attribute reads, classes and methods follow Python's rules**
+  (2026-10-11). The limitations `docs/PROTOPYC_SPECIFICATION.md` listed in
+  section 5 for attribute reads, compiled classes and lambdas used as methods.
+  - *Attributes.* Compiled `obj.name` was a raw protoCore lookup: a missing
+    attribute read as `None`, and properties, other descriptors,
+    `__getattribute__` and `__getattr__` were not applied; `obj.name = v`
+    bypassed data descriptors and `__setattr__`; `obj.m()` called a
+    `classmethod` or `staticmethod` object itself. Generated code now reads
+    through `PythonEnvironment::loadAttr` (the read `LOAD_ATTR` and
+    `getattr()` do, now one function) and writes through `storeAttr`, and
+    `callMethod` passes `obj` first only to a function found on its class.
+  - *Classes.* A compiled class was an object with `type` as `__class__` and
+    its bases as protoCore parents: no `__mro__` of its own, so an interpreted
+    subclass did not inherit its methods, no metaclass, `__init_subclass__`,
+    `Enum`, dataclass or `__slots__`. The interpreter's `BUILD_CLASS` is now
+    `PythonEnvironment::buildClass`, which compiled classes use too: the
+    metaclass and `__prepare__`, the body run with that namespace as frame
+    (with `__qualname__` and `__annotations__`), the metaclass call.
+    `PythonEnvironment::storeName` records new names in the namespace's
+    `__keys__` and stores through a `__prepare__` mapping's `__setitem__`, as
+    `STORE_NAME` does. Zero-argument `super()` in a compiled method reads the
+    class from a cell its storage keeps.
+  - *Methods and closures.* The interpreter rebound a compiled function found
+    on a class to the instance, losing its storage: its free variables read as
+    `None` unless the class namespace held its storage key, which a lambda in a
+    class body or a function attached from outside did not, and the
+    interpreter's `with` called a compiled `__enter__` without the instance. A
+    compiled function (`PythonEnvironment::isCompiledFunction`) now binds as a
+    Python function (`bindNativeMethod`) in attribute reads, method calls,
+    `super()`, special-method lookups and `__getattribute__` dispatch.
+  - *Exceptions.* An exception raised in a compiled `except` or `finally`
+    clause or `__exit__` gets the handled exception as `__context__`, and the
+    `finally` clause sees the exception in transit in `sys.exc_info()`.
+  - Also: a compiled slice (`a[i:j]`) built an empty object and raised
+    `TypeError` (`PythonEnvironment::buildSlice` dropped the attributes it set
+    on an immutable object), and a call with `*args` or `**kwargs` did not
+    compile (it named protoCore functions that do not exist).
+  - *Cost* (compiled module, Release, 300,000 iterations, against
+    `52620c49`): a method call through `callMethod` 0.17-0.21 s before,
+    0.19-0.29 s after (a fast path keeps compiled methods off the full
+    lookup); an attribute read 0.018 s before, 0.033-0.041 s after; an
+    attribute write 0.085 s before, 0.11 s after (`storeAttr` takes
+    `OP_STORE_ATTR`'s plain-instance path when nothing intercepts the write).
+    `fib(27)` compiled is unchanged (0.09-0.13 s).
+  - *Tests*: `protopyc_python_classes` (CPython's output,
+    `test/compiler/python_classes.expected`; the interpreter, and the compiled
+    module under a heap limit with `PROTOCORE_GC_CONTEXT_THRESHOLD=200`, the
+    limit alone and the adaptive controller) and
+    `protopyc_emitted_cpp_python_classes` (the C++ compiles with this build's
+    compiler, MSVC on Windows). Before, all six groups of the driver raised.
+- **Interpreter: attribute errors** (2026-10-11). `None.name` read as `None`
+  instead of raising `AttributeError`; a class's missing attribute said
+  `'type' object has no attribute` instead of `type object 'C' has no
+  attribute`; `getattr(obj, name, default)` returned the default for any
+  exception the lookup raised, not only `AttributeError`.
+
 - **protopyc: exceptions, `with` statements and the methods of classes defined
   in functions** (2026-10-11). The three limitations
   `docs/PROTOPYC_SPECIFICATION.md` listed in section 5.

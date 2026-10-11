@@ -345,6 +345,44 @@ public:
     const proto::ProtoObject* lookupBoundSpecialMethod(proto::ProtoContext* ctx, const proto::ProtoObject* obj,
                                                        const proto::ProtoString* name);
 
+    /** Exception chaining (PEP 3134). setExceptionContext makes `context`
+     *  the __context__ of `exc` (an exception raised while `context` was
+     *  handled), first cutting a cycle through `exc` in context's chain, as
+     *  CPython does. chainException does so only when `exc` has no context
+     *  yet; chainPendingException applies it to the pending exception. */
+    void setExceptionContext(proto::ProtoContext* ctx, const proto::ProtoObject* exc,
+                             const proto::ProtoObject* context);
+    void chainException(proto::ProtoContext* ctx, const proto::ProtoObject* exc,
+                        const proto::ProtoObject* context);
+    void chainPendingException(const proto::ProtoObject* context);
+
+    /** True when `value` is a function protopyc compiled: a native method
+     *  bound to its function storage (an object with an own `__module_ns__`;
+     *  see docs/PROTOPYC_SPECIFICATION.md). Such a function binds to an
+     *  instance as a Python function does: the instance becomes its first
+     *  argument and the storage stays its `self`. */
+    bool isCompiledFunction(proto::ProtoContext* ctx, const proto::ProtoObject* value) const;
+
+    /** `method` (a native method found on the class of `instance`) bound to
+     *  `instance`: a compiled function (isCompiledFunction) becomes a Python
+     *  bound method, any other native method is rebound to the instance. */
+    const proto::ProtoObject* bindNativeMethod(proto::ProtoContext* ctx, const proto::ProtoObject* method,
+                                               const proto::ProtoObject* instance);
+
+    /** The callable that builds a class: `class name(*bases, **kwds): body`
+     *  as the interpreter's BUILD_CLASS runs it. `bases` is a tuple, `kwds`
+     *  a dict or None. The metaclass is chosen and __prepare__ called as in
+     *  CPython; `body` then fills the namespace it is given (and may replace
+     *  it), returning false with an exception pending when it raised; the
+     *  metaclass call builds the class (its __mro__, __init_subclass__,
+     *  __set_name__). `anchor` is a slot the collector sees, used for the
+     *  namespace and then the class. Returns the class, or nullptr with an
+     *  exception pending. */
+    using ClassBody = std::function<bool(proto::ProtoObject*& ns)>;
+    const proto::ProtoObject* buildClass(proto::ProtoContext* ctx, const proto::ProtoObject* name,
+                                         const proto::ProtoObject* bases, const proto::ProtoObject* kwds,
+                                         const ClassBody& body, const proto::ProtoObject** anchor);
+
     /** True when `value`, found under `name` in namespace `ns`, is what every
      *  module inherits as an object (its __class__, or a method of the module
      *  prototype such as keys or __init__) rather than a global name. */
@@ -425,8 +463,24 @@ public:
     const proto::ProtoObject* getItem(const proto::ProtoObject* container, const proto::ProtoObject* key, proto::ProtoContext* ctx = nullptr);
     void setItem(const proto::ProtoObject* container, const proto::ProtoObject* key, const proto::ProtoObject* value, proto::ProtoContext* ctx = nullptr);
     const proto::ProtoObject* initDictStorage(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
+    /** Raw protoCore attribute read and write (no descriptors, no
+     *  __getattr__; a missing attribute reads as None). Kept for embedders and
+     *  modules protopyc generated before loadAttr/storeAttr existed. */
     const proto::ProtoObject* getAttr(const proto::ProtoObject* obj, const std::string& attr);
     void setAttr(const proto::ProtoObject* obj, const std::string& attr, const proto::ProtoObject* val);
+    /** `obj.name` as Python reads it (what builtins.getattr does): data
+     *  descriptors, __getattribute__, instance attributes, non-data
+     *  descriptors (properties, methods bound to obj), then __getattr__.
+     *  nullptr with AttributeError pending when there is no such attribute.
+     *  With `outIsUnboundFunc`, a function found on obj's class is returned
+     *  unbound and *outIsUnboundFunc set, for a call that passes obj first. */
+    const proto::ProtoObject* loadAttr(proto::ProtoContext* ctx, const proto::ProtoObject* obj,
+                                       const proto::ProtoString* name, bool* outIsUnboundFunc = nullptr);
+    const proto::ProtoObject* loadAttr(const proto::ProtoObject* obj, const char* name);
+    /** `obj.name = value` as Python writes it (data descriptors, __setattr__,
+     *  __slots__). False with an exception pending when it raised. */
+    bool storeAttr(const proto::ProtoObject* obj, const char* name, const proto::ProtoObject* value);
+    bool storeAttr(const proto::ProtoObject* obj, const proto::ProtoString* name, const proto::ProtoObject* value);
     bool isTrue(const proto::ProtoObject* obj);
     const proto::ProtoObject* resolveModule(const std::string& nameStr, proto::ProtoContext* ctx = nullptr);
     const proto::ProtoObject* importModule(const std::string& name, int level = 0, const std::vector<std::string>& fromList = {});

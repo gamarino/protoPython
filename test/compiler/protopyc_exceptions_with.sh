@@ -9,13 +9,13 @@
 # its class.
 #
 # The interpreter's output on the source is the expected output for
-# exceptions_with_driver.py. Where the interpreter does not run a finally
-# clause that an exception or a return leaving an except clause must run,
-# exceptions_with_cpython_driver.py checks the compiled module against CPython
-# 3's output instead (exceptions_with_cpython.expected). The compiled module
-# must print exactly that under a heap limit that forces collections
-# (submission at every safepoint, then the default threshold) and under
-# protopy's default adaptive heap controller.
+# exceptions_with_driver.py. exceptions_with_cpython_driver.py covers finally
+# clauses that an exception or a return leaving an except clause must run; its
+# expected output is CPython 3's (exceptions_with_cpython.expected), which the
+# interpreter must print too (it skipped those finally clauses before
+# 2026-10-11). The compiled module must print exactly that under a heap limit
+# that forces collections (submission at every safepoint, then the default
+# threshold) and under protopy's default adaptive heap controller.
 #
 # Before the fix: a raising statement did not stop the rest of its statement
 # list (and a raised exception class was not instantiated), `with` called
@@ -39,6 +39,11 @@ ulimit -c 0
     cat "$work/expected.txt"; echo "FAILED: the interpreter run"; exit 1; }
 [ "$(tail -n 1 "$work/expected.txt")" = END ] || {
     cat "$work/expected.txt"; echo "FAILED: the interpreter run is incomplete"; exit 1; }
+cp "$cdriver" "$work/src/cdriver.py"
+(cd "$work/src" && timeout 300 "$protopy" cdriver.py >"$work/interpreted_cpython.txt" 2>&1) || true
+if ! diff -u "$cexpected" "$work/interpreted_cpython.txt"; then
+    echo "FAILED: the interpreter run (CPython reference)"; exit 1
+fi
 
 (cd "$work/src" && "$protopyc" exceptions_with_probe.py --build-so >build.log 2>&1) || {
     cat "$work/src/build.log"; echo "FAILED: protopyc"; exit 1; }

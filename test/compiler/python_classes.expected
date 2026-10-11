@@ -1,0 +1,80 @@
+attribute_reads 0 4
+attribute_reads 1 plain
+attribute_reads 2 8
+attribute_reads 3 5
+attribute_reads 4 6
+attribute_reads 5 2
+attribute_reads 6 3
+attribute_reads 7 method of 4
+attribute_reads 8 ('AttributeError', "'Plain' object has no attribute 'missing'")
+attribute_reads 9 ('AttributeError', "type object 'Plain' has no attribute 'missing'")
+attribute_reads 10 1
+attribute_reads 11 fallback:other
+attribute_reads 12 intercepted:anything
+attribute_reads 13 ('KeyError', "'secret'")
+attribute_reads 14 30
+attribute_reads 15 10
+attribute_reads 16 7
+attribute_reads 17 [('set', 7)]
+attribute_reads 18 ('LOW', ['label'])
+attribute_reads 19 1.5
+attribute_reads 20 via bound builtin
+attribute_reads 21 ('AttributeError', "'NoneType' object has no attribute 'nothing'")
+class_facts 0 ['Derived', 'Base', 'object']
+class_facts 1 ['Base']
+class_facts 2 Derived
+class_facts 3 Derived
+class_facts 4 python_classes_probe
+class_facts 5 True
+class_facts 6 Derived
+class_facts 7 True
+class_facts 8 True
+class_facts 9 False
+class_facts 10 hi ann
+class_facts 11 Derived/Base(ann)
+class_facts 12 <Derived ann>
+class_facts 13 True
+class_facts 14 3
+class_facts 15 ['a', 'n', 'n']
+class_facts 16 type
+class_facts 17 ('ProbeError', 7, 'code 7', True)
+class_facts 18 ['Registered']
+class_facts 19 2
+class_facts 20 ['enter', 'body', ('exit', None)]
+closures 0 5
+closures 1 7
+closures 2 ('outside', 'k')
+closures 3 ('late', 'k')
+closures 4 tagged:Base(bob)
+class_machinery 0 ('Meta', 'Meta')
+class_machinery 1 ('RED', 2, ['RED', 'GREEN'], True)
+class_machinery 2 ('Point(x=1, y=0, tags=[])', True, 7)
+class_machinery 3 True
+class_machinery 4 ('AttributeError', 1)
+class_machinery 5 ('Outer.Inner', 'make_local_class.<locals>.Local')
+class_machinery 6 [('set', 7)]
+chaining 0 ('in except', 'KeyError')
+chaining 1 ('in finally', 'KeyError')
+chaining 2 ('from', 'KeyError', True)
+chaining 3 ('exc_info in finally', 'KeyError')
+chaining 4 ('exc_info after', None)
+interpreted_subclasses 0 ['Child', 'Derived', 'Base', 'object']
+interpreted_subclasses 1 hi cy
+interpreted_subclasses 2 Child/Derived/Base(cy)
+interpreted_subclasses 3 <Child cy>
+interpreted_subclasses 4 True
+interpreted_subclasses 5 2
+interpreted_subclasses 6 ['sub enter', 'enter', 'body', ('exit', None)]
+interpreted_subclasses 7 ('ChildError', 3)
+interpreted_subclasses 8 Late
+interpreted_with 0 ['enter', 'body', ('exit', None)]
+interpreted_with 1 ['enter', ('exit', 'KeyError')]
+interpreted_with 2 ['enter', ('exit', 'ValueError')]
+interpreted_access 0 4
+interpreted_access 1 3
+interpreted_access 2 method of 2
+interpreted_access 3 9
+interpreted_access 4 ('outside', 'z')
+interpreted_access 5 ('late', 'z')
+interpreted_access 6 t:Base(x)
+END

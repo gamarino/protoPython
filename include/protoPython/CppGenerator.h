@@ -103,6 +103,19 @@ private:
     // While a class body is emitted, the names it binds go to the class
     // namespace, not to the enclosing function's locals.
     bool inClassBody_ = false;
+    // While a class body is emitted: the slot of its class cell, a mutable
+    // object whose `cls` attribute receives the class once it is built. The
+    // methods defined in the body keep it in their storage as `__class__`,
+    // for zero-argument super().
+    int classCellSlot_ = -1;
+    // While a method's body is emitted (a def directly in a class body with
+    // a first parameter): that parameter, the object zero-argument super()
+    // binds to.
+    std::string methodSelfParam_;
+    // __qualname__ prefix of the scope being emitted ("" at module level,
+    // "f.<locals>" in function f, "C" in class C).
+    std::string qualnamePrefix_;
+    std::string internedKey(const std::string& name);
     // Bind `name` to the C++ expression `valueExpr`: a function local's
     // slot, or the current frame through env->storeName.
     void emitAssignName(const std::string& name, const std::string& valueExpr);

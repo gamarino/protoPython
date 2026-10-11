@@ -2732,76 +2732,22 @@ static const proto::ProtoObject* py_getattr(
         fprintf(stderr, "DEBUG: getattr(obj=%p, key='%s')\n", (void*)obj, s.c_str());
     } 
 
-    const proto::ProtoObject* val = env ? env->getAttribute(context, obj, key, false) : obj->getAttribute(context, key);
-    if (protoPython::diagResolveEnabled()) {
-        fprintf(stderr, "DEBUG: py_getattr val=%p PROTO_NONE=%p\n", (void*)val, (void*)PROTO_NONE);
-    }
-    bool attrFound = val && (val != PROTO_NONE || obj->hasAttribute(context, key) == PROTO_TRUE);
-
-    if (!attrFound && env) {
-        // Mirror OP_LOAD_ATTR: try __getattr__ before raising AttributeError.
-        // raiseError=false above means env->getAttribute should not raise on a
-        // missing attribute, but a *descriptor* called during the lookup may
-        // have raised — those should propagate, not be masked.  We treat a
-        // pending AttributeError on `obj.<key>` as the "attribute is missing"
-        // signal and clear it before consulting __getattr__; any other pending
-        // exception we leave alone so the original error wins.
-        bool wasMissing = !env->hasPendingException();
-        if (!wasMissing) {
-            const proto::ProtoObject* exc = env->peekPendingException();
-            if (exc) {
-                const proto::ProtoObject* cls = env->getType(context, exc);
-                const proto::ProtoString* nameS = env->getNameString();
-                const proto::ProtoObject* nameAttr = cls ? cls->getAttribute(context, nameS) : nullptr;
-                if (nameAttr && nameAttr->isString(context)) {
-                    std::string clsName;
-                    nameAttr->asString(context)->toUTF8String(context, clsName);
-                    if (clsName == "AttributeError") {
-                        env->clearPendingException();
-                        wasMissing = true;
-                    }
-                }
-            }
-        }
-        if (wasMissing) {
-            const proto::ProtoString* getattrKey = PythonEnvironment::getInternedString(context, "__getattr__");
-            const proto::ProtoObject* getattrFn = nullptr;
-            bool getattrIsOwn = false;
-            if (obj->hasOwnAttribute(context, getattrKey) == PROTO_TRUE) {
-                getattrFn = obj->getAttribute(context, getattrKey);
-                getattrIsOwn = true;
-            } else {
-                const proto::ProtoObject* cls = env->getType(context, obj);
-                if (cls && cls != PROTO_NONE) {
-                    getattrFn = env->getAttribute(context, cls, getattrKey, false);
-                }
-            }
-            if (getattrFn && getattrFn != PROTO_NONE) {
-                // Module-level __getattr__(name) takes only the name.
-                // Class-level __getattr__(self, name) takes both.
-                std::vector<const proto::ProtoObject*> args = getattrIsOwn
-                    ? std::vector<const proto::ProtoObject*>{nameObj}
-                    : std::vector<const proto::ProtoObject*>{obj, nameObj};
-                val = env->callObject(getattrFn, args);
-                attrFound = val && !env->hasPendingException();
-            }
+    if (!env) return obj->getAttribute(context, key);
+    // The read LOAD_ATTR does (PythonEnvironment::loadAttr): descriptors,
+    // __getattribute__, then __getattr__, AttributeError when missing.
+    const proto::ProtoObject* val = env->loadAttr(context, obj, key);
+    if (val) return val;
+    if (argCount >= 3 && env->hasPendingException()) {
+        // getattr(obj, name, default) answers the default for a missing
+        // attribute only: any other exception propagates.
+        const proto::ProtoObject* exc = env->peekPendingException();
+        const proto::ProtoObject* aeType = env->getAttributeErrorType();
+        if (exc && aeType && (env->getType(context, exc) == aeType ||
+                              exc->isInstanceOf(context, aeType) == PROTO_TRUE)) {
+            env->clearPendingException();
+            return positionalParameters->getAt(context, 2);
         }
     }
-
-    if (env && env->hasPendingException()) {
-        if (argCount >= 3) env->clearPendingException();
-        else return nullptr;
-    }
-
-    if (attrFound) {
-        return val;
-    }
-
-    if (argCount >= 3) {
-        return positionalParameters->getAt(context, 2);
-    }
-
-    if (env) env->raiseAttributeError(context, obj, nameStr);
     return nullptr;
 }
 

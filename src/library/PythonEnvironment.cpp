@@ -17063,7 +17063,16 @@ void PythonEnvironment::raiseAttributeError(proto::ProtoContext* ctx, const prot
         else if (obj->asList(ctx)) typeName = "list";
     }
     std::string msg = "'" + typeName + "' object has no attribute '" + attr + "'";
-    
+    // CPython names the class itself when the object is a class.
+    if (obj && obj != PROTO_NONE && isActuallyAClass(ctx, obj)) {
+        const proto::ProtoObject* clsName = obj->getAttribute(ctx, getNameString());
+        if (clsName && clsName->isString(ctx)) {
+            std::string n;
+            clsName->asString(ctx)->toUTF8String(ctx, n);
+            msg = "type object '" + n + "' has no attribute '" + attr + "'";
+        }
+    }
+
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx));
     const proto::ProtoObject* exc = invokePythonCallable(ctx, attributeErrorType, args, nullptr);
     if (exc) {
@@ -19028,6 +19037,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             if (instance == PROTO_NONE || !instance) return self; // Unbound method accessed natively via class
             // Create natively bound method:
             if (!self->isMethod(ctx)) return self;
+            PythonEnvironment* getEnv = PythonEnvironment::fromContext(ctx);
+            if (getEnv && getEnv->isCompiledFunction(ctx, self)) return getEnv->bindNativeMethod(ctx, self, instance);
             const proto::ProtoObject* bound = ctx->fromMethod(const_cast<proto::ProtoObject*>(instance), self->asMethod(ctx));
             if (get_env_diag()) fprintf(stderr, "DEBUG_GET: created bound method %p\n", (void*)bound);
             
@@ -24638,6 +24649,8 @@ const proto::ProtoObject* PythonEnvironment::lookupBoundSpecialMethod(proto::Pro
         if (base->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
             const proto::ProtoObject* v = base->getOwnAttributeDirect(ctx, name);
             if (v && v != PROTO_NONE) {
+                // A function protopyc compiled binds as a Python function.
+                if (isCompiledFunction(ctx, v)) return bindNativeMethod(ctx, v, obj);
                 // If v is a descriptor, invoke __get__(obj, cls).
                 const proto::ProtoString* getDS = PythonEnvironment::getInternedString(ctx, "__get__");
                 const proto::ProtoObject* vType = getType(ctx, v);
@@ -24667,6 +24680,7 @@ const proto::ProtoObject* PythonEnvironment::lookupBoundSpecialMethod(proto::Pro
     if (obj && obj->hasOwnAttribute(ctx, name) != PROTO_TRUE) {
         const proto::ProtoObject* v = obj->getAttribute(ctx, name);
         if (v && v != PROTO_NONE && v->isMethod(ctx)) {
+            if (isCompiledFunction(ctx, v)) return bindNativeMethod(ctx, v, obj);
             if (v->asMethodSelf(ctx) != nullptr) return v;
             return ctx->fromMethod(const_cast<proto::ProtoObject*>(obj), v->asMethod(ctx));
         }
@@ -25454,7 +25468,12 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                             ctx->newList()->appendLast(ctx, obj)
                                           ->appendLast(ctx, name->asObject(ctx));
                         const proto::ProtoObject* gaRes = nullptr;
-                        if (gaM->asMethod(ctx)) {
+                        if (isCompiledFunction(ctx, gaM)) {
+                            // A compiled __getattribute__(self, name): called
+                            // as a function, its storage as `self`.
+                            gaRes = gaM->asMethod(ctx)(ctx,
+                                const_cast<proto::ProtoObject*>(gaM->asMethodSelf(ctx)), nullptr, gaArgs, nullptr);
+                        } else if (gaM->asMethod(ctx)) {
                             gaRes = gaM->asMethod(ctx)(ctx,
                                 const_cast<proto::ProtoObject*>(obj), nullptr, gaArgs, nullptr);
                         } else {
@@ -25610,7 +25629,17 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     }
 
     if (obj == PROTO_NONE) {
-        if (noneTypeProto) return noneTypeProto->getAttribute(ctx, name);
+        // protoCore's getAttribute answers PROTO_NONE for an absent name
+        // too: `None.missing` read as None instead of raising.
+        if (noneTypeProto) {
+            const proto::ProtoObject* v = noneTypeProto->getAttribute(ctx, name);
+            if (v && (v != PROTO_NONE || noneTypeProto->hasAttribute(ctx, name) == PROTO_TRUE)) return v;
+        }
+        if (raiseError) {
+            std::string nameStr;
+            name->toUTF8String(ctx, nameStr);
+            raiseAttributeError(ctx, obj, nameStr);
+        }
         return nullptr;
     }
 
@@ -26056,6 +26085,16 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
             }
             if (isClass && !foundOnMeta) {
                 return val;
+            }
+            // A function protopyc compiled binds as a Python function does:
+            // unbound for a call that passes obj first, a bound method
+            // otherwise; its storage stays its `self`.
+            if (isCompiledFunction(ctx, val)) {
+                if (outIsUnboundFunc) {
+                    *outIsUnboundFunc = true;
+                    return val;
+                }
+                return bindNativeMethod(ctx, val, obj);
             }
             const proto::ProtoObject* bound = ctx->fromMethod(const_cast<proto::ProtoObject*>(obj), val->asMethod(ctx));
             const proto::ProtoString* py_name_s = this->getNameString();
@@ -28935,9 +28974,39 @@ void PythonEnvironment::storeName(const std::string& name, const proto::ProtoObj
     // of the program — the smoking gun behind `x = 5; x += 3;
     // print(x)` emitting 5 from compiled modules).
     if (const proto::ProtoObject* frame = getCurrentFrame()) {
-        const proto::ProtoObject* updated = frame->setAttribute(ctx, key, val);
-        if (updated && updated != frame) {
-            setCurrentFrame(const_cast<proto::ProtoObject*>(updated));
+        // As the interpreter's STORE_NAME: a namespace a metaclass's
+        // __prepare__ returned (a mapping other than dict) stores through its
+        // __setitem__; a name bound for the first time is recorded in the
+        // namespace's __keys__, which a class's creation reads its namespace
+        // through.
+        const proto::ProtoObject* frameType = getType(ctx, frame);
+        bool handledBySetitem = false;
+        if (frameType && frameType != PROTO_NONE && frameType != dictPrototype &&
+            frameType != modulePrototype && frameType != objectPrototype) {
+            const proto::ProtoObject* setitem = getAttribute(ctx, frameType, getSetItemString(), false);
+            if (setitem && setitem != PROTO_NONE) {
+                handledBySetitem = true;
+                callObject(setitem, {frame, key->asObject(ctx), val});
+                if (hasPendingException()) return;
+            }
+        }
+        const proto::ProtoSparseList* own = frame->getOwnAttributes(ctx);
+        const bool isNewKey = !own || !own->has(ctx, reinterpret_cast<uintptr_t>(key));
+        if (!handledBySetitem) {
+            const proto::ProtoObject* updated = frame->setAttribute(ctx, key, val);
+            if (updated && updated != frame) {
+                frame = updated;
+                setCurrentFrame(const_cast<proto::ProtoObject*>(updated));
+            }
+        }
+        if (isNewKey) {
+            const proto::ProtoString* keysName = getKeysString();
+            const proto::ProtoObject* keysObj = (frame->hasOwnAttribute(ctx, keysName) == PROTO_TRUE)
+                ? frame->getOwnAttributeDirect(ctx, keysName) : nullptr;
+            const proto::ProtoList* keysList = (keysObj && keysObj->asList(ctx)) ? keysObj->asList(ctx) : ctx->newList();
+            keysList = keysList->appendLast(ctx, key->asObject(ctx));
+            const proto::ProtoObject* updated = frame->setAttribute(ctx, keysName, keysList->asObject(ctx));
+            if (updated && updated != frame) setCurrentFrame(const_cast<proto::ProtoObject*>(updated));
         }
         invalidateResolveCache();
         return;
@@ -29177,40 +29246,136 @@ const proto::ProtoObject* PythonEnvironment::callMethod(const proto::ProtoObject
                                                        const std::vector<const proto::ProtoObject*>& args) {
     proto::ProtoContext* ctx = getCurrentContext();
     if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
-    if (!obj || obj == PROTO_NONE) {
-        // Match `obj.attr(...)` on None: getAttribute raises AttributeError
-        // here; mirror the interpreter by surfacing that error.
-        callObject(getAttribute(ctx, obj, PythonEnvironment::getInternedString(ctx, attr.c_str())), args);
-        return nullptr;
-    }
     const proto::ProtoString* nameS = PythonEnvironment::getInternedString(ctx, attr.c_str());
-
-    // Match LOAD_METHOD: when the attribute lives on the prototype chain
-    // (not directly on `obj`'s own dict), it's a method.  Look it up raw
-    // (no descriptor binding) and prepend `obj` to args so the callee sees
-    // `self` in args[0] — the convention every protopyc-generated function
-    // prologue relies on.  When the attribute IS an own attribute of `obj`,
-    // it is a regular value bound to the instance (a callable stored in
-    // the instance dict, a Python bound method, a property's __get__
-    // result, …) and we invoke it through the normal getAttribute path so
-    // descriptors and bound-method binding run.
-    if (obj->hasOwnAttribute(ctx, nameS) != PROTO_TRUE) {
+    // `obj.attr(args)`: the attribute as LOAD_ATTR reads it for a call. A
+    // function found on obj's class (a Python function or one protopyc
+    // compiled) comes back unbound, and obj is passed as its first argument;
+    // anything else (a bound method, a classmethod or staticmethod already
+    // resolved by its descriptor, a callable instance attribute) is called
+    // with `args` as they are.
+    // Fast path, the common call from compiled code to a compiled method: a
+    // compiled function found on obj's class (not an own attribute, no
+    // __getattribute__ override) is what loadAttr would return unbound.
+    if (obj && obj != PROTO_NONE && obj->hasOwnAttribute(ctx, nameS) != PROTO_TRUE) {
         const proto::ProtoObject* raw = obj->getAttribute(ctx, nameS);
-        if (raw && raw != PROTO_NONE) {
-            std::vector<const proto::ProtoObject*> bound;
-            bound.reserve(args.size() + 1);
-            bound.push_back(obj);
-            for (auto* a : args) bound.push_back(a);
-            return callObject(raw, bound);
+        if (raw && raw != PROTO_NONE && isCompiledFunction(ctx, raw)) {
+            const proto::ProtoObject* type = getType(ctx, obj);
+            if (type && type != PROTO_NONE &&
+                !(ensureClassFlags(ctx, type) & PYFLAG_HAS_CUSTOM_GETATTR)) {
+                std::vector<const proto::ProtoObject*> withSelf;
+                withSelf.reserve(args.size() + 1);
+                withSelf.push_back(obj);
+                for (auto* a : args) withSelf.push_back(a);
+                return callObject(raw, withSelf);
+            }
         }
     }
-
-    // Attribute lives on the instance: descriptor protocol / bound-method
-    // semantics apply via getAttribute, and the caller's args go through
-    // unchanged (no self-prepend — the resolved value is already bound
-    // to obj if it is a method).
-    const proto::ProtoObject* method = getAttribute(ctx, obj, nameS, true);
+    bool unbound = false;
+    const proto::ProtoObject* method = loadAttr(ctx, obj, nameS, &unbound);
+    if (!method) return nullptr;
+    if (unbound) {
+        std::vector<const proto::ProtoObject*> withSelf;
+        withSelf.reserve(args.size() + 1);
+        withSelf.push_back(obj);
+        for (auto* a : args) withSelf.push_back(a);
+        return callObject(method, withSelf);
+    }
     return callObject(method, args);
+}
+
+const proto::ProtoObject* PythonEnvironment::loadAttr(proto::ProtoContext* ctx, const proto::ProtoObject* obj,
+                                                     const proto::ProtoString* key, bool* outIsUnboundFunc) {
+    if (outIsUnboundFunc) *outIsUnboundFunc = false;
+    if (!obj || !key) return nullptr;
+    // As LOAD_ATTR: only a function found on obj's class is returned unbound;
+    // obj's own attributes (a module's functions, a callable stored on the
+    // instance) are returned as they are.
+    if (outIsUnboundFunc && obj != PROTO_NONE && obj->hasOwnAttribute(ctx, key) == PROTO_TRUE) {
+        outIsUnboundFunc = nullptr;
+    }
+    const proto::ProtoObject* val = getAttribute(ctx, obj, key, false, outIsUnboundFunc);
+    if (outIsUnboundFunc && *outIsUnboundFunc && val) return val;
+    bool attrFound = val && (val != PROTO_NONE || obj == PROTO_NONE || obj->hasAttribute(ctx, key) == PROTO_TRUE);
+    if (!attrFound) {
+        // A descriptor called during the lookup may have raised: that
+        // exception propagates. An AttributeError for the name itself means
+        // "missing", and __getattr__ is consulted, as LOAD_ATTR does.
+        bool wasMissing = !hasPendingException();
+        if (!wasMissing) {
+            const proto::ProtoObject* exc = peekPendingException();
+            if (exc && attributeErrorType &&
+                (getType(ctx, exc) == attributeErrorType || exc->isInstanceOf(ctx, attributeErrorType) == PROTO_TRUE)) {
+                clearPendingException();
+                wasMissing = true;
+            }
+        }
+        if (wasMissing && obj != PROTO_NONE) {
+            const proto::ProtoString* getattrKey = PythonEnvironment::getInternedString(ctx, "__getattr__");
+            const proto::ProtoObject* getattrFn = nullptr;
+            bool getattrIsOwn = false;
+            if (obj->hasOwnAttribute(ctx, getattrKey) == PROTO_TRUE) {
+                getattrFn = obj->getAttribute(ctx, getattrKey);
+                getattrIsOwn = true;
+            } else {
+                const proto::ProtoObject* cls = getType(ctx, obj);
+                if (cls && cls != PROTO_NONE) getattrFn = getAttribute(ctx, cls, getattrKey, false);
+                if (hasPendingException()) return nullptr;
+            }
+            if (getattrFn && getattrFn != PROTO_NONE) {
+                // Module-level __getattr__(name) takes only the name;
+                // class-level __getattr__(self, name) takes both.
+                const proto::ProtoObject* nameObj = key->asObject(ctx);
+                val = getattrIsOwn ? callObject(getattrFn, {nameObj}) : callObject(getattrFn, {obj, nameObj});
+                if (hasPendingException()) return nullptr;
+                attrFound = val != nullptr;
+            }
+        }
+    }
+    if (hasPendingException()) return nullptr;
+    if (attrFound) return val;
+    std::string nameStr;
+    key->toUTF8String(ctx, nameStr);
+    raiseAttributeError(ctx, obj, nameStr);
+    return nullptr;
+}
+
+const proto::ProtoObject* PythonEnvironment::loadAttr(const proto::ProtoObject* obj, const char* name) {
+    proto::ProtoContext* ctx = getCurrentContext();
+    if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
+    return loadAttr(ctx, obj, PythonEnvironment::getInternedString(ctx, name));
+}
+
+void PythonEnvironment::chainPendingException(const proto::ProtoObject* context) {
+    if (!hasPendingException()) return;
+    proto::ProtoContext* ctx = getCurrentContext();
+    if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
+    chainException(ctx, peekPendingException(), context);
+}
+
+bool PythonEnvironment::isCompiledFunction(proto::ProtoContext* ctx, const proto::ProtoObject* value) const {
+    if (!value || !value->isMethod(ctx)) return false;
+    const proto::ProtoObject* storage = value->asMethodSelf(ctx);
+    if (!storage || storage == PROTO_NONE || !storage->isCell(ctx)) return false;
+    static const proto::ProtoString* moduleNsKey = nullptr;
+    if (!moduleNsKey) moduleNsKey = PythonEnvironment::getInternedString(ctx, "__module_ns__");
+    return storage->hasOwnAttribute(ctx, moduleNsKey) == PROTO_TRUE;
+}
+
+const proto::ProtoObject* PythonEnvironment::bindNativeMethod(proto::ProtoContext* ctx, const proto::ProtoObject* method,
+                                                             const proto::ProtoObject* instance) {
+    if (isCompiledFunction(ctx, method)) {
+        // As a Python function binds: a bound method whose call passes the
+        // instance first and keeps the function (and its storage) intact.
+        const proto::ProtoObject* bound = ctx->newObject(true);
+        if (methodPrototype) {
+            bound = bound->addParent(ctx, methodPrototype);
+            bound = bound->setAttribute(ctx, getClassString(), methodPrototype);
+        }
+        bound = bound->setAttribute(ctx, getSelfDunderString(), instance);
+        bound = bound->setAttribute(ctx, getFuncDunderString(), method);
+        return bound;
+    }
+    return ctx->fromMethod(const_cast<proto::ProtoObject*>(instance), method->asMethod(ctx));
 }
 
 void PythonEnvironment::setAttr(const proto::ProtoObject* obj, const std::string& attr, const proto::ProtoObject* val) {
@@ -29763,9 +29928,11 @@ void PythonEnvironment::augAssignAttr(const proto::ProtoObject* obj, const std::
         case TokenType::AtAssign:          binOp = TokenType::At; break;
         default: return;
     }
-    const proto::ProtoObject* oldVal = getAttr(obj, attr);
+    const proto::ProtoObject* oldVal = loadAttr(obj, attr.c_str());
+    if (!oldVal) return;
     const proto::ProtoObject* newVal = binaryOp(oldVal, binOp, value);
-    setAttr(obj, attr, newVal);
+    if (!newVal || hasPendingException()) return;
+    storeAttr(obj, attr.c_str(), newVal);
 }
 
 void PythonEnvironment::augAssignItem(const proto::ProtoObject* container, const proto::ProtoObject* key, TokenType op, const proto::ProtoObject* value) {
@@ -29919,11 +30086,17 @@ void PythonEnvironment::importStar(const proto::ProtoObject* mod) {
 
 const proto::ProtoObject* PythonEnvironment::buildSlice(const proto::ProtoObject* start, const proto::ProtoObject* stop, const proto::ProtoObject* step) {
     proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
-    proto::ProtoObject* sliceObj = const_cast<proto::ProtoObject*>(ctx->newObject(false));
-    sliceObj->setAttribute(ctx, startString, start ? start : PROTO_NONE);
-    sliceObj->setAttribute(ctx, stopString, stop ? stop : PROTO_NONE);
-    sliceObj->setAttribute(ctx, stepString, step ? step : PROTO_NONE);
-    if (sliceType) sliceObj->addParent(ctx, sliceType);
+    // The slice OP_BUILD_SLICE builds. The object was immutable and the
+    // results of setAttribute were dropped: a compiled `a[i:j]` passed an
+    // empty object and raised TypeError.
+    const proto::ProtoObject* sliceObj = ctx->newObject(true);
+    sliceObj = sliceObj->setAttribute(ctx, startString, start ? start : PROTO_NONE);
+    sliceObj = sliceObj->setAttribute(ctx, stopString, stop ? stop : PROTO_NONE);
+    sliceObj = sliceObj->setAttribute(ctx, stepString, step ? step : PROTO_NONE);
+    if (sliceType) {
+        sliceObj = sliceObj->addParent(ctx, sliceType);
+        sliceObj = sliceObj->setAttribute(ctx, getClassString(), sliceType);
+    }
     return sliceObj;
 }
 

@@ -70,6 +70,18 @@ struct __Handling {
     __Handling& operator=(const __Handling&) = delete;
 };
 
+// The same for a finally clause, when it runs for an exception (`exc` is not
+// null).
+struct __HandlingIf {
+    const bool active;
+    explicit __HandlingIf(const proto::ProtoObject* exc) : active(exc != nullptr) {
+        if (active) protoPython::PythonEnvironment::pushActiveException(exc);
+    }
+    ~__HandlingIf() { if (active) protoPython::PythonEnvironment::popActiveException(); }
+    __HandlingIf(const __HandlingIf&) = delete;
+    __HandlingIf& operator=(const __HandlingIf&) = delete;
+};
+
 // A class body binds names in its namespace, the current frame while it
 // runs; the previous frame is restored however the body is left.
 struct __FrameScope {
@@ -116,6 +128,52 @@ bool __isClass(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env, co
     }
     env->raiseException(exc);
     throw __PyUnwind{};
+}
+
+// Zero-argument super() in a method: the class of the method, from the class
+// cell its storage keeps as `__class__` (filled once the class is built).
+const proto::ProtoObject* __classFromCell(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env,
+                                          const proto::ProtoObject* fs) {
+    const proto::ProtoObject* cell =
+        fs ? fs->getAttribute(ctx, protoPython::PythonEnvironment::getInternedString(ctx, "__class__")) : nullptr;
+    const proto::ProtoObject* cls = (cell && cell != PROTO_NONE)
+        ? cell->getAttribute(ctx, protoPython::PythonEnvironment::getInternedString(ctx, "cls")) : nullptr;
+    if (!cls || cls == PROTO_NONE) {
+        env->raiseRuntimeError(ctx, "super(): __class__ cell not found");
+        throw __PyUnwind{};
+    }
+    return cls;
+}
+
+// `f(*it)`: appends the values of `iterable` to the list in `listSlot`.
+void __extendArgs(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env,
+                  const proto::ProtoObject** listSlot, const proto::ProtoObject* iterable) {
+    const proto::ProtoObject* it = env->iter(iterable);
+    if (!it) {
+        if (!env->hasPendingException()) env->raiseTypeError(ctx, "argument after * must be an iterable");
+        throw __PyUnwind{};
+    }
+    protoPython::PythonEnvironment::TransientPin pin(env, it);
+    while (const proto::ProtoObject* v = env->next(it)) {
+        *listSlot = (*listSlot)->asList(ctx)->appendLast(ctx, v)->asObject(ctx);
+    }
+    if (env->hasPendingException()) {
+        if (!env->isStopIteration(ctx, env->peekPendingException())) throw __PyUnwind{};
+        env->clearPendingException();
+    }
+}
+
+// `f(**a, **b)`: merges the mapping into the dict in `dictSlot` (created by
+// the first call).
+void __mergeKwargs(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env,
+                   const proto::ProtoObject** dictSlot, const proto::ProtoObject* mapping) {
+    (void)ctx;
+    if (!*dictSlot || *dictSlot == PROTO_NONE) {
+        *dictSlot = env->callObject(env->lookupName("dict"), {});
+        if (env->hasPendingException()) throw __PyUnwind{};
+    }
+    env->callMethod(*dictSlot, "update", {mapping});
+    if (env->hasPendingException()) throw __PyUnwind{};
 }
 
 // A bare `raise`: the exception the innermost running except clause handles.
@@ -240,7 +298,10 @@ void __withExit(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env,
             __Handling handling(exc);
             suppress = env->callObject(exit, {env->getType(ctx, exc), exc, tb ? tb : PROTO_NONE});
         }
-        if (env->hasPendingException()) throw __PyUnwind{};
+        if (env->hasPendingException()) {
+            env->chainPendingException(exc);
+            throw __PyUnwind{};
+        }
         const bool suppressed = env->isTrue(suppress);
         if (env->hasPendingException()) throw __PyUnwind{};
         if (!suppressed) {
@@ -637,6 +698,16 @@ bool CppGenerator::generateCall(CallNode* n) {
         for (auto& kw : n->keywords) if (kw.first.empty()) { hasUnpacking = true; break; }
     }
 
+    if (!hasUnpacking && n->args.empty() && n->keywords.empty() && !methodSelfParam_.empty()) {
+        // Zero-argument super() in a method: super(<the class>, <first
+        // parameter>), the class read from the method's class cell.
+        auto* nm = dynamic_cast<NameNode*>(n->func.get());
+        if (nm && nm->id == "super" && !localVars_.count("super")) {
+            *out_ << "env->callObject(env->lookupName(\"super\"), {__classFromCell(ctx, env, __fs), local_"
+                  << methodSelfParam_ << "})";
+            return true;
+        }
+    }
     if (!hasUnpacking) {
         if (n->keywords.empty()) {
             // For `obj.attr(args)` route through env->callMethod, which uses
@@ -716,37 +787,55 @@ bool CppGenerator::generateCall(CallNode* n) {
             *out_ << "})";
         }
     } else {
-        // PEP 448 multiple unpacking. 
-        // Build them using helpers or blocks.
-        *out_ << "([&]() {\n";
-        *out_ << "        auto* __f = "; if (!generateNode(n->func.get())) return false; *out_ << ";\n";
-        *out_ << "        auto* __alst = ctx->newList();\n";
+        // f(a, *it, k=v, **m) (PEP 448): the positional values, starred
+        // iterables expanded, go into a list kept in a temporary slot (the
+        // iteration can run Python code and collect); keywords are named or
+        // come from the `**` mappings (merged into one dict when there are
+        // several).
+        const int listSlot = allocTempSlot();
+        *out_ << "([&]() -> const proto::ProtoObject* {\n";
+        *out_ << "        const proto::ProtoObject* __f = ";
+        if (!generateNode(n->func.get())) return false;
+        *out_ << ";\n";
+        *out_ << "        __slot[" << listSlot << "] = ctx->newList()->asObject(ctx);\n";
         for (auto& a : n->args) {
             if (auto* s = dynamic_cast<StarredNode*>(a.get())) {
-                *out_ << "        __alst = ctx->listExtend(ctx, __alst, (const proto::ProtoList*)env->getAttr("; 
+                *out_ << "        __extendArgs(ctx, env, &__slot[" << listSlot << "], ";
                 if (!generateNode(s->value.get())) return false;
-                *out_ << ", env->getDataString()));\n";
+                *out_ << ");\n";
             } else {
-                *out_ << "        __alst = __alst->appendLast(ctx, ";
+                *out_ << "        { const proto::ProtoObject* __v = ";
                 if (!generateNode(a.get())) return false;
-                *out_ << ");\n";
+                *out_ << "; __slot[" << listSlot << "] = __slot[" << listSlot
+                      << "]->asList(ctx)->appendLast(ctx, __v)->asObject(ctx); }\n";
             }
         }
-        *out_ << "        bool __hasKw = false;\n";
-        *out_ << "        auto* __kmap = ctx->newSparseList();\n";
+        *out_ << "        std::vector<std::pair<std::string, const proto::ProtoObject*>> __kws;\n";
+        size_t nMaps = 0;
+        for (auto& kw : n->keywords) if (kw.first.empty()) ++nMaps;
+        const int mapSlot = nMaps > 1 ? allocTempSlot() : -1;
+        *out_ << "        const proto::ProtoObject* __kwmap = nullptr;\n";
+        if (nMaps > 1) *out_ << "        __slot[" << mapSlot << "] = PROTO_NONE;\n";
         for (auto& kw : n->keywords) {
-            *out_ << "        __hasKw = true;\n";
             if (kw.first.empty()) {
-                *out_ << "        __kmap = ctx->dictUpdate(ctx, __kmap, (const proto::ProtoSparseList*)env->getAttr(";
-                if (!generateNode(kw.second.get())) return false;
-                *out_ << ", env->getDataString()));\n";
+                if (nMaps == 1) {
+                    *out_ << "        __kwmap = ";
+                    if (!generateNode(kw.second.get())) return false;
+                    *out_ << ";\n";
+                } else {
+                    *out_ << "        __mergeKwargs(ctx, env, &__slot[" << mapSlot << "], ";
+                    if (!generateNode(kw.second.get())) return false;
+                    *out_ << ");\n";
+                }
             } else {
-                *out_ << "        __kmap = __kmap->setAt(ctx, ctx->fromUTF8String(\"" << kw.first << "\")->getHash(ctx), ";
+                *out_ << "        __kws.push_back({\"" << kw.first << "\", ";
                 if (!generateNode(kw.second.get())) return false;
-                *out_ << ");\n";
+                *out_ << "});\n";
             }
         }
-        *out_ << "        return env->callObjectEx(__f, {}, {}, ctx->newTupleFromList(__alst)->asObject(ctx), __hasKw ? __kmap->asObject(ctx) : nullptr);\n";
+        if (nMaps > 1) *out_ << "        __kwmap = __slot[" << mapSlot << "];\n";
+        *out_ << "        return env->callObjectEx(__f, {}, __kws, ctx->newTupleFromList(__slot["
+              << listSlot << "]->asList(ctx))->asObject(ctx), __kwmap);\n";
         *out_ << "    })()";
     }
     return true;
@@ -757,6 +846,18 @@ bool CppGenerator::generateStarred(StarredNode* n) {
 }
 
 bool CppGenerator::generateAnnAssign(AnnAssignNode* n) {
+    // `name: annotation [= value]` in a class body records the annotation
+    // in the class namespace's __annotations__ (created with the namespace,
+    // see generateClassDef), as the interpreter does; dataclasses read it.
+    auto* annName = dynamic_cast<NameNode*>(n->target.get());
+    if (inClassBody_ && annName && n->annotation) {
+        *out_ << "env->setItem(env->lookupName(\"__annotations__\"), "
+              << "protoPython::PythonEnvironment::getInternedString(ctx, \"" << annName->id << "\")->asObject(ctx), ";
+        if (!generateNode(n->annotation.get())) return false;
+        *out_ << ")";
+        if (!n->value) return true;
+        *out_ << ";\n    if (*__pexc) throw __PyUnwind{};\n    ";
+    }
     if (n->value) {
         std::ostringstream valStream;
         std::ostream* oldOut = out_;
@@ -778,9 +879,11 @@ bool CppGenerator::generateAssignToTarget(ASTNode* target, const std::string& va
         emitAssignName(nameNode->id, valueExpr);
         return true;
     } else if (auto* attrNode = dynamic_cast<AttributeNode*>(target)) {
-        *out_ << "env->setAttr(";
+        // Python's attribute write (data descriptors, __setattr__); an
+        // exception it raises is pending, seen after the statement.
+        *out_ << "env->storeAttr(";
         if (!generateNode(attrNode->value.get())) return false;
-        *out_ << ", \"" << attrNode->attr << "\", " << valueExpr << ")";
+        *out_ << ", " << internedKey(attrNode->attr) << ", " << valueExpr << ")";
         return true;
     } else if (auto* subNode = dynamic_cast<SubscriptNode*>(target)) {
         *out_ << "env->setItem(";
@@ -1311,6 +1414,12 @@ bool CppGenerator::generateFunctionInternal(const std::string& name,
     // class under this key (__methodStorage).
     const bool isMethod = oldInClassBody;
     const std::string methodStorageKey = "__protopyc_fs_" + cppFuncName + "__";
+    // Zero-argument super() in the body binds to the first parameter of a
+    // method; the qualified name of what the body defines continues this one.
+    const std::string oldMethodSelfParam = methodSelfParam_;
+    methodSelfParam_ = (isMethod && !parameters.empty()) ? parameters[0] : std::string();
+    const std::string oldQualnamePrefix = qualnamePrefix_;
+    qualnamePrefix_ = (qualnamePrefix_.empty() ? name : qualnamePrefix_ + "." + name) + ".<locals>";
 
     // Publish the current function identity so generateCall can detect
     // self-recursion and emit a direct C++ call instead of routing the
@@ -1545,6 +1654,8 @@ bool CppGenerator::generateFunctionInternal(const std::string& name,
     freeVars_ = oldFreeVars;
     currentFuncName_ = oldCurrentFuncName;
     currentFuncCppName_ = oldCurrentFuncCppName;
+    methodSelfParam_ = oldMethodSelfParam;
+    qualnamePrefix_ = oldQualnamePrefix;
     ctl_ = std::move(oldCtl);
     returnSlot_ = oldReturnSlot;
     out_ = oldOut;
@@ -1560,6 +1671,10 @@ bool CppGenerator::generateFunctionInternal(const std::string& name,
     *out_ << "    const proto::ProtoObject* __fs = __newFunctionStorage(ctx);\n";
     for (const auto& fv : orderedFreeVars) {
         *out_ << "    __fs = __withFreeVar(ctx, __fs, \"" << fv << "\", local_" << fv << ");\n";
+    }
+    if (isMethod && classCellSlot_ >= 0) {
+        // The class cell, for zero-argument super() (see generateClassDef).
+        *out_ << "    __fs = __withFreeVar(ctx, __fs, \"__class__\", __slot[" << classCellSlot_ << "]);\n";
     }
     *out_ << "    const proto::ProtoObject* __fn = ctx->fromMethod(const_cast<proto::ProtoObject*>(__fs), "
           << cppFuncName << ");\n";
@@ -1582,91 +1697,121 @@ bool CppGenerator::generateFunctionInternal(const std::string& name,
 }
 
 bool CppGenerator::generateClassDef(ClassDefNode* n) {
+    // A compiled class is built as the interpreter builds one
+    // (PythonEnvironment::buildClass): the metaclass is chosen and
+    // __prepare__ called, the body fills the namespace, and the metaclass
+    // call makes the class (its __mro__, __init_subclass__, __set_name__).
     *out_ << "\n    // Class definition: " << n->name << "\n";
-    *out_ << "    const proto::ProtoObject* class_name_" << n->name << " = ctx->fromUTF8String(\"" << n->name << "\");\n";
-    
-    // Bases.  They and the namespace are used after the class body, which
-    // may loop: each is kept in an anchor slot.
-    *out_ << "    std::vector<const proto::ProtoObject*> bases_" << n->name << ";\n";
+    *out_ << "    {\n";
+    // Bases, keywords, the namespace (then the class) and the class cell are
+    // used across the class body, which may loop: each is kept in an anchor
+    // slot.
     std::vector<int> classAnchors;
+    const int basesSlot = pushAnchor();
+    classAnchors.push_back(basesSlot);
+    *out_ << "    __slot[" << basesSlot << "] = ctx->newList()->asObject(ctx);\n";
     for (auto& b : n->bases) {
-        const int baseSlot = pushAnchor();
-        classAnchors.push_back(baseSlot);
-        *out_ << "    __slot[" << baseSlot << "] = ";
-        if (!generateNode(b.get())) return false;
-        *out_ << ";\n";
-        *out_ << "    bases_" << n->name << ".push_back(__slot[" << baseSlot << "]);\n";
+        if (auto* st = dynamic_cast<StarredNode*>(b.get())) {
+            *out_ << "    __extendArgs(ctx, env, &__slot[" << basesSlot << "], ";
+            if (!generateNode(st->value.get())) return false;
+            *out_ << ");\n";
+        } else {
+            *out_ << "    { const proto::ProtoObject* __b = ";
+            if (!generateNode(b.get())) return false;
+            *out_ << "; __slot[" << basesSlot << "] = __slot[" << basesSlot
+                  << "]->asList(ctx)->appendLast(ctx, __b)->asObject(ctx); }\n";
+        }
+        beginStatement();
     }
-
-    // Namespace and Body
+    *out_ << "    __slot[" << basesSlot << "] = ctx->newTupleFromList(__slot[" << basesSlot
+          << "]->asList(ctx))->asObject(ctx);\n";
+    int kwdsSlot = -1;
+    if (!n->keywords.empty()) {
+        // class C(metaclass=M, **kw): a dict of the keywords.
+        kwdsSlot = pushAnchor();
+        classAnchors.push_back(kwdsSlot);
+        *out_ << "    __slot[" << kwdsSlot << "] = __ck(__pexc, env->callObject(env->lookupName(\"dict\"), {}));\n";
+        for (auto& kw : n->keywords) {
+            if (kw.first.empty()) {
+                *out_ << "    env->callMethod(__slot[" << kwdsSlot << "], \"update\", {";
+                if (!generateNode(kw.second.get())) return false;
+                *out_ << "});\n";
+            } else {
+                *out_ << "    env->setItem(__slot[" << kwdsSlot << "], ctx->fromUTF8String(\""
+                      << escapeCppString(kw.first) << "\"), ";
+                if (!generateNode(kw.second.get())) return false;
+                *out_ << ");\n";
+            }
+            *out_ << "    if (*__pexc) throw __PyUnwind{};\n";
+            beginStatement();
+        }
+    }
     const int nsSlot = pushAnchor();
     classAnchors.push_back(nsSlot);
-    *out_ << "    auto* ns_" << n->name << " = const_cast<proto::ProtoObject*>(ctx->newObject(true));\n";
-    *out_ << "    __slot[" << nsSlot << "] = ns_" << n->name << ";\n";
-    *out_ << "    ns_" << n->name << "->setAttribute(ctx, env->getNameString(), class_name_" << n->name << ");\n";
-    *out_ << "    {\n";
-    *out_ << "        __FrameScope __classFrame(ns_" << n->name << ");\n";
+    const int cellSlot = pushAnchor();
+    classAnchors.push_back(cellSlot);
+    *out_ << "    __slot[" << cellSlot << "] = ctx->newObject(true);\n";
+
+    const std::string qualname = qualnamePrefix_.empty() ? n->name : qualnamePrefix_ + "." + n->name;
+    *out_ << "    const proto::ProtoObject* var_cls_" << n->name << " = env->buildClass(ctx, "
+          << "protoPython::PythonEnvironment::getInternedString(ctx, \"" << n->name << "\")->asObject(ctx), "
+          << "__slot[" << basesSlot << "], "
+          << (kwdsSlot >= 0 ? "__slot[" + std::to_string(kwdsSlot) + "]" : std::string("PROTO_NONE")) << ",\n";
+    *out_ << "        [&](proto::ProtoObject*& __ns) -> bool {\n";
+    *out_ << "        __FrameScope __classFrame(__ns);\n";
+    *out_ << "        try {\n";
+    *out_ << "        env->storeName(\"__qualname__\", protoPython::PythonEnvironment::getInternedString(ctx, \""
+          << qualname << "\")->asObject(ctx));\n";
+    bool hasAnnotations = false;
+    if (auto* suite = dynamic_cast<SuiteNode*>(n->body.get())) {
+        for (auto& st : suite->statements) {
+            if (dynamic_cast<AnnAssignNode*>(st.get())) { hasAnnotations = true; break; }
+        }
+    }
+    if (hasAnnotations) {
+        *out_ << "        env->storeName(\"__annotations__\", __ck(__pexc, env->callObject(env->lookupName(\"dict\"), {})));\n";
+    }
     // Names the class body binds go to the class namespace (the current
     // frame), not to the enclosing function's locals.
     const bool oldInClassBody = inClassBody_;
+    const int oldClassCellSlot = classCellSlot_;
+    const std::string oldQualnamePrefix = qualnamePrefix_;
     inClassBody_ = true;
+    classCellSlot_ = cellSlot;
+    qualnamePrefix_ = qualname;
+    beginStatement();
     const bool bodyOk = generateNode(n->body.get());
     inClassBody_ = oldInClassBody;
+    classCellSlot_ = oldClassCellSlot;
+    qualnamePrefix_ = oldQualnamePrefix;
     if (!bodyOk) return false;
-    *out_ << "    }\n";
-
-    // Create Class Object
-    *out_ << "    auto* cls_" << n->name << " = const_cast<proto::ProtoObject*>(ctx->newObject(true));\n";
-    *out_ << "    if (env->getTypePrototype()) cls_" << n->name << "->setAttribute(ctx, env->getClassString(), env->getTypePrototype());\n";
-    *out_ << "    for (auto* b : bases_" << n->name << ") cls_" << n->name << "->addParent(ctx, b);\n";
-    
-    // Copy attributes from namespace to class
-    *out_ << "    {\n";
-    *out_ << "        const proto::ProtoSparseList* keys = ns_" << n->name << "->getAttributes(ctx);\n";
-    *out_ << "        if (keys) {\n";
-    *out_ << "            auto it = keys->getIterator(ctx);\n";
-    *out_ << "            while (it && it->hasNext(ctx)) {\n";
-    *out_ << "                proto::proto_ulong key = it->nextKey(ctx);\n";
-    *out_ << "                const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(static_cast<std::uintptr_t>(key));\n";
-    *out_ << "                if (keyObj && keyObj->isString(ctx)) {\n";
-    *out_ << "                    const proto::ProtoString* k = keyObj->asString(ctx);\n";
-    *out_ << "                    cls_" << n->name << "->setAttribute(ctx, k, ns_" << n->name << "->getAttribute(ctx, k));\n";
-    *out_ << "                }\n";
-    *out_ << "                it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(ctx);\n";
-    *out_ << "            }\n";
-    *out_ << "        }\n";
-    *out_ << "    }\n";
-    
-    // Set __call__ for instantiation
-    *out_ << "    cls_" << n->name << "->setAttribute(ctx, env->getCallString(), ctx->fromMethod(cls_" << n->name << ", [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {\n";
-    *out_ << "        auto* env = protoPython::PythonEnvironment::get(ctx);\n";
-    *out_ << "        auto* obj = const_cast<proto::ProtoObject*>(ctx->newObject(true));\n";
-    *out_ << "        obj->addParent(ctx, self);\n";
-    *out_ << "        const proto::ProtoObject* init = env->getAttribute(ctx, obj, env->getInitString());\n";
-    *out_ << "        if (init && init != PROTO_NONE) {\n";
-    *out_ << "            std::vector<const proto::ProtoObject*> vargs;\n";
-    *out_ << "            for (proto::proto_ulong i = 0; i < args->getSize(ctx); ++i) vargs.push_back(args->getAt(ctx, i));\n";
-    *out_ << "            env->callObject(init, vargs);\n";
-    // An exception __init__ raised is the call's.
-    *out_ << "            if (env->hasPendingException()) return nullptr;\n";
-    *out_ << "        }\n";
-    *out_ << "        return obj;\n";
-    *out_ << "    }));\n";
-
-    *out_ << "    auto var_cls_" << n->name << " = static_cast<const proto::ProtoObject*>(cls_" << n->name << ");\n";
+    *out_ << ";\n";
+    *out_ << "        } catch (const __PyUnwind&) { return false; }\n";
+    // The body may have rebound the frame (a namespace that is not mutable).
+    *out_ << "        __ns = const_cast<proto::ProtoObject*>(protoPython::PythonEnvironment::getCurrentFrame());\n";
+    *out_ << "        return true;\n";
+    *out_ << "    }, &__slot[" << nsSlot << "]);\n";
+    *out_ << "    if (!var_cls_" << n->name << ") throw __PyUnwind{};\n";
+    *out_ << "    __slot[" << nsSlot << "] = var_cls_" << n->name << ";\n";
+    // The methods' zero-argument super() reads the class from the cell.
+    *out_ << "    const_cast<proto::ProtoObject*>(__slot[" << cellSlot << "])->setAttribute(ctx, "
+          << "protoPython::PythonEnvironment::getInternedString(ctx, \"cls\"), var_cls_" << n->name << ");\n";
 
     // Apply decorators Bottom-to-Top
     if (!n->decorator_list.empty()) {
         for (auto it = n->decorator_list.rbegin(); it != n->decorator_list.rend(); ++it) {
+            beginStatement();
             *out_ << "    var_cls_" << n->name << " = __ck(__pexc, env->callObject(";
             if (!generateNode(it->get())) return false;
             *out_ << ", {var_cls_" << n->name << "}));\n";
+            *out_ << "    __slot[" << nsSlot << "] = var_cls_" << n->name << ";\n";
         }
     }
 
     *out_ << "    ";
     emitAssignName(n->name, "var_cls_" + n->name);
     *out_ << ";\n";
+    *out_ << "    }\n";
     for (size_t i = 0; i < classAnchors.size(); ++i) popAnchor();
     return true;
 }
@@ -1813,10 +1958,20 @@ bool CppGenerator::generateReturn(ReturnNode* n) {
     return true;
 }
 
+// An attribute name as an interned string, looked up once per site (interned
+// strings are perennial; a function-local static is initialized once, also
+// when several threads reach it).
+std::string CppGenerator::internedKey(const std::string& name) {
+    return "([&]() { static const proto::ProtoString* const __k = "
+           "protoPython::PythonEnvironment::getInternedString(ctx, \"" + name + "\"); return __k; }())";
+}
+
 bool CppGenerator::generateAttribute(AttributeNode* n) {
-    *out_ << "env->getAttr(";
+    // Python's attribute read (descriptors, __getattr__, AttributeError):
+    // nullptr with the exception pending when it raised.
+    *out_ << "env->loadAttr(ctx, ";
     if (!generateNode(n->value.get())) return false;
-    *out_ << ", \"" << n->attr << "\")";
+    *out_ << ", " << internedKey(n->attr) << ")";
     return true;
 }
 
@@ -2132,7 +2287,9 @@ bool CppGenerator::generateTry(TryNode* n) {
             *out_ << "try {\n";
             if (!generateBody(h.body.get())) { ok = false; break; }
             *out_ << ";\n";
-            *out_ << "} catch (const __PyUnwind&) {}\n";
+            // An exception the clause raises was raised while handling
+            // __exc: its __context__ (PEP 3134).
+            *out_ << "} catch (const __PyUnwind&) { env->chainPendingException(__exc); }\n";
             *out_ << "            }\n";
             first += nHandler[i];
         }
@@ -2163,7 +2320,15 @@ bool CppGenerator::generateTry(TryNode* n) {
         *out_ << "        __finally_" << fin.id << ": ;\n";
         *out_ << "        if (" << resumeIdle << ") __slot[" << pendingSlot
               << "] = *__pexc ? env->takePendingException() : nullptr;\n";
+        // While the finally clause runs for an exception, that exception is
+        // the active one (sys.exc_info()), and the __context__ of one the
+        // clause raises.
+        *out_ << "        {\n";
+        *out_ << "        __HandlingIf __finallyHandling(__slot[" << pendingSlot << "]);\n";
         ok = emitClause(n->finalbody.get(), first, nFinally);
+        *out_ << "        }\n";
+        *out_ << "        if (__slot[" << pendingSlot << "] && *__pexc) env->chainPendingException(__slot["
+              << pendingSlot << "]);\n";
         *out_ << "        if (__slot[" << pendingSlot << "] && !*__pexc) env->raiseException(__slot["
               << pendingSlot << "]);\n";
         popAnchor();
@@ -2316,6 +2481,7 @@ bool CppGenerator::generateLambda(LambdaNode* n) {
     const bool oldInClassBody = inClassBody_;
     const std::string oldCurrentFuncName = currentFuncName_;
     const std::string oldCurrentFuncCppName = currentFuncCppName_;
+    const std::string oldMethodSelfParam = methodSelfParam_;
     orderedLocalVars_ = lambdaLocals;
     orderedLocalVars_.insert(orderedLocalVars_.end(), lambdaFreeVars.begin(), lambdaFreeVars.end());
     localVars_ = std::unordered_set<std::string>(orderedLocalVars_.begin(), orderedLocalVars_.end());
@@ -2323,6 +2489,7 @@ bool CppGenerator::generateLambda(LambdaNode* n) {
     inClassBody_ = false;
     currentFuncName_.clear();
     currentFuncCppName_.clear();
+    methodSelfParam_.clear();
     auto restore = [&]() {
         orderedLocalVars_ = oldOrderedLocals;
         localVars_ = oldLocalVars;
@@ -2330,6 +2497,7 @@ bool CppGenerator::generateLambda(LambdaNode* n) {
         inClassBody_ = oldInClassBody;
         currentFuncName_ = oldCurrentFuncName;
         currentFuncCppName_ = oldCurrentFuncCppName;
+        methodSelfParam_ = oldMethodSelfParam;
     };
 
     const SlotFrame lambdaSlots = enterSlotFrame(static_cast<int>(orderedLocalVars_.size()));
