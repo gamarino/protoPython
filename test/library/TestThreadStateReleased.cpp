@@ -29,6 +29,8 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 #include <chrono>
 #include <string>
 #include <thread>
@@ -131,18 +133,23 @@ protected:
     /// `defs` already compiled and settled so that the one-off cost of compiling
     /// (protoPython pins each compiled module's bytecode for the life of the
     /// environment) is not counted as retention.
+    /// Returned when the workload did not run.  A real delta can be negative:
+    /// when the workload retains nothing, a cycle can also free garbage that
+    /// was still marked at the `before` reading.
+    static constexpr proto::proto_long kNotMeasured = std::numeric_limits<proto::proto_long>::min();
+
     proto::proto_long retentionOf(const std::string& defs, const std::string& call) {
         if (env_.executeString(defs, "<retention:defs>") != 0) {
             env_.takePendingException();
             ADD_FAILURE() << "definitions failed to execute";
-            return -1;
+            return kNotMeasured;
         }
         settle();
         const proto::proto_long before = markedCells(space());
         if (env_.executeString(call, "<retention:call>") != 0) {
             env_.takePendingException();
             ADD_FAILURE() << "workload failed to execute";
-            return -1;
+            return kNotMeasured;
         }
         driveCycles(space(), ctx(), 8, 15000);
         return markedCells(space()) - before;
@@ -198,9 +205,9 @@ TEST_F(RetentionTest, DroppedFunctionObjectsAreReclaimed)
         "        del xs\n"
         "    return rounds * per_round\n";
     const proto::proto_long small = retentionOf(defs, "_r = _mkmany(20, 10)\n");   //  200 fns
-    ASSERT_GE(small, 0);
+    ASSERT_NE(small, kNotMeasured);
     const proto::proto_long large = retentionOf(defs, "_r = _mkmany(20, 60)\n");   // 1200 fns
-    ASSERT_GE(large, 0);
+    ASSERT_NE(large, kNotMeasured);
 
     const double perFunction = (double) (large - small) / 1000.0;
     EXPECT_LT(perFunction, 20.0)
@@ -233,9 +240,9 @@ TEST_F(RetentionTest, FinishedThreadsDoNotAccumulateMarkedCells)
         "        del ts\n"
         "    return rounds * n\n";
     const proto::proto_long small = retentionOf(defs, "_r = _t_run(10, 2)\n");   // 20 threads
-    ASSERT_GE(small, 0);
+    ASSERT_NE(small, kNotMeasured);
     const proto::proto_long large = retentionOf(defs, "_r = _t_run(10, 10)\n");  // 100 threads
-    ASSERT_GE(large, 0);
+    ASSERT_NE(large, kNotMeasured);
 
     const double perThread = (double) (large - small) / 80.0;
     EXPECT_LT(perThread, 120.0)
