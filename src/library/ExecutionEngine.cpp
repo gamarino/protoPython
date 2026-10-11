@@ -818,8 +818,15 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     // the Python-visible `f_locals`, which framePrototype computes on demand
     // as a mapping of the local variables.  Skipped for CO_OPTIMIZED
     // functions (params in slots) to save 1 AVL-tree op in the hot path.
+    //
+    // The value is a marker, not the frame: the frame is mutable, so storing
+    // the frame in itself was a one-handle cycle that protoCore never
+    // collects, and every call of such a function kept its frame for the
+    // life of the space.  The reader (frameNamespaceOf in BuiltinsModule.cpp)
+    // takes the object on the frame's chain that owns the marker, which is the
+    // object the old value named.
     if (env && !(co_flags & CO_OPTIMIZED)) {
-        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFrameNamespaceString(), frame));
+        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFrameNamespaceString(), PROTO_TRUE));
     }
 
     if (isGenerator) {
@@ -8456,7 +8463,41 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (fn && env) {
                     const proto::ProtoObject* nameAttr = codeObj->getAttribute(ctx,
                         PythonEnvironment::getInternedString(ctx, "co_name"));
+                    // Bind the function's own name in its closure frame only
+                    // when the function, or a scope nested in it, reads that
+                    // name as a free variable: a recursive nested function,
+                    // whose outer slot is not assigned yet when the frame's
+                    // values are copied above.  The binding closes the cycle
+                    //   closureFrame -[.name]-> fn -[.__closure_frames__]-> closureFrame
+                    // between two mutables, which protoCore never collects
+                    // (docs/CONFORMANCE.md, rule 13).  For a comprehension,
+                    // a lambda or any non-recursive nested def nothing reads
+                    // the binding, and the cycle leaked one closure per
+                    // EXECUTION (a comprehension in a loop: about 55 cells per
+                    // iteration, for ever).  `<listcomp>`, `<lambda>`,
+                    // `<genexpr>` and the like are not identifiers, so no code
+                    // can read them; comprehensions carry no co_freevars, so
+                    // this test is what covers them.  Otherwise, without
+                    // co_freevars the answer stays "bind", as before.
+                    bool nameIsFree = true;
                     if (nameAttr && nameAttr->isString(ctx)) {
+                        std::string nm;
+                        nameAttr->asString(ctx)->toUTF8String(ctx, nm);
+                        if (!nm.empty() && nm[0] == '<') nameIsFree = false;
+                    }
+                    if (nameIsFree && coFreevars && nameAttr && nameAttr->isString(ctx)) {
+                        nameIsFree = false;
+                        const proto::ProtoString* nm = nameAttr->asString(ctx);
+                        for (proto::proto_ulong fi = 0; fi < coFreevars->getSize(ctx); ++fi) {
+                            const proto::ProtoObject* fvn = coFreevars->getAt(ctx, static_cast<int>(fi));
+                            if (fvn && fvn->isString(ctx) &&
+                                fvn->asString(ctx)->cmp_to_string(ctx, nm) == 0) {
+                                nameIsFree = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (nameIsFree && nameAttr && nameAttr->isString(ctx)) {
                         const proto::ProtoObject* updatedFrame =
                             const_cast<proto::ProtoObject*>(closureFrame)->setAttribute(
                                 ctx, nameAttr->asString(ctx), fn);

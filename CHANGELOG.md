@@ -241,6 +241,36 @@ onwards. Commit hashes are given for reference.
     nested function, so `gc.host_stress` reaches the path: 2 of 10 runs failed
     before the fix, 0 of 10 after.
 
+- **Comprehensions, lambdas and calls of closure-making functions were kept
+  for ever.** Two edges closed cycles between mutable objects, which protoCore
+  never collects (rule 13 in `docs/CONFORMANCE.md`), once per *execution*.
+  This is the "growing live set" observed while the adaptive heap was being
+  adopted.
+  - `OP_BUILD_FUNCTION` bound every new function's name in its own closure
+    frame. Only a recursive nested function reads that binding. Now the name
+    is bound only when it is in the function's `co_freevars`, and never when it
+    is not an identifier (`<listcomp>`, `<lambda>`, `<genexpr>`).
+  - A function whose locals a nested scope captures (a non-`CO_OPTIMIZED`,
+    frame-mapped function such as `def scale(xs, k): return [x * k for x in
+    xs]`) stored its frame in the frame itself as the namespace that
+    zero-argument `super()` reads. It now stores a marker, and `super()` takes
+    the object on the frame's chain that owns it.
+  - Measured under the controller with a 3 M-cell budget: a list
+    comprehension in a 20,000-iteration loop went from 161 K to 1.27 M live
+    cells over 189 cycles, and now stays at 158-190 K. 60,000 calls of
+    `scale` drove the live set to 2.99 M cells (at the ceiling).
+  - Not changed: a named nested def stored in such a frame still forms one
+    cycle per call of its defining function. That cycle is structural to the
+    whole-frame capture of closures. Chains of instances (`n = Node(j, n)`, 50
+    deep) were also checked: the live set rises to about 1.9 M cells within
+    30 cycles and stays flat for the next 400. That is acyclic mutable chains
+    draining one level per cycle, not a leak.
+  - Tests: `MutableCycles.ComprehensionsAndLambdasLeaveNoCycle` (360 extra
+    handles in cycles without the first fix, 0 with it) and
+    `MutableCycles.AMappedFrameDoesNotReferenceItself` (30 cycles before, 0
+    after). The conformance probe now drops its closure after use, so its one
+    structural cycle stays attributable.
+
 - **`obj.name = value` bypassed a `__setattr__` or a data descriptor inherited
   from a base class.** `OP_STORE_ATTR`'s fast path wrote the attribute
   directly unless the instance's own class owned `__setattr__` or an attribute

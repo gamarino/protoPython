@@ -505,6 +505,36 @@ structural case. Already minimised: the edge is gated on `co_freevars`
 (`ExecutionEngine.cpp:1308`), so the bound is one per function that genuinely closes
 over something.
 
+**Two incidental edges beside it, removed on 2026-10-10.** They were found by
+following a live set that grew under the adaptive controller, and both were one
+permanent cycle per *execution*, not per definition:
+
+* *`OP_BUILD_FUNCTION` bound every new function's name in its own closure frame*
+  (`closure frame -[.name]-> fn -[.__closure_frames__]-> closure frame`). The
+  binding is read only when the function or a nested scope reads its own name as
+  a free variable, i.e. recursion. For a comprehension, generator expression or
+  lambda (`<listcomp>`, ...) no code can read it. A list comprehension in a
+  20,000-iteration loop grew the live set from 161 K to 1.27 M cells over 189
+  cycles. Now the name is bound only when it is in `co_freevars`, never when it
+  starts with `<`. Test: `MutableCycles.ComprehensionsAndLambdasLeaveNoCycle`
+  (+360 handles in cycles without the fix, 0 with it).
+* *A mapped (non-`CO_OPTIMIZED`) frame stored itself under `__frame_namespace__`*,
+  the namespace zero-argument `super()` reads. That made one cycle per call of
+  every function whose locals a nested scope captures:
+  `def scale(xs, k): return [x * k for x in xs]` called 300 times left 300
+  cycles, and 60,000 calls drove the live set to a 3 M-cell ceiling. The frame
+  now stores a marker, and `frameNamespaceOf` returns the object on the chain
+  that owns it. Test: `MutableCycles.AMappedFrameDoesNotReferenceItself` (30
+  cycles before, 0 after; it also checks zero-argument `super()` in a class
+  defined inside a function).
+
+What stays is the structural cycle above, plus its consequence for a **named**
+nested def: its mapped defining frame holds it as a local, so
+`def make(k): def plain(): return k; return plain` still leaves one cycle per
+call of `make` (frame `-[.plain]->` fn `-[.__closure_frames__]->` closure frame
+`-[parent]->` frame). Removing that needs per-variable cells instead of
+whole-frame capture, which is a design change and is not done.
+
 The remaining two dominant shapes are **incidental with named, open blockers**:
 
 * **`__mro__` self, 6,671.** The stored own `__mro__` is a documented **cache** and

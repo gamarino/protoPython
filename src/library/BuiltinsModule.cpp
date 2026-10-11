@@ -4457,7 +4457,21 @@ static bool super_obj_is_valid(proto::ProtoContext* context,
 static const proto::ProtoObject* frameNamespaceOf(
     proto::ProtoContext* context, PythonEnvironment* env, const proto::ProtoObject* frame, int depth = 0) {
     if (!env || !frame || frame == PROTO_NONE || depth > 16) return nullptr;
-    const proto::ProtoObject* ns = frame->getAttribute(context, env->getFrameNamespaceString());
+    // A mapped function's frame carries a marker under the namespace key (see
+    // runUserFunctionCall), and the namespace is the object that owns it:
+    // the frame itself, or the closure parent it was inherited from, found in
+    // the order getAttribute resolves the key.
+    const proto::ProtoString* nsKey = env->getFrameNamespaceString();
+    const proto::ProtoObject* ns = frame->getAttribute(context, nsKey);
+    if (ns == PROTO_TRUE) {
+        if (frame->hasOwnAttribute(context, nsKey) == PROTO_TRUE) return frame;
+        const proto::ProtoList* chain = frame->getParents(context);
+        for (proto::proto_ulong i = 0; chain && i < chain->getSize(context); ++i) {
+            const proto::ProtoObject* p = chain->getAt(context, static_cast<int>(i));
+            if (p && p->hasOwnAttribute(context, nsKey) == PROTO_TRUE) return p;
+        }
+        return nullptr;
+    }
     if (ns && ns != PROTO_NONE) return ns;
     ns = frame->getAttribute(context, env->getFLocalsString());
     if (!ns || ns == PROTO_NONE) return nullptr;
