@@ -92,8 +92,20 @@ private:
     // the iterator's current value, declared as `local_<name>` in C++.
     bool emitComprehensionAssign(ASTNode* target, const std::string& valExpr);
     
-    bool inStateMachine_ = false;
-    int stateCount_ = 0;
+    // Generator bodies (see "Generator bodies" in CppGenerator.cpp).
+    bool inStateMachine_ = false;   // emitting a generator's continuation
+    int stateCount_ = 0;            // yields numbered so far in it
+    int countYields(ASTNode* node) const;
+    std::string resumeIn(int first, int count) const;
+    bool generateBody(ASTNode* body);
+    bool emitStatementList(const std::vector<ASTNode*>& stmts);
+    bool emitYieldStatement(ASTNode* yieldOrAwait, ASTNode* target);
+    // While a class body is emitted, the names it binds go to the class
+    // namespace, not to the enclosing function's locals.
+    bool inClassBody_ = false;
+    // Bind `name` to the C++ expression `valueExpr`: a function local's
+    // slot, or the current frame through env->storeName.
+    void emitAssignName(const std::string& name, const std::string& valueExpr);
     std::unordered_set<std::string> localVars_;
     std::vector<std::string> orderedLocalVars_;
     // While emitting a function body, the Python-level name of the

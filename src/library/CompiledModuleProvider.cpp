@@ -78,23 +78,11 @@ const proto::ProtoObject* CompiledModuleProvider::tryLoad(const std::string& log
     // The generated code resolves and binds names through the current frame
     // and the current globals (PythonEnvironment::lookupName / storeName), so
     // both must be this module while proto_module_init runs, not the importer's
-    // namespace. The previous values are restored on every exit path.
-    struct ModuleScope {
-        const proto::ProtoObject* oldGlobals = PythonEnvironment::getCurrentGlobals();
-        const proto::ProtoObject* oldFrame = PythonEnvironment::getCurrentFrame();
-        explicit ModuleScope(const proto::ProtoObject* module) {
-            PythonEnvironment::setCurrentGlobals(module);
-            PythonEnvironment::setCurrentFrame(module);
-            PythonEnvironment::pushScopeGlobals(module);
-        }
-        ~ModuleScope() {
-            PythonEnvironment::popScopeGlobals();
-            PythonEnvironment::setCurrentFrame(oldFrame);
-            PythonEnvironment::setCurrentGlobals(oldGlobals);
-        }
-    };
+    // namespace. The previous values are restored on every exit path. Each
+    // callable the module defines records this namespace and enters it again
+    // whenever it runs.
     {
-        ModuleScope scope(mod);
+        ModuleNamespaceScope scope(mod);
         initFunc();
     }
 

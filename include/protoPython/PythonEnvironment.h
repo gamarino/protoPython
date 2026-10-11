@@ -1806,6 +1806,62 @@ public:
     bool handleExhaustion(proto::ProtoContext* ctx);
 };
 
+/**
+ * Runs native code in the namespace of a module: while the scope lives, the
+ * thread's current frame and current globals are `ns`, so
+ * PythonEnvironment::lookupName and storeName resolve and bind module-level
+ * names of that module, whoever called the code.  `ns` is also pushed on the
+ * scope-globals stack (sys._getframemodulename).  The previous frame and
+ * globals are restored on every exit path.  A null `ns` makes the scope
+ * inactive, and so does entering the namespace that is already both the
+ * current frame and the current globals (a compiled callable called from
+ * its own module): consecutive compiled calls within one module count as
+ * one scope for sys._getframemodulename.
+ *
+ * Used by CompiledModuleProvider while a protopyc module initialises, and by
+ * every callable protopyc generates, which records the namespace of the module
+ * that defined it (an interpreted function does the same with __globals__).
+ */
+class ModuleNamespaceScope {
+public:
+    explicit ModuleNamespaceScope(const proto::ProtoObject* ns)
+        : ns_((ns && ns != PROTO_NONE) ? ns : nullptr),
+          oldGlobals_(PythonEnvironment::getCurrentGlobals()),
+          oldFrame_(PythonEnvironment::getCurrentFrame()) {
+        if (!ns_) return;
+        if (ns_ == oldGlobals_ && ns_ == oldFrame_) {
+            ns_ = nullptr;
+            return;
+        }
+        PythonEnvironment::pushScopeGlobals(ns_);
+        PythonEnvironment::setCurrentFrame(ns_);
+        if (ns_ != oldGlobals_) {
+            PythonEnvironment::setCurrentGlobals(ns_);
+            invalidate();
+        }
+    }
+    ~ModuleNamespaceScope() {
+        if (!ns_) return;
+        PythonEnvironment::popScopeGlobals();
+        PythonEnvironment::setCurrentFrame(oldFrame_);
+        if (oldGlobals_ != PythonEnvironment::getCurrentGlobals()) {
+            PythonEnvironment::setCurrentGlobals(oldGlobals_);
+            invalidate();
+        }
+    }
+    ModuleNamespaceScope(const ModuleNamespaceScope&) = delete;
+    ModuleNamespaceScope& operator=(const ModuleNamespaceScope&) = delete;
+
+private:
+    static void invalidate() {
+        if (PythonEnvironment* env = PythonEnvironment::getCurrentEnvironment())
+            env->invalidateResolveCache();
+    }
+    const proto::ProtoObject* ns_;
+    const proto::ProtoObject* oldGlobals_;
+    const proto::ProtoObject* oldFrame_;
+};
+
 } // namespace protoPython
 
 #endif // PROTOPYTHON_PYTHONENVIRONMENT_H

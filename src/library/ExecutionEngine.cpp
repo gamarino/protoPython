@@ -3181,15 +3181,18 @@ const proto::ProtoObject* py_generator_send_impl(
     // 2. Check for native callback
     const proto::ProtoObject* nativeCb = self->getAttribute(ctx, env->getGiNativeCallbackString());
     if (nativeCb && nativeCb != PROTO_NONE) {
-        // Native generators use a C++ callback that handles state.
-        // We pass self (the generator) and sendVal (the value being sent).
-        // The callback is responsible for updating gi_pc and gi_locals/stack on self.
-        
+        // Native generators (protopyc) use a C++ callback that handles
+        // state.  It receives the generator, the value sent and, for throw()
+        // and close(), the exception to raise at the suspended yield; it
+        // updates gi_pc and gi_locals on the generator itself.
+
         // 1. Mark as running
         self->setAttribute(ctx, env->getGiRunningString(), PROTO_TRUE);
-        
+
         try {
-            const proto::ProtoObject* result = env->callObject(nativeCb, {self, sendVal});
+            const proto::ProtoObject* result = throwExc
+                ? env->callObject(nativeCb, {self, sendVal ? sendVal : PROTO_NONE, throwExc})
+                : env->callObject(nativeCb, {self, sendVal ? sendVal : PROTO_NONE});
             self->setAttribute(ctx, env->getGiRunningString(), PROTO_FALSE);
             return result;
         } catch (const proto::ProtoObject* exc) {
