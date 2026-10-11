@@ -703,7 +703,33 @@ mean the `__data__` and `__class__` writes may be lost, and the unrooted wrapper
 may be swept mid-construction. **Severity: high, unproven** — no failing test is
 attached, and attaching one is the first thing to do with it.
 
-**Reviewed:** agent, 2026-09-25 — **pending maintainer review.**
+**Found by its symptom and fixed (2026-10-10): the running call's frame.** A
+Python call's frame was referenced only from C++ (`runUserFunctionCall`'s and
+`executeBytecodeRange`'s `frame`, the thread-local current frame) and was safe
+only while it stayed in its context's young generation. The interpreter's own
+`ctx->safepoint()` submits that generation once the context crosses
+`PROTOCORE_GC_CONTEXT_THRESHOLD`, so the next cycle freed the frame of any
+long-running call, and a nested function's `LOAD_DEREF` raised `NameError`.
+This shape is easy to miss when reading for C3: the frame is held across many
+allocations *safely*, and it becomes unrooted at the runtime's own safepoint,
+not at an allocation. `executeBytecodeRange` now anchors the frame in the
+context's last automatic slot (CHANGELOG, "Fixed"). Tests:
+`protopy_frame_survives_collection` (deterministic: 10 of 10 runs failed before
+the fix), and `gc.host_stress`, whose workload now drains its queue in a nested
+function (2 of 10 runs failed before the fix).
+
+**Found and filed, not fixed: protopyc-generated code** (issue #2). A compiled
+function runs in its caller's context, keeps every local in a C++ variable,
+and emits `ctx->safepoint()` at loop heads. That call submits the *caller's*
+young generation while the caller is in the middle of `OP_CALL`, and while the
+compiled locals are reachable only from C++. Under any heap limit a module with
+an allocating `while` loop crashes in its caller (6 of 6 runs at 1.5 M cells).
+The fix is a context of its own for each compiled call, with its locals in
+automatic slots, which is a code-generator change. protopyc is experimental
+(README).
+
+**Reviewed:** agent, 2026-09-25; frame and protopyc paragraphs 2026-10-10 —
+**pending maintainer review.**
 
 ### C5 — Which structure is rule 5 measured on, and why?
 

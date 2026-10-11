@@ -4254,7 +4254,24 @@ const proto::ProtoObject* executeBytecodeRange(
     const proto::ProtoObject** stackBase = nullptr;
     size_t stackCap = 0;
 
-    if (allSlots && nSlots > stackOffset) {
+    // The frame is anchored in the context's last automatic slot, which the
+    // operand stack never uses.  A frame is a cell of the context that runs
+    // it, and nothing in protoCore's heap references it while it runs: it is
+    // held by this function's `frame`, by the caller's C++ locals and by the
+    // thread-local current frame, none of which the collector scans.  That
+    // is safe only while the frame is in the context's young generation, and
+    // the ctx->safepoint() below hands the young generation to the collector
+    // once the context has allocated maxAllocatedCellsPerContext cells (rule
+    // 3 of protoCore's docs/EMBEDDER-CONFORMANCE.md).  Without the anchor the
+    // next cycle freed the frame of any long-running call, its cell was
+    // reused, and LOAD_DEREF / STORE_DEREF walked a stranger (a nested
+    // function's NameError on a variable of its enclosing function).
+    const proto::ProtoObject** frameAnchor = nullptr;
+    if (allSlots && nSlots > stackOffset + 1) {
+        stackBase = allSlots + stackOffset;
+        stackCap = nSlots - stackOffset - 1;
+        frameAnchor = allSlots + (nSlots - 1);
+    } else if (allSlots && nSlots > stackOffset) {
         stackBase = allSlots + stackOffset;
         stackCap = nSlots - stackOffset;
     } else {
@@ -4265,6 +4282,13 @@ const proto::ProtoObject* executeBytecodeRange(
 
     GCStack stack(stackBase, stackCap);
     stack.top = initialTop;
+    // A nested activation on the same context restores the outer anchor.
+    struct FrameAnchorScope {
+        const proto::ProtoObject** slot;
+        const proto::ProtoObject* saved;
+        ~FrameAnchorScope() { if (slot) *slot = saved; }
+    } frameAnchorScope{frameAnchor, frameAnchor ? *frameAnchor : nullptr};
+    if (frameAnchor) *frameAnchor = frame;
 
     std::vector<Block> blockStack;
     if (externalBlockStack) {
@@ -4288,6 +4312,9 @@ const proto::ProtoObject* executeBytecodeRange(
     proto::proto_ulong lastPc = pcStart;
     for (proto::proto_ulong i = pcStart; i <= pcEnd; ) {
         if ((++sp_ctr & 0x3F) == 0 && ctx) {
+            // Opcodes may have replaced `frame` (an immutable frame's
+            // setAttribute returns a new cell): anchor the current one.
+            if (frameAnchor) *frameAnchor = frame;
             ctx->safepoint();
             // Cooperative signal delivery: when a Python signal handler
             // is registered, the OS-level handler only flips a

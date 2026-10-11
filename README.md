@@ -35,6 +35,9 @@ protoPython provides three components:
   generated code were fixed in 2026 (for example, loop-target scoping and thread
   globals in commit `eab663bd`, and `and`/`or` lowering in commit `1084f969`);
   check the results of compiled modules against `protopy` before relying on them.
+  Generated code is not safe against garbage collection yet: once collections
+  run, a compiled module with an allocating loop can crash
+  ([issue #2](https://github.com/gamarino/protoPython/issues/2)).
 
 ### CPython conformance
 

@@ -210,6 +210,37 @@ onwards. Commit hashes are given for reference.
 
 ### Fixed
 
+- **A nested function lost the variables of its enclosing function once
+  collections ran** (`NameError: name 'target' is not defined`, intermittent).
+  The frame of a running Python call was referenced only from C++: the
+  `frame` locals of `runUserFunctionCall` and `executeBytecodeRange` and the
+  thread-local current frame, none of which protoCore scans. It was safe only
+  while it stayed in its context's young generation, and the interpreter's own
+  `ctx->safepoint()` (every 64 opcodes) hands that generation to the collector
+  once the context has allocated `PROTOCORE_GC_CONTEXT_THRESHOLD` cells (10,000
+  by default; protoCore's embedder rule 3). The next cycle freed the frame of
+  any long-running call, the cell was reused, and `LOAD_DEREF` /
+  `STORE_DEREF` walked a stranger: at the failing `LOAD_DEREF` the "frame" had
+  `f_code` None, no parents and no closure. `executeBytecodeRange` now keeps
+  the frame in its context's last automatic slot, which the operand stack no
+  longer uses, and refreshes it before every safepoint. protoCore was not at
+  fault: with protoCore built with a detector that aborts when a mutator uses
+  a mutable handle the collector finalized, the failure still occurred with no
+  report (the frame of a `CO_OPTIMIZED` function is immutable); with threshold
+  submission disabled (`PROTOCORE_GC_CONTEXT_THRESHOLD=4000000000`, 30 M-cell
+  limit) it failed 0 of 12 runs, and with a 200-cell threshold 24 of 24.
+  Collection pacing (protoCore 2.12.0) only changed how often a cycle fell in
+  the window: the same binary failed 10 of 12 runs against protoCore 2.11.0
+  too, which contradicts the earlier "0 of 24 against 2.11.0" bisection.
+  - Tests: `protopy_frame_survives_collection` (closure reads, `nonlocal`
+    writes and a nested definition after allocation, run with a 200-cell
+    context threshold and a 1.5 M-cell limit) failed 10 of 10 runs before the
+    fix and 0 of 20 after; the `def race(n)` reproduction failed 8 of 24 runs
+    under `PROTOCORE_HEAP_LIMIT_CELLS=1500000` and 0 of 24 after. The
+    conformance host's producer/consumer workload now drains the queue in a
+    nested function, so `gc.host_stress` reaches the path: 2 of 10 runs failed
+    before the fix, 0 of 10 after.
+
 - **`obj.name = value` bypassed a `__setattr__` or a data descriptor inherited
   from a base class.** `OP_STORE_ATTR`'s fast path wrote the attribute
   directly unless the instance's own class owned `__setattr__` or an attribute
