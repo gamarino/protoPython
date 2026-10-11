@@ -52,9 +52,9 @@ build is needed.
 ctest --test-dir build_release --output-on-failure
 ```
 
-On 2026-10-10 this configuration (protoCore 2.14.2 built from `../protoCore`, its
-own suite registered too) has 836 tests in CI; against an installed protoCore,
-protoPython's own suite has 189 on macOS and 186 on Windows.
+On 2026-10-11 this configuration (protoCore 2.14.2 built from `../protoCore`, its
+own suite registered too) has 839 tests in CI; against an installed protoCore,
+protoPython's own suite has 192 on macOS and 189 on Windows.
 
 ### Using an installed protoCore
 
@@ -313,15 +313,15 @@ through CMake's `InstallRequiredSystemLibraries`, so the unpacked `protopy.exe`
 runs without protoCore or the Visual C++ Redistributable installed. `cmake
 --install` copies the same DLLs into `<prefix>/bin`.
 
-In CI on 2026-10-10 (branch `chore/protocore-2.14.2`, runs 38104389529 and
-38104391156), with protoCore 2.14.2 at `17bc118e`, the ref every push and
-pull-request job pins, the 182 gating tests of the 186 registered pass on Windows
-(MSVC, `windows-2022`), the 185 of 189 on macOS (Apple clang, `macos-14`), and the
-824 of 836 of the Linux job, which also registers protoCore's own suite; the same
+In CI on 2026-10-11 (branch `fix/closure-frame-root`, runs 38113972723 and
+38113974345), with protoCore 2.14.2 at `17bc118e`, the ref every push and
+pull-request job pins, the 185 gating tests of the 189 registered pass on Windows
+(MSVC, `windows-2022`), the 188 of 192 on macOS (Apple clang, `macos-14`), and the
+827 of 839 of the Linux job, which also registers protoCore's own suite; the same
 Windows run built the ZIP and the NSIS installer and ran the unpacked
 `protopy.exe` with only the system directories on `PATH`. A second Windows job
 builds protoCore 2.11.0 (`69b56afe`), the minimum `CMakeLists.txt` accepts, and
-passes the same 182 of 186: it is the only job that tests the floor.
+passes the same 185 of 189: it is the only job that tests the floor.
 Clock-dependent cases run separately and do not gate (`.github/workflows/ci.yml`).
 On Windows and macOS the heap-limited tests `protopy_heap_limit_live_frames` and
 `protopy_file_close_on_collect` then run 25 more times each.
