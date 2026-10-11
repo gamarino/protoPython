@@ -150,9 +150,12 @@ TEST(MutableCycles, TheProbesShapesArePresentAndAttributable)
            "expectation to 0 and close that entry";
 
     // One closure in the probe, so exactly one `__closure_frames__` cycle:
-    // createUserFunction installs the defining frame on the function
-    // (ExecutionEngine.cpp:1311-1324) and OP_STORE_NAME binds the function back
-    // into that frame under its own name.
+    // createUserFunction installs the closure frame, whose parent is the
+    // defining frame, on the function, and the defining frame (mapped, since
+    // the closure captures its local) holds the function as a local.  Until
+    // 2026-10-10 OP_BUILD_FUNCTION also bound the function's name in the
+    // closure frame itself, a second edge that made the same cycle for every
+    // comprehension and lambda (ComprehensionsAndLambdasLeaveNoCycle).
     EXPECT_EQ(countShape(after, ".__closure_frames__"), 1u)
         << "the closure the probe builds no longer holds its defining frame.  "
            "OP_LOAD_DEREF walks __closure_frames__ at ExecutionEngine.cpp:6361, so "
@@ -182,4 +185,114 @@ TEST(MutableCycles, TheProbesShapesArePresentAndAttributable)
         << "the probe put " << (handlesInCycles(after) - handlesInCycles(before))
         << " further mutable handles into a cycle, against the "
         << (after.handles - before.handles) << " mutables it added to the table";
+}
+
+// A function's closure frame binds the function's own name only when the
+// function, or a scope nested in it, reads that name as a free variable (a
+// recursive nested function), and never a name such as `<listcomp>` that no
+// code can read.  OP_BUILD_FUNCTION used to bind it for EVERY function that
+// keeps its closure frame, which closed a permanent cycle
+//     closure frame -[.<listcomp>]-> fn -[.__closure_frames__]-> closure frame
+// for every comprehension, generator expression and lambda that reads an
+// enclosing variable: one per EXECUTION.  A loop running a list comprehension
+// 20,000 times grew the live set by about 55 cells per iteration for ever
+// (161 K -> 1.27 M cells over 189 cycles under the adaptive controller).
+//
+// Measured on handles inside cycles, not on a shape: the functions below are
+// dropped after use, so nothing they build may stay in a cycle.  A NAMED
+// nested def is deliberately absent: its mapped defining frame holds it as a
+// local while its closure chains to that frame, a cycle that the whole-frame
+// capture of closures implies and this test does not claim to remove
+// (docs/CONFORMANCE.md, rule 13).
+TEST(MutableCycles, ComprehensionsAndLambdasLeaveNoCycle)
+{
+    protoPython::PythonEnvironment env(STDLIB_PATH);
+    proto::ProtoContext* ctx = env.getContext();
+    ASSERT_NE(ctx, nullptr);
+    proto::ProtoSpace* space = env.getSpace();
+    ASSERT_NE(space, nullptr);
+
+    auto inCycles = [&]() {
+        const proto::MutableGraphReport r = space->findMutableCycles(ctx);
+        EXPECT_FALSE(r.truncated) << "the scan ran out of cell budget";
+        return handlesInCycles(r);
+    };
+
+    // Define first, so that the measured run adds no function to the module.
+    ASSERT_EQ(env.executeString(
+                  "def _mc_run():\n"
+                  "    total = 0\n"
+                  "    for i in range(40):\n"
+                  "        total += sum([i + j for j in range(3)])\n"
+                  "        total += sum(i + j for j in range(3))\n"
+                  "        total += (lambda: i)()\n"
+                  "    return total\n"
+                  "def _mc_recursive():\n"
+                  "    def factory(k):\n"
+                  "        def rec(n):\n"
+                  "            return k if n == 0 else rec(n - 1)\n"
+                  "        return rec\n"
+                  "    return [factory(k)(3) for k in range(5)]\n",
+                  "<mutable-cycles:define>"),
+              0);
+    const proto::proto_ulong base = inCycles();
+    ASSERT_EQ(env.executeString("assert _mc_run() == 2 * 2460 + 780\n",
+                                "<mutable-cycles:incidental>"),
+              0);
+    EXPECT_EQ(inCycles(), base)
+        << "comprehensions, generator expressions or lambdas left mutable handles "
+           "in a cycle: their closure frames still bind their own names";
+
+    // A recursive nested function still finds itself.
+    ASSERT_EQ(env.executeString("assert _mc_recursive() == [0, 1, 2, 3, 4]\n",
+                                "<mutable-cycles:recursive>"),
+              0);
+}
+
+// A function whose locals a nested scope captures keeps them on its (mutable)
+// frame, and records that frame as its namespace for zero-argument super().
+// It used to record it as the frame ITSELF, a one-handle cycle, so every
+// CALL of such a function -- `def scale(xs, k): return [x * k for x in xs]`
+// is one -- kept its frame for the life of the space: 300 calls, 300 cycles,
+// and a loop of 60,000 calls drove the live set to a 3 M-cell ceiling.
+TEST(MutableCycles, AMappedFrameDoesNotReferenceItself)
+{
+    protoPython::PythonEnvironment env(STDLIB_PATH);
+    proto::ProtoContext* ctx = env.getContext();
+    ASSERT_NE(ctx, nullptr);
+    proto::ProtoSpace* space = env.getSpace();
+    ASSERT_NE(space, nullptr);
+
+    auto namespaceCycles = [&]() {
+        const proto::MutableGraphReport r = space->findMutableCycles(ctx);
+        EXPECT_FALSE(r.truncated) << "the scan ran out of cell budget";
+        return countShape(r, ".__frame_namespace__");
+    };
+    const proto::proto_ulong base = namespaceCycles();
+
+    // The zero-argument super() inside a method defined in a mapped function
+    // is what reads the namespace: it must still find __class__ there.
+    ASSERT_EQ(env.executeString(
+                  "def _mf_scale(xs, k):\n"
+                  "    return [x * k for x in xs]\n"
+                  "def _mf_run():\n"
+                  "    total = 0\n"
+                  "    for i in range(30):\n"
+                  "        total += sum(_mf_scale([1, 2, 3], i))\n"
+                  "    return total\n"
+                  "def _mf_classes(tag):\n"
+                  "    class Base:\n"
+                  "        def who(self):\n"
+                  "            return 'base'\n"
+                  "    class Derived(Base):\n"
+                  "        def who(self):\n"
+                  "            return tag + super().who()\n"
+                  "    return Derived().who()\n"
+                  "assert _mf_run() == 6 * 435\n"
+                  "assert _mf_classes('d-') == 'd-base'\n",
+                  "<mutable-cycles:mapped-frame>"),
+              0);
+    EXPECT_EQ(namespaceCycles(), base)
+        << "a mapped frame still references itself as its namespace: every call "
+           "of a function whose locals a nested scope captures is kept for ever";
 }

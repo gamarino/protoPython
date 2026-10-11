@@ -235,8 +235,9 @@ public:
     //   * one zero-arg `super()`    -> `__getattr__ -> MethodCell` self (the proxy
     //                                  binds py_super_getattr to itself,
     //                                  BuiltinsModule.cpp:4283)
-    //   * one closure              -> `__closure_frames__` (fn -> frame -> fn,
-    //                                  ExecutionEngine.cpp:1311-1324)
+    //   * one closure              -> `__closure_frames__` (the defining frame
+    //                                  holds the function as a local, and the
+    //                                  function's closure chains to that frame)
     //
     // The return value is a DECLARATION of how many mutables the probe built, and
     // it is read back out of the interpreter rather than hard-coded: a probe whose
@@ -274,8 +275,14 @@ public:
             "        return cell[0]\n"
             "    return _conf_closed\n"
             "\n"
-            "_conf_closed = _conf_capture()\n"
-            "_conf_shapes = (_ConfMroB().tag(), _conf_closed(), _conf_closed())\n"
+            // The closure is used and dropped, not kept in a global: a global
+            // puts it in the module's component, which the detector reports
+            // once under another hop, and the shape would not be attributable.
+            "def _conf_use_closure():\n"
+            "    closed = _conf_capture()\n"
+            "    return (closed(), closed())\n"
+            "\n"
+            "_conf_shapes = (_ConfMroB().tag(),) + _conf_use_closure()\n"
             // Two class objects, two class-body namespaces, one super proxy and
             // one closure frame: the six mutables whose cycles this probe exists
             // to put in front of the detector.
