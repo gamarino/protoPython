@@ -1,0 +1,25 @@
+most_common [('a', 5), ('b', 2), ('r', 2), ('c', 1), ('d', 1)]
+most_common 2 [('a', 5), ('b', 2)]
+most_common 0 []
+most_common big [('a', 5), ('b', 2), ('r', 2), ('c', 1), ('d', 1)]
+ints [(3, 3), (1, 2)]
+total 11
+missing 0
+repr Counter({'a': 2, 'b': 1})
+kw [('a', 3), ('b', 1)]
+mapping [('a', 2)]
+generator [(0, 4), (1, 3), (2, 3)]
+update [('a', 3), ('b', 1), ('z', 1)]
+update mapping [('a', 6), ('b', 1)]
+subtract [('a', -1), ('b', 1), ('z', -1)]
+add [('a', 3), ('b', 2), ('c', 1)]
+sub [('a', 1)]
+or [('a', 2), ('b', 2), ('c', 1)]
+and [('a', 1), ('b', 1)]
+pos [('a', 1)]
+neg [('b', 1)]
+eq True True
+words [('the', 3), ('quick', 1), ('brown', 1)]
+big [(0, 52), (1, 52), (2, 52)] 97 5000
+deque iter is self True [1, 2, 3]
+deque reversed is self True [3, 2, 1]

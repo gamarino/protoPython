@@ -1421,9 +1421,12 @@ set_tests_properties(protopy_closure_semantics protopy_closure_semantics_gc PROP
 #     generators, iterators, zip, mappings with keys(), mappingproxy.
 #   abc_virtual_subclasses: isinstance / issubclass with collections.abc
 #     (registered built-in types, the ABC hierarchy, subclass hooks).
+#   counter_methods: collections.Counter (most_common segfaulted) and the
+#     deque iterators.
 set(PROTOPY_STDLIB_ORACLE_TESTS
     ordered_dict_iterables
-    abc_virtual_subclasses)
+    abc_virtual_subclasses
+    counter_methods)
 foreach(_t IN LISTS PROTOPY_STDLIB_ORACLE_TESTS)
     add_test(NAME protopy_${_t}
         COMMAND ${CMAKE_COMMAND} -DPROTOPY=$<TARGET_FILE:protopy>

@@ -17,13 +17,14 @@ struct DequeState {
     std::atomic<proto::proto_long> maxlen{-1}; // CPython's maxlen; -1 when unbounded
 };
 
-static const proto::ProtoObject* py_collections_dummy(
-    proto::ProtoContext* ctx,
+// __iter__ of the deque iterators: an iterator is its own iterator.
+static const proto::ProtoObject* py_iterator_self(
+    proto::ProtoContext*,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
     const proto::ProtoList*,
     const proto::ProtoSparseList*) {
-    return self->newChild(ctx, true);
+    return self;
 }
 
 static const proto::ProtoObject* py_tuple_getter_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
@@ -989,7 +990,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
     deque_iterator = deque_iterator->setAttribute(ctx, env->getNextString(),
                                                  ctx->fromMethod(nullptr, py_deque_iterator_next));
     deque_iterator = deque_iterator->setAttribute(ctx, env->getIterString(),
-                                                 ctx->fromMethod(nullptr, py_collections_dummy)); // self iter
+                                                 ctx->fromMethod(nullptr, py_iterator_self));
     // R5-82: __mro__ for _deque_iterator.
     if (env && env->getObjectPrototype()) {
         const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
@@ -1013,7 +1014,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
     deque_reverse_iterator = deque_reverse_iterator->setAttribute(ctx, env->getNextString(),
                                                   ctx->fromMethod(nullptr, py_deque_reverse_iterator_next));
     deque_reverse_iterator = deque_reverse_iterator->setAttribute(ctx, env->getIterString(),
-                                                  ctx->fromMethod(nullptr, py_collections_dummy)); // self iter
+                                                  ctx->fromMethod(nullptr, py_iterator_self));
     // R5-82: __mro__ for _deque_reverse_iterator.
     if (env && env->getObjectPrototype()) {
         const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
@@ -1028,9 +1029,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
 
     module = module->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "_deque_iterator"), deque_iterator);
 
-    // Dummy _count_elements for Counter
-    module = module->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "_count_elements"),
-                                 ctx->fromMethod(nullptr, py_collections_dummy));
+    // No _count_elements: collections/__init__.py falls back to its Python
+    // version, as CPython does without the C helper.  A placeholder bound to
+    // no receiver used to stand here; Counter(iterable) called it and
+    // dereferenced a null self (a segmentation fault).
 
     // Set __class__ on the module for better diagnostics
     module = module->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, "_collections")->asObject(ctx));
