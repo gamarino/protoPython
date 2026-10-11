@@ -95,6 +95,15 @@ public:
         // that said nothing about protoPython.  Here each round produces and
         // drains 2,000 items, so at most 2,000 are ever in flight and a failure
         // means the collector could not keep up.
+        //
+        // THE CONSUMER IS A NESTED FUNCTION, and that is load-bearing too.  It
+        // reads `d` and writes `total` through its frame (LOAD_DEREF /
+        // STORE_DEREF) while it allocates past the context threshold, so the
+        // interpreter's safepoint submits the context's young cells, the
+        // frame among them, to the collector.  Until 2026-10-10 that frame
+        // was held only in C++ locals and was freed under the running
+        // function (test/regression/frame_survives_collection.py); a drain
+        // loop written inline in _conf_pc never reached that path.
         const proto::proto_ulong perRound = 2000;
         const proto::proto_ulong rounds = (units / perRound) + 1;
         const std::string src =
@@ -113,12 +122,15 @@ public:
             "            t.start()\n"
             "        for t in ts:\n"
             "            t.join()\n"
-            "        while True:\n"
-            "            try:\n"
-            "                d.popleft()\n"
-            "            except IndexError:\n"
-            "                break\n"
-            "            total += 1\n"
+            "        def consumer():\n"
+            "            nonlocal total\n"
+            "            while True:\n"
+            "                try:\n"
+            "                    d.popleft()\n"
+            "                except IndexError:\n"
+            "                    break\n"
+            "                total += 1\n"
+            "        consumer()\n"
             "    return total\n"
             "_conf_pc_result = _conf_pc(" + std::to_string(rounds) + ", "
                 + std::to_string(perRound) + ")\n";

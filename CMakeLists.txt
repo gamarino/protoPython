@@ -374,6 +374,17 @@ set_tests_properties(protopy_list_rewrite_threads PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# A running function's frame must survive a collection: closures reading and
+# writing free variables while their context crosses the young-generation
+# submission threshold.  The tiny threshold and heap limit make the window open
+# on every call, so it failed on every run before the fix.
+add_test(NAME protopy_frame_survives_collection
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/frame_survives_collection.py)
+set_tests_properties(protopy_frame_survives_collection PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    ENVIRONMENT "PROTOCORE_GC_CONTEXT_THRESHOLD=200;PROTOCORE_HEAP_LIMIT_CELLS=1500000"
+    TIMEOUT 300
+    LABELS "regression_gate")
 # set mutators called from parallel threads must not lose or duplicate items.
 add_test(NAME protopy_set_mutation_threads
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/set_mutation_threads.py)
