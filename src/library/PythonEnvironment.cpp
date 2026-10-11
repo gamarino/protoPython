@@ -6839,8 +6839,15 @@ static const proto::ProtoObject* py_bytes_call(
             }
         }
     }
-    const proto::ProtoObject* iterAttr = arg->getAttribute(context, PythonEnvironment::getInternalString(context, "__iter__"));
-    if (!iterAttr || !iterAttr->asMethod(context)) {
+    // env->iter / env->next drive generators and Python iterators too: a
+    // native-only __next__ call made bytes(generator) raise StopIteration
+    // and bytearray(generator) come out empty.
+    const proto::ProtoObject* iterResult = env ? env->iter(arg) : nullptr;
+    if (!iterResult) {
+        if (env && env->hasPendingException()) {
+            // iter() reports a non-iterable as CPython's bytes() does not.
+            env->clearPendingException();
+        }
         // Non-iterable non-int / non-str: CPython raises
         //   TypeError: cannot convert 'X' object to bytes
         if (env) {
@@ -6855,17 +6862,14 @@ static const proto::ProtoObject* py_bytes_call(
         }
         return nullptr;
     }
-    const proto::ProtoList* empty = context->newList();
-    const proto::ProtoObject* iterResult = iterAttr->asMethod(context)(context, arg, nullptr, empty, nullptr);
-    if (!iterResult) return PROTO_NONE;
-    const proto::ProtoObject* nextAttr = iterResult->getAttribute(context, PythonEnvironment::getInternalString(context, "__next__"));
-    if (!nextAttr || !nextAttr->asMethod(context)) return PROTO_NONE;
-
+    PythonEnvironment::TransientPin pinIter(env, iterResult);
     std::string out;
-    const proto::ProtoList* nextArgs = context->newList();
     for (;;) {
-        const proto::ProtoObject* item = nextAttr->asMethod(context)(context, iterResult, nullptr, nextArgs, nullptr);
-        if (!item || item == PROTO_NONE) break;
+        const proto::ProtoObject* item = env->next(iterResult);
+        if (!item) {
+            if (env->hasPendingException()) return nullptr;
+            break;
+        }
         if (!item->isInteger(context) && !item->isBoolean(context)) {
             // CPython: bytes constructor rejects non-int iterable items.
             //   TypeError: 'X' object cannot be interpreted as an integer
@@ -11318,6 +11322,125 @@ static const proto::ProtoObject* py_bytes_zfill(
     return bytes_make_object(context, out.data(), static_cast<proto::proto_ulong>(out.size()));
 }
 
+// bytes.ljust / rjust / center(width, fillbyte=b' '), as CPython: the fill
+// must be one byte; center puts the extra byte on the right when the
+// original length is even... (CPython: left = pad/2 + (pad & width & 1)).
+static const proto::ProtoObject* bytes_pad(proto::ProtoContext* context, const proto::ProtoObject* self,
+                                           const proto::ProtoList* posArgs, const char* name, int mode) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    std::string raw;
+    if (!bytes_data_view(context, self, raw)) return PROTO_NONE;
+    if (!posArgs || posArgs->getSize(context) < 1 || !posArgs->getAt(context, 0)->isInteger(context)) {
+        if (env) env->raiseTypeError(context, std::string(name) + "() takes an integer width");
+        return nullptr;
+    }
+    const long long width = posArgs->getAt(context, 0)->asLong(context);
+    char fill = ' ';
+    if (posArgs->getSize(context) >= 2) {
+        std::string f;
+        if (!bytes_data_view(context, posArgs->getAt(context, 1), f) || f.size() != 1) {
+            if (env) env->raiseTypeError(context, std::string(name)
+                + "() argument 2 must be a byte string of length 1");
+            return nullptr;
+        }
+        fill = f[0];
+    }
+    if (width <= static_cast<long long>(raw.size()))
+        return bytes_make_object(context, raw.data(), static_cast<proto::proto_ulong>(raw.size()));
+    const size_t pad = static_cast<size_t>(width) - raw.size();
+    size_t left = 0;
+    if (mode == 1) left = pad;                                    // rjust
+    else if (mode == 2) left = pad / 2 + (pad & static_cast<size_t>(width) & 1);  // center
+    std::string out(left, fill);
+    out += raw;
+    out.append(pad - left, fill);
+    return bytes_make_object(context, out.data(), static_cast<proto::proto_ulong>(out.size()));
+}
+
+static const proto::ProtoObject* py_bytes_ljust(proto::ProtoContext* c, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* a, const proto::ProtoSparseList*) {
+    return bytes_pad(c, self, a, "ljust", 0);
+}
+static const proto::ProtoObject* py_bytes_rjust(proto::ProtoContext* c, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* a, const proto::ProtoSparseList*) {
+    return bytes_pad(c, self, a, "rjust", 1);
+}
+static const proto::ProtoObject* py_bytes_center(proto::ProtoContext* c, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* a, const proto::ProtoSparseList*) {
+    return bytes_pad(c, self, a, "center", 2);
+}
+
+// ASCII predicates of bytes (CPython's bytes are ASCII-only for these).
+template <class Pred>
+static const proto::ProtoObject* bytes_all(proto::ProtoContext* context, const proto::ProtoObject* self, Pred pred) {
+    std::string raw;
+    if (!bytes_data_view(context, self, raw) || raw.empty()) return PROTO_FALSE;
+    for (unsigned char ch : raw)
+        if (!pred(ch)) return PROTO_FALSE;
+    return PROTO_TRUE;
+}
+static bool asciiAlnum(unsigned char ch) { return ch < 0x80 && std::isalnum(ch); }
+static bool asciiSpace(unsigned char ch) { return ch == ' ' || (ch >= '\t' && ch <= '\r'); }
+static bool asciiLower(unsigned char ch) { return ch >= 'a' && ch <= 'z'; }
+static bool asciiUpper(unsigned char ch) { return ch >= 'A' && ch <= 'Z'; }
+
+static const proto::ProtoObject* py_bytes_isalnum(proto::ProtoContext* c, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return bytes_all(c, self, asciiAlnum);
+}
+static const proto::ProtoObject* py_bytes_isspace(proto::ProtoContext* c, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return bytes_all(c, self, asciiSpace);
+}
+// islower / isupper: at least one cased byte, and none of the other case.
+static const proto::ProtoObject* bytes_case(proto::ProtoContext* context, const proto::ProtoObject* self, bool lower) {
+    std::string raw;
+    if (!bytes_data_view(context, self, raw)) return PROTO_FALSE;
+    bool cased = false;
+    for (unsigned char ch : raw) {
+        if (lower ? asciiUpper(ch) : asciiLower(ch)) return PROTO_FALSE;
+        if (lower ? asciiLower(ch) : asciiUpper(ch)) cased = true;
+    }
+    return cased ? PROTO_TRUE : PROTO_FALSE;
+}
+static const proto::ProtoObject* py_bytes_islower(proto::ProtoContext* c, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return bytes_case(c, self, true);
+}
+static const proto::ProtoObject* py_bytes_isupper(proto::ProtoContext* c, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return bytes_case(c, self, false);
+}
+static const proto::ProtoObject* py_bytes_istitle(proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    std::string raw;
+    if (!bytes_data_view(context, self, raw)) return PROTO_FALSE;
+    bool cased = false, prevCased = false;
+    for (unsigned char ch : raw) {
+        if (asciiUpper(ch)) {
+            if (prevCased) return PROTO_FALSE;
+            prevCased = cased = true;
+        } else if (asciiLower(ch)) {
+            if (!prevCased) return PROTO_FALSE;
+            prevCased = cased = true;
+        } else {
+            prevCased = false;
+        }
+    }
+    return cased ? PROTO_TRUE : PROTO_FALSE;
+}
+static const proto::ProtoObject* py_bytes_capitalize(proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    std::string raw;
+    if (!bytes_data_view(context, self, raw)) return PROTO_NONE;
+    for (size_t i = 0; i < raw.size(); ++i) {
+        const unsigned char ch = static_cast<unsigned char>(raw[i]);
+        if (i == 0 && asciiLower(ch)) raw[i] = static_cast<char>(ch - 32);
+        else if (i > 0 && asciiUpper(ch)) raw[i] = static_cast<char>(ch + 32);
+    }
+    return bytes_make_object(context, raw.data(), static_cast<proto::proto_ulong>(raw.size()));
+}
+
 static const proto::ProtoObject* py_bytes_splitlines(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -11515,8 +11638,19 @@ static const proto::ProtoObject* py_bytes_translate(
     if (posArgs->getSize(context) >= 1) {
         const proto::ProtoObject* tableObj = posArgs->getAt(context, 0);
         if (tableObj && tableObj != PROTO_NONE) {
+            // A bytes-like table (what bytes.maketrans returns and hmac
+            // passes): it was ignored and the input came back unchanged.
+            std::string tbl;
             const proto::ProtoList* lst = tableObj->asList(context);
-            if (lst && lst->getSize(context) == 256) {
+            if (!lst && bytes_data_view(context, tableObj, tbl)) {
+                if (tbl.size() != 256) {
+                    if (PythonEnvironment* env = PythonEnvironment::fromContext(context))
+                        env->raiseValueError(context, PythonEnvironment::getInternedString(context,
+                            "translation table must be 256 characters long")->asObject(context));
+                    return nullptr;
+                }
+                for (int i = 0; i < 256; ++i) table[i] = static_cast<unsigned char>(tbl[i]);
+            } else if (lst && lst->getSize(context) == 256) {
                 for (int i = 0; i < 256; ++i) {
                     const proto::ProtoObject* v = lst->getAt(context, i);
                     if (v && v->isInteger(context)) {
@@ -21129,6 +21263,33 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     bytesPrototype = bytesPrototype->setAttribute(rootContext_,
         PythonEnvironment::getInternedString(rootContext_, "zfill"),
         rootContext_->fromMethod(nullptr, py_bytes_zfill));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "ljust"),
+        rootContext_->fromMethod(nullptr, py_bytes_ljust));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "rjust"),
+        rootContext_->fromMethod(nullptr, py_bytes_rjust));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "center"),
+        rootContext_->fromMethod(nullptr, py_bytes_center));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "isalnum"),
+        rootContext_->fromMethod(nullptr, py_bytes_isalnum));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "isspace"),
+        rootContext_->fromMethod(nullptr, py_bytes_isspace));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "islower"),
+        rootContext_->fromMethod(nullptr, py_bytes_islower));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "isupper"),
+        rootContext_->fromMethod(nullptr, py_bytes_isupper));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "istitle"),
+        rootContext_->fromMethod(nullptr, py_bytes_istitle));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "capitalize"),
+        rootContext_->fromMethod(nullptr, py_bytes_capitalize));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_,
         PythonEnvironment::getInternedString(rootContext_, "splitlines"),
         rootContext_->fromMethod(nullptr, py_bytes_splitlines));

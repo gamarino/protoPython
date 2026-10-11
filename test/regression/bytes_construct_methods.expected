@@ -1,0 +1,20 @@
+list b'\x01\x02'
+range b'\x00\x01\x02'
+generator b'\x00\x01\x02'
+iter b'\x01\x02'
+map b'\x01\x02'
+tuple b'\x01\x02'
+table b'\xa6\xa7\xa0\xa1\xa2\xa3'
+bytearray list [1, 2]
+bytearray range [0, 1, 2]
+bytearray generator [0, 1, 2]
+bytearray bytes [97, 98]
+ValueError
+ValueError
+TypeError
+ValueError
+b'key\x00\x00\x00\x00\x00' b'79%\\\\\\\\\\' b'ac' b'hippo'
+ValueError translation table must be 256 characters long
+b'ab   ' b'---ab' b'***ab**' b' abc  ' b'abc'
+True False True False True True False True False
+b'Hello world'

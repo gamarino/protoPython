@@ -1427,13 +1427,15 @@ set_tests_properties(protopy_closure_semantics protopy_closure_semantics_gc PROP
 #     a literal '-', group spans, named groups, Match / Pattern types.
 #   argparse_nargs: argparse nargs variants (they rely on such patterns).
 #   argparse_help: several prefix characters, help and usage output, textwrap.
+#   bytes_construct_methods: bytes / bytearray from iterables, bytes methods.
 set(PROTOPY_STDLIB_ORACLE_TESTS
     ordered_dict_iterables
     abc_virtual_subclasses
     counter_methods
     regex_empty_matches
     argparse_nargs
-    argparse_help)
+    argparse_help
+    bytes_construct_methods)
 foreach(_t IN LISTS PROTOPY_STDLIB_ORACLE_TESTS)
     add_test(NAME protopy_${_t}
         COMMAND ${CMAKE_COMMAND} -DPROTOPY=$<TARGET_FILE:protopy>

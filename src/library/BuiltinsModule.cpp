@@ -11254,6 +11254,30 @@ const proto::ProtoObject* py_bytearray_fallback(proto::ProtoContext* ctx, const 
                 long long n = initArg->asLong(ctx);
                 if (n < 0) n = 0;
                 initial.assign(static_cast<size_t>(n), '\0');
+            } else if (!gotBytes && env) {
+                // An iterable of ints (list, range, generator, ...) left the
+                // buffer empty.
+                const proto::ProtoObject* it = env->iter(initArg);
+                if (!it) return env->hasPendingException() ? nullptr : PROTO_NONE;
+                PythonEnvironment::TransientPin pinIt(env, it);
+                for (;;) {
+                    const proto::ProtoObject* item = env->next(it);
+                    if (!item) {
+                        if (env->hasPendingException()) return nullptr;
+                        break;
+                    }
+                    if (!item->isInteger(ctx) && !item->isBoolean(ctx)) {
+                        env->raiseTypeError(ctx, "'" + std::string("object") + "' object cannot be interpreted as an integer");
+                        return nullptr;
+                    }
+                    const long long v = item == PROTO_TRUE ? 1 : item == PROTO_FALSE ? 0 : item->asLong(ctx);
+                    if (v < 0 || v > 255) {
+                        env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx,
+                            "byte must be in range(0, 256)")->asObject(ctx));
+                        return nullptr;
+                    }
+                    initial += static_cast<char>(static_cast<unsigned char>(v));
+                }
             }
         }
     }
@@ -11803,12 +11827,38 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                     if (n < 0) n = 0;
                     initial.assign(static_cast<size_t>(n), '\0');
                 } else {
-                    const proto::ProtoObject* d = src->getAttribute(context, dataS);
+                    const proto::ProtoObject* d = src->hasOwnAttribute(context, dataS) == PROTO_TRUE
+                        ? src->getAttribute(context, dataS) : nullptr;
                     if (d && d->isByteBuffer(context)) {
                         const proto::ProtoByteBuffer* bb = d->asByteBuffer(context);
                         initial.assign(bb->getBuffer(context), bb->getSize(context));
                     } else if (d && d->isString(context)) {
                         d->asString(context)->toUTF8String(context, initial);
+                    } else if (PythonEnvironment* env = PythonEnvironment::fromContext(context)) {
+                        // An iterable of ints (list, range, generator, ...):
+                        // it left the buffer empty.
+                        const proto::ProtoObject* it = env->iter(src);
+                        if (!it) return env->hasPendingException() ? nullptr : PROTO_NONE;
+                        PythonEnvironment::TransientPin pinIt(env, it);
+                        for (;;) {
+                            const proto::ProtoObject* item = env->next(it);
+                            if (!item) {
+                                if (env->hasPendingException()) return nullptr;
+                                break;
+                            }
+                            const long long v = item == PROTO_TRUE ? 1 : item == PROTO_FALSE ? 0
+                                : item->isInteger(context) ? item->asLong(context) : -1;
+                            if (!item->isInteger(context) && !item->isBoolean(context)) {
+                                env->raiseTypeError(context, "'" + std::string("object") + "' object cannot be interpreted as an integer");
+                                return nullptr;
+                            }
+                            if (v < 0 || v > 255) {
+                                env->raiseValueError(context, PythonEnvironment::getInternedString(context,
+                                    "byte must be in range(0, 256)")->asObject(context));
+                                return nullptr;
+                            }
+                            initial += static_cast<char>(static_cast<unsigned char>(v));
+                        }
                     }
                 }
             }
