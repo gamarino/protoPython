@@ -296,3 +296,31 @@ TEST(MutableCycles, AMappedFrameDoesNotReferenceItself)
         << "a mapped frame still references itself as its namespace: every call "
            "of a function whose locals a nested scope captures is kept for ever";
 }
+
+// Creating a function must not add a permanent GC root.  createUserFunction
+// pinned each function's metadata cache (a byte buffer, which references no
+// cell) in the environment's root set for the life of the environment, and
+// the function already keeps the buffer through its own attribute.  So every
+// comprehension, lambda or nested def EXECUTED added one root for ever: the
+// set grew without bound and the collector scans it inside every
+// stop-the-world pause.
+TEST(MutableCycles, CreatingAFunctionAddsNoPermanentRoot)
+{
+    protoPython::PythonEnvironment env(STDLIB_PATH);
+    proto::ProtoRootSet* roots = env.getGcRoots();
+    ASSERT_NE(roots, nullptr);
+    // Warm up: the first call may compile, intern and pin what is pinned once.
+    ASSERT_EQ(env.executeString("def _fr_make(k):\n"
+                                "    return lambda: k\n"
+                                "_fr_once = [_fr_make(0)() for _ in range(2)]\n",
+                                "<roots:warm>"),
+              0);
+    const proto::proto_ulong before = roots->size();
+    ASSERT_EQ(env.executeString("_fr_sum = sum(_fr_make(k)() for k in range(200))\n"
+                                "assert _fr_sum == 19900\n",
+                                "<roots:run>"),
+              0);
+    EXPECT_LE(roots->size(), before + 2)
+        << "creating 200 functions added " << (roots->size() - before)
+        << " permanent roots";
+}
