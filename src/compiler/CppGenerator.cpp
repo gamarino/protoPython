@@ -93,9 +93,10 @@ bool __isClass(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env, co
            obj->getAttribute(ctx, classS) == env->getTypePrototype();
 }
 
-// `raise exc` and `raise exc from cause`.  A class is instantiated with no
-// arguments, as the interpreter's RAISE_VARARGS does.
-[[noreturn]] void __raise(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env,
+// `raise exc` and `raise exc from cause` (not named `__raise`, an MSVC
+// keyword).  A class is instantiated with no arguments, as the interpreter's
+// RAISE_VARARGS does.
+[[noreturn]] void __pyRaise(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env,
                           const proto::ProtoObject* exc, bool hasCause, const proto::ProtoObject* cause) {
     if (__isClass(ctx, env, exc)) {
         exc = env->callObject(exc, {});
@@ -118,7 +119,7 @@ bool __isClass(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env, co
 }
 
 // A bare `raise`: the exception the innermost running except clause handles.
-[[noreturn]] void __reraise(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env) {
+[[noreturn]] void __pyReraise(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env) {
     const proto::ProtoObject* exc = protoPython::PythonEnvironment::getActiveException();
     if (exc) env->raiseException(exc);
     else env->raiseRuntimeError(ctx, "reraise outside of except block");
@@ -2178,10 +2179,10 @@ bool CppGenerator::generateTry(TryNode* n) {
 
 bool CppGenerator::generateRaise(RaiseNode* n) {
     if (!n->exc) {
-        *out_ << "__reraise(ctx, env)";
+        *out_ << "__pyReraise(ctx, env)";
         return true;
     }
-    *out_ << "__raise(ctx, env, ";
+    *out_ << "__pyRaise(ctx, env, ";
     if (!generateNode(n->exc.get())) return false;
     if (n->cause) {
         *out_ << ", true, ";
