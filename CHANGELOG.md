@@ -137,7 +137,11 @@ onwards. Commit hashes are given for reference.
     would run during its measurements; under the controller the soft limit
     starts at 2 M cells, a cycle started, and its snapshot reader (a native
     loop without a safepoint) held the stop-the-world forever (timeout). It
-    now also sets `PROTOCORE_ADAPTIVE_HEAP_START=budget`.
+    now also sets `PROTOCORE_ADAPTIVE_HEAP=0`, which applies its ceiling as a
+    fixed limit on every protoCore from the 2.11.0 floor
+    (`PROTOCORE_ADAPTIVE_HEAP_START=budget` was tried first and timed out on
+    the Windows floor job, cross-platform run 38101731627: 2.11.0 does not
+    know it).
   - Observed while writing the bounded-memory test, not yet explained: under
     the controller's trace, the live set of a loop that builds lists with a
     list comprehension, or chains of class instances, rises from cycle to

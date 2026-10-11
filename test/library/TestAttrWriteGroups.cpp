@@ -36,14 +36,16 @@ void setEnvVar(const char* name, const char* value) { setenv(name, value, 1); }
 // One environment per process (it owns the process space).  A heap ceiling
 // high enough that no collection runs during a measurement is set before the
 // space is created.  The process space runs protoCore's adaptive heap
-// controller, whose soft limit would otherwise start at 2 M cells and start
-// cycles long before the ceiling: PROTOCORE_ADAPTIVE_HEAP_START=budget starts
-// it at the ceiling.  No cycle may run here: the snapshot reader below is a
-// native loop with no safepoint, so a stop-the-world would wait for it forever.
+// controller, whose soft limit would start at 2 M cells and start cycles long
+// before the ceiling: PROTOCORE_ADAPTIVE_HEAP=0 applies the ceiling as a fixed
+// hard limit instead (every protoCore from the 2.11.0 floor honours it;
+// PROTOCORE_ADAPTIVE_HEAP_START=budget would need 2.13.0).  No cycle may run
+// here: the snapshot reader below is a native loop with no safepoint, so a
+// stop-the-world would wait for it forever.
 protoPython::PythonEnvironment& sharedEnv() {
     static protoPython::PythonEnvironment* env = [] {
         setEnvVar("PROTOCORE_HEAP_LIMIT_CELLS", "200000000");
-        setEnvVar("PROTOCORE_ADAPTIVE_HEAP_START", "budget");
+        setEnvVar("PROTOCORE_ADAPTIVE_HEAP", "0");
         return new protoPython::PythonEnvironment(STDLIB_PATH);
     }();
     return *env;
