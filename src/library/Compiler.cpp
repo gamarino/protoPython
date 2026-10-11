@@ -5873,7 +5873,7 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoObject* co_automatic_obj = codeObj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_automatic_count"));
     int automatic_count = (co_automatic_obj && co_automatic_obj->isInteger(ctx)) ? static_cast<int>(co_automatic_obj->asLong(ctx)) : 0;
 
-    proto::ProtoContext* oldCtx = PythonEnvironment::getCurrentContext();
+    proto::ProtoContext* oldCtx = PythonEnvironment::getThreadContext();
 
     // Always create a sub-context for code objects to ensure stack isolation,
     // especially for eval() and exec() calls which would otherwise clobber the caller's stack slots.

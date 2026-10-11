@@ -852,11 +852,17 @@ public:
     static void setCurrentContext(proto::ProtoContext* ctx) { setThreadContextOutOfLine(ctx); }
     /** Gets the context native code allocates in (see innermostContext). */
     static proto::ProtoContext* getCurrentContext() { return innermostContext(threadContextOutOfLine()); }
+    /** The raw thread-local context, for saving and restoring it around setCurrentContext. */
+    static proto::ProtoContext* getThreadContext() { return threadContextOutOfLine(); }
 #else
     /** Sets the current thread-local context (for RAII management). */
     static void setCurrentContext(proto::ProtoContext* ctx) { s_threadContext = ctx; }
     /** Gets the context native code allocates in (see innermostContext). */
     static proto::ProtoContext* getCurrentContext() { return innermostContext(s_threadContext); }
+    /** The raw thread-local context, for saving and restoring it around
+     *  setCurrentContext.  getCurrentContext() is not that value: saving it
+     *  and restoring it later named a callee's context after it was gone. */
+    static proto::ProtoContext* getThreadContext() { return s_threadContext; }
 #endif
     /**
      * The thread's innermost live protoCore context, the one a native helper
