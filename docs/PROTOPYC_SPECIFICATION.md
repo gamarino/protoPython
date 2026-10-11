@@ -115,7 +115,9 @@ compiler diagnostics and native debuggers (GDB, LLDB) can point at Python source
     reference to a slot;
   - the value of every expression node except constants and locals is stored in a
     temporary slot as it is computed, and a `for` loop's iterator, a caught exception,
-    a class's bases and namespace are kept in slots for as long as they are used;
+    a class's bases and namespace, a `with` statement's `__exit__` and the exception
+    or return value in transit through a `finally` clause are kept in slots for as
+    long as they are used;
   - `ctx->safepoint()` is emitted only at the head of `while` and `for` loops, where
     no temporary of the running statement is live; it clears the temporary slots
     first, so they do not retain what the previous iteration computed. Comprehension
@@ -142,10 +144,60 @@ compiler diagnostics and native debuggers (GDB, LLDB) can point at Python source
   code), it receives its storage as `self`. The interpreter binds a native method
   found on a class to the instance (`obj.m(a)`), so `self` is then the receiver: the
   entry point moves it to the front of the arguments, where the prologue expects the
-  method's `self` parameter, and the namespace falls back to the module the file
-  initialized. A self-recursive call by the function's own name calls the body
-  directly. `def` and `class` statements in a function bind function locals; names
-  a class body binds go to the class namespace.
+  method's `self` parameter. A `def` in a class body therefore also binds its storage
+  in the class namespace, under a key of its own (`__protopyc_fs_<C++ name>__`), and
+  the entry point finds it through the receiver's class: a method keeps its module
+  namespace and its free variables however it is called, including a method of a
+  class defined inside a function, called on an instance from interpreted code. A
+  callable without a storage there (one attached to a class from outside the class
+  body, or a lambda in a class body) falls back to the namespace of the module the
+  file initialized, with its free variables `None`. A self-recursive call by the
+  function's own name calls the body directly. `def` and `class` statements in a
+  function bind function locals; names a class body binds go to the class namespace.
+  Free variables are transitive, as in Python: a function captures the enclosing
+  functions' variables that the functions nested in it use.
+- **Exceptions.** As in the interpreter, an operation that raises leaves its
+  exception pending in the `PythonEnvironment`. Generated code reads the address of
+  the thread's pending-exception flag once per call
+  (`PythonEnvironment::pendingExceptionFlagAddress`) and tests the flag after every
+  operation that can raise and after every statement; when it is set it throws the
+  C++ exception `__PyUnwind`, so neither the rest of the statement (a call's other
+  arguments, the call itself, an assignment) nor the rest of its statement list runs.
+  A callable catches `__PyUnwind` and returns `nullptr` with the exception still
+  pending, which is how a native method reports an exception to its caller; the
+  module initializer does the same, so the import fails with the exception.
+  - A `try` statement catches `__PyUnwind` around each of its clauses. If the body
+    left an exception pending, the first `except` clause whose type matches takes it
+    (binding it to the `as` name) and, while it runs, the exception is the one
+    `sys.exc_info()` and a bare `raise` see (`PythonEnvironment::pushActiveException`,
+    popped however the clause is left); an exception no clause matches stays
+    pending. The `else` clause runs when the body raised nothing. The `finally`
+    clause runs with the propagating exception set aside in a slot, and that
+    exception is pending again afterwards unless the clause raised its own or left
+    by `return`, `break` or `continue`.
+  - `return`, `break` and `continue` inside a `try` statement with a `finally`
+    clause (in its body, an `except` clause or the `else` clause), or inside a `with`
+    statement, store their kind in a slot of that statement (a return value in a slot
+    of the callable) and jump (`goto`) to its `finally` clause or `__exit__` call;
+    after it the exit continues outwards, through any further such statements. A
+    `return` in a `finally` clause replaces the exception or return value in
+    transit, as in CPython.
+  - `raise X` instantiates `X` with no arguments when it is a class, as the
+    interpreter's `RAISE_VARARGS` does; `raise X from Y` also sets `X.__cause__`
+    to `Y` (an instance of `Y` when it is a class) and `__suppress_context__`; a
+    bare `raise` re-raises the exception the innermost running `except` clause
+    handles, and raises `RuntimeError` outside one.
+- **`with` statements.** `with a as x, b as y:` is `with a as x:` containing
+  `with b as y:`. For each item the context manager is evaluated, `__enter__` and
+  `__exit__` are looked up on its type, as the interpreter does
+  (`PythonEnvironment::lookupBoundSpecialMethod`; `TypeError` when either is
+  missing), `__exit__` is kept in a slot, `__enter__` is called and its result bound
+  to the target. When the body is left, `__exit__` is called with the exception
+  that is propagating -- its type, the exception and its `__traceback__` attribute
+  (or `None`) -- or with three `None` when the body completed or left by `return`,
+  `break` or `continue`. A true result suppresses the exception and execution
+  continues after the `with` statement; otherwise the exception, or one `__exit__`
+  raised, propagates.
 - **Generators.** A function that contains `yield`, `yield from` or `await` compiles
   to two callables: the function, which binds its arguments and returns a generator
   object, and the continuation (`gi_native_callback`), which runs the body to the
@@ -163,25 +215,34 @@ compiler diagnostics and native debuggers (GDB, LLDB) can point at Python source
   delegates as the interpreter's `OP_YIELD_FROM` does: `send()` to the
   sub-iterator (or `__next__` when it has no `send` and the value is `None`),
   `throw()` and `close()` to its `throw`, and its `StopIteration` value is the
-  result. Inside a generator a statement that leaves an exception pending ends its
-  statement list; a `try` statement runs its handlers and its `finally` clause,
-  which runs with the propagating exception set aside.
+  result. Exceptions, `try` and `with` statements work in a generator as in a
+  function; the slots recording an exception set aside or an exit in transit are
+  saved with the others when the generator suspends.
 
 ## 5. Limitations
 
 - A `yield`, `yield from` or `await` must be a statement or the value of an
   assignment (`x = yield v`); one inside another expression (`f((yield v))`) is
   rejected at compile time.
-- Outside generators, a statement that raises leaves its exception pending and the
-  rest of its statement list still runs; the exception reaches the caller when the
-  callable returns, or the nearest enclosing `try` statement when its body ends.
-- A `with` statement evaluates its context expressions but calls neither
-  `__enter__` nor `__exit__`, and binds no `as` target.
-- A compiled function that the interpreter binds to an instance has no access to its
-  free variables (they read as `None`); this matters for a method of a class
-  defined inside a function. Its module-level names resolve in the module the file
-  initialized; loading the same library twice under two module names makes both use
-  the second.
+- An exception raised in an `except` clause gets no `__context__` (the interpreter
+  does not set it either), and compiled code adds no traceback entries.
+- The interpreter does not run a `finally` clause when an exception or a `return`,
+  `break` or `continue` leaves an `except` or `else` clause of the same `try`
+  statement, nor when no `except` clause matches; compiled code runs it, as CPython
+  does (`test/compiler/exceptions_with_cpython.expected`). The interpreter also
+  ignores the cause of `raise X from Y`.
+- A callable attached to a class from outside its class body, or a lambda in a
+  class body, called on an instance has no access to its free variables (they read
+  as `None`), and its module-level names resolve in the module the file
+  initialized; loading the same library twice under two module names makes both
+  use the second.
+- Attribute reads (`obj.name` outside a call) are plain protoCore lookups
+  (`PythonEnvironment::getAttr`): a missing attribute reads as `None` instead of
+  raising `AttributeError`, and descriptors such as properties are not applied.
+- A class that protopyc compiles has no `__mro__` of its own: a class the
+  interpreter defines with it as a base does not inherit its methods, and the
+  interpreter's `with` statement on one of its instances calls `__enter__` and
+  `__exit__` without the instance (compiled code's `with` binds them).
 - Generator expressions are evaluated eagerly, as a list.
 
 ## 6. Not implemented

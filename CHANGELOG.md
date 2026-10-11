@@ -289,6 +289,79 @@ onwards. Commit hashes are given for reference.
 
 ### Fixed
 
+- **protopyc: exceptions, `with` statements and the methods of classes defined
+  in functions** (2026-10-11). The three limitations
+  `docs/PROTOPYC_SPECIFICATION.md` listed in section 5.
+  - *Exceptions.* Outside generators, a statement that raised left its
+    exception pending and the rest of its statement list ran: the exception
+    reached the caller only when the function returned, or a `try` statement
+    when its body ended. Arguments after a raising one were still evaluated and
+    the call made with `nullptr`, and `raise Cls` raised the class itself. Now
+    generated code tests the pending-exception flag after every operation that
+    can raise and after every statement, and unwinds with the C++ exception
+    `__PyUnwind`, which each clause of a `try` statement, a `with` statement and
+    the callable catch (the callable returns `nullptr` with the exception
+    pending; a module initializer fails its import). `except` clauses push the
+    exception they handle for `sys.exc_info()` and a bare `raise` (which now
+    re-raises; it compiled to nothing); `return`, `break` and `continue` leave
+    through `finally` clauses and `with` statements (`goto` to the clause, then
+    the exit continues), and a `return` in a `finally` clause replaces the
+    exception in transit. `raise X` instantiates a class; `raise X from Y` sets
+    `__cause__`. An exception raised by a comprehension's iterator was
+    discarded; it propagates. `PythonEnvironment::pendingExceptionFlagAddress()`
+    gives generated code the flag's address once per call, so the test is a
+    load, not a cross-library thread-local lookup.
+  - *`with`.* The statement evaluated its context expressions and ran its body;
+    it called neither `__enter__` nor `__exit__` and bound no target. Each item
+    now looks up both on the context manager's type
+    (`PythonEnvironment::lookupBoundSpecialMethod`, the interpreter's
+    `SETUP_WITH` lookup moved out of `ExecutionEngine.cpp` to be shared), calls
+    `__enter__`, binds the target, and calls `__exit__` with the exception's
+    type, the exception and its traceback, or three `None`, also when the body
+    is left by `return`, `break` or `continue`; a true result suppresses the
+    exception. Several items nest.
+  - *Methods of classes defined in functions.* The interpreter binds a native
+    method found on a class to the instance, so a compiled method called as
+    `obj.m()` lost its function storage and read its free variables as `None`.
+    A `def` in a class body now also binds its storage in the class namespace
+    under a key of its own (`__protopyc_fs_<C++ name>__`), and the method's
+    entry point finds it through the instance's class, with the module
+    namespace. Free variables are also transitive now: a method that defines a
+    function using a variable of the function that defined the class captures
+    it (the generated C++ did not compile).
+  - The interpreter does not run a `finally` clause when an exception or a
+    `return`/`break`/`continue` leaves an `except` or `else` clause, or when no
+    `except` clause matches; compiled code runs it, as CPython does. Section 5
+    of the specification lists this and the remaining limitations found while
+    testing (no `__context__`; attribute reads do not raise `AttributeError` or
+    apply descriptors; an interpreted class cannot inherit from a compiled one).
+  - Tests: `protopyc_exceptions_with` compiles
+    `test/compiler/exceptions_with_probe.py` (raising statements, arguments and
+    tests; handlers, bare `raise`, nested `try`, `finally` with `return`,
+    `break` and `continue`; exceptions in loops, methods and the module body;
+    `with` with suppression, nesting, several items, exits and a truthy
+    non-bool `__exit__` result; methods of classes defined in functions called
+    through instances, bound methods, the class, compiled callers and a
+    compiled subclass) and requires the compiled module's output to equal the
+    interpreter's on the same source, and, for the `finally` cases the
+    interpreter does not run, to equal CPython's
+    (`exceptions_with_cpython.expected`), under a 1.5 M-cell heap limit with a
+    200-cell context threshold, under the same limit with the default
+    threshold, and under the default adaptive heap controller;
+    `protopyc_emitted_cpp_exceptions_with` compiles its C++ with the build's
+    compiler (MSVC on Windows). Against `c72e8cad` the first configuration
+    failed: `try_withdraw` raised instead of returning, `with` bodies raised
+    `NameError` on their target, and `g.greet()` raised `TypeError: 'NoneType'
+    object is not callable`.
+  - Performance (Release, protoCore 2.14.5, same runtime, interleaved runs,
+    2026-10-11): `fib(27)` 0.078-0.090 s (median 0.080), against 0.081-0.090 s (median 0.088)
+    on `c72e8cad`: the flag test is a load, and a comparison's result is tested
+    without a call. A loop raising and catching
+    `ValueError` in every other of 100,000 iterations takes 0.58-0.66 s,
+    against 0.49-0.57 s on `c72e8cad`, which did not stop at the `raise` and
+    returned 200,000 instead of 150,000 (the interpreter: 0.94-1.01 s). Each
+    raise now unwinds with a C++ exception.
+
 - **protopyc: compiled generators, and compiled code called from another
   module.** Two defects that `README.md` listed as known gaps of protopyc.
   - *Generators.* A compiled generator was a `switch` whose `case` labels sat
