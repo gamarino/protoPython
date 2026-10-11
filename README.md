@@ -29,7 +29,7 @@ protoPython provides three components:
 
 - **Version:** 1.0.0 (`CMakeLists.txt`, tag `v1.0.0`).
 - **Maturity:** not production ready. The project is open for community review.
-- **Tests:** the CTest suite has 859 tests when it builds protoCore 2.14.5 from `../protoCore` (protoPython's own plus protoCore's); CI pins protoCore 2.14.5 and runs the gating tests in a Release build (the 12 clock-dependent cases run in a separate, informational job). protoCore's own controller tests `AdaptiveHeapSteady.HeapStaysFarBelowTheGarbageVolume` and `AdaptiveHeapStorm.SoftLimitSettlesWithinBoundedCycles` have each failed a first CI attempt on the runner and passed on the second (runs 38104389529, 38113972723, 38115542237); since protoCore 2.14.4 the first gates deterministically and the second skips itself in this configuration. Locally, against protoCore 2.14.5 built from `../protoCore` (2026-10-11): 859 of 859 in Release; 857 of 859 under AddressSanitizer **with leak detection on** and no report (`protopy_re_results_not_interned` and `adaptive_heap_bounded_memory` measure memory and fail under ASan's 256 MB free-memory quarantine; both pass with `ASAN_OPTIONS=quarantine_size_mb=1`). Until protoCore 2.14.5, LeakSanitizer reported protoCore's retained memory at exit in every protopy test (with the 2.14.3 library swapped in, the same binary reports about 90 KB in 1,400 allocations for a one-line script); 2.14.5 keeps that memory reachable.
+- **Tests:** the CTest suite has 862 tests when it builds protoCore 2.14.5 from `../protoCore` (protoPython's own plus protoCore's); CI pins protoCore 2.14.5 and runs the gating tests in a Release build (the 12 clock-dependent cases run in a separate, informational job). protoCore's own controller tests `AdaptiveHeapSteady.HeapStaysFarBelowTheGarbageVolume` and `AdaptiveHeapStorm.SoftLimitSettlesWithinBoundedCycles` have each failed a first CI attempt on the runner and passed on the second (runs 38104389529, 38113972723, 38115542237); since protoCore 2.14.4 the first gates deterministically and the second skips itself in this configuration. Locally, against protoCore 2.14.5 built from `../protoCore` (2026-10-11): 862 of 862 in Release; 860 of 862 under AddressSanitizer **with leak detection on** and no report (`protopy_re_results_not_interned` and `adaptive_heap_bounded_memory` measure memory and fail under ASan's 256 MB free-memory quarantine; both pass with `ASAN_OPTIONS=quarantine_size_mb=1`). Until protoCore 2.14.5, LeakSanitizer reported protoCore's retained memory at exit in every protopy test (with the 2.14.3 library swapped in, the same binary reports about 90 KB in 1,400 allocations for a one-line script); 2.14.5 keeps that memory reachable.
 - **protopy:** under active conformance work (see below).
 - **protopyc:** experimental, with known limitations. Several correctness bugs in
   generated code were fixed in 2026 (for example, loop-target scoping and thread
@@ -47,7 +47,12 @@ protoPython provides three components:
   statement list; `finally` clauses run on exceptions, `return`, `break` and
   `continue`), `with` statements (`__enter__`/`__exit__`, suppression) and the
   methods of classes defined in functions, which keep their closure when called
-  on an instance; known limitations are listed in
+  on an instance. Attribute reads apply Python's rules (descriptors,
+  `__getattr__`, `AttributeError`), and compiled classes are built by the
+  interpreter's class machinery (their own `__mro__`, metaclasses, `Enum`,
+  dataclasses, interpreted subclasses), also since 2026-10-11; compiled
+  functions do not yet bind keyword arguments, `*args` or `**kwargs`. Known
+  limitations are listed in
   [docs/PROTOPYC_SPECIFICATION.md](docs/PROTOPYC_SPECIFICATION.md), section 5.
 
 ### CPython conformance
