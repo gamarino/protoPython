@@ -166,12 +166,50 @@ private:
     void beginStatement() { tempTop_ = anchorTop_; }
     // Text that opens the callable's context; `callerCtx` names the
     // context the callable was invoked with.
-    std::string openContextScope(const std::string& callerCtx) const;
+    std::string openContextScope(const std::string& callerCtx, bool pendingFlagParam = false) const;
     // A statement-level loop safepoint: clear the temporaries, then let
     // the collector run.
     void emitLoopSafepoint();
     bool generateNodeUnrooted(ASTNode* node);
     bool needsTempSlot(ASTNode* node) const;
+
+    // ---------------------------------------------------------------
+    // Exceptions and non-local exits (see "Exceptions" in
+    // CppGenerator.cpp).
+    //
+    // A statement list stops at the first statement that leaves an
+    // exception pending (emitStatement).  `return`, `break` and `continue`
+    // leave the innermost enclosing `try` statement with a finally clause,
+    // or `with` statement, through it: the kind of exit is stored in that
+    // statement's exit slot and control jumps to its finally clause (its
+    // __exit__ call), after which the exit continues outwards.  `ctl_`
+    // holds the loops and those statements that enclose the code being
+    // emitted, innermost last, within the current callable.
+    struct ControlEntry {
+        bool isLoop;
+        int id;          // label suffix of the finally clause (not a loop)
+        int exitSlot;    // slot recording the pending exit (not a loop)
+        bool exitReturn = false;
+        bool exitBreak = false;
+        bool exitContinue = false;
+    };
+    std::vector<ControlEntry> ctl_;
+    // The slot holding a return value while finally clauses run; -1 when
+    // the callable has no `try ... finally` and no `with` statement.
+    int returnSlot_ = -1;
+    int finallyCounter_ = 0;
+    bool emitStatement(ASTNode* stmt);
+    void emitPendingCheck();
+    // Emit the exit `kind` (1 return, 2 break, 3 continue) at the current
+    // position: through the innermost enclosing finally clause if any.
+    void emitExit(int kind, const std::string& returnValue);
+    void emitTerminalReturn(const std::string& valueExpr);
+    // After a finally clause (or __exit__): carry on the exit it recorded.
+    void emitExitDispatch(const ControlEntry& entry);
+    bool needsReturnSlot(ASTNode* node) const;
+    bool emitWithItems(WithNode* n, size_t index, bool resumable);
+    // The source file, for #line directives.
+    std::string filename_;
 };
 
 } // namespace protoPython

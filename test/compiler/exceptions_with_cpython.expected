@@ -1,0 +1,6 @@
+return_in_handler handler value ['finally after return in handler']
+break_in_handler broke ['finally after break in handler']
+unmatched_with_finally caught 'k' ['finally after unmatched']
+handler_raises_with_finally caught second ['finally after handler raised']
+else_raises_with_finally caught from else ['body', 'finally after else raised']
+END
