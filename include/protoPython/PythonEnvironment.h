@@ -850,14 +850,34 @@ public:
 #if defined(_WIN32) && !defined(protoPython_EXPORTS)
     /** Sets the current thread-local context (for RAII management). */
     static void setCurrentContext(proto::ProtoContext* ctx) { setThreadContextOutOfLine(ctx); }
-    /** Gets the current thread-local context. */
-    static proto::ProtoContext* getCurrentContext() { return threadContextOutOfLine(); }
+    /** Gets the context native code allocates in (see innermostContext). */
+    static proto::ProtoContext* getCurrentContext() { return innermostContext(threadContextOutOfLine()); }
 #else
     /** Sets the current thread-local context (for RAII management). */
     static void setCurrentContext(proto::ProtoContext* ctx) { s_threadContext = ctx; }
-    /** Gets the current thread-local context. */
-    static proto::ProtoContext* getCurrentContext() { return s_threadContext; }
+    /** Gets the context native code allocates in (see innermostContext). */
+    static proto::ProtoContext* getCurrentContext() { return innermostContext(s_threadContext); }
 #endif
+    /**
+     * The thread's innermost live protoCore context, the one a native helper
+     * must allocate in.  The thread-local context is set where code starts
+     * running (module execution, a new thread) and function calls do not
+     * update it, so during a call it names an OUTER activation.  Objects a
+     * helper allocated there (iterators, exceptions, argument lists) joined
+     * that outer context's young generation, a root that is submitted only
+     * when the outer activation reaches its own safepoint, so everything a
+     * long-running function did through the helpers stayed live until it
+     * returned (a list loop called 120,000 times exhausted a 2.5 M-cell heap).
+     * protoCore keeps the thread's current context exact (each ProtoContext
+     * makes itself current and its destructor restores `previous`), which is
+     * what chainParent (MemoryManager.hpp) relies on too.
+     */
+    static proto::ProtoContext* innermostContext(proto::ProtoContext* ctx) {
+        if (ctx && ctx->thread) {
+            if (proto::ProtoContext* current = ctx->thread->getCurrentContext()) return current;
+        }
+        return ctx;
+    }
     
     static thread_local PythonEnvironment* s_threadEnv;
     static thread_local proto::ProtoContext* s_threadContext;
@@ -1274,6 +1294,8 @@ public:
      * `size()` is back to the number of threads still running.
      */
     proto::ProtoRootSet* getPyThreadRoots() const { return pyThreadRoots_; }
+    /** The environment-lifetime root set (pinForever); for tests and diagnostics. */
+    proto::ProtoRootSet* getGcRoots() const { return gcRoots_; }
 
 
     /**

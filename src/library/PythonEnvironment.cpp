@@ -16588,23 +16588,23 @@ const proto::ProtoObject* PythonEnvironment::wrapList(proto::ProtoContext* ctx,
 
 void PythonEnvironment::setTraceFunction(const proto::ProtoObject* func) {
     if (!s_threadContext) return;
-    const proto::ProtoString* key = proto::ProtoString::fromUTF8(s_threadContext, "_trace_func");
-    const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(s_threadContext, key, func ? func : PROTO_NONE);
+    const proto::ProtoString* key = proto::ProtoString::fromUTF8(getCurrentContext(), "_trace_func");
+    const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(getCurrentContext(), key, func ? func : PROTO_NONE);
 }
 
 const proto::ProtoObject* PythonEnvironment::getTraceFunction() const {
     if (!s_threadContext) return nullptr;
-    const proto::ProtoString* key = proto::ProtoString::fromUTF8(s_threadContext, "_trace_func");
+    const proto::ProtoString* key = proto::ProtoString::fromUTF8(getCurrentContext(), "_trace_func");
     const proto::ProtoObject* func = getPyThread(s_threadContext)->getAttribute(s_threadContext, key);
     return func == PROTO_NONE ? nullptr : func;
 }
 
 void PythonEnvironment::setPendingException(const proto::ProtoObject* exc) {
     if (!s_threadContext) return;
-    const proto::ProtoString* key = s_threadEnv ? s_threadEnv->pendingExcString : proto::ProtoString::fromUTF8(s_threadContext, "_pending_exc");
+    const proto::ProtoString* key = s_threadEnv ? s_threadEnv->pendingExcString : proto::ProtoString::fromUTF8(getCurrentContext(), "_pending_exc");
     // Authoritative storage write — keeps the exception object reachable
     // through the GC root chain (py_thread → s_globalThreadRootsDict).
-    s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(s_threadContext, key, exc ? exc : PROTO_NONE);
+    s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(getCurrentContext(), key, exc ? exc : PROTO_NONE);
     // Mirror in TLS so the read path is completely cache-independent.
     // See SP0-P2.5 fix in PythonEnvironment.h `s_pendingExc` doc.
     bool real = (exc != nullptr && exc != PROTO_NONE);
@@ -16614,7 +16614,7 @@ void PythonEnvironment::setPendingException(const proto::ProtoObject* exc) {
 
 const proto::ProtoObject* PythonEnvironment::takePendingException() {
     if (!s_threadContext) return nullptr;
-    const proto::ProtoString* key = s_threadEnv ? s_threadEnv->pendingExcString : proto::ProtoString::fromUTF8(s_threadContext, "_pending_exc");
+    const proto::ProtoString* key = s_threadEnv ? s_threadEnv->pendingExcString : proto::ProtoString::fromUTF8(getCurrentContext(), "_pending_exc");
     // Prefer the TLS mirror — it is updated in lockstep with the
     // storage and is immune to the protoCore mutable-cache desync that
     // caused SP0-P2.5.  Fall back to the authoritative read only if
@@ -16625,7 +16625,7 @@ const proto::ProtoObject* PythonEnvironment::takePendingException() {
         e = getPyThread(s_threadContext)->getAttribute(s_threadContext, key);
         if (e == PROTO_NONE) e = nullptr;
     }
-    s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(s_threadContext, key, PROTO_NONE);
+    s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(getCurrentContext(), key, PROTO_NONE);
     s_pendingExc = nullptr;
     s_pendingExcFlag = false;
     return e;
@@ -16648,8 +16648,8 @@ const proto::ProtoObject* PythonEnvironment::peekPendingException() const {
 
 void PythonEnvironment::clearPendingException() {
     if (!s_threadContext) return;
-    const proto::ProtoString* key = pendingExcString ? pendingExcString : proto::ProtoString::fromUTF8(s_threadContext, "_pending_exc");
-    s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(s_threadContext, key, PROTO_NONE);
+    const proto::ProtoString* key = pendingExcString ? pendingExcString : proto::ProtoString::fromUTF8(getCurrentContext(), "_pending_exc");
+    s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(getCurrentContext(), key, PROTO_NONE);
     s_pendingExc = nullptr;
     s_pendingExcFlag = false;
 }
@@ -16952,7 +16952,7 @@ static std::string suggestSimilarName(proto::ProtoContext* ctx, const std::strin
 
 void PythonEnvironment::raiseImportError(const std::string& msg, const std::string& name) {
     if (!importErrorType) return;
-    proto::ProtoContext* ctx = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx));
     // Raise ModuleNotFoundError (subclass of ImportError) for "No module named" messages.
     bool isNotFound = (msg.find("No module named") != std::string::npos);
@@ -23010,7 +23010,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
 const proto::ProtoObject* PythonEnvironment::getGlobals() const {
     if (s_currentGlobals) return s_currentGlobals;
-    proto::ProtoContext* ctx = s_threadContext ? s_threadContext : const_cast<PythonEnvironment*>(this)->rootContext_;
+    proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : const_cast<PythonEnvironment*>(this)->rootContext_;
     return const_cast<PythonEnvironment*>(this)->resolve("__main__", ctx);
 }
 
@@ -23056,7 +23056,7 @@ static const proto::ProtoObject* ensureMainModule(PythonEnvironment* env,
 }
 
 int PythonEnvironment::executeString(const std::string& source, const std::string& name) {
-    proto::ProtoContext* context = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* context = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     ContextScope scope(this, context);
     const proto::ProtoObject* mod = ensureMainModule(this, context, name);
 
@@ -23107,8 +23107,8 @@ void PythonEnvironment::setSysPath(const std::vector<std::string>& beforeStdlib,
 
 int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain, proto::ProtoContext* ctx) {
     SafeImportLock lock(this, ctx);
-    if (!ctx) ctx = s_threadContext;
-    if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
+    if (!ctx) ctx = innermostContext(s_threadContext);
+    if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     ContextScope scope(this, ctx);
     
     // 1. Get/Load module object via ProtoSpace directly to avoid recursion with resolve()
@@ -23594,7 +23594,7 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
 }
 
 void PythonEnvironment::runExitHandlers() {
-    proto::ProtoContext* ctx = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     const proto::ProtoObject* atexitMod = resolve("atexit", ctx);
     if (!atexitMod || atexitMod == PROTO_NONE) return;
     const proto::ProtoObject* runFn = atexitMod->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "_run_exitfuncs"));
@@ -23612,7 +23612,7 @@ static void sigint_handler(int) {
 }
 
 std::string PythonEnvironment::formatTraceback(const proto::ProtoContext* ctx, const proto::ProtoObject* exc) {
-    if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
+    if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     proto::ProtoContext* nonConstCtx = const_cast<proto::ProtoContext*>(ctx);
     
     // The chain ends at Python's None (addTraceback stores the None object,
@@ -23703,7 +23703,7 @@ std::string PythonEnvironment::formatTraceback(const proto::ProtoContext* ctx, c
 }
 
 std::vector<std::string> PythonEnvironment::collectCandidates(const proto::ProtoObject* frame, const proto::ProtoObject* targetObj) {
-    proto::ProtoContext* context = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* context = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     std::unordered_set<std::string> uniqueCandidates = {
         "print", "len", "range", "str", "int", "float", "list", "dict", "tuple", "set", "exit", "quit", "help", "input", "eval", "exec", "open",
         "append", "extend", "insert", "remove", "pop", "clear", "index", "count", "sort", "reverse", "copy",
@@ -23763,7 +23763,7 @@ std::vector<std::string> PythonEnvironment::collectCandidates(const proto::Proto
 
 void PythonEnvironment::handleException(const proto::ProtoObject* exc, const proto::ProtoObject* frame, std::ostream& out) {
     if (!exc) return;
-    proto::ProtoContext* context = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* context = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     
     // Step 1335: sys.last_type, sys.last_value, sys.last_traceback
     // SP-D/B-DD2: route through getType (own-only `__class__` per SP-B/B1).
@@ -23824,7 +23824,7 @@ void PythonEnvironment::handleException(const proto::ProtoObject* exc, const pro
 
 std::string PythonEnvironment::formatException(const proto::ProtoObject* exc, const proto::ProtoObject* frame) {
     if (!exc) return "";
-    proto::ProtoContext* context = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* context = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
 
     std::string reset = "\033[0m";
     std::string bold = "\033[1m";
@@ -23988,7 +23988,7 @@ void PythonEnvironment::writeUnraisableReport(proto::ProtoContext* ctx, const pr
 
 void PythonEnvironment::reportUnraisable(proto::ProtoContext* ctx, const proto::ProtoObject* exc,
                                          const std::string& errMsg, const proto::ProtoObject* obj) {
-    if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
+    if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     // A hook the program installed receives an UnraisableHookArgs-shaped
     // object; the default hook (sys.__unraisablehook__) is this report.
     const proto::ProtoObject* hook = sysModule
@@ -24016,7 +24016,7 @@ void PythonEnvironment::reportUnraisable(proto::ProtoContext* ctx, const proto::
 }
 
 void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
-    proto::ProtoContext* context = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* context = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     if (!context || !builtinsModule) return;
     ContextScope scope(this, context);
     setInteractive(true);
@@ -24276,7 +24276,7 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
 
 void PythonEnvironment::incrementSysStats(const char* key) {
     if (!sysModule) return;
-    proto::ProtoContext* context = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* context = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     const proto::ProtoObject* stats = sysModule->getAttribute(context, PythonEnvironment::getInternedString(context, "stats"));
     if (!stats) return;
     const proto::ProtoObject* val = stats->getAttribute(context, PythonEnvironment::getInternedString(context, key));
@@ -24287,7 +24287,7 @@ void PythonEnvironment::incrementSysStats(const char* key) {
 
 void PythonEnvironment::enableDefaultTrace() {
     if (!sysModule) return;
-    proto::ProtoContext* context = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* context = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     const proto::ProtoObject* def = sysModule->getAttribute(context, PythonEnvironment::getInternedString(context, "_trace_default"));
     if (def && def != PROTO_NONE) setTraceFunction(def);
 }
@@ -27876,7 +27876,7 @@ const proto::ProtoObject* PythonEnvironment::lookupGlobalName(const proto::Proto
 
 const proto::ProtoObject* PythonEnvironment::resolveGlobalName(const proto::ProtoString* nameObj, proto::ProtoContext* ctx) {
     if (!nameObj) return nullptr;
-    if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
+    if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     // Same per-thread, generation-checked cache as resolve() keeps, apart
     // from it: resolve() also caches modules it imported by name.
     static thread_local std::unordered_map<uintptr_t, const proto::ProtoObject*> s_nameCache;
@@ -27930,7 +27930,7 @@ bool PythonEnvironment::isInheritedModuleName(proto::ProtoContext* ctx, const pr
 }
 
 const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name, proto::ProtoContext* ctx) {
-    if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
+    if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
 
     // Check per-thread cache first (Lock-free)
     uint64_t gen = resolveCacheGeneration_.load(std::memory_order_acquire);
@@ -27951,7 +27951,7 @@ const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name, pr
 
 const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* nameObj, proto::ProtoContext* ctx) {
     if (!nameObj) return nullptr;
-    if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
+    if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
 
     // Fast pointer-keyed cache: avoids toUTF8String + repeated lookups for the same
     // ProtoString* object. Keyed by (ptr, globals_ptr) so that variable shadowing across
@@ -28132,7 +28132,7 @@ const proto::ProtoObject* PythonEnvironment::resolveModule(const std::string& na
         fflush(stderr);
     }
     // Quick cache check
-    if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
+    if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     
     // 1. ProtoSpace Cache (Highest priority for bootstrap consistency)
     const proto::ProtoObject* cached = ctx->space->getImportModule(ctx, nameStr.c_str(), "val");
@@ -28265,8 +28265,8 @@ skip_cache_label:
 }
 
 bool PythonEnvironment::isResolved(const std::string& name, proto::ProtoContext* ctx) {
-    if (!ctx) ctx = s_threadContext;
-    if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
+    if (!ctx) ctx = innermostContext(s_threadContext);
+    if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     if (name == "None" || name == "True" || name == "False") return true;
     // Check resolve cache or builtins
     const proto::ProtoObject* r = resolve(name, ctx);
@@ -28674,7 +28674,7 @@ bool PythonEnvironment::objectsEqual(proto::ProtoContext* ctx, const proto::Prot
 
 const proto::ProtoObject* PythonEnvironment::binaryOp(const proto::ProtoObject* a, TokenType op, const proto::ProtoObject* b) {
     proto::ProtoContext* ctx = getCurrentContext();
-    if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
+    if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     if (!a || !b) return PROTO_NONE;
 
     if (proto::isSmallInt(a) && proto::isSmallInt(b)) {
@@ -28775,7 +28775,7 @@ const proto::ProtoObject* PythonEnvironment::binaryOp(const proto::ProtoObject* 
 
 const proto::ProtoObject* PythonEnvironment::lookupName(const std::string& name) {
     proto::ProtoContext* ctx = getCurrentContext();
-    if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
+    if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     const proto::ProtoObject* frame = getCurrentFrame();
     const proto::ProtoString* nameS = PythonEnvironment::getInternedString(ctx, name.c_str());
     if (frame) {
@@ -28791,7 +28791,7 @@ const proto::ProtoObject* PythonEnvironment::lookupName(const std::string& name)
 
 const proto::ProtoObject* PythonEnvironment::buildString(const proto::ProtoObject** parts, size_t count) {
     proto::ProtoContext* ctx = getCurrentContext();
-    if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
+    if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     std::string result;
     result.reserve(count * 16);
     for (size_t i = 0; i < count; ++i) {
@@ -28846,7 +28846,7 @@ const proto::ProtoObject* PythonEnvironment::buildString(const proto::ProtoObjec
 
 void PythonEnvironment::storeName(const std::string& name, const proto::ProtoObject* val) {
     proto::ProtoContext* ctx = getCurrentContext();
-    if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
+    if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     const proto::ProtoString* key = PythonEnvironment::getInternedString(ctx, name.c_str());
     // protoCore's setAttribute can hand back a new wrapper even on a
     // mutable object; the previous discard-the-return pattern meant
@@ -28885,7 +28885,7 @@ const proto::ProtoObject* PythonEnvironment::callObjectEx(const proto::ProtoObje
                                       const std::vector<std::pair<std::string, const proto::ProtoObject*>>& keywords,
                                       const proto::ProtoObject* starargs,
                                       const proto::ProtoObject* kwargs) {
-    proto::ProtoContext* ctx = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     // Use protoCore's bulk-construct list factory when the argument count
     // is known and we are not extending via starargs.  For up to 5
     // arguments this produces a single inline-storage cell instead of
@@ -28951,7 +28951,7 @@ const proto::ProtoObject* PythonEnvironment::callObjectEx(const proto::ProtoObje
 }
 
 const proto::ProtoObject* PythonEnvironment::getItem(const proto::ProtoObject* container, const proto::ProtoObject* key, proto::ProtoContext* ctx) {
-    if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
+    if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     if (!container || !key) return nullptr;
     
     const proto::ProtoObject* method = container->getAttribute(ctx, getItemString);
@@ -28979,7 +28979,7 @@ const proto::ProtoObject* PythonEnvironment::getItem(const proto::ProtoObject* c
 }
 
 void PythonEnvironment::setItem(const proto::ProtoObject* container, const proto::ProtoObject* key, const proto::ProtoObject* value, proto::ProtoContext* ctx) {
-    if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
+    if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     if (!container || !key || !value) return;
 
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key)->appendLast(ctx, value);
@@ -28997,7 +28997,7 @@ static const proto::ProtoObject* buildTraceback(proto::ProtoContext* ctx, const 
 // added to the intern pool, so equal values are distinct objects and the
 // collector reclaims them once they are unreachable.
 const proto::ProtoObject* PythonEnvironment::newStr(proto::ProtoContext* ctx, const std::string& str) {
-    if (!ctx) ctx = s_threadContext;
+    if (!ctx) ctx = innermostContext(s_threadContext);
     if (!ctx) return PROTO_NONE;
     // fromUTF8Buffer takes the length, so a str holding NUL characters (which
     // Python allows) is kept whole; fromStdString stops at the first NUL.
@@ -29091,7 +29091,7 @@ const proto::ProtoString* PythonEnvironment::getInternedString(proto::ProtoConte
 }
 
 const proto::ProtoObject* PythonEnvironment::getAttr(const proto::ProtoObject* obj, const std::string& attr) {
-    proto::ProtoContext* ctx = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     if (!obj || obj == PROTO_NONE) return PROTO_NONE;
     return obj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, attr.c_str()));
 }
@@ -29100,7 +29100,7 @@ const proto::ProtoObject* PythonEnvironment::callMethod(const proto::ProtoObject
                                                        const std::string& attr,
                                                        const std::vector<const proto::ProtoObject*>& args) {
     proto::ProtoContext* ctx = getCurrentContext();
-    if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
+    if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     if (!obj || obj == PROTO_NONE) {
         // Match `obj.attr(...)` on None: getAttribute raises AttributeError
         // here; mirror the interpreter by surfacing that error.
@@ -29138,13 +29138,13 @@ const proto::ProtoObject* PythonEnvironment::callMethod(const proto::ProtoObject
 }
 
 void PythonEnvironment::setAttr(const proto::ProtoObject* obj, const std::string& attr, const proto::ProtoObject* val) {
-    proto::ProtoContext* ctx = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     if (!obj) return;
     const_cast<proto::ProtoObject*>(obj)->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, attr.c_str()), val);
 }
 
 const proto::ProtoObject* PythonEnvironment::unaryOp(TokenType op, const proto::ProtoObject* a) {
-    proto::ProtoContext* ctx = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     if (!a) return PROTO_NONE;
 
     if (a->isInteger(ctx)) {
@@ -29188,7 +29188,7 @@ const proto::ProtoObject* PythonEnvironment::unaryOp(TokenType op, const proto::
 
 const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj) {
     proto::ProtoContext* ctx = getCurrentContext();
-    if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
+    if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
 
     if (!obj || obj == PROTO_NONE || obj == nonePrototype || (obj && obj->isNone(ctx)) || 
         (obj && obj->isCell(ctx) && obj->hasParent(ctx, noneTypeProto))) {
@@ -29498,7 +29498,7 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
 
 const proto::ProtoObject* PythonEnvironment::next(const proto::ProtoObject* obj) {
     proto::ProtoContext* ctx = getCurrentContext();
-    if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
+    if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
 
     if (hasPendingException()) {
         const proto::ProtoObject* exc = peekPendingException();
@@ -29557,7 +29557,7 @@ void PythonEnvironment::addTraceback(const proto::ProtoObject* exc, const proto:
     // belongs to the main thread: allocating through it from a worker
     // raced on its allocation state and its per-thread caches (SEGV in
     // ProtoSparseList::implSetAt under ASAN while threads raised errors).
-    proto::ProtoContext* ctx = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG: addTraceback exc=%p frame=%p lasti=%d lineno=%d\n", exc, frame, lasti, lineno);
@@ -29628,7 +29628,7 @@ void PythonEnvironment::addTraceback(const proto::ProtoObject* exc, const proto:
 
 bool PythonEnvironment::isException(const proto::ProtoObject* exc, const proto::ProtoObject* type) {
     if (!exc || !type || exc == PROTO_NONE || type == PROTO_NONE) return false;
-    proto::ProtoContext* ctx = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     
     if (type->isTuple(ctx)) {
         const proto::ProtoTuple* tup = type->asTuple(ctx);
@@ -29718,7 +29718,7 @@ void PythonEnvironment::augAssignItem(const proto::ProtoObject* container, const
 bool PythonEnvironment::isTrue(const proto::ProtoObject* obj) {
     if (!obj || obj == PROTO_NONE || obj == PROTO_FALSE) return false;
     if (obj == PROTO_TRUE) return true;
-    proto::ProtoContext* ctx = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     // Only a SmallInteger may be converted with asLong: a LargeInteger does not
     // fit in 64 bits and asLong rejects it ("LargeInteger value exceeds long
     // long range"), which made `while big_int:` raise.  A value wide enough to
@@ -29797,7 +29797,7 @@ bool PythonEnvironment::isTrue(const proto::ProtoObject* obj) {
 }
 
 const proto::ProtoObject* PythonEnvironment::importModule(const std::string& name, int level, const std::vector<std::string>& fromList) {
-    proto::ProtoContext* ctx = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     const proto::ProtoObject* imp = resolve("__import__", ctx);
     if (!imp) return PROTO_NONE;
     
@@ -29818,7 +29818,7 @@ const proto::ProtoObject* PythonEnvironment::importModule(const std::string& nam
 
 void PythonEnvironment::importStar(const proto::ProtoObject* mod) {
     if (!mod || mod == PROTO_NONE) return;
-    proto::ProtoContext* ctx = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     const proto::ProtoObject* globals = getGlobals();
     if (!globals) return;
     
@@ -29842,7 +29842,7 @@ void PythonEnvironment::importStar(const proto::ProtoObject* mod) {
 }
 
 const proto::ProtoObject* PythonEnvironment::buildSlice(const proto::ProtoObject* start, const proto::ProtoObject* stop, const proto::ProtoObject* step) {
-    proto::ProtoContext* ctx = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     proto::ProtoObject* sliceObj = const_cast<proto::ProtoObject*>(ctx->newObject(false));
     sliceObj->setAttribute(ctx, startString, start ? start : PROTO_NONE);
     sliceObj->setAttribute(ctx, stopString, stop ? stop : PROTO_NONE);
@@ -29852,7 +29852,7 @@ const proto::ProtoObject* PythonEnvironment::buildSlice(const proto::ProtoObject
 }
 
 void PythonEnvironment::delItem(const proto::ProtoObject* container, const proto::ProtoObject* key, proto::ProtoContext* ctx) {
-    if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
+    if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     if (!container || !key) return;
     
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key);
@@ -29860,13 +29860,13 @@ void PythonEnvironment::delItem(const proto::ProtoObject* container, const proto
 }
 
 void PythonEnvironment::delAttr(const proto::ProtoObject* obj, const std::string& attr) {
-    proto::ProtoContext* ctx = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     if (!obj) return;
     const_cast<proto::ProtoObject*>(obj)->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, attr.c_str()), PROTO_NONE);
 }
 
 void PythonEnvironment::delName(const std::string& name) {
-    proto::ProtoContext* ctx = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     const proto::ProtoObject* frame = getCurrentFrame();
     if (frame) {
         const_cast<proto::ProtoObject*>(frame)->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, name.c_str()), PROTO_NONE);
@@ -29939,7 +29939,7 @@ static thread_local std::vector<proto::ProtoRootSet::Handle> s_kwNamesHandles;
 void PythonEnvironment::pushKwNames(const proto::ProtoTuple* names) {
     proto::ProtoRootSet::Handle h = proto::ProtoRootSet::kNullHandle;
     if (transientArgsRoots_ && names) {
-        h = transientArgsRoots_->add(names->asObject(s_threadContext ? s_threadContext : rootContext_));
+        h = transientArgsRoots_->add(names->asObject(s_threadContext ? innermostContext(s_threadContext) : rootContext_));
     }
     s_kwNamesStack.push_back(names);
     s_kwNamesHandles.push_back(h);
@@ -29970,7 +29970,7 @@ static thread_local std::deque<std::pair<const proto::ProtoObject*, proto::Proto
 
 const proto::ProtoObject* PythonEnvironment::runUntilComplete(const proto::ProtoObject* coro) {
     if (!coro) return PROTO_NONE;
-    proto::ProtoContext* ctx = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     auto unpin = [this](proto::ProtoRootSet::Handle h) {
         if (transientArgsRoots_ && h != proto::ProtoRootSet::kNullHandle) {
             transientArgsRoots_->remove(h);
@@ -30276,7 +30276,7 @@ void PythonEnvironment::registerNativeModule(NativeModuleProvider* provider, con
 
 const proto::ProtoObject* PythonEnvironment::newTuple(const proto::ProtoList* list) {
     // Calling thread context: rootContext_ belongs to the main thread.
-    proto::ProtoContext* ctx = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     const proto::ProtoObject* obj = ctx->newTupleFromList(list)->asObject(ctx);
     if (tuplePrototype) {
         obj = obj->addParent(ctx, tuplePrototype);
@@ -30287,7 +30287,7 @@ const proto::ProtoObject* PythonEnvironment::newTuple(const proto::ProtoList* li
 
 const proto::ProtoObject* PythonEnvironment::newList(const proto::ProtoList* list) {
     // Calling thread context: rootContext_ belongs to the main thread.
-    proto::ProtoContext* ctx = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     const proto::ProtoObject* obj = list->asObject(ctx);
     if (listPrototype) {
         obj = obj->addParent(ctx, listPrototype);
