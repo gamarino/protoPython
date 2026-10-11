@@ -393,6 +393,16 @@ set_tests_properties(protopy_frame_f_back_after_return PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 60
     LABELS "regression_gate")
+# What native helpers (iteration, exceptions) allocate during a call must be
+# collectable while the caller runs; under a 2.5 M-cell fixed limit this ran
+# out of memory when they allocated in the module's context.
+add_test(NAME protopy_helper_garbage_is_collected
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/helper_garbage_is_collected.py)
+set_tests_properties(protopy_helper_garbage_is_collected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    ENVIRONMENT "PROTOCORE_HEAP_LIMIT_CELLS=2500000;PROTOCORE_ADAPTIVE_HEAP=0"
+    TIMEOUT 600
+    LABELS "regression_gate")
 # set mutators called from parallel threads must not lose or duplicate items.
 add_test(NAME protopy_set_mutation_threads
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/set_mutation_threads.py)
