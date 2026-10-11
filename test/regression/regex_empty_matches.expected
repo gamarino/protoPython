@@ -1,0 +1,14 @@
+<re.Match object; span=(0, 1), match='A'> <re.Match object; span=(0, 1), match='A'> <re.Match object; span=(0, 2), match='AA'>
+['A', 'A', ''] ['', '', '', ''] -a-b-c-
+['', 'a', '', 'b', 'c', ''] [(0, 0), (1, 3), (3, 3), (4, 4)]
+<re.Match object; span=(0, 3), match='A-A'> AOA
+A ('A-A',)
+['x', 'x', ''] 
+<re.Match object; span=(1, 3), match='AA'> <re.Match object; span=(1, 3), match='AA'> ['AA', '']
+>a
+>b ['ab', '', 'cd', '']
+(0, 11) (0, 5) 6 11 (-1, -1) 0 11
+IndexError no such group
+<re.Match object; span=(1, 3), match='bb'> <re.Match object; span=(0, 0), match=''>
+re.compile('a+') re.compile('a', re.IGNORECASE|re.MULTILINE) Pattern Match True
+world {'first': 'hello', 'second': 'world'} 0 (6, 11)

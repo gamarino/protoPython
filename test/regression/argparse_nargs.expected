@@ -1,0 +1,26 @@
+[] Namespace(files=[])
+['a', 'b'] Namespace(files=['a', 'b'])
+['--opt'] Namespace(opt=[])
+['--opt', 'x', 'y'] Namespace(opt=['x', 'y'])
+[] Namespace(opt=None)
+[] Namespace(opt=['d'])
+['a', 'b', '--opt', 'x', 'y'] Namespace(files=['a', 'b'], opt=['x', 'y'])
+['a', '-v', 'b'] ArgumentError: unrecognized arguments: b
+['a', 'b'] Namespace(x=['a', 'b'])
+[] Namespace(x='D')
+['q'] Namespace(x='q')
+['--o'] Namespace(o='C')
+[] Namespace(o='D')
+['--o', 'v'] Namespace(o='v')
+['a', 'b'] Namespace(x=['a', 'b'])
+['a', '--b', 'c'] Namespace(x=['a', '--b', 'c'])
+['s', '1', '2'] Namespace(a='s', rest=[1, 2])
+['--n', '1', '3'] Namespace(n=[1, 3])
+['--n', '1', '2', '--n', '3'] Namespace(n=[['1', '2'], ['3']])
+['--n', '1', '2', '--n', '3'] Namespace(n=['1', '2', '3'])
+['a', 'b', 'c', 'd'] Namespace(first='a', mid=['b', 'c'], last='d')
+['-x', '1', '2'] Namespace(x=['1', '2'], pos=None)
+['--pair', 'k', 'v'] Namespace(pair=['k', 'v'])
+[] ArgumentError: the following arguments are required: x
+['a'] ArgumentError: the following arguments are required: x
+usage: tool [-h] [--opt [OPT]] [files ...]

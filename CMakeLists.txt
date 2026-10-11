@@ -1423,10 +1423,15 @@ set_tests_properties(protopy_closure_semantics protopy_closure_semantics_gc PROP
 #     (registered built-in types, the ABC hierarchy, subclass hooks).
 #   counter_methods: collections.Counter (most_common segfaulted) and the
 #     deque iterators.
+#   regex_empty_matches: re with patterns that can match empty, classes with
+#     a literal '-', group spans, named groups, Match / Pattern types.
+#   argparse_nargs: argparse nargs variants (they rely on such patterns).
 set(PROTOPY_STDLIB_ORACLE_TESTS
     ordered_dict_iterables
     abc_virtual_subclasses
-    counter_methods)
+    counter_methods
+    regex_empty_matches
+    argparse_nargs)
 foreach(_t IN LISTS PROTOPY_STDLIB_ORACLE_TESTS)
     add_test(NAME protopy_${_t}
         COMMAND ${CMAKE_COMMAND} -DPROTOPY=$<TARGET_FILE:protopy>

@@ -3,6 +3,7 @@
 #include <protoPython/ReModule.h>
 #include <cctype>
 #include <climits>
+#include <cstdio>
 #include <cwchar>
 #include <cwctype>
 #include <regex>
@@ -331,14 +332,34 @@ static const proto::ProtoObject* py_match_groups(
     return tup ? tup->asObject(ctx) : result->asObject(ctx);
 }
 
+// The span of group `ref` (a number or a name; group 0 when absent) as code
+// point positions, (-1, -1) when the group did not participate.  False, with
+// IndexError raised, for a group the pattern does not have.
+static bool matchGroupBounds(proto::ProtoContext* ctx, const proto::ProtoObject* self,
+                             const proto::ProtoList* posArgs, long long& a, long long& b) {
+    const proto::ProtoObject* ref = (posArgs && posArgs->getSize(ctx) >= 1) ? posArgs->getAt(ctx, 0) : nullptr;
+    const long long idx = resolveGroupRef(ctx, self, ref);
+    const proto::ProtoObject* spansObj = self->getAttribute(ctx,
+        proto::ProtoString::createSymbol(ctx, "__re_spans__"));
+    const proto::ProtoList* spans = spansObj ? spansObj->asList(ctx) : nullptr;
+    const long long g = idx == -2 ? 0 : idx;
+    if (!spans || g < 0 || 2 * g + 1 >= static_cast<long long>(spans->getSize(ctx))) {
+        if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx)) env->raiseIndexError(ctx, "no such group");
+        return false;
+    }
+    a = spans->getAt(ctx, static_cast<int>(2 * g))->asLong(ctx);
+    b = spans->getAt(ctx, static_cast<int>(2 * g + 1))->asLong(ctx);
+    return true;
+}
+
 // match.start([group]) — return start position
 static const proto::ProtoObject* py_match_start(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
 {
-    const proto::ProtoObject* pos = self->getAttribute(ctx,
-        proto::ProtoString::createSymbol(ctx, "__re_pos__"));
-    return pos ? pos : ctx->fromInteger(0);
+    long long a, b;
+    if (!matchGroupBounds(ctx, self, posArgs, a, b)) return nullptr;
+    return ctx->fromInteger(a);
 }
 
 // match.end([group]) — return end position
@@ -346,9 +367,9 @@ static const proto::ProtoObject* py_match_end(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
 {
-    const proto::ProtoObject* end = self->getAttribute(ctx,
-        proto::ProtoString::createSymbol(ctx, "__re_end__"));
-    return end ? end : ctx->fromInteger(0);
+    long long a, b;
+    if (!matchGroupBounds(ctx, self, posArgs, a, b)) return nullptr;
+    return ctx->fromInteger(b);
 }
 
 // match.span([group]) — return (start, end) tuple
@@ -356,15 +377,28 @@ static const proto::ProtoObject* py_match_span(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
 {
-    const proto::ProtoObject* start = self->getAttribute(ctx,
-        proto::ProtoString::createSymbol(ctx, "__re_pos__"));
-    const proto::ProtoObject* end = self->getAttribute(ctx,
-        proto::ProtoString::createSymbol(ctx, "__re_end__"));
+    long long a, b;
+    if (!matchGroupBounds(ctx, self, posArgs, a, b)) return nullptr;
     const proto::ProtoList* lst = ctx->newList()
-        ->appendLast(ctx, start ? start : ctx->fromInteger(0))
-        ->appendLast(ctx, end ? end : ctx->fromInteger(0));
+        ->appendLast(ctx, ctx->fromInteger(a))
+        ->appendLast(ctx, ctx->fromInteger(b));
     const proto::ProtoTuple* tup = ctx->newTupleFromList(lst);
     return tup ? tup->asObject(ctx) : lst->asObject(ctx);
+}
+
+// repr(match): <re.Match object; span=(0, 1), match='A'>, as CPython.
+static const proto::ProtoObject* py_match_repr(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*)
+{
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    long long a, b;
+    if (!matchGroupBounds(ctx, self, nullptr, a, b)) return nullptr;
+    const proto::ProtoObject* s = self->getAttribute(ctx,
+        proto::ProtoString::createSymbol(ctx, "__re_match_str__"));
+    const std::string text = "<re.Match object; span=(" + std::to_string(a) + ", " + std::to_string(b)
+        + "), match=" + (env && s ? env->reprObject(ctx, s) : std::string("''")) + ">";
+    return ctx->fromUTF8String(text.c_str());
 }
 
 // match.lastindex — index of last matched group (None if no groups)
@@ -1049,6 +1083,18 @@ static bool matchAtEnd(const CompiledRe& cr, const Subject& sj, size_t from, siz
                              std::regex_constants::match_prev_avail | std::regex_constants::match_continuous);
 }
 
+// An empty match sitting on a marker (the start-of-subject marker or a
+// line-start marker) did not take the marker: it stands for an empty match
+// at the code point after it, where a longer match may start.  A search
+// begins before the marker so that ^ can take it; a pattern that can match
+// empty (A?, [A-]*) then matched nothing there and never saw the text:
+// re.match("A?", "AA") matched '' and argparse's nargs="*" / "?" patterns
+// consumed no argument.
+static bool emptyOnMarker(const ReMatch& m, ReString::const_iterator last) {
+    return m[0].first == m[0].second && m[0].first != last
+        && (*m[0].first == kBOS || *m[0].first == kLSM);
+}
+
 // Searches [pos, endpos) of the subject (code point positions). `anchored`:
 // the match must start at pos (pattern.match). `whole`: it must span the
 // whole range (fullmatch). `^` and `\A` match only at the true start, as in
@@ -1068,7 +1114,20 @@ static bool findMatch(const CompiledRe& cr, const Subject& sj, size_t pos, size_
         const auto first = base + static_cast<std::ptrdiff_t>(from);
         return whole ? std::regex_match(first, last, m, cr.re, f) : std::regex_search(first, last, m, cr.re, f);
     };
-    if (attempt(start, flags)) return true;
+    if (attempt(start, flags)) {
+        if (!emptyOnMarker(m, last)) return true;
+        // Look again just after the marker; that match starts at the same
+        // code point and is at least as long.
+        const size_t afterMarker = static_cast<size_t>(m[0].first - base) + 1;
+        ReMatch again;
+        const auto first = base + static_cast<std::ptrdiff_t>(afterMarker);
+        const auto f2 = flags | std::regex_constants::match_prev_avail;
+        if (whole ? std::regex_match(first, last, again, cr.re, f2)
+                  : std::regex_search(first, last, again, cr.re, f2)) {
+            m = again;
+        }
+        return true;
+    }
     if (!anchored && !whole && matchAtEnd(cr, sj, start, sj.searchEnd(endpos), m)) return true;
     // A MULTILINE pattern whose match at pos does not take the line-start
     // marker before pos: try once more after it.
@@ -1109,6 +1168,12 @@ static void forEachMatch(const CompiledRe& cr, const Subject& sj, size_t pos, si
         }
         const size_t ms = mappedIndex(sj, m[0].first);
         const size_t me = mappedIndex(sj, m[0].second);
+        if (emptyOnMarker(m, base + static_cast<std::ptrdiff_t>(last))) {
+            // Search again from just after the marker (see emptyOnMarker).
+            notNull = false;
+            cur = ms + 1;
+            continue;
+        }
         const size_t a = sj.toOrig(ms);
         const size_t b = sj.toOrig(me);
         bool report = true;
@@ -1151,7 +1216,8 @@ static const proto::ProtoObject* makeMatchObject(
     const ReMatch& m,
     const Subject& sj,
     const proto::ProtoObject* subjectStr,
-    const proto::ProtoObject* patObj = nullptr)
+    const proto::ProtoObject* patObj = nullptr,
+    const TranslatedRegex* tr = nullptr)
 {
     if (!matchProto) return PROTO_NONE;
     const proto::ProtoObject* mo = matchProto->newChild(ctx, true);
@@ -1167,6 +1233,17 @@ static const proto::ProtoObject* makeMatchObject(
     mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_end__"),
         ctx->fromInteger(static_cast<long long>(b)));
 
+    // Spans of groups 0..n as a flat (start, end, start, end, ...) list,
+    // -1 for a group that did not participate.
+    const proto::ProtoList* spans = ctx->newList();
+    for (size_t i = 0; i < m.size(); ++i) {
+        size_t ga = 0, gb = 0;
+        const bool took = groupSpan(sj, m, i, ga, gb);
+        spans = spans->appendLast(ctx, ctx->fromInteger(took ? static_cast<long long>(ga) : -1))
+                     ->appendLast(ctx, ctx->fromInteger(took ? static_cast<long long>(gb) : -1));
+    }
+    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_spans__"), spans->asObject(ctx));
+
     // Store captured groups (indices 1..n) as a list.
     const proto::ProtoList* groups = ctx->newList();
     for (size_t i = 1; i < m.size(); ++i) {
@@ -1181,14 +1258,23 @@ static const proto::ProtoObject* makeMatchObject(
         groups->asObject(ctx));
 
     // Forward the pattern's name -> index mapping so .group('name') /
-    // .groupdict() can resolve named groups.
-    if (patObj) {
-        const proto::ProtoObject* gi = patObj->getAttribute(ctx,
-            proto::ProtoString::createSymbol(ctx, "__re_groupindex__"));
-        if (gi && gi != PROTO_NONE) {
-            mo = mo->setAttribute(ctx,
-                proto::ProtoString::createSymbol(ctx, "__re_groupindex__"), gi);
+    // .groupdict() can resolve named groups.  A str pattern (re.match(p, s))
+    // has none: build it from the translation, which recorded the names.
+    const proto::ProtoObject* gi = patObj ? patObj->getAttribute(ctx,
+        proto::ProtoString::createSymbol(ctx, "__re_groupindex__")) : nullptr;
+    if ((!gi || gi == PROTO_NONE) && tr && !tr->groupIndex.empty()) {
+        const proto::ProtoList* gindex = ctx->newList();
+        for (const auto& kv : tr->groupIndex) {
+            const proto::ProtoList* pair = ctx->newList()
+                ->appendLast(ctx, PythonEnvironment::getInternedString(ctx, kv.first.c_str())->asObject(ctx))
+                ->appendLast(ctx, ctx->fromInteger(kv.second));
+            gindex = gindex->appendLast(ctx, pair->asObject(ctx));
         }
+        gi = gindex->asObject(ctx);
+    }
+    if (gi && gi != PROTO_NONE) {
+        mo = mo->setAttribute(ctx,
+            proto::ProtoString::createSymbol(ctx, "__re_groupindex__"), gi);
     }
 
     return mo;
@@ -1348,7 +1434,7 @@ static bool substitute(proto::ProtoContext* ctx, const proto::ProtoObject* patOb
         if (replIsTemplate) {
             if (!expandTemplate(ctx, tmpl, m, sj, cr.tr, out)) { ok = false; return false; }
         } else {
-            const proto::ProtoObject* mo = makeMatchObject(ctx, matchProto, m, sj, strObj, patObj);
+            const proto::ProtoObject* mo = makeMatchObject(ctx, matchProto, m, sj, strObj, patObj, &cr.tr);
             PythonEnvironment::TransientPin pinMatch(env, mo);
             const proto::ProtoObject* r = env->callObject(replObj, { mo });
             if (!r) {
@@ -1427,7 +1513,7 @@ static const proto::ProtoObject* matchOnce(proto::ProtoContext* ctx, const proto
     if (windowArgs) matchWindow(ctx, windowArgs, windowFirst, sj.orig.size(), pos, endpos);
     ReMatch m;
     if (!findMatch(cr, sj, pos, endpos, kind == MatchKind::Match, kind == MatchKind::FullMatch, m)) return PROTO_NONE;
-    return makeMatchObject(ctx, matchProto, m, sj, strObj, patObj);
+    return makeMatchObject(ctx, matchProto, m, sj, strObj, patObj, &cr.tr);
 }
 
 // The list re.findall returns: each match's group 0, its one group, or the
@@ -1478,7 +1564,7 @@ static const proto::ProtoObject* findIter(proto::ProtoContext* ctx, const proto:
     if (windowArgs) matchWindow(ctx, windowArgs, windowFirst, sj.orig.size(), pos, endpos);
     const proto::ProtoList* results = ctx->newList();
     forEachMatch(cr, sj, pos, endpos, [&](const ReMatch& m) {
-        results = results->appendLast(ctx, makeMatchObject(ctx, matchProto, m, sj, strObj, patObj));
+        results = results->appendLast(ctx, makeMatchObject(ctx, matchProto, m, sj, strObj, patObj, &cr.tr));
         return true;
     });
     return pyList(ctx, results);
@@ -1862,7 +1948,7 @@ static const proto::ProtoObject* py_scanner_iter_match(
     // the test only calls match() once per position iteration, so this is acceptable).
     (void)newSelf;
 
-    return makeMatchObject(ctx, mpAttr, m, sj, strObj);
+    return makeMatchObject(ctx, mpAttr, m, sj, strObj, nullptr, &cr.tr);
 }
 
 // pattern.scanner(string) → ScannerIterator
@@ -2066,12 +2152,70 @@ static const proto::ProtoObject* py_scanner_scan(
 
 // ---------------------------------------------------------------------------
 // initialize()
+// re.Pattern / re.Match as classes: type(m) is re.Match and repr() finds
+// their __repr__.  They were bare objects, so type() reported `object` and
+// repr() gave <object object at ...>.
+static const proto::ProtoObject* makeReClass(proto::ProtoContext* ctx,
+                                             const proto::ProtoObject* cls, const char* name) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env || !env->getObjectPrototype() || !env->getTypePrototype()) return cls;
+    const proto::ProtoObject* objectProto = env->getObjectPrototype();
+    cls = cls->addParent(ctx, objectProto);
+    cls = cls->setAttribute(ctx, env->getClassString(), env->getTypePrototype());
+    const proto::ProtoObject* nameObj = PythonEnvironment::getInternedString(ctx, name)->asObject(ctx);
+    cls = cls->setAttribute(ctx, env->getNameString(), nameObj);
+    cls = cls->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__qualname__"), nameObj);
+    cls = cls->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__module__"),
+        PythonEnvironment::getInternedString(ctx, "re")->asObject(ctx));
+    cls = cls->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__is_python_class__"), PROTO_TRUE);
+    cls = cls->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__bases__"),
+        ctx->newTupleFromList(ctx->newList()->appendLast(ctx, objectProto))->asObject(ctx));
+    cls = cls->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__mro__"),
+        ctx->newTupleFromList(ctx->newList()->appendLast(ctx, cls)->appendLast(ctx, objectProto))->asObject(ctx));
+    return cls;
+}
+
+// repr(pattern): re.compile('a+', re.IGNORECASE), as CPython.
+static const proto::ProtoObject* py_pattern_repr(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*)
+{
+    const proto::ProtoObject* pat = self->getAttribute(ctx,
+        proto::ProtoString::createSymbol(ctx, "__re_pattern__"));
+    const proto::ProtoObject* fl = self->getAttribute(ctx,
+        proto::ProtoString::createSymbol(ctx, "__re_flags__"));
+    std::string out = "re.compile(" + (pat ? PythonEnvironment::reprObject(ctx, pat) : std::string("''"));
+    long long flags = (fl && fl->isInteger(ctx)) ? fl->asLong(ctx) : 0;
+    flags &= ~32LL;  // re.UNICODE is implied for a str pattern
+    if (flags) {
+        static const struct { long long bit; const char* name; } names[] = {
+            {2, "re.IGNORECASE"}, {4, "re.LOCALE"}, {8, "re.MULTILINE"}, {16, "re.DOTALL"},
+            {64, "re.VERBOSE"}, {128, "re.DEBUG"}, {256, "re.ASCII"}};
+        std::string parts;
+        for (const auto& n : names) {
+            if (!(flags & n.bit)) continue;
+            if (!parts.empty()) parts += "|";
+            parts += n.name;
+            flags &= ~n.bit;
+        }
+        if (flags) {
+            if (!parts.empty()) parts += "|";
+            parts += "0x" + [&] { char b[32]; std::snprintf(b, sizeof b, "%llx", flags); return std::string(b); }();
+        }
+        out += ", " + parts;
+    }
+    out += ")";
+    return ctx->fromUTF8String(out.c_str());
+}
+
 // ---------------------------------------------------------------------------
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(false);
 
     // --- Match prototype ---
-    const proto::ProtoObject* matchProto = ctx->newObject(false);
+    // Match and Pattern are classes (see makeReClass): mutable, so the
+    // methods bound below and their __mro__ keep naming the same object.
+    const proto::ProtoObject* matchProto = ctx->newObject(true);
     matchProto = matchProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "group"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(matchProto), py_match_group));
     matchProto = matchProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "groups"),
@@ -2086,11 +2230,13 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(matchProto), py_match_span));
     matchProto = matchProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "lastindex"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(matchProto), py_match_lastindex));
+    matchProto = matchProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__repr__"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(matchProto), py_match_repr));
 
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__match_proto__"), matchProto);
 
     // --- Pattern prototype ---
-    const proto::ProtoObject* patternProto = ctx->newObject(false);
+    const proto::ProtoObject* patternProto = ctx->newObject(true);
     patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__match_proto__"), matchProto);
     patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "match"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_match));
@@ -2110,6 +2256,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_split));
     patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "scanner"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_scanner_method));
+    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__repr__"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_repr));
 
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__pattern_proto__"), patternProto);
 
@@ -2178,6 +2326,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "Scanner"), scannerType);
 
     // Expose Pattern and Match type objects (CPython compatibility)
+    patternProto = makeReClass(ctx, patternProto, "Pattern");
+    matchProto = makeReClass(ctx, matchProto, "Match");
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "Pattern"), patternProto);
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "Match"), matchProto);
 
