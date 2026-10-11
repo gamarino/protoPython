@@ -41,7 +41,10 @@ namespace {
 // `break` and `continue` inside a `try` statement with a finally clause, or
 // inside a `with` statement, record what they do in a slot and jump to the
 // finally clause (or the __exit__ call), which does it afterwards.
-const char* const kGeneratedPreamble = R"PREAMBLE(namespace {
+// MSVC limits one string literal to 16380 bytes (C2026): the preamble is
+// several adjacent raw literals.
+const char* const kGeneratedPreamble =
+R"PREAMBLE(namespace {
 struct __PyUnwind {};
 
 // The pending-exception flag of the running thread: every compiled callable
@@ -236,7 +239,8 @@ const proto::ProtoObject* __freeVar(proto::ProtoContext* ctx, const proto::Proto
     return protoPython::PythonEnvironment::get(ctx)->newCell(ctx, nullptr);
 }
 
-// `a, b = value` and `a, *rest, b = value`: the n values of the iterable, the
+)PREAMBLE"
+R"PREAMBLE(// `a, b = value` and `a, *rest, b = value`: the n values of the iterable, the
 // one at `star` a list of the rest, into out[0..n); ValueError as CPython's
 // when the counts do not match.
 void __unpack(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env, const proto::ProtoObject* value,
