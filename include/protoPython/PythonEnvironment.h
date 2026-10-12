@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <thread>
 #include <unordered_map>
+#include <cstddef>
 #include <vector>
 #include <protoPython/Tokenizer.h>
 
