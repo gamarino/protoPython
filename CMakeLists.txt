@@ -1429,6 +1429,8 @@ set_tests_properties(protopy_closure_semantics protopy_closure_semantics_gc PROP
 #   argparse_help: several prefix characters, help and usage output, textwrap.
 #   bytes_construct_methods: bytes / bytearray from iterables, bytes methods.
 #   hashlib_digests: every guaranteed digest, BLAKE2 parameters, SHAKE, hmac.
+#   itertools_functions: every itertools function, None values, generator
+#     inputs, laziness on infinite inputs, the combinatorics.
 set(PROTOPY_STDLIB_ORACLE_TESTS
     ordered_dict_iterables
     abc_virtual_subclasses
@@ -1437,7 +1439,8 @@ set(PROTOPY_STDLIB_ORACLE_TESTS
     argparse_nargs
     argparse_help
     bytes_construct_methods
-    hashlib_digests)
+    hashlib_digests
+    itertools_functions)
 foreach(_t IN LISTS PROTOPY_STDLIB_ORACLE_TESTS)
     add_test(NAME protopy_${_t}
         COMMAND ${CMAKE_COMMAND} -DPROTOPY=$<TARGET_FILE:protopy>

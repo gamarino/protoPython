@@ -1,0 +1,56 @@
+chain [1, None, 2, 'a', 'b', None]
+chain gens [1, None, 1, 2]
+chain.from_iterable [1, 2, None, 'x', 'y']
+from_iterable lazy [1, 2, 1, 2, 1]
+from_iterable gen [1, 2, 2, 3, 3, 3]
+chain type (True, True)
+count [5, 7, 9, 11]
+count float [0.5, 0.75, 1.0]
+count repr ('count(3)', 'count(1, 2)')
+cycle ['a', 'b', 'c', 'a', 'b', 'c', 'a']
+cycle gen [None, 1, None, 1, None]
+cycle empty []
+repeat ([None, None, None], [], 'repeat(1, 2)')
+accumulate [1, 3, 6, 10]
+accumulate mul [1, 2, 6, 24]
+accumulate initial [10, 11, 13, 16]
+accumulate empty initial [5]
+batched [('a', 'b', 'c'), ('d', 'e', 'f'), ('g',)]
+batched strict EXC ValueError
+batched zero EXC ValueError
+compress ['a', 'c', 'e', 'f']
+dropwhile [3, 4, 1]
+takewhile [1, 2]
+filterfalse [0, 2, 4, 6]
+filterfalse None [0, None, '']
+groupby [('a', ['a', 'a', 'a']), ('b', ['b', 'b']), ('c', ['c']), ('d', ['d', 'd'])]
+groupby key [(1, [1, 3]), (0, [2, 4]), (1, [5])]
+groupby skip ['a', 'b', 'c']
+groupby stale [[], []]
+islice [2, 5, 8, 11, 14]
+islice None [None, None, 1]
+islice stop None ['b', 'c', 'd']
+islice consume ([0, 1], [2, 3, 4])
+islice negative EXC ValueError
+islice step 0 EXC ValueError
+pairwise [('a', 'b'), ('b', 'c'), ('c', 'd')]
+pairwise short []
+starmap [8, 9]
+tee [[1, 2, 3], [1, 2, 3]]
+tee interleaved (1, 2, 1, [2, 3], [3])
+tee zero ()
+zip_longest [('a', 'x'), ('b', 'y'), ('-', 'z')]
+zip_longest none []
+product [('a', 0), ('a', 1), ('b', 0), ('b', 1)]
+product repeat [(0, 0), (0, 1), (1, 0), (1, 1)]
+product empty ([()], [])
+permutations [('a', 'b'), ('a', 'c'), ('b', 'a'), ('b', 'c'), ('c', 'a'), ('c', 'b')]
+permutations full [(0, 1, 2), (0, 2, 1), (1, 0, 2), (1, 2, 0), (2, 0, 1), (2, 1, 0)]
+permutations r>n []
+combinations [('a', 'b'), ('a', 'c'), ('a', 'd'), ('b', 'c'), ('b', 'd'), ('c', 'd')]
+combinations r>n []
+combinations 0 [()]
+cwr [('a', 'a'), ('a', 'b'), ('a', 'c'), ('b', 'b'), ('b', 'c'), ('c', 'c')]
+cwr empty []
+counts (120, 210, 1000)
+tuple str (('a', 'b'), True)

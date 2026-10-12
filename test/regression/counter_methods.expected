@@ -3,6 +3,7 @@ most_common 2 [('a', 5), ('b', 2)]
 most_common 0 []
 most_common big [('a', 5), ('b', 2), ('r', 2), ('c', 1), ('d', 1)]
 ints [(3, 3), (1, 2)]
+elements ['a', 'a', 'a', 'a', 'a', 'b', 'b', 'c', 'd', 'r', 'r']
 total 11
 missing 0
 repr Counter({'a': 2, 'b': 1})

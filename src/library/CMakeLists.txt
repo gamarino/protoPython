@@ -8,7 +8,6 @@ add_library(protoPython SHARED
     Parser.cpp
     Tokenizer.cpp
     FunctoolsModule.cpp
-    ItertoolsModule.cpp
     LoggingModule.cpp
     MathModule.cpp
     OperatorModule.cpp

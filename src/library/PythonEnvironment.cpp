@@ -26,7 +26,6 @@
 #include <protoPython/MathModule.h>
 #include <protoPython/OperatorModule.h>
 #include <protoPython/FunctoolsModule.h>
-#include <protoPython/ItertoolsModule.h>
 #include <protoPython/CodecsModule.h>
 #include <protoPython/ReModule.h>
 #include <protoPython/OsModule.h>
@@ -7196,6 +7195,10 @@ static const proto::ProtoObject* py_tuple_call(
             if (cls2 == env->getBytesPrototype() || iterable->getPrototype(context) == env->getBytesPrototype())
                 skipFastPath2 = true;
         }
+        // A str answers asList() too, with its raw code-point cells:
+        // tuple("ab") held two non-str objects (inline strings only; longer or
+        // non-ASCII ones happened to take the iterator path).  Iterate it.
+        if (iterable->isString(context)) skipFastPath2 = true;
         const proto::ProtoList* otherL = skipFastPath2 ? nullptr : iterable->asList(context);
         if (otherL) {
             proto::proto_ulong sz = otherL->getSize(context);
@@ -22672,7 +22675,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     registerNativeModule(nativeProviderPtr, "_signal", [](proto::ProtoContext* ctx) { return signal_module::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "_thread", [](proto::ProtoContext* ctx) { return thread_module::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "_functools", [](proto::ProtoContext* ctx) { return functools::initialize(ctx); });
-    registerNativeModule(nativeProviderPtr, "itertools", [](proto::ProtoContext* ctx) { return itertools::initialize(ctx); });
+    // itertools has no native module: lib/python3.14/itertools.py.
     registerNativeModule(nativeProviderPtr, "re", [](proto::ProtoContext* ctx) { return re::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "atexit", [](proto::ProtoContext* ctx) { return atexit_module::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "_weakref", [](proto::ProtoContext* ctx) { return weakref::initialize(ctx); });
