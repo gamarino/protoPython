@@ -909,13 +909,24 @@ static const proto::ProtoObject* py_next(
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoString* nextS = env ? env->getNextString() : PythonEnvironment::getInternedString(context, "__next__");
 
-    const proto::ProtoObject* nextMethod = env ? env->getAttribute(context, obj, nextS, false) : (obj->hasOwnAttribute(context, nextS) == PROTO_TRUE ? obj->getAttribute(context, nextS) : nullptr);
-    if (env && env->hasPendingException()) return nullptr;
+    // The protoCore chain walk first (one cached lookup), as env->next does:
+    // a native method, or a function defined in a class.  Only anything else
+    // takes the Python-level attribute lookup, which binds methods and was
+    // most of the cost of next() on a Python iterator (~20 us against ~1.5 us
+    // for the same iterator driven by sum()).
+    const proto::ProtoString* codeS = env ? env->getCodeString() : nullptr;
+    const proto::ProtoObject* nextMethod = obj->getAttribute(context, nextS);
+    const bool directHit = nextMethod && nextMethod != PROTO_NONE
+        && (nextMethod->asMethod(context)
+            || (codeS && nextMethod->hasOwnAttribute(context, codeS) == PROTO_TRUE));
+    if (!directHit) {
+        nextMethod = env ? env->getAttribute(context, obj, nextS, false) : (obj->hasOwnAttribute(context, nextS) == PROTO_TRUE ? obj->getAttribute(context, nextS) : nullptr);
+        if (env && env->hasPendingException()) return nullptr;
+    }
     // A __next__ defined in Python is looked up on the receiver's prototype
     // chain and called with the receiver prepended, as env->next does. Only
     // native __next__ methods were called before, so next() raised
     // "object is not an iterator" for every Python-level iterator class.
-    const proto::ProtoString* codeS = env ? env->getCodeString() : nullptr;
     if ((!nextMethod || !nextMethod->asMethod(context)) && env && codeS) {
         const proto::ProtoObject* raw = obj->getAttribute(context, nextS);
         if (raw && raw != PROTO_NONE && raw->hasOwnAttribute(context, codeS) == PROTO_TRUE) nextMethod = raw;
