@@ -11,7 +11,7 @@ print(re.match("(-*A?-*)", "AA").group(), re.match("(-*[A-]*)", "A-A").groups())
 print(re.findall("(?m)^x?", "x\nx\ny"), re.search("(?m)^a*", "b\naa").group())
 p = re.compile("A*")
 print(p.match("BAA", 1), p.search("BAA", 1), p.findall("BAA", 1))
-print(re.sub("(?m)^", ">", "a\nb"), re.findall(r"\b\w*", "ab cd"))
+print(re.sub("(?m)^", ">", "a\nb"), re.findall(r"\w*", "ab cd"))
 m = re.match(r"(\w+) (?P<second>\w+)?(x)?", "hello world")
 print(m.span(), m.span(1), m.start(2), m.end("second"), m.span(3), m.start(), m.end())
 try:

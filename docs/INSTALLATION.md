@@ -53,8 +53,8 @@ ctest --test-dir build_release --output-on-failure
 ```
 
 On 2026-10-11 this configuration (protoCore 2.14.5 built from `../protoCore`, its
-own suite registered too) has 869 tests; against an installed protoCore,
-protoPython's own suite has 199 on macOS and 192 on Windows (CI run 38154261053).
+own suite registered too) has 879 tests; against an installed protoCore,
+protoPython's own suite runs 215 gating tests on macOS and 206 on Windows (CI run 38189055151).
 
 ### Using an installed protoCore
 

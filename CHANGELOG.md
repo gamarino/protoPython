@@ -88,7 +88,8 @@ binary from before its fix.
 Found and not fixed: `iter(object())` returns a dict key iterator;
 `type(bytearray())` is bytes; `type(len)` has no `__call__`; class reprs omit
 the module (`<class 'HelpFormatter'>`); `bytes.expandtabs` / `rsplit` are
-missing; std::regex has no lookbehind; `_collections_abc.py` cannot replace the
+missing; std::regex has no lookbehind; with libc++ (macOS), `re.findall(r"\b\w*", "ab cd")` misses the
+final empty match; `_collections_abc.py` cannot replace the
 native stand-in yet (`range(1 << 1000)` and class-namespace `get` fail).
 
 ### Changed — closures hold cells, not frames (2026-10-11)
