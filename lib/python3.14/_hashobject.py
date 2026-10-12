@@ -19,7 +19,7 @@ def _as_bytes(data):
         return bytes(data)
     if hasattr(data, "tobytes"):
         return bytes(data.tobytes())
-    raise TypeError(f"object supporting the buffer API required")
+    raise TypeError("object supporting the buffer API required")
 
 
 def _initial(data, string):

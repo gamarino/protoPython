@@ -58,6 +58,8 @@ env:
   # The clock-dependent cases in this combined suite.  protoPython's own:
   #   protopy_dict_key_hash          assert elapsed < 20.0 for 20000 dict inserts
   #                                  (test/regression/dict_key_hash.py:124)
+  #   protopy_generator_resume_cost  generator resume / function call time ratio
+  #                                  < 60 (test/regression/generator_resume_cost.py)
   #   conformance_isolate.*          three cases whose violation is a deadlock or
   #                                  an abort, so the TIMEOUT 300 is the verdict
   #                                  (test/library/CMakeLists.txt:109-114).  Two
@@ -73,7 +75,7 @@ env:
   #   MPSCQueueGC.LargeDrainDoesNotBlock...         a stop-the-world pause time
   #   MPSCQueueConcurrency.EightProducers...        a 15-minute deadline
   #   conformance.isolate.*                         protoCore's own three
-  CLOCK_DEPENDENT_TESTS: '^(protopy_dict_key_hash|conformance_isolate\..*|SwarmTest\.OneMillionConcats|ConcurrentMarkSafety\.ThreadCacheSlotFlipsDuringMark|BulkListBuild\.LargeBuildDoesNotBlockStopTheWorld|MPSCQueueGC\.LargeDrainDoesNotBlockStopTheWorld|MPSCQueueConcurrency\.EightProducersOneConsumerLoseNothingAndDuplicateNothing|conformance\.isolate\..*)$'
+  CLOCK_DEPENDENT_TESTS: '^(protopy_dict_key_hash|protopy_generator_resume_cost|conformance_isolate\..*|SwarmTest\.OneMillionConcats|ConcurrentMarkSafety\.ThreadCacheSlotFlipsDuringMark|BulkListBuild\.LargeBuildDoesNotBlockStopTheWorld|MPSCQueueGC\.LargeDrainDoesNotBlockStopTheWorld|MPSCQueueConcurrency\.EightProducersOneConsumerLoseNothingAndDuplicateNothing|conformance\.isolate\..*)$'
 
 jobs:
   test:

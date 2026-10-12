@@ -17,6 +17,80 @@ onwards. Commit hashes are given for reference.
 > (`9fa74ad1`), after the `v1.0.0` tag, and has no matching tag or CMake
 > version.
 
+### Fixed — standard-library and runtime bugs from the Windows review (2026-10-11)
+
+Each item has a regression test whose expected output is CPython 3.14's
+(`test/regression/<name>.py` and `.expected`, registered through
+`PROTOPY_STDLIB_ORACLE_TESTS` in `CMakeLists.txt`); every test fails on the
+binary from before its fix.
+
+- **`OrderedDict(generator)` and `dict.update(iterator)`** (`991d4d10`).
+  dict.update probed `__keys__` / `__data__` on its argument through the
+  parent chain; every class keeps its namespace there, so a generator, a zip
+  or a `MappingProxyType` copied the attributes of `object`. The store is
+  copied directly only for a dict; `update(None)` / `update(5)` raise
+  TypeError. `dict.fromkeys` returned an immutable object (assignments were
+  lost) and stopped at a `None` key (`38d3d26c`).
+  Test: `protopy_ordered_dict_iterables`.
+- **`collections.Counter` segfault** (`797ccd00`).
+  `_collections._count_elements` was a placeholder bound to no receiver that
+  called `self->newChild()`: `Counter("abc")` dereferenced a null `self`. It is
+  gone (collections uses its Python `_count_elements`); the deque iterators'
+  `__iter__` returns the iterator. Test: `protopy_counter_methods`.
+- **`collections.abc` virtual subclasses** (`0294f7f2`). The native ABCs had a
+  no-op `register()`, so `isinstance({}, Mapping)`, `isinstance([], Sequence)`
+  and `isinstance([], Iterable)` were False and Counter counted the keys of
+  mappings and `**kwargs`. Each ABC now has a registry with CPython's
+  built-in registrations, the ABC hierarchy, and the one-method subclass
+  hooks; issubclass / isinstance consult it after the MRO check fails.
+  Test: `protopy_abc_virtual_subclasses`.
+- **`itertools`** (`dfcf1d16`). The native module skipped generators and
+  Python iterators, stopped chain / islice / cycle at the first `None`, built
+  `chain.from_iterable` eagerly (endless on an infinite input), and returned
+  empty iterators for groupby, permutations, combinations and
+  combinations_with_replacement. `lib/python3.14/itertools.py` replaces it,
+  after CPython's documented equivalents. **Slower** than the old native code
+  where that code was correct (200,000 items: islice(count()) 178 -> 1,645 ms,
+  chain 86 -> 2,183 ms, repeat 79 -> 636 ms); a native accelerator for
+  count / repeat / islice / chain / cycle is the follow-up. `tuple("ab")` held
+  raw code-point cells instead of str. Test: `protopy_itertools_functions`.
+- **Recursive `yield from` cost** (`1a4c454b`). A generator resume rebuilt a
+  local-names list and copied every slot of its context (operand-stack area
+  included, ~135 slots for a small function) into a new list: ~70 us per
+  resume, of which ~3 us ran bytecode. It now sizes the context like a call
+  and saves only the variable slots. `for x in gen(4000)`: 69 -> 2.65 us per
+  item; `sum(walk(200))` with recursive `yield from`: 2,947 -> 104 ms (CPython
+  0.37 ms). `next()` finds `__next__` with the cached protoCore lookup first:
+  4.19 s -> 1.43 s for 200,000 calls (`e8545204`).
+  Test: `protopy_generator_resume_cost` (clock-dependent, informational in CI).
+- **argparse `nargs="*"` / `"?"`** (`94c9ca06`). A regex search starts before
+  the start-of-subject marker so `^` can take it; a pattern that can match
+  empty (`(-*[A-]*)`, `(-*A?-*)`, which argparse builds) matched `''` on the
+  marker and never saw the arguments. Also in `re`: `start` / `end` / `span`
+  take a group, named groups work for `re.match(p, s)`, and `re.Match` /
+  `re.Pattern` are classes with CPython's reprs. `lib/python3.14/argparse.py`
+  is CPython's again (a local edit broke `prefix_chars` with several
+  characters); `textwrap` falls back to whitespace splitting where `std::regex`
+  lacks lookbehind, so `print_help()` no longer raises (`def587d0`).
+  Tests: `protopy_regex_empty_matches`, `protopy_argparse_nargs`,
+  `protopy_argparse_help`.
+- **`hashlib`** (`4c0cef92`). There were no `_md5` / `_sha1` / `_sha2` /
+  `_sha3` / `_blake2` modules: `import hashlib` raised. A native core
+  (`_hashcore`) implements MD5, SHA-1, SHA-2, SHA-3, SHAKE and BLAKE2 (with its
+  full parameter block), keeping a digest's state as an immutable bytes value;
+  the hash objects are Python (`_hashobject.py`). `_operator._compare_digest`
+  added for hmac. Bytes fixes it needed (`c475122a`): `bytes(generator)`
+  raised StopIteration, `bytearray(iterable)` was empty, `bytes.translate`
+  ignored a bytes table, and `ljust` / `rjust` / `center` / `isalnum` /
+  `isspace` / `islower` / `isupper` / `istitle` / `capitalize` were missing.
+  Tests: `protopy_hashlib_digests`, `protopy_bytes_construct_methods`.
+
+Found and not fixed: `iter(object())` returns a dict key iterator;
+`type(bytearray())` is bytes; `type(len)` has no `__call__`; class reprs omit
+the module (`<class 'HelpFormatter'>`); `bytes.expandtabs` / `rsplit` are
+missing; std::regex has no lookbehind; `_collections_abc.py` cannot replace the
+native stand-in yet (`range(1 << 1000)` and class-namespace `get` fail).
+
 ### Changed — closures hold cells, not frames (2026-10-11)
 
 - **A nested function closes over cells, never over the frame that defined it,
