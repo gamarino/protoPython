@@ -1354,8 +1354,8 @@ bool CppGenerator::generateCall(CallNode* n) {
             }
         }
         if (nMaps > 1) *out_ << "        __kwmap = __slot[" << mapSlot << "];\n";
-        *out_ << "        return env->callObjectEx(__f, {}, __kws, ctx->newTupleFromList(__slot["
-              << listSlot << "]->asList(ctx))->asObject(ctx), __kwmap);\n";
+        *out_ << "        return env->callObjectEx(__f, {}, __kws, env->makeTuple(ctx, __slot["
+              << listSlot << "]->asList(ctx)), __kwmap);\n";
         *out_ << "    })()";
     }
     return true;
@@ -2315,8 +2315,8 @@ bool CppGenerator::generateClassDef(ClassDefNode* n) {
         }
         beginStatement();
     }
-    *out_ << "    __slot[" << basesSlot << "] = ctx->newTupleFromList(__slot[" << basesSlot
-          << "]->asList(ctx))->asObject(ctx);\n";
+    *out_ << "    __slot[" << basesSlot << "] = env->makeTuple(ctx, __slot[" << basesSlot
+          << "]->asList(ctx));\n";
     int kwdsSlot = -1;
     if (!n->keywords.empty()) {
         // class C(metaclass=M, **kw): a dict of the keywords.
@@ -2677,7 +2677,6 @@ bool CppGenerator::generateDictLiteral(DictLiteralNode* n) {
 
 bool CppGenerator::generateTupleLiteral(TupleLiteralNode* n) {
     *out_ << "([&]() {\n";
-    *out_ << "        auto* tupObj = static_cast<const proto::ProtoObject*>(ctx->newObject(true));\n";
     *out_ << "        auto* lst = ctx->newList();\n";
     for (auto& elt : n->elements) {
         if (auto* s = dynamic_cast<StarredNode*>(elt.get())) {
@@ -2696,10 +2695,9 @@ bool CppGenerator::generateTupleLiteral(TupleLiteralNode* n) {
             *out_ << ");\n";
         }
     }
-    *out_ << "        auto* tup = ctx->newTupleFromList(lst);\n";
-    *out_ << "        tupObj->setAttribute(ctx, env->getDataString(), (const proto::ProtoObject*)tup);\n";
-    *out_ << "        if (env->getTuplePrototype()) tupObj->addParent(ctx, env->getTuplePrototype());\n";
-    *out_ << "        return (const proto::ProtoObject*)tupObj;\n";
+    // A ProtoList-backed tuple (PythonEnvironment::makeTuple): a ProtoTuple
+    // is interned and never collected.
+    *out_ << "        return env->makeTuple(ctx, lst);\n";
     *out_ << "    })()";
     return true;
 }

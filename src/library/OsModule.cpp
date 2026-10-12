@@ -356,7 +356,7 @@ static const proto::ProtoObject* py_os_fspath(
         if (obj->isInteger(ctx) || obj->isFloat(ctx) || obj->isBoolean(ctx) || obj == PROTO_NONE) return false;
         const proto::ProtoObject* type = env->getType(ctx, obj);
         const proto::ProtoObject* mro = type ? type->getAttribute(ctx, env->getMroString()) : nullptr;
-        const proto::ProtoTuple* mroT = (mro && mro != PROTO_NONE) ? mro->asTuple(ctx) : nullptr;
+        ::protoPython::TupleView mroT = (mro && mro != PROTO_NONE) ? ::protoPython::PythonEnvironment::tupleView(ctx, mro) : nullptr;
         for (proto::proto_ulong i = 0; mroT && i < mroT->getSize(ctx); ++i) {
             const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(i));
             if (base == env->getStrPrototype() || base == env->getBytesPrototype()) return true;
@@ -426,7 +426,7 @@ static const proto::ProtoObject* py_os_fspath(
     const proto::ProtoList* pair = ctx->newList()
         ->appendLast(ctx, proto::ProtoString::fromUTF8String(ctx, p.substr(0, split).c_str())->asObject(ctx))
         ->appendLast(ctx, proto::ProtoString::fromUTF8String(ctx, p.substr(split).c_str())->asObject(ctx));
-    return ctx->newTupleFromList(pair)->asObject(ctx);
+    return ::protoPython::PythonEnvironment::tupleFromList(ctx, pair);
 }
 
 static const proto::ProtoObject* py_getcwd(
@@ -815,7 +815,7 @@ static const proto::ProtoObject* py_waitpid(
     const proto::ProtoList* tuple = ctx->newList();
     tuple = tuple->appendLast(ctx, ctx->fromInteger(res));
     tuple = tuple->appendLast(ctx, ctx->fromInteger(status));
-    return ctx->newTupleFromList(tuple)->asObject(ctx);
+    return ::protoPython::PythonEnvironment::tupleFromList(ctx, tuple);
 #else
     return PROTO_NONE;
 #endif
@@ -925,7 +925,7 @@ static const proto::ProtoObject* py_pipe(
         const proto::ProtoList* tuple = ctx->newList();
         tuple = tuple->appendLast(ctx, ctx->fromInteger(pipefds[0]));
         tuple = tuple->appendLast(ctx, ctx->fromInteger(pipefds[1]));
-        return ctx->newTupleFromList(tuple)->asObject(ctx);
+        return ::protoPython::PythonEnvironment::tupleFromList(ctx, tuple);
     }
 #endif
     return PROTO_NONE;
@@ -992,7 +992,7 @@ static const proto::ProtoObject* py_environ_items(
             const proto::ProtoList* pair = ctx->newList();
             pair = pair->appendLast(ctx, PythonEnvironment::getInternedString(ctx, key.c_str())->asObject(ctx));
             pair = pair->appendLast(ctx, PythonEnvironment::getInternedString(ctx, value.c_str())->asObject(ctx));
-            result = result->appendLast(ctx, ctx->newTupleFromList(pair)->asObject(ctx));
+            result = result->appendLast(ctx, ::protoPython::PythonEnvironment::tupleFromList(ctx, pair));
         }
     }
     return PythonEnvironment::wrapList(ctx, result);
@@ -1163,7 +1163,7 @@ static const proto::ProtoObject* py_utime(
                            const proto::ProtoObject** outA,
                            const proto::ProtoObject** outB) -> bool {
         if (!obj) return false;
-        const proto::ProtoTuple* tup = obj->asTuple(ctx);
+        ::protoPython::TupleView tup = ::protoPython::PythonEnvironment::tupleView(ctx, obj);
         if (tup && tup->getSize(ctx) >= 2) {
             *outA = tup->getAt(ctx, 0);
             *outB = tup->getAt(ctx, 1);
@@ -1179,7 +1179,7 @@ static const proto::ProtoObject* py_utime(
         // ProtoList in __data__.
         const proto::ProtoObject* data = obj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__data__"));
         if (data) {
-            const proto::ProtoTuple* dtup = data->asTuple(ctx);
+            ::protoPython::TupleView dtup = ::protoPython::PythonEnvironment::tupleView(ctx, data);
             if (dtup && dtup->getSize(ctx) >= 2) {
                 *outA = dtup->getAt(ctx, 0);
                 *outB = dtup->getAt(ctx, 1);
@@ -1511,7 +1511,7 @@ static const proto::ProtoObject* py_path_splitroot_ex(
     result = result->appendLast(ctx, PythonEnvironment::getInternedString(ctx, drive.c_str())->asObject(ctx));
     result = result->appendLast(ctx, PythonEnvironment::getInternedString(ctx, root.c_str())->asObject(ctx));
     result = result->appendLast(ctx, PythonEnvironment::getInternedString(ctx, tail.c_str())->asObject(ctx));
-    return ctx->newTupleFromList(result)->asObject(ctx);
+    return ::protoPython::PythonEnvironment::tupleFromList(ctx, result);
 }
 
 static const proto::ProtoObject* py_path_normpath(
@@ -1913,8 +1913,8 @@ static char** buildArgv(proto::ProtoContext* ctx, const proto::ProtoObject* seq,
     // non-lists.  Tuples go through asTuple()->asList(); lists go
     // through obj->asList() directly.
     const proto::ProtoList* lst = nullptr;
-    if (seq->isTuple(ctx)) {
-        const proto::ProtoTuple* tup = seq->asTuple(ctx);
+    if (::protoPython::PythonEnvironment::isTupleValue(ctx, seq)) {
+        ::protoPython::TupleView tup = ::protoPython::PythonEnvironment::tupleView(ctx, seq);
         if (tup) lst = tup->asList(ctx);
     } else {
         lst = seq->asList(ctx);
@@ -1975,8 +1975,8 @@ static char** buildEnvp(proto::ProtoContext* ctx, const proto::ProtoObject* envO
         const proto::ProtoObject* item = env->next(iter);
         if (!item) break;
         std::string k, v;
-        if (item->isTuple(ctx)) {
-            const proto::ProtoList* tup = item->asTuple(ctx)->asList(ctx);
+        if (::protoPython::PythonEnvironment::isTupleValue(ctx, item)) {
+            const proto::ProtoList* tup = ::protoPython::PythonEnvironment::tupleView(ctx, item)->asList(ctx);
             if (tup && tup->getSize(ctx) >= 2) {
                 const proto::ProtoObject* kObj = tup->getAt(ctx, 0);
                 const proto::ProtoObject* vObj = tup->getAt(ctx, 1);
@@ -2366,7 +2366,7 @@ static const proto::ProtoObject* py_os_getloadavg(
         fields = fields->appendLast(ctx, ctx->fromDouble(a[0]));
         fields = fields->appendLast(ctx, ctx->fromDouble(a[1]));
         fields = fields->appendLast(ctx, ctx->fromDouble(a[2]));
-        return ctx->newTupleFromList(fields)->asObject(ctx);
+        return ::protoPython::PythonEnvironment::tupleFromList(ctx, fields);
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (env) env->raiseOSError(ctx, errno ? errno : 1, "getloadavg failed", "");
@@ -2447,7 +2447,7 @@ static const proto::ProtoObject* py_os_times(
     fields = fields->appendLast(ctx, ctx->fromDouble(t.tms_cutime / ticks));
     fields = fields->appendLast(ctx, ctx->fromDouble(t.tms_cstime / ticks));
     fields = fields->appendLast(ctx, ctx->fromDouble(real / ticks));
-    return ctx->newTupleFromList(fields)->asObject(ctx);
+    return ::protoPython::PythonEnvironment::tupleFromList(ctx, fields);
 #elif defined(_WIN32)
     // Process user and kernel time; children and elapsed are 0, as CPython.
     FILETIME created, exited, kernel, user;
@@ -2464,7 +2464,7 @@ static const proto::ProtoObject* py_os_times(
     fields = fields->appendLast(ctx, ctx->fromDouble(0.0));
     fields = fields->appendLast(ctx, ctx->fromDouble(0.0));
     fields = fields->appendLast(ctx, ctx->fromDouble(0.0));
-    return ctx->newTupleFromList(fields)->asObject(ctx);
+    return ::protoPython::PythonEnvironment::tupleFromList(ctx, fields);
 #else
     return PROTO_NONE;
 #endif

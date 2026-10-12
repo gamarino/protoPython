@@ -17,6 +17,47 @@ onwards. Commit hashes are given for reference.
 > (`9fa74ad1`), after the `v1.0.0` tag, and has no matching tag or CMake
 > version.
 
+### Changed — tuples are collectable (2026-10-12)
+
+- **A Python tuple is an immutable object over a `ProtoList`, not a protoCore
+  `ProtoTuple`** (maintainer decision: "a collectable tuple is a ProtoList").
+  Every `ProtoTuple` goes through protoCore's tuple interner, whose table is
+  keyed by the element pointers, is a GC root and never drops an entry, so a
+  tuple of new objects (`*args`, a display `(a, b)`, `dict.items()` pairs,
+  `zip`, `enumerate`, `divmod`, `str.partition`, slicing, `+`, `*`) kept them
+  for the life of the process: about 10 cells per call. A loop of such
+  operations now runs in a fixed 1 M-cell heap (100,000 iterations; 30,000 ran
+  out of memory before).
+  - `PythonEnvironment::makeTuple` builds every tuple (an immutable child of
+    `tuple`, or a mutable instance of a tuple subclass, with the items in
+    `__data__`); the empty tuple is one perennial object (`() is ()`, which was
+    False). `tuple(t)` returns `t`; `tuple(some_list)` shares the list's
+    `ProtoList` (immutable) instead of copying it.
+  - `PythonEnvironment::tupleView` reads the items of a tuple in either form; the
+    readers of the interpreter, the built-ins and the native modules use it
+    (they called `asTuple()`, which a `ProtoList`-backed tuple does not answer).
+    `getType`, `isinstance`, `==`, ordering and `+` tell a tuple from a list,
+    whose storage now has the same shape: `[1, 2] + (3,)` and `(1,) < [1]`
+    raise TypeError as in CPython (`list + tuple` concatenated before).
+  - Unchanged: tuple hashes (`tuple_hash_values.py` checks the values of the
+    `ProtoTuple`-based runtime), equality, ordering and repr. Tuples built once
+    by the compiler or at start-up (code-object constants, `__mro__`,
+    `__bases__`, keyword-name tuples of interned strings) remain `ProtoTuple`s.
+  - protopyc emits `makeTuple` for tuple displays, star-call arguments and class
+    bases.
+  - *Measured* (Release, interleaved, median of 5-7 process runs, wall-clock;
+    hardware counters are blocked on this machine): a tuple-heavy loop (star
+    calls, displays, unpacking, `dict.items()`, tuple keys) 17.9 s -> 15.9 s
+    (-11 %); binary_trees -9 %; nqueens -6 %; call_recursion -3 %; fib +1 %;
+    attr_lookup +1.9 % and richards_lite +1.9 % (a first version was +6 %;
+    `tupleView` now costs one call for a `ProtoTuple` and one own-attribute probe
+    for a non-tuple). Rule 5 (`gc.transient_reclaimed`): the tuple workload grows
+    the heap by 652,821 cells instead of 1,709,634.
+  - *Tests*: `protopy_tuple_semantics` (CPython's output: construction, `() is
+    ()`, hashing, equality, ordering, dict keys, sets, slicing, unpacking,
+    `*args`, namedtuple, pickle, subclasses), `protopy_tuple_bounded_memory`,
+    `protopy_tuple_hash_values`.
+
 ### Fixed — standard-library and runtime bugs from the Windows review (2026-10-11)
 
 Each item has a regression test whose expected output is CPython 3.14's

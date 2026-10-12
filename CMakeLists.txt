@@ -1431,7 +1431,11 @@ set_tests_properties(protopy_closure_semantics protopy_closure_semantics_gc PROP
 #   hashlib_digests: every guaranteed digest, BLAKE2 parameters, SHAKE, hmac.
 #   itertools_functions: every itertools function, None values, generator
 #     inputs, laziness on infinite inputs, the combinatorics.
+#   tuple_semantics: tuples (ProtoList-backed) against CPython: construction,
+#     identity of (), hashing, equality, ordering, dict keys, sets, slicing,
+#     unpacking, *args, namedtuple, pickle, subclasses.
 set(PROTOPY_STDLIB_ORACLE_TESTS
+    tuple_semantics
     ordered_dict_iterables
     abc_virtual_subclasses
     counter_methods
@@ -1461,6 +1465,23 @@ add_test(NAME protopy_generator_resume_cost
 set_tests_properties(protopy_generator_resume_cost PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 300
+    LABELS "regression_gate")
+# Tuples of fresh objects (*args, displays, dict.items(), zip, enumerate,
+# divmod, tuple()) are collected: a loop of them runs in a fixed 1 M-cell heap.
+# Tuples were interned protoCore ProtoTuples, never collected; this ran out of
+# memory.  Tuple hashes keep the values they had.
+add_test(NAME protopy_tuple_bounded_memory
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/tuple_bounded_memory.py 30000)
+set_tests_properties(protopy_tuple_bounded_memory PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    ENVIRONMENT "PROTOCORE_HEAP_LIMIT_CELLS=1000000;PROTOCORE_ADAPTIVE_HEAP=0"
+    TIMEOUT 600
+    LABELS "regression_gate")
+add_test(NAME protopy_tuple_hash_values
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/tuple_hash_values.py)
+set_tests_properties(protopy_tuple_hash_values PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
     LABELS "regression_gate")
 # Defining a named nested function (plain, recursive, nonlocal, capturing in a
 # comprehension, returned) leaves nothing once the call returns: a loop of

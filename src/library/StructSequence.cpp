@@ -15,7 +15,8 @@ const proto::ProtoObject* newStructSequence(
     for (size_t i = 0; i < nVisible; ++i) {
         visible = visible->appendLast(ctx, fields[i].value ? fields[i].value : PROTO_NONE);
     }
-    const proto::ProtoTuple* data = ctx->newTupleFromList(visible);
+    // The items as a ProtoList, like any tuple (PythonEnvironment::makeTuple):
+    // a ProtoTuple would be interned and never collected.
 
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoObject* obj = ctx->newObject(true);
@@ -25,7 +26,7 @@ const proto::ProtoObject* newStructSequence(
     }
     obj = obj->setAttribute(ctx,
         env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "__data__"),
-        data ? data->asObject(ctx) : visible->asObject(ctx));
+        visible->asObject(ctx));
     for (const StructSequenceField& field : fields) {
         if (!field.name) continue;
         obj = obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, field.name),

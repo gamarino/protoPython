@@ -548,7 +548,7 @@ static const proto::ProtoObject* py_date_isocalendar(
     tup = tup->appendLast(ctx, ctx->fromInteger(isoYear));
     tup = tup->appendLast(ctx, ctx->fromInteger(isoWeek));
     tup = tup->appendLast(ctx, ctx->fromInteger(isoDay));
-    return ctx->newTupleFromList(tup)->asObject(ctx);
+    return ::protoPython::PythonEnvironment::tupleFromList(ctx, tup);
 }
 
 static long long date_to_ordinal(int y, int m, int d) {
@@ -1278,7 +1278,7 @@ static const proto::ProtoObject* py_date_timetuple(
     tup = tup->appendLast(ctx, ctx->fromInteger(t.tm_yday + 1));
     tup = tup->appendLast(ctx, ctx->fromInteger(t.tm_isdst));
     
-    return env->callObject(struct_time, {ctx->newTupleFromList(tup)->asObject(ctx)});
+    return env->callObject(struct_time, {::protoPython::PythonEnvironment::tupleFromList(ctx, tup)});
 }
 
 static const proto::ProtoObject* py_datetime_timetuple(
@@ -1312,7 +1312,7 @@ static const proto::ProtoObject* py_datetime_timetuple(
     tup = tup->appendLast(ctx, ctx->fromInteger(t.tm_isdst));
     
     if (!struct_time || struct_time == PROTO_NONE) return PROTO_NONE;
-    return env->callObject(struct_time, {ctx->newTupleFromList(tup)->asObject(ctx)});
+    return env->callObject(struct_time, {::protoPython::PythonEnvironment::tupleFromList(ctx, tup)});
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {

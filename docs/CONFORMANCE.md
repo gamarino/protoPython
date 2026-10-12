@@ -67,6 +67,16 @@ perennial. So: **rule 5 passes, and the 10% figure is an informational finding
 for P5**, not a rule failure. Reporting it as a failure would have been the
 overclaim; reporting only "PASS" would have thrown away the number.
 
+**Update 2026-10-12 — tuples are no longer perennial.** A Python tuple is now an
+immutable object over a `ProtoList` (`PythonEnvironment::makeTuple`), not a
+`ProtoTuple`. The same rule-5 workload grows the heap by 652,821 cells instead
+of 1,709,634 (a tuple costs fewer cells) and leaves 132,188 instead of 179,957
+after collection. The remainder is a fixed start-up residue, not growth: a loop
+of 100,000 iterations of tuples of fresh objects runs in a fixed 1 M-cell heap
+(`protopy_tuple_bounded_memory`, 30,000 in CTest), where 30,000 ran out of
+memory before. Compile-time and start-up tuples (code-object constants,
+`__mro__`, `__bases__`) remain `ProtoTuple`s.
+
 ## Rule 8: red to green, and a correction to what this file used to claim
 
 ### What this file said, and why it was wrong

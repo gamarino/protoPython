@@ -58,7 +58,7 @@ static const proto::ProtoObject* imp_is_builtin(
     const proto::ProtoObject* sysMods = env->resolve("sys", ctx);
     if (sysMods && sysMods != PROTO_NONE) {
          const proto::ProtoObject* builtinsDef = sysMods->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "builtin_module_names"));
-         if (builtinsDef && builtinsDef->isTuple(ctx)) {
+         if (builtinsDef && ::protoPython::PythonEnvironment::isTupleValue(ctx, builtinsDef)) {
              // Logic to check tuple
          }
     }

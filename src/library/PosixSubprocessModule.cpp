@@ -72,11 +72,11 @@ static const proto::ProtoObject* py_fork_exec(
     int errpipe_write = posArgs->getAt(ctx, 13) ? posArgs->getAt(ctx, 13)->asLong(ctx) : -1;
 
     size_t argsCount = 0;
-    if (argsObj && argsObj->isTuple(ctx)) argsCount = argsObj->asTuple(ctx)->getSize(ctx);
+    if (argsObj && ::protoPython::PythonEnvironment::isTupleValue(ctx, argsObj)) argsCount = ::protoPython::PythonEnvironment::tupleView(ctx, argsObj)->getSize(ctx);
     else if (argsObj && argsObj->asList(ctx)) argsCount = argsObj->asList(ctx)->getSize(ctx);
 
     size_t execCount = 0;
-    if (execListObj && execListObj->isTuple(ctx)) execCount = execListObj->asTuple(ctx)->getSize(ctx);
+    if (execListObj && ::protoPython::PythonEnvironment::isTupleValue(ctx, execListObj)) execCount = ::protoPython::PythonEnvironment::tupleView(ctx, execListObj)->getSize(ctx);
 
     size_t envCount = 0;
     bool hasEnv = false;
@@ -116,8 +116,8 @@ static const proto::ProtoObject* py_fork_exec(
         // accept both str and bytes via extractStringOrBytes.
         char** c_args = new char*[argsCount + 1];
         for (size_t i = 0; i < argsCount; ++i) {
-            const proto::ProtoObject* elem = argsObj->isTuple(ctx)
-                ? argsObj->asTuple(ctx)->getAt(ctx, i)
+            const proto::ProtoObject* elem = ::protoPython::PythonEnvironment::isTupleValue(ctx, argsObj)
+                ? ::protoPython::PythonEnvironment::tupleView(ctx, argsObj)->getAt(ctx, i)
                 : argsObj->asList(ctx)->getAt(ctx, i);
             std::string s;
             extractStringOrBytes(ctx, elem, s);
@@ -143,7 +143,7 @@ static const proto::ProtoObject* py_fork_exec(
         // Walk executable_list (tuple of bytes paths produced by
         // os.fsencode + os.path.join) and try each one.
         for (size_t i = 0; i < execCount; ++i) {
-            const proto::ProtoObject* execPathObj = execListObj->asTuple(ctx)->getAt(ctx, i);
+            const proto::ProtoObject* execPathObj = ::protoPython::PythonEnvironment::tupleView(ctx, execListObj)->getAt(ctx, i);
             std::string exec_path;
             extractStringOrBytes(ctx, execPathObj, exec_path);
             if (exec_path.empty()) continue;

@@ -285,7 +285,7 @@ static const proto::ProtoObject* py_hexlify(
             const proto::ProtoObject* intP = envHex->getIntPrototype();
             const proto::ProtoObject* mAttr = envHex->getAttribute(ctx, aT,
                 envHex->getMroString(), false);
-            const proto::ProtoTuple* mT = mAttr ? mAttr->asTuple(ctx) : nullptr;
+            ::protoPython::TupleView mT = mAttr ? ::protoPython::PythonEnvironment::tupleView(ctx, mAttr) : nullptr;
             bool hasInt = false;
             if (mT && intP) {
                 for (proto::proto_ulong i = 0; i < mT->getSize(ctx); ++i) {

@@ -675,8 +675,7 @@ static const proto::ProtoObject* py_frexp(
     const proto::ProtoList* lst = ctx->newList()
         ->appendLast(ctx, ctx->fromDouble(mantissa))
         ->appendLast(ctx, ctx->fromInteger(exp));
-    const proto::ProtoTuple* tup = ctx->newTupleFromList(lst);
-    return tup ? tup->asObject(ctx) : PROTO_NONE;
+    return ::protoPython::PythonEnvironment::tupleFromList(ctx, lst);
 }
 
 static const proto::ProtoObject* py_modf(
@@ -689,8 +688,7 @@ static const proto::ProtoObject* py_modf(
     const proto::ProtoList* lst = ctx->newList()
         ->appendLast(ctx, ctx->fromDouble(frac))
         ->appendLast(ctx, ctx->fromDouble(intpart));
-    const proto::ProtoTuple* tup = ctx->newTupleFromList(lst);
-    return tup ? tup->asObject(ctx) : PROTO_NONE;
+    return ::protoPython::PythonEnvironment::tupleFromList(ctx, lst);
 }
 
 static const proto::ProtoObject* py_cbrt(

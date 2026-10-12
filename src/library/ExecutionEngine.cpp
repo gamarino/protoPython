@@ -105,10 +105,10 @@ struct ClosureLayout {
         ClosureLayout l;
         if (!codeObj || codeObj == PROTO_NONE) return l;
         const proto::ProtoObject* vn = codeObj->getAttribute(ctx, env->getCoVarnamesString());
-        l.nVarnames = (vn && vn->asTuple(ctx)) ? static_cast<uint32_t>(vn->asTuple(ctx)->getSize(ctx)) : 0;
+        l.nVarnames = (vn && ::protoPython::PythonEnvironment::tupleView(ctx, vn)) ? static_cast<uint32_t>(::protoPython::PythonEnvironment::tupleView(ctx, vn)->getSize(ctx)) : 0;
         const proto::ProtoObject* fv = codeObj->getAttribute(ctx,
             PythonEnvironment::getInternedString(ctx, "co_freevars"));
-        l.nFree = (fv && fv != PROTO_NONE && fv->asTuple(ctx)) ? static_cast<uint32_t>(fv->asTuple(ctx)->getSize(ctx)) : 0;
+        l.nFree = (fv && fv != PROTO_NONE && ::protoPython::PythonEnvironment::tupleView(ctx, fv)) ? static_cast<uint32_t>(::protoPython::PythonEnvironment::tupleView(ctx, fv)->getSize(ctx)) : 0;
         const proto::ProtoObject* sr = codeObj->getAttribute(ctx,
             PythonEnvironment::getInternedString(ctx, "co_selfref"));
         if (sr && sr->isInteger(ctx)) l.selfRef = static_cast<int32_t>(sr->asLong(ctx));
@@ -116,8 +116,8 @@ struct ClosureLayout {
             PythonEnvironment::getInternedString(ctx, "co_selfref_cell")) == PROTO_TRUE;
         const proto::ProtoObject* cs = codeObj->getAttribute(ctx,
             PythonEnvironment::getInternedString(ctx, "co_cellslots"));
-        if (cs && cs != PROTO_NONE && cs->asTuple(ctx)) {
-            const proto::ProtoTuple* t = cs->asTuple(ctx);
+        if (cs && cs != PROTO_NONE && ::protoPython::PythonEnvironment::tupleView(ctx, cs)) {
+            ::protoPython::TupleView t = ::protoPython::PythonEnvironment::tupleView(ctx, cs);
             for (proto::proto_ulong i = 0; i < t->getSize(ctx); ++i) {
                 const proto::ProtoObject* v = t->getAt(ctx, static_cast<int>(i));
                 if (v && v->isInteger(ctx)) l.ownedCellSlots.push_back(static_cast<int32_t>(v->asLong(ctx)));
@@ -587,7 +587,7 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     const proto::ProtoObject* globalsObj = nullptr;
     int co_flags = 0, nparams_count = 0, kwonly_count = 0, automatic_count = 0;
     bool isGenerator = false;
-    const proto::ProtoTuple* co_varnames = nullptr;
+    ::protoPython::TupleView co_varnames = nullptr;
 
     bool cacheHit = false;
     bool cacheNoInnerFunctions = false;
@@ -638,7 +638,7 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         automatic_count= getInt(env ? env->getCoAutomaticCountString() : nullptr);
         const proto::ProtoObject* cvObj = (env && env->getCoVarnamesString())
             ? codeObj->getAttribute(ctx, env->getCoVarnamesString()) : nullptr;
-        co_varnames = (cvObj && cvObj->asTuple(ctx)) ? cvObj->asTuple(ctx) : nullptr;
+        co_varnames = (cvObj && ::protoPython::PythonEnvironment::tupleView(ctx, cvObj)) ? ::protoPython::PythonEnvironment::tupleView(ctx, cvObj) : nullptr;
         nVarnames = co_varnames ? co_varnames->getSize(ctx) : 0;
         const proto::ProtoObject* isGenObj = (env && env->getCoIsGeneratorString())
             ? codeObj->getAttribute(ctx, env->getCoIsGeneratorString()) : nullptr;
@@ -822,8 +822,8 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         // or overflow them: the message names how many have defaults.)
         const proto::ProtoObject* defaultsObj = (argCount != static_cast<proto::proto_ulong>(nparams_count))
             ? codeOwner->getAttribute(calleeCtx, env->getDefaultsString()) : nullptr;
-        const proto::ProtoTuple* defaults = (defaultsObj && defaultsObj != PROTO_NONE && defaultsObj->isTuple(calleeCtx))
-            ? defaultsObj->asTuple(calleeCtx) : nullptr;
+        ::protoPython::TupleView defaults = (defaultsObj && defaultsObj != PROTO_NONE && ::protoPython::PythonEnvironment::isTupleValue(calleeCtx, defaultsObj))
+            ? ::protoPython::PythonEnvironment::tupleView(calleeCtx, defaultsObj) : nullptr;
         const proto::ProtoObject* defaultsBuf[16];
         std::vector<const proto::ProtoObject*> defaultsHeap;
         const proto::ProtoObject** defaultValues = defaultsBuf;
@@ -978,9 +978,9 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         const proto::ProtoObject* constsObj = codeObj->getAttribute(calleeCtx, env->getCoConstsString());
         const proto::ProtoObject* namesObj = codeObj->getAttribute(calleeCtx, env->getCoNamesString());
 
-        const proto::ProtoTuple* bytecode = bytecodeObj ? bytecodeObj->asTuple(calleeCtx) : nullptr;
-        const proto::ProtoTuple* consts = constsObj ? constsObj->asTuple(calleeCtx) : nullptr;
-        const proto::ProtoTuple* names = namesObj ? namesObj->asTuple(calleeCtx) : nullptr;
+        ::protoPython::TupleView bytecode = bytecodeObj ? ::protoPython::PythonEnvironment::tupleView(calleeCtx, bytecodeObj) : nullptr;
+        ::protoPython::TupleView consts = constsObj ? ::protoPython::PythonEnvironment::tupleView(calleeCtx, constsObj) : nullptr;
+        ::protoPython::TupleView names = namesObj ? ::protoPython::PythonEnvironment::tupleView(calleeCtx, namesObj) : nullptr;
 
         // Extract pre-computed native bytecode int[] from co_bytecode_native (allocated once at
         // compile time by makeCodeObject). Passing int* to executeBytecodeRange avoids the per-call
@@ -999,7 +999,7 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         if (bytecode && consts) {
             // The operand stack starts after the locals and free variables.
             proto::proto_ulong stackOffset = nLocalsPlus;
-            result = executeBytecodeRange(calleeCtx, consts, bytecode, names, frame, 0, bytecode->getSize(calleeCtx), stackOffset,
+            result = executeBytecodeRange(calleeCtx, consts.tuple, bytecode.tuple, names.tuple, frame, 0, bytecode->getSize(calleeCtx), stackOffset,
                 nullptr, nullptr, nullptr, 0, nullptr, nativeBc);
         } else {
             result = PROTO_NONE;
@@ -1556,20 +1556,20 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
 
         const proto::ProtoObject* cvObj = env->getCoVarnamesString()
             ? codeObj->getAttribute(ctx, env->getCoVarnamesString()) : nullptr;
-        const proto::ProtoTuple* co_varnames_val = (cvObj && cvObj->asTuple(ctx)) ? cvObj->asTuple(ctx) : nullptr;
+        ::protoPython::TupleView co_varnames_val = (cvObj && ::protoPython::PythonEnvironment::tupleView(ctx, cvObj)) ? ::protoPython::PythonEnvironment::tupleView(ctx, cvObj) : nullptr;
 
         // Resolve the co_consts, co_names, and co_bytecode tuples.
         const proto::ProtoObject* constsObj = env->getCoConstsString()
             ? codeObj->getAttribute(ctx, env->getCoConstsString()) : nullptr;
-        const proto::ProtoTuple* co_consts_val = constsObj ? constsObj->asTuple(ctx) : nullptr;
+        ::protoPython::TupleView co_consts_val = constsObj ? ::protoPython::PythonEnvironment::tupleView(ctx, constsObj) : nullptr;
 
         const proto::ProtoObject* namesObj = env->getCoNamesString()
             ? codeObj->getAttribute(ctx, env->getCoNamesString()) : nullptr;
-        const proto::ProtoTuple* co_names_val = namesObj ? namesObj->asTuple(ctx) : nullptr;
+        ::protoPython::TupleView co_names_val = namesObj ? ::protoPython::PythonEnvironment::tupleView(ctx, namesObj) : nullptr;
 
         const proto::ProtoObject* codeObjTupleObj = env->getCoCodeString()
             ? codeObj->getAttribute(ctx, env->getCoCodeString()) : nullptr;
-        const proto::ProtoTuple* co_bytecode_val = codeObjTupleObj ? codeObjTupleObj->asTuple(ctx) : nullptr;
+        ::protoPython::TupleView co_bytecode_val = codeObjTupleObj ? ::protoPython::PythonEnvironment::tupleView(ctx, codeObjTupleObj) : nullptr;
 
         // Native bytecode and its opcode census were resolved once above.
         // Reusing them saves a second scan of the whole bytecode.
@@ -1629,10 +1629,10 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
         }
         cache->codeObj            = codeObj;
         cache->globalsObj         = globalsObj;
-        cache->co_varnames        = co_varnames_val;
-        cache->co_bytecode        = co_bytecode_val;
-        cache->co_consts_tuple    = co_consts_val;
-        cache->co_names_tuple     = co_names_val;
+        cache->co_varnames        = co_varnames_val.tuple;
+        cache->co_bytecode        = co_bytecode_val.tuple;
+        cache->co_consts_tuple    = co_consts_val.tuple;
+        cache->co_names_tuple     = co_names_val.tuple;
         cache->nativeBc           = nativeBc_val;
         cache->nConsts            = nConsts_val;
         cache->nNames             = nNames_val;
@@ -1679,7 +1679,7 @@ static bool isStrictSubclassOf(proto::ProtoContext* ctx,
     const proto::ProtoString* mroS = env->getMroString();
     if (!mroS) return false;
     const proto::ProtoObject* mroObj = env->getAttribute(ctx, bCls, mroS, false);
-    const proto::ProtoTuple* mroTup = mroObj ? mroObj->asTuple(ctx) : nullptr;
+    ::protoPython::TupleView mroTup = mroObj ? ::protoPython::PythonEnvironment::tupleView(ctx, mroObj) : nullptr;
     if (!mroTup) return false;
     proto::proto_ulong n = mroTup->getSize(ctx);
     for (proto::proto_ulong i = 0; i < n; ++i) {
@@ -1952,7 +1952,7 @@ static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
         const proto::ProtoObject* data = a->getAttribute(ctx, env->getDataString());
         if (data) l1 = data->asList(ctx);
         if (!l1 && data) {
-            if (data->asTuple(ctx)) l1 = data->asTuple(ctx)->asList(ctx);
+            if (::protoPython::PythonEnvironment::tupleView(ctx, data)) l1 = ::protoPython::PythonEnvironment::tupleView(ctx, data)->asList(ctx);
         }
     }
     const proto::ProtoList* l2 = b->asList(ctx);
@@ -1960,10 +1960,16 @@ static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
         const proto::ProtoObject* data = b->getAttribute(ctx, env->getDataString());
         if (data) l2 = data->asList(ctx);
         if (!l2 && data) {
-            if (data->asTuple(ctx)) l2 = data->asTuple(ctx)->asList(ctx);
+            if (::protoPython::PythonEnvironment::tupleView(ctx, data)) l2 = ::protoPython::PythonEnvironment::tupleView(ctx, data)->asList(ctx);
         }
     }
 
+    // tuple + tuple and list + list only: list + tuple is a TypeError (both
+    // keep a ProtoList, so the shapes alone matched).
+    if (l1 && l2 && ::protoPython::PythonEnvironment::isTupleValue(ctx, a)
+                    != ::protoPython::PythonEnvironment::isTupleValue(ctx, b)) {
+        l1 = nullptr;
+    }
     if (l1 && l2) {
         // Handle list/tuple addition
         proto::ProtoList* resL = const_cast<proto::ProtoList*>(ctx->newList());
@@ -1985,7 +1991,7 @@ static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
             else if (aCls == env->getListPrototype()) isList = true;
             else {
                 const proto::ProtoObject* mroAttr = env->getAttribute(ctx, aCls, env->getMroString(), false);
-                const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+                ::protoPython::TupleView mroT = mroAttr ? ::protoPython::PythonEnvironment::tupleView(ctx, mroAttr) : nullptr;
                 if (mroT) {
                     for (proto::proto_ulong mi = 0; mi < mroT->getSize(ctx); ++mi) {
                         const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(mi));
@@ -2001,12 +2007,10 @@ static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
             else if (isList) aCls = env->getListPrototype();
         }
 
+        if (isTuple && env) return env->makeTuple(ctx, resL);
         proto::ProtoObject* resObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
         const proto::ProtoString* dataS = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
-        if (isTuple) {
-            // Save setAttribute result: these are immutable persistent objects.
-            resObj = const_cast<proto::ProtoObject*>(resObj->setAttribute(ctx, dataS, ctx->newTupleFromList(resL)->asObject(ctx)));
-        } else {
+        {
             resObj = const_cast<proto::ProtoObject*>(resObj->setAttribute(ctx, dataS, resL->asObject(ctx)));
         }
 
@@ -2081,12 +2085,12 @@ static const proto::ProtoObject* binaryMultiply(proto::ProtoContext* ctx,
     // Tuple repetition: tuple * int or int * tuple
     const proto::ProtoObject* tupleObj = nullptr;
     intObj = nullptr;
-    if (a->asTuple(ctx) && b->isInteger(ctx)) { tupleObj = a; intObj = b; }
-    else if (a->isInteger(ctx) && b->asTuple(ctx)) { tupleObj = b; intObj = a; }
+    if (::protoPython::PythonEnvironment::tupleView(ctx, a) && b->isInteger(ctx)) { tupleObj = a; intObj = b; }
+    else if (a->isInteger(ctx) && ::protoPython::PythonEnvironment::tupleView(ctx, b)) { tupleObj = b; intObj = a; }
     if (tupleObj && intObj) {
         long long n = intObj->asLong(ctx);
-        if (n <= 0) return ctx->newTupleFromList(ctx->newList())->asObject(ctx);
-        const proto::ProtoTuple* t = tupleObj->asTuple(ctx);
+        if (n <= 0) return ::protoPython::PythonEnvironment::tupleFromList(ctx, ctx->newList());
+        ::protoPython::TupleView t = ::protoPython::PythonEnvironment::tupleView(ctx, tupleObj);
         size_t seqSize = t->getSize(ctx);
         proto::ProtoList* resultList = const_cast<proto::ProtoList*>(ctx->newList());
         for (long long rep = 0; rep < n; ++rep) {
@@ -2095,7 +2099,7 @@ static const proto::ProtoObject* binaryMultiply(proto::ProtoContext* ctx,
                 if (elem) resultList = const_cast<proto::ProtoList*>(resultList->appendLast(ctx, elem));
             }
         }
-        return ctx->newTupleFromList(resultList)->asObject(ctx);
+        return ::protoPython::PythonEnvironment::tupleFromList(ctx, resultList);
     }
     // Fall through to __mul__/__rmul__ via the shared dunder dispatch so
     // Python-level user functions (which `asMethod` does NOT recognise —
@@ -2441,7 +2445,7 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
                     bool dispatchHere = false;
                     const proto::ProtoString* mroS = env_dunder->getMroString();
                     const proto::ProtoObject* mroObj = mroS ? env_dunder->getAttribute(ctx, bCls, mroS, false) : nullptr;
-                    const proto::ProtoTuple* mroTup = mroObj ? mroObj->asTuple(ctx) : nullptr;
+                    ::protoPython::TupleView mroTup = mroObj ? ::protoPython::PythonEnvironment::tupleView(ctx, mroObj) : nullptr;
                     if (mroTup) {
                         proto::proto_ulong mn = mroTup->getSize(ctx);
                         for (proto::proto_ulong mi = 0; mi < mn; ++mi) {
@@ -2509,8 +2513,8 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
             return result ? PROTO_TRUE : PROTO_FALSE;
         }
         const proto::ProtoList* lst = b->asList(ctx);
-        if (!lst && b->isTuple(ctx)) {
-            const proto::ProtoTuple* tup = b->asTuple(ctx);
+        if (!lst && ::protoPython::PythonEnvironment::isTupleValue(ctx, b)) {
+            ::protoPython::TupleView tup = ::protoPython::PythonEnvironment::tupleView(ctx, b);
             if (tup) lst = tup->asList(ctx);
         }
 
@@ -2529,7 +2533,7 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
                     bIsDictLike = true;
                 } else if (bt && bt != PROTO_NONE) {
                     const proto::ProtoObject* mAttr = envContains->getAttribute(ctx, bt, envContains->getMroString(), false);
-                    const proto::ProtoTuple* mroT = mAttr ? mAttr->asTuple(ctx) : nullptr;
+                    ::protoPython::TupleView mroT = mAttr ? ::protoPython::PythonEnvironment::tupleView(ctx, mAttr) : nullptr;
                     if (mroT) {
                         for (proto::proto_ulong i = 0; i < mroT->getSize(ctx); ++i) {
                             const proto::ProtoObject* m = mroT->getAt(ctx, static_cast<int>(i));
@@ -2546,7 +2550,7 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
             const proto::ProtoObject* data = bIsDictLike ? b->getAttribute(ctx, dataS) : nullptr;
             if (data && data != PROTO_NONE) {
                 if (data->asList(ctx)) lst = data->asList(ctx);
-                else if (data->isTuple(ctx)) lst = data->asTuple(ctx)->asList(ctx);
+                else if (::protoPython::PythonEnvironment::isTupleValue(ctx, data)) lst = ::protoPython::PythonEnvironment::tupleView(ctx, data)->asList(ctx);
                 else if (data->asSparseList(ctx)) {
                     // The key is looked up by the hash the dict stores it
                     // under; an unhashable key raises TypeError.
@@ -2759,7 +2763,7 @@ static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     // size-0 sparseList (every `if some_user_object:` then evaluates
     // false). For dict-backed objects, the user-visible `dict.__bool__`
     // binding handles truthiness above.
-    if (obj->asTuple(ctx)) return (obj->asTuple(ctx)->getSize(ctx) > 0);
+    if (::protoPython::PythonEnvironment::tupleView(ctx, obj)) return (::protoPython::PythonEnvironment::tupleView(ctx, obj)->getSize(ctx) > 0);
     if (obj->asList(ctx)) return (obj->asList(ctx)->getSize(ctx) > 0);
 
     return true;
@@ -2957,7 +2961,7 @@ static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const pr
         uint32_t flags = (cls && cls != PROTO_NONE) ? env->ensureClassFlags(ctx, cls) : 0;
         if (flags & protoPython::PythonEnvironment::PYFLAG_HAS_CUSTOM_GETATTR) {
             const proto::ProtoObject* mroAttr = env->getAttribute(ctx, cls, env->getMroString(), false);
-            const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+            ::protoPython::TupleView mroT = mroAttr ? ::protoPython::PythonEnvironment::tupleView(ctx, mroAttr) : nullptr;
             if (mroT) {
                 for (proto::proto_ulong i = 0; i < mroT->getSize(ctx); ++i) {
                     const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(i));
@@ -3039,7 +3043,7 @@ static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const pr
                     bool ok = false;
                     const proto::ProtoString* mroS = env->getMroString();
                     const proto::ProtoObject* mroAttr = env->getAttribute(ctx, rcvType, mroS, false);
-                    const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+                    ::protoPython::TupleView mroT = mroAttr ? ::protoPython::PythonEnvironment::tupleView(ctx, mroAttr) : nullptr;
                     if (mroT) {
                         for (proto::proto_ulong i = 0; i < mroT->getSize(ctx); ++i) {
                             if (mroT->getAt(ctx, static_cast<int>(i)) == owner) { ok = true; break; }
@@ -3211,8 +3215,8 @@ const proto::ProtoObject* py_generator_send_impl(
         proto::proto_ulong size = blist->getSize(ctx);
         for (proto::proto_ulong i = 0; i < size; ++i) {
             const proto::ProtoObject* item = blist->getAt(ctx, static_cast<int>(i));
-            if (item && item->isTuple(ctx)) {
-                const proto::ProtoTuple* t = item->asTuple(ctx);
+            if (item && ::protoPython::PythonEnvironment::isTupleValue(ctx, item)) {
+                ::protoPython::TupleView t = ::protoPython::PythonEnvironment::tupleView(ctx, item);
                 if (t->getSize(ctx) >= 2) {
                     bool isWith = (t->getSize(ctx) >= 3) && (t->getAt(ctx, 2) == PROTO_TRUE);
                     blockStack.push_back({
@@ -3258,7 +3262,7 @@ const proto::ProtoObject* py_generator_send_impl(
     const proto::ProtoObject* result = nullptr;
     {
         const proto::ProtoObject* co_varnames_obj = codeObj->getAttribute(ctx, env->getCoVarnamesString());
-        const proto::ProtoTuple* co_varnames = co_varnames_obj ? co_varnames_obj->asTuple(ctx) : nullptr;
+        ::protoPython::TupleView co_varnames = co_varnames_obj ? ::protoPython::PythonEnvironment::tupleView(ctx, co_varnames_obj) : nullptr;
         stackOffset = co_varnames ? co_varnames->getSize(ctx) : 0;
         // The operand stack starts after the locals and the free variables.
         const proto::ProtoObject* nlpObj = codeObj->getAttribute(ctx,
@@ -3377,7 +3381,7 @@ const proto::ProtoObject* py_generator_send_impl(
             tempL = tempL->appendLast(calleeCtx, calleeCtx->fromInteger(b.handlerPc));
             tempL = tempL->appendLast(calleeCtx, calleeCtx->fromInteger(b.stackDepth));
             tempL = tempL->appendLast(calleeCtx, b.isWithBlock ? PROTO_TRUE : PROTO_FALSE);
-            const proto::ProtoObject* bTup = calleeCtx->newTupleFromList(tempL)->asObject(calleeCtx);
+            const proto::ProtoObject* bTup = ::protoPython::PythonEnvironment::tupleFromList(calleeCtx, tempL);
             newBlocks = newBlocks->appendLast(calleeCtx, bTup);
         }
         self->setAttribute(calleeCtx, env->getGiBlocksString(), newBlocks->asObject(calleeCtx));
@@ -3883,7 +3887,7 @@ bool invokeInitSubclass(proto::ProtoContext* ctx,
     if (!env) return true;
     const proto::ProtoObject* mroAttr = cls->getAttribute(ctx,
         PythonEnvironment::getInternedString(ctx, "__mro__"));
-    const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+    ::protoPython::TupleView mroT = mroAttr ? ::protoPython::PythonEnvironment::tupleView(ctx, mroAttr) : nullptr;
     if (!mroT || mroT->getSize(ctx) < 2) return true;
     const proto::ProtoString* iscS =
         PythonEnvironment::getInternedString(ctx, "__init_subclass__");
@@ -3997,8 +4001,8 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
                 const proto::ProtoObject* mroAttr = env
                     ? env->getAttribute(ctx, objCls, env->getMroString(), false)
                     : objCls->getAttribute(ctx, env->getMroString());
-                const proto::ProtoTuple* mroT =
-                    mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+                ::protoPython::TupleView mroT =
+                    mroAttr ? ::protoPython::PythonEnvironment::tupleView(ctx, mroAttr) : nullptr;
                 if (mroT) {
                     for (proto::proto_ulong mi = 0; mi < mroT->getSize(ctx); ++mi) {
                         if (mroT->getAt(ctx, static_cast<int>(mi)) == self) {
@@ -4016,8 +4020,8 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
                             if (c == self) return true;
                             const proto::ProtoObject* basesAttr =
                                 c->getAttribute(ctx, env->getBasesString());
-                            const proto::ProtoTuple* basesT =
-                                basesAttr ? basesAttr->asTuple(ctx) : nullptr;
+                            ::protoPython::TupleView basesT =
+                                basesAttr ? ::protoPython::PythonEnvironment::tupleView(ctx, basesAttr) : nullptr;
                             if (!basesT) return false;
                             for (proto::proto_ulong bi = 0; bi < basesT->getSize(ctx); ++bi) {
                                 if (walkBases(basesT->getAt(ctx, static_cast<int>(bi)), depth + 1)) return true;
@@ -4133,7 +4137,7 @@ static int lineForInstruction(proto::ProtoContext* ctx, PythonEnvironment* env,
     if (lineno <= 0) return 0;
 
     const proto::ProtoObject* lnotabObj = codeObj->getAttribute(ctx, env->getCoLnotabString());
-    const proto::ProtoTuple* lnT = (lnotabObj && lnotabObj != PROTO_NONE) ? lnotabObj->asTuple(ctx) : nullptr;
+    ::protoPython::TupleView lnT = (lnotabObj && lnotabObj != PROTO_NONE) ? ::protoPython::PythonEnvironment::tupleView(ctx, lnotabObj) : nullptr;
     const proto::ProtoList* lnL = (!lnT && lnotabObj && lnotabObj != PROTO_NONE) ? lnotabObj->asList(ctx) : nullptr;
     const proto::proto_ulong size = lnT ? lnT->getSize(ctx) : (lnL ? lnL->getSize(ctx) : 0);
     auto at = [&](proto::proto_ulong j) -> long long {
@@ -4332,7 +4336,7 @@ static const proto::ProtoString* derefSlotName(proto::ProtoContext* ctx, PythonE
     const proto::ProtoObject* codeObj = PythonEnvironment::getCurrentCodeObject();
     if (!codeObj || slot < 0) return nullptr;
     const proto::ProtoObject* vn = codeObj->getAttribute(ctx, env->getCoVarnamesString());
-    const proto::ProtoTuple* varnames = (vn && vn != PROTO_NONE) ? vn->asTuple(ctx) : nullptr;
+    ::protoPython::TupleView varnames = (vn && vn != PROTO_NONE) ? ::protoPython::PythonEnvironment::tupleView(ctx, vn) : nullptr;
     const proto::proto_ulong nVar = varnames ? varnames->getSize(ctx) : 0;
     const proto::ProtoObject* nameObj = nullptr;
     if (static_cast<proto::proto_ulong>(slot) < nVar) {
@@ -4341,7 +4345,7 @@ static const proto::ProtoString* derefSlotName(proto::ProtoContext* ctx, PythonE
     } else {
         const proto::ProtoObject* fv = codeObj->getAttribute(ctx,
             PythonEnvironment::getInternedString(ctx, "co_freevars"));
-        const proto::ProtoTuple* freevars = (fv && fv != PROTO_NONE) ? fv->asTuple(ctx) : nullptr;
+        ::protoPython::TupleView freevars = (fv && fv != PROTO_NONE) ? ::protoPython::PythonEnvironment::tupleView(ctx, fv) : nullptr;
         const proto::proto_ulong j = static_cast<proto::proto_ulong>(slot) - nVar;
         if (freevars && j < freevars->getSize(ctx)) nameObj = freevars->getAt(ctx, static_cast<int>(j));
     }
@@ -4390,7 +4394,7 @@ static void raiseUnboundFastLocal(proto::ProtoContext* ctx, PythonEnvironment* e
     std::string nStr = "?";
     const proto::ProtoObject* codeObj = PythonEnvironment::getCurrentCodeObject();
     const proto::ProtoObject* varnamesObj = codeObj ? codeObj->getAttribute(ctx, env->getCoVarnamesString()) : nullptr;
-    const proto::ProtoTuple* vt = varnamesObj ? varnamesObj->asTuple(ctx) : nullptr;
+    ::protoPython::TupleView vt = varnamesObj ? ::protoPython::PythonEnvironment::tupleView(ctx, varnamesObj) : nullptr;
     if (vt && idx >= 0 && static_cast<proto::proto_ulong>(idx) < vt->getSize(ctx)) {
         const proto::ProtoObject* nameObj = vt->getAt(ctx, idx);
         if (nameObj && proto::ProtoObject::isStringTagFast(nameObj)) {
@@ -4427,8 +4431,8 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
     // call. The resolved tuple is a young cell of this context and
     // the original stays in its caller slot, so both stay reachable.
     const proto::ProtoObject* origBases = nullptr;
-    if (env && bases && bases != PROTO_NONE && bases->asTuple(ctx)) {
-        const proto::ProtoTuple* baseTuple = bases->asTuple(ctx);
+    if (env && bases && bases != PROTO_NONE && ::protoPython::PythonEnvironment::tupleView(ctx, bases)) {
+        ::protoPython::TupleView baseTuple = ::protoPython::PythonEnvironment::tupleView(ctx, bases);
         const proto::ProtoString* mroEntriesS =
             PythonEnvironment::getInternedString(ctx, "__mro_entries__");
         const proto::ProtoList* resolved = ctx->newList();
@@ -4448,7 +4452,7 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
             const proto::ProtoObject* result =
                 invokeCallable(ctx, entries, ctx->newList()->appendLast(ctx, bases));
             if (env->hasPendingException()) { failed = true; break; }
-            const proto::ProtoTuple* resultTuple = result ? result->asTuple(ctx) : nullptr;
+            ::protoPython::TupleView resultTuple = result ? ::protoPython::PythonEnvironment::tupleView(ctx, result) : nullptr;
             if (!resultTuple) {
                 env->raiseTypeError(ctx, "__mro_entries__ must return a tuple");
                 failed = true;
@@ -4497,10 +4501,10 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
             if (!a || !b) return false;
             const proto::ProtoObject* mro = env->getAttribute(ctx, a,
                 PythonEnvironment::getInternedString(ctx, "__mro__"), false);
-            const proto::ProtoTuple* mroT = mro ? mro->asTuple(ctx) : nullptr;
+            ::protoPython::TupleView mroT = mro ? ::protoPython::PythonEnvironment::tupleView(ctx, mro) : nullptr;
             if (!mroT && mro) {
                 const proto::ProtoObject* d = env->getAttribute(ctx, mro, env->getDataString(), false);
-                if (d) mroT = d->asTuple(ctx);
+                if (d) mroT = ::protoPython::PythonEnvironment::tupleView(ctx, d);
             }
             if (mroT) {
                 for (proto::proto_ulong j = 0; j < mroT->getSize(ctx); ++j) {
@@ -4540,7 +4544,7 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
             }
         }
         if (winnerIsClass && bases) {
-            const proto::ProtoTuple* tb = bases->asTuple(ctx);
+            ::protoPython::TupleView tb = ::protoPython::PythonEnvironment::tupleView(ctx, bases);
             const proto::ProtoList* lb = tb ? nullptr : bases->asList(ctx);
             size_t bn = tb ? tb->getSize(ctx) : (lb ? lb->getSize(ctx) : 0);
             for (size_t i = 0; i < bn; ++i) {
@@ -4604,12 +4608,12 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
         // then upgrade to BNotMeta after walking B).
         const proto::ProtoObject* bestMeta = typeProto;
         {
-            const proto::ProtoTuple* tbInit = bases ? bases->asTuple(ctx) : nullptr;
+            ::protoPython::TupleView tbInit = bases ? ::protoPython::PythonEnvironment::tupleView(ctx, bases) : nullptr;
             const proto::ProtoList* lbInit = (tbInit || !bases) ? nullptr : bases->asList(ctx);
             if (!tbInit && !lbInit && bases) {
                 const proto::ProtoObject* dataA = bases->getAttribute(ctx, env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__"));
                 if (dataA) {
-                    tbInit = dataA->asTuple(ctx);
+                    tbInit = ::protoPython::PythonEnvironment::tupleView(ctx, dataA);
                     lbInit = tbInit ? nullptr : dataA->asList(ctx);
                 }
             }
@@ -4634,12 +4638,12 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
         }
         
         if (bases) {
-            const proto::ProtoTuple* tupleBases = bases->asTuple(ctx);
+            ::protoPython::TupleView tupleBases = ::protoPython::PythonEnvironment::tupleView(ctx, bases);
             const proto::ProtoList* listBases = tupleBases ? nullptr : bases->asList(ctx);
             if (!tupleBases && !listBases) {
                 const proto::ProtoObject* dataAttr = bases->getAttribute(ctx, env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__"));
                 if (dataAttr) {
-                    tupleBases = dataAttr->asTuple(ctx);
+                    tupleBases = ::protoPython::PythonEnvironment::tupleView(ctx, dataAttr);
                     listBases = tupleBases ? nullptr : dataAttr->asList(ctx);
                 }
             }
@@ -4681,10 +4685,10 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
                     const proto::ProtoObject* mro = env->getAttribute(ctx, baseMeta, PythonEnvironment::getInternedString(ctx, "__mro__"), false);
                     bool isSub = false;
                     if (mro) {
-                        const proto::ProtoTuple* mroTuple = mro->asTuple(ctx);
+                        ::protoPython::TupleView mroTuple = ::protoPython::PythonEnvironment::tupleView(ctx, mro);
                         if (!mroTuple) {
                             const proto::ProtoObject* data = env ? env->getAttribute(ctx, mro, env->getDataString(), false) : mro->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__data__"));
-                            if (data) mroTuple = data->asTuple(ctx);
+                            if (data) mroTuple = ::protoPython::PythonEnvironment::tupleView(ctx, data);
                         }
                         if (mroTuple) {
                             for (size_t j = 0; j < mroTuple->getSize(ctx); ++j) {
@@ -4729,12 +4733,12 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
                         bool bestIsSubOfBase = false;
                         const proto::ProtoObject* bmro = bestMeta->getAttribute(ctx,
                             PythonEnvironment::getInternedString(ctx, "__mro__"));
-                        const proto::ProtoTuple* bmroT = bmro ? bmro->asTuple(ctx) : nullptr;
+                        ::protoPython::TupleView bmroT = bmro ? ::protoPython::PythonEnvironment::tupleView(ctx, bmro) : nullptr;
                         if (!bmroT && bmro) {
                             const proto::ProtoObject* d = env
                                 ? env->getAttribute(ctx, bmro, env->getDataString(), false)
                                 : bmro->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__data__"));
-                            if (d) bmroT = d->asTuple(ctx);
+                            if (d) bmroT = ::protoPython::PythonEnvironment::tupleView(ctx, d);
                         }
                         if (bmroT) {
                             for (size_t j = 0; j < bmroT->getSize(ctx); ++j) {
@@ -4818,7 +4822,7 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
         bool isMapping = (nsObj && nsObj != PROTO_NONE);
         if (isMapping) {
             // Reject obvious non-mappings.
-            if (nsObj->asList(ctx) || nsObj->asTuple(ctx) ||
+            if (nsObj->asList(ctx) || ::protoPython::PythonEnvironment::tupleView(ctx, nsObj) ||
                 nsObj->isString(ctx) || nsObj->isInteger(ctx) ||
                 nsObj->isDouble(ctx) || nsObj->isBoolean(ctx)) {
                 isMapping = false;
@@ -4937,8 +4941,8 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
         if (slotsObj && slotsObj != PROTO_NONE) {
             // Slots can be tuple, list, or even a single str.
             const proto::ProtoList* slotsList = nullptr;
-            if (slotsObj->isTuple(ctx)) {
-                slotsList = slotsObj->asTuple(ctx)->asList(ctx);
+            if (::protoPython::PythonEnvironment::isTupleValue(ctx, slotsObj)) {
+                slotsList = ::protoPython::PythonEnvironment::tupleView(ctx, slotsObj)->asList(ctx);
             } else {
                 slotsList = slotsObj->asList(ctx);
             }
@@ -5196,7 +5200,7 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
             // Inherit unimplemented abstract names from bases.
             const proto::ProtoObject* mro2 = targetClass->getAttribute(ctx,
                 PythonEnvironment::getInternedString(ctx, "__mro__"));
-            const proto::ProtoTuple* mro2T = mro2 ? mro2->asTuple(ctx) : nullptr;
+            ::protoPython::TupleView mro2T = mro2 ? ::protoPython::PythonEnvironment::tupleView(ctx, mro2) : nullptr;
             if (mro2T) {
                 for (proto::proto_ulong mi = 1; mi < mro2T->getSize(ctx); ++mi) {
                     const proto::ProtoObject* base = mro2T->getAt(ctx, static_cast<int>(mi));
@@ -5204,7 +5208,7 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
                     const proto::ProtoObject* baseAm = base->getOwnAttributeDirect(ctx, amS);
                     if (!baseAm || baseAm == PROTO_NONE) continue;
                     const proto::ProtoList* bl = baseAm->asList(ctx);
-                    const proto::ProtoTuple* bt = bl ? nullptr : baseAm->asTuple(ctx);
+                    ::protoPython::TupleView bt = bl ? nullptr : ::protoPython::PythonEnvironment::tupleView(ctx, baseAm);
                     proto::proto_ulong sz = bl ? bl->getSize(ctx) : (bt ? bt->getSize(ctx) : 0);
                     for (proto::proto_ulong bi = 0; bi < sz; ++bi) {
                         const proto::ProtoObject* bn = bl ? bl->getAt(ctx, static_cast<int>(bi)) : bt->getAt(ctx, static_cast<int>(bi));
@@ -7103,7 +7107,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     if (aType && aType != PROTO_NONE && aType != env->getIntPrototype()
                         && aType != env->getFloatPrototype() && aType != env->getBoolPrototype()) {
                         const proto::ProtoObject* mroAttr = env->getAttribute(ctx, aType, env->getMroString(), false);
-                        const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+                        ::protoPython::TupleView mroT = mroAttr ? ::protoPython::PythonEnvironment::tupleView(ctx, mroAttr) : nullptr;
                         if (mroT) {
                             for (proto::proto_ulong mi = 0; mi < mroT->getSize(ctx); ++mi) {
                                 const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(mi));
@@ -7446,7 +7450,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         lstObj->setAttribute(ctx, dataString, lst->asObject(ctx));
                     } else {
                         // Handle ProtoTuple iterables (e.g. raw *args tuple from varargs binding)
-                        const proto::ProtoTuple* fromTuple = (fromData && fromData->asTuple(ctx)) ? fromData->asTuple(ctx) : iterable->asTuple(ctx);
+                        ::protoPython::TupleView fromTuple = (fromData && ::protoPython::PythonEnvironment::tupleView(ctx, fromData)) ? ::protoPython::PythonEnvironment::tupleView(ctx, fromData) : ::protoPython::PythonEnvironment::tupleView(ctx, iterable);
                         if (fromTuple) {
                             for (proto::proto_ulong j = 0; j < fromTuple->getSize(ctx); ++j) {
                                 lst = lst->appendLast(ctx, fromTuple->getAt(ctx, static_cast<int>(j)));
@@ -8107,7 +8111,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                         for (proto::proto_ulong i = 0; i < entries->getSize(ctx); ++i) {
                                             const proto::ProtoObject* pair = entries->getAt(ctx, static_cast<int>(i));
                                             if (!pair) continue;
-                                            const proto::ProtoTuple* pT = pair->asTuple(ctx);
+                                            ::protoPython::TupleView pT = ::protoPython::PythonEnvironment::tupleView(ctx, pair);
                                             const proto::ProtoList* pL = pT ? pT->asList(ctx)
                                                                             : pair->asList(ctx);
                                             if (!pL || pL->getSize(ctx) < 1) continue;
@@ -8164,14 +8168,14 @@ const proto::ProtoObject* executeBytecodeRange(
             // groups" above).  arg = (descriptor constant << 5) | position.
             const int pos = arg & 31;
             const int descIdx = arg >> 5;
-            const proto::ProtoTuple* desc = nullptr;
+            ::protoPython::TupleView desc = nullptr;
             if (constants && static_cast<proto::proto_ulong>(descIdx) < constants->getSize(ctx)) {
                 const proto::ProtoObject* d = constants->getAt(ctx, descIdx);
-                desc = d ? d->asTuple(ctx) : nullptr;
+                desc = d ? ::protoPython::PythonEnvironment::tupleView(ctx, d) : nullptr;
             }
             if (!desc || stack.size() < 2) { attrGroupState = 0; i = next_i; continue; }
             if (pos == 0)
-                attrGroupState = attrGroupApplies(ctx, env, stack.back(), names, desc) ? 1 : 2;
+                attrGroupState = attrGroupApplies(ctx, env, stack.back(), names, desc.tuple) ? 1 : 2;
             const int n = static_cast<int>(desc->getAt(ctx, 0)->asLong(ctx));
             const int nameIdx = static_cast<int>(desc->getAt(ctx, 1 + pos)->asLong(ctx));
             if (attrGroupState == 1 && op == OP_STORE_ATTR_GROUP) {
@@ -8344,7 +8348,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                         // walk the MRO once
                                         const proto::ProtoObject* mroAttr = env->getAttribute(ctx,
                                             directType, env->getMroString(), false);
-                                        const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+                                        ::protoPython::TupleView mroT = mroAttr ? ::protoPython::PythonEnvironment::tupleView(ctx, mroAttr) : nullptr;
                                         if (mroT) {
                                             for (proto::proto_ulong i = 0; i < mroT->getSize(ctx); ++i) {
                                                 const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(i));
@@ -8855,7 +8859,7 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.size() < 2) { i = next_i; continue; } // at least names_tuple
             const proto::ProtoObject* namesTupleObj = stack.back();
             stack.pop_back();
-            const proto::ProtoTuple* namesTuple = namesTupleObj->asTuple(ctx);
+            ::protoPython::TupleView namesTuple = ::protoPython::PythonEnvironment::tupleView(ctx, namesTupleObj);
             if (!namesTuple) { i = next_i; continue; }
             int nkw = static_cast<int>(namesTuple->getSize(ctx));
             int npos = arg - nkw;
@@ -8912,7 +8916,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 callArgs = selfArgs;
             }
             
-            if (env) env->pushKwNames(namesTuple);
+            if (env) env->pushKwNames(namesTuple.tuple);
             const proto::ProtoObject* result = invokeCallable(ctx, callable, callArgs, kwMap);
             if (env) env->popKwNames();
             
@@ -9065,9 +9069,9 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoList* posArgs = nullptr;
             if (starargs && starargs->asList(ctx)) {
                 posArgs = starargs->asList(ctx);
-            } else if (starargs && starargs->asTuple(ctx)) {
+            } else if (starargs && ::protoPython::PythonEnvironment::tupleView(ctx, starargs)) {
                 posArgs = ctx->newList();
-                const proto::ProtoTuple* t = starargs->asTuple(ctx);
+                ::protoPython::TupleView t = ::protoPython::PythonEnvironment::tupleView(ctx, starargs);
                 for (proto::proto_ulong j = 0; j < t->getSize(ctx); ++j) {
                     posArgs = posArgs->appendLast(ctx, t->getAt(ctx, static_cast<int>(j)));
                 }
@@ -9179,15 +9183,11 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack[stack.size() - 1] = const_cast<proto::ProtoObject*>(lst->asObject(ctx)); // Update root
             }
             
-            const proto::ProtoTuple* tup = ctx->newTupleFromList(lst);
-            proto::ProtoObject* tupObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
-            stack.push_back(tupObj); // Root tupObj
-            if (env && env->getTuplePrototype()) tupObj = const_cast<proto::ProtoObject*>(tupObj->addParent(ctx, env->getTuplePrototype()));
-            
-            tupObj = const_cast<proto::ProtoObject*>(tupObj->setAttribute(ctx, env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__"), tup->asObject(ctx)));
-            
-            const proto::ProtoObject* finalTup = tupObj;
-            for (int j = 0; j < arg + 2; ++j) stack.pop_back();
+            // A tuple is a ProtoList-backed immutable object (makeTuple): a
+            // ProtoTuple would go through protoCore's tuple interner and
+            // never be collected.  `lst` stays rooted on the stack meanwhile.
+            const proto::ProtoObject* finalTup = ::protoPython::PythonEnvironment::tupleFromList(ctx, lst);
+            for (int j = 0; j < arg + 1; ++j) stack.pop_back();
             stack.push_back(finalTup);
         } break;
         case OP_BUILD_FUNCTION: {
@@ -9489,12 +9489,12 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             } else {
                 const proto::ProtoList* list = seq->asList(ctx);
-                const proto::ProtoTuple* tup = seq->asTuple(ctx);
+                ::protoPython::TupleView tup = ::protoPython::PythonEnvironment::tupleView(ctx, seq);
                 if (!list && !tup) {
                      const proto::ProtoObject* data = seq->getAttribute(ctx, protoPython::PythonEnvironment::getInternalString(ctx, "__data__"));
                      if (data) {
                          list = data->asList(ctx);
-                         tup = data->asTuple(ctx);
+                         tup = ::protoPython::PythonEnvironment::tupleView(ctx, data);
                      }
                 }
                 if (list) {
@@ -9544,10 +9544,10 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (env->hasPendingException()) { i = next_i; continue; }
             } else {
                 const proto::ProtoList* list = seq->asList(ctx);
-                const proto::ProtoTuple* tup = seq->asTuple(ctx);
+                ::protoPython::TupleView tup = ::protoPython::PythonEnvironment::tupleView(ctx, seq);
                 if (!list && !tup) {
                     const proto::ProtoObject* data = seq->getAttribute(ctx, protoPython::PythonEnvironment::getInternalString(ctx, "__data__"));
-                    if (data) { list = data->asList(ctx); tup = data->asTuple(ctx); }
+                    if (data) { list = data->asList(ctx); tup = ::protoPython::PythonEnvironment::tupleView(ctx, data); }
                 }
                 if (list) {
                     for (size_t j = 0; j < list->getSize(ctx); ++j) all.push_back(list->getAt(ctx, static_cast<int>(j)));
@@ -9746,14 +9746,9 @@ const proto::ProtoObject* executeBytecodeRange(
                     fprintf(stderr, "DEBUG: OP_LIST_TO_TUPLE L=%p size=%zu\n", (void*)L, L ? L->getSize(ctx) : 0);
                 }
                 
-                if (L) {
-                    const proto::ProtoTuple* T = ctx->newTupleFromList(L);
-                    proto::ProtoObject* tupObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
-                    tupObj->setAttribute(ctx, dataS, T->asObject(ctx));
-                    if (env && env->getTuplePrototype()) {
-                        tupObj->addParent(ctx, env->getTuplePrototype());
-                        tupObj->setAttribute(ctx, env->getClassString(), env->getTuplePrototype());
-                    }
+                if (L && env) {
+                    // The list's ProtoList is immutable: the tuple shares it.
+                    const proto::ProtoObject* tupObj = ::protoPython::PythonEnvironment::tupleFromList(ctx, L);
                     stack.pop_back();
                     stack.push_back(tupObj);
                 } else {
@@ -9979,7 +9974,7 @@ const proto::ProtoObject* executeBytecodeRange(
                             if (!isModuleLike && objType && objType != PROTO_NONE) {
                                 const proto::ProtoString* mroS = env->getMroString();
                                 const proto::ProtoObject* oMroAttr = mroS ? env->getAttribute(ctx, objType, mroS, false) : nullptr;
-                                const proto::ProtoTuple* oMroT = oMroAttr ? oMroAttr->asTuple(ctx) : nullptr;
+                                ::protoPython::TupleView oMroT = oMroAttr ? ::protoPython::PythonEnvironment::tupleView(ctx, oMroAttr) : nullptr;
                                 if (oMroT) {
                                     for (proto::proto_ulong mi = 0; mi < oMroT->getSize(ctx); ++mi) {
                                         if (oMroT->getAt(ctx, static_cast<int>(mi)) == modProto) {
@@ -10074,7 +10069,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                 const proto::ProtoString* delattrS =
                                     PythonEnvironment::getInternedString(ctx, "__delattr__");
                                 const proto::ProtoObject* mroAttr = env->getAttribute(ctx, objType, env->getMroString(), false);
-                                const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+                                ::protoPython::TupleView mroT = mroAttr ? ::protoPython::PythonEnvironment::tupleView(ctx, mroAttr) : nullptr;
                                 const proto::ProtoObject* override = nullptr;
                                 if (mroT) {
                                     for (proto::proto_ulong mi = 0; mi < mroT->getSize(ctx); ++mi) {
@@ -10152,8 +10147,8 @@ const proto::ProtoObject* executeBytecodeRange(
                                 if (c == anchor) return true;
                                 const proto::ProtoObject* basesAttr =
                                     c->getAttribute(ctx, env->getBasesString());
-                                const proto::ProtoTuple* basesT =
-                                    basesAttr ? basesAttr->asTuple(ctx) : nullptr;
+                                ::protoPython::TupleView basesT =
+                                    basesAttr ? ::protoPython::PythonEnvironment::tupleView(ctx, basesAttr) : nullptr;
                                 if (!basesT) return false;
                                 for (proto::proto_ulong bi = 0; bi < basesT->getSize(ctx); ++bi) {
                                     const proto::ProtoObject* b =

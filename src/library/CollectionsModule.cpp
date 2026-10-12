@@ -42,11 +42,11 @@ static const proto::ProtoObject* py_tuple_getter_get(proto::ProtoContext* ctx, c
     // namedtuple instances may either be a raw ProtoTuple shape or a
     // wrapped Python tuple/list object that stores the sequence in
     // __data__.  Try both so we work for either layout.
-    const proto::ProtoTuple* tup = instance->asTuple(ctx);
+    ::protoPython::TupleView tup = ::protoPython::PythonEnvironment::tupleView(ctx, instance);
     if (!tup) {
         const proto::ProtoObject* data = instance->getAttribute(ctx,
             PythonEnvironment::getInternedString(ctx, "__data__"));
-        if (data) tup = data->asTuple(ctx);
+        if (data) tup = ::protoPython::PythonEnvironment::tupleView(ctx, data);
     }
     if (tup && index >= 0 && (size_t)index < tup->getSize(ctx)) {
         return tup->getAt(ctx, static_cast<int>((size_t)index));

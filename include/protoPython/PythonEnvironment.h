@@ -18,6 +18,57 @@
 namespace protoPython {
 class NativeModuleProvider;
 
+/**
+ * The items of a tuple, whatever its representation: a Python tuple
+ * (PythonEnvironment::makeTuple, items in a ProtoList) or a protoCore
+ * ProtoTuple (compile-time constants and other internal tuples), bare or as
+ * the `__data__` of a wrapper.  Obtain one with PythonEnvironment::tupleView.
+ */
+struct TupleView {
+    const proto::ProtoList* list = nullptr;
+    const proto::ProtoTuple* tuple = nullptr;
+    /** The tuple object a `list` view was read from (asObject returns it). */
+    const proto::ProtoObject* source = nullptr;
+
+    TupleView() = default;
+    TupleView(std::nullptr_t) {}
+    /** A view of an internal ProtoTuple. */
+    TupleView(const proto::ProtoTuple* t) : tuple(t) {}
+
+    explicit operator bool() const { return list || tuple; }
+    proto::proto_ulong size(proto::ProtoContext* ctx) const {
+        return list ? list->getSize(ctx) : (tuple ? tuple->getSize(ctx) : 0);
+    }
+    const proto::ProtoObject* at(proto::ProtoContext* ctx, proto::proto_ulong i) const {
+        const int k = static_cast<int>(i);
+        return list ? list->getAt(ctx, k) : tuple->getAt(ctx, k);
+    }
+    /** The items as a ProtoList (a new one for a ProtoTuple). */
+    const proto::ProtoList* items(proto::ProtoContext* ctx) const {
+        return list ? list : (tuple ? tuple->asList(ctx) : nullptr);
+    }
+
+    // The ProtoTuple accessors, so that code reading `t->getSize(ctx)` /
+    // `t->getAt(ctx, i)` from a `const ProtoTuple* t` reads a view unchanged.
+    const TupleView* operator->() const { return this; }
+    proto::proto_ulong getSize(proto::ProtoContext* ctx) const { return size(ctx); }
+    const proto::ProtoObject* getAt(proto::ProtoContext* ctx, int i) const {
+        if (i < 0) i += static_cast<int>(size(ctx));
+        return list ? list->getAt(ctx, i) : tuple->getAt(ctx, i);
+    }
+    const proto::ProtoList* asList(proto::ProtoContext* ctx) const { return items(ctx); }
+    /**
+     * The tuple as a Python value: the tuple object the view was read from,
+     * or the ProtoTuple (itself a tuple value).  Never the bare ProtoList,
+     * which would type as a list.
+     */
+    const proto::ProtoObject* asObject(proto::ProtoContext* ctx) const {
+        return list ? source : (tuple ? tuple->asObject(ctx) : nullptr);
+    }
+    bool operator==(std::nullptr_t) const { return !list && !tuple; }
+    bool operator!=(std::nullptr_t) const { return list || tuple; }
+};
+
 class PythonEnvironment {
 public:
     /**
@@ -582,6 +633,34 @@ public:
     void importStar(const proto::ProtoObject* mod);
 
     const proto::ProtoObject* buildSlice(const proto::ProtoObject* start, const proto::ProtoObject* stop, const proto::ProtoObject* step);
+    /**
+     * The items of `obj` if it is a tuple (see TupleView); an empty view
+     * otherwise.  A list is not a tuple.
+     */
+    static TupleView tupleView(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
+    /** True if `obj` is a tuple of either representation (see tupleView). */
+    static bool isTupleValue(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
+        return static_cast<bool>(tupleView(ctx, obj));
+    }
+    /** True if `obj` is a tuple made by makeTuple (the ProtoList form). */
+    bool isListBackedTuple(proto::ProtoContext* ctx, const proto::ProtoObject* obj) const;
+    const proto::ProtoObject* getEmptyTuple() const { return emptyTupleObject; }
+    /**
+     * A Python tuple: an immutable child of the tuple class (or of a tuple
+     * subclass, `cls`) whose `__data__` is the ProtoList of its items.  Python
+     * tuples are not protoCore ProtoTuples: every ProtoTuple goes through
+     * protoCore's tuple interner, which never drops an entry, so a tuple of
+     * fresh objects (*args, dict.items() pairs) was never collected.  The empty
+     * tuple is one perennial object, so `() is ()`.
+     */
+    const proto::ProtoObject* makeTuple(proto::ProtoContext* ctx, const proto::ProtoList* items,
+                                        const proto::ProtoObject* cls = nullptr);
+    /** makeTuple through the context's environment (for native modules). */
+    static const proto::ProtoObject* tupleFromList(proto::ProtoContext* ctx, const proto::ProtoList* items) {
+        PythonEnvironment* env = fromContext(ctx);
+        return env ? env->makeTuple(ctx, items) : ctx->newTupleFromList(items)->asObject(ctx);
+    }
+    /** makeTuple from a list of items (legacy name). */
     const proto::ProtoObject* newTuple(const proto::ProtoList* list);
     const proto::ProtoObject* newList(const proto::ProtoList* list);
     void delItem(const proto::ProtoObject* container, const proto::ProtoObject* key, proto::ProtoContext* ctx = nullptr);
@@ -1673,6 +1752,7 @@ private:
     const proto::ProtoString* iterString{nullptr};
     const proto::ProtoString* nextString{nullptr};
     const proto::ProtoList* emptyList{nullptr};
+    const proto::ProtoObject* emptyTupleObject{nullptr};
     const proto::ProtoSparseList* emptySparseList{nullptr};
     int recursionLimit_{1000};
 

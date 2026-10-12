@@ -242,11 +242,11 @@ static const proto::ProtoObject* py_struct_time(
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* seq = posArgs->getAt(ctx, 0);
     auto getElem = [&](int i) -> long long {
-        const proto::ProtoTuple* tup = seq ? seq->asTuple(ctx) : nullptr;
+        ::protoPython::TupleView tup = seq ? ::protoPython::PythonEnvironment::tupleView(ctx, seq) : nullptr;
         if (!tup) {
             const proto::ProtoObject* data = seq ? seq->getAttribute(
                 ctx, PythonEnvironment::getInternedString(ctx, "__data__")) : nullptr;
-            if (data) tup = data->asTuple(ctx);
+            if (data) tup = ::protoPython::PythonEnvironment::tupleView(ctx, data);
         }
         const proto::ProtoList* lst = tup ? nullptr : (seq ? seq->asList(ctx) : nullptr);
         if (tup && (size_t)i < tup->getSize(ctx)) {
@@ -325,14 +325,14 @@ static const proto::ProtoObject* py_asctime(
         // so wrappers that store the data under __data__ work too.
         const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
         const proto::ProtoList* list = nullptr;
-        if (arg->isTuple(ctx)) list = arg->asTuple(ctx)->asList(ctx);
+        if (::protoPython::PythonEnvironment::isTupleValue(ctx, arg)) list = ::protoPython::PythonEnvironment::tupleView(ctx, arg)->asList(ctx);
         else list = arg->asList(ctx);
         if (!list) {
             // try __data__ unwrap
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
             const proto::ProtoObject* d = env ? arg->getAttribute(ctx, env->getDataString()) : nullptr;
             if (d) {
-                if (d->isTuple(ctx)) list = d->asTuple(ctx)->asList(ctx);
+                if (::protoPython::PythonEnvironment::isTupleValue(ctx, d)) list = ::protoPython::PythonEnvironment::tupleView(ctx, d)->asList(ctx);
                 else list = d->asList(ctx);
             }
         }
@@ -370,13 +370,13 @@ static const proto::ProtoObject* py_mktime(
     if (posArgs->getSize(ctx) < 1) return ctx->fromDouble(0.0);
     const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
     const proto::ProtoList* list = nullptr;
-    if (arg->isTuple(ctx)) list = arg->asTuple(ctx)->asList(ctx);
+    if (::protoPython::PythonEnvironment::isTupleValue(ctx, arg)) list = ::protoPython::PythonEnvironment::tupleView(ctx, arg)->asList(ctx);
     else list = arg->asList(ctx);
     if (!list) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
         const proto::ProtoObject* d = env ? arg->getAttribute(ctx, env->getDataString()) : nullptr;
         if (d) {
-            if (d->isTuple(ctx)) list = d->asTuple(ctx)->asList(ctx);
+            if (::protoPython::PythonEnvironment::isTupleValue(ctx, d)) list = ::protoPython::PythonEnvironment::tupleView(ctx, d)->asList(ctx);
             else list = d->asList(ctx);
         }
     }

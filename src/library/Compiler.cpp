@@ -6209,7 +6209,7 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoObject* co_code = codeObj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_code"));
     const proto::ProtoObject* co_varnames = codeObj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_varnames"));
 
-    if (!co_consts || !co_consts->asTuple(ctx) || !co_code || !co_code->asTuple(ctx)) {
+    if (!co_consts || !::protoPython::PythonEnvironment::tupleView(ctx, co_consts) || !co_code || !::protoPython::PythonEnvironment::tupleView(ctx, co_code)) {
         if (get_env_diag()) {
             fprintf(stderr, "DEBUG: runCodeObject missing co_consts (%p) or co_code (%p)\n", (void*)co_consts, (void*)co_code);
         }
@@ -6240,7 +6240,7 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     proto::ProtoContext* execCtx = subCtx;
     PythonEnvironment::setCurrentContext(execCtx);
 
-    proto::proto_ulong stackOffset = (co_varnames && co_varnames->asTuple(execCtx)) ? co_varnames->asTuple(execCtx)->getSize(execCtx) : 0;
+    proto::proto_ulong stackOffset = (co_varnames && ::protoPython::PythonEnvironment::tupleView(execCtx, co_varnames)) ? ::protoPython::PythonEnvironment::tupleView(execCtx, co_varnames)->getSize(execCtx) : 0;
     // Free variables and cells (a class body's; Compiler.h, "Closures"): the
     // free variables take the closure's cells in the slots after
     // co_varnames, each co_cellslots slot an empty cell, and the operand
@@ -6257,7 +6257,7 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
             if (env && slots) {
                 const proto::ProtoObject* fv = codeObj->getAttribute(execCtx,
                     PythonEnvironment::getInternedString(execCtx, "co_freevars"));
-                const proto::ProtoTuple* freevars = (fv && fv != PROTO_NONE) ? fv->asTuple(execCtx) : nullptr;
+                ::protoPython::TupleView freevars = (fv && fv != PROTO_NONE) ? ::protoPython::PythonEnvironment::tupleView(execCtx, fv) : nullptr;
                 const proto::proto_ulong nFree = freevars ? freevars->getSize(execCtx) : 0;
                 const proto::proto_ulong nCells = closure ? closure->getSize(execCtx) : 0;
                 for (proto::proto_ulong j = 0; j < nFree && nVar + j < nSlots; ++j) {
@@ -6266,7 +6266,7 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
                 }
                 const proto::ProtoObject* cs = codeObj->getAttribute(execCtx,
                     PythonEnvironment::getInternedString(execCtx, "co_cellslots"));
-                const proto::ProtoTuple* cellSlots = (cs && cs != PROTO_NONE) ? cs->asTuple(execCtx) : nullptr;
+                ::protoPython::TupleView cellSlots = (cs && cs != PROTO_NONE) ? ::protoPython::PythonEnvironment::tupleView(execCtx, cs) : nullptr;
                 for (proto::proto_ulong k = 0; cellSlots && k < cellSlots->getSize(execCtx); ++k) {
                     const proto::ProtoObject* idx = cellSlots->getAt(execCtx, static_cast<int>(k));
                     if (idx && idx->isInteger(execCtx) && idx->asLong(execCtx) >= 0
@@ -6279,13 +6279,13 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
 
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG: runCodeObject co_code size=%llu co_consts size=%llu stackOffset=%llu\n",
-            static_cast<unsigned long long>(co_code->asTuple(execCtx)->getSize(execCtx)),
-            static_cast<unsigned long long>(co_consts->asTuple(execCtx)->getSize(execCtx)),
+            static_cast<unsigned long long>(::protoPython::PythonEnvironment::tupleView(execCtx, co_code)->getSize(execCtx)),
+            static_cast<unsigned long long>(::protoPython::PythonEnvironment::tupleView(execCtx, co_consts)->getSize(execCtx)),
             static_cast<unsigned long long>(stackOffset));
     }
 
-    const proto::ProtoObject* result = executeBytecodeRange(execCtx, co_consts->asTuple(execCtx), co_code->asTuple(execCtx),
-        co_names ? co_names->asTuple(execCtx) : nullptr, frame, 0, co_code->asTuple(execCtx)->getSize(execCtx),
+    const proto::ProtoObject* result = executeBytecodeRange(execCtx, ::protoPython::PythonEnvironment::tupleView(execCtx, co_consts).tuple, ::protoPython::PythonEnvironment::tupleView(execCtx, co_code).tuple,
+        co_names ? ::protoPython::PythonEnvironment::tupleView(execCtx, co_names).tuple : nullptr, frame, 0, ::protoPython::PythonEnvironment::tupleView(execCtx, co_code)->getSize(execCtx),
         stackOffset);
 
     if (get_env_diag()) {

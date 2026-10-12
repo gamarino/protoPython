@@ -67,8 +67,8 @@ static bool collectFds(proto::ProtoContext* ctx, const proto::ProtoObject* obj,
     const proto::ProtoObject* data = env ? obj->getAttribute(ctx, env->getDataString()) : nullptr;
     const proto::ProtoList* list = obj->asList(ctx);
     if (!list && data) list = data->asList(ctx);
-    const proto::ProtoTuple* tup = list ? nullptr : obj->asTuple(ctx);
-    if (!list && !tup && data) tup = data->asTuple(ctx);
+    ::protoPython::TupleView tup = list ? nullptr : ::protoPython::PythonEnvironment::tupleView(ctx, obj);
+    if (!list && !tup && data) tup = ::protoPython::PythonEnvironment::tupleView(ctx, data);
     if (list) {
         for (size_t i = 0; i < list->getSize(ctx); ++i) if (!process(list->getAt(ctx, static_cast<int>(i)))) return false;
         return true;
@@ -329,7 +329,7 @@ static const proto::ProtoObject* py_select(
         }
         tuple = tuple->appendLast(ctx, PythonEnvironment::wrapList(ctx, result));
     }
-    return ctx->newTupleFromList(tuple)->asObject(ctx);
+    return ::protoPython::PythonEnvironment::tupleFromList(ctx, tuple);
 }
 
 // error class (subclass of OSError)

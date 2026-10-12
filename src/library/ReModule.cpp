@@ -319,7 +319,7 @@ static const proto::ProtoObject* py_match_groups(
         proto::ProtoString::createSymbol(ctx, "__re_groups__"));
     if (!groupsObj || !groupsObj->asList(ctx)) {
         // Return empty tuple
-        return ctx->newTupleFromList(ctx->newList())->asObject(ctx);
+        return ::protoPython::PythonEnvironment::tupleFromList(ctx, ctx->newList());
     }
     const proto::ProtoList* groups = groupsObj->asList(ctx);
     // Replace unmatched (PROTO_NONE) with default value
@@ -328,8 +328,7 @@ static const proto::ProtoObject* py_match_groups(
         const proto::ProtoObject* g = groups->getAt(ctx, static_cast<int>(i));
         result = result->appendLast(ctx, (g == PROTO_NONE) ? defaultVal : g);
     }
-    const proto::ProtoTuple* tup = ctx->newTupleFromList(result);
-    return tup ? tup->asObject(ctx) : result->asObject(ctx);
+    return PythonEnvironment::tupleFromList(ctx, result);
 }
 
 // The span of group `ref` (a number or a name; group 0 when absent) as code
@@ -382,8 +381,7 @@ static const proto::ProtoObject* py_match_span(
     const proto::ProtoList* lst = ctx->newList()
         ->appendLast(ctx, ctx->fromInteger(a))
         ->appendLast(ctx, ctx->fromInteger(b));
-    const proto::ProtoTuple* tup = ctx->newTupleFromList(lst);
-    return tup ? tup->asObject(ctx) : lst->asObject(ctx);
+    return PythonEnvironment::tupleFromList(ctx, lst);
 }
 
 // repr(match): <re.Match object; span=(0, 1), match='A'>, as CPython.
@@ -1466,7 +1464,7 @@ static bool substitute(proto::ProtoContext* ctx, const proto::ProtoObject* patOb
 
 static const proto::ProtoObject* newPair(proto::ProtoContext* ctx,
                                          const proto::ProtoObject* a, const proto::ProtoObject* b) {
-    return ctx->newTupleFromList(ctx->newList()->appendLast(ctx, a)->appendLast(ctx, b))->asObject(ctx);
+    return ::protoPython::PythonEnvironment::tupleFromList(ctx, ctx->newList()->appendLast(ctx, a)->appendLast(ctx, b));
 }
 
 // The [pos, endpos) window of the pattern methods, in code points: the
@@ -1535,8 +1533,7 @@ static const proto::ProtoObject* findAll(proto::ProtoContext* ctx, const proto::
             // 2+ capturing groups: return list of tuples (CPython behavior)
             const proto::ProtoList* grps = ctx->newList();
             for (size_t i = 1; i < sm.size(); ++i) grps = grps->appendLast(ctx, newStr(ctx, groupText(sj, sm, i)));
-            const proto::ProtoTuple* tup = ctx->newTupleFromList(grps);
-            results = results->appendLast(ctx, tup ? tup->asObject(ctx) : grps->asObject(ctx));
+            results = results->appendLast(ctx, PythonEnvironment::tupleFromList(ctx, grps));
         } else if (sm.size() == 2) {
             // Exactly 1 capturing group: return the group string (CPython behavior)
             results = results->appendLast(ctx, newStr(ctx, groupText(sj, sm, 1)));
@@ -2001,13 +1998,13 @@ static const proto::ProtoObject* py_scanner_new(
 
     auto getItem = [&](const proto::ProtoObject* seq, size_t i) -> const proto::ProtoObject* {
         if (!seq) return nullptr;
-        if (seq->asTuple(ctx)) return seq->asTuple(ctx)->getAt(ctx, (int)i);
+        if (::protoPython::PythonEnvironment::tupleView(ctx, seq)) return ::protoPython::PythonEnvironment::tupleView(ctx, seq)->getAt(ctx, (int)i);
         if (seq->asList(ctx))  return seq->asList(ctx)->getAt(ctx, (int)i);
         return nullptr;
     };
     auto seqSize = [&](const proto::ProtoObject* seq) -> size_t {
         if (!seq) return 0;
-        if (seq->asTuple(ctx)) return (size_t)seq->asTuple(ctx)->getSize(ctx);
+        if (::protoPython::PythonEnvironment::tupleView(ctx, seq)) return (size_t)::protoPython::PythonEnvironment::tupleView(ctx, seq)->getSize(ctx);
         if (seq->asList(ctx))  return (size_t)seq->asList(ctx)->getSize(ctx);
         return 0;
     };
@@ -2147,7 +2144,7 @@ static const proto::ProtoObject* py_scanner_scan(
     const proto::ProtoList* pair = ctx->newList()
         ->appendLast(ctx, resultsObj)
         ->appendLast(ctx, remaining);
-    return ctx->newTupleFromList(pair)->asObject(ctx);
+    return ::protoPython::PythonEnvironment::tupleFromList(ctx, pair);
 }
 
 // ---------------------------------------------------------------------------
@@ -2169,9 +2166,9 @@ static const proto::ProtoObject* makeReClass(proto::ProtoContext* ctx,
         PythonEnvironment::getInternedString(ctx, "re")->asObject(ctx));
     cls = cls->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__is_python_class__"), PROTO_TRUE);
     cls = cls->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__bases__"),
-        ctx->newTupleFromList(ctx->newList()->appendLast(ctx, objectProto))->asObject(ctx));
+        ::protoPython::PythonEnvironment::tupleFromList(ctx, ctx->newList()->appendLast(ctx, objectProto)));
     cls = cls->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__mro__"),
-        ctx->newTupleFromList(ctx->newList()->appendLast(ctx, cls)->appendLast(ctx, objectProto))->asObject(ctx));
+        ::protoPython::PythonEnvironment::tupleFromList(ctx, ctx->newList()->appendLast(ctx, cls)->appendLast(ctx, objectProto)));
     return cls;
 }
 
@@ -2317,11 +2314,11 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         const proto::ProtoList* bList = ctx->newList()->appendLast(ctx, objectProto);
         scannerType = const_cast<proto::ProtoObject*>(scannerType->setAttribute(ctx,
             proto::ProtoString::createSymbol(ctx, "__bases__"),
-            ctx->newTupleFromList(bList)->asObject(ctx)));
+            ::protoPython::PythonEnvironment::tupleFromList(ctx, bList)));
         const proto::ProtoList* mList = ctx->newList()->appendLast(ctx, scannerType)->appendLast(ctx, objectProto);
         scannerType = const_cast<proto::ProtoObject*>(scannerType->setAttribute(ctx,
             proto::ProtoString::createSymbol(ctx, "__mro__"),
-            ctx->newTupleFromList(mList)->asObject(ctx)));
+            ::protoPython::PythonEnvironment::tupleFromList(ctx, mList)));
     }
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "Scanner"), scannerType);
 

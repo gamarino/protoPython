@@ -108,7 +108,7 @@ static const proto::ProtoList* collectMappingItems(proto::ProtoContext* ctx, con
         if (env && env->peekPendingException()) { env->clearPendingException(); val = PROTO_NONE; }
         // Yield as (key, value) tuple
         const proto::ProtoList* pair = ctx->newList()->appendLast(ctx, key)->appendLast(ctx, val ? val : PROTO_NONE);
-        result = result->appendLast(ctx, ctx->newTupleFromList(pair)->asObject(ctx));
+        result = result->appendLast(ctx, ::protoPython::PythonEnvironment::tupleFromList(ctx, pair));
     }
     return result;
 }
@@ -192,8 +192,8 @@ static const proto::ProtoObject* py_mapping_values(
     const proto::ProtoList* result = ctx->newList();
     for (proto::proto_ulong i = 0; i < items->getSize(ctx); ++i) {
         const proto::ProtoObject* pair = items->getAt(ctx, static_cast<int>(i));
-        if (pair && pair->isTuple(ctx) && pair->asTuple(ctx)->getSize(ctx) >= 2)
-            result = result->appendLast(ctx, pair->asTuple(ctx)->getAt(ctx, 1));
+        if (pair && ::protoPython::PythonEnvironment::isTupleValue(ctx, pair) && ::protoPython::PythonEnvironment::tupleView(ctx, pair)->getSize(ctx) >= 2)
+            result = result->appendLast(ctx, ::protoPython::PythonEnvironment::tupleView(ctx, pair)->getAt(ctx, 1));
     }
     return PythonEnvironment::wrapList(ctx, result);
 }
@@ -363,7 +363,7 @@ static const proto::ProtoObject* py_mutable_mapping_update(
                             }
                             if (!pair || pair == PROTO_NONE) break;
                             const proto::ProtoList* pl = pair->asList(ctx);
-                            const proto::ProtoTuple* pt = pair->asTuple(ctx);
+                            ::protoPython::TupleView pt = ::protoPython::PythonEnvironment::tupleView(ctx, pair);
                             if (pt) pl = pt->asList(ctx);
                             if (pl && pl->getSize(ctx) >= 2) {
                                 storeKV(pl->getAt(ctx, 0), pl->getAt(ctx, 1));
@@ -469,7 +469,7 @@ bool mroContains(proto::ProtoContext* ctx, PythonEnvironment* env,
     const proto::ProtoObject* mro = env->getAttribute(ctx, cls, env->getMroString(), false);
     if (env->hasPendingException()) env->clearPendingException();
     if (!mro || mro == PROTO_NONE) return false;
-    if (const proto::ProtoTuple* t = mro->asTuple(ctx)) {
+    if (::protoPython::TupleView t = ::protoPython::PythonEnvironment::tupleView(ctx, mro)) {
         for (proto::proto_ulong i = 0; i < t->getSize(ctx); ++i)
             if (t->getAt(ctx, static_cast<int>(i)) == base) return true;
     } else if (const proto::ProtoList* l = mro->asList(ctx)) {
@@ -487,7 +487,7 @@ bool definesAll(proto::ProtoContext* ctx, PythonEnvironment* env,
     if (!methods[0]) return false;
     const proto::ProtoObject* mro = env->getAttribute(ctx, cls, env->getMroString(), false);
     if (env->hasPendingException()) env->clearPendingException();
-    const proto::ProtoTuple* mroT = mro && mro != PROTO_NONE ? mro->asTuple(ctx) : nullptr;
+    ::protoPython::TupleView mroT = mro && mro != PROTO_NONE ? ::protoPython::PythonEnvironment::tupleView(ctx, mro) : nullptr;
     const proto::ProtoList* mroL = mro && mro != PROTO_NONE && !mroT ? mro->asList(ctx) : nullptr;
     const proto::proto_ulong n = mroT ? mroT->getSize(ctx) : (mroL ? mroL->getSize(ctx) : 0);
     for (int i = 0; i < 6 && methods[i]; ++i) {

@@ -49,7 +49,7 @@ static const proto::ProtoObject* exception_init(
             actualArgs = actualArgs->appendLast(context, positionalParameters->getAt(context, static_cast<int>(i)));
         }
     }
-    const proto::ProtoObject* args = context->newTupleFromList(actualArgs)->asObject(context);
+    const proto::ProtoObject* args = ::protoPython::PythonEnvironment::tupleFromList(context, actualArgs);
     instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context, argsName, args);
     instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context, PythonEnvironment::getInternedString(context, "__traceback__"), PROTO_NONE);
     instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context, PythonEnvironment::getInternedString(context, "__context__"), PROTO_NONE);
@@ -94,12 +94,12 @@ static const proto::ProtoObject* syntaxerror_init(
     // If args[1] is a tuple (filename, lineno, offset, text), unpack it (CPython convention)
     const proto::ProtoObject* argsObj = instance->getAttribute(context,
         PythonEnvironment::getInternedString(context, "args"));
-    if (argsObj && (argsObj->isTuple(context) || argsObj->asList(context))) {
-        proto::proto_ulong argsSize = argsObj->isTuple(context)
-            ? argsObj->asTuple(context)->getSize(context)
+    if (argsObj && (::protoPython::PythonEnvironment::isTupleValue(context, argsObj) || argsObj->asList(context))) {
+        proto::proto_ulong argsSize = ::protoPython::PythonEnvironment::isTupleValue(context, argsObj)
+            ? ::protoPython::PythonEnvironment::tupleView(context, argsObj)->getSize(context)
             : argsObj->asList(context)->getSize(context);
         auto getArg = [&](proto::proto_ulong i) -> const proto::ProtoObject* {
-            if (argsObj->isTuple(context)) return argsObj->asTuple(context)->getAt(context, static_cast<int>(i));
+            if (::protoPython::PythonEnvironment::isTupleValue(context, argsObj)) return ::protoPython::PythonEnvironment::tupleView(context, argsObj)->getAt(context, static_cast<int>(i));
             return argsObj->asList(context)->getAt(context, static_cast<int>(i));
         };
         if (argsSize >= 1) {
@@ -111,12 +111,12 @@ static const proto::ProtoObject* syntaxerror_init(
         }
         if (argsSize >= 2) {
             const proto::ProtoObject* info = getArg(1);
-            if (info && info != PROTO_NONE && (info->isTuple(context) || info->asList(context))) {
-                proto::proto_ulong infoSize = info->isTuple(context)
-                    ? info->asTuple(context)->getSize(context)
+            if (info && info != PROTO_NONE && (::protoPython::PythonEnvironment::isTupleValue(context, info) || info->asList(context))) {
+                proto::proto_ulong infoSize = ::protoPython::PythonEnvironment::isTupleValue(context, info)
+                    ? ::protoPython::PythonEnvironment::tupleView(context, info)->getSize(context)
                     : info->asList(context)->getSize(context);
                 auto getInfo = [&](proto::proto_ulong i) -> const proto::ProtoObject* {
-                    if (info->isTuple(context)) return info->asTuple(context)->getAt(context, static_cast<int>(i));
+                    if (::protoPython::PythonEnvironment::isTupleValue(context, info)) return ::protoPython::PythonEnvironment::tupleView(context, info)->getAt(context, static_cast<int>(i));
                     return info->asList(context)->getAt(context, static_cast<int>(i));
                 };
                 if (infoSize >= 1) instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context,
@@ -152,9 +152,9 @@ static const proto::ProtoObject* systemexit_init(
     const proto::ProtoObject* args = instance->getAttribute(context,
         PythonEnvironment::getInternedString(context, "args"));
     const proto::ProtoObject* code = PROTO_NONE;
-    if (args && args->isTuple(context)) {
-        const proto::proto_ulong argc = args->asTuple(context)->getSize(context);
-        if (argc == 1) code = args->asTuple(context)->getAt(context, 0);
+    if (args && ::protoPython::PythonEnvironment::isTupleValue(context, args)) {
+        const proto::proto_ulong argc = ::protoPython::PythonEnvironment::tupleView(context, args)->getSize(context);
+        if (argc == 1) code = ::protoPython::PythonEnvironment::tupleView(context, args)->getAt(context, 0);
         else if (argc > 1) code = args;
     }
     const_cast<proto::ProtoObject*>(instance)->setAttribute(context,
@@ -177,7 +177,7 @@ static const proto::ProtoObject* exception_str(
     
     const proto::ProtoString* argsName = PythonEnvironment::getInternedString(context, "args");
     const proto::ProtoObject* argsObj = instance->getAttribute(context, argsName);
-    const proto::ProtoTuple* args = argsObj && argsObj->isTuple(context) ? argsObj->asTuple(context) : context->newTuple();
+    ::protoPython::TupleView args = argsObj && ::protoPython::PythonEnvironment::isTupleValue(context, argsObj) ? ::protoPython::PythonEnvironment::tupleView(context, argsObj) : context->newTuple();
     
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG exception_str: args size %llu\n", static_cast<unsigned long long>(args->getSize(context)));
@@ -292,7 +292,7 @@ static const proto::ProtoObject* oserror_init(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoString* argsName = PythonEnvironment::getInternedString(context, "args");
     const proto::ProtoObject* argsObj = instance->getAttribute(context, argsName);
-    const proto::ProtoTuple* args = (argsObj && argsObj->isTuple(context)) ? argsObj->asTuple(context) : nullptr;
+    ::protoPython::TupleView args = (argsObj && ::protoPython::PythonEnvironment::isTupleValue(context, argsObj)) ? ::protoPython::PythonEnvironment::tupleView(context, argsObj) : nullptr;
     const proto::proto_ulong n = args ? args->getSize(context) : 0;
     if (n < 2 || n > 5) return PROTO_NONE;
     auto set = [&](const char* name, const proto::ProtoObject* value) {
@@ -309,7 +309,7 @@ static const proto::ProtoObject* oserror_init(
         const proto::ProtoList* kept = context->newList()
             ->appendLast(context, args->getAt(context, 0))
             ->appendLast(context, args->getAt(context, 1));
-        set("args", context->newTupleFromList(kept)->asObject(context));
+        set("args", ::protoPython::PythonEnvironment::tupleFromList(context, kept));
     }
     return PROTO_NONE;
 }
@@ -377,7 +377,7 @@ static const proto::ProtoObject* keyerror_str(
     }
     if (instance && instance != PROTO_NONE) {
         const proto::ProtoObject* argsObj = instance->getAttribute(context, PythonEnvironment::getInternedString(context, "args"));
-        const proto::ProtoTuple* args = argsObj && argsObj->isTuple(context) ? argsObj->asTuple(context) : nullptr;
+        ::protoPython::TupleView args = argsObj && ::protoPython::PythonEnvironment::isTupleValue(context, argsObj) ? ::protoPython::PythonEnvironment::tupleView(context, argsObj) : nullptr;
         if (args && args->getSize(context) == 1) {
             return PythonEnvironment::getInternedString(context,
                 PythonEnvironment::reprObject(context, args->getAt(context, 0)).c_str())->asObject(context);
@@ -401,7 +401,7 @@ static const proto::ProtoObject* exception_repr(
     
     const proto::ProtoString* argsName = PythonEnvironment::getInternedString(context, "args");
     const proto::ProtoObject* argsObj = instance->getAttribute(context, argsName);
-    const proto::ProtoTuple* args = argsObj && argsObj->isTuple(context) ? argsObj->asTuple(context) : context->newTuple();
+    ::protoPython::TupleView args = argsObj && ::protoPython::PythonEnvironment::isTupleValue(context, argsObj) ? ::protoPython::PythonEnvironment::tupleView(context, argsObj) : context->newTuple();
     // Resolve the exception's actual class via getType, not via the
     // prototype chain.  An exception instance has no own __class__
     // attribute (exception_init never sets one), so a raw getAttribute
@@ -577,8 +577,8 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
         const proto::ProtoObject* baseMro = envEM
             ? envEM->getAttribute(ctx, base, mroEMS, false)
             : base->getAttribute(ctx, mroEMS);
-        if (baseMro && baseMro->isTuple(ctx)) {
-            const proto::ProtoTuple* bt = baseMro->asTuple(ctx);
+        if (baseMro && ::protoPython::PythonEnvironment::isTupleValue(ctx, baseMro)) {
+            ::protoPython::TupleView bt = ::protoPython::PythonEnvironment::tupleView(ctx, baseMro);
             for (size_t i = 0; i < bt->getSize(ctx); ++i) {
                 mroList = mroList->appendLast(ctx, bt->getAt(ctx, static_cast<int>(i)));
             }
@@ -867,8 +867,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
             PythonEnvironment::getInternedString(context, "args"));
         // CPython: value is args[0], or None without arguments.
         const proto::ProtoObject* value = PROTO_NONE;
-        if (args && args->isTuple(context) && args->asTuple(context)->getSize(context) > 0) {
-            value = args->asTuple(context)->getAt(context, 0);
+        if (args && ::protoPython::PythonEnvironment::isTupleValue(context, args) && ::protoPython::PythonEnvironment::tupleView(context, args)->getSize(context) > 0) {
+            value = ::protoPython::PythonEnvironment::tupleView(context, args)->getAt(context, 0);
         }
         const_cast<proto::ProtoObject*>(instance)->setAttribute(context,
             PythonEnvironment::getInternedString(context, "value"), value);

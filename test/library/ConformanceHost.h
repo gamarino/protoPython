@@ -53,9 +53,10 @@ public:
     // C5: measured on the TUPLE, deliberately, and this is the one choice in the
     // adaptor that decides an answer.  protoPython has two user-visible
     // sequences, list and tuple.  A Python tuple is a first-class sequence a
-    // user gets from a literal, and protoPython builds it out of protoCore's
-    // ProtoTuple, whose nodes are interned and perennial (OP_BUILD_TUPLE,
-    // OP_LIST_TO_TUPLE, and the *args binding each allocate one per execution).
+    // user gets from a literal.  It was built out of protoCore's ProtoTuple,
+    // whose nodes are interned and perennial; since 2026-10-12 it is an
+    // immutable object over a ProtoList (PythonEnvironment::makeTuple), and this
+    // case measures that it is collected.
     // Measuring the list instead would make this case pass, and would be
     // choosing the workload to get the answer -- the same defect as a fixture
     // written so that it cannot go red.

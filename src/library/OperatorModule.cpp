@@ -326,8 +326,7 @@ static const proto::ProtoObject* py_itemgetter_call(
         for (proto::proto_ulong i = 0; i < items->getSize(ctx); ++i) {
             results = results->appendLast(ctx, getItem(items->getAt(ctx, static_cast<int>(i))));
         }
-        const proto::ProtoTuple* tup = ctx->newTupleFromList(results);
-        return tup ? tup->asObject(ctx) : PROTO_NONE;
+        return ::protoPython::PythonEnvironment::tupleFromList(ctx, results);
     }
 }
 
@@ -379,8 +378,7 @@ static const proto::ProtoObject* py_attrgetter_call(
     for (proto::proto_ulong i = 0; i < attrs->getSize(ctx); ++i) {
         results = results->appendLast(ctx, getNestedAttr(obj, attrs->getAt(ctx, static_cast<int>(i))));
     }
-    const proto::ProtoTuple* tup = ctx->newTupleFromList(results);
-    return tup ? tup->asObject(ctx) : PROTO_NONE;
+    return ::protoPython::PythonEnvironment::tupleFromList(ctx, results);
 }
 
 static const proto::ProtoObject* py_attrgetter(

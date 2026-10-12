@@ -24,7 +24,7 @@ static const proto::ProtoObject* py_bisect_right(
     
     if (hi == -1) {
         if (a->asList(ctx)) hi = (long long)a->asList(ctx)->getSize(ctx);
-        else if (a->isTuple(ctx)) hi = (long long)a->asTuple(ctx)->getSize(ctx);
+        else if (::protoPython::PythonEnvironment::isTupleValue(ctx, a)) hi = (long long)::protoPython::PythonEnvironment::tupleView(ctx, a)->getSize(ctx);
         else hi = 0; // Fallback
     }
 
@@ -35,7 +35,7 @@ static const proto::ProtoObject* py_bisect_right(
         long long mid = (lo + hi) / 2;
         const proto::ProtoObject* item = nullptr;
         if (a->asList(ctx)) item = a->asList(ctx)->getAt(ctx, static_cast<int>((size_t)mid));
-        else if (a->isTuple(ctx)) item = a->asTuple(ctx)->getAt(ctx, static_cast<int>((size_t)mid));
+        else if (::protoPython::PythonEnvironment::isTupleValue(ctx, a)) item = ::protoPython::PythonEnvironment::tupleView(ctx, a)->getAt(ctx, static_cast<int>((size_t)mid));
         
         // x < item ?
         const proto::ProtoList* args = ctx->newList()->appendLast(ctx, item);
@@ -66,7 +66,7 @@ static const proto::ProtoObject* py_bisect_left(
     
     if (hi == -1) {
         if (a->asList(ctx)) hi = (long long)a->asList(ctx)->getSize(ctx);
-        else if (a->isTuple(ctx)) hi = (long long)a->asTuple(ctx)->getSize(ctx);
+        else if (::protoPython::PythonEnvironment::isTupleValue(ctx, a)) hi = (long long)::protoPython::PythonEnvironment::tupleView(ctx, a)->getSize(ctx);
         else hi = 0;
     }
 
@@ -77,7 +77,7 @@ static const proto::ProtoObject* py_bisect_left(
         long long mid = (lo + hi) / 2;
         const proto::ProtoObject* item = nullptr;
         if (a->asList(ctx)) item = a->asList(ctx)->getAt(ctx, static_cast<int>((size_t)mid));
-        else if (a->isTuple(ctx)) item = a->asTuple(ctx)->getAt(ctx, static_cast<int>((size_t)mid));
+        else if (::protoPython::PythonEnvironment::isTupleValue(ctx, a)) item = ::protoPython::PythonEnvironment::tupleView(ctx, a)->getAt(ctx, static_cast<int>((size_t)mid));
         
         // item < x ?
         const proto::ProtoList* args = ctx->newList()->appendLast(ctx, x);

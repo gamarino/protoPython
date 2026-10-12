@@ -204,7 +204,7 @@ static const proto::ProtoObject* py_weakref_ref(
         // mirror py_object_get_weakref's logic.
         const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
         const proto::ProtoObject* mroAttr = tp ? env->getAttribute(ctx, tp, mroS, false) : nullptr;
-        const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+        ::protoPython::TupleView mroT = mroAttr ? ::protoPython::PythonEnvironment::tupleView(ctx, mroAttr) : nullptr;
         bool hasBlocker = false;
         bool hasExplicitWeakrefSlot = false;
         const proto::ProtoString* slotsChkS =
@@ -214,7 +214,7 @@ static const proto::ProtoObject* py_weakref_ref(
             const proto::ProtoObject* sv = base->getOwnAttributeDirect(ctx, slotsChkS);
             if (!sv) return false;
             const proto::ProtoList* sL = sv->asList(ctx);
-            const proto::ProtoTuple* sT = sv->asTuple(ctx);
+            ::protoPython::TupleView sT = ::protoPython::PythonEnvironment::tupleView(ctx, sv);
             proto::proto_ulong n = sL ? sL->getSize(ctx)
                               : (sT ? sT->getSize(ctx) : 0);
             for (proto::proto_ulong i = 0; i < n; ++i) {
@@ -255,7 +255,7 @@ static const proto::ProtoObject* py_weakref_ref(
                     base->getOwnAttributeDirect(ctx, slotsS);
                 if (!slotsAttr) return false;
                 const proto::ProtoList* slotsL = slotsAttr->asList(ctx);
-                const proto::ProtoTuple* slotsTp = slotsAttr->asTuple(ctx);
+                ::protoPython::TupleView slotsTp = ::protoPython::PythonEnvironment::tupleView(ctx, slotsAttr);
                 proto::proto_ulong nn = slotsL ? slotsL->getSize(ctx)
                                   : (slotsTp ? slotsTp->getSize(ctx) : 0);
                 for (proto::proto_ulong i = 0; i < nn; ++i) {

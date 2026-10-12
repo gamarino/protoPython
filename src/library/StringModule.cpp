@@ -137,7 +137,7 @@ static const proto::ProtoObject* py_formatter_parser(
         tup = tup->appendLast(ctx, conv);
 
         // Wrap as a Python tuple object
-        const proto::ProtoObject* tupObj = ctx->newTupleFromList(tup)->asObject(ctx);
+        const proto::ProtoObject* tupObj = ::protoPython::PythonEnvironment::tupleFromList(ctx, tup);
         if (env && env->getTuplePrototype()) {
             proto::ProtoObject* t = const_cast<proto::ProtoObject*>(ctx->newObject(false));
             t = const_cast<proto::ProtoObject*>(t->addParent(ctx, env->getTuplePrototype()));
@@ -214,7 +214,7 @@ static const proto::ProtoObject* py_formatter_field_name_split(
             const proto::ProtoList* pair = ctx->newList();
             pair = pair->appendLast(ctx, PROTO_TRUE);
             pair = pair->appendLast(ctx, PythonEnvironment::getInternedString(ctx, attr.c_str())->asObject(ctx));
-            rest_parts = rest_parts->appendLast(ctx, ctx->newTupleFromList(pair)->asObject(ctx));
+            rest_parts = rest_parts->appendLast(ctx, ::protoPython::PythonEnvironment::tupleFromList(ctx, pair));
         } else if (r[pos] == '[') {
             ++pos;
             size_t end = r.find(']', pos);
@@ -231,7 +231,7 @@ static const proto::ProtoObject* py_formatter_field_name_split(
             const proto::ProtoList* pair = ctx->newList();
             pair = pair->appendLast(ctx, PROTO_FALSE);
             pair = pair->appendLast(ctx, key);
-            rest_parts = rest_parts->appendLast(ctx, ctx->newTupleFromList(pair)->asObject(ctx));
+            rest_parts = rest_parts->appendLast(ctx, ::protoPython::PythonEnvironment::tupleFromList(ctx, pair));
         } else {
             ++pos;
         }
@@ -250,7 +250,7 @@ static const proto::ProtoObject* py_formatter_field_name_split(
     const proto::ProtoList* result_pair = ctx->newList();
     result_pair = result_pair->appendLast(ctx, first);
     result_pair = result_pair->appendLast(ctx, restListObj);
-    return ctx->newTupleFromList(result_pair)->asObject(ctx);
+    return ::protoPython::PythonEnvironment::tupleFromList(ctx, result_pair);
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {

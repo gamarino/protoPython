@@ -215,12 +215,14 @@ Two kinds of object are never collected, by protoCore's design (protoCore
   stay for the life of the process: mutually recursive or decorated recursive
   nested functions (one cycle per definition), a class (its `__mro__` and
   `__class__` cell hold it), a list that contains itself.
-- **A tuple.** protoPython's tuples are protoCore tuples, which protoCore interns
-  and never frees, so a tuple keeps what it holds: a loop that builds tuples of
-  new objects (`return (a, b)` of fresh lists, `*args` of fresh objects) grows
-  the heap by those objects for good. Measured: 40,000 calls passing a new list
-  through `*args` keep about 10 cells each. Not fixed: it needs a collectable
-  tuple representation.
+- **A tuple** is no longer one: since 2026-10-12 a Python tuple is an immutable
+  object holding its items in a `ProtoList`, collected like any other object
+  (`PythonEnvironment::makeTuple`). It was a protoCore `ProtoTuple`, which
+  protoCore interns and never frees: a loop building tuples of new objects
+  (`*args`, `return (a, b)`, `dict.items()`) kept them all, about 10 cells per
+  call. `protopy_tuple_bounded_memory` runs such a loop in a fixed 1 M-cell
+  heap. Tuples built once at start-up or by the compiler (code-object
+  constants, `__mro__`, `__bases__`) are still `ProtoTuple`s.
 
 Before this default, protopy set no limit and protoCore never started a
 collection by itself, so the heap grew with every allocation. Embedders that

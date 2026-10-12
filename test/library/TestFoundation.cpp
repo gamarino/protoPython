@@ -138,7 +138,8 @@ TEST_F(FoundationTest, SysModule) {
     // serial) in __data__, with every field also available as an attribute.
     const proto::ProtoObject* viData = versionInfo->getAttribute(context, env.getDataString());
     ASSERT_NE(viData, nullptr);
-    const proto::ProtoTuple* viTuple = viData->asTuple(context);
+    // A tuple keeps its items in a ProtoList (PythonEnvironment::makeTuple).
+    const proto::ProtoList* viTuple = viData->asList(context);
     ASSERT_NE(viTuple, nullptr);
     EXPECT_EQ(viTuple->getSize(context), 5u);
     const proto::ProtoObject* major = versionInfo->getAttribute(context, proto::ProtoString::createSymbol(context, "major"));

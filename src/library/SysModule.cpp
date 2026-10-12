@@ -195,7 +195,7 @@ static const proto::ProtoObject* sys_getsizeof(
                 PythonEnvironment::getInternedString(context, "__sizeof__");
             const proto::ProtoString* mroS = env->getMroString();
             const proto::ProtoObject* mroAttr = mroS ? env->getAttribute(context, cls, mroS, false) : nullptr;
-            const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
+            ::protoPython::TupleView mroT = mroAttr ? ::protoPython::PythonEnvironment::tupleView(context, mroAttr) : nullptr;
             const proto::ProtoObject* sizeM = nullptr;
             if (mroT) {
                 for (proto::proto_ulong i = 0; i < mroT->getSize(context); ++i) {
@@ -514,7 +514,7 @@ static const proto::ProtoObject* sys_get_asyncgen_hooks(
             ? sysMod->getAttribute(context, PythonEnvironment::getInternedString(context, attr)) : nullptr;
         hooks = hooks->appendLast(context, v ? v : PROTO_NONE);
     }
-    return env ? env->newTuple(hooks) : context->newTupleFromList(hooks)->asObject(context);
+    return env ? env->newTuple(hooks) : ::protoPython::PythonEnvironment::tupleFromList(context, hooks);
 }
 
 static const proto::ProtoObject* sys_set_asyncgen_hooks(
@@ -681,7 +681,7 @@ static const proto::ProtoObject* sys_exc_info(
     const proto::ProtoObject* exc = PythonEnvironment::getActiveException();
     if (!exc || exc == PROTO_NONE) {
         const proto::ProtoList* l = context->newList()->appendLast(context, PROTO_NONE)->appendLast(context, PROTO_NONE)->appendLast(context, PROTO_NONE);
-        const proto::ProtoObject* tupleObj = context->newTupleFromList(l)->asObject(context);
+        const proto::ProtoObject* tupleObj = ::protoPython::PythonEnvironment::tupleFromList(context, l);
         if (env && env->getTuplePrototype()) {
             tupleObj = tupleObj->addParent(context, env->getTuplePrototype());
             tupleObj = tupleObj->setAttribute(context, PythonEnvironment::getInternedString(context, "__class__"), env->getTuplePrototype());
@@ -693,7 +693,7 @@ static const proto::ProtoObject* sys_exc_info(
     if (!tb) tb = PROTO_NONE;
     
     const proto::ProtoList* l = context->newList()->appendLast(context, type)->appendLast(context, exc)->appendLast(context, tb);
-    const proto::ProtoObject* tupleObj = context->newTupleFromList(l)->asObject(context);
+    const proto::ProtoObject* tupleObj = ::protoPython::PythonEnvironment::tupleFromList(context, l);
     if (env && env->getTuplePrototype()) {
         tupleObj = tupleObj->addParent(context, env->getTuplePrototype());
         tupleObj = tupleObj->setAttribute(context, PythonEnvironment::getInternedString(context, "__class__"), env->getTuplePrototype());
@@ -1098,7 +1098,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     for (const char* name : builtin_names) {
         builtinsList = builtinsList->appendLast(ctx, PythonEnvironment::getInternedString(ctx, name)->asObject(ctx));
     }
-    const proto::ProtoObject* bt = env ? env->newTuple(builtinsList) : ctx->newTupleFromList(builtinsList)->asObject(ctx);
+    const proto::ProtoObject* bt = env ? env->newTuple(builtinsList) : ::protoPython::PythonEnvironment::tupleFromList(ctx, builtinsList);
     sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "builtin_module_names"), bt);
 
     // sys.executable — STRUCT-309: CPython parity expects the path

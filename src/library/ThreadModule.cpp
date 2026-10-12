@@ -438,8 +438,8 @@ static const proto::ProtoObject* py_start_new_thread(
     argsForThread = argsForThread->appendLast(ctx, callable);
     if (posArgs->getSize(ctx) >= 2) {
         const proto::ProtoObject* second = posArgs->getAt(ctx, 1);
-        if (second->asTuple(ctx)) {
-            const proto::ProtoTuple* tup = second->asTuple(ctx);
+        if (::protoPython::PythonEnvironment::tupleView(ctx, second)) {
+            ::protoPython::TupleView tup = ::protoPython::PythonEnvironment::tupleView(ctx, second);
             for (proto::proto_ulong i = 0; i < tup->getSize(ctx); ++i)
                 argsForThread = argsForThread->appendLast(ctx, tup->getAt(ctx, static_cast<int>(i)));
         } else {
