@@ -1449,6 +1449,16 @@ foreach(_t IN LISTS PROTOPY_STDLIB_ORACLE_TESTS)
         TIMEOUT 120
         LABELS "regression_gate")
 endforeach()
+# A generator resume costs a small multiple of a function call, and so does
+# each level a value crosses in a recursive `yield from` (both measured in the
+# same process).  A resume copied every slot of the context, the operand
+# stack area included, into new lists: ~70 us per resume.
+add_test(NAME protopy_generator_resume_cost
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/generator_resume_cost.py)
+set_tests_properties(protopy_generator_resume_cost PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 300
+    LABELS "regression_gate")
 # Defining a named nested function (plain, recursive, nonlocal, capturing in a
 # comprehension, returned) leaves nothing once the call returns: a loop of
 # such calls runs in a fixed 2.5 M-cell heap.  Closures held the defining

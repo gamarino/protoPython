@@ -941,8 +941,14 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         const proto::ProtoList* emptyStack = calleeCtx->newList();
         gen->setAttribute(calleeCtx, env ? env->getGiStackString() : PythonEnvironment::getInternedString(calleeCtx, "gi_stack"), emptyStack->asObject(calleeCtx));
         
+        // Only the variable slots (co_varnames, cells, free variables): the
+        // rest of the automatic area is the operand stack, empty here.
+        // Saving all of it cost one list append per slot (~135 for a small
+        // function) on every generator created.
         const proto::ProtoList* localList = calleeCtx->newList();
-        for (unsigned int i = 0; i < nSlots; ++i) {
+        const unsigned int nVarSlots = static_cast<unsigned int>(
+            std::min<proto::proto_ulong>(nSlots, nLocalsPlus));
+        for (unsigned int i = 0; i < nVarSlots; ++i) {
             localList = localList->appendLast(calleeCtx, slots[i]);
         }
         gen->setAttribute(calleeCtx, env ? env->getGiLocalsString() : PythonEnvironment::getInternedString(calleeCtx, "gi_locals"), localList->asObject(calleeCtx));
@@ -3261,16 +3267,11 @@ const proto::ProtoObject* py_generator_send_impl(
         const proto::ProtoObject* co_automatic_obj = codeObj->getAttribute(ctx, env->getCoAutomaticCountString());
         int automatic_count = (co_automatic_obj && co_automatic_obj->isInteger(ctx)) ? static_cast<int>(co_automatic_obj->asLong(ctx)) : 0;
         
-        const proto::ProtoList* localNames = ctx->newList();
-        if (co_varnames) {
-            proto::proto_ulong vSize = co_varnames->getSize(ctx);
-            for (int i = 0; i < automatic_count; ++i) {
-                const proto::ProtoObject* name = (i < static_cast<int>(vSize)) ? co_varnames->getAt(ctx, i) : PROTO_NONE;
-                localNames = localNames->appendLast(ctx, name);
-            }
-        }
-        
-        ContextScope scope(ctx->space, ctx, nullptr, localNames, nullptr, nullptr);
+        // Sized like a function call's context (runUserFunctionCall): by
+        // automatic_count, without a list of local names.  Building that
+        // list took one append per automatic slot on every resume.
+        ContextScope scope(ctx->space, ctx, nullptr, nullptr, nullptr, nullptr,
+                           static_cast<size_t>(automatic_count));
         calleeCtx = scope.context();
         
         // Restore locals from gi_locals
@@ -3337,11 +3338,18 @@ const proto::ProtoObject* py_generator_send_impl(
             &finalTop);
         PythonEnvironment::setCurrentCodeObject(prevCodeObj);
 
+        // Save the variable slots only, [0, stackOffset): the operand stack
+        // is saved below up to its live top.  Saving every automatic slot
+        // (the operand-stack area included, 128 + max stack) cost one list
+        // append per slot on every resume, ~37 us of a ~75 us resume, and
+        // made each step of a recursive `yield from` chain pay it per level.
         const proto::ProtoList* newLocals = calleeCtx->newList();
         const proto::ProtoObject** updatedSlots = calleeCtx->getAutomaticLocals();
         unsigned int updatedSlotsN = calleeCtx->getAutomaticLocalsCount();
         if (updatedSlots) {
-            for (unsigned int i = 0; i < updatedSlotsN; ++i) {
+            const unsigned int nVarSlots = static_cast<unsigned int>(
+                std::min<proto::proto_ulong>(updatedSlotsN, stackOffset));
+            for (unsigned int i = 0; i < nVarSlots; ++i) {
                 newLocals = newLocals->appendLast(calleeCtx, updatedSlots[i]);
             }
         }
