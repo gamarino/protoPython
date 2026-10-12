@@ -43,6 +43,7 @@ add_library(protoPython SHARED
     OpcodeModule.cpp
     StringModule.cpp
     BinasciiModule.cpp
+    HashcoreModule.cpp
     DatetimeModule.cpp
     PosixSubprocessModule.cpp
     FcntlModule.cpp

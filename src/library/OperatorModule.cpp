@@ -434,6 +434,64 @@ static const proto::ProtoObject* py_methodcaller(
     return ctx->fromMethod(const_cast<proto::ProtoObject*>(holder), py_methodcaller_call);
 }
 
+// _compare_digest(a, b): a == b in time independent of where they differ
+// (hmac.compare_digest).  Both ASCII str, or both bytes-like.
+static bool digestOctets(proto::ProtoContext* ctx, PythonEnvironment* env,
+                         const proto::ProtoObject* obj, std::string& out) {
+    const proto::ProtoObject* asBytes = obj;
+    const proto::ProtoObject* bytesType = env->getBytesPrototype();
+    if (!bytesType || env->getType(ctx, obj) != bytesType) {
+        asBytes = env->callObject(bytesType, {obj});
+        if (!asBytes) return false;
+    }
+    const proto::ProtoObject* data = asBytes->getAttribute(ctx, env->getDataString());
+    const proto::ProtoByteBuffer* bb = data ? data->asByteBuffer(ctx) : nullptr;
+    if (!bb) return false;
+    out.resize(bb->getSize(ctx));
+    for (size_t i = 0; i < out.size(); ++i) out[i] = bb->getAt(ctx, static_cast<int>(i));
+    return true;
+}
+
+static const proto::ProtoObject* py_compare_digest(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return PROTO_FALSE;
+    if (!args || args->getSize(ctx) != 2) {
+        env->raiseTypeError(ctx, "_compare_digest expected 2 arguments");
+        return nullptr;
+    }
+    const proto::ProtoObject* a = args->getAt(ctx, 0);
+    const proto::ProtoObject* b = args->getAt(ctx, 1);
+    std::string x, y;
+    const bool aStr = a->isString(ctx), bStr = b->isString(ctx);
+    if (aStr != bStr) {
+        env->raiseTypeError(ctx, "unsupported operand types(s) or combination of types: '"
+            + std::string(aStr ? "str" : "bytes") + "' and '" + std::string(bStr ? "str" : "bytes") + "'");
+        return nullptr;
+    }
+    if (aStr) {
+        a->asString(ctx)->toUTF8String(ctx, x);
+        b->asString(ctx)->toUTF8String(ctx, y);
+        for (const std::string* t : {&x, &y})
+            for (unsigned char ch : *t)
+                if (ch >= 0x80) {
+                    env->raiseTypeError(ctx, "comparing strings with non-ASCII characters is not supported");
+                    return nullptr;
+                }
+    } else if (!digestOctets(ctx, env, a, x) || !digestOctets(ctx, env, b, y)) {
+        if (!env->hasPendingException())
+            env->raiseTypeError(ctx, "unsupported operand types(s) or combination of types");
+        return nullptr;
+    }
+    // Visit every byte of `y` whatever the lengths, as CPython does.
+    unsigned char diff = x.size() == y.size() ? 0 : 1;
+    const std::string& left = x.size() == y.size() ? x : y;
+    for (size_t i = 0; i < y.size(); ++i)
+        diff |= static_cast<unsigned char>(left[i] ^ y[i]);
+    return diff == 0 ? PROTO_TRUE : PROTO_FALSE;
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(false);
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "add"),
@@ -491,6 +549,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_attrgetter));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "methodcaller"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_methodcaller));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_compare_digest"),
+        ctx->fromMethod(nullptr, py_compare_digest));
     return mod;
 }
 

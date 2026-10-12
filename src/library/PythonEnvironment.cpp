@@ -176,6 +176,7 @@ namespace weakref { const proto::ProtoObject* initialize(proto::ProtoContext* ct
 namespace math { const proto::ProtoObject* initialize(proto::ProtoContext* ctx); }
 namespace string_module { const proto::ProtoObject* initialize(proto::ProtoContext* ctx); }
 namespace binascii { const proto::ProtoObject* initialize(proto::ProtoContext* ctx); }
+namespace hashcore { const proto::ProtoObject* initialize(proto::ProtoContext* ctx); }
 static const proto::ProtoObject* py_str_call(proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink* parentLink, const proto::ProtoList* posArgs, const proto::ProtoSparseList*);
 static const proto::ProtoObject* py_repr_call(proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink* parentLink, const proto::ProtoList* posArgs, const proto::ProtoSparseList*);
 
@@ -22689,6 +22690,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     registerNativeModule(nativeProviderPtr, "_warnings", [](proto::ProtoContext* c) { return library::WarningsModule::createWarningsModule(c); });
     registerNativeModule(nativeProviderPtr, "_string", [](proto::ProtoContext* c) { return string_module::initialize(c); });
     registerNativeModule(nativeProviderPtr, "binascii", [](proto::ProtoContext* c) { return binascii::initialize(c); });
+    // Digests behind hashlib's _md5, _sha1, _sha2, _sha3 and _blake2 (Python).
+    registerNativeModule(nativeProviderPtr, "_hashcore", [](proto::ProtoContext* c) { return hashcore::initialize(c); });
     registerNativeModule(nativeProviderPtr, "_datetime", [](proto::ProtoContext* c) { return datetime::initialize(c); });
 #if defined(_WIN32)
     registerNativeModule(nativeProviderPtr, "_winapi", [](proto::ProtoContext* c) { return winapi_module::initialize(c); });
