@@ -243,16 +243,16 @@ a shared library). See [docs/PROTOPYC_SPECIFICATION.md](docs/PROTOPYC_SPECIFICAT
 
 ## Performance
 
-**protoCore 2.14.6 (measured 2026-10-12).**  protoCore no longer allocates a
+**protoCore 2.14.6 (measured 2026-10-13).**  protoCore no longer allocates a
 temporary for `%`, `//` and unary minus on two SmallIntegers.  Loops of
 2,000,000 iterations doing one operation each, protopy, the same commit
 (`e1c88f73`) built against protoCore 2.14.5 and 2.14.6, `perf stat` cycles:
-`%` -17.7 %, `//` -15.5 %, unary minus -5.2 % (A/A floor <= 1.9 %);
+`%` -18.7 %, `//` -16.5 %, unary minus -3.8 % (A/A floor <= 0.6 %);
 comparisons are unchanged (protoPython has its own SmallInteger path).
-`benchmarks/run_4way_interleaved.py` against CPython 3.14t moves within its
-noise, because none of its workloads divides: `int_sum_loop` 1.05 -> 1.01x,
-`pyperf_sieve` 3.74 -> 3.65x, `range_iterate` 1.79 -> 1.74x CPython-t's
-time.  Details: [protoCore's report](https://github.com/numaes/protoCore/blob/master/docs/reports/2026-10-12-cross-runtime-int-compare.md).
+`benchmarks/run_4way_interleaved.py` against CPython 3.14t, three rounds,
+moves within its noise because none of its workloads divides:
+`int_sum_loop` 1.07 -> 1.00x, `pyperf_sieve` 3.60 -> 3.53x, `range_iterate`
+1.83 -> 1.79x CPython-t's time. Measured under TLP's battery power profile (powersave, EPP balance_power): compare ratios, not absolute times, with older figures.  Details: [protoCore's report](https://github.com/numaes/protoCore/blob/master/docs/reports/2026-10-12-cross-runtime-int-compare.md).
 
 protoPython is slower than CPython on most single-threaded workloads. The most recent
 full measurement is
