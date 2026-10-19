@@ -243,6 +243,19 @@ a shared library). See [docs/PROTOPYC_SPECIFICATION.md](docs/PROTOPYC_SPECIFICAT
 
 ## Performance
 
+**protoCore 2.14.7 (measured 2026-10-19).** 2.14.7 changes the write path: a
+new value for an existing key copies the root-to-key path without rebalancing,
+and allocating a cell no longer takes a spinlock. The same binaries on
+protoCore 2.14.6 and 2.14.7, each run loading a fresh copy of the library,
+three rounds: `benchmarks/run_4way_interleaved.py` against CPython 3.14t moves
+the ratio by -0.2 % (protopy, geomean of 14 workloads) and -0.8 % (protopyc,
+8), within the harness's A/A spread except protopyc `memory_pressure` (-11.7
+%, informational); an attribute write (`o.x = v` in a loop) costs 2,578 cycles
+against 2,720 (-5 %, A/A 0.4 %). Measured under TLP's battery power profile
+(powersave, EPP balance_power): compare ratios, not absolute times, with older
+figures. Details: [protoCore's
+report](https://github.com/numaes/protoCore/blob/master/docs/reports/2026-10-18-write-path.md).
+
 **protoCore 2.14.6 (measured 2026-10-13).**  protoCore no longer allocates a
 temporary for `%`, `//` and unary minus on two SmallIntegers.  Loops of
 2,000,000 iterations doing one operation each, protopy, the same commit
