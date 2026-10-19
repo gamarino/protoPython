@@ -8323,48 +8323,6 @@ const proto::ProtoObject* executeBytecodeRange(
                                 if (directType == env->getModulePrototype() || obj == env->getBuiltinsModule()) {
                                     env->invalidateResolveCache();
                                 }
-                                // STRUCT-321: dict / list / tuple / set
-                                // subclass instances must NOT have STORE_ATTR
-                                // write the name into their __keys__ slot —
-                                // that slot is the dict payload's key
-                                // tracker (or the equivalent for the other
-                                // built-in containers), and conflating it
-                                // with instance-attribute insertion order
-                                // makes `list(d.keys())` surface C.__init__'s
-                                // self.__state assignments alongside the
-                                // user's d['x'] = 'y' inserts.
-                                // test_multiple_inheritance regresses
-                                // without this guard.
-                                bool isContainerSubclass = false;
-                                if (env && directType) {
-                                    if (directType == env->getDictPrototype()
-                                        || directType == env->getListPrototype()
-                                        || directType == env->getTuplePrototype()
-                                        || directType == env->getSetPrototype()
-                                        || directType == env->getFrozensetPrototype()
-                                        || directType == env->getBytesPrototype()) {
-                                        isContainerSubclass = true;
-                                    } else {
-                                        // walk the MRO once
-                                        const proto::ProtoObject* mroAttr = env->getAttribute(ctx,
-                                            directType, env->getMroString(), false);
-                                        ::protoPython::TupleView mroT = mroAttr ? ::protoPython::PythonEnvironment::tupleView(ctx, mroAttr) : nullptr;
-                                        if (mroT) {
-                                            for (proto::proto_ulong i = 0; i < mroT->getSize(ctx); ++i) {
-                                                const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(i));
-                                                if (base == env->getDictPrototype()
-                                                    || base == env->getListPrototype()
-                                                    || base == env->getTuplePrototype()
-                                                    || base == env->getSetPrototype()
-                                                    || base == env->getFrozensetPrototype()
-                                                    || base == env->getBytesPrototype()) {
-                                                    isContainerSubclass = true;
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
                                 // PEP 468 / dict insertion-order preservation.
                                 // Track the assignment in obj.__keys__ so
                                 // vars(obj) and obj.__dict__ surface attrs in
@@ -8397,7 +8355,6 @@ const proto::ProtoObject* executeBytecodeRange(
                                 // iterate the class annotation map instead) will see
                                 // the order shift.  This is documented and explicit; we
                                 // no longer pay 2× setAttribute on every `self.x = v`.
-                                (void)isContainerSubclass;
                             }
                         }
                     }
