@@ -9,8 +9,8 @@ static const proto::ProtoObject* py_marshal_loads(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self;
     (void)parentLink;
     (void)positionalParameters;
@@ -27,8 +27,8 @@ static const proto::ProtoObject* py_marshal_dumps(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self;
     (void)parentLink;
     (void)positionalParameters;

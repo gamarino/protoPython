@@ -571,8 +571,8 @@ static const proto::ProtoObject* py_io_read(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     long long n = -1;
     if (posArgs->getSize(context) > 0 && posArgs->getAt(context, 0)->isInteger(context))
         n = posArgs->getAt(context, 0)->asLong(context);
@@ -620,8 +620,8 @@ static const proto::ProtoObject* py_io_close(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList*,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*,
+    const proto::ProtoKeywordArguments*) {
     // Descriptor file: release the descriptor now (unless closefd=False)
     // and mark the object closed; its owner no longer closes anything when
     // collected. Closing twice does nothing, as in CPython.
@@ -660,8 +660,8 @@ static const proto::ProtoObject* py_io_enter(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList*,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*,
+    const proto::ProtoKeywordArguments*) {
     return self;
 }
 
@@ -669,8 +669,8 @@ static const proto::ProtoObject* py_io_exit(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     // Close the file and suppress no exceptions
     py_io_close(context, self, nullptr, posArgs, nullptr);
     return PROTO_FALSE;
@@ -706,8 +706,8 @@ static const proto::ProtoObject* io_fd_next_line(proto::ProtoContext* context, c
     return io_fd_result(context, text, line);
 }
 
-static const proto::ProtoObject* io_open_arg(proto::ProtoContext* context, const proto::ProtoList* pos,
-                                             const proto::ProtoSparseList* kw, proto::proto_ulong index,
+static const proto::ProtoObject* io_open_arg(proto::ProtoContext* context, const proto::ProtoArguments* pos,
+                                             const proto::ProtoKeywordArguments* kw, proto::proto_ulong index,
                                              const char* name);
 
 // readline(size=-1): at most `size` characters (bytes in binary mode) of the
@@ -716,8 +716,8 @@ static const proto::ProtoObject* py_io_readline(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     long long limit = -1;
     const proto::ProtoObject* sizeArg = io_open_arg(context, posArgs, keywordParameters, 0, "size");
     if (sizeArg && sizeArg != PROTO_NONE) {
@@ -749,8 +749,8 @@ static const proto::ProtoObject* py_io_iter(
     proto::ProtoContext*,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList*,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*,
+    const proto::ProtoKeywordArguments*) {
     // File objects are their own iterator: `for line in f` reuses the
     // same object across __next__ calls. Returning self preserves the
     // CPython contract.
@@ -761,8 +761,8 @@ static const proto::ProtoObject* py_io_next(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList*,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*,
+    const proto::ProtoKeywordArguments*) {
     if (io_get_fd(context, self) >= 0) {
         if (FdOwner* owner = io_fd_owner(context, self)) {
             bool atEnd = false;
@@ -789,8 +789,8 @@ static const proto::ProtoObject* py_io_flush(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList*,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*,
+    const proto::ProtoKeywordArguments*) {
     // Writes are unbuffered (descriptor files) or go to the backing buffer
     // immediately, so there is nothing to flush; a closed file raises.
     if (io_closed_fd_file(ctx, self)) return nullptr;
@@ -804,8 +804,8 @@ static const proto::ProtoObject* py_io_fileno(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList*,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*,
+    const proto::ProtoKeywordArguments*) {
     int fd = io_get_fd(ctx, self);
     if (fd < 0) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -828,7 +828,7 @@ static bool io_mode_has(proto::ProtoContext* ctx, const proto::ProtoObject* self
 
 static const proto::ProtoObject* py_io_readable(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     if (io_closed_fd_file(ctx, self)) return nullptr;
     if (io_buffer_file(ctx, self)) return PROTO_TRUE;  // read-mode file
     int fd = io_get_fd(ctx, self);
@@ -838,7 +838,7 @@ static const proto::ProtoObject* py_io_readable(
 
 static const proto::ProtoObject* py_io_writable(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     // A closed file answers too, as CPython's TextIOWrapper does.
     if (io_buffer_file(ctx, self)) return PROTO_FALSE;  // read-mode file
     if (io_closed_fd_file(ctx, self)) return nullptr;
@@ -849,7 +849,7 @@ static const proto::ProtoObject* py_io_writable(
 
 static const proto::ProtoObject* py_io_seekable(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     if (io_closed_fd_file(ctx, self)) return nullptr;
     if (io_buffer_file(ctx, self)) return PROTO_TRUE;  // read-mode file
     // Files are seekable; pipes, sockets and terminals are not.
@@ -904,7 +904,7 @@ static const proto::ProtoObject* io_buffer_seek(proto::ProtoContext* ctx, const 
 // file.seek(offset, whence=0): the new position.
 static const proto::ProtoObject* py_io_seek(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (io_closed_fd_file(ctx, self)) return nullptr;
     long long offset = 0;
     int whence = SEEK_SET;
@@ -930,7 +930,7 @@ static const proto::ProtoObject* py_io_seek(
 // file.tell(): the current position (a cookie in text mode).
 static const proto::ProtoObject* py_io_tell(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     if (io_closed_fd_file(ctx, self)) return nullptr;
     if (BufferFile* bf = io_buffer_file(ctx, self)) return ctx->fromInteger(static_cast<long long>(bf->pos));
     FdOwner* owner = io_fd_owner(ctx, self);
@@ -953,7 +953,7 @@ static const proto::ProtoObject* py_io_tell(
 // file.truncate(size=None) on a descriptor file: the new size.
 static const proto::ProtoObject* py_io_truncate(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (io_closed_fd_file(ctx, self)) return nullptr;
     if (io_buffer_file(ctx, self)) {
         io_raise_unsupported(ctx, "File not open for writing");
@@ -981,11 +981,11 @@ static const proto::ProtoObject* py_io_truncate(
 // file.writelines(lines): write() of each item.
 static const proto::ProtoObject* py_io_writelines(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*);
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*);
 
 static const proto::ProtoObject* py_io_isatty(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     int fd = io_get_fd(ctx, self);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     if (fd >= 0) return ::isatty(fd) ? PROTO_TRUE : PROTO_FALSE;
@@ -997,8 +997,8 @@ static const proto::ProtoObject* py_io_readlines(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList*,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*,
+    const proto::ProtoKeywordArguments*) {
     if (io_get_fd(context, self) >= 0) {
         if (FdOwner* owner = io_fd_owner(context, self)) {
             const proto::ProtoList* lines = context->newList();
@@ -1026,8 +1026,8 @@ static const proto::ProtoObject* py_io_write(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(context) < 1) return context->fromInteger(0);
     const proto::ProtoObject* data = posArgs->getAt(context, 0);
 
@@ -1075,7 +1075,7 @@ static const proto::ProtoObject* io_make_fd_file_prototype(proto::ProtoContext* 
 
 static const proto::ProtoObject* py_io_writelines(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoObject* lines = posArgs->getAt(ctx, 0);
@@ -1089,14 +1089,14 @@ static const proto::ProtoObject* py_io_writelines(
     if (!items) return PROTO_NONE;
     for (proto::proto_ulong i = 0; i < items->getSize(ctx); ++i) {
         const proto::ProtoList* one = ctx->newList()->appendLast(ctx, items->getAt(ctx, static_cast<int>(i)));
-        if (!py_io_write(ctx, self, nullptr, one, nullptr)) return nullptr;
+        if (!py_io_write(ctx, self, nullptr, argsView(proto::ProtoListArguments(ctx, one)), nullptr)) return nullptr;
     }
     return PROTO_NONE;
 }
 
 // open()'s argument at `index` or keyword `name`; nullptr when absent.
-static const proto::ProtoObject* io_open_arg(proto::ProtoContext* context, const proto::ProtoList* pos,
-                                             const proto::ProtoSparseList* kw, proto::proto_ulong index,
+static const proto::ProtoObject* io_open_arg(proto::ProtoContext* context, const proto::ProtoArguments* pos,
+                                             const proto::ProtoKeywordArguments* kw, proto::proto_ulong index,
                                              const char* name) {
     if (pos && pos->getSize(context) > index) return pos->getAt(context, static_cast<int>(index));
     if (kw) {
@@ -1107,8 +1107,8 @@ static const proto::ProtoObject* io_open_arg(proto::ProtoContext* context, const
 }
 
 // open()'s `newline` argument (6th positional or keyword) is None or absent.
-static bool io_newline_is_none(proto::ProtoContext* context, const proto::ProtoList* pos,
-                               const proto::ProtoSparseList* kw) {
+static bool io_newline_is_none(proto::ProtoContext* context, const proto::ProtoArguments* pos,
+                               const proto::ProtoKeywordArguments* kw) {
     const proto::ProtoObject* nl = io_open_arg(context, pos, kw, 5, "newline");
     return !nl || nl == PROTO_NONE;
 }
@@ -1183,8 +1183,8 @@ static const proto::ProtoObject* py_io_open(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
 
     const proto::ProtoObject* fileArg = positionalParameters->getAt(context, 0);
@@ -1337,18 +1337,18 @@ static const proto::ProtoObject* py_io_open_code(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) != 1) return PROTO_NONE;
     const proto::ProtoList* args = context->newList()
         ->appendLast(context, positionalParameters->getAt(context, 0))
         ->appendLast(context, context->fromUTF8String("rb"));
-    return py_io_open(context, self, parentLink, args, nullptr);
+    return py_io_open(context, self, parentLink, argsView(proto::ProtoListArguments(context, args)), nullptr);
 }
 
 static const proto::ProtoObject* py_io_register(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     // Dummy register method for ABCs
     return self;
 }
@@ -1470,7 +1470,7 @@ static const proto::ProtoObject* bio_set_state(proto::ProtoContext* ctx,
 
 static const proto::ProtoObject* py_bio_write(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return ctx->fromInteger(0);
     const proto::ProtoObject* data = args->getAt(ctx, 0);
     // Symmetric to StringIO.write: BytesIO.write requires bytes-like
@@ -1500,7 +1500,7 @@ static const proto::ProtoObject* py_bio_write(
 
 static const proto::ProtoObject* py_bio_getvalue(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return bio_make_bytes(ctx, bio_get_buf(ctx, self));
 }
 
@@ -1512,13 +1512,13 @@ static const proto::ProtoObject* py_bio_getvalue(
 // unblocks pickle round-trip without growing a memoryview dependency.
 static const proto::ProtoObject* py_bio_getbuffer(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return bio_make_bytes(ctx, bio_get_buf(ctx, self));
 }
 
 static const proto::ProtoObject* py_bio_read(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     std::string buf = bio_get_buf(ctx, self);
     proto::proto_long pos = bio_get_pos(ctx, self);
     if (pos < 0) pos = 0;
@@ -1538,7 +1538,7 @@ static const proto::ProtoObject* py_bio_read(
 
 static const proto::ProtoObject* py_bio_readline(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     std::string buf = bio_get_buf(ctx, self);
     proto::proto_long pos = bio_get_pos(ctx, self);
     if (pos < 0) pos = 0;
@@ -1562,10 +1562,10 @@ static const proto::ProtoObject* py_bio_readline(
 
 static const proto::ProtoObject* py_bio_readlines(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     const proto::ProtoList* lines = ctx->newList();
     for (;;) {
-        const proto::ProtoObject* line = py_bio_readline(ctx, self, nullptr, ctx->newList(), nullptr);
+        const proto::ProtoObject* line = py_bio_readline(ctx, self, nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
         // EOF: bio_make_bytes("") produces a bytes instance with empty
         // __data__ — peek into it to detect end of stream.
         std::string raw = bio_obj_to_bytes(ctx, line);
@@ -1577,14 +1577,14 @@ static const proto::ProtoObject* py_bio_readlines(
 
 static const proto::ProtoObject* py_bio_iter(
     proto::ProtoContext*, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return self;
 }
 
 static const proto::ProtoObject* py_bio_next(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
-    const proto::ProtoObject* line = py_bio_readline(ctx, self, nullptr, ctx->newList(), nullptr);
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
+    const proto::ProtoObject* line = py_bio_readline(ctx, self, nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     std::string raw = bio_obj_to_bytes(ctx, line);
     if (raw.empty()) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -1596,7 +1596,7 @@ static const proto::ProtoObject* py_bio_next(
 
 static const proto::ProtoObject* py_bio_seek(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     proto::proto_long off = 0;
     proto::proto_long whence = 0;
     if (args && args->getSize(ctx) > 0 && args->getAt(ctx, 0)->isInteger(ctx))
@@ -1616,13 +1616,13 @@ static const proto::ProtoObject* py_bio_seek(
 
 static const proto::ProtoObject* py_bio_tell(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return ctx->fromInteger(bio_get_pos(ctx, self));
 }
 
 static const proto::ProtoObject* py_bio_truncate(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     std::string buf = bio_get_buf(ctx, self);
     proto::proto_long pos = bio_get_pos(ctx, self);
     proto::proto_long size = pos;
@@ -1638,44 +1638,44 @@ static const proto::ProtoObject* py_bio_truncate(
 
 static const proto::ProtoObject* py_bio_close(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     bio_set_state(ctx, self, std::string(), 0);
     return PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_bio_flush(
     proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_bio_writable(
     proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return PROTO_TRUE;
 }
 
 static const proto::ProtoObject* py_bio_readable(
     proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return PROTO_TRUE;
 }
 
 static const proto::ProtoObject* py_bio_seekable(
     proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return PROTO_TRUE;
 }
 
 static const proto::ProtoObject* py_bio_enter(
     proto::ProtoContext*, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return self;
 }
 
 static const proto::ProtoObject* py_bio_exit(
     proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return PROTO_FALSE;
 }
 
@@ -1690,7 +1690,7 @@ static const proto::ProtoObject* py_bio_exit(
 // and absorb the construction work there.
 static const proto::ProtoObject* py_bio_new(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* cls = args->getAt(ctx, 0);
     proto::ProtoObject* inst = const_cast<proto::ProtoObject*>(cls->newChild(ctx, true));
@@ -1784,7 +1784,7 @@ static const proto::ProtoObject* sio_set_state(proto::ProtoContext* ctx,
 
 static const proto::ProtoObject* py_sio_write(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return ctx->fromInteger(0);
     const proto::ProtoObject* data = args->getAt(ctx, 0);
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -1825,13 +1825,13 @@ static const proto::ProtoObject* py_sio_write(
 
 static const proto::ProtoObject* py_sio_getvalue(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return PythonEnvironment::newStr(ctx, sio_encode(sio_get_buf(ctx, self)));
 }
 
 static const proto::ProtoObject* py_sio_read(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     std::u32string buf = sio_get_buf(ctx, self);
     proto::proto_long pos = sio_get_pos(ctx, self);
     if (pos < 0) pos = 0;
@@ -1853,7 +1853,7 @@ static const proto::ProtoObject* py_sio_read(
 // translation is not modelled), at most `size` characters of it.
 static const proto::ProtoObject* py_sio_readline(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     std::u32string buf = sio_get_buf(ctx, self);
     proto::proto_long pos = sio_get_pos(ctx, self);
     if (pos < 0) pos = 0;
@@ -1875,11 +1875,11 @@ static const proto::ProtoObject* py_sio_readline(
 
 static const proto::ProtoObject* py_sio_readlines(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     const proto::ProtoList* lines = ctx->newList();
     const proto::ProtoList* noArgs = ctx->newList();
     for (;;) {
-        const proto::ProtoObject* line = py_sio_readline(ctx, self, nullptr, noArgs, nullptr);
+        const proto::ProtoObject* line = py_sio_readline(ctx, self, nullptr, argsView(proto::ProtoListArguments(ctx, noArgs)), nullptr);
         if (!line || !line->isString(ctx) || line->asString(ctx)->getSize(ctx) == 0) break;
         lines = lines->appendLast(ctx, line);
     }
@@ -1888,14 +1888,14 @@ static const proto::ProtoObject* py_sio_readlines(
 
 static const proto::ProtoObject* py_sio_iter(
     proto::ProtoContext*, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return self;
 }
 
 static const proto::ProtoObject* py_sio_next(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
-    const proto::ProtoObject* line = py_sio_readline(ctx, self, nullptr, ctx->newList(), nullptr);
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
+    const proto::ProtoObject* line = py_sio_readline(ctx, self, nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     if (line && line->isString(ctx) && line->asString(ctx)->getSize(ctx) == 0) {
         if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx)) env->raiseStopIteration(ctx);
         return nullptr;
@@ -1905,7 +1905,7 @@ static const proto::ProtoObject* py_sio_next(
 
 static const proto::ProtoObject* py_sio_seek(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     proto::proto_long off = 0;
     proto::proto_long whence = 0;
     if (args && args->getSize(ctx) > 0 && args->getAt(ctx, 0)->isInteger(ctx))
@@ -1946,13 +1946,13 @@ static const proto::ProtoObject* py_sio_seek(
 
 static const proto::ProtoObject* py_sio_tell(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return ctx->fromInteger(sio_get_pos(ctx, self));
 }
 
 static const proto::ProtoObject* py_sio_truncate(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     std::u32string buf = sio_get_buf(ctx, self);
     proto::proto_long pos = sio_get_pos(ctx, self);
     proto::proto_long size = pos;
@@ -1968,46 +1968,46 @@ static const proto::ProtoObject* py_sio_truncate(
 
 static const proto::ProtoObject* py_sio_close(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     sio_set_state(ctx, self, std::u32string(), 0);
     return PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_sio_writable(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return PROTO_TRUE;
 }
 
 // fileno() of an in-memory stream: io.UnsupportedOperation, as in CPython.
 static const proto::ProtoObject* py_memio_fileno(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     io_raise_unsupported(ctx, "fileno");
     return nullptr;
 }
 
 static const proto::ProtoObject* py_sio_seekable(
     proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return PROTO_TRUE;
 }
 
 static const proto::ProtoObject* py_sio_readable(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return PROTO_TRUE;
 }
 
 static const proto::ProtoObject* py_sio_enter(
     proto::ProtoContext*, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return self;
 }
 
 static const proto::ProtoObject* py_sio_exit(
     proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return PROTO_FALSE;
 }
 
@@ -2020,7 +2020,7 @@ static const proto::ProtoObject* py_sio_exit(
 // regardless of input).
 static const proto::ProtoObject* py_sio_new(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* cls = args->getAt(ctx, 0);
     proto::ProtoObject* inst = const_cast<proto::ProtoObject*>(cls->newChild(ctx, true));
@@ -2053,7 +2053,7 @@ static const proto::ProtoObject* py_sio_new(
 // by CPython under -X warn_default_encoding) is not implemented.
 static const proto::ProtoObject* py_io_text_encoding(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::proto_ulong argc = posArgs ? posArgs->getSize(ctx) : 0;
     if (argc < 1 || argc > 2) {

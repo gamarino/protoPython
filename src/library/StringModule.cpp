@@ -102,8 +102,8 @@ static std::vector<ParsedField> parse_format_string(const std::string& fmt) {
 static const proto::ProtoObject* py_formatter_parser(
     proto::ProtoContext* ctx, const proto::ProtoObject*,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
 
     if (!posArgs || posArgs->getSize(ctx) < 1) return PythonEnvironment::wrapList(ctx, ctx->newList());
     const proto::ProtoObject* fmtObj = posArgs->getAt(ctx, 0);
@@ -169,8 +169,8 @@ static const proto::ProtoObject* py_formatter_parser(
 static const proto::ProtoObject* py_formatter_field_name_split(
     proto::ProtoContext* ctx, const proto::ProtoObject*,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
 
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* fnObj = posArgs->getAt(ctx, 0);

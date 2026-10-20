@@ -22,8 +22,8 @@ namespace protoPython {
 extern const proto::ProtoObject* invokePythonCallable(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* callable,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList* kwargs);
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments* kwargs);
 
 namespace atexit_module {
 
@@ -45,7 +45,7 @@ static const proto::ProtoObject* handlers_get_list(
 static const proto::ProtoObject* py_register(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwargs) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwargs) {
     if (!self || !posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* callable = posArgs->getAt(ctx, 0);
 
@@ -62,7 +62,7 @@ static const proto::ProtoObject* py_register(
     // The keyword arguments are kept as the sparse list the call received
     // (keys are interned-name hashes), so the handler is called with them
     // unchanged. An entry without keyword arguments stores None.
-    entry = entry->appendLast(ctx, kwargs ? kwargs->asObject(ctx) : PROTO_NONE);
+    entry = entry->appendLast(ctx, kwargs ? kwargs->asSparseList(ctx)->asObject(ctx) : PROTO_NONE);
 
     // Append to the module's handler list (creating it on first use).
     const proto::ProtoObject* listObj = handlers_get_list(ctx, self);
@@ -81,7 +81,7 @@ static const proto::ProtoObject* py_register(
 static const proto::ProtoObject* py_unregister(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (!self || !posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* target = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* listObj = handlers_get_list(ctx, self);
@@ -109,7 +109,7 @@ static const proto::ProtoObject* py_unregister(
 static const proto::ProtoObject* py_run_exitfuncs(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     if (!self) return PROTO_NONE;
     const proto::ProtoObject* listObj = handlers_get_list(ctx, self);
     if (!listObj) return PROTO_NONE;
@@ -134,7 +134,7 @@ static const proto::ProtoObject* py_run_exitfuncs(
         // CPython reports an exception raised by a handler through
         // sys.unraisablehook ("Exception ignored in atexit callback
         // <repr>:" and the traceback) and goes on with the next handler.
-        invokePythonCallable(ctx, callable, args, kwargs);
+        invokePythonCallable(ctx, callable, argsView(proto::ProtoListArguments(ctx, args)), kwargsView(proto::ProtoSparseListKeywordArguments(ctx, kwargs)));
         if (env && env->hasPendingException()) {
             const proto::ProtoObject* exc = env->takePendingException();
             std::string errMsg = "Exception ignored in atexit callback "

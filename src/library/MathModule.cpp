@@ -47,7 +47,7 @@ static double toDouble(proto::ProtoContext* ctx, const proto::ProtoObject* obj) 
 
 static const proto::ProtoObject* py_sqrt(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     if (x < 0.0) return raise_math_domain(ctx, "math domain error");
@@ -56,7 +56,7 @@ static const proto::ProtoObject* py_sqrt(
 
 static const proto::ProtoObject* py_sin(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     return ctx->fromDouble(std::sin(x));
@@ -64,7 +64,7 @@ static const proto::ProtoObject* py_sin(
 
 static const proto::ProtoObject* py_cos(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     return ctx->fromDouble(std::cos(x));
@@ -72,7 +72,7 @@ static const proto::ProtoObject* py_cos(
 
 static const proto::ProtoObject* py_tan(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     return ctx->fromDouble(std::tan(x));
@@ -80,7 +80,7 @@ static const proto::ProtoObject* py_tan(
 
 static const proto::ProtoObject* py_asin(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     if (x < -1.0 || x > 1.0) return raise_math_domain(ctx, "math domain error");
@@ -89,7 +89,7 @@ static const proto::ProtoObject* py_asin(
 
 static const proto::ProtoObject* py_acos(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     if (x < -1.0 || x > 1.0) return raise_math_domain(ctx, "math domain error");
@@ -98,7 +98,7 @@ static const proto::ProtoObject* py_acos(
 
 static const proto::ProtoObject* py_atan(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     return ctx->fromDouble(std::atan(x));
@@ -106,7 +106,7 @@ static const proto::ProtoObject* py_atan(
 
 static const proto::ProtoObject* py_atan2(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     double y = toDouble(ctx, posArgs->getAt(ctx, 0));
     double x = toDouble(ctx, posArgs->getAt(ctx, 1));
@@ -115,7 +115,7 @@ static const proto::ProtoObject* py_atan2(
 
 static const proto::ProtoObject* py_degrees(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     return ctx->fromDouble(x * (180.0 / 3.14159265358979323846));
@@ -123,7 +123,7 @@ static const proto::ProtoObject* py_degrees(
 
 static const proto::ProtoObject* py_radians(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     return ctx->fromDouble(x * (3.14159265358979323846 / 180.0));
@@ -146,14 +146,14 @@ static const proto::ProtoObject* mathDunderViaType(
     if (!m || m == PROTO_NONE) return nullptr;
     if (m->asMethod(ctx)) {
         return m->asMethod(ctx)(ctx,
-            const_cast<proto::ProtoObject*>(arg), nullptr, ctx->newList(), nullptr);
+            const_cast<proto::ProtoObject*>(arg), nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     }
     return env->callObject(m, { arg });
 }
 
 static const proto::ProtoObject* py_floor(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* r = mathDunderViaType(ctx, arg, "__floor__");
@@ -164,7 +164,7 @@ static const proto::ProtoObject* py_floor(
 
 static const proto::ProtoObject* py_ceil(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* r = mathDunderViaType(ctx, arg, "__ceil__");
@@ -175,7 +175,7 @@ static const proto::ProtoObject* py_ceil(
 
 static const proto::ProtoObject* py_fabs(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     return ctx->fromDouble(std::fabs(x));
@@ -183,7 +183,7 @@ static const proto::ProtoObject* py_fabs(
 
 static const proto::ProtoObject* py_trunc(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* r = mathDunderViaType(ctx, arg, "__trunc__");
@@ -194,7 +194,7 @@ static const proto::ProtoObject* py_trunc(
 
 static const proto::ProtoObject* py_copysign(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     double y = toDouble(ctx, posArgs->getAt(ctx, 1));
@@ -203,7 +203,7 @@ static const proto::ProtoObject* py_copysign(
 
 static const proto::ProtoObject* py_isclose(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwArgs) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwArgs) {
     // math.isclose(a, b, *, rel_tol=1e-09, abs_tol=0.0), following CPython's
     // math_isclose_impl. The tolerances are keyword-only; they used to be
     // read from positions 3 and 4 and passing them by keyword had no effect.
@@ -237,7 +237,7 @@ static const proto::ProtoObject* py_isclose(
 
 static const proto::ProtoObject* py_isinf(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_FALSE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     return std::isinf(x) ? PROTO_TRUE : PROTO_FALSE;
@@ -245,7 +245,7 @@ static const proto::ProtoObject* py_isinf(
 
 static const proto::ProtoObject* py_isfinite(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_FALSE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     return std::isfinite(x) ? PROTO_TRUE : PROTO_FALSE;
@@ -253,7 +253,7 @@ static const proto::ProtoObject* py_isfinite(
 
 static const proto::ProtoObject* py_isnan(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_FALSE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     return std::isnan(x) ? PROTO_TRUE : PROTO_FALSE;
@@ -261,7 +261,7 @@ static const proto::ProtoObject* py_isnan(
 
 static const proto::ProtoObject* py_log(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     if (x <= 0.0) return raise_math_domain(ctx, "math domain error");
@@ -275,7 +275,7 @@ static const proto::ProtoObject* py_log(
 
 static const proto::ProtoObject* py_log10(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     /* Fallback: first arg might be module (self), actual value at index 1. */
@@ -294,7 +294,7 @@ static const proto::ProtoObject* py_log10(
 
 static const proto::ProtoObject* py_log2(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     if (x <= 0.0) return raise_math_domain(ctx, "math domain error");
@@ -303,7 +303,7 @@ static const proto::ProtoObject* py_log2(
 
 static const proto::ProtoObject* py_log1p(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     if (x <= -1.0) return raise_math_domain(ctx, "math domain error");
@@ -312,7 +312,7 @@ static const proto::ProtoObject* py_log1p(
 
 static const proto::ProtoObject* py_hypot(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     double sum = 0.0;
     for (size_t k = 0; k < posArgs->getSize(ctx); k++)
@@ -322,7 +322,7 @@ static const proto::ProtoObject* py_hypot(
 
 static const proto::ProtoObject* py_fmod(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     double y = toDouble(ctx, posArgs->getAt(ctx, 1));
@@ -331,7 +331,7 @@ static const proto::ProtoObject* py_fmod(
 
 static const proto::ProtoObject* py_remainder(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     double y = toDouble(ctx, posArgs->getAt(ctx, 1));
@@ -340,7 +340,7 @@ static const proto::ProtoObject* py_remainder(
 
 static const proto::ProtoObject* py_erf(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     return ctx->fromDouble(std::erf(x));
@@ -348,7 +348,7 @@ static const proto::ProtoObject* py_erf(
 
 static const proto::ProtoObject* py_erfc(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     return ctx->fromDouble(std::erfc(x));
@@ -356,7 +356,7 @@ static const proto::ProtoObject* py_erfc(
 
 static const proto::ProtoObject* py_gamma(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     if (x <= 0.0 && std::floor(x) == x) return PROTO_NONE; /* non-positive integer: domain error */
@@ -367,7 +367,7 @@ static const proto::ProtoObject* py_gamma(
 
 static const proto::ProtoObject* py_lgamma(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     if (x <= 0.0 && std::floor(x) == x) return PROTO_NONE; /* non-positive integer: domain error */
@@ -378,7 +378,7 @@ static const proto::ProtoObject* py_lgamma(
 
 static const proto::ProtoObject* py_exp(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     return ctx->fromDouble(std::exp(x));
@@ -386,7 +386,7 @@ static const proto::ProtoObject* py_exp(
 
 static const proto::ProtoObject* py_dist(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     try {
         const proto::ProtoObject* pa = posArgs->getAt(ctx, 0);
@@ -430,7 +430,7 @@ static long long getLongSafe(proto::ProtoContext* ctx, const proto::ProtoObject*
 
 static const proto::ProtoObject* py_perm(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     long long n = getLongSafe(ctx, posArgs->getAt(ctx, 0));
     long long k = getLongSafe(ctx, posArgs->getAt(ctx, 1));
@@ -442,7 +442,7 @@ static const proto::ProtoObject* py_perm(
 
 static const proto::ProtoObject* py_comb(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     long long n = getLongSafe(ctx, posArgs->getAt(ctx, 0));
     long long k = getLongSafe(ctx, posArgs->getAt(ctx, 1));
@@ -455,7 +455,7 @@ static const proto::ProtoObject* py_comb(
 
 static const proto::ProtoObject* py_factorial(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
     // CPython rejects non-integer arguments with TypeError
@@ -495,7 +495,7 @@ static const proto::ProtoObject* py_factorial(
 
 static const proto::ProtoObject* py_prod(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* iterable = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* da = iterable->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"));
@@ -542,7 +542,7 @@ static const proto::ProtoObject* py_prod(
 
 static const proto::ProtoObject* py_sumprod(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     const proto::ProtoObject* a = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* b = posArgs->getAt(ctx, 1);
@@ -565,7 +565,7 @@ static const proto::ProtoObject* py_sumprod(
 
 static const proto::ProtoObject* py_isqrt(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     long long n = posArgs->getAt(ctx, 0)->asLong(ctx);
     if (n < 0) {
@@ -587,7 +587,7 @@ static const proto::ProtoObject* py_isqrt(
 
 static const proto::ProtoObject* py_acosh(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     if (x < 1.0) return raise_math_domain(ctx, "math domain error");
@@ -596,7 +596,7 @@ static const proto::ProtoObject* py_acosh(
 
 static const proto::ProtoObject* py_asinh(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     return ctx->fromDouble(std::asinh(x));
@@ -604,7 +604,7 @@ static const proto::ProtoObject* py_asinh(
 
 static const proto::ProtoObject* py_atanh(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     if (x <= -1.0 || x >= 1.0) return raise_math_domain(ctx, "math domain error");
@@ -613,7 +613,7 @@ static const proto::ProtoObject* py_atanh(
 
 static const proto::ProtoObject* py_cosh(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     return ctx->fromDouble(std::cosh(x));
@@ -621,7 +621,7 @@ static const proto::ProtoObject* py_cosh(
 
 static const proto::ProtoObject* py_sinh(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     return ctx->fromDouble(std::sinh(x));
@@ -629,7 +629,7 @@ static const proto::ProtoObject* py_sinh(
 
 static const proto::ProtoObject* py_tanh(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     return ctx->fromDouble(std::tanh(x));
@@ -637,7 +637,7 @@ static const proto::ProtoObject* py_tanh(
 
 static const proto::ProtoObject* py_ulp(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     if (std::isnan(x)) return ctx->fromDouble(std::numeric_limits<double>::quiet_NaN());
@@ -649,7 +649,7 @@ static const proto::ProtoObject* py_ulp(
 
 static const proto::ProtoObject* py_nextafter(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     double y = toDouble(ctx, posArgs->getAt(ctx, 1));
@@ -658,7 +658,7 @@ static const proto::ProtoObject* py_nextafter(
 
 static const proto::ProtoObject* py_ldexp(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     int exp = static_cast<int>(posArgs->getAt(ctx, 1)->asLong(ctx));
@@ -667,7 +667,7 @@ static const proto::ProtoObject* py_ldexp(
 
 static const proto::ProtoObject* py_frexp(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     int exp = 0;
@@ -680,7 +680,7 @@ static const proto::ProtoObject* py_frexp(
 
 static const proto::ProtoObject* py_modf(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     double intpart = 0.0;
@@ -693,7 +693,7 @@ static const proto::ProtoObject* py_modf(
 
 static const proto::ProtoObject* py_cbrt(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     return ctx->fromDouble(std::cbrt(x));
@@ -701,7 +701,7 @@ static const proto::ProtoObject* py_cbrt(
 
 static const proto::ProtoObject* py_exp2(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     return ctx->fromDouble(std::exp2(x));
@@ -709,7 +709,7 @@ static const proto::ProtoObject* py_exp2(
 
 static const proto::ProtoObject* py_expm1(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     return ctx->fromDouble(std::expm1(x));
@@ -717,7 +717,7 @@ static const proto::ProtoObject* py_expm1(
 
 static const proto::ProtoObject* py_fma(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 3) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
     double y = toDouble(ctx, posArgs->getAt(ctx, 1));
@@ -741,7 +741,7 @@ static long long gcd_impl(long long a, long long b) {
 // targets.
 static const proto::ProtoObject* py_gcd(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     proto::proto_ulong n = posArgs ? posArgs->getSize(ctx) : 0;
     if (n == 0) return ctx->fromInteger(0);
     long long acc = posArgs->getAt(ctx, 0)->asLong(ctx);
@@ -757,7 +757,7 @@ static const proto::ProtoObject* py_gcd(
 
 static const proto::ProtoObject* py_lcm(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     proto::proto_ulong n = posArgs ? posArgs->getSize(ctx) : 0;
     if (n == 0) return ctx->fromInteger(1);
     long long acc = posArgs->getAt(ctx, 0)->asLong(ctx);

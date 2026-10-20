@@ -30,56 +30,56 @@ const proto::ProtoObject* py_object_hash(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters);
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters);
 
 const proto::ProtoObject* py_complex(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters);
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters);
 const proto::ProtoObject* py_complex_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters);
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters);
 
 const proto::ProtoObject* py_type(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters);
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters);
 
 const proto::ProtoObject* py_type_init(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters);
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters);
 
 const proto::ProtoObject* py_type_prepare(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters);
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters);
 
 const proto::ProtoObject* py_python_ignore_init(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters);
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters);
 
 const proto::ProtoObject* py_object_new(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters);
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters);
 
 } // namespace builtins
 } // namespace protoPython

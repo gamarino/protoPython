@@ -8,7 +8,7 @@ extern "C" void* proto_module_init() {
     auto* env = protoPython::PythonEnvironment::get(ctx);
 
 #line 1 "test_lambda.py"
-env->storeName("f", ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+env->storeName("f", ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         auto* env = protoPython::PythonEnvironment::get(ctx);
         // Bind parameters
         if (args->getSize(ctx) > 0) env->storeName("x", args->getAt(ctx, 0));
@@ -18,7 +18,7 @@ env->storeName("f", ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const 
 #line 2 "test_lambda.py"
 env->callObject(env->lookupName("print"), {ctx->fromUTF8String("1 + 2 ="), env->callObject(env->lookupName("f"), {ctx->fromInteger(1), ctx->fromInteger(2)})});
 #line 4 "test_lambda.py"
-env->storeName("g", ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+env->storeName("g", ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         auto* env = protoPython::PythonEnvironment::get(ctx);
         // Bind parameters
         return ctx->fromInteger(42);
@@ -26,11 +26,11 @@ env->storeName("g", ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const 
 #line 5 "test_lambda.py"
 env->callObject(env->lookupName("print"), {ctx->fromUTF8String("g() ="), env->callObject(env->lookupName("g"), {})});
 #line 7 "test_lambda.py"
-env->storeName("h", ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+env->storeName("h", ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         auto* env = protoPython::PythonEnvironment::get(ctx);
         // Bind parameters
         if (args->getSize(ctx) > 0) env->storeName("x", args->getAt(ctx, 0));
-        return ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+        return ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         auto* env = protoPython::PythonEnvironment::get(ctx);
         // Bind parameters
         if (args->getSize(ctx) > 0) env->storeName("y", args->getAt(ctx, 0));
@@ -42,7 +42,7 @@ env->storeName("mul2", env->callObject(env->lookupName("h"), {ctx->fromInteger(2
 #line 9 "test_lambda.py"
 env->callObject(env->lookupName("print"), {ctx->fromUTF8String("2 * 3 ="), env->callObject(env->lookupName("mul2"), {ctx->fromInteger(3)})});
 #line 12 "test_lambda.py"
-env->callObject(env->lookupName("print"), {ctx->fromUTF8String("Sum [1,2,3]:"), env->callObject(ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+env->callObject(env->lookupName("print"), {ctx->fromUTF8String("Sum [1,2,3]:"), env->callObject(ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         auto* env = protoPython::PythonEnvironment::get(ctx);
         // Bind parameters
         if (args->getSize(ctx) > 0) env->storeName("l", args->getAt(ctx, 0));

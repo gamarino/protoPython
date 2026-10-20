@@ -75,7 +75,7 @@ static const proto::ProtoObject* notAPath(proto::ProtoContext* ctx) {
 // The follow_symlinks keyword of DirEntry.is_dir/is_file/stat (default
 // True). shutil.rmtree and os.walk pass False so that a link to a directory
 // is not taken for the directory.
-static bool followSymlinksArg(proto::ProtoContext* ctx, const proto::ProtoSparseList* kwargs) {
+static bool followSymlinksArg(proto::ProtoContext* ctx, const proto::ProtoKeywordArguments* kwargs) {
     if (!kwargs) return true;
     const proto::proto_ulong h = PythonEnvironment::getInternedString(ctx, "follow_symlinks")->getHash(ctx);
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -86,8 +86,8 @@ static const proto::ProtoObject* py_direntry_is_dir(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* kwargs) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* kwargs) {
     const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"));
     if (!pathObj || !pathObj->isString(ctx)) return PROTO_FALSE;
     std::string path;
@@ -103,8 +103,8 @@ static const proto::ProtoObject* py_direntry_is_file(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* kwargs) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* kwargs) {
     const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"));
     if (!pathObj || !pathObj->isString(ctx)) return PROTO_FALSE;
     std::string path;
@@ -120,8 +120,8 @@ static const proto::ProtoObject* py_direntry_is_symlink(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"));
     if (!pathObj || !pathObj->isString(ctx)) return PROTO_FALSE;
     std::string path;
@@ -140,8 +140,8 @@ static const proto::ProtoObject* py_direntry_is_junction(
     proto::ProtoContext* /*ctx*/,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     return PROTO_FALSE;
 }
 
@@ -149,8 +149,8 @@ static const proto::ProtoObject* py_direntry_fspath(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     // os.fspath(entry) looks __fspath__ up on the type, DirEntry, and passes
     // the entry as the first argument.
     const proto::ProtoString* pathS = proto::ProtoString::createSymbol(ctx, "path");
@@ -167,8 +167,8 @@ static const proto::ProtoObject* py_scandir_next(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     const proto::ProtoObject* stateObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__state__"));
     if (!stateObj || !stateObj->asExternalPointer(ctx)) return nullptr;
     ScandirState* state = static_cast<ScandirState*>(stateObj->asExternalPointer(ctx)->getPointer(ctx));
@@ -208,8 +208,8 @@ static const proto::ProtoObject* py_scandir_iter(
     proto::ProtoContext* /*ctx*/,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     return self;
 }
 
@@ -268,8 +268,8 @@ static const proto::ProtoObject* py_direntry_stat(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* kwargs) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* kwargs) {
     const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"));
     if (!pathObj || !pathObj->isString(ctx)) return PROTO_NONE;
     std::string path;
@@ -290,8 +290,8 @@ static const proto::ProtoObject* py_direntry_inode(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"));
     if (!pathObj || !pathObj->isString(ctx)) return PROTO_NONE;
     std::string path;
@@ -311,8 +311,8 @@ static const proto::ProtoObject* py_getenv(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* keyObj = posArgs->getAt(ctx, 0);
     if (!keyObj->isString(ctx)) return PROTO_NONE;
@@ -336,8 +336,8 @@ static const proto::ProtoObject* py_os_fspath(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env) return PROTO_NONE;
     if (!posArgs || posArgs->getSize(ctx) != 1) {
@@ -394,8 +394,8 @@ static const proto::ProtoObject* py_os_fspath(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     std::string p;
     if (!posArgs || posArgs->getSize(ctx) != 1
@@ -433,8 +433,8 @@ static const proto::ProtoObject* py_getcwd(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     char buf[4096];
     if (getcwd(buf, sizeof(buf)))
@@ -447,8 +447,8 @@ static const proto::ProtoObject* py_chdir(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
     std::string path;
@@ -467,8 +467,8 @@ static const proto::ProtoObject* py_listdir(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     std::string path = ".";
     if (posArgs->getSize(ctx) >= 1) {
         const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
@@ -505,8 +505,8 @@ static const proto::ProtoObject* py_scandir(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     std::string path = ".";
     if (posArgs->getSize(ctx) >= 1) {
         const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
@@ -547,8 +547,8 @@ static const proto::ProtoObject* py_stat(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
     std::string path;
@@ -568,8 +568,8 @@ static const proto::ProtoObject* py_lstat(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
     std::string path;
@@ -589,8 +589,8 @@ static const proto::ProtoObject* py_remove(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
     std::string path;
@@ -609,8 +609,8 @@ static const proto::ProtoObject* py_unlink(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwargs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwargs) {
     return py_remove(ctx, self, parentLink, posArgs, kwargs);
 }
 
@@ -618,8 +618,8 @@ static const proto::ProtoObject* py_mkdir(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
     std::string path;
@@ -640,8 +640,8 @@ static const proto::ProtoObject* py_rename(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     std::string oldPath, newPath;
     if (!PythonEnvironment::fsPathArgument(ctx, posArgs->getAt(ctx, 0), oldPath)
@@ -668,8 +668,8 @@ static const proto::ProtoObject* py_replace(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwargs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwargs) {
 #if defined(_WIN32)
     // os.replace replaces an existing destination; os.rename does not there.
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
@@ -693,8 +693,8 @@ static const proto::ProtoObject* py_access(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 2) return PROTO_FALSE;
     std::string path;
     if (!PythonEnvironment::fsPathArgument(ctx, posArgs->getAt(ctx, 0), path)) {
@@ -712,8 +712,8 @@ static const proto::ProtoObject* py_rmdir(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
     std::string path;
@@ -732,8 +732,8 @@ static const proto::ProtoObject* py_setenv(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     const proto::ProtoObject* keyObj = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* valObj = posArgs->getAt(ctx, 1);
@@ -754,8 +754,8 @@ static const proto::ProtoObject* py_unsetenv(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* keyObj = posArgs->getAt(ctx, 0);
     if (!keyObj->isString(ctx)) return PROTO_NONE;
@@ -778,8 +778,8 @@ static const proto::ProtoObject* py_waitpid(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     int pid = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
     int options = static_cast<int>(posArgs->getAt(ctx, 1)->asLong(ctx));
@@ -825,8 +825,8 @@ static const proto::ProtoObject* py_waitstatus_to_exitcode(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     int status = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
@@ -846,8 +846,8 @@ static const proto::ProtoObject* py_WIFSTOPPED(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     int status = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
@@ -861,8 +861,8 @@ static const proto::ProtoObject* py_WSTOPSIG(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     int status = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
@@ -876,8 +876,8 @@ static const proto::ProtoObject* py_kill(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     int pid = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
     int sig = static_cast<int>(posArgs->getAt(ctx, 1)->asLong(ctx));
@@ -917,8 +917,8 @@ static const proto::ProtoObject* py_pipe(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     int pipefds[2];
     if (pipe(pipefds) == 0) {
@@ -935,8 +935,8 @@ static const proto::ProtoObject* py_environ_keys(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     const proto::ProtoList* result = ctx->newList();
@@ -957,8 +957,8 @@ static const proto::ProtoObject* py_environ_values(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     const proto::ProtoList* result = ctx->newList();
@@ -979,8 +979,8 @@ static const proto::ProtoObject* py_environ_items(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     const proto::ProtoList* result = ctx->newList();
@@ -1005,8 +1005,8 @@ static const proto::ProtoObject* py_environ_getitem(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     return py_getenv(ctx, nullptr, nullptr, posArgs, nullptr);
 }
@@ -1015,8 +1015,8 @@ static const proto::ProtoObject* py_environ_iter(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     const proto::ProtoObject* keys = py_environ_keys(ctx, self, nullptr, nullptr, nullptr);
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     return env ? env->iter(keys) : nullptr;
@@ -1026,8 +1026,8 @@ static const proto::ProtoObject* py_environ_setitem(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     return py_setenv(ctx, nullptr, nullptr, posArgs, nullptr);
 }
@@ -1036,8 +1036,8 @@ static const proto::ProtoObject* py_environ_delitem(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     return py_unsetenv(ctx, nullptr, nullptr, posArgs, nullptr);
 }
@@ -1051,8 +1051,8 @@ static const proto::ProtoObject* py_open(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* flagsObj = posArgs->getAt(ctx, 1);
@@ -1083,8 +1083,8 @@ static const proto::ProtoObject* py_close(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     int fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
@@ -1105,8 +1105,8 @@ static const proto::ProtoObject* py_isatty(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_FALSE;
     const proto::ProtoObject* fdObj = posArgs->getAt(ctx, 0);
     if (!fdObj || !fdObj->isInteger(ctx)) return PROTO_FALSE;
@@ -1135,8 +1135,8 @@ static const proto::ProtoObject* py_utime(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwargs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwargs) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
     std::string path;
@@ -1254,8 +1254,8 @@ static const proto::ProtoObject* py_environ_keys_method(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     return py_environ_keys(ctx, nullptr, nullptr, nullptr, nullptr);
 }
 
@@ -1263,8 +1263,8 @@ static const proto::ProtoObject* py_environ_values_method(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     return py_environ_values(ctx, nullptr, nullptr, nullptr, nullptr);
 }
 
@@ -1272,8 +1272,8 @@ static const proto::ProtoObject* py_environ_items_method(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     return py_environ_items(ctx, nullptr, nullptr, nullptr, nullptr);
 }
 
@@ -1282,8 +1282,8 @@ static const proto::ProtoObject* py_urandom(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     long long n = posArgs->getAt(ctx, 0)->asLong(ctx);
     if (n < 0) {
@@ -1344,8 +1344,8 @@ static const proto::ProtoObject* py_getuid(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     return ctx->fromInteger(getuid());
 #else
@@ -1357,8 +1357,8 @@ static const proto::ProtoObject* py_geteuid(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     return ctx->fromInteger(geteuid());
 #else
@@ -1370,8 +1370,8 @@ static const proto::ProtoObject* py_getgid(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     return ctx->fromInteger(getgid());
 #else
@@ -1383,8 +1383,8 @@ static const proto::ProtoObject* py_getegid(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     return ctx->fromInteger(getegid());
 #else
@@ -1398,8 +1398,8 @@ static const proto::ProtoObject* py_cpu_count(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     unsigned int n = std::thread::hardware_concurrency();
     if (n == 0) return PROTO_NONE;
     return ctx->fromInteger(n);
@@ -1409,8 +1409,8 @@ static const proto::ProtoObject* py_exit(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     
     int status = 0;
     if (posArgs && posArgs->getSize(ctx) > 0) {
@@ -1427,8 +1427,8 @@ static const proto::ProtoObject* py_getpid(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     return ctx->fromInteger(getpid());
 #else
@@ -1440,8 +1440,8 @@ static const proto::ProtoObject* py_getppid(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     return ctx->fromInteger(getppid());
 #else
@@ -1453,8 +1453,8 @@ static const proto::ProtoObject* py_create_environ(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     const proto::ProtoObject* dict = ctx->newObject(true);
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (env && env->getDictPrototype()) {
@@ -1478,8 +1478,8 @@ static const proto::ProtoObject* py_path_splitroot_ex(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
     std::string path;
@@ -1518,8 +1518,8 @@ static const proto::ProtoObject* py_path_normpath(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
     if (!pathObj->isString(ctx)) return PROTO_NONE;
@@ -1530,8 +1530,8 @@ static const proto::ProtoObject* py_getpid_method(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     return py_getpid(ctx, nullptr, nullptr, nullptr, nullptr);
 }
 
@@ -1539,8 +1539,8 @@ static const proto::ProtoObject* py_getppid_method(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     return py_getppid(ctx, nullptr, nullptr, nullptr, nullptr);
 }
 
@@ -1548,8 +1548,8 @@ static const proto::ProtoObject* py_path_splitroot_ex_method(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwargs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwargs) {
     return py_path_splitroot_ex(ctx, self, parentLink, posArgs, kwargs);
 }
 
@@ -1557,8 +1557,8 @@ static const proto::ProtoObject* py_path_normpath_method(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwargs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwargs) {
     return py_path_normpath(ctx, self, parentLink, posArgs, kwargs);
 }
 
@@ -1566,12 +1566,12 @@ static const proto::ProtoObject* py_create_environ_method(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwargs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwargs) {
     return py_create_environ(ctx, self, parentLink, posArgs, kwargs);
 }
 
-static const proto::ProtoObject* py_os_readlink(proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+static const proto::ProtoObject* py_os_readlink(proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (args->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* pathObj = args->getAt(ctx, 0);
     std::string path;
@@ -1594,7 +1594,7 @@ static const proto::ProtoObject* py_os_readlink(proto::ProtoContext* ctx, const 
 // directory link, and creating one needs the privilege or developer mode, as
 // in CPython.
 static const proto::ProtoObject* py_os_symlink(proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-                                               const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+                                               const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (args->getSize(ctx) < 2) {
         if (env) env->raiseTypeError(ctx, "symlink() missing required argument 'src' or 'dst'");
@@ -1676,8 +1676,8 @@ static const proto::ProtoObject* py_os_read(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     int fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
     long long n = posArgs->getAt(ctx, 1)->asLong(ctx);
@@ -1722,8 +1722,8 @@ static const proto::ProtoObject* py_os_write(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     int fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
     std::string data;
@@ -1766,8 +1766,8 @@ static const proto::ProtoObject* py_os_dup(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     int fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
@@ -1793,8 +1793,8 @@ static const proto::ProtoObject* py_os_dup2(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwargs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwargs) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     int fd  = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
     int fd2 = static_cast<int>(posArgs->getAt(ctx, 1)->asLong(ctx));
@@ -1834,8 +1834,8 @@ static const proto::ProtoObject* py_os_set_inheritable(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     int fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -1860,8 +1860,8 @@ static const proto::ProtoObject* py_os_get_inheritable(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     int fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
@@ -1887,8 +1887,8 @@ static const proto::ProtoObject* py_os_fork(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     pid_t pid = ::fork();
     if (pid < 0) {
@@ -2006,8 +2006,8 @@ static const proto::ProtoObject* py_os_execv(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     std::string path;
     posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, path);
@@ -2033,8 +2033,8 @@ static const proto::ProtoObject* py_os_execve(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 3) return PROTO_NONE;
     std::string path;
     posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, path);
@@ -2066,8 +2066,8 @@ static const proto::ProtoObject* py_os_execvp(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     std::string file;
     posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, file);
@@ -2094,8 +2094,8 @@ static const proto::ProtoObject* py_os_execvpe(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 3) return PROTO_NONE;
     std::string file;
     posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, file);
@@ -2155,8 +2155,8 @@ static const proto::ProtoObject* py_os_fsdecode(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
     if (arg->isString(ctx)) return arg;
@@ -2175,8 +2175,8 @@ static const proto::ProtoObject* py_os_fsencode(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
     PythonEnvironment* env = PythonEnvironment::get(ctx);
@@ -2198,8 +2198,8 @@ static const proto::ProtoObject* py_os_strerror(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     int code = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
     const char* msg = std::strerror(code);
@@ -2213,8 +2213,8 @@ static const proto::ProtoObject* py_os_get_exec_path(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     const char* path = nullptr;
     if (posArgs && posArgs->getSize(ctx) >= 1) {
         const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
@@ -2255,7 +2255,7 @@ static const proto::ProtoObject* py_os_get_exec_path(
 // returned by waitpid().  No errors raised.
 static const proto::ProtoObject* py_os_WIFEXITED(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_FALSE;
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     int status = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
@@ -2267,7 +2267,7 @@ static const proto::ProtoObject* py_os_WIFEXITED(
 
 static const proto::ProtoObject* py_os_WIFSIGNALED(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_FALSE;
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     int status = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
@@ -2279,7 +2279,7 @@ static const proto::ProtoObject* py_os_WIFSIGNALED(
 
 static const proto::ProtoObject* py_os_WEXITSTATUS(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return ctx->fromInteger(0);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     int status = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
@@ -2291,7 +2291,7 @@ static const proto::ProtoObject* py_os_WEXITSTATUS(
 
 static const proto::ProtoObject* py_os_WTERMSIG(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return ctx->fromInteger(0);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     int status = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
@@ -2305,7 +2305,7 @@ static const proto::ProtoObject* py_os_WTERMSIG(
 // number arithmetic.  Used by stat, tarfile, shutil.
 static const proto::ProtoObject* py_os_makedev(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 2) return ctx->fromInteger(0);
     unsigned int maj = static_cast<unsigned int>(posArgs->getAt(ctx, 0)->asLong(ctx));
     unsigned int min_ = static_cast<unsigned int>(posArgs->getAt(ctx, 1)->asLong(ctx));
@@ -2318,7 +2318,7 @@ static const proto::ProtoObject* py_os_makedev(
 
 static const proto::ProtoObject* py_os_major(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return ctx->fromInteger(0);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     dev_t d = static_cast<dev_t>(posArgs->getAt(ctx, 0)->asLong(ctx));
@@ -2330,7 +2330,7 @@ static const proto::ProtoObject* py_os_major(
 
 static const proto::ProtoObject* py_os_minor(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return ctx->fromInteger(0);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     dev_t d = static_cast<dev_t>(posArgs->getAt(ctx, 0)->asLong(ctx));
@@ -2344,7 +2344,7 @@ static const proto::ProtoObject* py_os_minor(
 // configuration items.
 static const proto::ProtoObject* py_os_sysconf(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return ctx->fromInteger(0);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     int name = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
@@ -2358,7 +2358,7 @@ static const proto::ProtoObject* py_os_sysconf(
 // os.getloadavg() -> (1min, 5min, 15min).
 static const proto::ProtoObject* py_os_getloadavg(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     double a[3];
     if (::getloadavg(a, 3) == 3) {
@@ -2379,7 +2379,7 @@ static const proto::ProtoObject* py_os_getloadavg(
 // os.umask(mask) -> old_mask.
 static const proto::ProtoObject* py_os_umask(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
     int newmask = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
@@ -2395,7 +2395,7 @@ static const proto::ProtoObject* py_os_umask(
 // processes — the stdlib expects a string back).
 static const proto::ProtoObject* py_os_getlogin(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     char* nm = ::getlogin();
     if (nm) return PythonEnvironment::getInternedString(ctx, nm)->asObject(ctx);
@@ -2421,7 +2421,7 @@ static const proto::ProtoObject* py_os_getlogin(
 // os.WIFCONTINUED(status) -> bool.
 static const proto::ProtoObject* py_os_WIFCONTINUED(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_FALSE;
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
 #ifdef WIFCONTINUED
@@ -2435,7 +2435,7 @@ static const proto::ProtoObject* py_os_WIFCONTINUED(
 // os.times() -> 5-tuple (user, system, children_user, children_system, elapsed).
 static const proto::ProtoObject* py_os_times(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     struct tms t;
     clock_t real = times(&t);
@@ -2473,8 +2473,8 @@ static const proto::ProtoObject* py_os_times(
 // os.fstat(fd) -> stat_result, the same struct sequence os.stat returns.
 static const proto::ProtoObject* py_os_fstat(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     int fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
@@ -2498,8 +2498,8 @@ static const proto::ProtoObject* py_os_register_at_fork(
     proto::ProtoContext* /*ctx*/,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     return PROTO_NONE;
 }
 
@@ -2526,8 +2526,8 @@ static const proto::ProtoObject* py_os_confstr(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)

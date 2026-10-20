@@ -5,12 +5,12 @@ name: Cross-platform
 # run locally, against an INSTALLED protoCore package -- the supported mode on
 # Windows -- with GoogleTest fetched so the C++ suites run too. protoCore refs,
 # exactly:
-#   * macOS and the first Windows job build protoCore 2.14.5 (tag v2.14.5, commit
-#     063c6d55), as ci.yml does on Linux;
-#   * the "floor" Windows job builds protoCore 2.11.0 (tag v2.11.0, commit
-#     69b56afe), PROTOCORE_MIN_VERSION in CMakeLists.txt, the oldest release
-#     protoPython accepts (ProtoObject::setAttributes).  It is the repository's
-#     only floor job.
+#   * macOS and the first Windows job build protoCore 3.0.0 (commit cf52f9f5),
+#     as ci.yml does on Linux;
+#   * the "floor" Windows job builds protoCore 3.0.0 as well,
+#     PROTOCORE_MIN_VERSION in CMakeLists.txt, the oldest release protoPython
+#     accepts (natives read ProtoArguments descriptors).  It is the
+#     repository's only floor job.
 
 on:
   push:
@@ -41,17 +41,17 @@ jobs:
         include:
           - name: macOS (Apple clang, arm64)
             os: macos-14
-            # protoCore 2.14.5 (tag v2.14.5)
-            protocore_ref: 063c6d55e11fd4439758578d664c869aaa3a596a
+            # protoCore 3.0.0 (cf52f9f5)
+            protocore_ref: cf52f9f5056919bb07326afc7159d5b3d78c03a3
           - name: Windows (MSVC, x64)
             os: windows-2022
-            # protoCore 2.14.5 (tag v2.14.5)
-            protocore_ref: 063c6d55e11fd4439758578d664c869aaa3a596a
-          - name: Windows (MSVC, x64), protoCore 2.11.0 floor
+            # protoCore 3.0.0 (cf52f9f5)
+            protocore_ref: cf52f9f5056919bb07326afc7159d5b3d78c03a3
+          - name: Windows (MSVC, x64), protoCore 3.0.0 floor
             os: windows-2022
-            # THE FLOOR JOB, the only one: protoCore 2.11.0 (tag v2.11.0),
+            # THE FLOOR JOB, the only one: protoCore 3.0.0 (cf52f9f5),
             # PROTOCORE_MIN_VERSION in CMakeLists.txt
-            protocore_ref: 69b56afeee00d843d74f8e67d3add317bc1ce5d3
+            protocore_ref: cf52f9f5056919bb07326afc7159d5b3d78c03a3
     defaults:
       run:
         shell: bash

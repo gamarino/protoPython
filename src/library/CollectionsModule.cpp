@@ -22,12 +22,12 @@ static const proto::ProtoObject* py_iterator_self(
     proto::ProtoContext*,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList*,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*,
+    const proto::ProtoKeywordArguments*) {
     return self;
 }
 
-static const proto::ProtoObject* py_tuple_getter_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+static const proto::ProtoObject* py_tuple_getter_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* instance = posArgs->getAt(ctx, 0);
     // Class-level access (`NT.a`): Python's descriptor protocol passes
@@ -64,7 +64,7 @@ static const proto::ProtoObject* py_tuple_getter_get(proto::ProtoContext* ctx, c
 // any downstream string operation (.split / .startswith / etc.).
 static const proto::ProtoObject* g_tuplegetter_proto = nullptr;
 
-static const proto::ProtoObject* py_tuplegetter(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+static const proto::ProtoObject* py_tuplegetter(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* index = posArgs->getAt(ctx, 0);
     if (!g_tuplegetter_proto) {
@@ -110,7 +110,7 @@ static DequeState* get_deque_state(proto::ProtoContext* ctx, const proto::ProtoO
 // own arguments start at `argOff`.
 static DequeState* resolve_deque_receiver(proto::ProtoContext* ctx,
                                           const proto::ProtoObject*& self,
-                                          const proto::ProtoList* posArgs,
+                                          const proto::ProtoArguments* posArgs,
                                           proto::proto_ulong& argOff) {
     argOff = 0;
     DequeState* state = self ? get_deque_state(ctx, self) : nullptr;
@@ -201,8 +201,8 @@ static const proto::ProtoObject* py_deque_append(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwArgs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwArgs) {
 
     proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
@@ -232,8 +232,8 @@ static const proto::ProtoObject* py_deque_appendleft(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwArgs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwArgs) {
 
     proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
@@ -260,8 +260,8 @@ static const proto::ProtoObject* py_deque_pop(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwArgs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwArgs) {
 
     proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
@@ -291,8 +291,8 @@ static const proto::ProtoObject* py_deque_popleft(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwArgs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwArgs) {
 
     proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
@@ -322,8 +322,8 @@ static const proto::ProtoObject* py_deque_len(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwArgs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwArgs) {
 
     proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
@@ -338,8 +338,8 @@ static const proto::ProtoObject* py_deque_getitem(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwArgs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwArgs*/) {
     proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (!posArgs || posArgs->getSize(ctx) <= argOff) return PROTO_NONE;
@@ -371,8 +371,8 @@ static const proto::ProtoObject* py_deque_count(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwArgs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwArgs*/) {
     proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -414,8 +414,8 @@ static const proto::ProtoObject* py_deque_remove(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwArgs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwArgs*/) {
     proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (!state) {
@@ -456,8 +456,8 @@ static const proto::ProtoObject* py_deque_clear(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwArgs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwArgs*/) {
     proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (!state) {
@@ -479,8 +479,8 @@ static const proto::ProtoObject* py_deque_extend(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwArgs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwArgs*/) {
     proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (!state) {
@@ -510,8 +510,8 @@ static const proto::ProtoObject* py_deque_extendleft(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwArgs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwArgs*/) {
     proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (!state) {
@@ -543,8 +543,8 @@ static const proto::ProtoObject* py_module_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)parentLink; (void)positionalParameters; (void)keywordParameters;
     const proto::ProtoObject* name = self->getAttribute(context, PythonEnvironment::getInternalString(context, "__name__"));
     std::string s = "<module '";
@@ -562,8 +562,8 @@ static const proto::ProtoObject* py_deque_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)parentLink; (void)positionalParameters; (void)keywordParameters;
     proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(context, self, positionalParameters, argOff);
@@ -598,8 +598,8 @@ static const proto::ProtoObject* py_deque_iter(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwArgs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwArgs) {
     (void)parentLink; (void)posArgs; (void)kwArgs;
     
     proto::proto_ulong argOff = 0;
@@ -629,8 +629,8 @@ static const proto::ProtoObject* py_deque_reversed(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwArgs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwArgs) {
     (void)parentLink; (void)posArgs; (void)kwArgs;
     
     proto::proto_ulong argOff = 0;
@@ -658,8 +658,8 @@ static const proto::ProtoObject* py_deque_iterator_next(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwArgs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwArgs) {
     (void)parentLink; (void)posArgs; (void)kwArgs;
     
     const proto::ProtoObject* dequeObj = self->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_obj__"));
@@ -692,8 +692,8 @@ static const proto::ProtoObject* py_deque_reverse_iterator_next(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwArgs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwArgs) {
     (void)parentLink; (void)posArgs; (void)kwArgs;
     
     const proto::ProtoObject* dequeObj = self->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_obj__"));
@@ -724,7 +724,7 @@ static const proto::ProtoObject* py_deque_reverse_iterator_next(
 
 static const proto::ProtoObject* py_deque_new(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwArgs) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwArgs) {
     const proto::ProtoObject* cls = self;
     if (!cls && posArgs && posArgs->getSize(ctx) > 0) {
         cls = posArgs->getAt(ctx, 0);
@@ -763,8 +763,8 @@ static const proto::ProtoObject* py_deque_init(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwArgs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwArgs) {
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
     if (!env) return PROTO_NONE;
     proto::proto_ulong argOff = 0;
@@ -836,7 +836,7 @@ static const proto::ProtoObject* deque_as_list(proto::ProtoContext* ctx, PythonE
 // deque == / != / < / <= / > / >= another deque (op as in compareObjects:
 // 0 eq, 1 ne, 2 lt, 3 le, 4 gt, 5 ge); NotImplemented for any other operand.
 static const proto::ProtoObject* deque_compare(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ProtoList* posArgs, int op) {
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ProtoArguments* posArgs, int op) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env) return PROTO_NONE;
     proto::proto_ulong argOff = 0;
@@ -853,33 +853,33 @@ static const proto::ProtoObject* deque_compare(
 }
 
 static const proto::ProtoObject* py_deque_eq(proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     return deque_compare(ctx, self, posArgs, 0);
 }
 static const proto::ProtoObject* py_deque_ne(proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     return deque_compare(ctx, self, posArgs, 1);
 }
 static const proto::ProtoObject* py_deque_lt(proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     return deque_compare(ctx, self, posArgs, 2);
 }
 static const proto::ProtoObject* py_deque_le(proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     return deque_compare(ctx, self, posArgs, 3);
 }
 static const proto::ProtoObject* py_deque_gt(proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     return deque_compare(ctx, self, posArgs, 4);
 }
 static const proto::ProtoObject* py_deque_ge(proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     return deque_compare(ctx, self, posArgs, 5);
 }
 
 // fget of the read-only `maxlen` property: None when unbounded.
 static const proto::ProtoObject* py_deque_maxlen_get(proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (!state) return PROTO_NONE;

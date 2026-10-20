@@ -6,19 +6,19 @@ namespace logging {
 
 static const proto::ProtoObject* py_basicConfig(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_logger_info(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_getLogger(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     const proto::ProtoObject* logger = ctx->newObject(false);
     logger = logger->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "name"),
         posArgs->getSize(ctx) > 0 ? posArgs->getAt(ctx, 0) : PythonEnvironment::getInternedString(ctx, "root")->asObject(ctx));

@@ -363,19 +363,19 @@ const proto::ProtoObject* executeBytecodeRange(
 /**
  * @brief Python-compatible generator methods.
  */
-const proto::ProtoObject* py_self_iter(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
-const proto::ProtoObject* py_generator_repr(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
-const proto::ProtoObject* py_generator_next(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
-const proto::ProtoObject* py_generator_send(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
-const proto::ProtoObject* py_generator_throw(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
-const proto::ProtoObject* py_generator_close(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+const proto::ProtoObject* py_self_iter(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs);
+const proto::ProtoObject* py_generator_repr(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs);
+const proto::ProtoObject* py_generator_next(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs);
+const proto::ProtoObject* py_generator_send(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs);
+const proto::ProtoObject* py_generator_throw(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs);
+const proto::ProtoObject* py_generator_close(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs);
 /** PF: async_generator.asend / athrow — return an awaitable wrapper that, when
  *  driven via .send(None), advances the underlying generator one step and
  *  raises StopIteration with the yielded value (or propagates StopAsyncIteration).
  *  The previous PC1 design aliased asend → send, returning the value directly,
  *  which broke `await agen.asend(v)` and `run(agen.asend(v))` patterns. */
-const proto::ProtoObject* py_async_generator_asend(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
-const proto::ProtoObject* py_async_generator_athrow(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+const proto::ProtoObject* py_async_generator_asend(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs);
+const proto::ProtoObject* py_async_generator_athrow(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs);
 
 /**
  * @brief Executes bytecode: LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME,
@@ -401,6 +401,15 @@ const proto::ProtoObject* invokePythonCallable(
     const proto::ProtoList* args,
     const proto::ProtoSparseList* kwargs = nullptr);
 
+/** The same call with the arguments a native received (protoCore 3.0.0
+ *  descriptors): the call's own lists when it came with them, otherwise lists
+ *  built in `ctx` (asList / asSparseList). */
+const proto::ProtoObject* invokePythonCallable(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* callable,
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments* kwargs = nullptr);
+
 /** `item in container` with the semantics of the `in` operator (__contains__,
  *  then iteration or the old sequence protocol; TypeError for a container
  *  that supports neither). True/False, or nullptr with an exception pending. */
@@ -410,8 +419,8 @@ const proto::ProtoObject* containsOperator(proto::ProtoContext* ctx,
 const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList* kwargs);
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments* kwargs);
 
 /**
  * PEP 487: call `super(cls, cls).__init_subclass__(**kwargs)` for a class

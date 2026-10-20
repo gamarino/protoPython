@@ -44,8 +44,8 @@ bool onCurrentChain(proto::ProtoContext* ctx) {
 // _chain_ok(): True when the calling frame's context is reachable from the
 // thread's current context.
 const proto::ProtoObject* chainOk(proto::ProtoContext* ctx, const proto::ProtoObject*,
-                                  const proto::ParentLink*, const proto::ProtoList*,
-                                  const proto::ProtoSparseList*) {
+                                  const proto::ParentLink*, const proto::ProtoArguments*,
+                                  const proto::ProtoKeywordArguments*) {
     return onCurrentChain(ctx) ? PROTO_TRUE : PROTO_FALSE;
 }
 

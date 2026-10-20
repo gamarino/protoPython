@@ -73,36 +73,36 @@ static const proto::ProtoObject* py_import(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters);
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters);
 
 static const proto::ProtoObject* py_vars(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters);
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters);
 
 static const proto::ProtoObject* py_globals(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters);
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters);
 
 const proto::ProtoObject* py_object_new(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters);
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters);
 
 const proto::ProtoObject* py_type_prepare(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* dictObj = context->newObject(true);
     if (env && env->getDictPrototype()) {
@@ -117,8 +117,8 @@ static const proto::ProtoObject* py_import(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     size_t argCount = positionalParameters->getSize(context);
     if (argCount == 0) return PROTO_NONE;
     
@@ -257,8 +257,8 @@ static const proto::ProtoObject* py_gc_collect(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     return ctx->fromInteger(0);
 }
 
@@ -266,8 +266,8 @@ static const proto::ProtoObject* py_gc_isenabled(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     return PROTO_TRUE;
 }
 
@@ -275,8 +275,8 @@ static const proto::ProtoObject* py_id(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self; (void)parentLink; (void)keywordParameters;
     if (positionalParameters->getSize(context) == 0) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
@@ -287,8 +287,8 @@ static const proto::ProtoObject* py_complete(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self; (void)parentLink; (void)keywordParameters;
     if (positionalParameters->getSize(context) < 1) return context->newList()->asObject(context);
     
@@ -374,16 +374,16 @@ static const proto::ProtoObject* py_locals(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters);
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters);
 
 
 static const proto::ProtoObject* py_len(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     
@@ -420,7 +420,7 @@ static const proto::ProtoObject* py_len(
     if (lenMethod && lenMethod != PROTO_NONE) {
         if (lenMethod->asMethod(context)) {
             const proto::ProtoList* emptyArgs = env ? env->getEmptyList() : context->newList();
-            const proto::ProtoObject* res = lenMethod->asMethod(context)(context, const_cast<proto::ProtoObject*>(obj), nullptr, emptyArgs, nullptr);
+            const proto::ProtoObject* res = lenMethod->asMethod(context)(context, const_cast<proto::ProtoObject*>(obj), nullptr, argsView(proto::ProtoListArguments(context, emptyArgs)), nullptr);
             if (!res) return nullptr;  // exception already pending
             if (res != PROTO_NONE) {
                 const proto::ProtoObject* checked = checkLenResult(res);
@@ -489,8 +489,8 @@ static const proto::ProtoObject* py_print(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG: py_print called with %" PROTO_FMT_U " args\n", positionalParameters->getSize(context));
     }
@@ -658,7 +658,7 @@ static const proto::ProtoObject* py_print(
                 if (strMethod && strMethod != PROTO_NONE && strMethod->asMethod(context)) {
                     const proto::ProtoObject* out = strMethod->asMethod(context)(
                         context, const_cast<proto::ProtoObject*>(obj), nullptr,
-                        emptyL, nullptr);
+                        argsView(proto::ProtoListArguments(context, emptyL)), nullptr);
                     if (out && out->isString(context)) {
                         out->asString(context)->toUTF8String(context, rendered);
                         gotStr = true;
@@ -755,7 +755,7 @@ static const proto::ProtoObject* py_print(
                             if (getattrFn->asMethod(context)) {
                                 writeFn = getattrFn->asMethod(context)(context,
                                     const_cast<proto::ProtoObject*>(fileObj), nullptr,
-                                    gargs, nullptr);
+                                    argsView(proto::ProtoListArguments(context, gargs)), nullptr);
                             } else {
                                 const proto::ProtoList* fullArgs = context->newList()
                                     ->appendLast(context, fileObj)
@@ -773,7 +773,7 @@ static const proto::ProtoObject* py_print(
                         if (writeFn->asMethod(context)) {
                             writeFn->asMethod(context)(context,
                                 const_cast<proto::ProtoObject*>(fileObj), nullptr,
-                                callArgs, nullptr);
+                                argsView(proto::ProtoListArguments(context, callArgs)), nullptr);
                         } else {
                             const proto::ProtoList* fullArgs = context->newList()
                                 ->appendLast(context, fileObj)
@@ -801,8 +801,8 @@ static const proto::ProtoObject* py_iter(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     PythonEnvironment* envEarly = PythonEnvironment::fromContext(context);
     if (positionalParameters->getSize(context) < 1) {
         // CPython: `iter()` raises TypeError instead of silently returning None.
@@ -837,14 +837,14 @@ static const proto::ProtoObject* py_iter(
         it->setAttribute(context, sentS, sentinel);
         it->setAttribute(context, iterS, context->fromMethod(nullptr,
             +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
-               const proto::ParentLink*, const proto::ProtoList*,
-               const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+               const proto::ParentLink*, const proto::ProtoArguments*,
+               const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
                 return self;  // iter(iter) == iter
             }));
         it->setAttribute(context, nextS, context->fromMethod(nullptr,
             +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
-               const proto::ParentLink*, const proto::ProtoList*,
-               const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+               const proto::ParentLink*, const proto::ProtoArguments*,
+               const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
                 PythonEnvironment* e = PythonEnvironment::fromContext(ctx);
                 if (!e || !self) return nullptr;
                 const proto::ProtoString* fS =
@@ -877,7 +877,7 @@ static const proto::ProtoObject* py_iter(
         const proto::ProtoString* iterS = PythonEnvironment::getInternedString(context, "__iter__");
         const proto::ProtoObject* iterMethod = env ? env->getAttribute(context, obj, iterS, false) : (obj->hasOwnAttribute(context, iterS) == PROTO_TRUE ? obj->getAttribute(context, iterS) : nullptr);
         if (iterMethod && iterMethod->asMethod(context)) {
-            return iterMethod->asMethod(context)(context, obj, nullptr, context->newList(), nullptr);
+            return iterMethod->asMethod(context)(context, obj, nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
         }
     }
     return PROTO_NONE;
@@ -887,8 +887,8 @@ static const proto::ProtoObject* py_next(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
@@ -937,7 +937,7 @@ static const proto::ProtoObject* py_next(
     if (nativeNext || pythonNext) {
         const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
         const proto::ProtoObject* result = nativeNext
-            ? nextMethod->asMethod(context)(context, obj, nullptr, emptyL, nullptr)
+            ? nextMethod->asMethod(context)(context, obj, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr)
             : ::protoPython::invokePythonCallable(context, nextMethod,
                   context->newList()->appendLast(context, obj), nullptr);
         if (env && env->hasPendingException()) {
@@ -978,8 +978,8 @@ static const proto::ProtoObject* py_contains(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 2) return PROTO_FALSE;
     const proto::ProtoObject* item = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* container = positionalParameters->getAt(context, 1);
@@ -1003,7 +1003,7 @@ static const proto::ProtoObject* py_contains(
     const proto::ProtoObject* containsMethod = env ? env->getAttribute(context, container, containsS, false) : (container->hasOwnAttribute(context, containsS) == PROTO_TRUE ? container->getAttribute(context, containsS) : nullptr);
     if (containsMethod && containsMethod->asMethod(context)) {
         const proto::ProtoList* args = context->newList()->appendLast(context, item);
-        return containsMethod->asMethod(context)(context, container, nullptr, args, nullptr);
+        return containsMethod->asMethod(context)(context, container, nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
     }
 
     // FLAT approach fallback: if not iterable via __contains__, check as attribute if item is string
@@ -1018,8 +1018,8 @@ static const proto::ProtoObject* py_bool(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
 
@@ -1045,7 +1045,7 @@ static const proto::ProtoObject* py_bool(
     const proto::ProtoObject* cls = env ? env->getType(context, obj) : obj->getAttribute(context, PythonEnvironment::getInternedString(context, "__class__"));
     const proto::ProtoObject* boolMethod = cls ? cls->getAttribute(context, boolS) : obj->getAttribute(context, boolS);
     if (boolMethod && boolMethod->asMethod(context)) {
-        return boolMethod->asMethod(context)(context, obj, nullptr, emptyL, nullptr);
+        return boolMethod->asMethod(context)(context, obj, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr);
     }
 
     return PROTO_TRUE;
@@ -1055,8 +1055,8 @@ const proto::ProtoObject* py_complex(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     double real = 0.0;
     double imag = 0.0;
     
@@ -1170,7 +1170,7 @@ const proto::ProtoObject* py_complex(
                     if (m->asMethod(context)) {
                         const proto::ProtoList* a = context->newList();
                         result = m->asMethod(context)(context,
-                            const_cast<proto::ProtoObject*>(x), nullptr, a, nullptr);
+                            const_cast<proto::ProtoObject*>(x), nullptr, argsView(proto::ProtoListArguments(context, a)), nullptr);
                     } else {
                         result = env->callObject(m, { x });
                     }
@@ -1323,8 +1323,8 @@ const proto::ProtoObject* py_complex_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     const proto::ProtoObject* rObj = self->getAttribute(context, PythonEnvironment::getInternedString(context, "real"));
     const proto::ProtoObject* iObj = self->getAttribute(context, PythonEnvironment::getInternedString(context, "imag"));
     double real = (rObj && rObj->isDouble(context)) ? rObj->asDouble(context) : 0.0;
@@ -1344,15 +1344,15 @@ static const proto::ProtoObject* py_staticmethod(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters);
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters);
 
 static const proto::ProtoObject* py_classmethod(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters);
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters);
 
 // NOTE: The `py_type` function definition is not present in the provided content.
 // The instruction asks to modify a loop within `py_type`.
@@ -1363,8 +1363,8 @@ static const proto::ProtoObject* py_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     if (obj == PROTO_TRUE) return PythonEnvironment::getInternedString(context, "True")->asObject(context);
@@ -1385,7 +1385,7 @@ static const proto::ProtoObject* py_repr(
                 if (reprM && reprM != PROTO_NONE) {
                     if (reprM->asMethod(context)) {
                         const proto::ProtoObject* res = reprM->asMethod(context)(context,
-                            const_cast<proto::ProtoObject*>(obj), nullptr, context->newList(), nullptr);
+                            const_cast<proto::ProtoObject*>(obj), nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
                         if (res && res->isString(context)) return res;
                     } else {
                         const proto::ProtoString* codeS = env_pe->getCodeString();
@@ -1469,7 +1469,7 @@ static const proto::ProtoObject* py_repr(
                 if (reprM && reprM != PROTO_NONE) {
                     if (reprM->asMethod(context)) {
                         const proto::ProtoObject* res = reprM->asMethod(context)(context,
-                            const_cast<proto::ProtoObject*>(obj), nullptr, context->newList(), nullptr);
+                            const_cast<proto::ProtoObject*>(obj), nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
                         if (res && res->isString(context)) return res;
                     } else {
                         const proto::ProtoString* codeS = env_pe->getCodeString();
@@ -1666,8 +1666,8 @@ static const proto::ProtoObject* py_format(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     // Subclasses of int / float carry their numeric value inside __data__.
@@ -1748,7 +1748,7 @@ static const proto::ProtoObject* py_format(
         : PythonEnvironment::getInternedString(context, "")->asObject(context);
     if (formatMethod->asMethod(context)) {
         const proto::ProtoList* args = context->newList()->appendLast(context, specArg);
-        return formatMethod->asMethod(context)(context, obj, nullptr, args, nullptr);
+        return formatMethod->asMethod(context)(context, obj, nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
     }
     if (env) {
         return env->callObject(formatMethod, { obj, specArg });
@@ -1760,8 +1760,8 @@ static const proto::ProtoObject* py_open(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* ioMod = self->getAttribute(context, env ? env->getIOModuleString() : PythonEnvironment::getInternedString(context, "__io_module__"));
     if (!ioMod || ioMod == PROTO_NONE) return PROTO_NONE;
@@ -1773,21 +1773,21 @@ static const proto::ProtoObject* py_open(
 static const proto::ProtoObject* py_self_iter(
     proto::ProtoContext*,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return self;
 }
 
 static const proto::ProtoObject* py_enumerate_next(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*);
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*);
 
 static const proto::ProtoObject* py_enumerate(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
     const proto::ProtoObject* iterable = positionalParameters->getAt(context, 1);
     ::protoPython::PythonEnvironment* envStart = ::protoPython::PythonEnvironment::fromContext(context);
@@ -1855,7 +1855,7 @@ static const proto::ProtoObject* py_enumerate(
     const proto::ProtoString* itS = env ? env->getEnumIterString() : PythonEnvironment::getInternedString(context, "__enumerate_it__");
     const proto::ProtoString* idxS = env ? env->getEnumIdxString() : PythonEnvironment::getInternedString(context, "__enumerate_idx__");
 
-    const proto::ProtoObject* it = py_iter(context, nullptr, nullptr, context->newList()->appendLast(context, iterable), nullptr);
+    const proto::ProtoObject* it = py_iter(context, nullptr, nullptr, argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, iterable))), nullptr);
     if (!it || it == (env ? env->getNonePrototype() : nullptr) || it == PROTO_NONE) {
         if (get_env_diag()) fprintf(stderr, "DEBUG: py_enumerate py_iter returned empty for iterable=%p (it=%p, envNone=%p)\n", (void*)iterable, (void*)it, (void*)(env ? env->getNonePrototype() : nullptr));
         return PROTO_NONE;
@@ -1872,7 +1872,7 @@ static const proto::ProtoObject* py_enumerate(
 static const proto::ProtoObject* py_enumerate_next(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoString* itS = env ? env->getEnumIterString() : PythonEnvironment::getInternedString(context, "__enumerate_it__");
     const proto::ProtoString* idxS = env ? env->getEnumIdxString() : PythonEnvironment::getInternedString(context, "__enumerate_idx__");
@@ -1892,7 +1892,7 @@ static const proto::ProtoObject* py_enumerate_next(
     }
     
     const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
-    const proto::ProtoObject* value = nextMethod->asMethod(context)(context, it, nullptr, emptyL, nullptr);
+    const proto::ProtoObject* value = nextMethod->asMethod(context)(context, it, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr);
     if (!value) {
         if (get_env_diag()) fprintf(stderr, "DEBUG: py_enumerate_next nextMethod returned nullptr\n");
         return nullptr;
@@ -1907,14 +1907,14 @@ static const proto::ProtoObject* py_enumerate_next(
     return env ? env->newTuple(l) : ::protoPython::PythonEnvironment::tupleFromList(context, l);
 }
 
-    extern const proto::ProtoObject* invokePythonCallable(proto::ProtoContext* ctx, const proto::ProtoObject* callable, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+    extern const proto::ProtoObject* invokePythonCallable(proto::ProtoContext* ctx, const proto::ProtoObject* callable, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs);
 
 static const proto::ProtoObject* py_reversed(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 2) {
         ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
         if (env) env->raiseTypeError(context, "reversed expected at least 1 argument, got 0");
@@ -1943,7 +1943,7 @@ static const proto::ProtoObject* py_reversed(
         // none, so reversed([1, 2]) was empty), a Python function as its
         // first argument.
         const proto::ProtoObject* r = revMethod->asMethod(context)
-            ? revMethod->asMethod(context)(context, obj, nullptr, emptyL, nullptr)
+            ? revMethod->asMethod(context)(context, obj, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr)
             : ::protoPython::invokePythonCallable(context, revMethod,
                   context->newList()->appendLast(context, obj), nullptr);
         if (r) return r;
@@ -1976,7 +1976,7 @@ static const proto::ProtoObject* py_reversed(
     // A native __len__ needs obj as self too (py_reversed_next does the same
     // for __getitem__); a Python method comes back bound.
     const proto::ProtoObject* lenObj = lenMethod->asMethod(context)
-        ? lenMethod->asMethod(context)(context, obj, nullptr, emptyL, nullptr)
+        ? lenMethod->asMethod(context)(context, obj, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr)
         : ::protoPython::invokePythonCallable(context, lenMethod, emptyL, nullptr);
     if (!lenObj) {
         if (get_env_diag()) fprintf(stderr, "DEBUG: py_reversed lenMethod->call returned nullptr\n");
@@ -2006,7 +2006,7 @@ static const proto::ProtoObject* py_reversed(
 static const proto::ProtoObject* py_reversed_next(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoString* objS = env ? env->getRevObjString() : PythonEnvironment::getInternedString(context, "__reversed_obj__");
     const proto::ProtoString* idxS = env ? env->getRevIdxString() : PythonEnvironment::getInternedString(context, "__reversed_idx__");
@@ -2046,7 +2046,7 @@ static const proto::ProtoObject* py_reversed_next(
     const proto::ProtoObject* value = nullptr;
     if (getitemMethod->asMethod(context)) {
         // Native bound method (e.g. dict's MappingProxy __getitem__).
-        value = getitemMethod->asMethod(context)(context, obj, nullptr, args, nullptr);
+        value = getitemMethod->asMethod(context)(context, obj, nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
     } else {
         // Python-level method: invokePythonCallable already understands
         // bound methods (asMethodSelf carries `obj`) and unbound functions.
@@ -2081,8 +2081,8 @@ static const proto::ProtoObject* py_sum(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* iterable = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* start = positionalParameters->getSize(context) >= 2 ? positionalParameters->getAt(context, 1) : context->fromInteger(0);
@@ -2143,11 +2143,11 @@ static const proto::ProtoObject* py_sum(
             }
             const proto::ProtoList* args = context->newList()->appendLast(context, val);
             if (addM->asMethod(context)) {
-                acc = addM->asMethod(context)(context, acc, nullptr, args, nullptr);
+                acc = addM->asMethod(context)(context, acc, nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
             } else {
                 extern const proto::ProtoObject* invokePythonCallable(
                     proto::ProtoContext* ctx, const proto::ProtoObject* callable,
-                    const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+                    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs);
                 const proto::ProtoString* codeS = env->getCodeString();
                 bool raw = (codeS && addM->hasOwnAttribute(context, codeS) == PROTO_TRUE);
                 const proto::ProtoList* selfArgs = context->newList();
@@ -2167,8 +2167,8 @@ static const proto::ProtoObject* py_all(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_TRUE;
     const proto::ProtoObject* iterable = positionalParameters->getAt(context, 0);
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
@@ -2197,8 +2197,8 @@ static const proto::ProtoObject* py_any(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
     const proto::ProtoObject* iterable = positionalParameters->getAt(context, 0);
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
@@ -2223,8 +2223,8 @@ static const proto::ProtoObject* py_callable(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (!positionalParameters || positionalParameters->getSize(context) < 1) return PROTO_FALSE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     // None, null, or bare integers/booleans are not callable
@@ -2247,8 +2247,8 @@ static const proto::ProtoObject* py_object_init(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters && positionalParameters->getSize(context) > 1) { // 1 is self
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         std::string clsName = "unknown";
@@ -2481,8 +2481,8 @@ static const proto::ProtoObject* py_object_getattribute(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     const proto::ProtoObject* target = self;
     const proto::ProtoObject* nameObj = nullptr;
     if (positionalParameters && positionalParameters->getSize(context) >= 2) {
@@ -2538,8 +2538,8 @@ static const proto::ProtoObject* py_type_setattr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments*) {
     const proto::ProtoObject* target = self;
     const proto::ProtoObject* nameObj = nullptr;
     const proto::ProtoObject* value = nullptr;
@@ -2562,8 +2562,8 @@ static const proto::ProtoObject* py_object_setattr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     const proto::ProtoObject* target = self;
     const proto::ProtoObject* nameObj = nullptr;
     const proto::ProtoObject* value = nullptr;
@@ -2665,8 +2665,8 @@ static const proto::ProtoObject* py_object_eq(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     auto* env = PythonEnvironment::fromContext(context);
     // Support both bound (self=a, posArgs=[b]) and unbound (self=null, posArgs=[a,b]) conventions
     const proto::ProtoObject* a = self;
@@ -2685,8 +2685,8 @@ static const proto::ProtoObject* py_object_ne(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     auto* env = PythonEnvironment::fromContext(context);
     // Support both bound (self=a, posArgs=[b]) and unbound (self=null, posArgs=[a,b]) conventions
     const proto::ProtoObject* a = self;
@@ -2720,8 +2720,8 @@ static const proto::ProtoObject* py_getattr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     PythonEnvironment* envEarly = PythonEnvironment::fromContext(context);
     if (positionalParameters->getSize(context) < 2) {
         if (envEarly) envEarly->raiseTypeError(context,
@@ -2772,8 +2772,8 @@ static const proto::ProtoObject* py_setattr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     PythonEnvironment* envEarlyS = PythonEnvironment::fromContext(context);
     if (positionalParameters->getSize(context) < 3) {
         if (envEarlyS) envEarlyS->raiseTypeError(context,
@@ -2809,8 +2809,8 @@ static const proto::ProtoObject* py_dir(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)parentLink;
     (void)keywordParameters;
     
@@ -3003,7 +3003,7 @@ static const proto::ProtoObject* py_dir(
                         const proto::ProtoList* gargs =
                             context->newList()->appendLast(context, target)->appendLast(context, cls_d);
                         dirM = getM->asMethod(context)(context,
-                            const_cast<proto::ProtoObject*>(dirM), nullptr, gargs, nullptr);
+                            const_cast<proto::ProtoObject*>(dirM), nullptr, argsView(proto::ProtoListArguments(context, gargs)), nullptr);
                     } else {
                         dirM = env_dispatch->callObject(getM, {dirM, target, cls_d});
                     }
@@ -3013,7 +3013,7 @@ static const proto::ProtoObject* py_dir(
                     if (dirM->asMethod(context)) {
                         const proto::ProtoList* emptyL = context->newList();
                         r = dirM->asMethod(context)(context,
-                            const_cast<proto::ProtoObject*>(target), nullptr, emptyL, nullptr);
+                            const_cast<proto::ProtoObject*>(target), nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr);
                     } else {
                         r = env_dispatch->callObject(dirM, {});
                     }
@@ -3275,7 +3275,7 @@ static const proto::ProtoObject* input_call(proto::ProtoContext* context, Python
     if (proto::ProtoMethod native = fn->asMethod(context)) {
         const proto::ProtoList* list = context->newList();
         for (const auto* a : args) list = list->appendLast(context, a);
-        return native(context, stream, nullptr, list, nullptr);
+        return native(context, stream, nullptr, argsView(proto::ProtoListArguments(context, list)), nullptr);
     }
     return env->callObject(fn, args);
 }
@@ -3290,8 +3290,8 @@ static const proto::ProtoObject* py_input(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self; (void)parentLink; (void)keywordParameters;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (!env) return PROTO_NONE;
@@ -3369,8 +3369,8 @@ static const proto::ProtoObject* py__tokenize_source(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
@@ -3397,8 +3397,8 @@ static const proto::ProtoObject* py_compile(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
@@ -3614,8 +3614,8 @@ static const proto::ProtoObject* py_eval(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
@@ -3682,8 +3682,8 @@ static const proto::ProtoObject* py_help(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self; 
     (void)parentLink;
     (void)keywordParameters;
@@ -3729,7 +3729,7 @@ static const proto::ProtoObject* py_help(
     const proto::ProtoObject* reprMethod = obj->getAttribute(context, reprS);
     if (reprMethod && reprMethod->asMethod(context)) {
         const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
-        const proto::ProtoObject* r = reprMethod->asMethod(context)(context, obj, nullptr, emptyL, nullptr);
+        const proto::ProtoObject* r = reprMethod->asMethod(context)(context, obj, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr);
         if (r && r->isString(context)) {
             std::string s;
             r->asString(context)->toUTF8String(context, s);
@@ -3745,8 +3745,8 @@ static const proto::ProtoObject* py_memoryview_tobytes(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList*,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*,
+    const proto::ProtoKeywordArguments*) {
     const proto::ProtoObject* data = self->getAttribute(context, PythonEnvironment::getInternedString(context, "__mv_data__"));
     if (!data || data == PROTO_NONE) {
         return PythonEnvironment::getInternedString(context, "")->asObject(context);
@@ -3759,8 +3759,8 @@ static const proto::ProtoObject* py_memoryview_cast_method(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments*) {
     const proto::ProtoObject* data = self->getAttribute(context, PythonEnvironment::getInternedString(context, "__mv_data__"));
     if (!data || data == PROTO_NONE) return PROTO_NONE;
 
@@ -3798,8 +3798,8 @@ static const proto::ProtoObject* py_memoryview(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)parentLink;
     (void)keywordParameters;
 
@@ -3923,7 +3923,7 @@ static const proto::ProtoObject* py_memoryview(
             if (tobytesMeth->asMethod(context)) {
                 result = tobytesMeth->asMethod(context)(context,
                     const_cast<proto::ProtoObject*>(obj),
-                    nullptr, emptyArgs, nullptr);
+                    nullptr, argsView(proto::ProtoListArguments(context, emptyArgs)), nullptr);
             } else {
                 result = ::protoPython::invokePythonCallable(context, tobytesMeth, emptyArgs, nullptr);
             }
@@ -3994,8 +3994,8 @@ static const proto::ProtoObject* py_super_getattr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 0);
     if (!nameObj->isString(context)) return PROTO_NONE;
@@ -4233,7 +4233,7 @@ static const proto::ProtoObject* py_super_getattr(
                 const proto::ProtoObject* descrInstance =
                     (obj == mroSrc) ? PROTO_NONE : obj;
                 const proto::ProtoList* args = context->newList()->appendLast(context, descrInstance)->appendLast(context, type);
-                return descrGet->asMethod(context)(context, val, nullptr, args, nullptr);
+                return descrGet->asMethod(context)(context, val, nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
             }
             if (val->asMethod(context)) {
                 const proto::ProtoObject* bound = context->newObject(true);
@@ -4267,8 +4267,8 @@ static const proto::ProtoObject* py_super_setattr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* valueObj = positionalParameters->getAt(context, 1);
@@ -4305,8 +4305,8 @@ static const proto::ProtoObject* py_super_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* type = self->getAttribute(context, PythonEnvironment::getInternedString(context, "type"));
     const proto::ProtoObject* obj = self->getAttribute(context, PythonEnvironment::getInternedString(context, "obj"));
@@ -4333,8 +4333,8 @@ static const proto::ProtoObject* py_super_init_noop(
     proto::ProtoContext* context,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*positionalParameters*/,
-    const proto::ProtoSparseList* /*keywordParameters*/) {
+    const proto::ProtoArguments* /*positionalParameters*/,
+    const proto::ProtoKeywordArguments* /*keywordParameters*/) {
     (void)context;
     return PROTO_NONE;
 }
@@ -4476,8 +4476,8 @@ static const proto::ProtoObject* py_super_new(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self;
     (void)parentLink;
 
@@ -4782,8 +4782,8 @@ static const proto::ProtoObject* py_super_get(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* /*keywordParameters*/) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* /*keywordParameters*/) {
     if (!self) return PROTO_NONE;
     // Reads use raw getAttribute (the proxy's __py_getattr_handler__
     // would otherwise re-intercept).
@@ -4865,8 +4865,8 @@ static const proto::ProtoObject* py_exec(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
@@ -5034,21 +5034,21 @@ static const proto::ProtoObject* py_breakpoint(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self; (void)parentLink; (void)keywordParameters; (void)positionalParameters;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* sys = env ? env->resolve("sys", context) : nullptr;
     if (sys) {
         const proto::ProtoObject* hook = sys->getAttribute(context, PythonEnvironment::getInternedString(context, "breakpointhook"));
         if (hook && hook->asMethod(context)) {
-            return hook->asMethod(context)(context, sys, nullptr, env->getEmptyList(), nullptr);
+            return hook->asMethod(context)(context, sys, nullptr, argsView(proto::ProtoListArguments(context, env->getEmptyList())), nullptr);
         }
     }
     return PROTO_NONE;
 }
 
-static const proto::ProtoObject* py_globals(proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* positionalParameters, const proto::ProtoSparseList* keywordParameters) {
+static const proto::ProtoObject* py_globals(proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* positionalParameters, const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* f = PythonEnvironment::getCurrentFrame();
@@ -5059,7 +5059,7 @@ static const proto::ProtoObject* py_globals(proto::ProtoContext* context, const 
     return PythonEnvironment::getCurrentGlobals();
 }
 
-static const proto::ProtoObject* py_locals(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+static const proto::ProtoObject* py_locals(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     const proto::ProtoObject* f = PythonEnvironment::getCurrentFrame();
     if (!f || f == PROTO_NONE) {
          return py_globals(ctx, self, parentLink, nullptr, nullptr);
@@ -5074,7 +5074,7 @@ static const proto::ProtoObject* py_locals(proto::ProtoContext* ctx, const proto
     return f;
 }
 
-static const proto::ProtoObject* py_vars(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+static const proto::ProtoObject* py_vars(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     if (!args || args->getSize(ctx) == 0) {
         return py_locals(ctx, self, parentLink, nullptr, nullptr);
     }
@@ -5092,7 +5092,7 @@ static const proto::ProtoObject* py_vars(proto::ProtoContext* ctx, const proto::
     if (dict && dict != PROTO_NONE && dict->asMethod(ctx) && dict->asMethodSelf(ctx) != nullptr) {
         const proto::ProtoObject* materialised = dict->asMethod(ctx)(ctx,
             const_cast<proto::ProtoObject*>(dict->asMethodSelf(ctx)),
-            nullptr, ctx->newList(), nullptr);
+            nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
         if (materialised) dict = materialised;
     }
     if (dict && dict != PROTO_NONE) return dict;
@@ -5153,14 +5153,14 @@ static int sorted_compare(proto::ProtoContext* context, const proto::ProtoObject
                 const proto::ProtoObject* ltM = a->getAttribute(context, ltS);
                 if (ltM && ltM->asMethod(context)) {
                     const proto::ProtoList* args = context->newList()->appendLast(context, b);
-                    const proto::ProtoObject* res = ltM->asMethod(context)(context, a, nullptr, args, nullptr);
+                    const proto::ProtoObject* res = ltM->asMethod(context)(context, a, nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
                     if (res == PROTO_TRUE) return -1;
                     if (res == PROTO_FALSE) {
                         // Could be equal — invoke __eq__.
                         const proto::ProtoString* eqS = ::protoPython::PythonEnvironment::getInternedString(context, "__eq__");
                         const proto::ProtoObject* eqM = a->getAttribute(context, eqS);
                         if (eqM && eqM->asMethod(context)) {
-                            const proto::ProtoObject* eqr = eqM->asMethod(context)(context, a, nullptr, args, nullptr);
+                            const proto::ProtoObject* eqr = eqM->asMethod(context)(context, a, nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
                             if (eqr == PROTO_TRUE) return 0;
                         }
                         return 1;
@@ -5196,8 +5196,8 @@ static const proto::ProtoObject* py_sorted(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)parentLink;
     (void)self;
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
@@ -5336,8 +5336,8 @@ const proto::ProtoObject* py_object_hash(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     const proto::ProtoObject* obj = self;
     if (!obj && positionalParameters->getSize(context) > 0) {
         obj = positionalParameters->getAt(context, 0);
@@ -5353,8 +5353,8 @@ static const proto::ProtoObject* py_hash(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
@@ -5402,7 +5402,7 @@ static const proto::ProtoObject* py_hash(
     }
     if (!hashMethod) return PROTO_NONE;
     if (hashMethod->asMethod(context)) {
-        return hashMethod->asMethod(context)(context, const_cast<proto::ProtoObject*>(obj), nullptr, context->newList(), nullptr);
+        return hashMethod->asMethod(context)(context, const_cast<proto::ProtoObject*>(obj), nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     }
     // Python user `def __hash__(self)`: prepend self via invokePythonCallable.
     const proto::ProtoString* codeS = env ? env->getCodeString() : PythonEnvironment::getInternedString(context, "__code__");
@@ -5417,8 +5417,8 @@ static const proto::ProtoObject* py_hasattr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     PythonEnvironment* envEarly = PythonEnvironment::fromContext(context);
     if (positionalParameters->getSize(context) < 2) {
         if (envEarly) envEarly->raiseTypeError(context,
@@ -5564,8 +5564,8 @@ static const proto::ProtoObject* py_raise(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
     if (!env) return PROTO_NONE;
     if (positionalParameters->getSize(context) > 0) {
@@ -5578,8 +5578,8 @@ static const proto::ProtoObject* py_delattr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 1);
@@ -5859,15 +5859,15 @@ const proto::ProtoList* computeC3MRO(proto::ProtoContext* context, const proto::
 extern const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList* kwargs);
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments* kwargs);
 
 const proto::ProtoObject* py_genericalias_new(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 3) return PROTO_NONE;
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* origin = positionalParameters->getAt(context, 1);
@@ -5884,8 +5884,8 @@ static const proto::ProtoObject* py_genericalias_eq(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (!self || !posArgs || posArgs->getSize(context) < 1) return PROTO_FALSE;
     const proto::ProtoObject* other = posArgs->getAt(context, 0);
@@ -5911,8 +5911,8 @@ static const proto::ProtoObject* py_genericalias_hash(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList*,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*,
+    const proto::ProtoKeywordArguments*) {
     if (!self) return context->fromInteger(0);
     const proto::ProtoString* originS = PythonEnvironment::getInternedString(context, "__origin__");
     const proto::ProtoString* argsS   = PythonEnvironment::getInternedString(context, "__args__");
@@ -5929,8 +5929,8 @@ const proto::ProtoObject* py_genericalias_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (get_env_diag()) fprintf(stderr, "DEBUG py_genericalias_repr entered self=%p\n", (void*)self);
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* origin = self->getAttribute(context, PythonEnvironment::getInternedString(context, "__origin__"));
@@ -5998,8 +5998,8 @@ const proto::ProtoObject* py_uniontype_new(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* args = positionalParameters->getAt(context, 1);
@@ -6132,7 +6132,7 @@ static const proto::ProtoObject* buildUnionFlatDedup(proto::ProtoContext* ctx,
     const proto::ProtoTuple* args = ctx->newTuple(deduped);
     const proto::ProtoList* utArgs = ctx->newList()->appendLast(ctx, env->getUnionTypeProto())
                                                    ->appendLast(ctx, args->asObject(ctx));
-    return py_uniontype_new(ctx, nullptr, nullptr, utArgs, nullptr);
+    return py_uniontype_new(ctx, nullptr, nullptr, argsView(proto::ProtoListArguments(ctx, utArgs)), nullptr);
 }
 
 // UnionType.__or__: `(int|str) | list` → flatten LHS, dedupe.
@@ -6143,8 +6143,8 @@ const proto::ProtoObject* py_uniontype_or(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) {
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         return env ? env->getNotImplementedPrototype() : PROTO_NONE;
@@ -6161,8 +6161,8 @@ const proto::ProtoObject* py_uniontype_ror(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) {
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         return env ? env->getNotImplementedPrototype() : PROTO_NONE;
@@ -6181,8 +6181,8 @@ const proto::ProtoObject* py_uniontype_eq(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments*) {
     if (!positionalParameters || positionalParameters->getSize(context) < 1) return PROTO_FALSE;
     const proto::ProtoObject* other = positionalParameters->getAt(context, 0);
     if (self == other) return PROTO_TRUE;
@@ -6215,8 +6215,8 @@ const proto::ProtoObject* py_uniontype_hash(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList*,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*,
+    const proto::ProtoKeywordArguments*) {
     std::vector<const proto::ProtoObject*> args;
     if (!unionFlattenInto(context, self, args)) return context->fromLong(0);
     proto::proto_long h = 0;
@@ -6269,8 +6269,8 @@ const proto::ProtoObject* py_uniontype_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* args = self->getAttribute(context, PythonEnvironment::getInternedString(context, "__args__"));
     if (!args || !::protoPython::PythonEnvironment::isTupleValue(context, args)) return context->fromUTF8String("??? | ???");
@@ -6288,8 +6288,8 @@ const proto::ProtoObject* py_type_class_getitem(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG py_type_class_getitem self=%p env=%p gaProto=%p\n", (void*)self, (void*)env, (void*)(env ? env->getGenericAliasProto() : nullptr));
@@ -6302,15 +6302,15 @@ const proto::ProtoObject* py_type_class_getitem(
     const proto::ProtoList* gaArgs = context->newList()->appendLast(context, env->getGenericAliasProto())
                                                       ->appendLast(context, self)
                                                       ->appendLast(context, args);
-    return py_genericalias_new(context, nullptr, nullptr, gaArgs, nullptr);
+    return py_genericalias_new(context, nullptr, nullptr, argsView(proto::ProtoListArguments(context, gaArgs)), nullptr);
 }
 
 const proto::ProtoObject* py_type_or(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return self;
     const proto::ProtoObject* other = positionalParameters->getAt(context, 0);
 
@@ -6336,8 +6336,8 @@ const proto::ProtoObject* py_type_ror(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return self;
     const proto::ProtoObject* other = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* result = buildUnionFlatDedup(context, other, self);
@@ -6352,8 +6352,8 @@ const proto::ProtoObject* py_type_mro(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)parentLink;
     (void)keywordParameters;
     
@@ -6381,7 +6381,7 @@ const proto::ProtoObject* py_type_mro(
         const proto::ProtoList* args = context->newList()->appendLast(context, cls)->appendLast(context, cls); // (self, instance, owner)
         const proto::ProtoObject* getter = mroAttr->getAttribute(context, env ? env->getGetDunderString() : PythonEnvironment::getInternedString(context, "__get__"));
         if (getter && getter->asMethod(context)) {
-            mroAttr = getter->asMethod(context)(context, mroAttr, nullptr, args, nullptr);
+            mroAttr = getter->asMethod(context)(context, mroAttr, nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
         }
     }
 
@@ -6452,8 +6452,8 @@ const proto::ProtoObject* py_type_init(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     // type.__init__ generally ignores its arguments as initialization 
     // happens inside py_type (which acts as __new__).
     return PROTO_NONE;
@@ -6463,8 +6463,8 @@ const proto::ProtoObject* py_type(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG: py_type executing early unconditional: size=%zu\n", positionalParameters ? positionalParameters->getSize(context) : 0);
     }
@@ -6544,7 +6544,8 @@ const proto::ProtoObject* py_type(
                 if (m && m != py_type) {
                     const proto::ProtoList* newArgs = context->newList()->appendLast(context, self);
                     for (proto::proto_ulong i = 0; i < argCount; ++i) newArgs = newArgs->appendLast(context, positionalParameters->getAt(context, static_cast<int>(i)));
-                    return newMethod->call(context, nullptr, py_new, self, newArgs, keywordParameters);
+                    return newMethod->call(context, nullptr, py_new, self, newArgs,
+                        keywordParameters ? keywordParameters->asSparseList(context) : nullptr);
                 }
             }
         }
@@ -7141,13 +7142,13 @@ const proto::ProtoObject* py_type(
                                 const proto::ProtoObject* smCls = env->getBuiltins()->getAttribute(context, PythonEnvironment::getInternedString(context, "staticmethod"));
                                 if (smCls && smCls != PROTO_NONE) {
                                     const proto::ProtoList* smArgs = context->newList()->appendLast(context, smCls)->appendLast(context, val);
-                                    val = py_staticmethod(context, nullptr, nullptr, smArgs, nullptr);
+                                    val = py_staticmethod(context, nullptr, nullptr, argsView(proto::ProtoListArguments(context, smArgs)), nullptr);
                                 }
                             } else if ((ks == "__init_subclass__" || ks == "__class_getitem__") && tName != "classmethod") {
                                 const proto::ProtoObject* cmCls = env->getBuiltins()->getAttribute(context, PythonEnvironment::getInternedString(context, "classmethod"));
                                 if (cmCls && cmCls != PROTO_NONE) {
                                     const proto::ProtoList* cmArgs = context->newList()->appendLast(context, cmCls)->appendLast(context, val);
-                                    val = py_classmethod(context, nullptr, nullptr, cmArgs, nullptr);
+                                    val = py_classmethod(context, nullptr, nullptr, argsView(proto::ProtoListArguments(context, cmArgs)), nullptr);
                                 }
                             }
                         }
@@ -7736,7 +7737,8 @@ const proto::ProtoObject* py_type(
                 }
                 if (fk->getSize(context) > 0) hookNames = context->newTupleFromList(fk);
             }
-            if (!protoPython::invokeInitSubclass(context, targetClass, keywordParameters, hookNames)) {
+            if (!protoPython::invokeInitSubclass(context, targetClass,
+                    keywordParameters ? keywordParameters->asSparseList(context) : nullptr, hookNames)) {
                 return nullptr;
             }
         }
@@ -7904,8 +7906,8 @@ static const proto::ProtoObject* py_isinstance(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
     if (positionalParameters->getSize(context) < 2) return PROTO_FALSE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
@@ -7956,7 +7958,7 @@ static const proto::ProtoObject* py_isinstance(
                 const proto::ProtoList* one = context->newList()
                     ->appendLast(context, obj)
                     ->appendLast(context, member == PROTO_NONE ? env->getNoneTypePrototype() : member);
-                const proto::ProtoObject* r = py_isinstance(context, self, parentLink, one,
+                const proto::ProtoObject* r = py_isinstance(context, self, parentLink, argsView(proto::ProtoListArguments(context, one)),
                                                             keywordParameters);
                 if (r == PROTO_TRUE) return PROTO_TRUE;
             }
@@ -7975,7 +7977,7 @@ static const proto::ProtoObject* py_isinstance(
             const proto::ProtoList* one = context->newList()
                 ->appendLast(context, obj)
                 ->appendLast(context, tup->getAt(context, static_cast<int>(i)));
-            const proto::ProtoObject* r = py_isinstance(context, self, parentLink, one,
+            const proto::ProtoObject* r = py_isinstance(context, self, parentLink, argsView(proto::ProtoListArguments(context, one)),
                                                         keywordParameters);
             if (!r) return nullptr;
             if (r == PROTO_TRUE) return PROTO_TRUE;
@@ -8026,7 +8028,7 @@ static const proto::ProtoObject* py_isinstance(
                     const proto::ProtoObject* r = nullptr;
                     if (icheckM->asMethod(context)) {
                         r = icheckM->asMethod(context)(context,
-                            const_cast<proto::ProtoObject*>(cls), nullptr, args, nullptr);
+                            const_cast<proto::ProtoObject*>(cls), nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
                     } else {
                         const proto::ProtoList* fullArgs =
                             context->newList()->appendLast(context, cls)->appendLast(context, obj);
@@ -8111,7 +8113,7 @@ static const proto::ProtoObject* py_isinstance(
                 const proto::ProtoObject* r = nullptr;
                 if (icheckM->asMethod(context)) {
                     r = icheckM->asMethod(context)(context,
-                        const_cast<proto::ProtoObject*>(cls), nullptr, args, nullptr);
+                        const_cast<proto::ProtoObject*>(cls), nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
                 } else {
                     const proto::ProtoList* fullArgs =
                         context->newList()->appendLast(context, cls)->appendLast(context, obj);
@@ -8181,7 +8183,7 @@ static const proto::ProtoObject* py_isinstance(
                 const proto::ProtoObject* dynamicClass = nullptr;
                 if (gaM->asMethod(context)) {
                     dynamicClass = gaM->asMethod(context)(context,
-                        const_cast<proto::ProtoObject*>(obj), nullptr, args, nullptr);
+                        const_cast<proto::ProtoObject*>(obj), nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
                 } else {
                     const proto::ProtoList* selfArgs = context->newList()
                         ->appendLast(context, obj)
@@ -8283,8 +8285,8 @@ static const proto::ProtoObject* py_issubclass(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 2) return PROTO_FALSE;
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* base = positionalParameters->getAt(context, 1);
@@ -8347,7 +8349,7 @@ static const proto::ProtoObject* py_issubclass(
                     const proto::ProtoObject* r = nullptr;
                     if (scheckM->asMethod(context)) {
                         r = scheckM->asMethod(context)(context,
-                            const_cast<proto::ProtoObject*>(base), nullptr, args, nullptr);
+                            const_cast<proto::ProtoObject*>(base), nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
                     } else {
                         const proto::ProtoList* fullArgs =
                             context->newList()->appendLast(context, base)->appendLast(context, cls);
@@ -8396,8 +8398,8 @@ static const proto::ProtoObject* py_abs(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     if (obj->isInteger(context)) {
@@ -8455,7 +8457,7 @@ static const proto::ProtoObject* py_abs(
         return nullptr;
     }
     if (absM->asMethod(context)) {
-        return absM->asMethod(context)(context, const_cast<proto::ProtoObject*>(obj), nullptr, context->newList(), nullptr);
+        return absM->asMethod(context)(context, const_cast<proto::ProtoObject*>(obj), nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoString* codeS = env ? env->getCodeString() : PythonEnvironment::getInternedString(context, "__code__");
@@ -8468,8 +8470,8 @@ static const proto::ProtoObject* py_abs(
 
 static const proto::ProtoObject* py_min_max(
     proto::ProtoContext* context,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters,
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters,
     bool isMax) {
     PythonEnvironment* env0 = PythonEnvironment::fromContext(context);
     if (positionalParameters->getSize(context) < 1) {
@@ -8523,11 +8525,11 @@ static const proto::ProtoObject* py_min_max(
     if (positionalParameters->getSize(context) == 1) {
         // Handle iterable
         const proto::ProtoObject* iterable = positionalParameters->getAt(context, 0);
-        const proto::ProtoObject* iterObj = py_iter(context, nullptr, nullptr, context->newList()->appendLast(context, iterable), nullptr);
+        const proto::ProtoObject* iterObj = py_iter(context, nullptr, nullptr, argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, iterable))), nullptr);
         if (iterObj && iterObj != PROTO_NONE) {
             ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
             while (true) {
-                const proto::ProtoObject* item = py_next(context, nullptr, nullptr, context->newList()->appendLast(context, iterObj), nullptr);
+                const proto::ProtoObject* item = py_next(context, nullptr, nullptr, argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, iterObj))), nullptr);
                 if (!item) {
                     if (env && env->handleExhaustion(context)) break;
                     return nullptr;
@@ -8566,7 +8568,7 @@ static const proto::ProtoObject* py_min_max(
         if (keyFunc->asMethod(context)) {
             bestVal = keyFunc->asMethod(context)(context,
                 const_cast<proto::ProtoObject*>(keyFunc->asMethodSelf(context)),
-                nullptr, kArgs, nullptr);
+                nullptr, argsView(proto::ProtoListArguments(context, kArgs)), nullptr);
         } else {
             bestVal = ::protoPython::invokePythonCallable(context, keyFunc, kArgs, nullptr);
         }
@@ -8580,7 +8582,7 @@ static const proto::ProtoObject* py_min_max(
             if (keyFunc->asMethod(context)) {
                 currentVal = keyFunc->asMethod(context)(context,
                     const_cast<proto::ProtoObject*>(keyFunc->asMethodSelf(context)),
-                    nullptr, kArgs, nullptr);
+                    nullptr, argsView(proto::ProtoListArguments(context, kArgs)), nullptr);
             } else {
                 currentVal = ::protoPython::invokePythonCallable(context, keyFunc, kArgs, nullptr);
             }
@@ -8613,8 +8615,8 @@ static const proto::ProtoObject* py_min(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     return py_min_max(context, positionalParameters, keywordParameters, false);
 }
 
@@ -8622,8 +8624,8 @@ static const proto::ProtoObject* py_max(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     return py_min_max(context, positionalParameters, keywordParameters, true);
 }
 
@@ -8631,8 +8633,8 @@ static const proto::ProtoObject* py_pow(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     proto::proto_ulong n = positionalParameters->getSize(context);
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     // CPython: pow() requires at least 2 positional args.  Previously
@@ -8687,7 +8689,7 @@ static const proto::ProtoObject* py_pow(
                             context->newList()->appendLast(context, baseObj));
                         if (modObj) args = const_cast<proto::ProtoList*>(args->appendLast(context, modObj));
                         if (rpowM->asMethod(context)) {
-                            return rpowM->asMethod(context)(context, expObj, nullptr, args, nullptr);
+                            return rpowM->asMethod(context)(context, expObj, nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
                         }
                         // Python-user __rpow__: prepend self.
                         proto::ProtoList* selfArgs = const_cast<proto::ProtoList*>(
@@ -8749,7 +8751,7 @@ static const proto::ProtoObject* py_pow(
                 if (powMethod->asMethod(context)) {
                     proto::ProtoList* args = const_cast<proto::ProtoList*>(context->newList()->appendLast(context, expObj));
                     if (modObj) args = const_cast<proto::ProtoList*>(args->appendLast(context, modObj));
-                    return powMethod->asMethod(context)(context, baseObj, nullptr, args, nullptr);
+                    return powMethod->asMethod(context)(context, baseObj, nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
                 }
                 // Python-user __pow__ (no asMethod): prepend self so
                 // \`def __pow__(self, other, mod=None)\` binds correctly.
@@ -8769,7 +8771,7 @@ static const proto::ProtoObject* py_pow(
             proto::ProtoList* args = const_cast<proto::ProtoList*>(context->newList()->appendLast(context, expObj));
             if (modObj) args = const_cast<proto::ProtoList*>(args->appendLast(context, modObj));
             if (powMethod->asMethod(context))
-                return powMethod->asMethod(context)(context, baseObj, nullptr, args, nullptr);
+                return powMethod->asMethod(context)(context, baseObj, nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
             if (env) return ::protoPython::invokePythonCallable(context, powMethod, args, nullptr);
         }
         if (env) env->raiseTypeError(context, "unsupported operand type(s) for pow()");
@@ -8862,8 +8864,8 @@ static const proto::ProtoObject* py_divmod(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
@@ -8933,8 +8935,8 @@ static const proto::ProtoObject* py_ascii(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
@@ -8954,8 +8956,8 @@ static const proto::ProtoObject* py_ord(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
@@ -9048,8 +9050,8 @@ static const proto::ProtoObject* py_property_get(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     if (obj == PROTO_NONE) return self;
@@ -9075,8 +9077,8 @@ static const proto::ProtoObject* py_property_set(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* val = positionalParameters->getAt(context, 1);
@@ -9154,8 +9156,8 @@ static const proto::ProtoObject* py_property_delete(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments*) {
     if (!positionalParameters || positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* fdel = self->getAttribute(context, PythonEnvironment::getInternedString(context, "fdel"));
@@ -9208,8 +9210,8 @@ static const proto::ProtoObject* py_property_init(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     // property.__init__ ignores its positional and keyword parameters.
     // Initialization is already done natively in __new__.
     return PROTO_NONE;
@@ -9268,8 +9270,8 @@ static const proto::ProtoObject* py_property_getter_method(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* newFget = positionalParameters->getAt(context, 0);
     return py_property_copy_with(context, self, "fget", newFget);
@@ -9280,8 +9282,8 @@ static const proto::ProtoObject* py_property_setter_method(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* newFset = positionalParameters->getAt(context, 0);
     return py_property_copy_with(context, self, "fset", newFset);
@@ -9292,8 +9294,8 @@ static const proto::ProtoObject* py_property_deleter_method(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* newFdel = positionalParameters->getAt(context, 0);
     return py_property_copy_with(context, self, "fdel", newFdel);
@@ -9303,8 +9305,8 @@ static const proto::ProtoObject* py_property(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0); // property class
 
@@ -9367,16 +9369,16 @@ static const proto::ProtoObject* py_property(
 const proto::ProtoObject* runBoundMethodCall(proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList* kwargs);
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments* kwargs);
 namespace builtins {
 
 static const proto::ProtoObject* py_classmethod_get(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     proto::proto_ulong n = positionalParameters->getSize(context);
     if (n < 1) return PROTO_NONE;
     PythonEnvironment* envEarly = PythonEnvironment::fromContext(context);
@@ -9425,8 +9427,8 @@ static const proto::ProtoObject* py_classmethod(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     PythonEnvironment* envEarly = PythonEnvironment::fromContext(context);
     // CPython: classmethod() does NOT accept keyword arguments —
@@ -9563,8 +9565,8 @@ static const proto::ProtoObject* py_staticmethod_get(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     return self->getAttribute(context, PythonEnvironment::getInternedString(context, "func"));
 }
 
@@ -9572,8 +9574,8 @@ static const proto::ProtoObject* py_staticmethod(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     PythonEnvironment* envEarly = PythonEnvironment::fromContext(context);
     if (keywordParameters && keywordParameters->getSize(context) > 0) {
@@ -9728,8 +9730,8 @@ static const proto::ProtoObject* py_chr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
@@ -9803,8 +9805,8 @@ static const proto::ProtoObject* py_bin(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
@@ -9843,8 +9845,8 @@ static const proto::ProtoObject* py_oct(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
@@ -9877,8 +9879,8 @@ static const proto::ProtoObject* py_hex(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
@@ -9914,8 +9916,8 @@ static const proto::ProtoObject* py_round(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (positionalParameters->getSize(context) < 1) {
         // CPython: `round()` raises TypeError: missing required argument.
@@ -9960,7 +9962,7 @@ static const proto::ProtoObject* py_round(
             dArgs = dArgs->appendLast(context, positionalParameters->getAt(context, 1));
         }
         if (roundM->asMethod(context)) {
-            return roundM->asMethod(context)(context, const_cast<proto::ProtoObject*>(n), nullptr, dArgs, nullptr);
+            return roundM->asMethod(context)(context, const_cast<proto::ProtoObject*>(n), nullptr, argsView(proto::ProtoListArguments(context, dArgs)), nullptr);
         }
         const proto::ProtoList* selfArgs = context->newList()->appendLast(context, n);
         if (positionalParameters->getSize(context) >= 2) {
@@ -10059,7 +10061,7 @@ static const proto::ProtoObject* py_round(
 static const proto::ProtoObject* py_range_next(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
 
     // Fast-path: native ProtoRangeIteratorImplementation (what py_range_iter now returns).
     // Direct C++ field comparison and increment — zero attribute lookups, zero allocations.
@@ -10092,8 +10094,8 @@ static const proto::ProtoObject* py_range_len(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoString* curS = env ? env->getRangeCurString() : PythonEnvironment::getInternedString(context, "__range_cur__");
     const proto::ProtoString* stopS = env ? env->getRangeStopString() : PythonEnvironment::getInternedString(context, "__range_stop__");
@@ -10119,8 +10121,8 @@ static const proto::ProtoObject* py_range_len(
 // py_range_getitem (slice branch) needs to call it to build the result.
 static const proto::ProtoObject* py_range(
     proto::ProtoContext* context, const proto::ProtoObject* self,
-    const proto::ParentLink* parentLink, const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters);
+    const proto::ParentLink* parentLink, const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters);
 
 // Compute the canonical (start, stop, step, length) of `self` interpreted
 // as a range object.  Returns false if any required private attribute is
@@ -10153,8 +10155,8 @@ static const proto::ProtoObject* py_range_getitem(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments*) {
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     if (!args || args->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* idxObj = args->getAt(context, 0);
@@ -10210,7 +10212,7 @@ static const proto::ProtoObject* py_range_getitem(
             ->appendLast(context, context->fromInteger(newStart))
             ->appendLast(context, context->fromInteger(newStop))
             ->appendLast(context, context->fromInteger(newStep));
-        return py_range(context, self, nullptr, shifted, nullptr);
+        return py_range(context, self, nullptr, argsView(proto::ProtoListArguments(context, shifted)), nullptr);
     } else if (env) {
         // __index__ protocol on user instances.  Handles both native
         // (asMethod non-null) and Python-level (function with __code__)
@@ -10220,11 +10222,11 @@ static const proto::ProtoObject* py_range_getitem(
         const proto::ProtoObject* idxRes = nullptr;
         if (indexM && indexM != PROTO_NONE) {
             if (indexM->asMethod(context)) {
-                idxRes = indexM->asMethod(context)(context, idxObj, nullptr, context->newList(), nullptr);
+                idxRes = indexM->asMethod(context)(context, idxObj, nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
             } else {
                 extern const proto::ProtoObject* invokePythonCallable(
                     proto::ProtoContext* ctx, const proto::ProtoObject* callable,
-                    const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+                    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs);
                 const proto::ProtoList* selfArgs = context->newList()->appendLast(context, idxObj);
                 idxRes = ::protoPython::invokePythonCallable(context, indexM, selfArgs, nullptr);
             }
@@ -10280,8 +10282,8 @@ static const proto::ProtoObject* py_range_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList*,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*,
+    const proto::ProtoKeywordArguments*) {
     long long start = 0, stop = 0, step = 0, n = 0;
     if (!range_view(context, self, start, stop, step, n)) return PROTO_NONE;
     char buf[80];
@@ -10297,8 +10299,8 @@ static const proto::ProtoObject* py_range_count(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(context) < 1) return context->fromInteger(0);
     long long idx;
     bool found = range_locate(context, self, args->getAt(context, 0), idx);
@@ -10309,8 +10311,8 @@ static const proto::ProtoObject* py_range_index(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (!args || args->getSize(context) < 1) {
         if (env) env->raiseTypeError(context, "range.index requires exactly 1 argument");
@@ -10330,8 +10332,8 @@ static const proto::ProtoObject* py_range_iter(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoString* curS = env ? env->getRangeCurString() : PythonEnvironment::getInternedString(context, "__range_cur__");
@@ -10357,8 +10359,8 @@ static const proto::ProtoObject* py_range(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     
     long long start = 0;
     long long stop = 0;
@@ -10458,8 +10460,8 @@ static const proto::ProtoObject* py_zip(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     proto::proto_ulong n = positionalParameters->getSize(context);
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoString* iterS = env ? env->getIterString() : PythonEnvironment::getInternedString(context, "__iter__");
@@ -10472,7 +10474,7 @@ static const proto::ProtoObject* py_zip(
     const proto::ProtoList* itersList = context->newList();
     for (proto::proto_ulong i = 1; i < n; ++i) {
         const proto::ProtoObject* iterable = positionalParameters->getAt(context, static_cast<int>(i));
-        const proto::ProtoObject* it = py_iter(context, nullptr, nullptr, context->newList()->appendLast(context, iterable), nullptr);
+        const proto::ProtoObject* it = py_iter(context, nullptr, nullptr, argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, iterable))), nullptr);
         if (!it || it == noneObj) return PROTO_NONE;
         itersList = itersList->appendLast(context, it);
     }
@@ -10502,7 +10504,7 @@ static const proto::ProtoObject* py_zip(
 static const proto::ProtoObject* py_zip_next(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoString* itersS = env ? env->getZipItersString() : PythonEnvironment::getInternedString(context, "__zip_iters__");
     const proto::ProtoString* nextS = env ? env->getNextString() : PythonEnvironment::getInternedString(context, "__next__");
@@ -10526,7 +10528,7 @@ static const proto::ProtoObject* py_zip_next(
         const proto::ProtoObject* it = iters->getAt(context, static_cast<int>(i));
         const proto::ProtoObject* nextM = it ? it->getAttribute(context, nextS) : nullptr;
         if (!nextM || !nextM->asMethod(context)) return nullptr;
-        const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, emptyL, nullptr);
+        const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr);
         if (!val) {
             if (env && env->hasPendingException()) env->clearPendingException();
             if (!strict) return nullptr;
@@ -10552,7 +10554,7 @@ static const proto::ProtoObject* py_zip_next(
             const proto::ProtoObject* it = iters->getAt(context, static_cast<int>(j));
             const proto::ProtoObject* nextM = it ? it->getAttribute(context, nextS) : nullptr;
             if (!nextM || !nextM->asMethod(context)) continue;
-            const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, emptyL, nullptr);
+            const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr);
             if (val) {
                 if (env) env->raiseValueError(context,
                     PythonEnvironment::getInternedString(context,
@@ -10571,8 +10573,8 @@ static const proto::ProtoObject* py_filter(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)parentLink;
     (void)keywordParameters;
     // filter() is dispatched as `cls.__new__(cls, function, iterable)`,
@@ -10600,7 +10602,7 @@ static const proto::ProtoObject* py_filter(
     const proto::ProtoString* filterBoolS = env ? env->getFilterBoolString() : PythonEnvironment::getInternedString(context, "__filter_bool__");
     const proto::ProtoObject* noneObj = env ? env->getNonePrototype() : nullptr;
 
-    const proto::ProtoObject* it = py_iter(context, nullptr, nullptr, context->newList()->appendLast(context, iterable), nullptr);
+    const proto::ProtoObject* it = py_iter(context, nullptr, nullptr, argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, iterable))), nullptr);
     if (!it || it == noneObj) return PROTO_NONE;
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* boolType = env ? env->getBuiltins()->getAttribute(context, boolTypeS) : PROTO_NONE;
@@ -10645,7 +10647,7 @@ static bool filter_is_truthy(proto::ProtoContext* context, const proto::ProtoObj
 static const proto::ProtoObject* py_filter_next(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoString* funcS = env ? env->getFilterFuncString() : PythonEnvironment::getInternedString(context, "__filter_func__");
     const proto::ProtoString* iterS = env ? env->getFilterIterString() : PythonEnvironment::getInternedString(context, "__filter_iter__");
@@ -10680,7 +10682,7 @@ static const proto::ProtoObject* py_filter_next(
     bool noneFunc = (!func || func == PROTO_NONE);
 
     for (;;) {
-        const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, emptyL, nullptr);
+        const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr);
         if (!val) return nullptr;
 
         if (noneFunc) {
@@ -10702,8 +10704,8 @@ const proto::ProtoObject* py_python_ignore_init(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     // __init__ ignores its parameters for native types that handle initialization in __new__
     return PROTO_NONE;
 }
@@ -10712,8 +10714,8 @@ static const proto::ProtoObject* py_map(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)parentLink;
     if (positionalParameters->getSize(context) < 3) return PROTO_NONE;
     const proto::ProtoObject* func = positionalParameters->getAt(context, 1);
@@ -10742,7 +10744,7 @@ static const proto::ProtoObject* py_map(
     const proto::ProtoObject* iterStorage = nullptr;
     if (nIter == 1) {
         const proto::ProtoObject* iterable = positionalParameters->getAt(context, 2);
-        const proto::ProtoObject* it = py_iter(context, nullptr, nullptr, context->newList()->appendLast(context, iterable), nullptr);
+        const proto::ProtoObject* it = py_iter(context, nullptr, nullptr, argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, iterable))), nullptr);
         if (!it || it == noneObj) {
             if (get_env_diag()) fprintf(stderr, "DEBUG: py_map failing: py_iter returned None or nullptr\n");
             return PROTO_NONE;
@@ -10752,7 +10754,7 @@ static const proto::ProtoObject* py_map(
         const proto::ProtoList* iters = context->newList();
         for (proto::proto_ulong i = 0; i < nIter; ++i) {
             const proto::ProtoObject* iterable = positionalParameters->getAt(context, static_cast<int>(2 + i));
-            const proto::ProtoObject* it = py_iter(context, nullptr, nullptr, context->newList()->appendLast(context, iterable), nullptr);
+            const proto::ProtoObject* it = py_iter(context, nullptr, nullptr, argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, iterable))), nullptr);
             if (!it || it == noneObj) return PROTO_NONE;
             iters = iters->appendLast(context, it);
         }
@@ -10777,7 +10779,7 @@ static const proto::ProtoObject* py_map(
 static const proto::ProtoObject* py_map_next(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoString* funcS = env ? env->getMapFuncString() : PythonEnvironment::getInternedString(context, "__map_func__");
     const proto::ProtoString* iterS = env ? env->getMapIterString() : PythonEnvironment::getInternedString(context, "__map_iter__");
@@ -10824,7 +10826,7 @@ static const proto::ProtoObject* py_map_next(
             const proto::ProtoObject* it = itersList->getAt(context, static_cast<int>(i));
             const proto::ProtoObject* nextM = it->getAttribute(context, nextS);
             if (!nextM || !nextM->asMethod(context)) return nullptr;
-            const proto::ProtoObject* v = nextM->asMethod(context)(context, it, nullptr, emptyL, nullptr);
+            const proto::ProtoObject* v = nextM->asMethod(context)(context, it, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr);
             if (!v) {
                 // Any iterator exhausted → end of map, unless strict=True
                 // requires all of them to end together.
@@ -10837,7 +10839,7 @@ static const proto::ProtoObject* py_map_next(
                     const proto::ProtoObject* itj = itersList->getAt(context, static_cast<int>(j));
                     const proto::ProtoObject* nextJ = itj->getAttribute(context, nextS);
                     if (!nextJ || !nextJ->asMethod(context)) return nullptr;
-                    if (nextJ->asMethod(context)(context, itj, nullptr, emptyL, nullptr)) {
+                    if (nextJ->asMethod(context)(context, itj, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr)) {
                         lengthMismatch(j, "longer");
                         return nullptr;
                     }
@@ -10857,7 +10859,7 @@ static const proto::ProtoObject* py_map_next(
             }
             return nullptr;
         }
-        const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, emptyL, nullptr);
+        const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr);
         if (!val) {
             if (get_env_diag()) {
                 fprintf(stderr, "DEBUG: py_map_next: it=%p __next__ returned nullptr (end of iteration)\n", (void*)it);
@@ -10930,15 +10932,15 @@ const proto::ProtoObject* py_object_new(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters);
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters);
 
 const proto::ProtoObject* py_object_new(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     if (!positionalParameters || positionalParameters->getSize(context) < 1) {
         if (env) env->raiseTypeError(context,
@@ -11153,20 +11155,20 @@ static const proto::ProtoObject* py_bytearray_setitem(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*);
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*);
 static const proto::ProtoObject* py_bytearray_iadd(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*);
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*);
 static const proto::ProtoObject* py_bytearray_extend(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*);
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*);
 
 // STRUCT-35: encode a str via its own .encode(encoding, errors) method,
 // returning the encoded bytes payload in `out`.  Returns true on success;
@@ -11187,7 +11189,7 @@ static bool encode_str_via_method(proto::ProtoContext* ctx,
     const proto::ProtoList* callArgs = ctx->newList();
     if (encodingArg) callArgs = callArgs->appendLast(ctx, encodingArg);
     if (errorsArg) callArgs = callArgs->appendLast(ctx, errorsArg);
-    const proto::ProtoObject* encoded = encodeMethod->asMethod(ctx)(ctx, strObj, nullptr, callArgs, nullptr);
+    const proto::ProtoObject* encoded = encodeMethod->asMethod(ctx)(ctx, strObj, nullptr, argsView(proto::ProtoListArguments(ctx, callArgs)), nullptr);
     if (!encoded) return false;
     const proto::ProtoString* dataS = PythonEnvironment::getInternedString(ctx, "__data__");
     const proto::ProtoObject* data = encoded->getAttribute(ctx, dataS);
@@ -11207,7 +11209,7 @@ static bool encode_str_via_method(proto::ProtoContext* ctx,
     return false;
 }
 
-const proto::ProtoObject* py_bytearray_fallback(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* link, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_bytearray_fallback(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* link, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     if (get_env_diag()) fprintf(stderr, "DEBUG: py_bytearray_fallback called\n");
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoString* dataS = PythonEnvironment::getInternedString(ctx, "__data__");
@@ -11353,8 +11355,8 @@ static const proto::ProtoObject* py_bytearray_iadd(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!self || !posArgs || posArgs->getSize(ctx) < 1) return const_cast<proto::ProtoObject*>(self);
     const proto::ProtoObject* other = posArgs->getAt(ctx, 0);
@@ -11379,12 +11381,12 @@ static const proto::ProtoObject* py_bytearray_iadd(
         const proto::ProtoString* nextS = PythonEnvironment::getInternedString(ctx, "__next__");
         const proto::ProtoObject* iterM = other->getAttribute(ctx, iterS);
         if (iterM && iterM != PROTO_NONE && iterM->asMethod(ctx)) {
-            const proto::ProtoObject* it = iterM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(other), nullptr, ctx->newList(), nullptr);
+            const proto::ProtoObject* it = iterM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(other), nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
             if (it && it != PROTO_NONE) {
                 const proto::ProtoObject* nextM = it->getAttribute(ctx, nextS);
                 if (nextM && nextM->asMethod(ctx)) {
                     for (;;) {
-                        const proto::ProtoObject* v = nextM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(it), nullptr, ctx->newList(), nullptr);
+                        const proto::ProtoObject* v = nextM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(it), nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
                         if (env && env->peekPendingException()) {
                             if (env->isStopIteration(ctx, env->peekPendingException()))
                                 env->clearPendingException();
@@ -11419,8 +11421,8 @@ static const proto::ProtoObject* py_bytearray_extend(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* pl,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kw) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kw) {
     py_bytearray_iadd(ctx, self, pl, posArgs, kw);
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     return env ? env->getNonePrototype() : PROTO_NONE;
@@ -11435,8 +11437,8 @@ static const proto::ProtoObject* py_bytearray_setitem(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!self || !posArgs || posArgs->getSize(ctx) < 2) return PROTO_NONE;
     const proto::ProtoObject* key = posArgs->getAt(ctx, 0);
@@ -11681,8 +11683,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
             ctx->fromMethod(const_cast<proto::ProtoObject*>(objectProto),
             +[](proto::ProtoContext* context, const proto::ProtoObject* self,
                const proto::ParentLink*,
-               const proto::ProtoList* posArgs,
-               const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+               const proto::ProtoArguments* posArgs,
+               const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
                 const proto::ProtoObject* target = self;
                 const proto::ProtoObject* nameObj = nullptr;
                 if (posArgs && posArgs->getSize(context) >= 2) {
@@ -11786,13 +11788,13 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     }
     
     // Add dummy bytearray
-    auto py_bytearray_new = [](proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+    auto py_bytearray_new = [](proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         const proto::ProtoList* shiftedArgs = context->newList();
         const proto::ProtoObject* cls = args ? args->getAt(context, 0) : nullptr;
         if (args) {
             for (size_t i = 1; i < args->getSize(context); i++) shiftedArgs = shiftedArgs->appendLast(context, args->getAt(context, static_cast<int>(i)));
         }
-        return py_bytearray_fallback(context, cls, parentLink, shiftedArgs, kwargs);
+        return py_bytearray_fallback(context, cls, parentLink, argsView(proto::ProtoListArguments(context, shiftedArgs)), kwargs);
     };
     // STRUCT-35: bytearray.__init__(self, source=None, encoding=None,
     // errors=None) rebuilds self.__data__ in place.  Without this method
@@ -11801,7 +11803,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     // — leaving `ba` empty and breaking test_keyword_arguments.  The
     // implementation mirrors py_bytearray_fallback's source decoding but
     // overwrites the existing buffer instead of returning a new instance.
-    auto py_bytearray_init = [](proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* /*parentLink*/, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+    auto py_bytearray_init = [](proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* /*parentLink*/, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         if (!self || !args) return PROTO_NONE;
         // `bytearray.__init__(ba, …)` lands here with args = [ba, source?].
         // The first positional is the receiver; the rest are the user-visible
@@ -11930,13 +11932,13 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         fprintf(stderr, "DEBUG BUILTINS INIT: pEnv=%p\n", (void*)pEnv);
         fflush(stderr);
     }
-    auto py_range_new = [](proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+    auto py_range_new = [](proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         const proto::ProtoList* shiftedArgs = context->newList();
         const proto::ProtoObject* cls = args ? args->getAt(context, 0) : nullptr;
         if (args) {
             for (size_t i = 1; i < args->getSize(context); i++) shiftedArgs = shiftedArgs->appendLast(context, args->getAt(context, static_cast<int>(i)));
         }
-        return py_range(context, cls, parentLink, shiftedArgs, kwargs);
+        return py_range(context, cls, parentLink, argsView(proto::ProtoListArguments(context, shiftedArgs)), kwargs);
     };
     const proto::ProtoObject* rangeClass = ctx->newObject(false);
     if (objectProto) rangeClass = rangeClass->addParent(ctx, objectProto);
@@ -11976,8 +11978,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     rangeClass = rangeClass->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__reversed__"),
         ctx->fromMethod(nullptr,
         +[](proto::ProtoContext* c, const proto::ProtoObject* self,
-           const proto::ParentLink*, const proto::ProtoList*,
-           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+           const proto::ParentLink*, const proto::ProtoArguments*,
+           const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
             PythonEnvironment* env = PythonEnvironment::fromContext(c);
             if (!self) return PROTO_NONE;
             const proto::ProtoString* curS = env ? env->getRangeCurString() : PythonEnvironment::getInternedString(c, "__range_cur__");
@@ -12168,7 +12170,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "hash"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_hash));
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "help"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_help));
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "_complete"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_complete));
-    auto py_memoryview_new = [](proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+    auto py_memoryview_new = [](proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         return py_memoryview(context, self, parentLink, args, kwargs);
     };
     const proto::ProtoObject* memoryviewClass = ctx->newObject(false);
@@ -12190,8 +12192,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
             [](proto::ProtoContext* c,
                const proto::ProtoObject* self,
                const proto::ParentLink*,
-               const proto::ProtoList*,
-               const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+               const proto::ProtoArguments*,
+               const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
                 const proto::ProtoObject* nb = self->getAttribute(c,
                     PythonEnvironment::getInternedString(c, "nbytes"));
                 if (nb && nb->isInteger(c)) return nb;
@@ -12283,8 +12285,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         PythonEnvironment::getInternedString(ctx, "__setattr__"),
         ctx->fromMethod(nullptr,
         +[](proto::ProtoContext* context, const proto::ProtoObject* self,
-           const proto::ParentLink*, const proto::ProtoList* args,
-           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+           const proto::ParentLink*, const proto::ProtoArguments* args,
+           const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
             // Two call shapes: bound (self=prop, args=[name, value])
             // and unbound (self=null/class, args=[prop, name, value]).
             const proto::ProtoObject* target = self;
@@ -12382,8 +12384,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         // cached entry.  CPython does the same lazy copy on first
         // access.
         auto fget = +[](proto::ProtoContext* c, const proto::ProtoObject* /*self*/,
-                       const proto::ParentLink*, const proto::ProtoList* args,
-                       const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                       const proto::ParentLink*, const proto::ProtoArguments* args,
+                       const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
             if (!args || args->getSize(c) < 1) return PROTO_NONE;
             const proto::ProtoObject* inst = args->getAt(c, 0);
             if (!inst || inst == PROTO_NONE) return PROTO_NONE;
@@ -12431,8 +12433,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         // annotations are NOT mutated; the wrapper's own slot wins on
         // subsequent reads.
         auto fset = +[](proto::ProtoContext* c, const proto::ProtoObject* /*self*/,
-                       const proto::ParentLink*, const proto::ProtoList* args,
-                       const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                       const proto::ParentLink*, const proto::ProtoArguments* args,
+                       const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
             if (!args || args->getSize(c) < 2) return PROTO_NONE;
             const proto::ProtoObject* inst = args->getAt(c, 0);
             const proto::ProtoObject* value = args->getAt(c, 1);
@@ -12465,8 +12467,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         // reads fall back to the lazy descriptor (which re-materialises
         // from __func__).
         auto fdel = +[](proto::ProtoContext* c, const proto::ProtoObject* /*self*/,
-                       const proto::ParentLink*, const proto::ProtoList* args,
-                       const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                       const proto::ParentLink*, const proto::ProtoArguments* args,
+                       const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
             if (!args || args->getSize(c) < 1) return PROTO_NONE;
             const proto::ProtoObject* inst = args->getAt(c, 0);
             if (!inst || inst == PROTO_NONE) return PROTO_NONE;
@@ -12514,8 +12516,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         descr->setAttribute(ctx, pEnv->getClassString(), descrProto);
         descr->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"), attrS->asObject(ctx));
         auto fget = +[](proto::ProtoContext* c, const proto::ProtoObject* /*self*/,
-                       const proto::ParentLink*, const proto::ProtoList* args,
-                       const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                       const proto::ParentLink*, const proto::ProtoArguments* args,
+                       const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
             if (!args || args->getSize(c) < 1) return PROTO_NONE;
             const proto::ProtoObject* inst = args->getAt(c, 0);
             if (!inst || inst == PROTO_NONE) return PROTO_NONE;
@@ -12559,8 +12561,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
             return an;
         };
         auto fset = +[](proto::ProtoContext* c, const proto::ProtoObject* /*self*/,
-                       const proto::ParentLink*, const proto::ProtoList* args,
-                       const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                       const proto::ParentLink*, const proto::ProtoArguments* args,
+                       const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
             if (!args || args->getSize(c) < 2) return PROTO_NONE;
             const proto::ProtoObject* inst = args->getAt(c, 0);
             const proto::ProtoObject* value = args->getAt(c, 1);
@@ -12590,8 +12592,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
             return PROTO_NONE;
         };
         auto fdel = +[](proto::ProtoContext* c, const proto::ProtoObject* /*self*/,
-                       const proto::ParentLink*, const proto::ProtoList* args,
-                       const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                       const proto::ParentLink*, const proto::ProtoArguments* args,
+                       const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
             if (!args || args->getSize(c) < 1) return PROTO_NONE;
             const proto::ProtoObject* inst = args->getAt(c, 0);
             if (!inst || inst == PROTO_NONE) return PROTO_NONE;

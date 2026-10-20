@@ -181,7 +181,7 @@ static bool extract_bytes(proto::ProtoContext* ctx, const proto::ProtoObject* ob
         if (tobytesM && tobytesM->asMethod(ctx)) {
             const proto::ProtoObject* res = tobytesM->asMethod(ctx)(ctx,
                 const_cast<proto::ProtoObject*>(obj),
-                nullptr, ctx->newList(), nullptr);
+                nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
             if (res && res != obj) return extract_bytes(ctx, res, out);
         }
     }
@@ -192,7 +192,7 @@ static bool extract_bytes(proto::ProtoContext* ctx, const proto::ProtoObject* ob
 
 static const proto::ProtoObject* pack_impl(proto::ProtoContext* ctx,
                                            const std::string& fmt,
-                                           const proto::ProtoList* values,
+                                           const proto::ProtoArguments* values,
                                            proto::proto_ulong values_off) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     char order;
@@ -374,7 +374,7 @@ static const proto::ProtoObject* unpack_impl(proto::ProtoContext* ctx,
 
 const proto::ProtoObject* py_calcsize(proto::ProtoContext* ctx,
     const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return ctx->fromInteger(0);
     std::string fmt;
     if (!extract_bytes(ctx, args->getAt(ctx, 0), fmt)) return ctx->fromInteger(0);
@@ -386,7 +386,7 @@ const proto::ProtoObject* py_calcsize(proto::ProtoContext* ctx,
 
 const proto::ProtoObject* py_pack(proto::ProtoContext* ctx,
     const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
     std::string fmt;
     if (!extract_bytes(ctx, args->getAt(ctx, 0), fmt)) return PROTO_NONE;
@@ -395,7 +395,7 @@ const proto::ProtoObject* py_pack(proto::ProtoContext* ctx,
 
 const proto::ProtoObject* py_unpack(proto::ProtoContext* ctx,
     const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 2) return PythonEnvironment::wrapList(ctx, ctx->newList());
     std::string fmt;
     if (!extract_bytes(ctx, args->getAt(ctx, 0), fmt)) return PythonEnvironment::wrapList(ctx, ctx->newList());
@@ -406,7 +406,7 @@ const proto::ProtoObject* py_unpack(proto::ProtoContext* ctx,
 
 const proto::ProtoObject* py_unpack_from(proto::ProtoContext* ctx,
     const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 2) return PythonEnvironment::wrapList(ctx, ctx->newList());
     std::string fmt;
     if (!extract_bytes(ctx, args->getAt(ctx, 0), fmt)) return PythonEnvironment::wrapList(ctx, ctx->newList());
@@ -422,7 +422,7 @@ const proto::ProtoObject* py_unpack_from(proto::ProtoContext* ctx,
 
 const proto::ProtoObject* py_iter_unpack(proto::ProtoContext* ctx,
     const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 2) return PythonEnvironment::wrapList(ctx, ctx->newList());
     std::string fmt;
     if (!extract_bytes(ctx, args->getAt(ctx, 0), fmt)) return PythonEnvironment::wrapList(ctx, ctx->newList());
@@ -444,7 +444,7 @@ const proto::ProtoObject* py_iter_unpack(proto::ProtoContext* ctx,
 
 const proto::ProtoObject* py_clearcache(proto::ProtoContext*,
     const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return PROTO_NONE;
 }
 
@@ -452,7 +452,7 @@ const proto::ProtoObject* py_clearcache(proto::ProtoContext*,
 
 const proto::ProtoObject* py_struct_new(proto::ProtoContext* ctx,
     const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* cls = args->getAt(ctx, 0);
     proto::ProtoObject* inst = const_cast<proto::ProtoObject*>(cls->newChild(ctx, true));
@@ -478,7 +478,7 @@ const proto::ProtoObject* py_struct_new(proto::ProtoContext* ctx,
 
 const proto::ProtoObject* py_struct_pack(proto::ProtoContext* ctx,
     const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     const proto::ProtoObject* fmtObj = self->getAttribute(ctx,
         PythonEnvironment::getInternedString(ctx, "format"));
     std::string fmt;
@@ -488,7 +488,7 @@ const proto::ProtoObject* py_struct_pack(proto::ProtoContext* ctx,
 
 const proto::ProtoObject* py_struct_unpack(proto::ProtoContext* ctx,
     const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return PythonEnvironment::wrapList(ctx, ctx->newList());
     const proto::ProtoObject* fmtObj = self->getAttribute(ctx,
         PythonEnvironment::getInternedString(ctx, "format"));

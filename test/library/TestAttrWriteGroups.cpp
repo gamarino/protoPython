@@ -123,8 +123,8 @@ std::atomic<long> gMidway{0};
 // Takes one snapshot of the shared object's own attributes at a time and
 // checks that its three attributes carry the same round number.
 const proto::ProtoObject* snapshotReader(proto::ProtoContext* c, const proto::ProtoObject*,
-                                         const proto::ParentLink*, const proto::ProtoList*,
-                                         const proto::ProtoSparseList*) {
+                                         const proto::ParentLink*, const proto::ProtoArguments*,
+                                         const proto::ProtoKeywordArguments*) {
     while (!gWriterDone.load(std::memory_order_acquire)) {
         const proto::ProtoSparseList* snap = gShared->getOwnAttributes(c);
         const proto::ProtoObject* v[3];

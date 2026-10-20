@@ -17,6 +17,16 @@
 #include <protoPython/Tokenizer.h>
 
 namespace protoPython {
+
+/**
+ * A protoCore 3.0.0 descriptor for a call made inside one full expression,
+ * from a temporary:
+ *   m(ctx, self, nullptr, list, nullptr)
+ * The temporary lives until the end of the full expression, which outlasts
+ * the call; never keep the pointer.
+ */
+inline const proto::ProtoArguments* argsView(const proto::ProtoArguments& args) { return &args; }
+inline const proto::ProtoKeywordArguments* kwargsView(const proto::ProtoKeywordArguments& kwargs) { return &kwargs; }
 class NativeModuleProvider;
 
 /**
@@ -380,10 +390,10 @@ public:
     // cell bound-method object on the LOAD_METHOD/CALL hot path, where
     // the bound method is created and then immediately consumed.
     const proto::ProtoObject* getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, bool raiseError = true, bool* outIsUnboundFunc = nullptr);
-    static const proto::ProtoObject* py_function_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
-    static const proto::ProtoObject* py_method_call(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
-    static const proto::ProtoObject* py_method_repr(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
-    static const proto::ProtoObject* py_method_new(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+    static const proto::ProtoObject* py_function_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs);
+    static const proto::ProtoObject* py_method_call(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs);
+    static const proto::ProtoObject* py_method_repr(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs);
+    static const proto::ProtoObject* py_method_new(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs);
 
     const proto::ProtoObject* getType(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
 
@@ -458,8 +468,17 @@ public:
      *  sees them).  Returns false with TypeError pending, with CPython's
      *  message, when the call does not fit the signature. */
     bool bindArguments(proto::ProtoContext* ctx, const CompiledSignature& sig,
-                       const proto::ProtoList* args, const proto::ProtoSparseList* kwargs,
+                       const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs,
                        const proto::ProtoObject* fs, const proto::ProtoObject** out);
+    /** The same binding from lists (compiled code's bodies): a descriptor
+     *  over each, a small list read in place. */
+    bool bindArguments(proto::ProtoContext* ctx, const CompiledSignature& sig,
+                       const proto::ProtoList* args, const proto::ProtoSparseList* kwargs,
+                       const proto::ProtoObject* fs, const proto::ProtoObject** out) {
+        const proto::ProtoListArguments positional(ctx, args);
+        const proto::ProtoSparseListKeywordArguments keywords(ctx, kwargs);
+        return bindArguments(ctx, sig, args ? &positional : nullptr, kwargs ? &keywords : nullptr, fs, out);
+    }
     /** The binding both the interpreter and compiled code use: the
      *  parameters' names in slot order (positional, keyword-only, *args,
      *  **kwargs), the default values of the last positional parameters, and
@@ -478,7 +497,7 @@ public:
         const proto::ProtoString* const* names;
     };
     bool bindArgumentsCore(proto::ProtoContext* ctx, const ArgumentSpec& spec,
-                           const proto::ProtoList* args, const proto::ProtoSparseList* kwargs,
+                           const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs,
                            const proto::ProtoObject* const* defaultValues, unsigned nDefaults,
                            const proto::ProtoSparseList* kwDefaults, const proto::ProtoObject** out);
 

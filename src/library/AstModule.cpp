@@ -10,8 +10,8 @@ static const proto::ProtoObject* py_ast_node_call(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)parentLink;
     (void)positionalParameters;
     (void)keywordParameters;

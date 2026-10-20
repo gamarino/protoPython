@@ -38,8 +38,8 @@ static const proto::ProtoString* sym(proto::ProtoContext* ctx, const char* name)
 static const proto::ProtoObject* cv_call(proto::ProtoContext* ctx,
                                          const proto::ProtoObject* self,
                                          const proto::ParentLink*,
-                                         const proto::ProtoList* pos,
-                                         const proto::ProtoSparseList* kw) {
+                                         const proto::ProtoArguments* pos,
+                                         const proto::ProtoKeywordArguments* kw) {
     const proto::ProtoObject* inst = ctx->newObject(false);
     inst = inst->addParent(ctx, self);
     if (pos && pos->getSize(ctx) >= 1) {
@@ -70,8 +70,8 @@ static const proto::ProtoObject* cv_call(proto::ProtoContext* ctx,
 static const proto::ProtoObject* cv_get(proto::ProtoContext* ctx,
                                         const proto::ProtoObject* self,
                                         const proto::ParentLink*,
-                                        const proto::ProtoList* pos,
-                                        const proto::ProtoSparseList*) {
+                                        const proto::ProtoArguments* pos,
+                                        const proto::ProtoKeywordArguments*) {
     if (!self) return PROTO_NONE;
     const proto::ProtoObject* hasVal = self->getAttribute(ctx, sym(ctx, "__cv_has_value__"));
     if (hasVal == PROTO_TRUE) {
@@ -104,8 +104,8 @@ static const proto::ProtoObject* cv_get(proto::ProtoContext* ctx,
 static const proto::ProtoObject* cv_set(proto::ProtoContext* ctx,
                                         const proto::ProtoObject* self,
                                         const proto::ParentLink*,
-                                        const proto::ProtoList* pos,
-                                        const proto::ProtoSparseList*) {
+                                        const proto::ProtoArguments* pos,
+                                        const proto::ProtoKeywordArguments*) {
     if (!self || !pos || pos->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* newVal = pos->getAt(ctx, 0);
 
@@ -143,8 +143,8 @@ static const proto::ProtoObject* cv_set(proto::ProtoContext* ctx,
 static const proto::ProtoObject* cv_reset(proto::ProtoContext* ctx,
                                           const proto::ProtoObject* self,
                                           const proto::ParentLink*,
-                                          const proto::ProtoList* pos,
-                                          const proto::ProtoSparseList*) {
+                                          const proto::ProtoArguments* pos,
+                                          const proto::ProtoKeywordArguments*) {
     if (!self || !pos || pos->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* token = pos->getAt(ctx, 0);
     const proto::ProtoObject* var = token->getAttribute(ctx, sym(ctx, "var"));
@@ -177,8 +177,8 @@ static const proto::ProtoObject* cv_reset(proto::ProtoContext* ctx,
 static const proto::ProtoObject* ctx_run(proto::ProtoContext* ctx,
                                          const proto::ProtoObject* /*self*/,
                                          const proto::ParentLink*,
-                                         const proto::ProtoList* pos,
-                                         const proto::ProtoSparseList* kw) {
+                                         const proto::ProtoArguments* pos,
+                                         const proto::ProtoKeywordArguments* kw) {
     if (!pos || pos->getSize(ctx) < 1) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env) return PROTO_NONE;
@@ -194,8 +194,8 @@ static const proto::ProtoObject* ctx_run(proto::ProtoContext* ctx,
 static const proto::ProtoObject* copy_context(proto::ProtoContext* ctx,
                                               const proto::ProtoObject* /*self*/,
                                               const proto::ParentLink*,
-                                              const proto::ProtoList*,
-                                              const proto::ProtoSparseList*) {
+                                              const proto::ProtoArguments*,
+                                              const proto::ProtoKeywordArguments*) {
     const proto::ProtoObject* c = ctx->newObject(false);
     c = c->setAttribute(ctx, sym(ctx, "run"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(c), ctx_run));

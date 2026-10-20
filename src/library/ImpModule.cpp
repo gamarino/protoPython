@@ -11,7 +11,7 @@ namespace library {
 // -------------------------------------------------------------
 static const proto::ProtoObject* imp_acquire_lock(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (env) {
         // We simulate acquiring import lock
@@ -22,7 +22,7 @@ static const proto::ProtoObject* imp_acquire_lock(
 
 static const proto::ProtoObject* imp_release_lock(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (env) {
         // env->releaseImportLock(); // If not exposed publicly, bypass
@@ -32,7 +32,7 @@ static const proto::ProtoObject* imp_release_lock(
 
 static const proto::ProtoObject* imp_lock_held(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (env) {
         // Simple approximation: assuming it's held if we ask, or ask the environment's internal lock state
@@ -47,7 +47,7 @@ static const proto::ProtoObject* imp_lock_held(
 // -------------------------------------------------------------
 static const proto::ProtoObject* imp_is_builtin(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_FALSE;
     const proto::ProtoObject* nameArg = args->getAt(ctx, 0);
     if (!nameArg->isString(ctx)) return PROTO_FALSE;
@@ -72,7 +72,7 @@ static const proto::ProtoObject* imp_is_builtin(
 
 static const proto::ProtoObject* imp_create_builtin(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
     
     const proto::ProtoObject* specObj = args->getAt(ctx, 0);
@@ -111,7 +111,7 @@ static const proto::ProtoObject* imp_create_builtin(
 
 static const proto::ProtoObject* imp_exec_builtin(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     // exec_builtin just needs to optionally initialize state. For core native modules in ProtoPython,
     // they are fully initialized instantly at creation time via native methods.
     // Return None.
@@ -124,7 +124,7 @@ static const proto::ProtoObject* imp_exec_builtin(
 
 static const proto::ProtoObject* imp_is_frozen(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_FALSE;
     const proto::ProtoObject* nameArg = args->getAt(ctx, 0);
     if (!nameArg->isString(ctx)) return PROTO_FALSE;
@@ -140,14 +140,14 @@ static const proto::ProtoObject* imp_is_frozen(
 
 static const proto::ProtoObject* imp_is_frozen_package(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     // None of the core importlib modules are packages.
     return PROTO_FALSE;
 }
 
 static const proto::ProtoObject* imp_get_frozen_object(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     env->raiseImportError(ctx, "No frozen object bytecode available natively in ProtoPython");
     return nullptr;
@@ -155,7 +155,7 @@ static const proto::ProtoObject* imp_get_frozen_object(
 
 static const proto::ProtoObject* imp_find_frozen(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     // If not a frozen module we handle, return None
     // _imp.find_frozen(fullname) returns a 3-tuple: (data, ispkg, fullname) or None
     return PROTO_NONE;
@@ -166,7 +166,7 @@ static const proto::ProtoObject* imp_find_frozen(
 // -------------------------------------------------------------
 static const proto::ProtoObject* imp_extension_suffixes(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     const proto::ProtoList* ret = ctx->newList();
     ret = ret->appendLast(ctx, proto::ProtoString::createSymbol(ctx, ".so")->asObject(ctx));
     // A real list: a bare ProtoList reported len() 0 and printed as [].
@@ -185,7 +185,7 @@ static const proto::ProtoObject* imp_extension_suffixes(
 // -------------------------------------------------------------
 static const proto::ProtoObject* imp_source_hash(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     // Return a dummy bytes object for hashing correctness check bypass in cache loading.
     const proto::ProtoList* empty = ctx->newList();
     // Assuming newObject or similar creates bytes depending on ProtoPython bytes implementation.
@@ -196,13 +196,13 @@ static const proto::ProtoObject* imp_source_hash(
 
 static const proto::ProtoObject* imp_fix_co_filename(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return PROTO_NONE;
 }
 
 static const proto::ProtoObject* imp_override_multi_interp_extensions_check(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return ctx->fromInteger(0);
 }
 

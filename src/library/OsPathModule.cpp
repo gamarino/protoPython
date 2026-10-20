@@ -15,8 +15,8 @@ static const proto::ProtoObject* py_join(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     (void)self;
     if (!posArgs || posArgs->getSize(ctx) == 0)
         return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
@@ -26,13 +26,13 @@ static const proto::ProtoObject* py_join(
         const proto::ProtoObject* iterable = posArgs->getAt(ctx, 0);
         const proto::ProtoObject* iterM = iterable->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__iter__"));
         if (!iterM || !iterM->asMethod(ctx)) return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
-        const proto::ProtoObject* it = iterM->asMethod(ctx)(ctx, iterable, nullptr, ctx->newList(), nullptr);
+        const proto::ProtoObject* it = iterM->asMethod(ctx)(ctx, iterable, nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
         if (!it) return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
         const proto::ProtoObject* nextM = it->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__next__"));
         if (!nextM || !nextM->asMethod(ctx)) return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
         bool first = true;
         for (;;) {
-            const proto::ProtoObject* part = nextM->asMethod(ctx)(ctx, it, nullptr, ctx->newList(), nullptr);
+            const proto::ProtoObject* part = nextM->asMethod(ctx)(ctx, it, nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
             if (!part || part == PROTO_NONE) break;
             if (!first) out += sep;
             first = false;
@@ -60,8 +60,8 @@ static const proto::ProtoObject* py_exists(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     (void)self;
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_FALSE;
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
@@ -81,8 +81,8 @@ static const proto::ProtoObject* py_isfile(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     (void)self;
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_FALSE;
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
@@ -103,8 +103,8 @@ static const proto::ProtoObject* py_isdir(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     (void)self;
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_FALSE;
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
@@ -125,8 +125,8 @@ static const proto::ProtoObject* py_realpath(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     (void)self;
     if (!posArgs || posArgs->getSize(ctx) < 1) return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
     const proto::ProtoObject* path = posArgs->getAt(ctx, 0);
@@ -137,8 +137,8 @@ static const proto::ProtoObject* py_basename(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     (void)self;
     if (!posArgs || posArgs->getSize(ctx) < 1) return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
@@ -154,8 +154,8 @@ static const proto::ProtoObject* py_normpath(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     (void)self;
     if (!posArgs || posArgs->getSize(ctx) < 1) return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
     const proto::ProtoObject* path = posArgs->getAt(ctx, 0);

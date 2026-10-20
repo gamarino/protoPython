@@ -576,8 +576,8 @@ static const proto::ProtoObject* runUserFunctionCallRaw(proto::ProtoContext* ctx
 static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList* kwargs) {
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments* kwargs) {
     if (!ctx || !self || !args) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
 
@@ -1103,7 +1103,7 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
         // ProtoList ctor call regardless of arg count.
         const proto::ProtoList* argsList =
             ctx->newList(static_cast<unsigned>(rawArgCount), rawArgs);
-        return runUserFunctionCall(ctx, self, nullptr, argsList, kwargs);
+        return runUserFunctionCall(ctx, self, nullptr, argsView(proto::ProtoListArguments(ctx, argsList)), kwargsView(proto::ProtoSparseListKeywordArguments(ctx, kwargs)));
     }
 
     if (!codeObj || codeObj == PROTO_NONE) return PROTO_NONE;
@@ -1204,8 +1204,8 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
 const proto::ProtoObject* runBoundMethodCall(proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList* kwargs) {
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments* kwargs) {
     if (!ctx || !self) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env) return PROTO_NONE;
@@ -1222,7 +1222,7 @@ const proto::ProtoObject* runBoundMethodCall(proto::ProtoContext* ctx,
         }
     }
 
-    return invokePythonCallable(ctx, im_func, newArgs, kwargs);
+    return invokePythonCallable(ctx, im_func, newArgs, kwargs ? kwargs->asSparseList(ctx) : nullptr);
 }
 
 namespace {
@@ -1278,8 +1278,8 @@ static inline size_t loadAttrPicIndex(const proto::ProtoObject* type,
 static const proto::ProtoObject* py_function_get(proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (!ctx || !self || !args || args->getSize(ctx) < 1) return self;
     const proto::ProtoObject* instance = args->getAt(ctx, 0);
     // In Python, calling __get__ on a class (instance == None) returns the function itself.
@@ -1335,8 +1335,8 @@ static const proto::ProtoObject* py_function_get(proto::ProtoContext* ctx,
 // method bound to itself would form a cycle of mutable objects, which
 // protoCore never reclaims.
 static const proto::ProtoObject* functionAnnotate(proto::ProtoContext* ctx, const proto::ProtoObject* annotations,
-                                                  const proto::ParentLink*, const proto::ProtoList* args,
-                                                  const proto::ProtoSparseList*) {
+                                                  const proto::ParentLink*, const proto::ProtoArguments* args,
+                                                  const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env) return PROTO_NONE;
     if (!args || args->getSize(ctx) != 1) {
@@ -2149,7 +2149,7 @@ static const proto::ProtoObject* binaryUnaryNegative(proto::ProtoContext* ctx, c
         if (method && method != PROTO_NONE) {
             const proto::ProtoList* emptyL = ctx->newList();
             if (method->asMethod(ctx)) {
-                return method->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(a), nullptr, emptyL, nullptr);
+                return method->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(a), nullptr, argsView(proto::ProtoListArguments(ctx, emptyL)), nullptr);
             }
         }
     }
@@ -2268,7 +2268,7 @@ static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
         const proto::ProtoObject* method = env ? env->getAttribute(ctx, a, modS) : a->getAttribute(ctx, modS);
         if (method && method != PROTO_NONE && method->asMethod(ctx)) {
             const proto::ProtoList* args = ctx->newList()->appendLast(ctx, b);
-            return method->asMethod(ctx)(ctx, a, nullptr, args, nullptr);
+            return method->asMethod(ctx)(ctx, a, nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
         }
     }
     // User-class fallback: __mod__ / __rmod__.
@@ -2726,7 +2726,7 @@ static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
         const proto::ProtoList* emptyL = env ? env->getEmptyList() : ctx->newList();
         const proto::ProtoObject* result = nullptr;
         if (boolMethod->asMethod(ctx)) {
-            result = boolMethod->asMethod(ctx)(ctx, obj, nullptr, emptyL, nullptr);
+            result = boolMethod->asMethod(ctx)(ctx, obj, nullptr, argsView(proto::ProtoListArguments(ctx, emptyL)), nullptr);
         } else {
             // Python-user-defined __bool__ (no asMethod handle).  Route
             // through invokePythonCallable with `self` prepended so the
@@ -2746,7 +2746,7 @@ static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
         const proto::ProtoList* emptyL = env ? env->getEmptyList() : ctx->newList();
         const proto::ProtoObject* result = nullptr;
         if (lenMethod->asMethod(ctx)) {
-            result = lenMethod->asMethod(ctx)(ctx, obj, nullptr, emptyL, nullptr);
+            result = lenMethod->asMethod(ctx)(ctx, obj, nullptr, argsView(proto::ProtoListArguments(ctx, emptyL)), nullptr);
         } else {
             // Python-user-defined __len__: prepend self for the call.
             const proto::ProtoList* args = ctx->newList()->appendLast(ctx, obj);
@@ -2824,7 +2824,7 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
         const proto::ProtoMethod method = callable->asMethod(ctx);
         const proto::ProtoObject* self = callable->asMethodSelf(ctx);
         const proto::ProtoObject* result = method(
-            ctx, const_cast<proto::ProtoObject*>(self), nullptr, args, kwargs);
+            ctx, const_cast<proto::ProtoObject*>(self), nullptr, argsView(proto::ProtoListArguments(ctx, args)), kwargsView(proto::ProtoSparseListKeywordArguments(ctx, kwargs)));
         // Native iterators signal exhaustion from __next__ by returning
         // nullptr without an exception; env->next, FOR_ITER and next() rely
         // on that and never pay for a StopIteration object. Python code that
@@ -2842,7 +2842,7 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
     // (set in createUserFunction). Avoid the expensive getType + getAttribute(__call__) path.
     if (env && env->getCodeString() &&
         callable->hasOwnAttribute(ctx, env->getCodeString()) == PROTO_TRUE) {
-        return runUserFunctionCall(ctx, callable, nullptr, args, kwargs);
+        return runUserFunctionCall(ctx, callable, nullptr, argsView(proto::ProtoListArguments(ctx, args)), kwargsView(proto::ProtoSparseListKeywordArguments(ctx, kwargs)));
     }
 
     // If callable is a Python class, dispatch directly to runUserClassCall.
@@ -2869,7 +2869,7 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
                         if (lenM->asMethod(ctx)) {
                             lenRes = lenM->asMethod(ctx)(ctx,
                                 const_cast<proto::ProtoObject*>(am), nullptr,
-                                ctx->newList(), nullptr);
+                                argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
                         } else {
                             const proto::ProtoList* la =
                                 ctx->newList()->appendLast(ctx, am);
@@ -2891,7 +2891,7 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
                     }
                 }
             }
-            return runUserClassCall(ctx, callable, nullptr, args, kwargs);
+            return runUserClassCall(ctx, callable, nullptr, argsView(proto::ProtoListArguments(ctx, args)), kwargsView(proto::ProtoSparseListKeywordArguments(ctx, kwargs)));
         }
     }
 
@@ -2935,7 +2935,7 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
         fflush(stderr);
     }
 
-    const proto::ProtoObject* result = callAttr->asMethod(ctx)(ctx, callable, nullptr, args, kwargs);
+    const proto::ProtoObject* result = callAttr->asMethod(ctx)(ctx, callable, nullptr, argsView(proto::ProtoListArguments(ctx, args)), kwargsView(proto::ProtoSparseListKeywordArguments(ctx, kwargs)));
     if (get_env_diag()) {
         std::string r = result ? PythonEnvironment::reprObject(ctx, result) : "nullptr";
         fprintf(stderr, "DEBUG: invokeCallable (__call__) returning result=%p repr=%s\n", (void*)result, r.c_str());
@@ -2980,7 +2980,7 @@ static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const pr
                                     ctx->newList()->appendLast(ctx, container)->appendLast(ctx, cls);
                                 if (getM->asMethod(ctx)) {
                                     v = getM->asMethod(ctx)(ctx,
-                                        const_cast<proto::ProtoObject*>(v), nullptr, gargs, nullptr);
+                                        const_cast<proto::ProtoObject*>(v), nullptr, argsView(proto::ProtoListArguments(ctx, gargs)), nullptr);
                                 } else {
                                     // Python __get__: prepend descriptor
                                     // as self when invoking.
@@ -3130,7 +3130,7 @@ static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const pr
                 }
             }
         }
-        return method->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(container), nullptr, args, kwargs);
+        return method->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(container), nullptr, argsView(proto::ProtoListArguments(ctx, args)), kwargsView(proto::ProtoSparseListKeywordArguments(ctx, kwargs)));
     }
 
     // Python user-defined dunder (regular function with __code__): prepend
@@ -3420,14 +3420,14 @@ const proto::ProtoObject* py_generator_send_impl(
 const proto::ProtoObject* py_self_iter(
     proto::ProtoContext*,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return self;
 }
 
 const proto::ProtoObject* py_generator_repr(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env) return PythonEnvironment::getInternedString(ctx, "<generator object>")->asObject(ctx);
 
@@ -3446,7 +3446,7 @@ const proto::ProtoObject* py_generator_repr(
 const proto::ProtoObject* py_generator_next(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return py_generator_send_impl(ctx, self, PROTO_NONE);
 }
 
@@ -3470,8 +3470,8 @@ const proto::ProtoObject* py_class_aiter_next(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList*,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*,
+    const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env || !self) return PROTO_NONE;
 
@@ -3486,7 +3486,7 @@ const proto::ProtoObject* py_class_aiter_next(
     if (anext->asMethod(ctx) && anext->asMethodSelf(ctx) != nullptr) {
         // Bound native method — self already captured.
         coro = anext->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(self),
-                                     nullptr, ctx->newList(), nullptr);
+                                     nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     } else {
         // Python-level async def __anext__ — call as a callable, prepending self
         // explicitly because async def methods are not auto-bound by descriptor
@@ -3532,7 +3532,7 @@ const proto::ProtoObject* py_class_aiter_next(
     const proto::ProtoObject* sendResult = nullptr;
     if (sendMethod->asMethod(ctx)) {
         sendResult = sendMethod->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(coro),
-                                                nullptr, args, nullptr);
+                                                nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
     } else {
         sendResult = invokePythonCallable(ctx, sendMethod, args, nullptr);
     }
@@ -3577,8 +3577,8 @@ static const proto::ProtoObject* py_asend_wrapper_send(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList*,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*,
+    const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env || !self) return PROTO_NONE;
 
@@ -3636,8 +3636,8 @@ const proto::ProtoObject* py_async_generator_asend(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env || !self) return PROTO_NONE;
 
@@ -3671,8 +3671,8 @@ const proto::ProtoObject* py_async_generator_athrow(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* pl,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kw) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kw) {
     // Reuse py_generator_throw directly — its return value semantics
     // (yielded value, or pending exception on raise) match what awaitable
     // drivers expect for a single-shot throw.
@@ -3682,7 +3682,7 @@ const proto::ProtoObject* py_async_generator_athrow(
 const proto::ProtoObject* py_generator_send(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     const proto::ProtoObject* val = (posArgs && posArgs->getSize(ctx) > 0) ? posArgs->getAt(ctx, 0) : PROTO_NONE;
     // PB2: A just-started generator (pc == 0) cannot accept a sent value
     // other than None — there is no `yield` expression yet to receive it.
@@ -3704,7 +3704,7 @@ const proto::ProtoObject* py_generator_send(
 const proto::ProtoObject* py_generator_throw(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     const proto::ProtoObject* exc = (posArgs && posArgs->getSize(ctx) > 0) ? posArgs->getAt(ctx, 0) : PROTO_NONE;
     // Distinguish a *type* (class) from an *instance*.  A class owns __bases__;
     // an instance merely inherits __name__ through its class prototype chain,
@@ -3737,7 +3737,7 @@ const proto::ProtoObject* py_generator_throw(
 const proto::ProtoObject* py_generator_close(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env) return PROTO_NONE;
 
@@ -3815,6 +3815,12 @@ const proto::ProtoObject* py_generator_close(
 const proto::ProtoObject* invokePythonCallable(proto::ProtoContext* ctx,
     const proto::ProtoObject* callable, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
     return invokeCallable(ctx, callable, args, kwargs);
+}
+
+const proto::ProtoObject* invokePythonCallable(proto::ProtoContext* ctx,
+    const proto::ProtoObject* callable, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
+    return invokeCallable(ctx, callable, args ? args->asList(ctx) : nullptr,
+                          kwargs ? kwargs->asSparseList(ctx) : nullptr);
 }
 
 
@@ -3921,8 +3927,8 @@ bool invokeInitSubclass(proto::ProtoContext* ctx,
 const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList* kwargs) {
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments* kwargs) {
     if (!ctx || !self) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
 
@@ -3954,7 +3960,7 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
             }
         }
         
-        obj = const_cast<proto::ProtoObject*>(invokeCallable(ctx, newM, newArgs, kwargs));
+        obj = const_cast<proto::ProtoObject*>(invokeCallable(ctx, newM, newArgs, kwargs ? kwargs->asSparseList(ctx) : nullptr));
         if (!obj || obj == PROTO_NONE) {
              if (env && env->hasPendingException()) {
                  if (get_env_diag()) fprintf(stderr, "DEBUG runUserClassCall: Pending exception detected!\n");
@@ -4093,7 +4099,8 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
                         initArgs = initArgs->appendLast(ctx, args->getAt(ctx, static_cast<int>(i)));
                     }
                 }
-                const proto::ProtoObject* initRes = invokePythonCallable(ctx, initM, initArgs, kwargs);
+                const proto::ProtoObject* initRes = invokePythonCallable(ctx, initM, initArgs,
+                    kwargs ? kwargs->asSparseList(ctx) : nullptr);
                 if (env && env->hasPendingException()) {
                     if (get_env_diag()) fprintf(stderr, "DEBUG runUserClassCall: initM raised an exception!\n");
                     return nullptr;
@@ -5469,7 +5476,7 @@ const proto::ProtoObject* executeBytecodeRange(
                             strFunc->asString(ctx)->toUTF8String(ctx, excMsg);
                         } else if (strFunc->asMethod(ctx)) {
                             const proto::ProtoObject* funcSelf = strFunc->asMethodSelf(ctx);
-                            const proto::ProtoObject* strRes = strFunc->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(funcSelf), nullptr, ctx->newList(), ctx->newSparseList());
+                            const proto::ProtoObject* strRes = strFunc->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(funcSelf), nullptr, argsView(proto::ProtoArguments(nullptr, 0)), kwargsView(proto::ProtoSparseListKeywordArguments(ctx, ctx->newSparseList())));
                             if (strRes && strRes->isString(ctx)) {
                                 strRes->asString(ctx)->toUTF8String(ctx, excMsg);
                             }
@@ -5689,7 +5696,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     const proto::ProtoObject* exc = env->peekPendingException();
                     env->clearPendingException();
                     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, exc);
-                    result = throwMethod->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(subIter), nullptr, args, nullptr);
+                    result = throwMethod->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(subIter), nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
                     injectedThrow = true;
                 }
             }
@@ -6058,7 +6065,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* result = nullptr;
             if (iadd && iadd->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                result = iadd->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                result = iadd->asMethod(ctx)(ctx, a, nullptr, argsView(proto::ProtoListArguments(ctx, oneArg)), nullptr);
                 if (env && result == env->getNotImplementedPrototype()) result = nullptr;
             } else if (iadd && iadd != PROTO_NONE) {
                 const proto::ProtoList* args = ctx->newList()->appendLast(ctx, b);
@@ -6112,7 +6119,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* result = nullptr;
             if (isub && isub->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                result = isub->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                result = isub->asMethod(ctx)(ctx, a, nullptr, argsView(proto::ProtoListArguments(ctx, oneArg)), nullptr);
                 if (env && result == env->getNotImplementedPrototype()) result = nullptr;
             } else if (isub && isub != PROTO_NONE) {
                 const proto::ProtoList* args = ctx->newList()->appendLast(ctx, b);
@@ -6157,7 +6164,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* result = nullptr;
             if (imul && imul->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                result = imul->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                result = imul->asMethod(ctx)(ctx, a, nullptr, argsView(proto::ProtoListArguments(ctx, oneArg)), nullptr);
                 if (env && result == env->getNotImplementedPrototype()) result = nullptr;
             } else if (imul && imul != PROTO_NONE) {
                 // Python user __imul__ — invokeDunder prepends self.
@@ -6307,7 +6314,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* itruediv = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, env ? env->getITrueDivString() : PythonEnvironment::getInternedString(ctx, "__itruediv__"));
             if (itruediv && itruediv->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                const proto::ProtoObject* result = itruediv->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                const proto::ProtoObject* result = itruediv->asMethod(ctx)(ctx, a, nullptr, argsView(proto::ProtoListArguments(ctx, oneArg)), nullptr);
                 stack.pop_back();
                 stack.back() = result ? result : PROTO_NONE;
             } else {
@@ -6323,7 +6330,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* ifloordiv = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, env ? env->getIFloorDivString() : PythonEnvironment::getInternedString(ctx, "__ifloordiv__"));
             if (ifloordiv && ifloordiv->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                const proto::ProtoObject* result = ifloordiv->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                const proto::ProtoObject* result = ifloordiv->asMethod(ctx)(ctx, a, nullptr, argsView(proto::ProtoListArguments(ctx, oneArg)), nullptr);
                 stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
             } else {
                 const proto::ProtoObject* r = binaryFloorDivide(ctx, a, b);
@@ -6337,7 +6344,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* imod = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, env ? env->getIModString() : PythonEnvironment::getInternedString(ctx, "__imod__"));
             if (imod && imod->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                const proto::ProtoObject* result = imod->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                const proto::ProtoObject* result = imod->asMethod(ctx)(ctx, a, nullptr, argsView(proto::ProtoListArguments(ctx, oneArg)), nullptr);
                 stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
             } else {
                 const proto::ProtoObject* r = binaryModulo(ctx, a, b);
@@ -6353,7 +6360,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* result = nullptr;
             if (ipow && ipow->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                result = ipow->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                result = ipow->asMethod(ctx)(ctx, a, nullptr, argsView(proto::ProtoListArguments(ctx, oneArg)), nullptr);
                 if (env && result == env->getNotImplementedPrototype()) result = nullptr;
             } else if (ipow && ipow != PROTO_NONE) {
                 // Python-user-defined __ipow__ (POINTER_TAG_OBJECT, no
@@ -6408,7 +6415,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* result = nullptr;
             if (ilshift && ilshift->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                result = ilshift->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                result = ilshift->asMethod(ctx)(ctx, a, nullptr, argsView(proto::ProtoListArguments(ctx, oneArg)), nullptr);
                 if (env && result == env->getNotImplementedPrototype()) result = nullptr;
             }
             if (!result && a->isInteger(ctx) && b->isInteger(ctx)) {
@@ -6433,7 +6440,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* result = nullptr;
             if (irshift && irshift->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                result = irshift->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                result = irshift->asMethod(ctx)(ctx, a, nullptr, argsView(proto::ProtoListArguments(ctx, oneArg)), nullptr);
                 if (env && result == env->getNotImplementedPrototype()) result = nullptr;
             }
             if (!result && a->isInteger(ctx) && b->isInteger(ctx)) {
@@ -6458,7 +6465,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* result = nullptr;
             if (iand && iand->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                result = iand->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                result = iand->asMethod(ctx)(ctx, a, nullptr, argsView(proto::ProtoListArguments(ctx, oneArg)), nullptr);
                 if (env && result == env->getNotImplementedPrototype()) result = nullptr;
             }
             if (!result && a->isInteger(ctx) && b->isInteger(ctx)) {
@@ -6479,7 +6486,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* result = nullptr;
             if (ior && ior->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                result = ior->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                result = ior->asMethod(ctx)(ctx, a, nullptr, argsView(proto::ProtoListArguments(ctx, oneArg)), nullptr);
                 if (env && result == env->getNotImplementedPrototype()) result = nullptr;
             }
             if (!result && a->isInteger(ctx) && b->isInteger(ctx)) {
@@ -6500,7 +6507,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* result = nullptr;
             if (ixor && ixor->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                result = ixor->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                result = ixor->asMethod(ctx)(ctx, a, nullptr, argsView(proto::ProtoListArguments(ctx, oneArg)), nullptr);
                 if (env && result == env->getNotImplementedPrototype()) result = nullptr;
             }
             if (!result && a->isInteger(ctx) && b->isInteger(ctx)) {
@@ -6675,7 +6682,7 @@ const proto::ProtoObject* executeBytecodeRange(
                             const proto::ProtoList* argsB = ctx->newList()->appendLast(ctx, b);
                             result = typeOr->asMethod(ctx)(ctx,
                                 const_cast<proto::ProtoObject*>(a),
-                                nullptr, argsB, nullptr);
+                                nullptr, argsView(proto::ProtoListArguments(ctx, argsB)), nullptr);
                             if (result == env->getNotImplementedPrototype()) {
                                 result = nullptr;
                                 sawNotImplemented = true;
@@ -7389,7 +7396,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                 if (m->asMethod(ctx)) {
                                     return m->asMethod(ctx)(ctx,
                                         const_cast<proto::ProtoObject*>(recv),
-                                        nullptr, args, nullptr);
+                                        nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
                                 }
                                 const proto::ProtoString* codeS = env->getCodeString();
                                 bool raw = (codeS && m->hasOwnAttribute(ctx, codeS) == PROTO_TRUE);
@@ -7617,8 +7624,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 [](proto::ProtoContext*,
                    const proto::ProtoObject* self,
                    const proto::ParentLink*,
-                   const proto::ProtoList*,
-                   const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                   const proto::ProtoArguments*,
+                   const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
                     return self;
                 });
             stack.push_back(callable);
@@ -8045,7 +8052,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                     const proto::ProtoObject* dictResult =
                                         val->asMethod(ctx)(ctx,
                                             const_cast<proto::ProtoObject*>(val->asMethodSelf(ctx)),
-                                            nullptr, ctx->newList(), nullptr);
+                                            nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
                                     if (dictResult && !env->hasPendingException()) {
                                         val = dictResult;
                                     }
@@ -8067,7 +8074,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                         const proto::ProtoObject* dictResult =
                                             fget->asMethod(ctx)(ctx,
                                                 const_cast<proto::ProtoObject*>(obj),
-                                                nullptr, args, nullptr);
+                                                nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
                                         if (dictResult && !env->hasPendingException()) {
                                             val = dictResult;
                                         } else if (env->hasPendingException()) {
@@ -8485,7 +8492,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 if (metaGetItem && metaGetItem != PROTO_NONE) {
                     result = metaGetItem->asMethod(ctx)
-                        ? metaGetItem->asMethod(ctx)(ctx, container, nullptr, args, nullptr)
+                        ? metaGetItem->asMethod(ctx)(ctx, container, nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr)
                         : invokeCallable(ctx, metaGetItem,
                               ctx->newList()->appendLast(ctx, container)->appendLast(ctx, key), nullptr);
                     if (!result && env->hasPendingException()) continue;
@@ -9306,7 +9313,7 @@ const proto::ProtoObject* executeBytecodeRange(
                             } else {
                                 const proto::ProtoObject* callM = body->getAttribute(ctx, callS);
                                 if (callM && callM->asMethod(ctx)) {
-                                    callM->asMethod(ctx)(ctx, body, nullptr, ctx->newList(), nullptr);
+                                    callM->asMethod(ctx)(ctx, body, nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
                                     if (env && env->hasPendingException()) { return false; }
                                 }
                             }
@@ -10045,7 +10052,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                         ->appendLast(ctx, nameS->asObject(ctx));
                                     if (override->asMethod(ctx)) {
                                         override->asMethod(ctx)(ctx,
-                                            const_cast<proto::ProtoObject*>(obj), nullptr, args, nullptr);
+                                            const_cast<proto::ProtoObject*>(obj), nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
                                     } else {
                                         const proto::ProtoList* selfArgs = ctx->newList()
                                             ->appendLast(ctx, obj)
@@ -10471,11 +10478,11 @@ const proto::ProtoObject* executeMinimalBytecode(
 }
 
 
-const proto::ProtoObject* exported_py_function_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* exported_py_function_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     return py_function_get(ctx, self, parentLink, args, kwargs);
 }
 
-const proto::ProtoObject* exported_py_function_code_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* exported_py_function_code_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     if (args->getSize(ctx) < 2) return PROTO_NONE;
     const proto::ProtoObject* instance = args->getAt(ctx, 0);
     if (!instance || instance == PROTO_NONE) return self;
@@ -10485,7 +10492,7 @@ const proto::ProtoObject* exported_py_function_code_get(proto::ProtoContext* ctx
     return res ? res : PROTO_NONE;
 }
 
-const proto::ProtoObject* exported_py_function_globals_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* exported_py_function_globals_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     if (args->getSize(ctx) < 2) return PROTO_NONE;
     const proto::ProtoObject* instance = args->getAt(ctx, 0);
     if (!instance || instance == PROTO_NONE) return self;
@@ -10495,7 +10502,7 @@ const proto::ProtoObject* exported_py_function_globals_get(proto::ProtoContext* 
     return res ? res : PROTO_NONE;
 }
 
-const proto::ProtoObject* exported_py_function_doc_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* exported_py_function_doc_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     if (args->getSize(ctx) < 2) return PROTO_NONE;
     const proto::ProtoObject* instance = args->getAt(ctx, 0);
     if (!instance || instance == PROTO_NONE) return self;
@@ -10505,7 +10512,7 @@ const proto::ProtoObject* exported_py_function_doc_get(proto::ProtoContext* ctx,
 }
 
 
-const proto::ProtoObject* exported_runUserFunctionCall(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* exported_runUserFunctionCall(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     return runUserFunctionCall(ctx, self, parentLink, args, kwargs);
 }
 

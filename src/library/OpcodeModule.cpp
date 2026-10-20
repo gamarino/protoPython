@@ -12,8 +12,8 @@ static const proto::ProtoObject* py_has_arg(
     proto::ProtoContext* ctx,
     const proto::ProtoObject*,
     const proto::ParentLink*,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments*) {
     if (args->getSize(ctx) < 1) return PROTO_FALSE;
     const proto::ProtoObject* opObj = args->getAt(ctx, 0);
     if (!opObj->isInteger(ctx)) return PROTO_FALSE;
@@ -49,8 +49,8 @@ static const proto::ProtoObject* py_stack_effect(
     proto::ProtoContext* ctx,
     const proto::ProtoObject*,
     const proto::ParentLink*,
-    const proto::ProtoList*,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*,
+    const proto::ProtoKeywordArguments*) {
     // Stub: return 0 for now as most analysis doesn't strictly need it yet
     return ctx->fromInteger(0);
 }
@@ -60,12 +60,12 @@ static const proto::ProtoObject* py_null_list_stub(
     proto::ProtoContext* ctx,
     const proto::ProtoObject*,
     const proto::ParentLink*,
-    const proto::ProtoList*,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*,
+    const proto::ProtoKeywordArguments*) {
     return PythonEnvironment::wrapList(ctx, ctx->newList());
 }
 
-static const proto::ProtoObject* py_false_stub(proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) { return PROTO_FALSE; }
+static const proto::ProtoObject* py_false_stub(proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) { return PROTO_FALSE; }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     PythonEnvironment* env = PythonEnvironment::get(ctx);

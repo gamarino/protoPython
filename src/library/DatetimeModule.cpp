@@ -13,7 +13,7 @@
 namespace protoPython {
 namespace datetime {
 
-static const proto::ProtoObject* getKwArg(proto::ProtoContext* ctx, const proto::ProtoSparseList* kwArgs, const std::string& name) {
+static const proto::ProtoObject* getKwArg(proto::ProtoContext* ctx, const proto::ProtoKeywordArguments* kwArgs, const std::string& name) {
     if (!kwArgs) return nullptr;
     const proto::ProtoString* nameS = PythonEnvironment::getInternedString(ctx, name.c_str());
     return kwArgs->getAt(ctx, nameS->getHash(ctx));
@@ -75,7 +75,7 @@ static const proto::ProtoObject* create_timedelta_instance(proto::ProtoContext* 
 
 static const proto::ProtoObject* py_timedelta_new(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwArgs) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwArgs) {
     
     long long days = 0, seconds = 0, microseconds = 0, milliseconds = 0, minutes = 0, hours = 0, weeks = 0;
     
@@ -106,7 +106,7 @@ static const proto::ProtoObject* py_timedelta_new(
 
 static const proto::ProtoObject* py_timedelta_total_seconds(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     DeltaState* state = get_delta_state(ctx, self);
     if (!state) return ctx->fromDouble(0.0);
     double total = (double)state->days * 86400.0 + (double)state->seconds + (double)state->microseconds / 1000000.0;
@@ -115,7 +115,7 @@ static const proto::ProtoObject* py_timedelta_total_seconds(
 
 static const proto::ProtoObject* py_timedelta_repr(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     DeltaState* state = get_delta_state(ctx, self);
     if (!state) return PythonEnvironment::getInternedString(ctx, "timedelta(0)")->asObject(ctx);
     std::string s = "timedelta(days=" + std::to_string(state->days) + 
@@ -126,7 +126,7 @@ static const proto::ProtoObject* py_timedelta_repr(
 
 static const proto::ProtoObject* py_timedelta_add(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
     DeltaState* s1 = get_delta_state(ctx, self);
     DeltaState* s2 = get_delta_state(ctx, args->getAt(ctx, 0));
@@ -136,7 +136,7 @@ static const proto::ProtoObject* py_timedelta_add(
 
 static const proto::ProtoObject* py_timedelta_sub(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
     DeltaState* s1 = get_delta_state(ctx, self);
     DeltaState* s2 = get_delta_state(ctx, args->getAt(ctx, 0));
@@ -146,7 +146,7 @@ static const proto::ProtoObject* py_timedelta_sub(
 
 static const proto::ProtoObject* py_timedelta_lt(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_FALSE;
     DeltaState* s1 = get_delta_state(ctx, self);
     DeltaState* s2 = get_delta_state(ctx, args->getAt(ctx, 0));
@@ -160,7 +160,7 @@ static const proto::ProtoObject* py_timedelta_lt(
 
 static const proto::ProtoObject* py_timedelta_eq(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_FALSE;
     DeltaState* s1 = get_delta_state(ctx, self);
     DeltaState* s2 = get_delta_state(ctx, args->getAt(ctx, 0));
@@ -359,7 +359,7 @@ static const proto::ProtoObject* create_time_instance(proto::ProtoContext* ctx, 
 
 static const proto::ProtoObject* py_timedelta_mul(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
     DeltaState* state = get_delta_state(ctx, self);
     if (!state) return PROTO_NONE;
@@ -373,7 +373,7 @@ static const proto::ProtoObject* py_timedelta_mul(
 
 static const proto::ProtoObject* py_timedelta_abs(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     DeltaState* s = get_delta_state(ctx, self);
     if (!s) return PROTO_NONE;
     if (s->days >= 0) return self;
@@ -382,7 +382,7 @@ static const proto::ProtoObject* py_timedelta_abs(
 
 static const proto::ProtoObject* py_timedelta_neg(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     DeltaState* s = get_delta_state(ctx, self);
     if (!s) return PROTO_NONE;
     return create_timedelta_instance(ctx, self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")), -s->days, -s->seconds, -s->microseconds);
@@ -390,13 +390,13 @@ static const proto::ProtoObject* py_timedelta_neg(
 
 static const proto::ProtoObject* py_timedelta_pos(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return self;
 }
 
 static const proto::ProtoObject* py_timedelta_bool(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     DeltaState* s = get_delta_state(ctx, self);
     if (!s) return PROTO_FALSE;
     return (s->days != 0 || s->seconds != 0 || s->microseconds != 0) ? PROTO_TRUE : PROTO_FALSE;
@@ -404,7 +404,7 @@ static const proto::ProtoObject* py_timedelta_bool(
 
 static const proto::ProtoObject* py_timedelta_hash(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     DeltaState* s = get_delta_state(ctx, self);
     if (!s) return ctx->fromInteger(0);
     long long h = s->days ^ s->seconds ^ s->microseconds;
@@ -414,7 +414,7 @@ static const proto::ProtoObject* py_timedelta_hash(
 static const proto::ProtoObject* py_timedelta_truediv(
 
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
     DeltaState* state = get_delta_state(ctx, self);
     if (!state) return PROTO_NONE;
@@ -436,7 +436,7 @@ static const proto::ProtoObject* py_timedelta_truediv(
 
 static const proto::ProtoObject* py_date_new(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwArgs) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwArgs) {
     
     int y = 1, m = 1, d = 1;
     if (posArgs) {
@@ -458,7 +458,7 @@ static const proto::ProtoObject* py_date_new(
 
 static const proto::ProtoObject* py_date_isoformat(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     DateState* state = get_date_state(ctx, self);
     if (!state) return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
     char buf[16];
@@ -468,7 +468,7 @@ static const proto::ProtoObject* py_date_isoformat(
 
 static const proto::ProtoObject* py_date_repr(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     DateState* state = get_date_state(ctx, self);
     if (!state) return PythonEnvironment::getInternedString(ctx, "date(1, 1, 1)")->asObject(ctx);
     std::string s = "datetime.date(" + std::to_string(state->year) + ", " + 
@@ -478,7 +478,7 @@ static const proto::ProtoObject* py_date_repr(
 
 static const proto::ProtoObject* py_date_lt(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_FALSE;
     DateState* s1 = get_date_state(ctx, self);
     DateState* s2 = get_date_state(ctx, args->getAt(ctx, 0));
@@ -492,7 +492,7 @@ static const proto::ProtoObject* py_date_lt(
 
 static const proto::ProtoObject* py_date_eq(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_FALSE;
     DateState* s1 = get_date_state(ctx, self);
     DateState* s2 = get_date_state(ctx, args->getAt(ctx, 0));
@@ -502,7 +502,7 @@ static const proto::ProtoObject* py_date_eq(
 
 static const proto::ProtoObject* py_date_replace(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* /*posArgs*/, const proto::ProtoSparseList* kwArgs) {
+    const proto::ProtoArguments* /*posArgs*/, const proto::ProtoKeywordArguments* kwArgs) {
     
     DateState* state = get_date_state(ctx, self);
     if (!state) return PROTO_NONE;
@@ -523,7 +523,7 @@ static const proto::ProtoObject* py_date_replace(
 
 static const proto::ProtoObject* py_date_weekday(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     int y, m, d;
     if (!ymdOf(ctx, self, y, m, d)) return ctx->fromInteger(0);
     return ctx->fromInteger(isoWeekday(y, m, d) - 1); // Mon=0, Sun=6
@@ -531,7 +531,7 @@ static const proto::ProtoObject* py_date_weekday(
 
 static const proto::ProtoObject* py_date_isoweekday(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     int y, m, d;
     if (!ymdOf(ctx, self, y, m, d)) return ctx->fromInteger(1);
     return ctx->fromInteger(isoWeekday(y, m, d)); // Mon=1, Sun=7
@@ -539,7 +539,7 @@ static const proto::ProtoObject* py_date_isoweekday(
 
 static const proto::ProtoObject* py_date_isocalendar(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     int y, m, d;
     if (!ymdOf(ctx, self, y, m, d)) return PROTO_NONE;
     int isoYear, isoWeek, isoDay;
@@ -561,7 +561,7 @@ static long long date_to_ordinal(int y, int m, int d) {
 
 static const proto::ProtoObject* py_date_toordinal(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     DateState* state = get_date_state(ctx, self);
     if (!state) return ctx->fromInteger(1);
     return ctx->fromInteger(date_to_ordinal(state->year, state->month, state->day));
@@ -569,7 +569,7 @@ static const proto::ProtoObject* py_date_toordinal(
 
 static const proto::ProtoObject* py_date_hash(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     DateState* s = get_date_state(ctx, self);
     if (!s) return ctx->fromInteger(0);
     long long h = s->year ^ (s->month << 20) ^ (s->day << 24);
@@ -578,7 +578,7 @@ static const proto::ProtoObject* py_date_hash(
 
 static const proto::ProtoObject* py_date_fromtimestamp(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList* /*kwArgs*/) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* /*kwArgs*/) {
     if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
     struct tm lt;
     int us;
@@ -590,7 +590,7 @@ static const proto::ProtoObject* py_date_fromordinal(
 
 
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList* /*kwArgs*/) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* /*kwArgs*/) {
     
     if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
     long long n = args->getAt(ctx, 0)->asLong(ctx);
@@ -608,7 +608,7 @@ static const proto::ProtoObject* py_date_fromordinal(
 
 static const proto::ProtoObject* py_date_add(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
     DateState* ds = get_date_state(ctx, self);
     DeltaState* ts = get_delta_state(ctx, args->getAt(ctx, 0));
@@ -630,7 +630,7 @@ static const proto::ProtoObject* py_date_add(
 
 static const proto::ProtoObject* py_date_sub(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* other = args->getAt(ctx, 0);
     DateState* ds1 = get_date_state(ctx, self);
@@ -662,7 +662,7 @@ static const proto::ProtoObject* py_date_sub(
 
 static const proto::ProtoObject* py_date_today(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     struct tm lt;
     if (int err = timeconv::localTime(static_cast<std::int64_t>(time(nullptr)), &lt)) {
         if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx)) env->raiseOSError(ctx, err, std::strerror(err));
@@ -723,7 +723,7 @@ static const proto::ProtoObject* create_datetime_instance(proto::ProtoContext* c
 
 static const proto::ProtoObject* py_datetime_new(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwArgs) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwArgs) {
     
     int y = 1, m = 1, d = 1, h = 0, min = 0, s = 0, ms = 0;
     if (posArgs) {
@@ -753,7 +753,7 @@ static const proto::ProtoObject* py_datetime_new(
 
 static const proto::ProtoObject* py_datetime_isoformat(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     DateTimeState* state = get_datetime_state(ctx, self);
     if (!state) return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
     char buf[32];
@@ -768,7 +768,7 @@ static const proto::ProtoObject* py_datetime_isoformat(
 
 static const proto::ProtoObject* py_datetime_repr(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     DateTimeState* state = get_datetime_state(ctx, self);
     if (!state) return PythonEnvironment::getInternedString(ctx, "datetime(1, 1, 1)")->asObject(ctx);
     std::string s = "datetime.datetime(" + std::to_string(state->year) + ", " + 
@@ -780,7 +780,7 @@ static const proto::ProtoObject* py_datetime_repr(
 
 static const proto::ProtoObject* py_datetime_lt(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_FALSE;
     DateTimeState* s1 = get_datetime_state(ctx, self);
     DateTimeState* s2 = get_datetime_state(ctx, args->getAt(ctx, 0));
@@ -802,7 +802,7 @@ static const proto::ProtoObject* py_datetime_lt(
 
 static const proto::ProtoObject* py_datetime_eq(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_FALSE;
     DateTimeState* s1 = get_datetime_state(ctx, self);
     DateTimeState* s2 = get_datetime_state(ctx, args->getAt(ctx, 0));
@@ -814,7 +814,7 @@ static const proto::ProtoObject* py_datetime_eq(
 
 static const proto::ProtoObject* py_datetime_replace(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* /*posArgs*/, const proto::ProtoSparseList* kwArgs) {
+    const proto::ProtoArguments* /*posArgs*/, const proto::ProtoKeywordArguments* kwArgs) {
     
     DateTimeState* state = get_datetime_state(ctx, self);
     if (!state) return PROTO_NONE;
@@ -843,7 +843,7 @@ static const proto::ProtoObject* py_datetime_replace(
 
 static const proto::ProtoObject* py_datetime_add(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
     DateTimeState* ds = get_datetime_state(ctx, self);
     DeltaState* ts = get_delta_state(ctx, args->getAt(ctx, 0));
@@ -879,7 +879,7 @@ static const proto::ProtoObject* py_datetime_add(
 
 static const proto::ProtoObject* py_datetime_sub(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* other = args->getAt(ctx, 0);
     DateTimeState* ds1 = get_datetime_state(ctx, self);
@@ -929,7 +929,7 @@ static const proto::ProtoObject* py_datetime_sub(
 
 static const proto::ProtoObject* py_datetime_now(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     struct tm lt;
     if (int err = timeconv::localTime(static_cast<std::int64_t>(time(nullptr)), &lt)) {
         if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx)) env->raiseOSError(ctx, err, std::strerror(err));
@@ -943,7 +943,7 @@ static const proto::ProtoObject* py_datetime_now(
 // time methods
 static const proto::ProtoObject* py_time_new(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwArgs) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwArgs) {
     
     int h = 0, min = 0, s = 0, ms = 0;
     if (posArgs) {
@@ -985,7 +985,7 @@ static const proto::ProtoObject* py_time_new(
 
 static const proto::ProtoObject* py_time_isoformat(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     TimeState* state = get_time_state(ctx, self);
     if (!state) return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
     char buf[16];
@@ -998,7 +998,7 @@ static const proto::ProtoObject* py_time_isoformat(
 
 static const proto::ProtoObject* py_time_repr(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     TimeState* state = get_time_state(ctx, self);
     if (!state) return PythonEnvironment::getInternedString(ctx, "time(0, 0, 0)")->asObject(ctx);
     std::string s = "datetime.time(" + std::to_string(state->hour) + ", " + 
@@ -1010,32 +1010,32 @@ static const proto::ProtoObject* py_time_repr(
 // Class call bridge to support calling native types as constructors
 static const proto::ProtoObject* py_class_call_bridge(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     const proto::ProtoObject* newMethod = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__new__"));
     if (newMethod && newMethod->asMethod(ctx)) {
         // args for __new__: (cls, *args)
         const proto::ProtoList* newArgs = ctx->newList()->appendLast(ctx, self);
         for (size_t i = 0; i < args->getSize(ctx); ++i) newArgs = newArgs->appendLast(ctx, args->getAt(ctx, static_cast<int>(i)));
-        return newMethod->asMethod(ctx)(ctx, self, nullptr, newArgs, kwargs);
+        return newMethod->asMethod(ctx)(ctx, self, nullptr, argsView(proto::ProtoListArguments(ctx, newArgs)), kwargs);
     }
     return PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_timezone_utcoffset(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "_offset"));
 }
 
 static const proto::ProtoObject* py_timezone_dst(
     proto::ProtoContext* ctx, const proto::ProtoObject* /*self*/, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_timezone_tzname(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     const proto::ProtoObject* name = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "_name"));
     if (name) return name;
     return PythonEnvironment::getInternedString(ctx, "UTC")->asObject(ctx);
@@ -1043,7 +1043,7 @@ static const proto::ProtoObject* py_timezone_tzname(
 
 static const proto::ProtoObject* py_timezone_new(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwArgs) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwArgs) {
     
     const proto::ProtoObject* offset = nullptr;
 
@@ -1080,7 +1080,7 @@ static const proto::ProtoObject* py_timezone_new(
 
 static const proto::ProtoObject* py_datetime_fromtimestamp(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList* /*kwArgs*/) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* /*kwArgs*/) {
     if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
     struct tm lt;
     int us;
@@ -1093,7 +1093,7 @@ static const proto::ProtoObject* py_datetime_fromtimestamp(
 // 1 to 9999 on every platform.
 static const proto::ProtoObject* py_datetime_utcfromtimestamp(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList* /*kwArgs*/) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* /*kwArgs*/) {
     if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
     struct tm ut;
     int us;
@@ -1105,7 +1105,7 @@ static const proto::ProtoObject* py_datetime_utcfromtimestamp(
 static const proto::ProtoObject* py_datetime_combine(
 
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList* /*kwArgs*/) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* /*kwArgs*/) {
     
     if (!args || args->getSize(ctx) < 2) return PROTO_NONE;
     const proto::ProtoObject* dateObj = args->getAt(ctx, 0);
@@ -1120,7 +1120,7 @@ static const proto::ProtoObject* py_datetime_combine(
 
 static const proto::ProtoObject* py_datetime_hash(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     DateTimeState* s = get_datetime_state(ctx, self);
     if (!s) return ctx->fromInteger(0);
     long long h = s->year ^ (s->month << 20) ^ (s->day << 24) ^ (s->hour << 10) ^ (s->minute << 15) ^ (s->second << 20) ^ (s->microsecond << 2);
@@ -1130,7 +1130,7 @@ static const proto::ProtoObject* py_datetime_hash(
 static const proto::ProtoObject* py_time_lt(
 
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_FALSE;
     TimeState* s1 = get_time_state(ctx, self);
     TimeState* s2 = get_time_state(ctx, args->getAt(ctx, 0));
@@ -1146,7 +1146,7 @@ static const proto::ProtoObject* py_time_lt(
 
 static const proto::ProtoObject* py_time_eq(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_FALSE;
     TimeState* s1 = get_time_state(ctx, self);
     TimeState* s2 = get_time_state(ctx, args->getAt(ctx, 0));
@@ -1157,7 +1157,7 @@ static const proto::ProtoObject* py_time_eq(
 
 static const proto::ProtoObject* py_time_replace(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* /*posArgs*/, const proto::ProtoSparseList* kwArgs) {
+    const proto::ProtoArguments* /*posArgs*/, const proto::ProtoKeywordArguments* kwArgs) {
 
     
     TimeState* state = get_time_state(ctx, self);
@@ -1181,7 +1181,7 @@ static const proto::ProtoObject* py_time_replace(
 
 static const proto::ProtoObject* py_date_strftime(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList* /*kwArgs*/) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* /*kwArgs*/) {
 
     // Method dispatch may give us posArgs=[format] (self bound) or
     // posArgs=[self, format] depending on how the call site obtained
@@ -1219,7 +1219,7 @@ static const proto::ProtoObject* py_date_strftime(
 
 static const proto::ProtoObject* py_datetime_strftime(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList* /*kwArgs*/) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* /*kwArgs*/) {
 
     // Same bound-self / unbound-call layout split as py_date_strftime.
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
@@ -1252,7 +1252,7 @@ static const proto::ProtoObject* py_datetime_strftime(
 
 static const proto::ProtoObject* py_date_timetuple(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* /*posArgs*/, const proto::ProtoSparseList* /*kwArgs*/) {
+    const proto::ProtoArguments* /*posArgs*/, const proto::ProtoKeywordArguments* /*kwArgs*/) {
     
     int y = (int)self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "year"))->asLong(ctx);
     int m = (int)self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "month"))->asLong(ctx);
@@ -1283,7 +1283,7 @@ static const proto::ProtoObject* py_date_timetuple(
 
 static const proto::ProtoObject* py_datetime_timetuple(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* /*posArgs*/, const proto::ProtoSparseList* /*kwArgs*/) {
+    const proto::ProtoArguments* /*posArgs*/, const proto::ProtoKeywordArguments* /*kwArgs*/) {
     
     int y = (int)self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "year"))->asLong(ctx);
     int m = (int)self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "month"))->asLong(ctx);
@@ -1412,7 +1412,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoList* utcArgs = ctx->newList();
     utcArgs = utcArgs->appendLast(ctx, timezoneType); // cls
     utcArgs = utcArgs->appendLast(ctx, create_timedelta_instance(ctx, timedeltaType, 0, 0, 0)); // offset
-    const proto::ProtoObject* utc = py_timezone_new(ctx, timezoneType, nullptr, utcArgs, nullptr);
+    const proto::ProtoObject* utc = py_timezone_new(ctx, timezoneType, nullptr, argsView(proto::ProtoListArguments(ctx, utcArgs)), nullptr);
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "UTC"), utc);
 
 

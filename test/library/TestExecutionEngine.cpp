@@ -24,8 +24,8 @@ static const proto::ProtoObject* callable_returns_42(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parent*/,
-    const proto::ProtoList* /*args*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*args*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     return ctx->fromInteger(42);
 }
 

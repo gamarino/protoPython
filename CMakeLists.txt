@@ -94,10 +94,12 @@ set(PROTOPYTHON_STDLIB_INSTALL_PARENT "${CMAKE_INSTALL_LIBDIR}/protoPython")
 # long long on Windows. (Before that the floor was 2.0: no other protoCore API
 # newer than 2.0.0 is used.) The ceiling is the next major, because protoCore's
 # major version and its soname move together; the SOVERSION is asserted below.
-set(PROTOCORE_MIN_VERSION      "2.11")
-set(PROTOCORE_MIN_VERSION_FULL "2.11.0")
-set(PROTOCORE_NEXT_MAJOR       "3.0.0")
-set(PROTOCORE_ABI_SOVERSION    "3")
+# 3.0.0: methods receive their arguments as ProtoArguments /
+# ProtoKeywordArguments descriptors (protoCore docs/CALLING_CONVENTION.md).
+set(PROTOCORE_MIN_VERSION      "3.0")
+set(PROTOCORE_MIN_VERSION_FULL "3.0.0")
+set(PROTOCORE_NEXT_MAJOR       "4.0.0")
+set(PROTOCORE_ABI_SOVERSION    "4")
 option(PROTOCORE_REQUIRE_PACKAGE
     "Require an installed protoCore CMake package; never fall back to ../protoCore" OFF)
 

@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — protoCore 3.0.0: the descriptor calling convention (2026-10-20)
+
+- **Built against protoCore 3.0.0** (SOVERSION 4), now the declared minimum:
+  every native receives protoCore's `ProtoArguments` / `ProtoKeywordArguments`
+  descriptors (protoCore `docs/CALLING_CONVENTION.md`), as do the argument
+  helpers that read them.  CI pins protoCore `cf52f9f5` on every job, the
+  floor job included; the DEB / RPM dependency is `>= 3.0.0, << 4.0.0`.
+- The engine keeps lists internally: `invokePythonCallable`,
+  `invokeCallable`, `bindArguments` and protopyc's generated bodies take a
+  `ProtoList` / `ProtoSparseList`; overloads and the generated entry points
+  convert a native's descriptors with `asList` / `asSparseList`, which
+  answers the call's own list when it came with one.  `argsView(...)` gives a
+  descriptor over a temporary for one full expression, for the ~230 direct
+  calls of a native with a list.
+- **`callObjectEx` builds no keyword structures for a call without
+  keywords** (map's callback, for instance): it built an empty
+  `ProtoSparseList` and an empty name list on every call.
+- Interleaved A/B against main on protoCore 2.14.8, three rounds with A/A,
+  cycles: `attr_lookup` -7.1 %, `nqueens` -6.1 %, `sieve` -5.4 %, `richards`
+  -5.2 %, `binary_trees` -5.0 %, `list_append` -4.4 %, a map/lambda probe
+  -3.9 % (before the `callObjectEx` change), `range_iterate` +3.0 %
+  (instructions unchanged).
+
 Changes on `main` since the 0.3.0 entry, from commit `038eb6ea` (2026-05-12)
 onwards. Commit hashes are given for reference.
 

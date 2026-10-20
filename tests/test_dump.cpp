@@ -6,7 +6,7 @@
 #include <algorithm>
 
 
-const proto::ProtoObject* py_func_f_1(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_f_1(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_d = PROTO_NONE;

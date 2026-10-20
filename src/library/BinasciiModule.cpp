@@ -104,7 +104,7 @@ static std::string obj_to_bytes(proto::ProtoContext* ctx, const proto::ProtoObje
         if (tobytesM && tobytesM != PROTO_NONE && tobytesM->asMethod(ctx)) {
             const proto::ProtoObject* res = tobytesM->asMethod(ctx)(ctx,
                 const_cast<proto::ProtoObject*>(obj),
-                nullptr, ctx->newList(), nullptr);
+                nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
             if (res && res != obj) return obj_to_bytes(ctx, res);
         }
     }
@@ -158,8 +158,8 @@ static int b64_decode_char(char c) {
 static const proto::ProtoObject* py_b2a_base64(
     proto::ProtoContext* ctx, const proto::ProtoObject*,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwargs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwargs) {
 
     if (!posArgs || posArgs->getSize(ctx) < 1) return make_bytes(ctx, "\n");
     const proto::ProtoObject* arg0 = posArgs->getAt(ctx, 0);
@@ -204,8 +204,8 @@ static const proto::ProtoObject* py_b2a_base64(
 static const proto::ProtoObject* py_a2b_base64(
     proto::ProtoContext* ctx, const proto::ProtoObject*,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
 
     if (!posArgs || posArgs->getSize(ctx) < 1) return make_bytes(ctx, "");
     std::string src = obj_to_bytes(ctx, posArgs->getAt(ctx, 0));
@@ -267,8 +267,8 @@ static const proto::ProtoObject* py_a2b_base64(
 static const proto::ProtoObject* py_hexlify(
     proto::ProtoContext* ctx, const proto::ProtoObject*,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
 
     if (!posArgs || posArgs->getSize(ctx) < 1) return make_bytes(ctx, "");
     const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
@@ -330,8 +330,8 @@ static const proto::ProtoObject* py_hexlify(
 static const proto::ProtoObject* py_unhexlify(
     proto::ProtoContext* ctx, const proto::ProtoObject*,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
 
     if (!posArgs || posArgs->getSize(ctx) < 1) return make_bytes(ctx, "");
     std::string src = obj_to_bytes(ctx, posArgs->getAt(ctx, 0));
@@ -368,8 +368,8 @@ static const proto::ProtoObject* py_unhexlify(
 static const proto::ProtoObject* py_crc32(
     proto::ProtoContext* ctx, const proto::ProtoObject*,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
 
     if (!posArgs || posArgs->getSize(ctx) < 1) return ctx->fromInteger(0);
     std::string src = obj_to_bytes(ctx, posArgs->getAt(ctx, 0));

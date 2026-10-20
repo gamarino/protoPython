@@ -11,8 +11,8 @@ static const proto::ProtoObject* py_codecs_lookup(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 0);
     if (!nameObj->isString(context)) return PROTO_NONE;
@@ -33,8 +33,8 @@ static const proto::ProtoObject* py_codecs_encode(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     // Basic bytes/str encoding
     return PROTO_NONE;
 }
@@ -43,8 +43,8 @@ static const proto::ProtoObject* py_codecs_decode(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     // Basic bytes/str decoding
     return PROTO_NONE;
 }
@@ -53,8 +53,8 @@ static const proto::ProtoObject* py_codecs_register(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     return PROTO_NONE;
 }
 
@@ -62,8 +62,8 @@ static const proto::ProtoObject* py_codecs_register_error(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     return PROTO_NONE;
 }
 
@@ -71,8 +71,8 @@ static const proto::ProtoObject* py_codecs_lookup_error(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     return PROTO_NONE;
 }
 

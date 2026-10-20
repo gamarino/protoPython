@@ -9,7 +9,7 @@ extern "C" void* proto_module_init() {
 
 #line 1 "test_decorators_final.py"
 
-    auto func_dec = ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+    auto func_dec = ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         auto* env = protoPython::PythonEnvironment::get(ctx);
         // Bind parameters
         if (args->getSize(ctx) > 0) env->storeName("f", args->getAt(ctx, 0));
@@ -19,7 +19,7 @@ extern "C" void* proto_module_init() {
 env->callObject(env->lookupName("print"), {ctx->fromUTF8String("Decorating function")});
 #line 3 "source.py"
 
-    auto func_wrap = ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+    auto func_wrap = ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         auto* env = protoPython::PythonEnvironment::get(ctx);
         // Bind parameters
         if (args->getSize(ctx) > 0) env->storeName("a", args->getAt(ctx, 0));
@@ -41,7 +41,7 @@ throw env->lookupName("wrap");
 ;
 #line 8 "test_decorators_final.py"
 
-    auto func_double = ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+    auto func_double = ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         auto* env = protoPython::PythonEnvironment::get(ctx);
         // Bind parameters
         if (args->getSize(ctx) > 0) env->storeName("x", args->getAt(ctx, 0));
@@ -59,7 +59,7 @@ throw env->binaryOp(env->lookupName("x"), protoPython::TokenType::Star, ctx->fro
 env->callObject(env->lookupName("print"), {ctx->fromUTF8String("Double(10):"), env->callObject(env->lookupName("double"), {ctx->fromInteger(10)})});
 #line 13 "test_decorators_final.py"
 
-    auto func_cls_dec = ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+    auto func_cls_dec = ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         auto* env = protoPython::PythonEnvironment::get(ctx);
         // Bind parameters
         if (args->getSize(ctx) > 0) env->storeName("c", args->getAt(ctx, 0));
@@ -88,7 +88,7 @@ throw env->lookupName("c");
         protoPython::PythonEnvironment::setCurrentFrame(ns_A);
 #line 20 "source.py"
 
-    auto func___init__ = ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+    auto func___init__ = ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         auto* env = protoPython::PythonEnvironment::get(ctx);
         // Bind parameters
         if (args->getSize(ctx) > 0) env->storeName("self", args->getAt(ctx, 0));
@@ -122,7 +122,7 @@ env->setAttr(env->lookupName("self"), "val", env->lookupName("val"));
             }
         }
     }
-    cls_A->setAttribute(ctx, env->getCallString(), ctx->fromMethod(cls_A, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+    cls_A->setAttribute(ctx, env->getCallString(), ctx->fromMethod(cls_A, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         auto* env = protoPython::PythonEnvironment::get(ctx);
         auto* obj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
         obj->addParent(ctx, self);

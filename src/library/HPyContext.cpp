@@ -161,8 +161,8 @@ const proto::ProtoObject* hpy_method_wrapper(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* /*keywordParameters*/) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* /*keywordParameters*/) {
     const proto::ProtoObject* methObj = self ? self->getAttribute(context, internedKey(context, "__hpy_meth__")) : nullptr;
     const proto::ProtoExternalPointer* ext =
         (methObj && methObj != PROTO_NONE) ? methObj->asExternalPointer(context) : nullptr;

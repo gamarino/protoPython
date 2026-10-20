@@ -21,7 +21,7 @@ class FoundationTest : public ::testing::Test {
 protected:
     PythonEnvironment& env{getSharedEnv()};
     
-    const proto::ProtoObject* invokeCallable(proto::ProtoContext* context, const proto::ProtoObject* fn, const proto::ProtoObject* receiver, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs = nullptr) {
+    const proto::ProtoObject* invokeCallable(proto::ProtoContext* context, const proto::ProtoObject* fn, const proto::ProtoObject* receiver, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs = nullptr) {
         if (!fn) return nullptr;
         if (fn->asMethod(context)) return fn->asMethod(context)(context, receiver, nullptr, args, kwargs);
         const proto::ProtoObject* callAttr = fn->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__call__"));

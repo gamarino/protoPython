@@ -6,7 +6,7 @@
 #include <algorithm>
 
 
-const proto::ProtoObject* py_func__cb_2(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func__cb_2(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_arg = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -30,7 +30,7 @@ env->callObject(env->lookupName("callback"), {env->lookupName("self")});
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___new___1(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___new___1(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_cls = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -77,7 +77,7 @@ throw env->lookupName("self");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___call___3(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___call___3(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -100,7 +100,7 @@ throw env->callObject(env->getAttr(env->lookupName("self"), "_meth_type"), {env-
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___eq___4(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___eq___4(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -124,7 +124,7 @@ throw env->lookupName("NotImplemented");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___ne___5(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___ne___5(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -148,7 +148,7 @@ throw env->lookupName("NotImplemented");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_remove_7(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_remove_7(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_wr = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -168,7 +168,7 @@ env->callObject(env->lookupName("_atomic_removal"), {env->getAttr(env->lookupNam
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___init___6(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___init___6(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -204,7 +204,7 @@ env->setAttr(env->lookupName("self"), "data", ([&]() {
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___getitem___8(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___getitem___8(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -227,7 +227,7 @@ throw env->lookupName("o");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___delitem___9(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___delitem___9(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -240,7 +240,7 @@ env->delItem(env->getAttr(env->lookupName("self"), "data"), env->lookupName("key
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___len___10(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___len___10(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -251,7 +251,7 @@ throw env->callObject(env->lookupName("len"), {env->getAttr(env->lookupName("sel
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___contains___11(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___contains___11(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -279,7 +279,7 @@ throw env->binaryOp(env->lookupName("o"), protoPython::TokenType::Plus /* Unsupp
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___repr___12(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___repr___12(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -299,7 +299,7 @@ throw env->binaryOp(ctx->fromUTF8String("<%s at %#x>"), protoPython::TokenType::
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___setitem___13(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___setitem___13(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -312,7 +312,7 @@ env->setItem(env->getAttr(env->lookupName("self"), "data"), env->lookupName("key
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_copy_14(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_copy_14(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -350,7 +350,7 @@ throw env->lookupName("new");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___deepcopy___15(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___deepcopy___15(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -394,7 +394,7 @@ throw env->lookupName("new");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_get_16(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_get_16(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -421,7 +421,7 @@ throw env->lookupName("default");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_items_17(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_items_17(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -463,7 +463,7 @@ if (env->isTrue(env->binaryOp(env->lookupName("v"), protoPython::TokenType::Plus
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_cont_keys_18(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_cont_keys_18(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     auto* gen = const_cast<proto::ProtoObject*>(self);
     const proto::ProtoSparseList* gi_locals = env->getAttribute(ctx, gen, env->getGiLocalsString())->asSparseList(ctx);
@@ -515,7 +515,7 @@ if (env->isTrue(env->binaryOp(env->callObject(env->lookupName("wr"), {}), protoP
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_keys_18(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_keys_18(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     auto* gen = const_cast<proto::ProtoObject*>(ctx->newObject(true));
     if (env->getGeneratorPrototype()) gen->addParent(ctx, env->getGeneratorPrototype());
@@ -528,7 +528,7 @@ const proto::ProtoObject* py_func_keys_18(proto::ProtoContext* ctx, const proto:
     return gen;
 }
 
-const proto::ProtoObject* py_cont_itervaluerefs_19(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_cont_itervaluerefs_19(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     auto* gen = const_cast<proto::ProtoObject*>(self);
     const proto::ProtoSparseList* gi_locals = env->getAttribute(ctx, gen, env->getGiLocalsString())->asSparseList(ctx);
@@ -571,7 +571,7 @@ ctx->fromUTF8String("Return an iterator that yields the weak references to the v
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_itervaluerefs_19(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_itervaluerefs_19(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     auto* gen = const_cast<proto::ProtoObject*>(ctx->newObject(true));
     if (env->getGeneratorPrototype()) gen->addParent(ctx, env->getGeneratorPrototype());
@@ -584,7 +584,7 @@ const proto::ProtoObject* py_func_itervaluerefs_19(proto::ProtoContext* ctx, con
     return gen;
 }
 
-const proto::ProtoObject* py_cont_values_20(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_cont_values_20(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     auto* gen = const_cast<proto::ProtoObject*>(self);
     const proto::ProtoSparseList* gi_locals = env->getAttribute(ctx, gen, env->getGiLocalsString())->asSparseList(ctx);
@@ -642,7 +642,7 @@ if (env->isTrue(env->binaryOp(local_obj, protoPython::TokenType::Plus /* Unsuppo
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_values_20(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_values_20(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     auto* gen = const_cast<proto::ProtoObject*>(ctx->newObject(true));
     if (env->getGeneratorPrototype()) gen->addParent(ctx, env->getGeneratorPrototype());
@@ -657,7 +657,7 @@ const proto::ProtoObject* py_func_values_20(proto::ProtoContext* ctx, const prot
     return gen;
 }
 
-const proto::ProtoObject* py_func_popitem_21(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_popitem_21(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -691,7 +691,7 @@ throw ([&]() {
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_pop_22(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_pop_22(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -735,7 +735,7 @@ throw env->lookupName("o");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_setdefault_23(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_setdefault_23(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -774,7 +774,7 @@ throw env->lookupName("o");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_update_24(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_update_24(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -831,7 +831,7 @@ env->setItem(env->lookupName("d"), env->lookupName("key"), env->callObject(env->
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_valuerefs_25(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_valuerefs_25(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -852,7 +852,7 @@ throw env->callObject(env->lookupName("list"), {env->callObject(env->getAttr(env
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___ior___26(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___ior___26(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -866,7 +866,7 @@ throw env->lookupName("self");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___or___27(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___or___27(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -889,7 +889,7 @@ throw env->lookupName("NotImplemented");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___ror___28(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___ror___28(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -914,7 +914,7 @@ throw env->lookupName("NotImplemented");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___new___29(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___new___29(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_type = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -933,7 +933,7 @@ throw env->lookupName("self");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___init___30(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___init___30(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -947,7 +947,7 @@ env->callObject(env->getAttr(env->callObject(env->lookupName("super"), {}), "__i
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_remove_32(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_remove_32(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_k = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -980,7 +980,7 @@ env->delItem(env->getAttr(env->lookupName("self"), "data"), env->lookupName("k")
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___init___31(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___init___31(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1011,7 +1011,7 @@ env->callObject(env->getAttr(env->lookupName("self"), "update"), {env->lookupNam
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___delitem___33(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___delitem___33(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1024,7 +1024,7 @@ env->delItem(env->getAttr(env->lookupName("self"), "data"), env->callObject(env-
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___getitem___34(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___getitem___34(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1036,7 +1036,7 @@ throw env->getItem(env->getAttr(env->lookupName("self"), "data"), env->callObjec
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___len___35(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___len___35(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1047,7 +1047,7 @@ throw env->callObject(env->lookupName("len"), {env->getAttr(env->lookupName("sel
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___repr___36(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___repr___36(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1067,7 +1067,7 @@ throw env->binaryOp(ctx->fromUTF8String("<%s at %#x>"), protoPython::TokenType::
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___setitem___37(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___setitem___37(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1080,7 +1080,7 @@ env->setItem(env->getAttr(env->lookupName("self"), "data"), env->callObject(env-
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_copy_38(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_copy_38(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1118,7 +1118,7 @@ throw env->lookupName("new");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___deepcopy___39(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___deepcopy___39(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1162,7 +1162,7 @@ throw env->lookupName("new");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_get_40(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_get_40(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1175,7 +1175,7 @@ throw env->callObject(env->getAttr(env->getAttr(env->lookupName("self"), "data")
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___contains___41(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___contains___41(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1203,7 +1203,7 @@ throw env->binaryOp(env->lookupName("wr"), protoPython::TokenType::Plus /* Unsup
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_items_42(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_items_42(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1245,7 +1245,7 @@ if (env->isTrue(env->binaryOp(env->lookupName("key"), protoPython::TokenType::Pl
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_cont_keys_43(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_cont_keys_43(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     auto* gen = const_cast<proto::ProtoObject*>(self);
     const proto::ProtoSparseList* gi_locals = env->getAttribute(ctx, gen, env->getGiLocalsString())->asSparseList(ctx);
@@ -1303,7 +1303,7 @@ if (env->isTrue(env->binaryOp(local_obj, protoPython::TokenType::Plus /* Unsuppo
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_keys_43(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_keys_43(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     auto* gen = const_cast<proto::ProtoObject*>(ctx->newObject(true));
     if (env->getGeneratorPrototype()) gen->addParent(ctx, env->getGeneratorPrototype());
@@ -1318,7 +1318,7 @@ const proto::ProtoObject* py_func_keys_43(proto::ProtoContext* ctx, const proto:
     return gen;
 }
 
-const proto::ProtoObject* py_cont_values_44(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_cont_values_44(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     auto* gen = const_cast<proto::ProtoObject*>(self);
     const proto::ProtoSparseList* gi_locals = env->getAttribute(ctx, gen, env->getGiLocalsString())->asSparseList(ctx);
@@ -1370,7 +1370,7 @@ if (env->isTrue(env->binaryOp(env->callObject(env->lookupName("wr"), {}), protoP
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_values_44(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_values_44(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     auto* gen = const_cast<proto::ProtoObject*>(ctx->newObject(true));
     if (env->getGeneratorPrototype()) gen->addParent(ctx, env->getGeneratorPrototype());
@@ -1383,7 +1383,7 @@ const proto::ProtoObject* py_func_values_44(proto::ProtoContext* ctx, const prot
     return gen;
 }
 
-const proto::ProtoObject* py_func_keyrefs_45(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_keyrefs_45(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1404,7 +1404,7 @@ throw env->callObject(env->lookupName("list"), {env->getAttr(env->lookupName("se
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_popitem_46(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_popitem_46(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1438,7 +1438,7 @@ throw ([&]() {
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_pop_47(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_pop_47(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1458,7 +1458,7 @@ throw ([&]() {
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_setdefault_48(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_setdefault_48(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1471,7 +1471,7 @@ throw env->callObject(env->getAttr(env->getAttr(env->lookupName("self"), "data")
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_update_49(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_update_49(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1525,7 +1525,7 @@ env->callObject(env->getAttr(env->lookupName("self"), "update"), {env->lookupNam
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___ior___50(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___ior___50(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1539,7 +1539,7 @@ throw env->lookupName("self");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___or___51(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___or___51(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1562,7 +1562,7 @@ throw env->lookupName("NotImplemented");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___ror___52(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___ror___52(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1587,7 +1587,7 @@ throw env->lookupName("NotImplemented");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___init___53(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___init___53(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1630,7 +1630,7 @@ env->setAttr(env->lookupName("finalize"), "_dirty", PROTO_TRUE);
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___call___54(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___call___54(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1669,7 +1669,7 @@ throw ([&]() {
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_detach_55(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_detach_55(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1712,7 +1712,7 @@ throw ([&]() {
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_peek_56(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_peek_56(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1755,7 +1755,7 @@ throw ([&]() {
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_alive_57(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_alive_57(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1768,7 +1768,7 @@ throw env->binaryOp(env->lookupName("self"), protoPython::TokenType::Plus /* Uns
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_atexit_58(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_atexit_58(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1784,7 +1784,7 @@ throw env->binaryOp(env->callObject(env->lookupName("bool"), {env->lookupName("i
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_atexit_59(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_atexit_59(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1803,7 +1803,7 @@ env->setAttr(env->lookupName("info"), "atexit", env->callObject(env->lookupName(
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___repr___60(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___repr___60(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1848,7 +1848,7 @@ throw env->binaryOp(ctx->fromUTF8String("<%s object at %#x; for %r at %#x>"), pr
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func__select_for_exit_61(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func__select_for_exit_61(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_cls = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1857,7 +1857,7 @@ const proto::ProtoObject* py_func__select_for_exit_61(proto::ProtoContext* ctx, 
 #line 537 "source.py"
 env->storeName("L", /* Unsupported node: N11protoPython12ListCompNodeE */);
 #line 538 "source.py"
-env->callObjectEx(env->getAttr(env->lookupName("L"), "sort"), {}, {{"key", ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+env->callObjectEx(env->getAttr(env->lookupName("L"), "sort"), {}, {{"key", ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         auto* env = protoPython::PythonEnvironment::get(ctx);
         // Bind parameters
         unsigned long nPos = args ? args->getSize(ctx) : 0;
@@ -1870,7 +1870,7 @@ throw /* Unsupported node: N11protoPython12ListCompNodeE */;
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func__exitfunc_62(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func__exitfunc_62(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_cls = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -2112,7 +2112,7 @@ env->storeName("__hash__", env->getAttr(env->lookupName("ref"), "__hash__"));
             }
         }
     }
-    cls_WeakMethod->setAttribute(ctx, env->getCallString(), ctx->fromMethod(cls_WeakMethod, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+    cls_WeakMethod->setAttribute(ctx, env->getCallString(), ctx->fromMethod(cls_WeakMethod, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         auto* env = protoPython::PythonEnvironment::get(ctx);
         auto* obj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
         obj->addParent(ctx, self);
@@ -2234,7 +2234,7 @@ env->storeName("__iter__", env->lookupName("keys"));
             }
         }
     }
-    cls_WeakValueDictionary->setAttribute(ctx, env->getCallString(), ctx->fromMethod(cls_WeakValueDictionary, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+    cls_WeakValueDictionary->setAttribute(ctx, env->getCallString(), ctx->fromMethod(cls_WeakValueDictionary, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         auto* env = protoPython::PythonEnvironment::get(ctx);
         auto* obj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
         obj->addParent(ctx, self);
@@ -2305,7 +2305,7 @@ env->storeName("__slots__", ([&]() {
             }
         }
     }
-    cls_KeyedRef->setAttribute(ctx, env->getCallString(), ctx->fromMethod(cls_KeyedRef, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+    cls_KeyedRef->setAttribute(ctx, env->getCallString(), ctx->fromMethod(cls_KeyedRef, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         auto* env = protoPython::PythonEnvironment::get(ctx);
         auto* obj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
         obj->addParent(ctx, self);
@@ -2428,7 +2428,7 @@ env->storeName("__iter__", env->lookupName("keys"));
             }
         }
     }
-    cls_WeakKeyDictionary->setAttribute(ctx, env->getCallString(), ctx->fromMethod(cls_WeakKeyDictionary, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+    cls_WeakKeyDictionary->setAttribute(ctx, env->getCallString(), ctx->fromMethod(cls_WeakKeyDictionary, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         auto* env = protoPython::PythonEnvironment::get(ctx);
         auto* obj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
         obj->addParent(ctx, self);
@@ -2538,7 +2538,7 @@ env->storeName("__slots__", ([&]() {
             }
         }
     }
-    cls__Info->setAttribute(ctx, env->getCallString(), ctx->fromMethod(cls__Info, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+    cls__Info->setAttribute(ctx, env->getCallString(), ctx->fromMethod(cls__Info, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         auto* env = protoPython::PythonEnvironment::get(ctx);
         auto* obj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
         obj->addParent(ctx, self);
@@ -2608,7 +2608,7 @@ env->storeName("__slots__", ([&]() {
             }
         }
     }
-    cls_finalize->setAttribute(ctx, env->getCallString(), ctx->fromMethod(cls_finalize, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+    cls_finalize->setAttribute(ctx, env->getCallString(), ctx->fromMethod(cls_finalize, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         auto* env = protoPython::PythonEnvironment::get(ctx);
         auto* obj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
         obj->addParent(ctx, self);

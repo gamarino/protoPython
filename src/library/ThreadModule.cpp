@@ -67,8 +67,8 @@ static const proto::ProtoObject* py_lock_acquire(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     const proto::ProtoObject* handle = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_handle"));
     if (!handle || handle == PROTO_NONE) {
         if (posArgs && posArgs->getSize(ctx) >= 1) handle = posArgs->getAt(ctx, 0);
@@ -134,8 +134,8 @@ static const proto::ProtoObject* py_lock_release(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     const proto::ProtoObject* handle = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_handle"));
     if (!handle || handle == PROTO_NONE) {
         if (posArgs && posArgs->getSize(ctx) >= 1) handle = posArgs->getAt(ctx, 0);
@@ -158,8 +158,8 @@ static const proto::ProtoObject* py_rlock_acquire(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     const proto::ProtoObject* handle = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_handle"));
     if (!handle || handle == PROTO_NONE) {
         if (posArgs && posArgs->getSize(ctx) >= 1) handle = posArgs->getAt(ctx, 0);
@@ -217,8 +217,8 @@ static const proto::ProtoObject* py_rlock_release(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     const proto::ProtoObject* handle = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_handle"));
     if (!handle || handle == PROTO_NONE) {
         if (posArgs && posArgs->getSize(ctx) >= 1) handle = posArgs->getAt(ctx, 0);
@@ -278,8 +278,8 @@ static const proto::ProtoObject* py_rlock_locked(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     const proto::ProtoObject* handle = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_handle"));
     if (!handle || handle == PROTO_NONE) return PROTO_FALSE;
     const proto::ProtoExternalPointer* ext = handle->asExternalPointer(ctx);
@@ -292,8 +292,8 @@ static const proto::ProtoObject* py_lock_enter(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwargs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwargs) {
     return py_lock_acquire(ctx, self, parentLink, nullptr, nullptr);
 }
 
@@ -301,8 +301,8 @@ static const proto::ProtoObject* py_lock_exit(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwargs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwargs) {
     py_lock_release(ctx, self, parentLink, nullptr, nullptr);
     return PROTO_NONE;
 }
@@ -311,8 +311,8 @@ static const proto::ProtoObject* py_rlock_enter(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwargs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwargs) {
     return py_rlock_acquire(ctx, self, parentLink, nullptr, nullptr);
 }
 
@@ -320,8 +320,8 @@ static const proto::ProtoObject* py_rlock_exit(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwargs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwargs) {
     py_rlock_release(ctx, self, parentLink, nullptr, nullptr);
     return PROTO_NONE;
 }
@@ -337,8 +337,8 @@ static const proto::ProtoObject* thread_bootstrap(
     proto::ProtoContext* context,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     diagBootstrapTid();
 #if defined(_WIN32)
     // Invalid C runtime arguments are errors on Python threads (PosixCompat.h).
@@ -419,8 +419,8 @@ static const proto::ProtoObject* py_start_new_thread(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* callable = posArgs->getAt(ctx, 0);
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
@@ -461,8 +461,8 @@ static const proto::ProtoObject* py_log_thread_ident(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (protoPython::diagThreadEnabled()) {
         fprintf(stderr, "[thread] ident=%lld\n",
             static_cast<long long>(current_thread_id()));
@@ -475,8 +475,8 @@ static const proto::ProtoObject* py_lock_locked(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     const proto::ProtoObject* handle = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_handle"));
     if (!handle || handle == PROTO_NONE) return PROTO_FALSE;
     const proto::ProtoExternalPointer* ext = handle->asExternalPointer(ctx);
@@ -490,8 +490,8 @@ static const proto::ProtoObject* py_allocate_lock(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     const proto::ProtoObject* lockProt = self ? self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_lockProt")) : nullptr;
     proto::ProtoObject* obj = lockProt ? const_cast<proto::ProtoObject*>(lockProt->newChild(ctx, true)) : const_cast<proto::ProtoObject*>(ctx->newObject(false));
     obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_handle"), 
@@ -503,8 +503,8 @@ static const proto::ProtoObject* py_allocate_rlock(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     const proto::ProtoObject* rlockProt = self ? self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_rlockProt")) : nullptr;
     proto::ProtoObject* obj = rlockProt ? const_cast<proto::ProtoObject*>(rlockProt->newChild(ctx, true)) : const_cast<proto::ProtoObject*>(ctx->newObject(false));
     obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_handle"), 
@@ -516,8 +516,8 @@ static const proto::ProtoObject* py_get_ident(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     return ctx->fromInteger(current_thread_id());
 }
 
@@ -525,8 +525,8 @@ static const proto::ProtoObject* py_getpid(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* /*posArgs*/,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* /*posArgs*/,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     return ctx->fromInteger(current_process_id());
 }
 
@@ -534,8 +534,8 @@ static const proto::ProtoObject* py_join_thread(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* handle = posArgs->getAt(ctx, 0);
     const proto::ProtoExternalPointer* ext = handle->asExternalPointer(ctx);
@@ -557,14 +557,14 @@ static const proto::ProtoObject* py_join_thread(
 static const proto::ProtoObject* py_is_main_interpreter(
     proto::ProtoContext* ctx,
     const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return PROTO_TRUE; // For now
 }
 
 static const proto::ProtoObject* py_get_main_thread_ident(
     proto::ProtoContext* ctx,
     const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return ctx->fromInteger(g_main_thread_id);
 }
 
@@ -579,7 +579,7 @@ static const proto::ProtoObject* py_handle_is_done(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     if (!self) return PROTO_TRUE;
     const proto::ProtoString* doneAttr =
         proto::ProtoString::createSymbol(ctx, "_done");
@@ -604,7 +604,7 @@ static const proto::ProtoObject* py_handle_join(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     if (!self) return PROTO_NONE;
     const proto::ProtoString* ptrAttr =
         proto::ProtoString::createSymbol(ctx, "_proto_thread");
@@ -626,7 +626,7 @@ static const proto::ProtoObject* py_handle_set_done(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     if (!self) return PROTO_NONE;
     const proto::ProtoString* doneAttr =
         proto::ProtoString::createSymbol(ctx, "_done");
@@ -639,7 +639,7 @@ static const proto::ProtoObject* py_handle_set_done(
 static const proto::ProtoObject* py_make_thread_handle(
     proto::ProtoContext* ctx,
     const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     proto::ProtoObject* handle =
         const_cast<proto::ProtoObject*>(ctx->newObject(true));
     proto::proto_long initialIdent = 0;
@@ -677,8 +677,8 @@ static const proto::ProtoObject* py_start_joinable_thread(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwargs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwargs) {
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* callable = posArgs->getAt(ctx, 0);
 
@@ -697,7 +697,7 @@ static const proto::ProtoObject* py_start_joinable_thread(
         }
     }
     if (!handle || handle == PROTO_NONE) {
-        handle = py_make_thread_handle(ctx, self, nullptr, ctx->newList(), nullptr);
+        handle = py_make_thread_handle(ctx, self, nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     }
 
     // Build the args list passed to thread_bootstrap:
@@ -735,7 +735,7 @@ static const proto::ProtoObject* py_start_joinable_thread(
 static const proto::ProtoObject* py_daemon_threads_allowed(
     proto::ProtoContext* ctx,
     const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return PROTO_TRUE;
 }
 
@@ -757,7 +757,7 @@ static const proto::ProtoObject* py_daemon_threads_allowed(
 static const proto::ProtoObject* py_shutdown(
     proto::ProtoContext* ctx,
     const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     if (!ctx || !ctx->space || !ctx->space->threads) return PROTO_NONE;
     const proto::ProtoSparseListIterator* it = ctx->space->threads->getIterator(ctx);
     while (it && it->hasNext(ctx)) {
@@ -784,8 +784,8 @@ static const proto::ProtoObject* py_is_alive(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_FALSE;
     const proto::ProtoObject* handle = posArgs->getAt(ctx, 0);
     const proto::ProtoExternalPointer* ext = handle->asExternalPointer(ctx);
@@ -879,13 +879,13 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     // Provide a callable for _ThreadHandle
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_ThreadHandle"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_make_thread_handle));
 
-    auto py_thread_count = [](proto::ProtoContext* c, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+    auto py_thread_count = [](proto::ProtoContext* c, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
         return c->fromInteger(c->space->runningThreads.load());
     };
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_count"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_thread_count));
 
-    auto py_get_handle = [](proto::ProtoContext* c, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+    auto py_get_handle = [](proto::ProtoContext* c, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
         if (!args || args->getSize(c) < 1) return PROTO_NONE;
         proto::proto_ulong tid = (proto::proto_ulong)args->getAt(c, 0)->asLong(c);
         const proto::ProtoSparseList* threads = c->space->threads;

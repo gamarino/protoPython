@@ -40,8 +40,8 @@ static const proto::ProtoObject* py_fork_exec(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     
     // STRUCT-288: CPython 3.14 subprocess.py passes 22 positional
     // arguments to _fork_exec (args, executable_list, close_fds,

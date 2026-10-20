@@ -23,8 +23,8 @@ static const proto::ProtoObject* py_fcntl_fcntl(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     int fd  = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
     int cmd = static_cast<int>(posArgs->getAt(ctx, 1)->asLong(ctx));
@@ -54,8 +54,8 @@ static const proto::ProtoObject* py_fcntl_ioctl(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     int fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
     proto::proto_ulong request = static_cast<proto::proto_ulong>(posArgs->getAt(ctx, 1)->asLong(ctx));
@@ -82,8 +82,8 @@ static const proto::ProtoObject* py_fcntl_flock(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     int fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
     int op = static_cast<int>(posArgs->getAt(ctx, 1)->asLong(ctx));

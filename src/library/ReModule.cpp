@@ -16,8 +16,8 @@ namespace protoPython {
 extern const proto::ProtoObject* invokePythonCallable(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* callable,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList* kwargs);
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments* kwargs);
 
 namespace re {
 
@@ -244,7 +244,7 @@ static long long resolveGroupRef(proto::ProtoContext* ctx,
 // match.group([index]) — return the string for a group (default group 0 = full match)
 static const proto::ProtoObject* py_match_group(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
 {
     const proto::ProtoObject* ref = nullptr;
     if (posArgs && posArgs->getSize(ctx) >= 1) ref = posArgs->getAt(ctx, 0);
@@ -266,7 +266,7 @@ static const proto::ProtoObject* py_match_group(
 // match.groupdict([default]) — return {name: matched_string} for all named groups.
 static const proto::ProtoObject* py_match_groupdict(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
 {
     const proto::ProtoObject* defaultVal = PROTO_NONE;
     if (posArgs && posArgs->getSize(ctx) >= 1) defaultVal = posArgs->getAt(ctx, 0);
@@ -309,7 +309,7 @@ static const proto::ProtoObject* py_match_groupdict(
 // match.groups([default]) — return tuple of all captured groups
 static const proto::ProtoObject* py_match_groups(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
 {
     const proto::ProtoObject* defaultVal = PROTO_NONE;
     if (posArgs && posArgs->getSize(ctx) >= 1) {
@@ -335,7 +335,7 @@ static const proto::ProtoObject* py_match_groups(
 // point positions, (-1, -1) when the group did not participate.  False, with
 // IndexError raised, for a group the pattern does not have.
 static bool matchGroupBounds(proto::ProtoContext* ctx, const proto::ProtoObject* self,
-                             const proto::ProtoList* posArgs, long long& a, long long& b) {
+                             const proto::ProtoArguments* posArgs, long long& a, long long& b) {
     const proto::ProtoObject* ref = (posArgs && posArgs->getSize(ctx) >= 1) ? posArgs->getAt(ctx, 0) : nullptr;
     const long long idx = resolveGroupRef(ctx, self, ref);
     const proto::ProtoObject* spansObj = self->getAttribute(ctx,
@@ -354,7 +354,7 @@ static bool matchGroupBounds(proto::ProtoContext* ctx, const proto::ProtoObject*
 // match.start([group]) — return start position
 static const proto::ProtoObject* py_match_start(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
 {
     long long a, b;
     if (!matchGroupBounds(ctx, self, posArgs, a, b)) return nullptr;
@@ -364,7 +364,7 @@ static const proto::ProtoObject* py_match_start(
 // match.end([group]) — return end position
 static const proto::ProtoObject* py_match_end(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
 {
     long long a, b;
     if (!matchGroupBounds(ctx, self, posArgs, a, b)) return nullptr;
@@ -374,7 +374,7 @@ static const proto::ProtoObject* py_match_end(
 // match.span([group]) — return (start, end) tuple
 static const proto::ProtoObject* py_match_span(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
 {
     long long a, b;
     if (!matchGroupBounds(ctx, self, posArgs, a, b)) return nullptr;
@@ -387,7 +387,7 @@ static const proto::ProtoObject* py_match_span(
 // repr(match): <re.Match object; span=(0, 1), match='A'>, as CPython.
 static const proto::ProtoObject* py_match_repr(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*)
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*)
 {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     long long a, b;
@@ -402,7 +402,7 @@ static const proto::ProtoObject* py_match_repr(
 // match.lastindex — index of last matched group (None if no groups)
 static const proto::ProtoObject* py_match_lastindex(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*)
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*)
 {
     const proto::ProtoObject* groupsObj = self->getAttribute(ctx,
         proto::ProtoString::createSymbol(ctx, "__re_groups__"));
@@ -1008,8 +1008,8 @@ static long long extractFlags(proto::ProtoContext* ctx,
 }
 
 // An optional integer argument given at position `idx` or as keyword `name`.
-static long long intArg(proto::ProtoContext* ctx, const proto::ProtoList* posArgs, proto::proto_ulong idx,
-                        const proto::ProtoSparseList* kwArgs, const char* name, long long dflt) {
+static long long intArg(proto::ProtoContext* ctx, const proto::ProtoArguments* posArgs, proto::proto_ulong idx,
+                        const proto::ProtoKeywordArguments* kwArgs, const char* name, long long dflt) {
     const proto::ProtoObject* v = nullptr;
     if (posArgs && posArgs->getSize(ctx) > idx) {
         v = posArgs->getAt(ctx, static_cast<int>(idx));
@@ -1023,8 +1023,8 @@ static long long intArg(proto::ProtoContext* ctx, const proto::ProtoList* posArg
 // The flags of a module-level call: the compiled pattern's, the `flags`
 // argument at position `idx` and the `flags` keyword.
 static long long callFlags(proto::ProtoContext* ctx, const proto::ProtoObject* patObj,
-                           const proto::ProtoList* posArgs, proto::proto_ulong idx,
-                           const proto::ProtoSparseList* kwArgs) {
+                           const proto::ProtoArguments* posArgs, proto::proto_ulong idx,
+                           const proto::ProtoKeywordArguments* kwArgs) {
     return extractFlags(ctx, patObj, nullptr, -1) | intArg(ctx, posArgs, idx, kwArgs, "flags", 0);
 }
 
@@ -1469,7 +1469,7 @@ static const proto::ProtoObject* newPair(proto::ProtoContext* ctx,
 
 // The [pos, endpos) window of the pattern methods, in code points: the
 // arguments at positions `first` and `first + 1`, clamped as CPython does.
-static void matchWindow(proto::ProtoContext* ctx, const proto::ProtoList* posArgs, proto::proto_ulong first,
+static void matchWindow(proto::ProtoContext* ctx, const proto::ProtoArguments* posArgs, proto::proto_ulong first,
                         size_t size, size_t& pos, size_t& endpos) {
     pos = 0;
     endpos = size;
@@ -1499,7 +1499,7 @@ enum class MatchKind { Match, Search, FullMatch };
 static const proto::ProtoObject* matchOnce(proto::ProtoContext* ctx, const proto::ProtoObject* matchProto,
                                            const proto::ProtoObject* patObj, const proto::ProtoObject* strObj,
                                            long long flags, MatchKind kind,
-                                           const proto::ProtoList* windowArgs, proto::proto_ulong windowFirst) {
+                                           const proto::ProtoArguments* windowArgs, proto::proto_ulong windowFirst) {
     std::string pat;
     ReString s;
     if (!getPattern(ctx, patObj, pat)) return PROTO_NONE;
@@ -1518,7 +1518,7 @@ static const proto::ProtoObject* matchOnce(proto::ProtoContext* ctx, const proto
 // tuple of its groups.
 static const proto::ProtoObject* findAll(proto::ProtoContext* ctx, const proto::ProtoObject* patObj,
                                          const proto::ProtoObject* strObj, long long flags,
-                                         const proto::ProtoList* windowArgs, proto::proto_ulong windowFirst) {
+                                         const proto::ProtoArguments* windowArgs, proto::proto_ulong windowFirst) {
     std::string pat;
     ReString s;
     if (!getPattern(ctx, patObj, pat) || !wideArg(ctx, strObj, s)) return pyList(ctx, ctx->newList());
@@ -1549,7 +1549,7 @@ static const proto::ProtoObject* findAll(proto::ProtoContext* ctx, const proto::
 // The match objects of re.finditer, as a list.
 static const proto::ProtoObject* findIter(proto::ProtoContext* ctx, const proto::ProtoObject* matchProto,
                                           const proto::ProtoObject* patObj, const proto::ProtoObject* strObj,
-                                          long long flags, const proto::ProtoList* windowArgs,
+                                          long long flags, const proto::ProtoArguments* windowArgs,
                                           proto::proto_ulong windowFirst) {
     std::string pat;
     ReString s;
@@ -1605,7 +1605,7 @@ static const proto::ProtoObject* splitString(proto::ProtoContext* ctx, const pro
 
 static const proto::ProtoObject* py_compile(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwArgs)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwArgs)
 {
     if (posArgs->getSize(ctx) < 1 || !posArgs->getAt(ctx, 0)->isString(ctx)) return PROTO_NONE;
     std::string pat;
@@ -1672,7 +1672,7 @@ static const proto::ProtoObject* py_compile(
 // re.match(pattern, string, flags=0)
 static const proto::ProtoObject* py_match(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwArgs)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwArgs)
 {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
@@ -1683,7 +1683,7 @@ static const proto::ProtoObject* py_match(
 // re.search(pattern, string, flags=0)
 static const proto::ProtoObject* py_search(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwArgs)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwArgs)
 {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
@@ -1693,7 +1693,7 @@ static const proto::ProtoObject* py_search(
 
 static const proto::ProtoObject* py_escape(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
 {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
@@ -1716,7 +1716,7 @@ static const proto::ProtoObject* py_escape(
 // pattern.match(string[, pos[, endpos]])
 static const proto::ProtoObject* py_pattern_match(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
 {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     return matchOnce(ctx, getMatchProto(ctx, self), self, posArgs->getAt(ctx, 0),
@@ -1726,7 +1726,7 @@ static const proto::ProtoObject* py_pattern_match(
 // pattern.fullmatch(string[, pos[, endpos]])
 static const proto::ProtoObject* py_pattern_fullmatch(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
 {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     return matchOnce(ctx, getMatchProto(ctx, self), self, posArgs->getAt(ctx, 0),
@@ -1736,7 +1736,7 @@ static const proto::ProtoObject* py_pattern_fullmatch(
 // pattern.search(string[, pos[, endpos]])
 static const proto::ProtoObject* py_pattern_search(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
 {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     return matchOnce(ctx, getMatchProto(ctx, self), self, posArgs->getAt(ctx, 0),
@@ -1746,7 +1746,7 @@ static const proto::ProtoObject* py_pattern_search(
 // pattern.sub(repl, string, count=0)
 static const proto::ProtoObject* py_pattern_sub(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwArgs)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwArgs)
 {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!posArgs || posArgs->getSize(ctx) < 2) {
@@ -1766,7 +1766,7 @@ static const proto::ProtoObject* py_pattern_sub(
 // pattern.subn(repl, string, count=0) -> (new_string, number_of_subs)
 static const proto::ProtoObject* py_pattern_subn(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwArgs)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwArgs)
 {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!posArgs || posArgs->getSize(ctx) < 2) {
@@ -1786,7 +1786,7 @@ static const proto::ProtoObject* py_pattern_subn(
 // pattern.findall(string[, pos[, endpos]])
 static const proto::ProtoObject* py_pattern_findall(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
 {
     if (posArgs->getSize(ctx) < 1) return pyList(ctx, ctx->newList());
     return findAll(ctx, self, posArgs->getAt(ctx, 0), extractFlags(ctx, self, nullptr, -1), posArgs, 1);
@@ -1798,7 +1798,7 @@ static const proto::ProtoObject* py_pattern_findall(
 // drives the use case (its `parse` calls `self._EXAMPLE_RE.finditer(string)`).
 static const proto::ProtoObject* py_pattern_finditer(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
 {
     if (posArgs->getSize(ctx) < 1) return pyList(ctx, ctx->newList());
     return findIter(ctx, getMatchProto(ctx, self), self, posArgs->getAt(ctx, 0),
@@ -1808,7 +1808,7 @@ static const proto::ProtoObject* py_pattern_finditer(
 // pattern.split(string, maxsplit=0)
 static const proto::ProtoObject* py_pattern_split(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwArgs)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwArgs)
 {
     if (posArgs->getSize(ctx) < 1) return pyList(ctx, ctx->newList());
     return splitString(ctx, self, posArgs->getAt(ctx, 0), intArg(ctx, posArgs, 1, kwArgs, "maxsplit", 0),
@@ -1819,7 +1819,7 @@ static const proto::ProtoObject* py_pattern_split(
 // re.fullmatch(pattern, string, flags=0)
 static const proto::ProtoObject* py_fullmatch(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwArgs)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwArgs)
 {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
@@ -1830,7 +1830,7 @@ static const proto::ProtoObject* py_fullmatch(
 // re.findall(pattern, string, flags=0)
 static const proto::ProtoObject* py_findall(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwargs)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwargs)
 {
     if (posArgs->getSize(ctx) < 2) return pyList(ctx, ctx->newList());
     const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
@@ -1840,7 +1840,7 @@ static const proto::ProtoObject* py_findall(
 // re.sub(pattern, repl, string, count=0, flags=0)
 static const proto::ProtoObject* py_sub(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwargs)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwargs)
 {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!posArgs || posArgs->getSize(ctx) < 3) {
@@ -1861,7 +1861,7 @@ static const proto::ProtoObject* py_sub(
 // re.subn(pattern, repl, string, count=0, flags=0) -> (new_string, number_of_subs)
 static const proto::ProtoObject* py_subn(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwargs)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwargs)
 {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!posArgs || posArgs->getSize(ctx) < 3) {
@@ -1882,7 +1882,7 @@ static const proto::ProtoObject* py_subn(
 // re.finditer(pattern, string, flags=0) → match objects (returned as a list)
 static const proto::ProtoObject* py_finditer(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwargs)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwargs)
 {
     if (posArgs->getSize(ctx) < 2) return pyList(ctx, ctx->newList());
     const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
@@ -1893,7 +1893,7 @@ static const proto::ProtoObject* py_finditer(
 // re.split(pattern, string, maxsplit=0, flags=0)
 static const proto::ProtoObject* py_split_module(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwargs)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwargs)
 {
     if (posArgs->getSize(ctx) < 2) return pyList(ctx, ctx->newList());
     const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
@@ -1909,7 +1909,7 @@ static const proto::ProtoObject* py_split_module(
 // Stores current position and matches incrementally.
 static const proto::ProtoObject* py_scanner_iter_match(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*)
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*)
 {
     const proto::ProtoObject* strObj  = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__scan_str__"));
     const proto::ProtoObject* posObj  = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__scan_pos__"));
@@ -1951,7 +1951,7 @@ static const proto::ProtoObject* py_scanner_iter_match(
 // pattern.scanner(string) → ScannerIterator
 static const proto::ProtoObject* py_pattern_scanner_method(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
 {
     std::string strVal;
     if (posArgs && posArgs->getSize(ctx) >= 1 && posArgs->getAt(ctx, 0)->isString(ctx)) {
@@ -1984,7 +1984,7 @@ static const proto::ProtoObject* py_pattern_scanner_method(
 // lexicon is a list of (pattern, action) pairs.
 static const proto::ProtoObject* py_scanner_new(
     proto::ProtoContext* ctx, const proto::ProtoObject*,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
 {
     // posArgs: [cls, lexicon, flags?]
     if (!posArgs || posArgs->getSize(ctx) < 2) return PROTO_NONE;
@@ -2063,7 +2063,7 @@ static const proto::ProtoObject* py_scanner_new(
 // Scanner.scan(self, string) → ([tokens...], remaining)
 static const proto::ProtoObject* py_scanner_scan(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
 {
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     if (!posArgs->getAt(ctx, 0)->isString(ctx)) return PROTO_NONE;
@@ -2117,7 +2117,7 @@ static const proto::ProtoObject* py_scanner_scan(
                         ->appendLast(ctx, self)
                         ->appendLast(ctx, tokenStr);
                     const proto::ProtoObject* res = env ?
-                        invokePythonCallable(ctx, action, callArgs, nullptr) : nullptr;
+                        invokePythonCallable(ctx, action, argsView(proto::ProtoListArguments(ctx, callArgs)), nullptr) : nullptr;
                     if (res && res != PROTO_NONE) {
                         results = results->appendLast(ctx, res);
                     }
@@ -2175,7 +2175,7 @@ static const proto::ProtoObject* makeReClass(proto::ProtoContext* ctx,
 // repr(pattern): re.compile('a+', re.IGNORECASE), as CPython.
 static const proto::ProtoObject* py_pattern_repr(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*)
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*)
 {
     const proto::ProtoObject* pat = self->getAttribute(ctx,
         proto::ProtoString::createSymbol(ctx, "__re_pattern__"));

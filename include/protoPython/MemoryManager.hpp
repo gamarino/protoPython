@@ -126,8 +126,8 @@ public:
                  proto::ProtoContext* parent,
                  const proto::ProtoList* parameterNames,
                  const proto::ProtoList* localNames,
-                 const proto::ProtoList* args,
-                 const proto::ProtoSparseList* kwargs,
+                 const proto::ProtoArguments* args,
+                 const proto::ProtoKeywordArguments* kwargs,
                  size_t totalSlots = 0)
         : parent_(chainParent(parent ? parent : PythonEnvironment::getCurrentContext())),
           ctx_(nullptr) {

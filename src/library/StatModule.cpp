@@ -17,7 +17,7 @@ namespace stat_module {
 // both raw ints and stat_result-style wrappers whose `__data__`
 // carries the integer.
 static int extract_mode(proto::ProtoContext* ctx,
-                        const proto::ProtoList* args) {
+                        const proto::ProtoArguments* args) {
     if (!args || args->getSize(ctx) < 1) return 0;
     const proto::ProtoObject* a = args->getAt(ctx, 0);
     if (!a) return 0;
@@ -28,7 +28,7 @@ static int extract_mode(proto::ProtoContext* ctx,
 #define DEFINE_S_IS(name, expected_macro) \
 static const proto::ProtoObject* py_##name( \
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*, \
-    const proto::ProtoList* args, const proto::ProtoSparseList*) { \
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) { \
     int mode = extract_mode(ctx, args); \
     return ((mode & S_IFMT) == (expected_macro)) ? PROTO_TRUE : PROTO_FALSE; \
 }
@@ -48,7 +48,7 @@ DEFINE_S_IS(S_ISSOCK, S_IFSOCK)
 // file-type field.
 static const proto::ProtoObject* py_S_IMODE(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     int mode = extract_mode(ctx, args);
     return ctx->fromInteger(mode & 07777);
 }
@@ -56,7 +56,7 @@ static const proto::ProtoObject* py_S_IMODE(
 // stat.S_IFMT(mode) — extract the file-type bits.
 static const proto::ProtoObject* py_S_IFMT(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     int mode = extract_mode(ctx, args);
     return ctx->fromInteger(mode & S_IFMT);
 }
@@ -65,7 +65,7 @@ static const proto::ProtoObject* py_S_IFMT(
 // Used by ls -l style output and by pathlib.Path's repr/__str__.
 static const proto::ProtoObject* py_filemode(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     int mode = extract_mode(ctx, args);
     char buf[11] = "----------";
     if (S_ISDIR(mode)) buf[0] = 'd';
@@ -100,7 +100,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     auto setFn = [&](const char* name,
                      const proto::ProtoObject* (*fn)(proto::ProtoContext*,
                          const proto::ProtoObject*, const proto::ParentLink*,
-                         const proto::ProtoList*, const proto::ProtoSparseList*)) {
+                         const proto::ProtoArguments*, const proto::ProtoKeywordArguments*)) {
         mod = mod->setAttribute(ctx,
             proto::ProtoString::createSymbol(ctx, name),
             ctx->fromMethod(nullptr, fn));

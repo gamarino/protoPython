@@ -6,7 +6,7 @@
 #include <algorithm>
 
 
-const proto::ProtoObject* py_func___repr___1(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___repr___1(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -29,7 +29,7 @@ throw env->binaryOp(ctx->fromUTF8String("TokenInfo(type=%s, string=%r, start=%r,
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_exact_type_2(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_exact_type_2(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -48,7 +48,7 @@ throw env->getAttr(env->lookupName("self"), "type");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_group_3(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_group_3(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_e = PROTO_NONE;
@@ -99,7 +99,7 @@ env->raiseException(env->lookupName("e"));
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_any_4(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_any_4(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     try {
@@ -116,7 +116,7 @@ throw env->binaryOp(([&]() {
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_maybe_5(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_maybe_5(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     try {
@@ -133,7 +133,7 @@ throw env->binaryOp(([&]() {
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func__all_string_prefixes_6(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func__all_string_prefixes_6(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local__valid_string_prefixes = PROTO_NONE;
@@ -230,7 +230,7 @@ throw env->lookupName("result");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func__compile_7(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func__compile_7(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_expr = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -241,7 +241,7 @@ throw env->callObject(env->getAttr(env->lookupName("re"), "compile"), {env->look
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func___init___8(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func___init___8(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -268,7 +268,7 @@ env->setAttr(env->lookupName("self"), "encoding", PROTO_NONE);
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_add_whitespace_9(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_add_whitespace_9(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -297,7 +297,7 @@ env->callObject(env->getAttr(env->getAttr(env->lookupName("self"), "tokens"), "a
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_add_backslash_continuation_10(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_add_backslash_continuation_10(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -339,7 +339,7 @@ env->setAttr(env->lookupName("self"), "prev_col", ctx->fromInteger(0));
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_escape_brackets_11(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_escape_brackets_11(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -412,7 +412,7 @@ throw env->callObject(env->getAttr(ctx->fromUTF8String(""), "join"), {env->looku
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_untokenize_12(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_untokenize_12(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -601,7 +601,7 @@ throw env->callObject(env->getAttr(ctx->fromUTF8String(""), "join"), {env->getAt
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_compat_13(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_compat_13(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_self = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -854,7 +854,7 @@ env->setAttr(env->lookupName("self"), "prev_type", env->lookupName("toknum"));
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_untokenize_14(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_untokenize_14(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_iterable = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -891,7 +891,7 @@ throw env->lookupName("out");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func__get_normal_name_15(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func__get_normal_name_15(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_orig_enc = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -939,7 +939,7 @@ throw env->lookupName("orig_enc");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_read_or_stop_17(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_read_or_stop_17(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     try {
@@ -962,7 +962,7 @@ throw ctx->fromUTF8String("");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_find_cookie_18(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_find_cookie_18(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_line = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1058,7 +1058,7 @@ throw env->lookupName("encoding");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_detect_encoding_16(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_detect_encoding_16(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_readline = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1264,7 +1264,7 @@ throw ([&]() {
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_open_19(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_open_19(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_filename = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1306,7 +1306,7 @@ env->callObject(env->getAttr(env->lookupName("buffer"), "close"), {});
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_cont_tokenize_20(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_cont_tokenize_20(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     auto* gen = const_cast<proto::ProtoObject*>(self);
     const proto::ProtoSparseList* gi_locals = env->getAttribute(ctx, gen, env->getGiLocalsString())->asSparseList(ctx);
@@ -1409,7 +1409,7 @@ local_encoding = ctx->fromUTF8String("utf-8");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_tokenize_20(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_tokenize_20(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     auto* gen = const_cast<proto::ProtoObject*>(ctx->newObject(true));
     if (env->getGeneratorPrototype()) gen->addParent(ctx, env->getGeneratorPrototype());
@@ -1424,7 +1424,7 @@ const proto::ProtoObject* py_func_tokenize_20(proto::ProtoContext* ctx, const pr
     return gen;
 }
 
-const proto::ProtoObject* py_func_generate_tokens_21(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_generate_tokens_21(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_readline = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1441,7 +1441,7 @@ throw env->callObjectEx(env->lookupName("_generate_tokens_from_c_tokenizer"), {e
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_perror_23(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_perror_23(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_message = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1455,7 +1455,7 @@ env->callObject(env->getAttr(env->getAttr(env->lookupName("sys"), "stderr"), "wr
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_error_24(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_error_24(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_message = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1512,7 +1512,7 @@ env->callObject(env->getAttr(env->lookupName("sys"), "exit"), {ctx->fromInteger(
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func__main_22(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func__main_22(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_args = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1670,7 +1670,7 @@ env->callObject(env->lookupName("perror"), {env->binaryOp(ctx->fromUTF8String("u
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func__transform_msg_25(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func__transform_msg_25(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     unsigned long nPos = args ? args->getSize(ctx) : 0;
     const proto::ProtoObject* local_msg = (nPos > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
@@ -1693,7 +1693,7 @@ throw env->lookupName("msg");
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_cont__generate_tokens_from_c_tokenizer_26(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_cont__generate_tokens_from_c_tokenizer_26(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     auto* gen = const_cast<proto::ProtoObject*>(self);
     const proto::ProtoSparseList* gi_locals = env->getAttribute(ctx, gen, env->getGiLocalsString())->asSparseList(ctx);
@@ -1792,7 +1792,7 @@ env->raiseException(env->callObject(env->lookupName("TokenError"), {local_msg, (
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func__generate_tokens_from_c_tokenizer_26(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func__generate_tokens_from_c_tokenizer_26(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     auto* gen = const_cast<proto::ProtoObject*>(ctx->newObject(true));
     if (env->getGeneratorPrototype()) gen->addParent(ctx, env->getGeneratorPrototype());
@@ -1966,7 +1966,7 @@ env->delName("token");
             }
         }
     }
-    cls_TokenInfo->setAttribute(ctx, env->getCallString(), ctx->fromMethod(cls_TokenInfo, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+    cls_TokenInfo->setAttribute(ctx, env->getCallString(), ctx->fromMethod(cls_TokenInfo, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         auto* env = protoPython::PythonEnvironment::get(ctx);
         auto* obj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
         obj->addParent(ctx, self);
@@ -2215,7 +2215,7 @@ env->storeName("tabsize", ctx->fromInteger(8));
             }
         }
     }
-    cls_TokenError->setAttribute(ctx, env->getCallString(), ctx->fromMethod(cls_TokenError, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+    cls_TokenError->setAttribute(ctx, env->getCallString(), ctx->fromMethod(cls_TokenError, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         auto* env = protoPython::PythonEnvironment::get(ctx);
         auto* obj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
         obj->addParent(ctx, self);
@@ -2278,7 +2278,7 @@ env->storeName("tabsize", ctx->fromInteger(8));
             }
         }
     }
-    cls_Untokenizer->setAttribute(ctx, env->getCallString(), ctx->fromMethod(cls_Untokenizer, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+    cls_Untokenizer->setAttribute(ctx, env->getCallString(), ctx->fromMethod(cls_Untokenizer, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         auto* env = protoPython::PythonEnvironment::get(ctx);
         auto* obj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
         obj->addParent(ctx, self);

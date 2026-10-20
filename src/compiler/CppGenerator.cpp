@@ -2075,7 +2075,7 @@ bool CppGenerator::generateDef(DefNode* n, bool isAsync) {
         *out_ << "    protoPython::promote(ctx, __result);\n";
         *out_ << "    return __result;\n";
         *out_ << "}\n";
-        *out_ << "\nconst proto::ProtoObject* " << cppName << "(proto::ProtoContext* __callerCtx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {\n";
+        *out_ << "\nconst proto::ProtoObject* " << cppName << "(proto::ProtoContext* __callerCtx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {\n";
         *out_ << "    (void)pl;\n";
         *out_ << "    const bool __isStorage = __isFunctionStorage(__callerCtx, self);\n";
         if (isMethod && cppName == cppFuncName) {
@@ -2090,7 +2090,9 @@ bool CppGenerator::generateDef(DefNode* n, bool isAsync) {
             *out_ << "    const proto::ProtoObject* __fs = __isStorage ? self : nullptr;\n";
         }
         *out_ << "    protoPython::ModuleNamespaceScope __ns(__moduleNamespaceOf(__callerCtx, __fs));\n";
-        *out_ << "    return " << cppName << "_body(__callerCtx, __fs, __isStorage ? nullptr : self, args, kwargs, protoPython::PythonEnvironment::pendingExceptionFlagAddress());\n";
+        *out_ << "    return " << cppName << "_body(__callerCtx, __fs, __isStorage ? nullptr : self,\n"
+              << "        args ? args->asList(__callerCtx) : nullptr, kwargs ? kwargs->asSparseList(__callerCtx) : nullptr,\n"
+              << "        protoPython::PythonEnvironment::pendingExceptionFlagAddress());\n";
         *out_ << "}\n";
     };
     auto emitBindings = [&]() -> bool {
@@ -3156,8 +3158,12 @@ bool CppGenerator::generateLambda(LambdaNode* n) {
     // The lambda's slot count is known now; its storage is built in the
     // enclosing scope (the cells it closes over are the enclosing scope's).
     std::ostringstream lambdaFn;
-    lambdaFn << "[](proto::ProtoContext* __callerCtx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {\n";
+    lambdaFn << "[](proto::ProtoContext* __callerCtx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* __argsD, const proto::ProtoKeywordArguments* __kwargsD) -> const proto::ProtoObject* {\n";
     lambdaFn << "        (void)pl;\n";
+    // The body binds from lists: the call's own when it came with them
+    // (protoCore 3.0.0 descriptors), otherwise built here.
+    lambdaFn << "        const proto::ProtoList* args = __argsD ? __argsD->asList(__callerCtx) : nullptr;\n";
+    lambdaFn << "        const proto::ProtoSparseList* kwargs = __kwargsD ? __kwargsD->asSparseList(__callerCtx) : nullptr;\n";
     lambdaFn << openContextScope("__callerCtx");
     lambdaFn << "        auto* env = protoPython::PythonEnvironment::get(ctx);\n";
     lambdaFn << "        const proto::ProtoObject* __fs = __functionStorageOf(ctx, self, args);\n";
@@ -3407,7 +3413,9 @@ bool CppGenerator::emitYieldStatement(ASTNode* node, ASTNode* target) {
         *out_ << "                env->raiseException(__t);\n";
         *out_ << "                throw __PyUnwind{};\n";
         *out_ << "            }\n";
-        *out_ << "            __slot[" << valSlot << "] = __tm->asMethod(ctx)(ctx, __sub, nullptr, ctx->newList()->appendLast(ctx, __t), nullptr);\n";
+        // __t came in the generator's own throw() arguments, which its caller
+        // holds: the array call form reads it in place (protoCore 3.0.0).
+        *out_ << "            __slot[" << valSlot << "] = __tm->asMethod(ctx)(ctx, __sub, nullptr, protoPython::argsView(proto::ProtoArguments(&__t, 1)), nullptr);\n";
         *out_ << "            __advance = false;\n";
         *out_ << "        }\n";
         *out_ << "    }\n";

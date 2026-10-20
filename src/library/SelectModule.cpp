@@ -235,8 +235,8 @@ static const proto::ProtoObject* py_select(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwargs*/) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!posArgs || posArgs->getSize(ctx) < 3) {
         if (env) env->raiseTypeError(ctx, "select expected at least 3 arguments");

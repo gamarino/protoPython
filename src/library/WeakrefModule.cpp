@@ -125,7 +125,7 @@ static const proto::ProtoObject* lookup_via_handle(
 // least one arg — the target).
 static const proto::ProtoObject* py_weakref_ref(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     proto::proto_ulong n = posArgs ? posArgs->getSize(ctx) : 0;
 
@@ -338,7 +338,7 @@ static bool is_ref_object(proto::ProtoContext* ctx, const proto::ProtoObject* o)
 // The receiver is `self` for a bound dunder call, or the first positional
 // argument for an unbound one (`weakref.ref.__eq__(r1, r2)`).
 static const proto::ProtoObject* ref_receiver(proto::ProtoContext* ctx,
-    const proto::ProtoObject* self, const proto::ProtoList* posArgs,
+    const proto::ProtoObject* self, const proto::ProtoArguments* posArgs,
     proto::proto_ulong& argOff) {
     argOff = 0;
     if (is_ref_object(ctx, self)) return self;
@@ -350,7 +350,7 @@ static const proto::ProtoObject* ref_receiver(proto::ProtoContext* ctx,
 }
 
 static const proto::ProtoObject* weakref_compare(proto::ProtoContext* ctx,
-    const proto::ProtoObject* self, const proto::ProtoList* posArgs, int op) {
+    const proto::ProtoObject* self, const proto::ProtoArguments* posArgs, int op) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env) return PROTO_NONE;
     proto::proto_ulong argOff = 0;
@@ -371,19 +371,19 @@ static const proto::ProtoObject* weakref_compare(proto::ProtoContext* ctx,
 
 static const proto::ProtoObject* py_weakref_eq(proto::ProtoContext* ctx,
     const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     return weakref_compare(ctx, self, posArgs, 0);
 }
 
 static const proto::ProtoObject* py_weakref_ne(proto::ProtoContext* ctx,
     const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     return weakref_compare(ctx, self, posArgs, 1);
 }
 
 static const proto::ProtoObject* py_weakref_hash(proto::ProtoContext* ctx,
     const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env) return PROTO_NONE;
     proto::proto_ulong argOff = 0;
@@ -406,7 +406,7 @@ static const proto::ProtoObject* py_weakref_hash(proto::ProtoContext* ctx,
 
 static const proto::ProtoObject* py_weakref_repr(proto::ProtoContext* ctx,
     const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     proto::proto_ulong argOff = 0;
     const proto::ProtoObject* r = ref_receiver(ctx, self, posArgs, argOff);
@@ -435,13 +435,13 @@ static const proto::ProtoObject* py_weakref_repr(proto::ProtoContext* ctx,
 
 static const proto::ProtoObject* py_weakref_proxy(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     return py_weakref_ref(ctx, self, nullptr, posArgs, nullptr);
 }
 
 static const proto::ProtoObject* py_weakref_evict(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env || !posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
@@ -458,7 +458,7 @@ static const proto::ProtoObject* py_weakref_evict(
 
 static const proto::ProtoObject* py_weakref_getweakrefcount(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env || !posArgs || posArgs->getSize(ctx) < 1) return ctx->fromInteger(0);
     const proto::ProtoObject* mod = env->lookupName("_weakref");
@@ -471,13 +471,13 @@ static const proto::ProtoObject* py_weakref_getweakrefcount(
 
 static const proto::ProtoObject* py_weakref_getweakrefs(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return PythonEnvironment::wrapList(ctx, ctx->newList());
 }
 
 static const proto::ProtoObject* py_weakref_remove_dead_weakref(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (!posArgs || posArgs->getSize(ctx) < 2) return PROTO_NONE;
     const proto::ProtoObject* dct = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* key = posArgs->getAt(ctx, 1);

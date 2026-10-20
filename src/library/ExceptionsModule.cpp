@@ -14,8 +14,8 @@ static const proto::ProtoObject* exception_init(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     
     const proto::ProtoObject* instance = self;
     proto::proto_ulong startIdx = 0;
@@ -62,8 +62,8 @@ static const proto::ProtoObject* syntaxerror_init(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
 
     // Call base exception init first
     exception_init(context, self, parentLink, positionalParameters, keywordParameters);
@@ -141,8 +141,8 @@ static const proto::ProtoObject* systemexit_init(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     exception_init(context, self, parentLink, positionalParameters, keywordParameters);
     const proto::ProtoObject* instance = self;
     if ((!instance || instance == PROTO_NONE) && positionalParameters && positionalParameters->getSize(context) > 0) {
@@ -166,8 +166,8 @@ static const proto::ProtoObject* exception_str(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     
     const proto::ProtoObject* instance = self;
     if (!instance || instance == PROTO_NONE) {
@@ -248,8 +248,8 @@ static const proto::ProtoObject* oserror_new(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (!positionalParameters || positionalParameters->getSize(context) < 1) {
         return builtins::py_object_new(context, self, parentLink, positionalParameters, keywordParameters);
     }
@@ -271,7 +271,7 @@ static const proto::ProtoObject* oserror_new(
         }
     }
     return builtins::py_object_new(context, self, parentLink,
-        context->newList()->appendLast(context, target), nullptr);
+        argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, target))), nullptr);
 }
 
 // OSError.__init__: BaseException's args, plus errno and strerror for two
@@ -281,8 +281,8 @@ static const proto::ProtoObject* oserror_init(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     exception_init(context, self, parentLink, positionalParameters, keywordParameters);
     const proto::ProtoObject* instance = self;
     if (!instance || instance == PROTO_NONE) {
@@ -321,8 +321,8 @@ static const proto::ProtoObject* oserror_str(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     const proto::ProtoObject* instance = self;
     if (!instance || instance == PROTO_NONE) {
         if (!positionalParameters || positionalParameters->getSize(context) == 0) {
@@ -369,8 +369,8 @@ static const proto::ProtoObject* keyerror_str(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     const proto::ProtoObject* instance = self;
     if ((!instance || instance == PROTO_NONE) && positionalParameters && positionalParameters->getSize(context) > 0) {
         instance = positionalParameters->getAt(context, 0);
@@ -390,8 +390,8 @@ static const proto::ProtoObject* exception_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     
     const proto::ProtoObject* instance = self;
     if (!instance || instance == PROTO_NONE) {
@@ -450,8 +450,8 @@ static const proto::ProtoObject* importerror_init(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     exception_init(context, self, parentLink, positionalParameters, keywordParameters);
     const proto::ProtoObject* instance = self;
     if (!instance || instance == PROTO_NONE) {
@@ -518,8 +518,8 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
     static const auto exception_with_traceback = [](proto::ProtoContext* ctx,
                                                      const proto::ProtoObject* self,
                                                      const proto::ParentLink*,
-                                                     const proto::ProtoList* args,
-                                                     const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                                                     const proto::ProtoArguments* args,
+                                                     const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
         if (!self || self == PROTO_NONE) return PROTO_NONE;
         const proto::ProtoObject* tb = (args && args->getSize(ctx) > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
         const_cast<proto::ProtoObject*>(self)->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__traceback__"), tb ? tb : PROTO_NONE);
@@ -534,8 +534,8 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
     static const auto exception_add_note = [](proto::ProtoContext* ctx,
                                                const proto::ProtoObject* self,
                                                const proto::ParentLink*,
-                                               const proto::ProtoList* args,
-                                               const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                                               const proto::ProtoArguments* args,
+                                               const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
         if (!self || !args || args->getSize(ctx) < 1) return PROTO_NONE;
         const proto::ProtoObject* note = args->getAt(ctx, 0);
@@ -854,7 +854,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     // received the new instance both as self and as the first argument, so
     // args became (instance, value) and repr(value) recursed until the stack
     // overflowed.
-    stopIterMutable->setAttribute(ctx, py_init, ctx->fromMethod(nullptr, [](proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* positionalParameters, const proto::ProtoSparseList* keywordParameters) -> const proto::ProtoObject* {
+    stopIterMutable->setAttribute(ctx, py_init, ctx->fromMethod(nullptr, [](proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* positionalParameters, const proto::ProtoKeywordArguments* keywordParameters) -> const proto::ProtoObject* {
         // Run base init so the instance's `args` is populated (without the
         // duplicated instance), then derive `value` from it.
         exception_init(context, self, parentLink, positionalParameters, keywordParameters);

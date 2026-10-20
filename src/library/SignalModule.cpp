@@ -13,8 +13,8 @@ namespace protoPython {
 extern const proto::ProtoObject* invokePythonCallable(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* callable,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList* kwargs);
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments* kwargs);
 
 namespace signal_module {
 
@@ -91,10 +91,10 @@ bool checkAndDeliverPendingSignals(proto::ProtoContext* ctx, PythonEnvironment* 
             ->appendLast(ctx, ctx->fromInteger(sig))
             ->appendLast(ctx, PROTO_NONE);
         if (handler->asMethod(ctx)) {
-            handler->asMethod(ctx)(ctx, nullptr, nullptr, args, nullptr);
+            handler->asMethod(ctx)(ctx, nullptr, nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
         } else {
-            invokePythonCallable(ctx, handler, args,
-                env ? env->getEmptySparseList() : nullptr);
+            invokePythonCallable(ctx, handler, argsView(proto::ProtoListArguments(ctx, args)),
+                kwargsView(proto::ProtoSparseListKeywordArguments(ctx, env ? env->getEmptySparseList() : nullptr)));
         }
         delivered = true;
         // Don't suppress a pending exception — let the bytecode
@@ -126,8 +126,8 @@ static const proto::ProtoObject* py_signal(
     proto::ProtoContext* ctx,
     const proto::ProtoObject*,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     if (!posArgs || posArgs->getSize(ctx) < 2) return PROTO_NONE;
     const proto::ProtoObject* sigObj = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* handler = posArgs->getAt(ctx, 1);
@@ -173,8 +173,8 @@ static const proto::ProtoObject* py_default_int_handler(
     proto::ProtoContext* ctx,
     const proto::ProtoObject*,
     const proto::ParentLink*,
-    const proto::ProtoList*,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*,
+    const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (env) env->raiseKeyboardInterrupt(ctx);
     return nullptr;
@@ -184,8 +184,8 @@ static const proto::ProtoObject* py_getsig(
     proto::ProtoContext* ctx,
     const proto::ProtoObject*,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* sigObj = posArgs->getAt(ctx, 0);
     if (!sigObj || !sigObj->isInteger(ctx)) return PROTO_NONE;
@@ -199,7 +199,7 @@ static const proto::ProtoObject* py_getsig(
 // fallback for portability.
 static const proto::ProtoObject* py_strsignal(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     int sig = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
 #if defined(_WIN32)
@@ -226,7 +226,7 @@ static const proto::ProtoObject* py_strsignal(
 // signal.alarm(seconds) -> previous remaining alarm in seconds.
 static const proto::ProtoObject* py_alarm(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     unsigned int sec = 0;
     if (posArgs && posArgs->getSize(ctx) >= 1) {
         sec = static_cast<unsigned int>(posArgs->getAt(ctx, 0)->asLong(ctx));
@@ -237,7 +237,7 @@ static const proto::ProtoObject* py_alarm(
 // signal.pause() -> None.  Blocks until a signal arrives.
 static const proto::ProtoObject* py_pause(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     // 2026-05-25: `::pause` blocks the thread in the kernel until ANY
     // signal arrives. The textbook "permanently parked" case — the
     // unmanaged-region bracket lets the GC run without it.
@@ -253,7 +253,7 @@ static const proto::ProtoObject* py_pause(
 // code still pokes at it.
 static const proto::ProtoObject* py_siginterrupt(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (!posArgs || posArgs->getSize(ctx) < 2) return PROTO_NONE;
     int sig = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -270,7 +270,7 @@ static const proto::ProtoObject* py_siginterrupt(
 static int s_wakeup_fd = -1;
 static const proto::ProtoObject* py_set_wakeup_fd(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     int old = s_wakeup_fd;
     if (posArgs && posArgs->getSize(ctx) >= 1) {
         s_wakeup_fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
@@ -281,7 +281,7 @@ static const proto::ProtoObject* py_set_wakeup_fd(
 // signal.valid_signals() -> set of valid signal numbers.
 static const proto::ProtoObject* py_valid_signals(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoSet* s = ctx->newSet();
 #if defined(_WIN32)
@@ -304,8 +304,8 @@ static const proto::ProtoObject* py_raise_signal(
     proto::ProtoContext* ctx,
     const proto::ProtoObject*,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* sigObj = posArgs->getAt(ctx, 0);
     if (!sigObj || !sigObj->isInteger(ctx)) return PROTO_NONE;

@@ -7,7 +7,7 @@ namespace bisect {
 
 static const proto::ProtoObject* py_bisect_right(
     proto::ProtoContext* ctx, const proto::ProtoObject* /*self*/, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList* /*kwArgs*/) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* /*kwArgs*/) {
     
     if (!posArgs || posArgs->getSize(ctx) < 2) return PROTO_NONE;
     const proto::ProtoObject* a = posArgs->getAt(ctx, 0);
@@ -49,7 +49,7 @@ static const proto::ProtoObject* py_bisect_right(
 
 static const proto::ProtoObject* py_bisect_left(
     proto::ProtoContext* ctx, const proto::ProtoObject* /*self*/, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList* /*kwArgs*/) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* /*kwArgs*/) {
     
     if (!posArgs || posArgs->getSize(ctx) < 2) return PROTO_NONE;
     const proto::ProtoObject* a = posArgs->getAt(ctx, 0);

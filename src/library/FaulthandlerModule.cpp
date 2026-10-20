@@ -100,7 +100,7 @@ static void uninstall_signals() {
 // stack walking that's out of scope).
 static const proto::ProtoObject* py_enable(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     int fd = 2;
     if (posArgs && posArgs->getSize(ctx) >= 1) {
         const proto::ProtoObject* fileArg = posArgs->getAt(ctx, 0);
@@ -115,7 +115,7 @@ static const proto::ProtoObject* py_enable(
                 if (m && m->asMethod(ctx)) {
                     const proto::ProtoObject* r = m->asMethod(ctx)(ctx,
                         const_cast<proto::ProtoObject*>(fileArg),
-                        nullptr, ctx->newList(), nullptr);
+                        nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
                     if (r && r->isInteger(ctx)) fd = static_cast<int>(r->asLong(ctx));
                 }
             }
@@ -127,14 +127,14 @@ static const proto::ProtoObject* py_enable(
 
 static const proto::ProtoObject* py_disable(
     proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     uninstall_signals();
     return PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_is_enabled(
     proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return s_enabled.load(std::memory_order_acquire) ? PROTO_TRUE : PROTO_FALSE;
 }
 
@@ -147,7 +147,7 @@ static const proto::ProtoObject* py_is_enabled(
 // we don't have.
 static const proto::ProtoObject* py_dump_traceback(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     int fd = s_fd.load(std::memory_order_acquire);
     if (posArgs && posArgs->getSize(ctx) >= 1) {
         const proto::ProtoObject* fileArg = posArgs->getAt(ctx, 0);

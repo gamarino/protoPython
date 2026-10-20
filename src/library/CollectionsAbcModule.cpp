@@ -11,14 +11,14 @@ namespace protoPython {
 extern const proto::ProtoObject* invokePythonCallable(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* callable,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList* kwargs);
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments* kwargs);
 static const proto::ProtoObject* py_check_methods(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* sparseArgs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* sparseArgs) {
 
 
     if (!posArgs || posArgs->getSize(ctx) < 2) return PROTO_FALSE;
@@ -68,13 +68,13 @@ static const proto::ProtoList* collectMappingItems(proto::ProtoContext* ctx, con
                           const proto::ProtoList* args) -> const proto::ProtoObject* {
         if (!method || method == PROTO_NONE) return nullptr;
         if (method->asMethod(ctx)) {
-            return method->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(receiver), nullptr, args, nullptr);
+            return method->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(receiver), nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
         }
         const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, receiver);
         proto::proto_ulong n = args ? args->getSize(ctx) : 0;
         for (proto::proto_ulong j = 0; j < n; ++j) selfArgs = selfArgs->appendLast(ctx, args->getAt(ctx, static_cast<int>(j)));
         // Use the extern helper declared in ExecutionEngine.cpp
-        return invokePythonCallable(ctx, method, selfArgs, nullptr);
+        return invokePythonCallable(ctx, method, argsView(proto::ProtoListArguments(ctx, selfArgs)), nullptr);
     };
 
     const proto::ProtoString* iterS = PythonEnvironment::getInternalString(ctx, "__iter__");
@@ -118,8 +118,8 @@ static const proto::ProtoObject* py_mapping_items(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     const proto::ProtoObject* mapping = self;
     // If self is None/null, try args[0]
     if (!mapping || mapping == PROTO_NONE) {
@@ -134,8 +134,8 @@ static const proto::ProtoObject* py_mapping_keys(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     const proto::ProtoObject* mapping = self;
     if (!mapping || mapping == PROTO_NONE) {
         if (posArgs && posArgs->getSize(ctx) > 0) mapping = posArgs->getAt(ctx, 0);
@@ -146,9 +146,9 @@ static const proto::ProtoObject* py_mapping_keys(
 
     auto callM = [&](const proto::ProtoObject* method, const proto::ProtoObject* recv) -> const proto::ProtoObject* {
         if (!method || method == PROTO_NONE) return nullptr;
-        if (method->asMethod(ctx)) return method->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(recv), nullptr, emptyL, nullptr);
+        if (method->asMethod(ctx)) return method->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(recv), nullptr, argsView(proto::ProtoListArguments(ctx, emptyL)), nullptr);
         const proto::ProtoList* sa = ctx->newList()->appendLast(ctx, recv);
-        return invokePythonCallable(ctx, method, sa, nullptr);
+        return invokePythonCallable(ctx, method, argsView(proto::ProtoListArguments(ctx, sa)), nullptr);
     };
 
     const proto::ProtoString* iterS = PythonEnvironment::getInternalString(ctx, "__iter__");
@@ -181,8 +181,8 @@ static const proto::ProtoObject* py_mapping_values(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     const proto::ProtoObject* mapping = self;
     if (!mapping || mapping == PROTO_NONE) {
         if (posArgs && posArgs->getSize(ctx) > 0) mapping = posArgs->getAt(ctx, 0);
@@ -205,8 +205,8 @@ static const proto::ProtoObject* py_mapping_contains(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!self || !posArgs || posArgs->getSize(ctx) < 1) return PROTO_FALSE;
     const proto::ProtoObject* key = posArgs->getAt(ctx, 0);
@@ -218,10 +218,10 @@ static const proto::ProtoObject* py_mapping_contains(
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key);
     const proto::ProtoObject* val = nullptr;
     if (getM->asMethod(ctx)) {
-        val = getM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(self), nullptr, args, nullptr);
+        val = getM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(self), nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
     } else {
         const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, self)->appendLast(ctx, key);
-        val = invokePythonCallable(ctx, getM, selfArgs, nullptr);
+        val = invokePythonCallable(ctx, getM, argsView(proto::ProtoListArguments(ctx, selfArgs)), nullptr);
     }
     if (env && env->peekPendingException()) {
         // Any exception during __getitem__ (typically KeyError) means the
@@ -245,8 +245,8 @@ static const proto::ProtoObject* py_abc_call(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList*,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*,
+    const proto::ProtoKeywordArguments*) {
     return self->newChild(ctx, true);
 }
 
@@ -257,8 +257,8 @@ static const proto::ProtoObject* py_mutable_mapping_update(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwArgs) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwArgs) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!self) return PROTO_NONE;
 
@@ -274,13 +274,13 @@ static const proto::ProtoObject* py_mutable_mapping_update(
         if (!method || method == PROTO_NONE) return nullptr;
         if (method->asMethod(ctx)) {
             return method->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(receiver),
-                                          nullptr, args, nullptr);
+                                          nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
         }
         // Python callable — prepend receiver as self.
         const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, receiver);
         proto::proto_ulong n = args ? args->getSize(ctx) : 0;
         for (proto::proto_ulong j = 0; j < n; ++j) selfArgs = selfArgs->appendLast(ctx, args->getAt(ctx, static_cast<int>(j)));
-        return invokePythonCallable(ctx, method, selfArgs, nullptr);
+        return invokePythonCallable(ctx, method, argsView(proto::ProtoListArguments(ctx, selfArgs)), nullptr);
     };
 
     auto storeKV = [&](const proto::ProtoObject* k, const proto::ProtoObject* v) {
@@ -559,8 +559,8 @@ static const proto::ProtoObject* py_abc_register(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     if (!posArgs || posArgs->getSize(ctx) < 1) return self;
     // Called through the class (Mapping.register(x)) self is the ABC; as a
     // plain function (register(Mapping, x)) the ABC comes first.
@@ -579,8 +579,8 @@ static const proto::ProtoObject* py_abc_check_methods(
     proto::ProtoContext* ctx,
     const proto::ProtoObject*,
     const proto::ParentLink*,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments*) {
     
     if (args->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* C = args->getAt(ctx, 0);
@@ -641,12 +641,12 @@ static const proto::ProtoObject* abc_invoke_method(
     const proto::ProtoObject* method = recv->getAttribute(ctx, methodName);
     if (!method || method == PROTO_NONE) return nullptr;
     if (method->asMethod(ctx)) {
-        return method->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(recv), nullptr, args, nullptr);
+        return method->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(recv), nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
     }
     const proto::ProtoList* sa = ctx->newList()->appendLast(ctx, recv);
     proto::proto_ulong n = args ? args->getSize(ctx) : 0;
     for (proto::proto_ulong j = 0; j < n; ++j) sa = sa->appendLast(ctx, args->getAt(ctx, static_cast<int>(j)));
-    return invokePythonCallable(ctx, method, sa, nullptr);
+    return invokePythonCallable(ctx, method, argsView(proto::ProtoListArguments(ctx, sa)), nullptr);
 }
 
 // CPython's `_collections_abc.MutableMapping.pop` mixin: lookup via
@@ -658,8 +658,8 @@ static const proto::ProtoObject* py_mutable_mapping_pop(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env || !self || !args || args->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* key = args->getAt(ctx, 0);
@@ -702,8 +702,8 @@ static const proto::ProtoObject* py_mutable_mapping_popitem(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList*,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*,
+    const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env || !self) return PROTO_NONE;
     const proto::ProtoObject* it = env->iter(self);
@@ -735,8 +735,8 @@ static const proto::ProtoObject* py_mutable_mapping_clear(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList*,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*,
+    const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env || !self) return PROTO_NONE;
     for (;;) {
@@ -758,8 +758,8 @@ static const proto::ProtoObject* py_mutable_mapping_setdefault(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env || !self || !args || args->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* key = args->getAt(ctx, 0);
@@ -795,8 +795,8 @@ static const proto::ProtoObject* py_mutable_sequence_append(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env || !self || !args || args->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* value = args->getAt(ctx, 0);
@@ -812,11 +812,11 @@ static const proto::ProtoObject* py_mutable_sequence_append(
     auto invoke = [&](const proto::ProtoObject* m, const proto::ProtoObject* recv,
                       const proto::ProtoList* a) -> const proto::ProtoObject* {
         if (m->asMethod(ctx))
-            return m->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(recv), nullptr, a, nullptr);
+            return m->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(recv), nullptr, argsView(proto::ProtoListArguments(ctx, a)), nullptr);
         const proto::ProtoList* sa = ctx->newList()->appendLast(ctx, recv);
         proto::proto_ulong n = a ? a->getSize(ctx) : 0;
         for (proto::proto_ulong j = 0; j < n; ++j) sa = sa->appendLast(ctx, a->getAt(ctx, static_cast<int>(j)));
-        return invokePythonCallable(ctx, m, sa, nullptr);
+        return invokePythonCallable(ctx, m, argsView(proto::ProtoListArguments(ctx, sa)), nullptr);
     };
     const proto::ProtoObject* lenObj = invoke(lenM, self, ctx->newList());
     if (!lenObj || env->hasPendingException()) return nullptr;
@@ -832,8 +832,8 @@ static const proto::ProtoObject* py_mutable_sequence_extend(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env || !self || !args || args->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* iterable = args->getAt(ctx, 0);
@@ -850,7 +850,7 @@ static const proto::ProtoObject* py_mutable_sequence_extend(
         }
         PythonEnvironment::TransientPin pinV(env, v);
         const proto::ProtoList* a = ctx->newList()->appendLast(ctx, v);
-        py_mutable_sequence_append(ctx, self, nullptr, a, nullptr);
+        py_mutable_sequence_append(ctx, self, nullptr, argsView(proto::ProtoListArguments(ctx, a)), nullptr);
         if (env->hasPendingException()) return nullptr;
     }
     return PROTO_NONE;
@@ -863,8 +863,8 @@ static const proto::ProtoObject* py_mutable_sequence_extend(
 #define ABC_ABSTRACT_STUB(name) \
 static const proto::ProtoObject* py_abc_abstract_##name( \
     proto::ProtoContext* ctx, const proto::ProtoObject*, \
-    const proto::ParentLink*, const proto::ProtoList*, \
-    const proto::ProtoSparseList*) { \
+    const proto::ParentLink*, const proto::ProtoArguments*, \
+    const proto::ProtoKeywordArguments*) { \
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx); \
     if (env) env->raiseTypeError(ctx, std::string("abstract method '") + #name \
         + "' on _collections_abc class must be overridden by the subclass"); \
@@ -881,8 +881,8 @@ static const proto::ProtoObject* py_abc_get(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments*) {
     if (!self || !args || args->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* key = args->getAt(ctx, 0);
     const proto::ProtoObject* def = (args->getSize(ctx) > 1) ? args->getAt(ctx, 1) : PROTO_NONE;
@@ -1066,7 +1066,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* abcMeta = createAbc("ABCMeta");
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "ABCMeta"), abcMeta);
 
-    static const auto py_abstractmethod = [](proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    static const auto py_abstractmethod = [](proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
         if (args->getSize(nullptr) < 1) return PROTO_NONE;
         return args->getAt(nullptr, 0);
     };

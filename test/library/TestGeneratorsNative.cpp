@@ -5,7 +5,7 @@
 #include <algorithm>
 
 
-const proto::ProtoObject* py_cont_gen_1(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_cont_gen_1(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     auto* gen = const_cast<proto::ProtoObject*>(self);
     const proto::ProtoSparseList* gi_locals = env->getAttribute(ctx, gen, env->getGiLocalsString())->asSparseList(ctx);
@@ -64,7 +64,7 @@ const proto::ProtoObject* py_cont_gen_1(proto::ProtoContext* ctx, const proto::P
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* py_func_gen_1(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+const proto::ProtoObject* py_func_gen_1(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     auto* env = protoPython::PythonEnvironment::get(ctx);
     auto* gen = const_cast<proto::ProtoObject*>(ctx->newObject(true));
     if (env->getGeneratorPrototype()) gen->addParent(ctx, env->getGeneratorPrototype());

@@ -35,7 +35,7 @@ static std::string utf8Arg(proto::ProtoContext* ctx, const proto::ProtoList* arg
 // NeedCurrentDirectoryForExePath(exe_name) -> bool
 static const proto::ProtoObject* py_need_current_directory_for_exe_path(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     std::wstring name = protopy_widen(utf8Arg(ctx, args, 0));
     return NeedCurrentDirectoryForExePathW(name.c_str()) ? PROTO_TRUE : PROTO_FALSE;
 }
@@ -43,7 +43,7 @@ static const proto::ProtoObject* py_need_current_directory_for_exe_path(
 // LCMapStringEx(locale, flags, src) -> str
 static const proto::ProtoObject* py_lc_map_string_ex(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     std::wstring locale = protopy_widen(utf8Arg(ctx, args, 0));
     DWORD flags = 0;
     if (args && args->getSize(ctx) > 1 && args->getAt(ctx, 1)->isInteger(ctx))

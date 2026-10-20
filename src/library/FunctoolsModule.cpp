@@ -8,8 +8,8 @@ static const proto::ProtoObject* py_partial_call(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     const proto::ProtoObject* func = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__partial_func__"));
     const proto::ProtoObject* frozenObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__partial_args__"));
     if (!func) return PROTO_NONE;
@@ -25,15 +25,15 @@ static const proto::ProtoObject* py_partial_call(
 
     const proto::ProtoObject* callAttr = func->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__call__"));
     if (!callAttr || !callAttr->asMethod(ctx)) return PROTO_NONE;
-    return callAttr->asMethod(ctx)(ctx, func, nullptr, args, nullptr);
+    return callAttr->asMethod(ctx)(ctx, func, nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
 }
 
 static const proto::ProtoObject* py_partial(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* func = posArgs->getAt(ctx, 0);
     const proto::ProtoList* frozen = ctx->newList();
@@ -52,8 +52,8 @@ static const proto::ProtoObject* py_cmp_to_key(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     // Just return a wrapper (minimal implementation for now)
     return posArgs->getAt(ctx, 0); 
@@ -63,8 +63,8 @@ static const proto::ProtoObject* py_reduce(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink*,
-    const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     const proto::ProtoObject* func = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* iterable = posArgs->getAt(ctx, 1);

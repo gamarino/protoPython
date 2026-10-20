@@ -37,7 +37,7 @@ namespace sys {
 // protoPython extension, for tests that bound memory growth.
 static const proto::ProtoObject* sys_current_rss(
     proto::ProtoContext* context, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     long long rss = -1;
 #if defined(__linux__)
     if (FILE* f = std::fopen("/proc/self/statm", "r")) {
@@ -62,8 +62,8 @@ static const proto::ProtoObject* sys_exit(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__env_ptr__"));
     if (envPtr && envPtr->asExternalPointer(context)) {
         auto* env = static_cast<PythonEnvironment*>(envPtr->asExternalPointer(context)->getPointer(context));
@@ -85,8 +85,8 @@ static const proto::ProtoObject* sys_displayhook(
     proto::ProtoContext* context,
     const proto::ProtoObject*,
     const proto::ParentLink*,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (!env) return PROTO_NONE;
     if (!positionalParameters || positionalParameters->getSize(context) != 1) {
@@ -106,7 +106,7 @@ static const proto::ProtoObject* sys_displayhook(
     if (!reprFn || !reprFn->asMethod(context)) return PROTO_NONE;
     const proto::ProtoObject* text = reprFn->asMethod(context)(context,
         const_cast<proto::ProtoObject*>(builtins), nullptr,
-        context->newList()->appendLast(context, value), nullptr);
+        argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, value))), nullptr);
     if (env->hasPendingException() || !text || !text->isString(context)) return nullptr;
 
     // sys.stdout.write(text + "\n").  `write` is looked up on the stream
@@ -125,7 +125,7 @@ static const proto::ProtoObject* sys_displayhook(
     const proto::ProtoObject* lineObj = PythonEnvironment::getInternedString(context, line.c_str())->asObject(context);
     if (writeFn->asMethod(context)) {
         writeFn->asMethod(context)(context, const_cast<proto::ProtoObject*>(out), nullptr,
-            context->newList()->appendLast(context, lineObj), nullptr);
+            argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, lineObj))), nullptr);
     } else {
         invokePythonCallable(context, writeFn, context->newList()->appendLast(context, lineObj), nullptr);
     }
@@ -139,8 +139,8 @@ static const proto::ProtoObject* sys_settrace(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__env_ptr__"));
     if (envPtr) {
         const proto::ProtoExternalPointer* ext = envPtr->asExternalPointer(context);
@@ -158,8 +158,8 @@ static const proto::ProtoObject* sys_trace_default(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
@@ -175,8 +175,8 @@ static const proto::ProtoObject* sys_getsizeof(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
@@ -221,7 +221,7 @@ static const proto::ProtoObject* sys_getsizeof(
                         const proto::ProtoList* gargs =
                             context->newList()->appendLast(context, obj)->appendLast(context, cls);
                         sizeM = getM->asMethod(context)(context,
-                            const_cast<proto::ProtoObject*>(sizeM), nullptr, gargs, nullptr);
+                            const_cast<proto::ProtoObject*>(sizeM), nullptr, argsView(proto::ProtoListArguments(context, gargs)), nullptr);
                     } else {
                         sizeM = env->callObject(getM, {sizeM, obj, cls});
                     }
@@ -232,7 +232,7 @@ static const proto::ProtoObject* sys_getsizeof(
                     if (sizeM->asMethod(context)) {
                         const proto::ProtoList* emptyL = context->newList();
                         r = sizeM->asMethod(context)(context,
-                            const_cast<proto::ProtoObject*>(obj), nullptr, emptyL, nullptr);
+                            const_cast<proto::ProtoObject*>(obj), nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr);
                     } else {
                         r = env->callObject(sizeM, {});
                     }
@@ -248,8 +248,8 @@ static const proto::ProtoObject* sys_gettrace(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__env_ptr__"));
     if (envPtr) {
         const proto::ProtoExternalPointer* ext = envPtr->asExternalPointer(context);
@@ -266,8 +266,8 @@ static const proto::ProtoObject* sys_getframe(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
@@ -379,8 +379,8 @@ static const proto::ProtoObject* sys_getframemodulename(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self;
     (void)parentLink;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
@@ -411,8 +411,8 @@ static const proto::ProtoObject* sys_setrecursionlimit(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__env_ptr__"));
     if (envPtr && envPtr->asExternalPointer(context)) {
         auto* env = static_cast<PythonEnvironment*>(envPtr->asExternalPointer(context)->getPointer(context));
@@ -442,8 +442,8 @@ static const proto::ProtoObject* sys_setswitchinterval(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self; (void)parentLink; (void)keywordParameters;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (!positionalParameters || positionalParameters->getSize(context) != 1) {
@@ -474,8 +474,8 @@ static const proto::ProtoObject* sys_getswitchinterval(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
     return context->fromDouble(s_switchInterval.load(std::memory_order_relaxed));
 }
@@ -487,8 +487,8 @@ static const proto::ProtoObject* sys_is_finalizing(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)context; (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
     return PROTO_FALSE;
 }
@@ -503,8 +503,8 @@ static const proto::ProtoObject* sys_get_asyncgen_hooks(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* sysMod = env ? env->getSysModule() : nullptr;
@@ -521,8 +521,8 @@ static const proto::ProtoObject* sys_set_asyncgen_hooks(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self; (void)parentLink;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* sysMod = env ? env->getSysModule() : nullptr;
@@ -548,8 +548,8 @@ static const proto::ProtoObject* sys_intern(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self; (void)parentLink; (void)keywordParameters;
     if (positionalParameters->getSize(context) > 0) {
         return positionalParameters->getAt(context, 0);
@@ -561,8 +561,8 @@ static const proto::ProtoObject* sys_exception(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
     const proto::ProtoObject* exc = PythonEnvironment::getActiveException();
     return exc ? exc : PROTO_NONE;
@@ -579,8 +579,8 @@ static const proto::ProtoObject* sys_audit(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)context; (void)self; (void)parentLink;
     (void)positionalParameters; (void)keywordParameters;
     return PROTO_NONE;
@@ -590,8 +590,8 @@ static const proto::ProtoObject* sys_addaudithook(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)context; (void)self; (void)parentLink;
     (void)positionalParameters; (void)keywordParameters;
     return PROTO_NONE;
@@ -607,7 +607,7 @@ static const proto::ProtoObject* sys_addaudithook(
 // raises AttributeError, as for every module.
 static const proto::ProtoObject* sys_module_getattr(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoObject* sysMod = env ? env->getSysModule() : nullptr;
     if (!env || !sysMod || !args || args->getSize(ctx) < 1) return PROTO_NONE;
@@ -644,7 +644,7 @@ static const proto::ProtoObject* sys_module_getattr(
 // PythonEnvironment::reportUnraisable calls a program-installed hook instead.
 static const proto::ProtoObject* sys_unraisablehook(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env || !args || args->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* unraisable = args->getAt(ctx, 0);
@@ -666,7 +666,7 @@ static const proto::ProtoObject* sys_unraisablehook(
 // breakpoint().  Default is pdb.set_trace.  Stub.
 static const proto::ProtoObject* sys_breakpointhook(
     proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return PROTO_NONE;
 }
 
@@ -674,8 +674,8 @@ static const proto::ProtoObject* sys_exc_info(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* exc = PythonEnvironment::getActiveException();
@@ -705,8 +705,8 @@ static const proto::ProtoObject* sys_getfilesystemencoding(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self;
     (void)parentLink;
     (void)positionalParameters;
@@ -718,8 +718,8 @@ static const proto::ProtoObject* sys_getfilesystemencodeerrors(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self;
     (void)parentLink;
     (void)positionalParameters;
@@ -731,8 +731,8 @@ static const proto::ProtoObject* sys_is_remote_debug_enabled(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)context; (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
     return PROTO_FALSE;
 }
@@ -741,8 +741,8 @@ static const proto::ProtoObject* sys_get_cpu_count_config(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self;
     (void)parentLink;
     (void)positionalParameters;
@@ -754,8 +754,8 @@ static const proto::ProtoObject* sys_file_write(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     if (positionalParameters->getSize(context) > 0) {
         const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
         if (arg->isString(context)) {
@@ -778,8 +778,8 @@ static const proto::ProtoObject* sys_file_flush(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     const proto::ProtoObject* streamType = self->getAttribute(context, proto::ProtoString::createSymbol(context, "_stream_type"));
     if (streamType && streamType->isInteger(context) && streamType->asLong(context) == 2) {
         fflush(stderr);
@@ -818,31 +818,31 @@ static long long sys_stream_lseek(int fd, long long offset, int whence) {
 // OSError when the stream is a terminal or a pipe.
 static const proto::ProtoObject* sys_stream_fileno(
     proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return context->fromInteger(sys_stream_fd(context, self));
 }
 
 static const proto::ProtoObject* sys_stream_readable(
     proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return sys_stream_fd(context, self) == 0 ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* sys_stream_writable(
     proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return sys_stream_fd(context, self) != 0 ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* sys_stream_seekable(
     proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return sys_stream_lseek(sys_stream_fd(context, self), 0, SEEK_CUR) >= 0 ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* sys_stream_isatty(
     proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return ::isatty(sys_stream_fd(context, self)) ? PROTO_TRUE : PROTO_FALSE;
 }
 
@@ -860,13 +860,13 @@ static const proto::ProtoObject* sys_stream_seek_to(proto::ProtoContext* context
 
 static const proto::ProtoObject* sys_stream_tell(
     proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     return sys_stream_seek_to(context, self, 0, SEEK_CUR);
 }
 
 static const proto::ProtoObject* sys_stream_seek(
     proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     long long offset = 0;
     int whence = SEEK_SET;
     if (args && args->getSize(context) > 0 && args->getAt(context, 0)->isInteger(context))
@@ -880,8 +880,8 @@ static const proto::ProtoObject* sys_getrecursionlimit(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__env_ptr__"));
     if (envPtr && envPtr->asExternalPointer(context)) {
         auto* env = static_cast<PythonEnvironment*>(envPtr->asExternalPointer(context)->getPointer(context));
@@ -1312,8 +1312,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     static const auto py_jit_is_enabled = [](proto::ProtoContext* ctx,
                                               const proto::ProtoObject*,
                                               const proto::ParentLink*,
-                                              const proto::ProtoList*,
-                                              const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                                              const proto::ProtoArguments*,
+                                              const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
         (void)ctx; return PROTO_FALSE;
     };
     const proto::ProtoObject* jit_obj = env && env->getObjectPrototype()
@@ -1327,11 +1327,11 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     // Required by bdb.py → pdb.py → doctest.py
     {
         auto noop = [](proto::ProtoContext* c, const proto::ProtoObject*, const proto::ParentLink*,
-                       const proto::ProtoList*, const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                       const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
             return PROTO_NONE;
         };
         auto ret_none = [](proto::ProtoContext* c, const proto::ProtoObject*, const proto::ParentLink*,
-                           const proto::ProtoList*, const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                           const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
             return PROTO_NONE;
         };
 

@@ -606,7 +606,7 @@ bool keccakByName(const std::string& name, KeccakState& s) {
     return true;
 }
 
-std::string argString(proto::ProtoContext* ctx, const proto::ProtoList* args, int i) {
+std::string argString(proto::ProtoContext* ctx, const proto::ProtoArguments* args, int i) {
     std::string s;
     if (!args || static_cast<int>(args->getSize(ctx)) <= i) return s;
     const proto::ProtoObject* o = args->getAt(ctx, i);
@@ -636,8 +636,8 @@ bool unpack(const std::string& raw, uint8_t tag, S& s) {
 }
 
 const proto::ProtoObject* py_new(proto::ProtoContext* ctx, const proto::ProtoObject*,
-                                 const proto::ParentLink*, const proto::ProtoList* args,
-                                 const proto::ProtoSparseList*) {
+                                 const proto::ParentLink*, const proto::ProtoArguments* args,
+                                 const proto::ProtoKeywordArguments*) {
     const std::string name = argString(ctx, args, 0);
     Algo a;
     if (algoByName(name, a)) {
@@ -655,8 +655,8 @@ const proto::ProtoObject* py_new(proto::ProtoContext* ctx, const proto::ProtoObj
 }
 
 const proto::ProtoObject* py_update(proto::ProtoContext* ctx, const proto::ProtoObject*,
-                                    const proto::ParentLink*, const proto::ProtoList* args,
-                                    const proto::ProtoSparseList*) {
+                                    const proto::ParentLink*, const proto::ProtoArguments* args,
+                                    const proto::ProtoKeywordArguments*) {
     std::string raw, data;
     if (!args || args->getSize(ctx) < 2 || !bytesOf(ctx, args->getAt(ctx, 0), raw)
         || !bytesOf(ctx, args->getAt(ctx, 1), data))
@@ -684,8 +684,8 @@ const proto::ProtoObject* py_update(proto::ProtoContext* ctx, const proto::Proto
 }
 
 const proto::ProtoObject* py_digest(proto::ProtoContext* ctx, const proto::ProtoObject*,
-                                    const proto::ParentLink*, const proto::ProtoList* args,
-                                    const proto::ProtoSparseList*) {
+                                    const proto::ParentLink*, const proto::ProtoArguments* args,
+                                    const proto::ProtoKeywordArguments*) {
     std::string raw;
     if (!args || args->getSize(ctx) < 1 || !bytesOf(ctx, args->getAt(ctx, 0), raw))
         return fail(ctx, "_hashcore.digest(state[, length]) needs a bytes state");
@@ -714,8 +714,8 @@ const proto::ProtoObject* py_digest(proto::ProtoContext* ctx, const proto::Proto
 // blake2_new(is_b, digest_size, key, salt, person, fanout, depth, leaf_size,
 //            node_offset, node_depth, inner_size, last_node) -> state
 const proto::ProtoObject* py_blake2_new(proto::ProtoContext* ctx, const proto::ProtoObject*,
-                                        const proto::ParentLink*, const proto::ProtoList* args,
-                                        const proto::ProtoSparseList*) {
+                                        const proto::ParentLink*, const proto::ProtoArguments* args,
+                                        const proto::ProtoKeywordArguments*) {
     if (!args || args->getSize(ctx) < 12) return fail(ctx, "_hashcore.blake2_new needs 12 arguments");
     auto num = [&](int i) -> long long {
         const proto::ProtoObject* o = args->getAt(ctx, i);

@@ -13,8 +13,8 @@ static const proto::ProtoObject* py_warnings_warn(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
@@ -38,7 +38,7 @@ static const proto::ProtoObject* py_warnings_warn(
         const proto::ProtoObject* strMethod = env ? env->getAttribute(context, message, strName) : message->getAttribute(context, strName);
         if (strMethod && strMethod->asMethod(context)) {
             const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
-            const proto::ProtoObject* sObj = strMethod->asMethod(context)(context, message, nullptr, emptyL, nullptr);
+            const proto::ProtoObject* sObj = strMethod->asMethod(context)(context, message, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr);
             if (sObj && sObj->isString(context)) {
                 sObj->asString(context)->toUTF8String(context, msgStr);
             }
@@ -94,15 +94,15 @@ static const proto::ProtoObject* py_warnings_filters_mutated_lock_held(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
     
     // Return a dummy object that acts as a context manager
     proto::ProtoObject* lock = const_cast<proto::ProtoObject*>(context->newObject(true));
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     
-    auto dummyFunc = [](proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+    auto dummyFunc = [](proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
         return PROTO_NONE;
     };
     
@@ -143,7 +143,7 @@ const proto::ProtoObject* WarningsModule::createWarningsModule(proto::ProtoConte
                             context->fromMethod(moduleObj, py_warnings_warn));
 
     // Expose _acquire_lock and _release_lock (dummy for single-threaded V78)
-    auto dummyFunc = [](proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+    auto dummyFunc = [](proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
         return PROTO_NONE;
     };
     moduleObj->setAttribute(context, PythonEnvironment::getInternedString(context, "_acquire_lock"), context->fromMethod(moduleObj, dummyFunc));

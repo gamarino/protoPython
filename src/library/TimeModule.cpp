@@ -48,7 +48,7 @@ static double toDouble(proto::ProtoContext* ctx, const proto::ProtoObject* obj) 
 
 static const proto::ProtoObject* py_time(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     (void)posArgs;
     auto now = std::chrono::system_clock::now();
     auto epoch = now.time_since_epoch();
@@ -58,7 +58,7 @@ static const proto::ProtoObject* py_time(
 
 static const proto::ProtoObject* py_sleep(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double sec = toDouble(ctx, posArgs->getAt(ctx, 0));
     if (sec > 0) {
@@ -75,7 +75,7 @@ static const proto::ProtoObject* py_sleep(
 
 static const proto::ProtoObject* py_monotonic(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     (void)posArgs;
     auto now = std::chrono::steady_clock::now();
     auto epoch = now.time_since_epoch();
@@ -87,7 +87,7 @@ static const proto::ProtoObject* py_monotonic(
 // monotonic on POSIX.  Required by timeit, profiling, asyncio.
 static const proto::ProtoObject* py_perf_counter(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     auto now = std::chrono::steady_clock::now();
     auto epoch = now.time_since_epoch();
     double sec = std::chrono::duration<double>(epoch).count();
@@ -96,7 +96,7 @@ static const proto::ProtoObject* py_perf_counter(
 
 static const proto::ProtoObject* py_perf_counter_ns(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     auto now = std::chrono::steady_clock::now();
     auto epoch = now.time_since_epoch();
     long long ns = std::chrono::duration_cast<std::chrono::nanoseconds>(epoch).count();
@@ -108,7 +108,7 @@ static const proto::ProtoObject* py_perf_counter_ns(
 // CPUTIME_ID) or via the user+system fields of ::times().
 static const proto::ProtoObject* py_process_time(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     struct timespec ts;
     if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts) == 0) {
@@ -125,7 +125,7 @@ static const proto::ProtoObject* py_process_time(
 
 static const proto::ProtoObject* py_process_time_ns(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     struct timespec ts;
     if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts) == 0) {
@@ -142,7 +142,7 @@ static const proto::ProtoObject* py_process_time_ns(
 
 static const proto::ProtoObject* py_thread_time(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     struct timespec ts;
     if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts) == 0) {
@@ -194,7 +194,7 @@ static const proto::ProtoObject* make_struct_time(proto::ProtoContext* ctx, cons
 // The `secs` argument of gmtime/localtime/ctime: absent or None is now; an
 // int or a float is floored to whole seconds. Raises (and returns false) for
 // another type, NaN, or a value outside time_t, as CPython does.
-static bool secondsArgument(proto::ProtoContext* ctx, const proto::ProtoList* posArgs, std::int64_t& out) {
+static bool secondsArgument(proto::ProtoContext* ctx, const proto::ProtoArguments* posArgs, std::int64_t& out) {
     const proto::ProtoObject* arg = (posArgs && posArgs->getSize(ctx) > 0) ? posArgs->getAt(ctx, 0) : nullptr;
     if (!arg || arg == PROTO_NONE) {
         out = static_cast<std::int64_t>(std::time(nullptr));
@@ -237,8 +237,8 @@ static void raiseConversionError(proto::ProtoContext* ctx, int err) {
 // _strptime line 13 and blocked the whole datetime / strftime audit chain.
 static const proto::ProtoObject* py_struct_time(
     proto::ProtoContext* ctx, const proto::ProtoObject* /*self*/,
-    const proto::ParentLink*, const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments*) {
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* seq = posArgs->getAt(ctx, 0);
     auto getElem = [&](int i) -> long long {
@@ -266,7 +266,7 @@ static const proto::ProtoObject* py_struct_time(
 
 static const proto::ProtoObject* py_localtime(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     std::int64_t t;
     if (!secondsArgument(ctx, posArgs, t)) return nullptr;
     struct tm tmv;
@@ -279,7 +279,7 @@ static const proto::ProtoObject* py_localtime(
 
 static const proto::ProtoObject* py_gmtime(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     std::int64_t t;
     if (!secondsArgument(ctx, posArgs, t)) return nullptr;
     struct tm tmv;
@@ -295,7 +295,7 @@ static const proto::ProtoObject* py_gmtime(
 // current time is used.
 static const proto::ProtoObject* py_ctime(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     std::int64_t secs;
     if (!secondsArgument(ctx, posArgs, secs)) return nullptr;
     struct tm tmv;
@@ -317,7 +317,7 @@ static const proto::ProtoObject* py_ctime(
 // struct_time tuple instead of seconds.
 static const proto::ProtoObject* py_asctime(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     struct tm tmv;
     std::memset(&tmv, 0, sizeof(tmv));
     if (posArgs->getSize(ctx) > 0 && posArgs->getAt(ctx, 0) != PROTO_NONE) {
@@ -366,7 +366,7 @@ static const proto::ProtoObject* py_asctime(
 // time.mktime(t) -> float — inverse of localtime.
 static const proto::ProtoObject* py_mktime(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return ctx->fromDouble(0.0);
     const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
     const proto::ProtoList* list = nullptr;
@@ -396,7 +396,7 @@ static const proto::ProtoObject* py_mktime(
 
 static const proto::ProtoObject* py_strftime(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* fmtObj = posArgs->getAt(ctx, 0);
     if (!fmtObj->isString(ctx)) return PROTO_NONE;
@@ -440,7 +440,7 @@ static const proto::ProtoObject* py_strftime(
 
 static const proto::ProtoObject* py_time_ns(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     (void)posArgs;
     auto now = std::chrono::system_clock::now();
     auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
@@ -449,7 +449,7 @@ static const proto::ProtoObject* py_time_ns(
 
 static const proto::ProtoObject* py_monotonic_ns(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     (void)posArgs;
     auto now = std::chrono::steady_clock::now();
     auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
@@ -460,7 +460,7 @@ static const proto::ProtoObject* py_monotonic_ns(
 //   implementation, monotonic, adjustable, resolution
 static const proto::ProtoObject* py_get_clock_info(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     std::string name;
     if (posArgs && posArgs->getSize(ctx) > 0) {
         const proto::ProtoObject* a = posArgs->getAt(ctx, 0);
