@@ -25021,14 +25021,13 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
             else if (obj->asList(ctx)) res = listPrototype;
             else if (obj->asSet(ctx)) res = setPrototype;
             else if (obj->asSparseList(ctx)) {
-                // SparseLists do not carry parent links via the protoCore
-                // prototype chain — getParents() always returns an empty
-                // list for non-Object tagged pointers — so this branch
-                // intentionally keeps the original allocation-free check
-                // path (which falls into the dict-prototype default).
-                const proto::ProtoList* parents = obj->getParents(ctx);
-                if (parents && parents->getSize(ctx) > 0 && parents->getAt(ctx, 0) == dictPrototype) res = dictPrototype;
-                else if (!parents || parents->getSize(ctx) == 0) res = dictPrototype;
+                // A dict: no parent, or dict itself as the first one. The
+                // first parent is read with getFirstParent (PROTO_NONE when
+                // there is none), which allocates nothing; getParents built
+                // a fresh ProtoList here on every call, and objects that
+                // answer asSparseList do carry parent links.
+                const proto::ProtoObject* p0 = obj->getFirstParent(ctx);
+                if (!p0 || p0 == PROTO_NONE || p0 == dictPrototype) res = dictPrototype;
             }
         }
 
@@ -25984,7 +25983,15 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                 // Only fall back to raw parent chain when no __mro__ exists (non-Python objects).
                 // For Python classes with __mro__, the metaclass lookup (section 1.2) handles
                 // anything not found in the class's own MRO.
-                const proto::ProtoList* parents = searchObj->getParents(ctx);
+                //
+                // For a Symbol name the loop below only asks each direct parent's chain, so
+                // when searchObj's own chain (itself plus every parent's chain) does not have
+                // the name no parent can, and the parent list is not built: getParents
+                // allocates a fresh ProtoList on every call, and this miss is the common
+                // case (the `__set__` probe of the descriptor protocol on a plain value).
+                const bool chainMisses =
+                    name_is_symbol && searchObj->hasAttribute(ctx, name) != PROTO_TRUE;
+                const proto::ProtoList* parents = chainMisses ? nullptr : searchObj->getParents(ctx);
                 if (parents) {
                     for (size_t i = 0; i < parents->getSize(ctx); ++i) {
                         const proto::ProtoObject* baseCls = parents->getAt(ctx, static_cast<int>(i));
