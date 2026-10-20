@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — attribute reads and writes by one protoCore lookup (2026-10-20)
+
+- **`LOAD_ATTR` resolves the common read with one `getAttribute` of the
+  whole chain** (protoCore's per-thread attribute cache answers repeats).
+  A class keeps its annotations in that chain -- a property, a
+  classmethod, a descriptor, a function that binds -- so the lookup
+  returns the annotation in place of a value and the kind of the result
+  decides: a tagged int or string, a bool, None, or an object whose type
+  has no `__get__` is the value; a Python function binds to an instance of
+  its class; anything else takes the previous paths unchanged. Whether
+  the MRO overrides `__getattribute__` comes from the type's class flags.
+- **`super` owns `__getattribute__`**, as in CPython (it was object's), so
+  its proxies carry the custom-getattribute class flag;
+  `tryFastGetAttribute` no longer probes `__py_getattr_handler__` on every
+  call, and answers tagged values without a type probe.
+- **`STORE_ATTR`**: the setter check is one lookup of the type's chain
+  (absent, None or a tagged value is no descriptor: a class-level default
+  no longer sends every instance write to the slow path); `__class__` /
+  `__dict__` compare by pointer (names are interned) instead of hashing
+  both strings on every write; the receiver test is a tag test.
+- `fastClassFlags` decodes the SmallInt flags inline.
+- New regression test `attribute_access` (CPython oracle).
+- Interleaved A/B, three rounds, same protoCore, cycles: inherited class
+  attribute read -69 %, None field read -55 %, store with a class default
+  -28 %, own store -19 %, `attr_lookup` -19 %, own field read -15 % (and
+  -14 % five levels deep), `richards` -6 %, method call -4 %, `fib` -4 %;
+  `binary_trees`, `sieve`, `list_append` unchanged (+0.5 / +1.2 / +0.3 %,
+  within A/A).
+- Known divergences from CPython, unchanged by this work: a data
+  descriptor does not win over a value written straight into `__dict__`;
+  reassigning `__class__` does not change method resolution; methods of a
+  `super` subclass are not found.
+
 ### Changed — protoCore 3.0.0: the descriptor calling convention (2026-10-20)
 
 - **Built against protoCore 3.0.0** (SOVERSION 4), now the declared minimum:

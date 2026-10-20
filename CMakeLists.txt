@@ -1436,8 +1436,13 @@ set_tests_properties(protopy_closure_semantics protopy_closure_semantics_gc PROP
 #   tuple_semantics: tuples (ProtoList-backed) against CPython: construction,
 #     identity of (), hashing, equality, ordering, dict keys, sets, slicing,
 #     unpacking, *args, namedtuple, pickle, subclasses.
+#   attribute_access: attribute reads and writes on the one-lookup paths of
+#     OP_LOAD_ATTR / OP_STORE_ATTR: descriptors, properties, methods,
+#     __getattribute__ / __setattr__ defined on a base or assigned later,
+#     super(), slots, metaclass attributes, deep hierarchies.
 set(PROTOPY_STDLIB_ORACLE_TESTS
     tuple_semantics
+    attribute_access
     ordered_dict_iterables
     abc_virtual_subclasses
     counter_methods

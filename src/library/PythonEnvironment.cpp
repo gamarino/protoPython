@@ -24706,9 +24706,10 @@ bool PythonEnvironment::isCompleteBlock(const std::string& code) {
 uint32_t PythonEnvironment::fastClassFlags(proto::ProtoContext* ctx,
                                             const proto::ProtoObject* cls) const {
     if (!cls || cls == PROTO_NONE || !pyFlagsString_) return 0;
+    // The flags are a SmallInt (ensureClassFlags): decoded inline.
     const proto::ProtoObject* v = cls->getOwnAttributeDirect(ctx, pyFlagsString_);
-    if (!v || v == PROTO_NONE || !v->isInteger(ctx)) return 0;
-    return static_cast<uint32_t>(v->asLong(ctx));
+    if (!proto::isSmallInt(v)) return 0;
+    return static_cast<uint32_t>(proto::asSmallInt(v));
 }
 
 uint32_t PythonEnvironment::ensureClassFlags(proto::ProtoContext* ctx,
@@ -25288,21 +25289,10 @@ static const proto::ProtoObject* tryFastGetAttribute(
         }
     }
 
-    // OBJ-level dispatch: objects with an own __py_getattr_handler__ (e.g.
-    // super proxies) implement their own attribute access semantics.
-    // Use getOwnAttributeDirect to read the handler value — calling
-    // hasOwnAttribute alone returns the boolean PROTO_TRUE/PROTO_FALSE
-    // sentinel, not the stored callable, and the subsequent
-    // `handler->isMethod()` check then fails so the proxy never gets
-    // dispatched.
-    const proto::ProtoString* handlerS = env->getPyGetAttrHandlerString();
-    if (handlerS) {
-        const proto::ProtoObject* handler = obj->getOwnAttributeDirect(ctx, handlerS);
-        if (handler && handler != PROTO_NONE && handler->isMethod(ctx)) {
-            const proto::ProtoList* args = ctx->newList()->appendLast(ctx, reinterpret_cast<const proto::ProtoObject*>(name));
-            return handler->asMethod(ctx)(ctx, obj, nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
-        }
-    }
+    // A super() proxy (the only object with an own __py_getattr_handler__)
+    // is excluded by the check above: super owns __getattribute__, so its
+    // class and every subclass carry PYFLAG_HAS_CUSTOM_GETATTR, and the
+    // slow path dispatches the handler.
 
     // protoCore semantic: getAttribute returns PROTO_NONE for BOTH
     // "attribute absent on the entire prototype chain" AND "attribute
@@ -25345,6 +25335,10 @@ static const proto::ProtoObject* tryFastGetAttribute(
         return val;
     }
     if (!val) return nullptr;
+
+    // A tagged int or string, or a bool, is the value: no descriptor.
+    if (proto::isSmallInt(val) || proto::ProtoObject::isStringTagFast(val)
+        || val == PROTO_TRUE || val == PROTO_FALSE) return val;
 
     // Native methods: O(1) pointer-tag check.
     if (val->isMethod(ctx)) return nullptr;

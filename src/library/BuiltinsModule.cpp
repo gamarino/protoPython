@@ -4374,6 +4374,27 @@ static proto::ProtoObject* make_super_proxy(proto::ProtoContext* context,
     return proxy;
 }
 
+// super.__getattribute__(proxy, name), CPython's super_getattro: the
+// proxy's own lookup. As an attribute of the class it is also the
+// annotation by which a plain chain lookup of __getattribute__ tells a
+// proxy (of super or a subclass) from an ordinary object.
+static const proto::ProtoObject* py_super_getattribute(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
+    const unsigned long n = positionalParameters ? positionalParameters->getSize(context) : 0;
+    if (n < 1) return PROTO_NONE;
+    // Called as a method (self is the proxy, args (name,)) or through the
+    // class (args (proxy, name)), as the attribute protocol does.
+    const proto::ProtoObject* proxy = n >= 2 ? positionalParameters->getAt(context, 0) : self;
+    const proto::ProtoObject* name = positionalParameters->getAt(context, static_cast<int>(n - 1));
+    const proto::ProtoObject* only[1] = {name};
+    return py_super_getattr(context, proxy, parentLink,
+                            protoPython::argsView(proto::ProtoArguments(only, 1)), nullptr);
+}
+
 // CPython's supercheck: a bound super `super(type, obj)` requires obj to
 // be an instance of type OR a subtype of type.  Shared by py_super_new
 // (the 2-arg constructor) and py_super_get (the descriptor rebind).
@@ -12237,6 +12258,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         // super is a descriptor: an unbound super(C) rebinds to
         // super(C, instance) when read off an instance.
         superProto = superProto->setAttribute(ctx, pEnv->getGetDunderString(), ctx->fromMethod(nullptr, py_super_get));
+        superProto = superProto->setAttribute(ctx, pEnv->getGetattributeDunderString(), ctx->fromMethod(nullptr, py_super_getattribute));
         if (pEnv) pEnv->setSuperPrototype(superProto);
         builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "super"), superProto);
     }

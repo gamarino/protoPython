@@ -255,23 +255,26 @@ static bool opcodeHasArg(int op) {
 // `obj.<nameS> = value`, so that OP_STORE_ATTR's direct write would be wrong?
 // It does when
 //   * `directType` owns an attribute named `nameS` (the slow path decides what
-//     it is, as it always did);
+//     it is, as it always did: on a class receiver this is a dunder of object
+//     or type, whose write may invalidate cached class flags);
 //   * a class on the chain defines `__setattr__` (PYFLAG_HAS_CUSTOM_SETATTR);
 //   * a class on the chain holds a data descriptor named `nameS` (an object
 //     whose own chain answers `__set__` or `__delete__`: property, a
 //     descriptor instance, a member of `__slots__`).
-// The descriptor is found by protoCore's own parent-chain walk
-// (hasAttribute / getAttribute, served by the per-thread attribute cache):
-// the chain of a Python class is its MRO.
+// The class's attribute of that name is found by one protoCore lookup of the
+// whole chain (served by the per-thread attribute cache): the chain of a
+// Python class is its MRO. A setter is an annotation of the class, so that
+// lookup returns it; what it returns decides. Absent, None, a tagged int or
+// string, or a bool is no descriptor: the write goes to the instance.
 static bool typeChainInterceptsStore(proto::ProtoContext* ctx, PythonEnvironment* env,
                                      const proto::ProtoObject* directType, uint32_t typeFlags,
                                      const proto::ProtoString* nameS) {
     if (typeFlags & PythonEnvironment::PYFLAG_HAS_CUSTOM_SETATTR) return true;
-    // The common case, a name no class on the chain holds, costs one lookup.
-    if (directType->hasAttribute(ctx, nameS) != PROTO_TRUE) return false;
+    const proto::ProtoObject* d = directType->getAttribute(ctx, nameS);
     if (directType->hasOwnAttribute(ctx, nameS) == PROTO_TRUE) return true;
+    if (d == PROTO_NONE || proto::isSmallInt(d) || proto::ProtoObject::isStringTagFast(d)
+            || d == PROTO_TRUE || d == PROTO_FALSE) return false;
     {
-        const proto::ProtoObject* d = directType->getAttribute(ctx, nameS);
         // Only an object cell can be a descriptor; a class stored as a class
         // attribute is not one, whatever methods it defines.
         if (d && d != PROTO_NONE && (reinterpret_cast<uintptr_t>(d) & 0x3F) == 0
@@ -7735,6 +7738,75 @@ const proto::ProtoObject* executeBytecodeRange(
                         const char* v = std::getenv("PROTOPY_DISABLE_LOADATTR_FASTPATH");
                         return v != nullptr && v[0] != '\0' && v[0] != '0';
                     }();
+                    // The common read, by protoCore: one getAttribute resolves
+                    // the whole chain, and protoCore's per-thread attribute cache
+                    // answers repeats. A class keeps its annotations in that
+                    // chain -- a property, a classmethod, a user descriptor, a
+                    // function that binds -- so the lookup returns the
+                    // annotation in place of a value, and the kind of the
+                    // result decides what Python adds. The flags of the
+                    // receiver's type, an annotation of the class read in one
+                    // step, say whether its MRO overrides __getattribute__ (a
+                    // super() proxy's class does; for a class receiver the
+                    // type is its metaclass). Whatever this block does not
+                    // settle takes the paths below, unchanged.
+                    if (!disableLoadattrFastpath && env && obj && obj != PROTO_NONE
+                            && attrName != env->getClassString()
+                            && attrName != env->getMroString()
+                            && attrName != env->getDictDunderString()
+                            && attrName != env->getBasesString()
+                            && attrName != env->getGetattributeDunderString()) {
+                        const proto::ProtoObject* cls = env->getType(ctx, obj);
+                        if (cls && cls != PROTO_NONE && cls != obj
+                                && !(env->ensureClassFlags(ctx, cls)
+                                     & protoPython::PythonEnvironment::PYFLAG_HAS_CUSTOM_GETATTR)) {
+                            const proto::ProtoObject* v = obj->getAttribute(ctx, attrName);
+                            bool plain = proto::isSmallInt(v) || proto::ProtoObject::isStringTagFast(v)
+                                      || v == PROTO_TRUE || v == PROTO_FALSE;
+                            bool bindToObj = false;
+                            if (v == PROTO_NONE) {
+                                // None, or absent (__getattr__, AttributeError).
+                                plain = obj->hasAttribute(ctx, attrName) == PROTO_TRUE;
+                            } else if (!plain && v && !v->isMethod(ctx)) {
+                                const proto::ProtoObject* vt = v->getFirstParent(ctx);
+                                if (vt == env->getFunctionPrototype()) {
+                                    // A Python function: the function itself when
+                                    // stored on the object, a method when found on
+                                    // the class of an instance (the receiver's
+                                    // type is its first parent: not a class, no
+                                    // reassigned __class__). The bound method
+                                    // object of a plain LOAD_ATTR takes the paths
+                                    // below.
+                                    if (pushNull) {
+                                        if (obj->getOwnAttributeDirect(ctx, attrName) == v) plain = true;
+                                        else bindToObj = obj->getFirstParent(ctx) == cls;
+                                    }
+                                } else {
+                                    // Not a descriptor unless its type has __get__.
+                                    plain = !vt || vt == PROTO_NONE || vt == v
+                                         || !(env->ensureClassFlags(ctx, vt)
+                                              & protoPython::PythonEnvironment::PYFLAG_HAS_GET_DESCR);
+                                }
+                            }
+                            if (bindToObj) {
+                                // [function, self]: CALL prepends self, as for
+                                // the unbound functions of the paths below.
+                                stack.back() = v;
+                                stack.push_back(obj);
+                                i = next_i; continue;
+                            }
+                            if (plain) {
+                                if (pushNull) {
+                                    stack.back() = nullptr;
+                                    stack.push_back(v);
+                                } else {
+                                    stack.back() = v;
+                                }
+                                i = next_i; continue;
+                            }
+                        }
+                    }
+
                     // Sprint-4 (2026-06-15): skip 4 isXxx tag checks per access
                     // when the getType cache has already classified this obj as
                     // non-primitive. The (obj -> is-primitive) mapping is
@@ -8267,20 +8339,20 @@ const proto::ProtoObject* executeBytecodeRange(
                     // path (env->setAttribute) so the immutable-primitive
                     // and metaclass-compatibility validation runs.  The
                     // fast path bypasses those checks.
+                    // Names are interned (Compiler::addName): pointers compare.
                     const proto::ProtoString* classS = env ? env->getClassString() : nullptr;
-                    bool isClassAssign = classS && (nameS == classS
-                        || nameS->getHash(ctx) == classS->getHash(ctx));
+                    bool isClassAssign = classS && nameS == classS;
                     // __dict__ assignment must always traverse the slow
                     // path (env->setAttribute) so the dict-replace logic
                     // runs (validate type + repopulate __data__/__keys__).
                     // The fast path would store the rhs as a plain
                     // attribute named "__dict__" and lose the entries.
                     const proto::ProtoString* dictS = env ? env->getDictDunderString() : nullptr;
-                    bool isDictAssign = dictS && (nameS == dictS
-                        || nameS->getHash(ctx) == dictS->getHash(ctx));
+                    bool isDictAssign = dictS && nameS == dictS;
+                    // An object cell (pointer tag 0), as storeAttr requires:
+                    // not an int, str, bool or float.
                     if (!isClassAssign && !isDictAssign && !disableStoreattrFastpath && env && obj && obj != PROTO_NONE
-                            && !obj->isString(ctx) && !obj->isInteger(ctx)
-                            && !obj->isBoolean(ctx) && !obj->isFloat(ctx)) {
+                            && (reinterpret_cast<uintptr_t>(obj) & 0x3F) == 0) {
                         // P2 type-flags fast path.  Replaces the legacy 3
                         // hasOwnAttribute probes (isPyClassS, slotsS,
                         // nameS-as-descriptor) with a single

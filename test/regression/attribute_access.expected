@@ -1,0 +1,34 @@
+diamond R
+base getattribute 42
+before 1
+assigned later 7
+property prop method meth classvar 5 bound True
+own function free
+class access True 5
+super meth+
+('cm', 'K') ('cm', 'K') ('sm', 3) ('sm', 4) m m
+('cm', 'K')
+prop 10
+slots 1 None
+own callable called 2
+meta meta metaprop WM
+nondata nondata
+shadowed shadow
+getattr 1 fallback missing
+compute
+cached 42 42
+namedtuple 1 2
+dataclass 3 z
+enum 1 RED True
+module True 2.0
+kinds True 1.5 abc None
+nested Inner
+counter 2 0
+setattr later 30
+shadow instance class
+class write 5
+instance write 6 5
+slot write 3
+slot reject
+super getattribute zz
+deep 3 4
