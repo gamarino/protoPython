@@ -243,6 +243,41 @@ a shared library). See [docs/PROTOPYC_SPECIFICATION.md](docs/PROTOPYC_SPECIFICAT
 
 ## Performance
 
+**protoCore 2.14.8 (measured 2026-10-20).** `benchmarks/run_4way_interleaved.py`,
+`main` at `4f8ab5bb` (which adds the STORE_ATTR change below), Release, built
+against protoCore 2.14.8; three rounds, each behind a quiet gate (1.1-1.3 busy
+CPUs) and on a fresh copy of the library; medians of the three rounds. Ratios
+are to free-threaded CPython 3.14t (> 1: protoPython is slower); the last
+columns are the 2026-10-18 run on protoCore 2.14.7.
+
+| Benchmark | CPython 3.14t ms | protopy ms | protopy ratio | protopyc ms | protopyc ratio | 2.14.7: protopy / protopyc |
+|---|---:|---:|---:|---:|---:|---:|
+| `startup_empty` | 21.7 | 21.0 | 0.97x | — | — | 0.92x / — |
+| `int_sum_loop` | 478.7 | 495.7 | 1.03x | 292.0 | 0.61x | 1.02x / 0.64x |
+| `list_append_loop` | 23.2 | 142.8 | 6.14x | 160.3 | 6.91x | 5.84x / 6.67x |
+| `str_concat_loop` | 22.7 | 131.2 | 5.85x | 200.3 | 8.89x | 5.57x / 8.79x |
+| `range_iterate` | 284.6 | 521.8 | 1.83x | 320.0 | 1.08x | 1.78x / 1.08x |
+| `multithread_cpu` | 171.3 | 109.5 | **0.65x** | 43.4 | **0.25x** | 0.65x / 0.28x |
+| `attr_lookup` | 336.4 | 2054.6 | 6.10x | 1088.1 | 3.22x | 6.25x / 3.26x |
+| `call_recursion` | 32.7 | 184.3 | 5.64x | 153.5 | 4.76x | 5.71x / 4.62x |
+| `pyperf_fib` | 83.4 | 395.2 | 4.58x | — | — | 4.59x / — |
+| `pyperf_binary_trees` | 33.3 | 486.5 | 14.64x | — | — | 14.47x / — |
+| `pyperf_nqueens` | 49.6 | 119.7 | 2.41x | — | — | 2.37x / — |
+| `pyperf_richards_lite` | 24.8 | 40.5 | 1.62x | — | — | 1.68x / — |
+| `pyperf_sieve` | 25.2 | 93.1 | 3.64x | — | — | 3.48x / — |
+| `memory_pressure` (informational) | 51.0 | 1451.9 | 28.9x | 1589.1 | 31.5x | 29.9x / 31.7x |
+| **Geomean** (harness, `memory_pressure` excluded) | | | **2.97x** | | **2.05x** | 2.93x / 2.07x |
+
+Nothing moved beyond the spread: protoCore 2.14.8's context slot stack helps
+embedders that allocated a call's slots on the heap, and protoPython keeps them
+in its frames already; the STORE_ATTR change (no `__mro__` walk on every
+attribute store) does not reach these workloads measurably (`attr_lookup`
+reads). On four CPU-bound threads (`multithread_cpu`) protoPython is 1.5x
+(protopy) to 4x (protopyc) faster than CPython 3.14t; single-threaded it is
+level on `int_sum_loop` and 1.6-15x slower on the rest, 3x (protopy) and 2x
+(protopyc) on the geomean. Raw results:
+[`benchmarks/reports/2026-10-20/`](benchmarks/reports/2026-10-20/).
+
 **protoCore 2.14.7 (measured 2026-10-19).** 2.14.7 changes the write path: a
 new value for an existing key copies the root-to-key path without rebalancing,
 and allocating a cell no longer takes a spinlock. The same binaries on
