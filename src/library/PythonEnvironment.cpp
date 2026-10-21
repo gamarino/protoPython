@@ -512,11 +512,14 @@ static const proto::ProtoObject* py_type_call(
     }
     // PI: refuse to instantiate classes with abstract methods.
     // CPython's type.__call__ checks __abstractmethods__ (a frozenset
-    // populated by ABCMeta) and raises TypeError if non-empty.
+    // populated by ABCMeta) and raises TypeError if non-empty.  Only the
+    // class's own value counts, as CPython's per-type abstract flag: a
+    // subclass created without recomputing it is not abstract.
     if (env && self) {
         const proto::ProtoString* amS =
             PythonEnvironment::getInternedString(context, "__abstractmethods__");
-        const proto::ProtoObject* am = self->getAttribute(context, amS);
+        const proto::ProtoObject* am = self->hasOwnAttribute(context, amS) == PROTO_TRUE
+            ? self->getOwnAttributeDirect(context, amS) : nullptr;
         bool nonEmpty = false;
         if (am && am != PROTO_NONE) {
             // Probe via Python `len()` semantics so the check works for

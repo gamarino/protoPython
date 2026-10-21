@@ -1,0 +1,147 @@
+mapping_contains_missing -> False
+mapping_contains_bad raised ValueError getitem boom
+mapping_get_missing -> 7
+mapping_get_bad raised ValueError getitem boom
+mapping_eq -> True
+mm_pop_missing -> 5
+mm_pop_missing_nodefault raised KeyError 'z'
+mm_popitem_empty raised KeyError 
+mm_popitem_bad raised ValueError del boom
+mm_setdefault -> (3, 3)
+mm_clear_bad raised ValueError del boom
+seq_iter_bad raised ValueError seq boom
+seq_contains_bad raised ValueError seq boom
+seq_index_bad raised ValueError seq boom
+seq_count_bad raised ValueError seq boom
+seq_reversed_bad raised ValueError seq boom
+seq_iter_ok -> [0, 1, 2]
+seq_index_missing raised ValueError 
+ms_pop_empty raised KeyError 
+ms_pop_bad raised ValueError discard boom
+ms_remove_missing raised KeyError 'zz'
+mseq_pop_empty raised IndexError list index out of range
+mseq_remove_missing raised ValueError 
+mseq_ops -> [2, 1]
+set_and -> S([2, 3])
+set_or -> S([1, 2, 3, 4])
+set_sub -> S([1])
+set_xor -> S([1, 4])
+set_rsub -> S([9])
+set_rand -> S([2])
+set_and_list -> S([1])
+set_or_int raised TypeError unsupported operand type(s) for |: 'S' and 'int'
+set_le -> (True, False, True)
+set_lt -> (True, False)
+set_ge -> (True, False)
+set_gt -> (True, False)
+set_eq -> (True, False, True, True)
+set_eq_list -> False
+set_le_list -> NotImplemented
+set_isdisjoint -> (True, False)
+set_hash_none -> None
+set_hash_call raised TypeError unhashable type: 'S'
+set__hash -> True
+set__hash_value -> -272375401224217160
+set_from_iterable -> S([5, 6])
+hashable_set -> True
+set_dict_key -> 'x'
+ms_ior -> MS([1, 2, 3])
+ms_iand -> MS([2, 3])
+ms_ixor -> MS([1, 2, 4])
+ms_ixor_self -> MS([])
+ms_isub -> MS([2, 3])
+ms_isub_self -> MS([])
+ms_clear -> MS([])
+ms_pop -> (5, MS([]))
+ms_remove -> MS([6])
+ms_or -> MS([1, 2])
+ms_isdisjoint -> True
+ms_le -> True
+ms_mro -> ['MS', 'MutableSet', 'Set', 'Collection', 'Sized', 'Iterable', 'Container', 'object']
+keys_type -> 'KeysView'
+keys_list -> ['a', 'b']
+items_list -> [('a', 1), ('b', 2)]
+values_list -> [1, 2]
+keys_len -> 2
+keys_contains -> (True, False)
+items_contains -> (True, False, False)
+values_contains -> (True, False)
+keys_and -> ['a']
+keys_or -> ['a', 'b', 'q']
+keys_sub -> ['b']
+keys_eq -> True
+items_and -> [('a', 1)]
+keys_isinstance -> (True, True, True, False, True)
+views_from_iterable -> ('set', 'set')
+valuesview -> (2, [1, 2])
+mapping_eq_ne -> (True, True, False)
+mapping_hash -> None
+mapping_reversed_attr -> None
+mapping_get -> (1, None)
+dict_eq_mapping -> True
+mapping_dict -> {'a': 1, 'b': 2}
+mm_update_kw -> {'x': 1, 'y': 2}
+mm_update_mapping -> {'a': 1, 'b': 2}
+mm_update_pairs -> {'p': 1, 'q': 2}
+mm_update_both -> {'k': 1, 'z': 3}
+mm_update_keys -> {'u': 'uu'}
+mm_ops -> (1, ('b', 2), {})
+seq_list -> [1, 2, 3, 2]
+seq_reversed -> [2, 3, 2, 1]
+seq_index -> (1, 3, 3, 2)
+seq_index_stop raised ValueError 
+seq_count -> 2
+seq_contains -> (True, False)
+seq_hash -> True
+mseq_ops2 -> (1, 4, [3, 7, 8, 3, 7, 8], [])
+mseq_index -> 1
+iterator_iter -> [1, 2]
+iterator_self -> True
+gen_next -> (1, 2)
+gen_iter -> True
+gen_list -> [1, 2, 3]
+gen_close -> None
+gen_close_ignored raised RuntimeError generator ignored GeneratorExit
+gen_throw_default raised ValueError 
+gen_throw_default_val raised ValueError v
+coro_close -> None
+ag_anext -> ('done', 1)
+ag_aclose -> ('done', None)
+ag_log -> [('send', None), ('throw', 'GeneratorExit')]
+ag_aiter -> True
+ag_aclose_ignored raised RuntimeError asynchronous generator ignored GeneratorExit
+reversible -> [2, 1]
+hashable_impl -> 42
+callable_impl -> (7, True, True)
+mapping_not_callable -> False
+buffer_hook -> True
+abstractmethods -> {'Hashable': ['__hash__'], 'Iterable': ['__iter__'], 'Iterator': ['__next__'], 'Reversible': ['__iter__', '__reversed__'], 'Generator': ['send', 'throw'], 'Sized': ['__len__'], 'Container': ['__contains__'], 'Collection': ['__contains__', '__iter__', '__len__'], 'Set': ['__contains__', '__iter__', '__len__'], 'MutableSet': ['__contains__', '__iter__', '__len__', 'add', 'discard'], 'Mapping': ['__getitem__', '__iter__', '__len__'], 'MutableMapping': ['__delitem__', '__getitem__', '__iter__', '__len__', '__setitem__'], 'MappingView': [], 'KeysView': [], 'ItemsView': [], 'ValuesView': [], 'Sequence': ['__getitem__', '__len__'], 'MutableSequence': ['__delitem__', '__getitem__', '__len__', '__setitem__', 'insert'], 'Awaitable': ['__await__'], 'Coroutine': ['__await__', 'send', 'throw'], 'AsyncIterable': ['__aiter__'], 'AsyncIterator': ['__anext__'], 'AsyncGenerator': ['asend', 'athrow'], 'Callable': ['__call__']}
+mixin_isabstract -> (True, False)
+inst_mapping raised TypeError
+inst_sized raised TypeError
+inst_partial raised TypeError
+partial_abstracts -> ['__iter__', '__len__']
+inst_keysview -> 'KeysView'
+inst_SubHashable raised TypeError
+inst_SubSized raised TypeError
+inst_SubContainer raised TypeError
+inst_SubIterable raised TypeError
+inst_SubCallable raised TypeError
+coop_init_subclass -> ([('Impl', 'x')], 0, [])
+coop_half raised TypeError
+half_abstracts -> ['__iter__', '__len__']
+nosuper_impl -> []
+kw_init_subclass raised TypeError K.__init_subclass__() takes no keyword arguments
+mros -> {'MutableSet': ['MutableSet', 'Set', 'Collection', 'Sized', 'Iterable', 'Container', 'object'], 'KeysView': ['KeysView', 'MappingView', 'Set', 'Collection', 'Sized', 'Iterable', 'Container', 'object'], 'ItemsView': ['ItemsView', 'MappingView', 'Set', 'Collection', 'Sized', 'Iterable', 'Container', 'object'], 'ValuesView': ['ValuesView', 'MappingView', 'Collection', 'Sized', 'Iterable', 'Container', 'object'], 'MutableMapping': ['MutableMapping', 'Mapping', 'Collection', 'Sized', 'Iterable', 'Container', 'object'], 'MutableSequence': ['MutableSequence', 'Sequence', 'Reversible', 'Collection', 'Sized', 'Iterable', 'Container', 'object'], 'Generator': ['Generator', 'Iterator', 'Iterable', 'object'], 'Coroutine': ['Coroutine', 'Awaitable', 'object'], 'AsyncGenerator': ['AsyncGenerator', 'AsyncIterator', 'AsyncIterable', 'object'], 'Collection': ['Collection', 'Sized', 'Iterable', 'Container', 'object']}
+bases -> {'Hashable': ['object'], 'Set': ['Collection'], 'KeysView': ['MappingView', 'Set'], 'Sequence': ['Reversible', 'Collection'], 'Collection': ['Sized', 'Iterable', 'Container']}
+issub_hier -> (True, True, True, False)
+issubclass_chain -> (True, True, True, True, False)
+registered -> (True, True, True, True, True, False)
+builtins_isinstance -> [True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, False, True, True, False, False]
+names -> ('__le__', 'Mapping.get')
+module_names -> ('collections.abc', 'collections.abc', 'Mapping')
+with_abc -> ({'a': 1, 'b': 2}, 1, 0, True)
+dict_and_mm -> (1, ['Both', 'dict', 'MutableMapping', 'Mapping', 'Collection', 'Sized', 'Iterable', 'Container', 'object'])
+userdict -> ([('a', 1), ('b', 2), ('c', 3)], 1, 9, ['b', 'c', 'z'], [2, 3, 9], True)
+chainmap -> ([('a', 1), ('b', 2)], 2, True, 2, ['a', 'b', 'q'])
+userlist -> (1, 2)

@@ -2881,11 +2881,13 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
         if (isPyClsS && callable->hasOwnAttribute(ctx, isPyClsS) == PROTO_TRUE) {
             // PI: refuse to instantiate classes whose
             // __abstractmethods__ frozenset is non-empty.  Mirrors
-            // py_type_call's check for the metaclass-dispatched path.
+            // py_type_call's check for the metaclass-dispatched path; only
+            // the class's own value counts, as there.
             if (env) {
                 const proto::ProtoString* amS =
                     PythonEnvironment::getInternedString(ctx, "__abstractmethods__");
-                const proto::ProtoObject* am = callable->getAttribute(ctx, amS);
+                const proto::ProtoObject* am = callable->hasOwnAttribute(ctx, amS) == PROTO_TRUE
+                    ? callable->getOwnAttributeDirect(ctx, amS) : nullptr;
                 if (am && am != PROTO_NONE) {
                     const proto::ProtoString* lenS =
                         PythonEnvironment::getInternedString(ctx, "__len__");

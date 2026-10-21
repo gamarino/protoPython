@@ -4197,9 +4197,12 @@ static const proto::ProtoObject* py_super_getattr(
                 // _convert_), because the resulting unbound method was
                 // invoked with only (name, value) and dropped the
                 // implicit cls.
+                // The owner is that starting type too (CPython's
+                // su->obj_type), not the type super() was given: a
+                // classmethod reached through super(B, C) binds to C.
                 const proto::ProtoObject* descrInstance =
                     (obj == mroSrc) ? PROTO_NONE : obj;
-                const proto::ProtoList* args = context->newList()->appendLast(context, descrInstance)->appendLast(context, type);
+                const proto::ProtoList* args = context->newList()->appendLast(context, descrInstance)->appendLast(context, mroSrc ? mroSrc : type);
                 return descrGet->asMethod(context)(context, val, nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
             }
             if (val->asMethod(context)) {

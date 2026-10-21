@@ -1,18 +1,12 @@
 #include <protoPython/CollectionsAbcModule.h>
 #include <protoPython/DiagUtils.h>
 #include <protoPython/PythonEnvironment.h>
-#include <cstring>
 #include <string>
+#include <vector>
 #include <protoCore.h>
 
 namespace protoPython {
 
-// Forward declaration — implemented in ExecutionEngine.cpp
-extern const proto::ProtoObject* invokePythonCallable(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* callable,
-    const proto::ProtoArguments* args,
-    const proto::ProtoKeywordArguments* kwargs);
 static const proto::ProtoObject* py_check_methods(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
@@ -57,341 +51,17 @@ static const proto::ProtoObject* py_check_methods(
 
 namespace collections_abc {
 
-// Helper: iterate a mapping (using __iter__ + __getitem__) and collect (key, value) tuples.
-// Returns a ProtoList of 2-element tuples, or nullptr on error.
-static const proto::ProtoList* collectMappingItems(proto::ProtoContext* ctx, const proto::ProtoObject* mapping) {
-    if (!mapping || mapping == PROTO_NONE) return nullptr;
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    const proto::ProtoList* emptyL = ctx->newList();
-
-    auto callMethod = [&](const proto::ProtoObject* method, const proto::ProtoObject* receiver,
-                          const proto::ProtoList* args) -> const proto::ProtoObject* {
-        if (!method || method == PROTO_NONE) return nullptr;
-        if (method->asMethod(ctx)) {
-            return method->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(receiver), nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
-        }
-        const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, receiver);
-        proto::proto_ulong n = args ? args->getSize(ctx) : 0;
-        for (proto::proto_ulong j = 0; j < n; ++j) selfArgs = selfArgs->appendLast(ctx, args->getAt(ctx, static_cast<int>(j)));
-        // Use the extern helper declared in ExecutionEngine.cpp
-        return invokePythonCallable(ctx, method, argsView(proto::ProtoListArguments(ctx, selfArgs)), nullptr);
-    };
-
-    const proto::ProtoString* iterS = PythonEnvironment::getInternalString(ctx, "__iter__");
-    const proto::ProtoObject* iterM = mapping->getAttribute(ctx, iterS);
-    if (!iterM || iterM == PROTO_NONE) return nullptr;
-    const proto::ProtoObject* itObj = callMethod(iterM, mapping, emptyL);
-    if (!itObj || itObj == PROTO_NONE) return nullptr;
-
-    // Pin the derived iterator: callMethod calls user __next__ which can
-    // trigger GC; without a pin the iterator backing cells can be freed
-    // mid-loop (the deep-recursion UAF class fixed in #92's session).
-    PythonEnvironment::TransientPin pinIt(env, itObj);
-
-    const proto::ProtoString* nextS = PythonEnvironment::getInternalString(ctx, "__next__");
-    const proto::ProtoObject* nextM = itObj->getAttribute(ctx, nextS);
-    if (!nextM || nextM == PROTO_NONE) return nullptr;
-
-    const proto::ProtoList* result = ctx->newList();
-    for (;;) {
-        const proto::ProtoObject* key = nullptr;
-        try {
-            key = callMethod(nextM, itObj, emptyL);
-        } catch (const PyException& e) {
-            if (!env || !env->isStopIteration(ctx, e.exception())) throw;
-            break;
-        }
-        if (!key || key == PROTO_NONE) break;
-        // Get value via __getitem__. Pin `key` while we call getItem,
-        // since getItem may call user code that triggers GC.
-        PythonEnvironment::TransientPin pinKey(env, key);
-        // Any exception from __getitem__ reads as a None value.
-        const proto::ProtoObject* val = PROTO_NONE;
-        try {
-            val = env ? env->getItem(mapping, key, ctx) : PROTO_NONE;
-        } catch (const PyException&) {
-            val = PROTO_NONE;
-        }
-        // Yield as (key, value) tuple
-        const proto::ProtoList* pair = ctx->newList()->appendLast(ctx, key)->appendLast(ctx, val ? val : PROTO_NONE);
-        result = result->appendLast(ctx, ::protoPython::PythonEnvironment::tupleFromList(ctx, pair));
-    }
-    return result;
-}
-
-/** Mapping.items(): returns a list of (key, value) tuples */
-static const proto::ProtoObject* py_mapping_items(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* self,
-    const proto::ParentLink*,
-    const proto::ProtoArguments* posArgs,
-    const proto::ProtoKeywordArguments*) {
-    const proto::ProtoObject* mapping = self;
-    // If self is None/null, try args[0]
-    if (!mapping || mapping == PROTO_NONE) {
-        if (posArgs && posArgs->getSize(ctx) > 0) mapping = posArgs->getAt(ctx, 0);
-    }
-    const proto::ProtoList* items = collectMappingItems(ctx, mapping);
-    return items ? items->asObject(ctx) : ctx->newList()->asObject(ctx);
-}
-
-/** Mapping.keys(): returns a list of keys */
-static const proto::ProtoObject* py_mapping_keys(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* self,
-    const proto::ParentLink*,
-    const proto::ProtoArguments* posArgs,
-    const proto::ProtoKeywordArguments*) {
-    const proto::ProtoObject* mapping = self;
-    if (!mapping || mapping == PROTO_NONE) {
-        if (posArgs && posArgs->getSize(ctx) > 0) mapping = posArgs->getAt(ctx, 0);
-    }
-    if (!mapping || mapping == PROTO_NONE) return PythonEnvironment::wrapList(ctx, ctx->newList());
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    const proto::ProtoList* emptyL = ctx->newList();
-
-    auto callM = [&](const proto::ProtoObject* method, const proto::ProtoObject* recv) -> const proto::ProtoObject* {
-        if (!method || method == PROTO_NONE) return nullptr;
-        if (method->asMethod(ctx)) return method->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(recv), nullptr, argsView(proto::ProtoListArguments(ctx, emptyL)), nullptr);
-        const proto::ProtoList* sa = ctx->newList()->appendLast(ctx, recv);
-        return invokePythonCallable(ctx, method, argsView(proto::ProtoListArguments(ctx, sa)), nullptr);
-    };
-
-    const proto::ProtoString* iterS = PythonEnvironment::getInternalString(ctx, "__iter__");
-    const proto::ProtoObject* iterM = mapping->getAttribute(ctx, iterS);
-    const proto::ProtoObject* itObj = iterM ? callM(iterM, mapping) : nullptr;
-    if (!itObj || itObj == PROTO_NONE) return PythonEnvironment::wrapList(ctx, ctx->newList());
-
-    // Pin the derived iterator across user __next__ callbacks.
-    PythonEnvironment::TransientPin pinIt(env, itObj);
-
-    const proto::ProtoString* nextS = PythonEnvironment::getInternalString(ctx, "__next__");
-    const proto::ProtoObject* nextM = itObj->getAttribute(ctx, nextS);
-    if (!nextM || nextM == PROTO_NONE) return PythonEnvironment::wrapList(ctx, ctx->newList());
-
-    const proto::ProtoList* result = ctx->newList();
-    for (;;) {
-        const proto::ProtoObject* key = nullptr;
-        try {
-            key = callM(nextM, itObj);
-        } catch (const PyException& e) {
-            if (!env || !env->isStopIteration(ctx, e.exception())) throw;
-            break;
-        }
-        if (!key || key == PROTO_NONE) break;
-        result = result->appendLast(ctx, key);
-    }
-    return PythonEnvironment::wrapList(ctx, result);
-}
-
-/** Mapping.values(): returns a list of values */
-static const proto::ProtoObject* py_mapping_values(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* self,
-    const proto::ParentLink*,
-    const proto::ProtoArguments* posArgs,
-    const proto::ProtoKeywordArguments*) {
-    const proto::ProtoObject* mapping = self;
-    if (!mapping || mapping == PROTO_NONE) {
-        if (posArgs && posArgs->getSize(ctx) > 0) mapping = posArgs->getAt(ctx, 0);
-    }
-    const proto::ProtoList* items = collectMappingItems(ctx, mapping);
-    if (!items) return PythonEnvironment::wrapList(ctx, ctx->newList());
-    const proto::ProtoList* result = ctx->newList();
-    for (proto::proto_ulong i = 0; i < items->getSize(ctx); ++i) {
-        const proto::ProtoObject* pair = items->getAt(ctx, static_cast<int>(i));
-        if (pair && ::protoPython::PythonEnvironment::isTupleValue(ctx, pair) && ::protoPython::PythonEnvironment::tupleView(ctx, pair)->getSize(ctx) >= 2)
-            result = result->appendLast(ctx, ::protoPython::PythonEnvironment::tupleView(ctx, pair)->getAt(ctx, 1));
-    }
-    return PythonEnvironment::wrapList(ctx, result);
-}
-
-/** Mapping.__contains__(self, key): key in self by attempting self[key]
- *  and treating KeyError as absence. Mirrors the Python reference impl
- *  in _collections_abc.Mapping. */
-static const proto::ProtoObject* py_mapping_contains(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* self,
-    const proto::ParentLink*,
-    const proto::ProtoArguments* posArgs,
-    const proto::ProtoKeywordArguments*) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (!self || !posArgs || posArgs->getSize(ctx) < 1) return PROTO_FALSE;
-    const proto::ProtoObject* key = posArgs->getAt(ctx, 0);
-
-    const proto::ProtoString* getItemS = PythonEnvironment::getInternalString(ctx, "__getitem__");
-    const proto::ProtoObject* getM = self->getAttribute(ctx, getItemS);
-    if (!getM || getM == PROTO_NONE) return PROTO_FALSE;
-
-    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key);
-    const proto::ProtoObject* val = nullptr;
-    try {
-        if (getM->asMethod(ctx)) {
-            val = getM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(self), nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
-        } else {
-            const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, self)->appendLast(ctx, key);
-            val = invokePythonCallable(ctx, getM, argsView(proto::ProtoListArguments(ctx, selfArgs)), nullptr);
-        }
-    } catch (const PyException&) {
-        // Any exception during __getitem__ (typically KeyError) means the
-        // key is not present; return False. Mirrors the .py
-        // reference's `try: self[key] except KeyError: return False`. We
-        // intentionally absorb broader exceptions here because the ABC
-        // stub is the only contract — the original exception was raised
-        // out of the user's own __getitem__, and `key in container` per
-        // CPython only propagates non-LookupError exceptions; this is the
-        // closest behaviour we can offer without exception-class plumbing
-        // through the ABC stub.
-        return PROTO_FALSE;
-    }
-    (void)env;
-    (void)val;
-    return PROTO_TRUE;
-}
-
-/** Minimal __call__ for ABC stub: return new child (for isinstance/callable use). */
-static const proto::ProtoObject* py_abc_call(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* self,
-    const proto::ParentLink*,
-    const proto::ProtoArguments*,
-    const proto::ProtoKeywordArguments*) {
-    return self->newChild(ctx, true);
-}
-
-/** MutableMapping.update(self, other=(), **kwargs): mirrors the .py
- *  reference. Without this, every UserDict / ChainMap / OrderedDict
- *  inheriting MutableMapping silently drops its initial data. */
-static const proto::ProtoObject* py_mutable_mapping_update(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* self,
-    const proto::ParentLink*,
-    const proto::ProtoArguments* posArgs,
-    const proto::ProtoKeywordArguments* kwArgs) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (!self) return PROTO_NONE;
-
-    const proto::ProtoString* setItemS = PythonEnvironment::getInternalString(ctx, "__setitem__");
-    const proto::ProtoString* getItemS = PythonEnvironment::getInternalString(ctx, "__getitem__");
-    const proto::ProtoString* keysS    = PythonEnvironment::getInternalString(ctx, "keys");
-    const proto::ProtoString* iterS    = PythonEnvironment::getInternalString(ctx, "__iter__");
-    const proto::ProtoString* nextS    = PythonEnvironment::getInternalString(ctx, "__next__");
-
-    auto invokeBound = [&](const proto::ProtoObject* method,
-                           const proto::ProtoObject* receiver,
-                           const proto::ProtoList* args) -> const proto::ProtoObject* {
-        if (!method || method == PROTO_NONE) return nullptr;
-        if (method->asMethod(ctx)) {
-            return method->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(receiver),
-                                          nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
-        }
-        // Python callable — prepend receiver as self.
-        const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, receiver);
-        proto::proto_ulong n = args ? args->getSize(ctx) : 0;
-        for (proto::proto_ulong j = 0; j < n; ++j) selfArgs = selfArgs->appendLast(ctx, args->getAt(ctx, static_cast<int>(j)));
-        return invokePythonCallable(ctx, method, argsView(proto::ProtoListArguments(ctx, selfArgs)), nullptr);
-    };
-
-    auto storeKV = [&](const proto::ProtoObject* k, const proto::ProtoObject* v) {
-        const proto::ProtoObject* setM = self->getAttribute(ctx, setItemS);
-        if (!setM || setM == PROTO_NONE) return;
-        const proto::ProtoList* setArgs = ctx->newList()->appendLast(ctx, k)->appendLast(ctx, v);
-        invokeBound(setM, self, setArgs);
-    };
-
-    if (posArgs && posArgs->getSize(ctx) >= 1) {
-        const proto::ProtoObject* other = posArgs->getAt(ctx, 0);
-        if (other && other != PROTO_NONE) {
-            // dict / object exposing .keys() and __getitem__
-            const proto::ProtoObject* keysM = other->getAttribute(ctx, keysS);
-            const proto::ProtoObject* getM = other->getAttribute(ctx, getItemS);
-            bool useKeys = (keysM && keysM != PROTO_NONE);
-            if (useKeys) {
-                const proto::ProtoObject* keysObj = invokeBound(keysM, other, ctx->newList());
-                if (keysObj && keysObj != PROTO_NONE) {
-                    // Pin keysObj across the iteration: it lives only on
-                    // the C++ stack from here, but every invokeBound call
-                    // below may trigger GC.
-                    PythonEnvironment::TransientPin pinKeys(env, keysObj);
-                    // Iterate keysObj
-                    const proto::ProtoList* lst = keysObj->asList(ctx);
-                    if (!lst) {
-                        // try __iter__
-                        const proto::ProtoObject* iterM2 = keysObj->getAttribute(ctx, iterS);
-                        const proto::ProtoObject* it = iterM2 ? invokeBound(iterM2, keysObj, ctx->newList()) : nullptr;
-                        if (it) {
-                            // Pin the derived iterator across user __next__.
-                            PythonEnvironment::TransientPin pinIt(env, it);
-                            const proto::ProtoObject* nextM2 = it->getAttribute(ctx, nextS);
-                            for (;;) {
-                                const proto::ProtoObject* k = nullptr;
-                                try {
-                                    k = nextM2 ? invokeBound(nextM2, it, ctx->newList()) : nullptr;
-                                } catch (const PyException& e) {
-                                    if (!env || !env->isStopIteration(ctx, e.exception())) throw;
-                                    break;
-                                }
-                                if (!k || k == PROTO_NONE) break;
-                                // Pin k while we call getitem (user code).
-                                PythonEnvironment::TransientPin pinK(env, k);
-                                const proto::ProtoObject* v = nullptr;
-                                if (getM && getM != PROTO_NONE) {
-                                    const proto::ProtoList* ga = ctx->newList()->appendLast(ctx, k);
-                                    v = invokeBound(getM, other, ga);
-                                }
-                                if (v) storeKV(k, v);
-                            }
-                        }
-                    } else {
-                        proto::proto_ulong n = lst->getSize(ctx);
-                        for (proto::proto_ulong i = 0; i < n; ++i) {
-                            const proto::ProtoObject* k = lst->getAt(ctx, static_cast<int>(i));
-                            const proto::ProtoObject* v = nullptr;
-                            if (getM && getM != PROTO_NONE) {
-                                const proto::ProtoList* ga = ctx->newList()->appendLast(ctx, k);
-                                v = invokeBound(getM, other, ga);
-                            }
-                            if (v) storeKV(k, v);
-                        }
-                    }
-                }
-            } else {
-                // Iterable of (k, v) pairs
-                const proto::ProtoObject* iterM3 = other->getAttribute(ctx, iterS);
-                if (iterM3 && iterM3 != PROTO_NONE) {
-                    const proto::ProtoObject* it = invokeBound(iterM3, other, ctx->newList());
-                    if (it) {
-                        // Pin the iterator across user __next__.
-                        PythonEnvironment::TransientPin pinIt(env, it);
-                        const proto::ProtoObject* nextM3 = it->getAttribute(ctx, nextS);
-                        for (;;) {
-                            const proto::ProtoObject* pair = nullptr;
-                            try {
-                                pair = nextM3 ? invokeBound(nextM3, it, ctx->newList()) : nullptr;
-                            } catch (const PyException& e) {
-                                if (!env || !env->isStopIteration(ctx, e.exception())) throw;
-                                break;
-                            }
-                            if (!pair || pair == PROTO_NONE) break;
-                            const proto::ProtoList* pl = pair->asList(ctx);
-                            ::protoPython::TupleView pt = ::protoPython::PythonEnvironment::tupleView(ctx, pair);
-                            if (pt) pl = pt->asList(ctx);
-                            if (pl && pl->getSize(ctx) >= 2) {
-                                storeKV(pl->getAt(ctx, 0), pl->getAt(ctx, 1));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    // NOTE: **kwargs path intentionally minimal — the SparseList carrier
-    // exposes processElements but not a direct (key,value) walk by ProtoString
-    // here. Most update() callers use the positional form; revisit if a test
-    // case needs MutableMapping-subclass.update(**kw) wired through.
-    (void)kwArgs;
-    return env ? env->getNonePrototype() : PROTO_NONE;
-}
+// ---------------------------------------------------------------------------
+// Module layout
+//
+// Lib/_collections_abc.py cannot run as is here, so this module creates the
+// ABC class objects natively, with CPython's hierarchy (__bases__, a C3
+// __mro__ and the protoCore parent chain in that order), and keeps their
+// registries of virtual subclasses and subclass hooks (below).  The methods
+// the ABCs define, mixins and abstract defaults alike, are CPython's own,
+// in lib/python3.14/_collections_abc_mixins.py: initialize() imports that
+// module and calls its install() with this module once the classes exist.
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Virtual subclasses
@@ -449,6 +119,39 @@ const AbcSpec* specByName(const std::string& name) {
     for (const AbcSpec& s : kAbcSpecs)
         if (name == s.name) return &s;
     return nullptr;
+}
+
+// The C3 linearization of an ABC's name and those of its ABC bases, as
+// type.__new__ computes __mro__ for the CPython classes (object excluded).
+std::vector<std::string> abcMro(const std::string& name) {
+    std::vector<std::vector<std::string>> seqs;
+    std::vector<std::string> bases;
+    if (const AbcSpec* spec = specByName(name)) {
+        for (const char* b : spec->bases) {
+            if (!b) continue;
+            seqs.push_back(abcMro(b));
+            bases.push_back(b);
+        }
+    }
+    seqs.push_back(bases);
+    std::vector<std::string> result{name};
+    for (;;) {
+        std::string head;
+        for (const auto& s : seqs) {
+            if (s.empty()) continue;
+            bool inTail = false;
+            for (const auto& t : seqs)
+                for (size_t i = 1; i < t.size() && !inTail; ++i)
+                    if (t[i] == s[0]) inTail = true;
+            if (!inTail) { head = s[0]; break; }
+        }
+        // The hierarchy is CPython's and consistent: no head means done.
+        if (head.empty()) break;
+        result.push_back(head);
+        for (auto& s : seqs)
+            if (!s.empty() && s[0] == head) s.erase(s.begin());
+    }
+    return result;
 }
 
 const proto::ProtoString* stateKey(proto::ProtoContext* ctx) {
@@ -643,275 +346,6 @@ static const proto::ProtoObject* py_abc_check_methods(
     return PROTO_TRUE;
 }
 
-// Invoke `recv.<methodName>(*args)` via the same dispatch path that
-// the bytecode interpreter uses for explicit method calls — explicit
-// attribute lookup, then asMethod-or-invokePythonCallable. Distinct
-// from `env->getItem/setItem/delItem` which use protoCore's internal
-// `Object.call(...)` and do NOT walk Python MRO for class instances:
-// invoking `__delitem__` via env->delItem on a UserDict is silently
-// a no-op because the dunder lives on UserDict's class, not the
-// instance. Returns nullptr if the method is missing or raised.
-static const proto::ProtoObject* abc_invoke_method(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* recv,
-    const proto::ProtoString* methodName,
-    const proto::ProtoList* args) {
-    if (!recv || !methodName) return nullptr;
-    const proto::ProtoObject* method = recv->getAttribute(ctx, methodName);
-    if (!method || method == PROTO_NONE) return nullptr;
-    if (method->asMethod(ctx)) {
-        return method->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(recv), nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
-    }
-    const proto::ProtoList* sa = ctx->newList()->appendLast(ctx, recv);
-    proto::proto_ulong n = args ? args->getSize(ctx) : 0;
-    for (proto::proto_ulong j = 0; j < n; ++j) sa = sa->appendLast(ctx, args->getAt(ctx, static_cast<int>(j)));
-    return invokePythonCallable(ctx, method, argsView(proto::ProtoListArguments(ctx, sa)), nullptr);
-}
-
-// CPython's `_collections_abc.MutableMapping.pop` mixin: lookup via
-// `__getitem__`, delete via `__delitem__`. With the default-argument
-// fallback, a missing key returns the default; without one it
-// re-raises KeyError. Replaces the silent self.newChild() no-op that
-// previously made `mapping.pop(k)` a guaranteed data-loss bug.
-static const proto::ProtoObject* py_mutable_mapping_pop(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* self,
-    const proto::ParentLink*,
-    const proto::ProtoArguments* args,
-    const proto::ProtoKeywordArguments*) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (!env || !self || !args || args->getSize(ctx) < 1) return PROTO_NONE;
-    const proto::ProtoObject* key = args->getAt(ctx, 0);
-    bool hasDefault = args->getSize(ctx) >= 2;
-    const proto::ProtoObject* def = hasDefault ? args->getAt(ctx, 1) : PROTO_NONE;
-
-    const proto::ProtoString* getItemS = PythonEnvironment::getInternedString(ctx, "__getitem__");
-    const proto::ProtoString* delItemS = PythonEnvironment::getInternedString(ctx, "__delitem__");
-
-    const proto::ProtoList* gargs = ctx->newList()->appendLast(ctx, key);
-    const proto::ProtoObject* val = nullptr;
-    try {
-        val = abc_invoke_method(ctx, self, getItemS, gargs);
-    } catch (const PyException& e) {
-        const proto::ProtoObject* keyError = env->lookupName("KeyError");
-        if (hasDefault && keyError && env->isException(e.exception(), keyError)) return def;
-        throw;
-    }
-    if (!val) {
-        if (hasDefault) return def;
-        env->raiseKeyError(ctx, key);
-        return nullptr;
-    }
-    PythonEnvironment::TransientPin pinVal(env, val);
-    const proto::ProtoList* dargs = ctx->newList()->appendLast(ctx, key);
-    abc_invoke_method(ctx, self, delItemS, dargs);
-    return val;
-}
-
-// CPython's `MutableMapping.popitem` mixin: take an arbitrary
-// (key, value), remove it, return as a 2-tuple. Raises KeyError when
-// the mapping is empty.
-static const proto::ProtoObject* py_mutable_mapping_popitem(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* self,
-    const proto::ParentLink*,
-    const proto::ProtoArguments*,
-    const proto::ProtoKeywordArguments*) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (!env || !self) return PROTO_NONE;
-    const proto::ProtoObject* it = env->iter(self);
-    if (!it) return nullptr;
-    PythonEnvironment::TransientPin pinIt(env, it);
-    const proto::ProtoObject* key = nullptr;
-    try {
-        key = env->next(it);
-    } catch (const PyException&) {
-        // Any exception from the iterator is replaced by the KeyError below,
-        // as when the raise overwrote the pending exception.
-        key = nullptr;
-    }
-    if (!key) {
-        env->raiseKeyError(ctx, PythonEnvironment::getInternedString(ctx, "popitem(): mapping is empty")->asObject(ctx));
-        return nullptr;
-    }
-    PythonEnvironment::TransientPin pinKey(env, key);
-    const proto::ProtoString* getItemS = PythonEnvironment::getInternedString(ctx, "__getitem__");
-    const proto::ProtoString* delItemS = PythonEnvironment::getInternedString(ctx, "__delitem__");
-    const proto::ProtoList* gargs = ctx->newList()->appendLast(ctx, key);
-    const proto::ProtoObject* val = abc_invoke_method(ctx, self, getItemS, gargs);
-    if (!val) return nullptr;
-    PythonEnvironment::TransientPin pinVal(env, val);
-    const proto::ProtoList* dargs = ctx->newList()->appendLast(ctx, key);
-    abc_invoke_method(ctx, self, delItemS, dargs);
-    const proto::ProtoList* pair = ctx->newList()->appendLast(ctx, key)->appendLast(ctx, val);
-    return env->newTuple(pair);
-}
-
-// CPython's `MutableMapping.clear` mixin: pop until empty.
-static const proto::ProtoObject* py_mutable_mapping_clear(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* self,
-    const proto::ParentLink*,
-    const proto::ProtoArguments*,
-    const proto::ProtoKeywordArguments*) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (!env || !self) return PROTO_NONE;
-    for (;;) {
-        try {
-            py_mutable_mapping_popitem(ctx, self, nullptr, nullptr, nullptr);
-        } catch (const PyException& e) {
-            const proto::ProtoObject* keyError = env->lookupName("KeyError");
-            if (keyError && env->isException(e.exception(), keyError)) return PROTO_NONE;
-            throw;
-        }
-    }
-}
-
-// CPython's `MutableMapping.setdefault` mixin: lookup; on KeyError,
-// store and return default.
-static const proto::ProtoObject* py_mutable_mapping_setdefault(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* self,
-    const proto::ParentLink*,
-    const proto::ProtoArguments* args,
-    const proto::ProtoKeywordArguments*) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (!env || !self || !args || args->getSize(ctx) < 1) return PROTO_NONE;
-    const proto::ProtoObject* key = args->getAt(ctx, 0);
-    const proto::ProtoObject* def = args->getSize(ctx) >= 2 ? args->getAt(ctx, 1) : PROTO_NONE;
-
-    const proto::ProtoString* getItemS = PythonEnvironment::getInternedString(ctx, "__getitem__");
-    const proto::ProtoString* setItemS = PythonEnvironment::getInternedString(ctx, "__setitem__");
-    const proto::ProtoList* gargs = ctx->newList()->appendLast(ctx, key);
-    const proto::ProtoObject* val = nullptr;
-    try {
-        val = abc_invoke_method(ctx, self, getItemS, gargs);
-    } catch (const PyException& e) {
-        const proto::ProtoObject* keyError = env->lookupName("KeyError");
-        if (!keyError || !env->isException(e.exception(), keyError)) throw;
-        val = nullptr;  // missing key: store the default below
-    }
-    if (!val) {
-        const proto::ProtoList* sargs = ctx->newList()->appendLast(ctx, key)->appendLast(ctx, def);
-        abc_invoke_method(ctx, self, setItemS, sargs);
-        return def;
-    }
-    return val;
-}
-
-// CPython's `MutableSequence.append` mixin: insert at end.
-static const proto::ProtoObject* py_mutable_sequence_append(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* self,
-    const proto::ParentLink*,
-    const proto::ProtoArguments* args,
-    const proto::ProtoKeywordArguments*) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (!env || !self || !args || args->getSize(ctx) < 1) return PROTO_NONE;
-    const proto::ProtoObject* value = args->getAt(ctx, 0);
-
-    const proto::ProtoString* lenS = PythonEnvironment::getInternedString(ctx, "__len__");
-    const proto::ProtoString* insS = PythonEnvironment::getInternedString(ctx, "insert");
-    const proto::ProtoObject* lenM = self->getAttribute(ctx, lenS);
-    const proto::ProtoObject* insM = self->getAttribute(ctx, insS);
-    if (!lenM || lenM == PROTO_NONE || !insM || insM == PROTO_NONE) {
-        env->raiseTypeError(ctx, "append: subclass must provide __len__ and insert");
-        return nullptr;
-    }
-    auto invoke = [&](const proto::ProtoObject* m, const proto::ProtoObject* recv,
-                      const proto::ProtoList* a) -> const proto::ProtoObject* {
-        if (m->asMethod(ctx))
-            return m->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(recv), nullptr, argsView(proto::ProtoListArguments(ctx, a)), nullptr);
-        const proto::ProtoList* sa = ctx->newList()->appendLast(ctx, recv);
-        proto::proto_ulong n = a ? a->getSize(ctx) : 0;
-        for (proto::proto_ulong j = 0; j < n; ++j) sa = sa->appendLast(ctx, a->getAt(ctx, static_cast<int>(j)));
-        return invokePythonCallable(ctx, m, argsView(proto::ProtoListArguments(ctx, sa)), nullptr);
-    };
-    const proto::ProtoObject* lenObj = invoke(lenM, self, ctx->newList());
-    if (!lenObj) return nullptr;
-    proto::proto_long n = lenObj->asLong(ctx);
-    const proto::ProtoList* a = ctx->newList()->appendLast(ctx, ctx->fromInteger(n))->appendLast(ctx, value);
-    invoke(insM, self, a);
-    return PROTO_NONE;
-}
-
-// CPython's `MutableSequence.extend` mixin: append every element of an
-// iterable. Pins the iterator across user code per GC discipline.
-static const proto::ProtoObject* py_mutable_sequence_extend(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* self,
-    const proto::ParentLink*,
-    const proto::ProtoArguments* args,
-    const proto::ProtoKeywordArguments*) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (!env || !self || !args || args->getSize(ctx) < 1) return PROTO_NONE;
-    const proto::ProtoObject* iterable = args->getAt(ctx, 0);
-
-    const proto::ProtoObject* it = env->iter(iterable);
-    if (!it) return nullptr;
-    PythonEnvironment::TransientPin pinIt(env, it);
-    for (;;) {
-        const proto::ProtoObject* v = nullptr;
-        try {
-            v = env->next(it);
-        } catch (const PyException& e) {
-            if (!env->isStopIteration(ctx, e.exception())) throw;
-        }
-        if (!v) break;
-        PythonEnvironment::TransientPin pinV(env, v);
-        const proto::ProtoList* a = ctx->newList()->appendLast(ctx, v);
-        py_mutable_sequence_append(ctx, self, nullptr, argsView(proto::ProtoListArguments(ctx, a)), nullptr);
-    }
-    return PROTO_NONE;
-}
-
-// Generic stub for ABC methods that have NO default implementation in
-// CPython's `_collections_abc` (insert, remove, reverse, index, count,
-// Set boolean ops, etc.). Replaces the previous self.newChild() no-op
-// with a clear TypeError so silent corruption becomes a loud failure.
-#define ABC_ABSTRACT_STUB(name) \
-static const proto::ProtoObject* py_abc_abstract_##name( \
-    proto::ProtoContext* ctx, const proto::ProtoObject*, \
-    const proto::ParentLink*, const proto::ProtoArguments*, \
-    const proto::ProtoKeywordArguments*) { \
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx); \
-    if (env) env->raiseTypeError(ctx, std::string("abstract method '") + #name \
-        + "' on _collections_abc class must be overridden by the subclass"); \
-    return nullptr; \
-}
-
-ABC_ABSTRACT_STUB(insert)
-ABC_ABSTRACT_STUB(remove)
-ABC_ABSTRACT_STUB(reverse)
-ABC_ABSTRACT_STUB(index)
-ABC_ABSTRACT_STUB(count)
-
-static const proto::ProtoObject* py_abc_get(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* self,
-    const proto::ParentLink*,
-    const proto::ProtoArguments* args,
-    const proto::ProtoKeywordArguments*) {
-    if (!self || !args || args->getSize(ctx) < 1) return PROTO_NONE;
-    const proto::ProtoObject* key = args->getAt(ctx, 0);
-    const proto::ProtoObject* def = (args->getSize(ctx) > 1) ? args->getAt(ctx, 1) : PROTO_NONE;
-    
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (!env) return def;
-
-    const proto::ProtoObject* val = nullptr;
-    try {
-        val = env->getItem(self, key, ctx);
-    } catch (const PyException& e) {
-        const proto::ProtoObject* keyError = env->lookupName("KeyError");
-        if (keyError && env->isException(e.exception(), keyError)) return def;
-        throw;
-    }
-    if (val && val != PROTO_NONE) return val;
-    if (val == PROTO_NONE) return val; // If found and is None, return None
-    return def;
-}
-
 bool isVirtualSubclass(proto::ProtoContext* ctx, const proto::ProtoObject* cls,
                        const proto::ProtoObject* abc) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -923,20 +357,17 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     auto createAbc = [&](const char* name) {
         // Mutable, so the object keeps one identity: an immutable one is
-        // replaced by every setAttribute, and the (abc, object) __mro__ built
+        // replaced by every setAttribute, and the __mro__ setHierarchy builds
         // below named an earlier copy, which then appeared in the MRO of
         // every class deriving from the ABC instead of the ABC itself.
         proto::ProtoObject* abc = const_cast<proto::ProtoObject*>(ctx->newObject(true));
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
         
-        const proto::ProtoString* s_call = env ? env->getCallString() : PythonEnvironment::getInternedString(ctx, "__call__");
         const proto::ProtoString* s_name = env ? env->getNameString() : PythonEnvironment::getInternedString(ctx, "__name__");
         const proto::ProtoString* s_class = env ? env->getClassString() : PythonEnvironment::getInternedString(ctx, "__class__");
         const proto::ProtoString* s_register = PythonEnvironment::getInternedString(ctx, "register");
         const proto::ProtoString* s_is_py_class = PythonEnvironment::getInternedString(ctx, "__is_python_class__");
-        const proto::ProtoString* s_bases = env ? env->getBasesString() : PythonEnvironment::getInternedString(ctx, "__bases__");
 
-        abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_call, ctx->fromMethod(nullptr, py_abc_call)));
         abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_register, ctx->fromMethod(abc, py_abc_register)));
         abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_name, PythonEnvironment::getInternedString(ctx, name)->asObject(ctx)));
         
@@ -947,59 +378,6 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
 
         // Explicitly mark as a Python class for getType heuristic
         abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_is_py_class, PROTO_TRUE));
-
-        // 1. Add dummy methods to satisfy collections/__init__.py inheritance of methods
-        const char* methods[] = {
-            "update", "get", "keys", "values", "items", "pop", "popitem", "clear",
-            "setdefault", "index", "count", "append", "extend", "insert", "remove", "reverse",
-            "__eq__", "__ne__", "__lt__", "__gt__", "__ge__",
-            "__iter__", "__len__", "__contains__", "__hash__"
-        };
-        bool isMapping = (strcmp(name, "Mapping") == 0 || strcmp(name, "MutableMapping") == 0);
-        bool isMutableMapping = (strcmp(name, "MutableMapping") == 0);
-        bool isMutableSequence = (strcmp(name, "MutableSequence") == 0);
-        for (const char* m : methods) {
-            const proto::ProtoObject* impl = ctx->fromMethod(nullptr, py_abc_call);
-            if (isMapping && strcmp(m, "get") == 0) impl = ctx->fromMethod(nullptr, py_abc_get);
-            else if (isMapping && strcmp(m, "items") == 0) impl = ctx->fromMethod(nullptr, py_mapping_items);
-            else if (isMapping && strcmp(m, "keys") == 0) impl = ctx->fromMethod(nullptr, py_mapping_keys);
-            else if (isMapping && strcmp(m, "values") == 0) impl = ctx->fromMethod(nullptr, py_mapping_values);
-            else if (isMutableMapping && strcmp(m, "update") == 0) impl = ctx->fromMethod(nullptr, py_mutable_mapping_update);
-            else if (isMutableMapping && strcmp(m, "pop") == 0) impl = ctx->fromMethod(nullptr, py_mutable_mapping_pop);
-            else if (isMutableMapping && strcmp(m, "popitem") == 0) impl = ctx->fromMethod(nullptr, py_mutable_mapping_popitem);
-            else if (isMutableMapping && strcmp(m, "clear") == 0) impl = ctx->fromMethod(nullptr, py_mutable_mapping_clear);
-            else if (isMutableMapping && strcmp(m, "setdefault") == 0) impl = ctx->fromMethod(nullptr, py_mutable_mapping_setdefault);
-            else if (isMutableSequence && strcmp(m, "append") == 0) impl = ctx->fromMethod(nullptr, py_mutable_sequence_append);
-            else if (isMutableSequence && strcmp(m, "extend") == 0) impl = ctx->fromMethod(nullptr, py_mutable_sequence_extend);
-            else if (isMutableSequence && strcmp(m, "insert") == 0) impl = ctx->fromMethod(nullptr, py_abc_abstract_insert);
-            else if (isMutableSequence && strcmp(m, "remove") == 0) impl = ctx->fromMethod(nullptr, py_abc_abstract_remove);
-            else if (isMutableSequence && strcmp(m, "reverse") == 0) impl = ctx->fromMethod(nullptr, py_abc_abstract_reverse);
-            else if ((isMutableSequence || strcmp(name, "Sequence") == 0) && strcmp(m, "index") == 0) impl = ctx->fromMethod(nullptr, py_abc_abstract_index);
-            else if ((isMutableSequence || strcmp(name, "Sequence") == 0) && strcmp(m, "count") == 0) impl = ctx->fromMethod(nullptr, py_abc_abstract_count);
-            else if (isMapping && strcmp(m, "__contains__") == 0) impl = ctx->fromMethod(nullptr, py_mapping_contains);
-            abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, m), impl));
-        }
-
-        // 2. Inherit from object to have a valid MRO
-        if (env) {
-            const proto::ProtoObject* objProto = env->getObjectPrototype();
-            if (objProto) {
-                abc = const_cast<proto::ProtoObject*>(abc->addParent(ctx, objProto));
-
-                // Set __bases__ to (object,)
-                const proto::ProtoList* bases = ctx->newList();
-                bases = bases->appendLast(ctx, objProto);
-                abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_bases, env->newTuple(bases)));
-
-                // Set __mro__ = (abc, object) so subclass MRO computation includes this ABC.
-                const proto::ProtoList* mroList = ctx->newList();
-                mroList = mroList->appendLast(ctx, abc);
-                mroList = mroList->appendLast(ctx, objProto);
-                abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx,
-                    PythonEnvironment::getInternedString(ctx, "__mro__"),
-                    ctx->newTupleFromList(mroList)->asObject(ctx)));
-            }
-        }
 
         // Registry of virtual subclasses (see isVirtualSubclass).
         const proto::ProtoObject* state = ctx->newObject(true);
@@ -1036,6 +414,41 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         if (const proto::ProtoObject* st = ownState(ctx, abc))
             const_cast<proto::ProtoObject*>(st)->setAttribute(ctx, allKey(ctx), all);
     }
+
+    // CPython's hierarchy: __bases__, the C3 __mro__, and the protoCore
+    // parent chain equal to __mro__[1:] (what class creation installs for a
+    // Python class), so a subclass of MutableSet finds Set's mixins.
+    auto setHierarchy = [&](proto::ProtoObject* abc, const char* name) {
+        const proto::ProtoObject* objProto = env ? env->getObjectPrototype() : nullptr;
+        if (!objProto) return;
+        auto abcNamed = [&](const std::string& n) {
+            return all->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, n.c_str()));
+        };
+        const proto::ProtoList* bases = ctx->newList();
+        if (const AbcSpec* spec = specByName(name)) {
+            for (const char* b : spec->bases)
+                if (b) bases = bases->appendLast(ctx, abcNamed(b));
+        }
+        if (bases->getSize(ctx) == 0) bases = bases->appendLast(ctx, objProto);
+        const proto::ProtoList* mro = ctx->newList()->appendLast(ctx, abc);
+        const proto::ProtoList* chain = ctx->newList();
+        const std::vector<std::string> mroNames = abcMro(name);
+        for (size_t i = 1; i < mroNames.size(); ++i) {
+            const proto::ProtoObject* base = abcNamed(mroNames[i]);
+            mro = mro->appendLast(ctx, base);
+            chain = chain->appendLast(ctx, base);
+        }
+        mro = mro->appendLast(ctx, objProto);
+        chain = chain->appendLast(ctx, objProto);
+        abc->setParents(ctx, chain);
+        abc->setAttribute(ctx, env->getBasesString(), env->newTuple(bases));
+        abc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__base__"), bases->getAt(ctx, 0));
+        abc->setAttribute(ctx, env->getMroString(), env->newTuple(mro));
+    };
+    for (const char* name : names) {
+        setHierarchy(const_cast<proto::ProtoObject*>(
+            all->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, name))), name);
+    }
     // The registrations Lib/_collections_abc.py makes for the built-in types.
     if (env) {
         auto reg = [&](const char* abcName, const proto::ProtoObject* type) {
@@ -1070,7 +483,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     mod = mod->setAttribute(ctx, sCheck, checkMethodsFunc);
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "check_methods"), checkMethodsFunc);
 
-    const proto::ProtoObject* abcMeta = createAbc("ABCMeta");
+    proto::ProtoObject* abcMeta = const_cast<proto::ProtoObject*>(createAbc("ABCMeta"));
+    setHierarchy(abcMeta, "ABCMeta");
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "ABCMeta"), abcMeta);
 
     static const auto py_abstractmethod = [](proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
@@ -1090,7 +504,18 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
 
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, "_collections_abc")->asObject(ctx));
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__loader__"), PROTO_NONE); 
-    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__executed__"), PROTO_TRUE); 
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__executed__"), PROTO_TRUE);
+
+    // CPython's methods of the ABCs.  A failure propagates: an import of
+    // _collections_abc without them would hand out unusable classes.
+    if (env) {
+        PythonEnvironment::TransientPin pinMod(env, mod);
+        const proto::ProtoObject* mixins = env->importModule("_collections_abc_mixins");
+        if (!mixins || mixins == PROTO_NONE) {
+            env->raiseImportError("cannot import _collections_abc_mixins", "_collections_abc_mixins");
+        }
+        env->callMethod(mixins, "install", {mod});
+    }
 
     return mod;
 }

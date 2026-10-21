@@ -1450,6 +1450,10 @@ set_tests_properties(protopy_closure_semantics protopy_closure_semantics_gc PROP
 #     raise, __context__) across callees, generators, finally and threads.
 #   iteration_errors: errors raised while builtins iterate propagate (zip,
 #     map, enumerate, filter, reversed, ...); Match.group; configparser.
+#   collections_abc_mixins: the methods of the collections.abc ABCs (Set,
+#     Mapping, Sequence, their mutable forms, the views, Generator, ...),
+#     the exceptions they catch and let through, the ABC hierarchy,
+#     __abstractmethods__ and abstract instantiation.
 set(PROTOPY_STDLIB_ORACLE_TESTS
     tuple_semantics
     attribute_access
@@ -1459,6 +1463,7 @@ set(PROTOPY_STDLIB_ORACLE_TESTS
     iteration_errors
     ordered_dict_iterables
     abc_virtual_subclasses
+    collections_abc_mixins
     counter_methods
     regex_empty_matches
     argparse_nargs
