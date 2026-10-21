@@ -990,14 +990,15 @@ public:
      * body) reserves the last kActivationSlots automatic slots of its
      * context: [n - 3] holds activationMark(), which tells an activation's
      * context from a native call's; [n - 2] the exception its running
-     * except or finally clause handles (None when none); [n - 1] belongs to
-     * the activation (the interpreter anchors its frame there).  The
+     * except or finally clause handles (None when none); [n - 1] and
+     * [n - 4] belong to the activation (the interpreter anchors its frame
+     * there, and the frame it makes for a traceback when it has none).  The
      * exception being handled (sys.exc_info(), a bare `raise`, the
      * __context__ of a new exception) is the one of the innermost
      * activation in the call chain that handles one: it lives in the
      * contexts, which keep it reachable, and needs no per-thread state.
      */
-    static constexpr unsigned kActivationSlots = 3;
+    static constexpr unsigned kActivationSlots = 4;
     const proto::ProtoObject* activationMark() const { return activationMark_; }
     /** Marks `ctx` as an activation's context; false when it has fewer
      *  than kActivationSlots automatic slots. */

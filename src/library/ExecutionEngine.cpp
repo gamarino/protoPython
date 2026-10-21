@@ -5379,6 +5379,9 @@ struct Activation {
     // This activation's handled-exception slot (see kActivationSlots), or
     // nullptr when its context has no room for one.
     const proto::ProtoObject** handledSlot = nullptr;
+    // The frame noteFrame synthesises for a traceback when the activation
+    // has none of its own (see kActivationSlots), or nullptr.
+    const proto::ProtoObject** synthFrameSlot = nullptr;
     bool sync_globals;
     // A constructor, not aggregate initialization: initializing the aggregate
     // zero-filled the whole object first (rep stos), on every call.
@@ -5447,19 +5450,25 @@ struct Activation {
         const bool frameIsActivation = tbFrame && tbFrame != PROTO_NONE &&
             (!runningCode || tbFrame->getAttribute(ctx, env->getFCodeString()) == runningCode);
         if (!frameIsActivation) {
-            proto::ProtoObject* synth = const_cast<proto::ProtoObject*>(ctx->newObject(false));
-            if (env->getFramePrototype()) {
-                synth = const_cast<proto::ProtoObject*>(synth->addParent(ctx, env->getFramePrototype()));
-            }
+            // One synthesised frame per activation, as CPython has one frame
+            // object per activation: a later raise in the same activation
+            // finds it in its slot (which keeps it reachable) and only moves
+            // its line.
+            static const proto::ProtoString* const linenoS = PythonEnvironment::getInternedString(ctx, "f_lineno");
             const proto::ProtoObject* curGlobals = PythonEnvironment::getCurrentGlobals();
-            if (curGlobals) {
-                synth = const_cast<proto::ProtoObject*>(synth->setAttribute(ctx, env->getFGlobalsString(), curGlobals));
+            const proto::ProtoObject* synth = synthFrameSlot ? *synthFrameSlot : nullptr;
+            if (!synth || synth == PROTO_NONE
+                || synth->getAttribute(ctx, env->getFCodeString()) != (runningCode ? runningCode : PROTO_NONE)
+                || synth->getAttribute(ctx, env->getFGlobalsString()) != (curGlobals ? curGlobals : PROTO_NONE)) {
+                const proto::ProtoObject* proto = env->getFramePrototype();
+                const proto::ProtoString* const names[3] = {env->getFGlobalsString(), env->getFCodeString(), linenoS};
+                const proto::ProtoObject* const values[3] = {
+                    curGlobals ? curGlobals : PROTO_NONE, runningCode ? runningCode : PROTO_NONE, ctx->fromInteger(tbLine)};
+                synth = (proto ? proto->newChild(ctx, true) : ctx->newObject(true))->setAttributes(ctx, 3, names, values);
+                if (synthFrameSlot) *synthFrameSlot = synth;
+            } else {
+                synth->setAttribute(ctx, linenoS, ctx->fromInteger(tbLine));
             }
-            if (runningCode) {
-                synth = const_cast<proto::ProtoObject*>(synth->setAttribute(ctx, env->getFCodeString(), runningCode));
-            }
-            synth = const_cast<proto::ProtoObject*>(synth->setAttribute(ctx,
-                PythonEnvironment::getInternedString(ctx, "f_lineno"), ctx->fromInteger(tbLine)));
             tbFrame = synth;
         }
         noteCaughtException(ctx, env, exc, tbFrame, static_cast<int>(lastPc), tbLine,
@@ -10550,12 +10559,14 @@ const proto::ProtoObject* executeBytecodeRange(
     // kActivationSlots); a nested activation on the same context shares them.
     const proto::ProtoObject** frameAnchor = nullptr;
     const proto::ProtoObject** handledSlot = nullptr;
+    const proto::ProtoObject** synthFrameSlot = nullptr;
     if (allSlots && nSlots > stackOffset + PythonEnvironment::kActivationSlots && env) {
         stackBase = allSlots + stackOffset;
         stackCap = nSlots - stackOffset - PythonEnvironment::kActivationSlots;
         frameAnchor = allSlots + (nSlots - 1);
         env->markActivation(ctx);
         handledSlot = allSlots + (nSlots - 2);
+        synthFrameSlot = allSlots + (nSlots - 4);
     } else if (allSlots && nSlots > stackOffset + 1) {
         stackBase = allSlots + stackOffset;
         stackCap = nSlots - stackOffset - 1;
@@ -10600,6 +10611,7 @@ const proto::ProtoObject* executeBytecodeRange(
                    nativeBc, pcStart, stackOffset, outPc, yielded, externalBlockStack, initialTop, finalTopPtr,
                    frameAnchor, sync_globals, frame, stack, blockStack, savedLevels, throwOnResume);
     act.handledSlot = handledSlot;
+    act.synthFrameSlot = synthFrameSlot;
     try {
         // A resumed generator rebuilds its try nesting first; any other
         // activation dispatches at once.

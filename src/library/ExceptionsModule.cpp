@@ -49,16 +49,13 @@ static const proto::ProtoObject* exception_init(
         }
     }
     const proto::ProtoObject* args = ::protoPython::PythonEnvironment::tupleFromList(context, actualArgs);
-    // One write group: the five fields are published together (one
-    // snapshot instead of five). Interned names are perennial.
-    static const proto::ProtoString* const names[5] = {
-        PythonEnvironment::getInternedString(context, "args"),
-        PythonEnvironment::getInternedString(context, "__traceback__"),
-        PythonEnvironment::getInternedString(context, "__context__"),
-        PythonEnvironment::getInternedString(context, "__cause__"),
-        PythonEnvironment::getInternedString(context, "__suppress_context__")};
-    const proto::ProtoObject* const values[5] = {args, PROTO_NONE, PROTO_NONE, PROTO_NONE, PROTO_FALSE};
-    instance->setAttributes(context, 5, names, values);
+    // Only args is the instance's own: __traceback__, __context__,
+    // __cause__ and __suppress_context__ read their defaults (None, False)
+    // from BaseException until raising or chaining sets them, as CPython
+    // keeps them out of the instance __dict__. Each own attribute is an
+    // insertion into the instance's attribute tree.
+    static const proto::ProtoString* const argsS = PythonEnvironment::getInternedString(context, "args");
+    instance->setAttribute(context, argsS, args);
     return PROTO_NONE;
 }
 
