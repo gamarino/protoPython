@@ -243,6 +243,55 @@ a shared library). See [docs/PROTOPYC_SPECIFICATION.md](docs/PROTOPYC_SPECIFICAT
 
 ## Performance
 
+**Python exceptions as C++ exceptions (measured 2026-10-21).** Branch
+`perf/cpp-exceptions` at `8a367f65`, built against protoCore 3.0.0 (not yet
+released): a Python exception is a C++ exception and a Python `try` a C++ `try`,
+so the normal path tests no pending-exception flag. `benchmarks/run_4way_interleaved.py`,
+three rounds behind the quiet gate (1.6-1.8 busy CPUs), each on a fresh copy of the
+library, medians; ratios to CPython 3.14t (> 1: protoPython is slower). The last
+column is the same branch before the change (`df185d1a`, protoCore 3.0.0 with the
+pending flag).
+
+| Benchmark | CPython 3.14t ms | protopy ms | protopy ratio | protopyc ms | protopyc ratio | before: protopy / protopyc |
+|---|---:|---:|---:|---:|---:|---:|
+| `startup_empty` | 24.2 | 21.3 | 0.85x | — | — | 0.91x / — |
+| `int_sum_loop` | 512.1 | 463.8 | 0.91x | 305.4 | 0.58x | 1.03x / 0.61x |
+| `list_append_loop` | 32.1 | 165.9 | 5.35x | 180.3 | 6.12x | 6.15x / 6.80x |
+| `str_concat_loop` | 28.2 | 145.7 | 5.36x | 196.9 | 7.30x | 5.63x / 7.90x |
+| `range_iterate` | 343.1 | 554.3 | 1.62x | 377.4 | 1.05x | 1.80x / 1.07x |
+| `multithread_cpu` | 222.5 | 118.1 | **0.60x** | 67.8 | **0.31x** | 0.59x / 0.25x |
+| `attr_lookup` | 373.1 | 1577.8 | 4.24x | 867.7 | 2.32x | 4.57x / 2.37x |
+| `call_recursion` | 36.0 | 205.0 | 5.57x | 171.3 | 4.76x | 5.50x / 4.61x |
+| `pyperf_fib` | 90.3 | 422.5 | 4.69x | — | — | 4.66x / — |
+| `pyperf_binary_trees` | 36.0 | 252.7 | 7.01x | — | — | 14.21x / — |
+| `pyperf_nqueens` | 53.0 | 103.1 | 1.97x | — | — | 2.32x / — |
+| `pyperf_richards_lite` | 27.7 | 38.4 | 1.44x | — | — | 1.56x / — |
+| `pyperf_sieve` | 29.1 | 97.2 | 3.44x | — | — | 3.48x / — |
+| `memory_pressure` (informational) | 50.7 | 1564.9 | 27.4x | 1650.6 | 28.8x | 27.6x / 28.6x |
+| **Geomean** (harness, `memory_pressure` excluded) | | | **2.52x** | | **1.91x** | 2.82x / 1.92x |
+
+The geomean moves from 2.82x to 2.52x (protopy): `pyperf_binary_trees` halves its
+ratio (instantiation no longer pays per-call exception checks) and the loops are
+faster than CPython's (`int_sum_loop` 0.91x). Exceptions themselves, in cycles per
+iteration (`perf stat -r 3`):
+
+| Probe (cycles per iteration) | before | now | CPython 3.14t |
+|---|---:|---:|---:|
+| empty `while` loop | 139 | 107 | 174 |
+| `try` that does not raise | 238 | 161 | 178 |
+| `raise ValueError("x")` caught | 192,657 | 83,539 | 1,115 |
+| raise of an existing exception | 32,446 | 28,142 | 1,714 |
+| `KeyError` from `d[k]` caught | 205,103 | 95,674 | 1,073 |
+| `hasattr` of a missing attribute | 11,441 | 11,639 | 682 |
+| generator exhausted | 397,840 | 262,659 | 991 |
+| instance of a plain class | 22,345 | 13,938 | 850 |
+
+A `try` costs nothing measurable until it raises, but a raise is still 75-90x
+CPython's: about half of it is C++ unwinding (the personality routine and its
+call-site table scan; the C++ floor here is about 5,300 cycles), the rest the
+exception object, its traceback entry and protoCore allocations. Raw results:
+[`benchmarks/reports/2026-10-21-cpp-exceptions-final/`](benchmarks/reports/2026-10-21-cpp-exceptions-final/).
+
 **protoCore 2.14.8 (measured 2026-10-20).** `benchmarks/run_4way_interleaved.py`,
 `main` at `4f8ab5bb` (which adds the STORE_ATTR change below), Release, built
 against protoCore 2.14.8; three rounds, each behind a quiet gate (1.1-1.3 busy
@@ -403,28 +452,29 @@ back to `env->binaryOp`, the runtime's generic binary-operation entry point.
 
 Each compiled function runs in a context of its own and keeps its locals and the value
 of every expression node in that context's automatic slots, so the collector sees
-them, and tests the thread's pending-exception flag (`__pexc`) after each operation:
-`__ck` and `__truth` throw `__PyUnwind` when an exception is pending, which stops the
-statement and its statement list (`docs/PROTOPYC_SPECIFICATION.md`, section 4). For
-`i < n` in a `while` loop, protopyc emits:
+them. A Python exception is a C++ exception (`protoPython::PyException`), as in the
+interpreter: an operation that raises throws it, so nothing after it in the statement
+or its statement list runs, and a Python `try` is a C++ `try`; the generated code tests
+no flag after an operation (`docs/PROTOPYC_SPECIFICATION.md`, section 4). For `i < n`
+in a `while` loop, protopyc emits:
 
 ```cpp
-const proto::ProtoObject* py_func_build_1(proto::ProtoContext* __callerCtx, ...) {
-    protoPython::ContextScope __scope(__callerCtx->space, __callerCtx, nullptr, nullptr, nullptr, nullptr, 5);
+static const proto::ProtoObject* py_func_build_1_body(proto::ProtoContext* __callerCtx, ...) {
+    protoPython::ContextScope __scope(__callerCtx->space, __callerCtx, nullptr, nullptr, nullptr, nullptr,
+                                      4 + protoPython::PythonEnvironment::kActivationSlots);
     proto::ProtoContext* ctx = __scope.context();
-    const proto::ProtoObject** __slot = ctx->getAutomaticLocals();
     ...
-    const proto::ProtoObject*& local_i = __slot[0];
-    const proto::ProtoObject*& local_n = __slot[2];
+    const proto::ProtoObject*& local_n = __slot[0];
+    const proto::ProtoObject*& local_i = __slot[1];
     ...
-while (__truth(env, __pexc, __ck(__pexc, (__slot[3] = (([&]() -> const proto::ProtoObject* {
+while (__truth(env, (__slot[3] = (([&]() -> const proto::ProtoObject* {
         const proto::ProtoObject* __a = local_i;
         const proto::ProtoObject* __b = local_n;
         if (__a && __b && proto::isSmallInt(__a) && proto::isSmallInt(__b)) {
             return (proto::asSmallInt(__a) < proto::asSmallInt(__b)) ? PROTO_TRUE : PROTO_FALSE;
         }
         return env->binaryOp(__a, protoPython::TokenType::Less, __b);
-    })()))))) {
+    })())))) {
     std::fill(__slot + 3, __slot + __nslots, PROTO_NONE);
     ctx->safepoint();
     ...

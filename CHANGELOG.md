@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — exceptions, follow-up (2026-10-21)
+
+- The pending-exception API is removed (`hasPendingException`, `peek`/`take`/
+  `clearPendingException`, `setPendingException`, the per-thread slot and flag);
+  `raiseException` throws, `executeString` lets an unhandled exception propagate.
+- The exception being handled (`sys.exc_info()`, bare `raise`, `__context__`)
+  lives in the context of the activation that handles it
+  (`PythonEnvironment::kActivationSlots`, `HandledExceptionScope`), not in a
+  per-thread stack.
+- `collections.abc`: CPython's mixin methods (copied from Lib/_collections_abc.py,
+  loaded one ABC family at a time on first use), the real ABC hierarchy and
+  abstract instantiation; a Python metaclass receives the class namespace as a dict.
+- `zip`, `enumerate`, `filter` drive Python `__next__` and propagate its errors;
+  `Match.group` takes several groups (configparser works); `getattr` with a
+  default no longer raises internally.
+- A raise reuses one traceback frame per activation and stores only `args` on
+  the instance: raise + catch 108,671 -> 83,539 cycles.
+- Final measurement (benchmarks/reports/2026-10-21-cpp-exceptions-final/):
+  geomean vs CPython 3.14t 2.82x -> 2.52x (protopy), 1.92x -> 1.91x (protopyc).
+- Partitioning the dispatch function into per-opcode functions was tried and
+  reverted: no change to the unwinding cost, 1-6 % more instructions on the
+  normal path.
+
 ### Changed — Python exceptions are C++ exceptions (2026-10-21)
 
 - **A Python exception is a C++ exception** (`protoPython::PyException`,
