@@ -44,9 +44,13 @@ out of Release builds, and even in diagnostic builds the loader emits no message
 ## Limitations
 
 - Module functions receive positional arguments only; keyword arguments are ignored.
-- A function that returns `HPy_NULL` returns `None` to Python. `HPyErr_SetString`,
-  `HPyErr_Occurred` and `HPyErr_Clear` are stubs, so an extension cannot raise a
-  Python exception.
+- Errors follow HPy's C convention; no C++ exception crosses the extension's frames.
+  An `HPy_*` call that runs Python code which raises returns the API's error value
+  (`HPy_NULL`, `-1`, or `(size_t)-1` for `HPy_Length`) and keeps the exception in the
+  context; `HPyErr_SetString`, `HPyErr_Occurred` and `HPyErr_Clear` set, test and clear
+  it, and `HPy_Next` returns `HPy_NULL` without an error when the iterator is exhausted.
+  A function that returns `HPy_NULL` with an error set raises it in Python; one that
+  returns `HPy_NULL` with no error returns `None`.
 - `HPyList_New`, `HPyTuple_New` and `HPyDict_New` create raw protoCore collections
   rather than Python `list`, `tuple` and `dict` objects, and `HPyList_Append` does not
   change the list.

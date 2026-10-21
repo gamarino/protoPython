@@ -220,29 +220,27 @@ compiler diagnostics and native debuggers (GDB, LLDB) can point at Python source
   the method's storage keeps the class's cell, which the class body leaves in its
   namespace as `__classcell__` and `type.__new__` fills with the class before
   `__init_subclass__` runs, as in CPython.
-- **Exceptions.** As in the interpreter, an operation that raises leaves its
-  exception pending in the `PythonEnvironment`. Generated code reads the address of
-  the thread's pending-exception flag once per call
-  (`PythonEnvironment::pendingExceptionFlagAddress`) and tests the flag after every
-  operation that can raise and after every statement; when it is set it throws the
-  C++ exception `__PyUnwind`, so neither the rest of the statement (a call's other
-  arguments, the call itself, an assignment) nor the rest of its statement list runs.
-  A callable catches `__PyUnwind` and returns `nullptr` with the exception still
-  pending, which is how a native method reports an exception to its caller; the
-  module initializer does the same, so the import fails with the exception.
-  - A `try` statement catches `__PyUnwind` around each of its clauses. If the body
-    left an exception pending, the first `except` clause whose type matches takes it
-    (binding it to the `as` name) and, while it runs, the exception is the one
-    `sys.exc_info()` and a bare `raise` see (`PythonEnvironment::pushActiveException`,
-    popped however the clause is left); an exception no clause matches stays
-    pending. The `else` clause runs when the body raised nothing. The `finally`
-    clause runs with the propagating exception set aside in a slot, and that
-    exception is pending again afterwards unless the clause raised its own or left
-    by `return`, `break` or `continue`. While the `finally` clause runs for an
-    exception, that exception is the active one (`sys.exc_info()`). An
-    exception an `except` or `finally` clause (or an `__exit__` call) raises
-    gets the exception being handled as `__context__` (PEP 3134,
-    `PythonEnvironment::chainPendingException`), as in the interpreter.
+- **Exceptions.** As in the interpreter, a Python exception is a C++ exception,
+  `protoPython::PyException`: an operation that raises throws it, so neither the
+  rest of the statement (a call's other arguments, the call itself, an assignment)
+  nor the rest of its statement list runs, and a compiled callable lets it propagate
+  to its caller; the module initializer does the same, so the import fails with the
+  exception. Generated code tests nothing after an operation.
+  - A `try` statement is a C++ `try`. The exception its body raises is caught and
+    kept in a slot, and the handlers run after the C++ `try`, outside the catch
+    block, so that a generator suspended in one can re-enter it: the first `except`
+    clause whose type matches takes it (binding it to the `as` name) and, while it
+    runs, the exception is the one `sys.exc_info()` and a bare `raise` see (kept in
+    the callable's context, `PythonEnvironment::HandledExceptionScope`, and restored
+    however the clause is left); an exception no clause matches is thrown again. The
+    `else` clause runs when the body raised nothing. The `finally` clause runs with
+    the propagating exception set aside in a slot, and that exception is thrown again
+    afterwards unless the clause raised its own or left by `return`, `break` or
+    `continue`. While the `finally` clause runs for an exception, that exception is
+    the one being handled (`sys.exc_info()`). An exception an `except` or `finally`
+    clause (or an `__exit__` call) raises gets the exception being handled as
+    `__context__` (PEP 3134, `PythonEnvironment::chainException`), as in the
+    interpreter.
   - `return`, `break` and `continue` inside a `try` statement with a `finally`
     clause (in its body, an `except` clause or the `else` clause), or inside a `with`
     statement, store their kind in a slot of that statement (a return value in a slot

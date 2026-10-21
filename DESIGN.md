@@ -153,7 +153,9 @@ the object's `ProtoObject` pointer.
 - There is no global interpreter lock. protoCore collections are immutable and share
   structure between versions, and updates to mutable objects rely on protoCore's atomic
   compare-and-swap operations.
-- The current `ProtoContext` and the pending exception are thread-local.
+- The current `ProtoContext` is thread-local. Python exceptions are C++ exceptions
+  (`PyException`), so there is no pending-exception state; the exception being
+  handled is kept in the context of the activation that handles it.
 - Locks that remain in protoPython belong to the Python API (for example `_thread`
   locks) rather than to the interpreter. See
   [docs/L_SHAPE_ARCHITECTURE.md](docs/L_SHAPE_ARCHITECTURE.md).

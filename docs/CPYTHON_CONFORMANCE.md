@@ -61,6 +61,24 @@ defect and adds a `test/regression/*.py` test registered in
 
 ### Known divergences (pending)
 
+- **Namespaces (found 2026-10-21):** a class body and code run by `exec(src, d)` bind
+  their names as attributes of the namespace object, so a name such as `get` or
+  `keys` shadows the dict method: after `exec("def get(k): pass", d)`, `d.get(...)`
+  calls that function. A metaclass written in Python receives a dict of the body's
+  names instead, so `ABCMeta` is not affected; `n in ns` can be True for a name
+  `ns[n]` does not find.
+- **Builtins (found 2026-10-21):** `range` holds 64-bit integers only
+  (`range(1 << 1000)` raises; CPython's `longrange_iterator` does not exist);
+  `type(iter(range(0)))` is `object` and built-in iterator types leave themselves
+  out of their `__mro__`; `reversed()` ignores `__reversed__ = None`;
+  `'{0.__class__.__name__}'.format(x)` gives `'type'` for any object;
+  `hash(frozenset(...))` uses another algorithm; `isinstance(len,
+  collections.abc.Callable)` is False; `vars(exc)` shows `args`; the
+  abstract-instantiation `TypeError` does not name the methods.
+- **collections.abc:** the ABCs are native classes without `ABCMeta`; each root ABC's
+  `__init_subclass__` computes `__abstractmethods__`, so a subclass whose own
+  `__init_subclass__` skips `super()` is not checked for abstract methods.
+
 - **Dataclasses:** `frozen=True` fails in `__init__`:
   `object.__setattr__(obj, k, v)` dispatches to the subclass's
   `__setattr__`.

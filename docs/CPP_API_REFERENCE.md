@@ -39,7 +39,7 @@ Every environment uses the process-wide `proto::ProtoSpace` returned by the stat
 
 | Member | Result |
 |--------|--------|
-| `int executeString(const std::string& source, const std::string& name = "<string>")` | Runs source code in the `__main__` context. Returns 0 on success, -2 on a runtime failure. |
+| `int executeString(const std::string& source, const std::string& name = "<string>")` | Runs source code in the `__main__` context and returns 0. An exception the code does not handle propagates as a `PyException`. |
 | `int executeModule(const std::string& moduleName, bool asMain = false, proto::ProtoContext* ctx = nullptr)` | Resolves and runs a module (as `__main__` when `asMain` is true). Returns 0 on success, -1 if the module cannot be resolved, -2 on a runtime failure, -3 when the module raised `SystemExit` (the status is in `getExitRequested()`). |
 | `void runRepl(std::istream& in = std::cin, std::ostream& out = std::cout)` | Runs the interactive loop. |
 | `int getExitRequested() const` | Exit status requested through `SystemExit` or `sys.exit`. |
@@ -48,14 +48,18 @@ Every environment uses the process-wide `proto::ProtoSpace` returned by the stat
 
 ### Errors
 
-Python exceptions are not C++ exceptions. A failing call leaves a pending exception for
-the current thread:
+A Python exception is a C++ exception: a call that raises throws
+`protoPython::PyException` (`PythonEnvironment.h`), whose `exception()` is the Python
+exception object, kept reachable by the collector while the `PyException` exists.
+Embedding code catches it as any C++ exception; a native function raises with one of
+the `raise*` helpers or `raiseException`, which throw it. There is no pending-exception
+state to test or clear.
 
 | Member | Result |
 |--------|--------|
-| `bool hasPendingException() const` | Whether an exception is pending. |
-| `const proto::ProtoObject* takePendingException()` | Returns and clears the pending exception. |
-| `void setPendingException(const proto::ProtoObject* exc)` | Sets the pending exception. |
+| `[[noreturn]] void raiseException(const proto::ProtoObject* exc)` | Raises `exc`: throws it as a `PyException`. |
+| `bool isException(const proto::ProtoObject* exc, const proto::ProtoObject* type)` | Whether `exc` is an instance of `type` (a class or a tuple of classes), as `except type:` matches. |
+| `const proto::ProtoObject* getActiveException(proto::ProtoContext* ctx) const` | The exception being handled where `ctx` runs (`sys.exc_info()`), or `nullptr`. |
 | `void handleException(const proto::ProtoObject* exc, const proto::ProtoObject* frame = nullptr, std::ostream& out = std::cerr)` | Formats the exception and its traceback to `out`. For `SystemExit` it writes nothing and records the exit status. |
 
 A minimal embedding, following what `protopy -c` does:
@@ -67,16 +71,14 @@ A minimal embedding, following what `protopy -c` does:
 
 int main() {
     protoPython::PythonEnvironment env("", {"."}, {"embedded"});
-    int rc = env.executeString("print('hello from protoPython')", "<embedded>");
-    if (rc == -2) {
-        const proto::ProtoObject* exc = env.takePendingException();
-        if (exc && exc != PROTO_NONE) {
-            std::ostringstream text;
-            env.handleException(exc, nullptr, text);
-            if (text.str().empty())
-                return env.getExitRequested();   // SystemExit
-            std::cerr << text.str();
-        }
+    try {
+        env.executeString("print('hello from protoPython')", "<embedded>");
+    } catch (const protoPython::PyException& e) {
+        std::ostringstream text;
+        env.handleException(e.exception(), nullptr, text);
+        if (text.str().empty())
+            return env.getExitRequested();   // SystemExit
+        std::cerr << text.str();
         return 70;
     }
     return 0;
@@ -88,8 +90,8 @@ int main() {
 | Member | Result |
 |--------|--------|
 | `const proto::ProtoObject* importModule(const std::string& name, int level = 0, const std::vector<std::string>& fromList = {})` | Imports a module. |
-| `const proto::ProtoObject* loadAttr(const proto::ProtoObject* obj, const char* name)` | `obj.name` as Python reads it (descriptors, `__getattribute__`, `__getattr__`); `nullptr` with `AttributeError` pending when missing. |
-| `bool storeAttr(const proto::ProtoObject* obj, const char* name, const proto::ProtoObject* value)` | `obj.name = value` as Python writes it (data descriptors, `__setattr__`); `false` with the exception pending when it raised. |
+| `const proto::ProtoObject* loadAttr(const proto::ProtoObject* obj, const char* name)` | `obj.name` as Python reads it (descriptors, `__getattribute__`, `__getattr__`); raises `AttributeError` when missing. |
+| `bool storeAttr(const proto::ProtoObject* obj, const char* name, const proto::ProtoObject* value)` | `obj.name = value` as Python writes it (data descriptors, `__setattr__`); what they raise propagates. |
 | `const proto::ProtoObject* getAttr(const proto::ProtoObject* obj, const std::string& attr)` | Raw protoCore attribute read: no descriptors, a missing attribute reads as `None`. |
 | `void setAttr(const proto::ProtoObject* obj, const std::string& attr, const proto::ProtoObject* val)` | Raw protoCore attribute write. |
 | `const proto::ProtoObject* getItem(const proto::ProtoObject* container, const proto::ProtoObject* key, proto::ProtoContext* ctx = nullptr)` | `container[key]`. |
