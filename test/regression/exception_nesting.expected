@@ -1,0 +1,33 @@
+1
+g1 caught boom
+3
+g1 finally
+g1 done
+in except
+exc_info after resume KeyError
+bare raise after resume KeyError('k')
+exc_info after handler None
+g3 close runs finally
+closed
+enter
+exit RuntimeError
+['in with', 'after with']
+context ValueError None
+cause ValueError True
+finally
+[0, 'f0', 'f1', 2, 'f2', 'f3']
+unwind 1
+unwind 2
+unwind 3
+deep caught deep
+inner
+middle ZeroDivisionError
+outer outer True
+handled y inside x
+still in x OSError
+after all (None, None, None)
+1
+sub caught
+done
+finally after except return
+returned from except

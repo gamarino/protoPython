@@ -336,10 +336,19 @@ constexpr int BUILD_FUNCTION_CELLS_SHIFT = 8;
  *        scheduler dispatch; runs until pc exits [pcStart, pcEnd] or RETURN_VALUE.
  *        Uses direct protoCore types (zero-copy). See REARCHITECTURE_PROTOCORE.md.
  */
+/**
+ * One level of a frame's try nesting. A protected range (SETUP_FINALLY,
+ * SETUP_WITH) runs as a nested dispatch inside a C++ try, its handler inside
+ * the catch; the levels are recorded, outermost first, only so a suspended
+ * generator can rebuild them on resume. A handler level carries the
+ * exception it handles.
+ */
 struct Block {
     proto::proto_ulong handlerPc;
     size_t stackDepth;
     bool isWithBlock = false;
+    bool isHandler = false;
+    const proto::ProtoObject* exc = nullptr;
 };
 
 const proto::ProtoObject* executeBytecodeRange(

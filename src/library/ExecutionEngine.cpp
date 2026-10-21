@@ -3222,11 +3222,17 @@ const proto::ProtoObject* py_generator_send_impl(
                 ::protoPython::TupleView t = ::protoPython::PythonEnvironment::tupleView(ctx, item);
                 if (t->getSize(ctx) >= 2) {
                     bool isWith = (t->getSize(ctx) >= 3) && (t->getAt(ctx, 2) == PROTO_TRUE);
-                    blockStack.push_back({
+                    Block saved{
                         static_cast<proto::proto_ulong>(t->getAt(ctx, 0)->asLong(ctx)),
                         static_cast<size_t>(t->getAt(ctx, 1)->asLong(ctx)),
                         isWith
-                    });
+                    };
+                    // A handler level: the exception it was handling.
+                    if (t->getSize(ctx) >= 5 && t->getAt(ctx, 3) == PROTO_TRUE) {
+                        saved.isHandler = true;
+                        saved.exc = t->getAt(ctx, 4);
+                    }
+                    blockStack.push_back(saved);
                 }
             }
         }
@@ -3377,13 +3383,16 @@ const proto::ProtoObject* py_generator_send_impl(
         }
         self->setAttribute(calleeCtx, env->getGiStackString(), newStack->asObject(calleeCtx));
 
-        // Save blockStack back (tuple: [handlerPc, stackDepth, isWithBlock])
+        // Save blockStack back (tuple: [handlerPc, stackDepth, isWithBlock,
+        // isHandler, the handled exception or None])
         const proto::ProtoList* newBlocks = calleeCtx->newList();
         for (const auto& b : blockStack) {
             const proto::ProtoList* tempL = calleeCtx->newList();
             tempL = tempL->appendLast(calleeCtx, calleeCtx->fromInteger(b.handlerPc));
             tempL = tempL->appendLast(calleeCtx, calleeCtx->fromInteger(b.stackDepth));
             tempL = tempL->appendLast(calleeCtx, b.isWithBlock ? PROTO_TRUE : PROTO_FALSE);
+            tempL = tempL->appendLast(calleeCtx, b.isHandler ? PROTO_TRUE : PROTO_FALSE);
+            tempL = tempL->appendLast(calleeCtx, b.exc ? b.exc : PROTO_NONE);
             const proto::ProtoObject* bTup = ::protoPython::PythonEnvironment::tupleFromList(calleeCtx, tempL);
             newBlocks = newBlocks->appendLast(calleeCtx, bTup);
         }
@@ -5423,9 +5432,12 @@ const proto::ProtoObject* executeBytecodeRange(
     } frameAnchorScope{frameAnchor, frameAnchor ? *frameAnchor : nullptr};
     if (frameAnchor) *frameAnchor = frame;
 
+    // The try nesting of this activation (see Block). A resumed generator's
+    // saved levels are rebuilt below (runLevel), before dispatching.
     std::vector<Block> blockStack;
+    std::vector<Block> savedLevels;
     if (externalBlockStack) {
-        blockStack = *externalBlockStack;
+        savedLevels = *externalBlockStack;
     }
     const bool sync_globals = (frame == PythonEnvironment::getCurrentGlobals());
     // Cooperative GC safepoint counter.  Most Python opcodes execute without
@@ -5443,7 +5455,80 @@ const proto::ProtoObject* executeBytecodeRange(
     // Slot index of the instruction executed last: the one that raised when
     // an exception is found pending at the top of the loop.
     proto::proto_ulong lastPc = pcStart;
-    for (proto::proto_ulong i = pcStart; i <= pcEnd; ) {
+
+    // A Python try is a C++ try (see Block). A nested dispatch ends at its
+    // range's POP_BLOCK or, for a handler, at its POP_EXCEPT: levelExit says
+    // which and levelExitPc where the enclosing level continues. RETURN_VALUE
+    // and a yield end every level.
+    enum class LevelExit { Return, PopBlock, PopExcept };
+    LevelExit levelExit = LevelExit::Return;
+    proto::proto_ulong levelExitPc = 0;
+    // An opcode that still reports an error by returning nullptr with the
+    // exception pending ends its level as a throw would.
+    auto throwIfPending = [&](const proto::ProtoObject* r) {
+        if (levelExit == LevelExit::Return && !r && env && env->hasPendingException()) {
+            const proto::ProtoObject* pending = env->peekPendingException();
+            env->clearPendingException();
+            throw PyException(env, pending);
+        }
+    };
+    // A handler level runs inside the catch of the exception it handles,
+    // which is the active one (bare raise, sys.exc_info) while it runs; a
+    // RERAISE rethrows that catch's exception.
+    auto runHandler = [&](const proto::ProtoObject* handled, auto&& handlerBody) -> const proto::ProtoObject* {
+        Block handlerLevel{0, stack.size()};
+        handlerLevel.isHandler = true;
+        handlerLevel.exc = handled;
+        blockStack.push_back(handlerLevel);
+        if (env) env->pushActiveException(handled);
+        struct HandlerGuard {
+            std::vector<Block>& levels;
+            PythonEnvironment* env;
+            ~HandlerGuard() {
+                levels.pop_back();
+                if (env) {
+                    env->popActiveException();
+                    // popActiveException can set TypeError (list removeAt).
+                    if (env->hasPendingException()) env->clearPendingException();
+                }
+            }
+        } handlerGuard{blockStack, env};
+        levelExit = LevelExit::Return;
+        const proto::ProtoObject* r = handlerBody();
+        throwIfPending(r);
+        return r;
+    };
+    // A protected range: a nested dispatch inside a C++ try. On a Python
+    // exception the operand stack is cut to the depth the range started at,
+    // the exception pushed ([tb, exc, exc], or exc alone for a with block)
+    // and the handler run inside the catch.
+    auto runRange = [&](const Block& tryRange, auto&& rangeBody, auto&& handlerBody) -> const proto::ProtoObject* {
+        try {
+            blockStack.push_back(tryRange);
+            struct RangeGuard {
+                std::vector<Block>& levels;
+                ~RangeGuard() { levels.pop_back(); }
+            } rangeGuard{blockStack};
+            levelExit = LevelExit::Return;
+            const proto::ProtoObject* r = rangeBody();
+            throwIfPending(r);
+            return r;
+        } catch (const PyException& raised) {
+            const proto::ProtoObject* handled = raised.exception();
+            while (stack.size() > tryRange.stackDepth) stack.pop_back();
+            if (tryRange.isWithBlock) {
+                stack.push_back(handled);
+            } else {
+                stack.push_back(env ? env->getNonePrototype() : PROTO_NONE);
+                stack.push_back(handled);
+                stack.push_back(handled);
+            }
+            return runHandler(handled, handlerBody);
+        }
+    };
+
+    auto dispatch = [&](auto& nest, proto::proto_ulong pcFrom) -> const proto::ProtoObject* {
+    for (proto::proto_ulong i = pcFrom; i <= pcEnd; ) {
         if ((++sp_ctr & 0x3F) == 0 && ctx) {
             // Opcodes may have replaced `frame` (an immutable frame's
             // setAttribute returns a new cell): anchor the current one.
@@ -5594,57 +5679,12 @@ const proto::ProtoObject* executeBytecodeRange(
                 fflush(stderr);
             }
             
-            if (!blockStack.empty()) {
-                Block b = blockStack.back();
-                if (diag_local) {
-                    fprintf(stderr, "DEBUG: Popping block: handlerPc=%llu stackDepth=%zu\n", static_cast<unsigned long long>(b.handlerPc), b.stackDepth);
-                    fflush(stderr);
-                }
-                blockStack.pop_back();
-
-                if (exc && env) {
-                    env->pushActiveException(exc);
-                }
-                env->clearPendingException();
-
-                if (diag_local) {
-                    fprintf(stderr, "DEBUG: Cleaning stack: current size=%zu, target size=%zu\n", stack.size(), b.stackDepth);
-                    fflush(stderr);
-                }
-                while (stack.size() > b.stackDepth) stack.pop_back();
-                if (exc) {
-                    if (b.isWithBlock) {
-                        // with-block handler: stack is [..., __exit__]; push only exc
-                        // so OP_WITH_CLEANUP sees [__exit__, exc] as expected
-                        if (diag_local) {
-                            fprintf(stderr, "DEBUG: Pushing exc only for with-block handler %p\n", exc);
-                            fflush(stderr);
-                        }
-                        stack.push_back(exc);
-                    } else {
-                        if (diag_local) {
-                            fprintf(stderr, "DEBUG: Pushing exception tuple (None, exc, exc) %p back to stack\n", exc);
-                            fflush(stderr);
-                        }
-                        const proto::ProtoObject* noneObj = env ? env->getNonePrototype() : PROTO_NONE;
-                        stack.push_back(noneObj); // Traceback
-                        stack.push_back(exc);     // Value
-                        stack.push_back(exc);     // Type
-                    }
-                }
-
-                if (diag_local) {
-                    fprintf(stderr, "DEBUG: Jumping to handlerPc=%llu\n", static_cast<unsigned long long>(b.handlerPc));
-                    fflush(stderr);
-                }
-                i = b.handlerPc;
-                continue;
-            }
-            if (diag_local) {
-                fprintf(stderr, "DEBUG: No trap found, returning nullptr\n");
-                fflush(stderr);
-            }
-            return nullptr;
+            // A Python exception is a C++ exception: thrown to the innermost
+            // try of this activation (a nested dispatch) or out of it.
+            // noteCaughtException may have replaced the pending object.
+            const proto::ProtoObject* inFlight = env->peekPendingException();
+            env->clearPendingException();
+            throw PyException(env, inFlight ? inFlight : exc);
         }
         
         bool diag_env = diag_local;
@@ -6324,7 +6364,9 @@ const proto::ProtoObject* executeBytecodeRange(
             // of the active-exception stack: 1 when it leaves its own
             // clause, 2 when a clause raised a new exception (the active
             // one) while handling another. No traceback entry is added: the
-            // exception already has this frame's.
+            // exception already has this frame's. In a handler level that is
+            // the exception of the catch it runs in: rethrow it.
+            if (!blockStack.empty() && blockStack.back().isHandler && std::current_exception()) throw;
             if (env) reraiseActiveException(ctx, env, arg);
             i = next_i;
             continue;
@@ -6334,6 +6376,13 @@ const proto::ProtoObject* executeBytecodeRange(
             continue;
         } break;
         case OP_POP_EXCEPT: {
+            // The end of a handler (its level's guard stops treating the
+            // exception as handled): back to the level that opened the try.
+            if (!blockStack.empty() && blockStack.back().isHandler) {
+                levelExit = LevelExit::PopExcept;
+                levelExitPc = next_i;
+                return nullptr;
+            }
             if (env) {
                 env->popActiveException();
                 // popActiveException (e.g. list removeAt) can set TypeError; clear so module continues
@@ -7099,11 +7148,21 @@ const proto::ProtoObject* executeBytecodeRange(
             }
             if (!enterResult && env && env->hasPendingException()) continue;
 
-            // Push block pointing to handler at arg (absolute PC)
-            blockStack.push_back({static_cast<proto::proto_ulong>(arg), stack.size(), true});
-
+            // The with body runs as a nested dispatch inside a C++ try; the
+            // handler at arg (which calls __exit__) inside the catch.
+            const Block withRange{static_cast<proto::proto_ulong>(arg), stack.size(), true};
             stack.push_back(enterResult);
-        } break;
+            const proto::proto_ulong rangeStart = next_i;
+            const proto::ProtoObject* r = runRange(withRange,
+                [&]() { return nest(nest, rangeStart); },
+                [&]() { return nest(nest, withRange.handlerPc); });
+            if (levelExit != LevelExit::Return) {
+                levelExit = LevelExit::Return;
+                i = levelExitPc;
+                continue;
+            }
+            return r;
+        }
         case OP_WITH_CLEANUP: {
             // Stack: [..., __exit__, (None or Exc)]
             if (stack.size() < 2) { i = next_i; continue; }
@@ -10285,13 +10344,27 @@ const proto::ProtoObject* executeBytecodeRange(
             }
         } break;
         case OP_SETUP_FINALLY: {
-            if (diag_local) fprintf(stderr, "DEBUG: SETUP_FINALLY handler pc %llu, stack.top %llu\n", static_cast<unsigned long long>((proto::proto_ulong)arg), static_cast<unsigned long long>(stack.size()));
-            fflush(stderr);
-            blockStack.push_back({static_cast<proto::proto_ulong>(arg), stack.size()});
-            // No continue: fall through to i = next_i
-        } break;
+            // The protected range runs as a nested dispatch inside a C++
+            // try; its handler (at arg) inside the catch.
+            const Block tryRange{static_cast<proto::proto_ulong>(arg), stack.size()};
+            const proto::proto_ulong rangeStart = next_i;
+            const proto::ProtoObject* r = runRange(tryRange,
+                [&]() { return nest(nest, rangeStart); },
+                [&]() { return nest(nest, tryRange.handlerPc); });
+            if (levelExit != LevelExit::Return) {
+                levelExit = LevelExit::Return;
+                i = levelExitPc;
+                continue;
+            }
+            return r;
+        }
         case OP_POP_BLOCK: {
-            if (!blockStack.empty()) blockStack.pop_back();
+            // The end of a protected range: back to the level that opened it.
+            if (!blockStack.empty() && !blockStack.back().isHandler) {
+                levelExit = LevelExit::PopBlock;
+                levelExitPc = next_i;
+                return nullptr;
+            }
         } break;
         case OP_GET_AWAITABLE: {
             if (stack.empty()) { i = next_i; continue; }
@@ -10399,8 +10472,18 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (env) env->raiseTypeError(ctx, "async with expression must have __aenter__");
                 continue;
             }
-            blockStack.push_back({static_cast<proto::proto_ulong>(arg), stack.size()});
-        } break;
+            const Block withRange{static_cast<proto::proto_ulong>(arg), stack.size()};
+            const proto::proto_ulong rangeStart = next_i;
+            const proto::ProtoObject* r = runRange(withRange,
+                [&]() { return nest(nest, rangeStart); },
+                [&]() { return nest(nest, withRange.handlerPc); });
+            if (levelExit != LevelExit::Return) {
+                levelExit = LevelExit::Return;
+                i = levelExitPc;
+                continue;
+            }
+            return r;
+        }
 
         // ─────────────────────────────────────────────────────────────
         // Sprint-11 — fused / specialised opcodes produced by the
@@ -10563,7 +10646,10 @@ const proto::ProtoObject* executeBytecodeRange(
                 std::string msg = std::string("internal C++ exception: ") + e.what();
                 env->raiseRuntimeError(ctx, msg);
             }
-        } catch (...) {
+        } catch (const proto::ProtoObject*) {
+            // A legacy native generator throws its value (TestGeneratorsNative).
+            // Not catch (...): a Python exception (PyException) must pass to
+            // the enclosing try without being caught and rethrown here.
             if (env && !env->hasPendingException()) {
                 env->raiseRuntimeError(ctx, std::string("internal C++ exception (unknown type)"));
             }
@@ -10571,6 +10657,40 @@ const proto::ProtoObject* executeBytecodeRange(
         i = next_i;
     }
     return stack.empty() ? PROTO_NONE : stack.back();
+    };
+
+    // A resumed generator rebuilds its try nesting, outermost first: a
+    // protected range is entered again (its body continues at the resume
+    // point) and a handler runs again inside a catch of the exception it was
+    // handling. Each level then continues where its nested level ended.
+    auto runLevel = [&](auto& level, size_t k) -> const proto::ProtoObject* {
+        if (k == savedLevels.size()) return dispatch(dispatch, pcStart);
+        const Block saved = savedLevels[k];
+        const proto::ProtoObject* r;
+        if (saved.isHandler) {
+            try {
+                throw PyException(env, saved.exc);
+            } catch (const PyException&) {
+                r = runHandler(saved.exc, [&]() { return level(level, k + 1); });
+            }
+        } else {
+            r = runRange(saved, [&]() { return level(level, k + 1); },
+                         [&]() { return dispatch(dispatch, saved.handlerPc); });
+        }
+        if (levelExit != LevelExit::Return) {
+            levelExit = LevelExit::Return;
+            return dispatch(dispatch, levelExitPc);
+        }
+        return r;
+    };
+    // Transitional (tasks/cpp_exceptions_plan.md, S2.4 / S2.5): the callers
+    // still expect nullptr with the exception pending.
+    try {
+        return runLevel(runLevel, 0);
+    } catch (const PyException& uncaught) {
+        if (env) env->setPendingException(uncaught.exception());
+        return nullptr;
+    }
 }
 
 const proto::ProtoObject* executeMinimalBytecode(

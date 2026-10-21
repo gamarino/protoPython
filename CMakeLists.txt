@@ -1443,10 +1443,14 @@ set_tests_properties(protopy_closure_semantics protopy_closure_semantics_gc PROP
 #   instantiation: the one-lookup instantiation path of runUserClassCall:
 #     object.__new__'s checks, __init__ kinds, containers, exceptions, the
 #     instance __dict__ created on demand.
+#   exception_nesting: Python try / except / finally / with as C++ try /
+#     catch: yields at every level, gen.throw / close, the handled exception
+#     after a resume, chaining, suppression, break / continue through finally.
 set(PROTOPY_STDLIB_ORACLE_TESTS
     tuple_semantics
     attribute_access
     instantiation
+    exception_nesting
     ordered_dict_iterables
     abc_virtual_subclasses
     counter_methods

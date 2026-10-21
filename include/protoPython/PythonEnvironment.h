@@ -5,6 +5,7 @@
 #include <protoPython/DiagUtils.h>
 #include <atomic>
 #include <functional>
+#include <memory>
 #include <initializer_list>
 #include <iostream>
 #include <mutex>
@@ -2147,6 +2148,24 @@ private:
     const proto::ProtoObject* ns_;
     const proto::ProtoObject* oldGlobals_;
     const proto::ProtoObject* oldFrame_;
+};
+
+/**
+ * A Python exception in flight: `raise` is a `throw` of this type, a Python
+ * `try` is a C++ `try`, and the exception being handled is the one of the
+ * active catch. The exception object is reachable only from this C++ object
+ * while it travels, so it is kept in the environment's transient roots until
+ * the last copy (the catch's) is destroyed.
+ */
+class PyException {
+public:
+    PyException(PythonEnvironment* env, const proto::ProtoObject* exc)
+        : exc_(exc), pin_(std::make_shared<PythonEnvironment::TransientPin>(env, exc)) {}
+    const proto::ProtoObject* exception() const { return exc_; }
+
+private:
+    const proto::ProtoObject* exc_;
+    std::shared_ptr<PythonEnvironment::TransientPin> pin_;
 };
 
 } // namespace protoPython
