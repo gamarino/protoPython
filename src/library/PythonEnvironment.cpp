@@ -29672,7 +29672,8 @@ bool PythonEnvironment::ownAttributeFast(proto::ProtoContext* ctx, const proto::
 }
 
 const proto::ProtoObject* PythonEnvironment::loadAttr(proto::ProtoContext* ctx, const proto::ProtoObject* obj,
-                                                     const proto::ProtoString* key, bool* outIsUnboundFunc) {
+                                                     const proto::ProtoString* key, bool* outIsUnboundFunc,
+                                                     bool raiseIfMissing) {
     if (outIsUnboundFunc) *outIsUnboundFunc = false;
     if (!obj || !key) return nullptr;
     {
@@ -29722,6 +29723,9 @@ const proto::ProtoObject* PythonEnvironment::loadAttr(proto::ProtoContext* ctx, 
         }
     }
     if (attrFound) return val;
+    // getattr(obj, name, default) asks for nullptr instead: raising an
+    // AttributeError only for it to be caught costs a C++ throw.
+    if (!raiseIfMissing) return nullptr;
     std::string nameStr;
     key->toUTF8String(ctx, nameStr);
     raiseAttributeError(ctx, obj, nameStr);

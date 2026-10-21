@@ -636,11 +636,14 @@ public:
     /** `obj.name` as Python reads it (what builtins.getattr does): data
      *  descriptors, __getattribute__, instance attributes, non-data
      *  descriptors (properties, methods bound to obj), then __getattr__.
-     *  nullptr with AttributeError pending when there is no such attribute.
+     *  Raises AttributeError when there is no such attribute, or answers
+     *  nullptr when `raiseIfMissing` is false (what raises on the way, a
+     *  descriptor or __getattr__, still propagates).
      *  With `outIsUnboundFunc`, a function found on obj's class is returned
      *  unbound and *outIsUnboundFunc set, for a call that passes obj first. */
     const proto::ProtoObject* loadAttr(proto::ProtoContext* ctx, const proto::ProtoObject* obj,
-                                       const proto::ProtoString* name, bool* outIsUnboundFunc = nullptr);
+                                       const proto::ProtoString* name, bool* outIsUnboundFunc = nullptr,
+                                       bool raiseIfMissing = true);
     const proto::ProtoObject* loadAttr(const proto::ProtoObject* obj, const char* name);
     /** `obj.name = value` as Python writes it (data descriptors, __setattr__,
      *  __slots__). False with an exception pending when it raised. */

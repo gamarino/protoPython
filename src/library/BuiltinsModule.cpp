@@ -2719,7 +2719,8 @@ static const proto::ProtoObject* py_getattr(
     // __getattribute__, then __getattr__, AttributeError when missing.
     const proto::ProtoObject* val = nullptr;
     try {
-        val = env->loadAttr(context, obj, key);
+        val = env->loadAttr(context, obj, key, nullptr, argCount < 3);
+        if (!val && argCount >= 3) return positionalParameters->getAt(context, 2);
     } catch (const PyException& e) {
         // getattr(obj, name, default) answers the default for a missing
         // attribute only: any other exception propagates.
