@@ -5071,8 +5071,31 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
         }
     }
 
-    // 4. Invoke metaclass to create the class
-    const proto::ProtoList* mcArgs = ctx->newList()->appendLast(ctx, name)->appendLast(ctx, bases)->appendLast(ctx, ns);
+    // 4. Invoke metaclass to create the class.  The body bound its names as
+    // attributes of the namespace (STORE_NAME), where a name such as `get`
+    // or `__getitem__` would shadow the dict's own methods for a metaclass
+    // written in Python that reads it as a mapping (ABCMeta does).  Such a
+    // metaclass gets a dict of the names, in definition order; `type` reads
+    // the namespace itself, and a mapping __prepare__ returned is passed
+    // as it is.
+    const proto::ProtoObject* nsArg = ns;
+    if (env && metaclass && metaclass != env->getTypePrototype() && env->getDictPrototype()
+        && env->getType(ctx, ns) == env->getDictPrototype()) {
+        const proto::ProtoObject* names = ns->getAttribute(ctx, keysS);
+        const proto::ProtoList* nameList = names && names != PROTO_NONE ? names->asList(ctx) : nullptr;
+        const proto::ProtoObject* dict = env->callObject(env->getDictPrototype(), {});
+        if (dict && nameList) {
+            PythonEnvironment::TransientPin pinDict(env, dict);
+            for (proto::proto_ulong k = 0; k < nameList->getSize(ctx); ++k) {
+                const proto::ProtoObject* key = nameList->getAt(ctx, static_cast<int>(k));
+                const proto::ProtoString* keyS = key && key->isString(ctx) ? key->asString(ctx) : nullptr;
+                if (!keyS || ns->hasOwnAttribute(ctx, keyS) != PROTO_TRUE) continue;
+                env->setItem(dict, key, ns->getAttribute(ctx, keyS), ctx);
+            }
+            nsArg = dict;
+        }
+    }
+    const proto::ProtoList* mcArgs = ctx->newList()->appendLast(ctx, name)->appendLast(ctx, bases)->appendLast(ctx, nsArg);
     // STRUCT-37: strip `metaclass` from kwds before forwarding
     // to the metaclass call.  CPython's __build_class__
     // consumes `metaclass` itself (used only to *pick* the
