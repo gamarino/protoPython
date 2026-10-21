@@ -1,0 +1,16 @@
+plain 1 3 [('a', 1), ('b', 3)]
+no init NoInit {}
+takes no arguments True
+init returned non-None
+inherited init 7
+new override (1, 2) (1, 2)
+singleton True
+list subclass [1, 2] ml 2
+dict subclass {'a': 1} MyDict
+exception args ('bad', 2) ('bad', 2) None None
+custom exception 3 ('code 3',)
+dataclass DC(x=1, y=0) True
+slots 1
+dict on demand [('j', 2), ('k', 1)] 2
+kw only 9
+kw only rejects positional

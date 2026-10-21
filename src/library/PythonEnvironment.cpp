@@ -30319,7 +30319,7 @@ void PythonEnvironment::addTraceback(const proto::ProtoObject* exc, const proto:
         fprintf(stderr, "DEBUG: addTraceback exc=%p frame=%p lasti=%d lineno=%d\n", exc, frame, lasti, lineno);
     }
     
-    const proto::ProtoString* tbName = PythonEnvironment::getInternedString(ctx, "__traceback__");
+    static const proto::ProtoString* const tbName = PythonEnvironment::getInternedString(ctx, "__traceback__");
     const proto::ProtoObject* currentTb = exc->getAttribute(ctx, tbName);
     
     if (get_env_diag()) {
@@ -30328,47 +30328,25 @@ void PythonEnvironment::addTraceback(const proto::ProtoObject* exc, const proto:
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG: addTraceback allocating newTb\n"); fflush(stderr);
     }
-    const proto::ProtoObject* newTb = tracebackPrototype->newChild(ctx, true);
-    if (get_env_diag()) {
-        fprintf(stderr, "DEBUG: addTraceback setting classString\n"); fflush(stderr);
-    }
-    newTb = newTb->setAttribute(ctx, classString, tracebackPrototype);
-    
-    if (get_env_diag()) {
-        fprintf(stderr, "DEBUG: addTraceback creating strings\n"); fflush(stderr);
-    }
-    const proto::ProtoString* tbFrameName = PythonEnvironment::getInternedString(ctx, "tb_frame");
-    const proto::ProtoString* tbLastiName = PythonEnvironment::getInternedString(ctx, "tb_lasti");
-    const proto::ProtoString* tbLinenoName = PythonEnvironment::getInternedString(ctx, "tb_lineno");
-    const proto::ProtoString* tbNextName = PythonEnvironment::getInternedString(ctx, "tb_next");
-    
-    if (get_env_diag()) {
-        fprintf(stderr, "DEBUG: addTraceback setting attributes\n"); fflush(stderr);
-    }
-    // Coerce a missing frame to PROTO_NONE before storing. protoCore's
-    // ProtoSparseList::implSetAt treats nullptr as a delete, so a raw
-    // nullptr would skip writing tb_frame entirely and leave the slot
-    // inheriting from tracebackPrototype. The chained traceback would
-    // then look like it had no own tb_frame and consumers walking the
-    // chain (unittest.result._is_relevant_tb_level, traceback.format_*)
-    // would raise AttributeError on the second link. Module-top-level
-    // exceptions and synthesised tracebacks reach addTraceback with
-    // frame=nullptr legitimately; map them to PROTO_NONE so the chain
-    // exposes a stable own attribute everywhere.
-    const proto::ProtoObject* frameOrNone = frame ? frame : PROTO_NONE;
-    newTb = newTb->setAttribute(ctx, tbFrameName, frameOrNone);
-    newTb = newTb->setAttribute(ctx, tbLastiName, ctx->fromInteger(lasti));
-    newTb = newTb->setAttribute(ctx, tbLinenoName, ctx->fromInteger(lineno));
-    
-    if (currentTb && currentTb != this->getNonePrototype() && currentTb != PROTO_NONE) {
-        newTb = newTb->setAttribute(ctx, tbNextName, currentTb);
-    } else {
-        newTb = newTb->setAttribute(ctx, tbNextName, this->getNonePrototype());
-    }
-    
-    if (get_env_diag()) {
-        fprintf(stderr, "DEBUG: addTraceback newTb=%p created\n", newTb); fflush(stderr);
-    }
+    // One traceback link, its five fields published in one write group.
+    // Interned names are perennial. A missing frame is stored as
+    // PROTO_NONE: protoCore treats a nullptr value as a delete, which would
+    // leave the link without an own tb_frame (unittest.result and
+    // traceback.format_* walk the chain and read it on every link).
+    static const proto::ProtoString* const tbNames[5] = {
+        classString,
+        PythonEnvironment::getInternedString(ctx, "tb_frame"),
+        PythonEnvironment::getInternedString(ctx, "tb_lasti"),
+        PythonEnvironment::getInternedString(ctx, "tb_lineno"),
+        PythonEnvironment::getInternedString(ctx, "tb_next")};
+    const bool hasNext = currentTb && currentTb != this->getNonePrototype() && currentTb != PROTO_NONE;
+    const proto::ProtoObject* const tbValues[5] = {
+        tracebackPrototype,
+        frame ? frame : PROTO_NONE,
+        ctx->fromInteger(lasti),
+        ctx->fromInteger(lineno),
+        hasNext ? currentTb : this->getNonePrototype()};
+    const proto::ProtoObject* newTb = tracebackPrototype->newChild(ctx, true)->setAttributes(ctx, 5, tbNames, tbValues);
 
     // Update exception's __traceback__
     const proto::ProtoObject* updatedExc = const_cast<proto::ProtoObject*>(exc)->setAttribute(ctx, tbName, newTb);

@@ -3947,6 +3947,52 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
         return env->getType(ctx, args->getAt(ctx, 0));
     }
 
+    // The common instantiation, by protoCore. __new__ and __init__ are
+    // annotations of the class, and one lookup of the class's chain returns
+    // the one that applies. When __new__ is object's, the instance is the
+    // class's newChild, and the checks object.__new__ makes are answered by
+    // the same lookups: a container base (list, dict, tuple, set, frozenset,
+    // bytes) owns its own __new__, so its subclasses do not get here; extra
+    // arguments with object's __init__ too take the full path, which raises
+    // "takes no arguments". __init__ is invoked as the full path invokes it,
+    // when it is object's (nothing to do), a native method or a Python
+    // function; anything else takes the full path.
+    if (env && env->getObjectPrototype()) {
+        const proto::ProtoObject* objectProto = env->getObjectPrototype();
+        const proto::ProtoString* newKey = env->getNewString();
+        const proto::ProtoString* initKey = env->getInitString();
+        const proto::ProtoObject* defNew = objectProto->getOwnAttributeDirect(ctx, newKey);
+        if (defNew && defNew != PROTO_NONE && self->getAttribute(ctx, newKey) == defNew) {
+            const proto::ProtoObject* defInit = objectProto->getOwnAttributeDirect(ctx, initKey);
+            const proto::ProtoObject* initM = self->getAttribute(ctx, initKey);
+            const bool hasArgs = (args && args->getSize(ctx) > 0) || (kwargs && kwargs->getSize(ctx) > 0);
+            const bool initDefault = initM == defInit;
+            const bool initCallable = initM && initM != PROTO_NONE
+                && (initDefault || initM->isMethod(ctx)
+                    || initM->getFirstParent(ctx) == env->getFunctionPrototype());
+            if (initCallable && !(hasArgs && initDefault)) {
+                proto::ProtoObject* obj = const_cast<proto::ProtoObject*>(self->newChild(ctx, true));
+                if (initDefault) return obj;
+                const proto::ProtoList* initArgs = ctx->newList()->appendLast(ctx, obj);
+                if (args) {
+                    for (size_t i = 0; i < args->getSize(ctx); ++i) {
+                        initArgs = initArgs->appendLast(ctx, args->getAt(ctx, static_cast<int>(i)));
+                    }
+                }
+                const proto::ProtoObject* initRes = invokePythonCallable(ctx, initM, initArgs,
+                    kwargs ? kwargs->asSparseList(ctx) : nullptr);
+                if (env->hasPendingException()) return nullptr;
+                // CPython: a Python __init__ must return None.
+                if (initRes && initRes != PROTO_NONE && env->getCodeString()
+                        && initM->hasOwnAttribute(ctx, env->getCodeString()) == PROTO_TRUE) {
+                    env->raiseTypeError(ctx, "__init__() should return None, not 'non-None'");
+                    return nullptr;
+                }
+                return obj;
+            }
+        }
+    }
+
     const proto::ProtoString* newS = env ? env->getNewString() : protoPython::PythonEnvironment::getInternalString(ctx, "__new__");
     const proto::ProtoObject* newM = env ? env->getAttribute(ctx, self, newS) : self->getAttribute(ctx, newS);
     

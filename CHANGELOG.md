@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — instantiation and the exception object (2026-10-21)
+
+- **Instantiation by protoCore**: `__new__` and `__init__` are annotations of
+  the class, and one lookup of the class's chain returns the one that
+  applies. When `__new__` is object's, the instance is the class's
+  `newChild`; object.__new__'s checks are answered by the same lookups (a
+  container base owns its own `__new__`; extra arguments with object's
+  `__init__` take the full path, which raises). The full path ran an MRO
+  walk for the extra-arguments check and another for the container check,
+  and looked `__new__` and `__init__` up through the whole Python
+  attribute protocol, on every instantiation.
+- **The instance `__dict__` storage is created on demand** (by `__dict__` /
+  `vars()`), not by `object.__new__` on every instance: two attribute writes
+  and two collections per instantiation.
+- **The exception object and each traceback link are built with one write
+  group** (`setAttributes`) instead of five attribute writes each, with
+  their names interned once.
+- New regression test `instantiation` (CPython oracle).
+- Measured, `perf stat -r 3` cycles: an instance of a plain class 22,345 ->
+  12,818 per instantiation; `ValueError("x")` 29,178 -> 20,168; a raise and
+  catch 192,657 -> 91,826; `pyperf_binary_trees` 2.04 G -> 0.83 G cycles
+  (-59 %, same result). Known divergence, unchanged: a metaclass's
+  `__call__` is not invoked when its class is called.
+
 ### Changed — attribute reads and writes by one protoCore lookup (2026-10-20)
 
 - **`LOAD_ATTR` resolves the common read with one `getAttribute` of the

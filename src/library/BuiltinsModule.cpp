@@ -11155,14 +11155,11 @@ const proto::ProtoObject* py_object_new(
     // the protoCore parent — getType() / env->getAttribute("__class__")
     // synthesise the class identity from that link, so we no longer
     // mirror it as an explicit __class__ attribute on the instance.
-    const proto::ProtoObject* obj = cls->newChild(context, true);
-
-    // Initialize properties tracking specifically dictionary
-    if (env) {
-        obj = env->initDictStorage(context, obj);
-    }
-
-    return obj;
+    // The instance's __dict__ storage (__data__ / __keys__) is created when
+    // the dict is first asked for (py_object_get_dict, initDictStorage), not
+    // here: most instances never have it read, and creating it cost two
+    // attribute writes and two collections on every instantiation.
+    return cls->newChild(context, true);
 }
 
 // Forward decls (defined after this block; needed by py_bytearray_fallback

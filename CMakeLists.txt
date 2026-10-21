@@ -1440,9 +1440,13 @@ set_tests_properties(protopy_closure_semantics protopy_closure_semantics_gc PROP
 #     OP_LOAD_ATTR / OP_STORE_ATTR: descriptors, properties, methods,
 #     __getattribute__ / __setattr__ defined on a base or assigned later,
 #     super(), slots, metaclass attributes, deep hierarchies.
+#   instantiation: the one-lookup instantiation path of runUserClassCall:
+#     object.__new__'s checks, __init__ kinds, containers, exceptions, the
+#     instance __dict__ created on demand.
 set(PROTOPY_STDLIB_ORACLE_TESTS
     tuple_semantics
     attribute_access
+    instantiation
     ordered_dict_iterables
     abc_virtual_subclasses
     counter_methods

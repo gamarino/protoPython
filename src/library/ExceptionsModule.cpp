@@ -42,7 +42,6 @@ static const proto::ProtoObject* exception_init(
         }
     }
 
-    const proto::ProtoString* argsName = PythonEnvironment::getInternedString(context, "args");
     const proto::ProtoList* actualArgs = context->newList();
     if (positionalParameters && positionalParameters->getSize(context) > startIdx) {
         for (proto::proto_ulong i = startIdx; i < positionalParameters->getSize(context); ++i) {
@@ -50,11 +49,16 @@ static const proto::ProtoObject* exception_init(
         }
     }
     const proto::ProtoObject* args = ::protoPython::PythonEnvironment::tupleFromList(context, actualArgs);
-    instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context, argsName, args);
-    instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context, PythonEnvironment::getInternedString(context, "__traceback__"), PROTO_NONE);
-    instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context, PythonEnvironment::getInternedString(context, "__context__"), PROTO_NONE);
-    instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context, PythonEnvironment::getInternedString(context, "__cause__"), PROTO_NONE);
-    instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context, PythonEnvironment::getInternedString(context, "__suppress_context__"), PROTO_FALSE);
+    // One write group: the five fields are published together (one
+    // snapshot instead of five). Interned names are perennial.
+    static const proto::ProtoString* const names[5] = {
+        PythonEnvironment::getInternedString(context, "args"),
+        PythonEnvironment::getInternedString(context, "__traceback__"),
+        PythonEnvironment::getInternedString(context, "__context__"),
+        PythonEnvironment::getInternedString(context, "__cause__"),
+        PythonEnvironment::getInternedString(context, "__suppress_context__")};
+    const proto::ProtoObject* const values[5] = {args, PROTO_NONE, PROTO_NONE, PROTO_NONE, PROTO_FALSE};
+    instance->setAttributes(context, 5, names, values);
     return PROTO_NONE;
 }
 
