@@ -1,9 +1,11 @@
 #include <gtest/gtest.h>
 #include <protoPython/PythonEnvironment.h>
+#include <protoPython/ExecutionEngine.h>
 #include <protoCore.h>
 #include <vector>
 #include <fstream>
 #include <cstdio>
+#include <cstring>
 
 using namespace protoPython;
 
@@ -28,7 +30,10 @@ protected:
         if (callAttr && callAttr->asMethod(context)) {
             return callAttr->asMethod(context)(context, fn, nullptr, args, kwargs);
         }
-        return nullptr;
+        // A Python type or function (types carry no native __call__): call it
+        // the way the interpreter does. The receiver is not passed, so an
+        // unbound Python method must get its instance in `args`.
+        return protoPython::invokePythonCallable(context, fn, args, kwargs);
     }
 };
 
@@ -362,13 +367,16 @@ TEST_F(FoundationTest, ListGetItemSetItem) {
     const proto::ProtoObject* updated = my_list->getAttribute(context, dataName);
     EXPECT_EQ(updated->asList(context)->getAt(context, 1)->asLong(context), 99);
 
-    const proto::ProtoList* sliceSpec = context->newList()
-        ->appendLast(context, context->fromInteger(1))
-        ->appendLast(context, context->fromInteger(3));
-    const proto::ProtoList* sliceArgs = context->newList()->appendLast(context, sliceSpec->asObject(context));
+    // my_list[1:3], with a real slice object.
+    const proto::ProtoObject* sliceSpec = env.callObject(env.resolve("slice"), {context->fromInteger(1), context->fromInteger(3)});
+    ASSERT_NE(sliceSpec, nullptr);
+    const proto::ProtoList* sliceArgs = context->newList()->appendLast(context, sliceSpec);
     const proto::ProtoObject* sliceObj = getitemMethod->asMethod(context)(context, my_list, nullptr, protoPython::argsView(proto::ProtoListArguments(context, sliceArgs)), nullptr);
     ASSERT_NE(sliceObj, nullptr);
-    const proto::ProtoList* sliceList = sliceObj->asList(context);
+    // The slice is a new list object, its items in __data__.
+    const proto::ProtoObject* sliceData = sliceObj->getAttribute(context, dataName);
+    ASSERT_NE(sliceData, nullptr);
+    const proto::ProtoList* sliceList = sliceData->asList(context);
     ASSERT_NE(sliceList, nullptr);
     EXPECT_EQ(sliceList->getSize(context), 2);
     EXPECT_EQ(sliceList->getAt(context, 0)->asLong(context), 99);
@@ -380,6 +388,7 @@ TEST_F(FoundationTest, DictSetItemLen) {
     const proto::ProtoObject* my_dict = context->newObject(true);
     my_dict = my_dict->addParent(context, env.getDictPrototype());
     my_dict->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+    my_dict->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
 
     const proto::ProtoString* setitemName = proto::ProtoString::fromUTF8String(context, "__setitem__");
     const proto::ProtoString* lenName = proto::ProtoString::fromUTF8String(context, "__len__");
@@ -401,8 +410,14 @@ TEST_F(FoundationTest, DictSetItemLen) {
 
     const proto::ProtoObject* missingKey = context->fromUTF8String("missing");
     const proto::ProtoList* missArgs = context->newList()->appendLast(context, missingKey);
-    const proto::ProtoObject* missingVal = my_dict->call(context, nullptr, getitemName, my_dict, missArgs);
-    EXPECT_EQ(missingVal, PROTO_NONE);
+    const proto::ProtoObject* keyErrorType = env.resolve("KeyError");
+    ASSERT_NE(keyErrorType, nullptr);
+    try {
+        my_dict->call(context, nullptr, getitemName, my_dict, missArgs);
+        ADD_FAILURE() << "d['missing'] did not raise";
+    } catch (const protoPython::PyException& e) {
+        EXPECT_TRUE(env.isException(e.exception(), keyErrorType));
+    }
 }
 
 TEST_F(FoundationTest, ListIterNext) {
@@ -438,6 +453,7 @@ TEST_F(FoundationTest, DictIterKeys) {
     const proto::ProtoObject* my_dict = context->newObject(true);
     my_dict = my_dict->addParent(context, env.getDictPrototype());
     my_dict->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+    my_dict->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
 
     const proto::ProtoObject* pyIter = env.resolve("iter");
     const proto::ProtoObject* pyNext = env.resolve("next");
@@ -528,6 +544,8 @@ TEST_F(FoundationTest, EqualsDunder) {
     const proto::ProtoObject* dict2 = context->newObject(true)->addParent(context, env.getDictPrototype());
     dict1->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
     dict2->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+    dict1->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
+    dict2->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
     const proto::ProtoObject* setitem = dict1->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__setitem__"));
     ASSERT_NE(setitem, nullptr);
     const proto::ProtoObject* key = context->fromUTF8String("k");
@@ -583,6 +601,7 @@ TEST_F(FoundationTest, ReprStrDunder) {
 
     const proto::ProtoObject* dictObj = context->newObject(true)->addParent(context, env.getDictPrototype());
     dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
     const proto::ProtoObject* setitem = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__setitem__"));
     ASSERT_NE(setitem, nullptr);
     const proto::ProtoObject* key = context->fromUTF8String("k");
@@ -597,7 +616,7 @@ TEST_F(FoundationTest, ReprStrDunder) {
     ASSERT_TRUE(dictStrObj->isString(context));
     std::string dictStr;
     dictStrObj->asString(context)->toUTF8String(context, dictStr);
-    EXPECT_EQ(dictStr, "{k: 9}");
+    EXPECT_EQ(dictStr, "{'k': 9}");
 }
 
 TEST_F(FoundationTest, BoolDunder) {
@@ -634,6 +653,7 @@ TEST_F(FoundationTest, DictViews) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* dictObj = context->newObject(true)->addParent(context, env.getDictPrototype());
     dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
     const proto::ProtoObject* setitem = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__setitem__"));
     ASSERT_NE(setitem, nullptr);
     const proto::ProtoObject* key = context->fromUTF8String("k");
@@ -868,8 +888,8 @@ TEST_F(FoundationTest, DictPopitem) {
     ASSERT_NE(popitemM, nullptr);
     const proto::ProtoObject* pair = popitemM->asMethod(context)(context, dictObj, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     ASSERT_NE(pair, nullptr);
-    ASSERT_NE(pair->asTuple(context), nullptr);
-    const proto::ProtoTuple* tup = pair->asTuple(context);
+    const protoPython::TupleView tup = PythonEnvironment::tupleView(context, pair);
+    ASSERT_TRUE(static_cast<bool>(tup));
     EXPECT_EQ(tup->getSize(context), 2u);
     std::string k;
     tup->getAt(context, 0)->asString(context)->toUTF8String(context, k);
@@ -980,12 +1000,8 @@ TEST_F(FoundationTest, StringDunders) {
     const proto::ProtoObject* pyBoolType = builtins->getAttribute(context, proto::ProtoString::fromUTF8String(context, "bool"));
     ASSERT_NE(pyContains, nullptr);
     ASSERT_NE(pyBoolType, nullptr);
-    // bool is a type, use __call__ to invoke it
-    const proto::ProtoObject* pyBoolCall = pyBoolType->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__call__"));
-    ASSERT_NE(pyBoolCall, nullptr);
-
-    const proto::ProtoList* boolArgs = context->newList()->appendLast(context, strObj);
-    const proto::ProtoObject* nonEmptyBool = pyBoolCall->asMethod(context)(context, pyBoolType, nullptr, protoPython::argsView(proto::ProtoListArguments(context, boolArgs)), nullptr);
+    // bool is a type: call it the way the interpreter does.
+    const proto::ProtoObject* nonEmptyBool = env.callObject(pyBoolType, {strObj});
     EXPECT_EQ(nonEmptyBool, PROTO_TRUE);
 
     const proto::ProtoList* containsArgs = context->newList()->appendLast(context, context->fromUTF8String("b"))->appendLast(context, strObj);
@@ -997,7 +1013,7 @@ TEST_F(FoundationTest, StringDunders) {
     EXPECT_EQ(hasX, PROTO_FALSE);
 
     const proto::ProtoObject* emptyStr = context->fromUTF8String("");
-    const proto::ProtoObject* emptyBool = pyBoolCall->asMethod(context)(context, pyBoolType, nullptr, protoPython::argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, emptyStr))), nullptr);
+    const proto::ProtoObject* emptyBool = env.callObject(pyBoolType, {emptyStr});
     EXPECT_EQ(emptyBool, PROTO_FALSE);
 
     const proto::ProtoObject* strPrototype = env.getStrPrototype();
@@ -1064,11 +1080,18 @@ TEST_F(FoundationTest, BytesIndex) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* bytesPrototype = env.getBytesPrototype();
     ASSERT_NE(bytesPrototype, nullptr);
-    const proto::ProtoObject* b = context->newObject(true)->addParent(context, bytesPrototype);
-    b->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String("hello"));
+    // A bytes object keeps its octets in a ProtoByteBuffer under __data__.
+    auto makeBytes = [&](const char* s) {
+        const proto::ProtoObject* o = context->newObject(true)->addParent(context, bytesPrototype);
+        o->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"),
+                        context->newByteBuffer(s, std::strlen(s))->asObject(context));
+        return o;
+    };
+    const proto::ProtoObject* b = makeBytes("hello");
     const proto::ProtoObject* indexM = bytesPrototype->getAttribute(context, proto::ProtoString::fromUTF8String(context, "index"));
     ASSERT_NE(indexM, nullptr);
-    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromUTF8String("ll"));
+    // b"hello".index(b"ll"): the needle must be bytes-like (a str raises TypeError).
+    const proto::ProtoList* args = context->newList()->appendLast(context, makeBytes("ll"));
     const proto::ProtoObject* idx = indexM->asMethod(context)(context, b, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(idx, nullptr);
     EXPECT_TRUE(idx->isInteger(context));
@@ -1085,10 +1108,14 @@ TEST_F(FoundationTest, ContainerExceptions) {
     const proto::ProtoObject* getitem = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__getitem__"));
     ASSERT_NE(getitem, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromUTF8String("missing_key"));
-    getitem->asMethod(context)(context, dictObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
-
-    const proto::ProtoObject* exc = env.takePendingException();
-    ASSERT_NE(exc, nullptr);
+    const proto::ProtoObject* keyErrorType = env.resolve("KeyError");
+    ASSERT_NE(keyErrorType, nullptr);
+    try {
+        getitem->asMethod(context)(context, dictObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
+        ADD_FAILURE() << "d['missing_key'] did not raise";
+    } catch (const protoPython::PyException& e) {
+        EXPECT_TRUE(env.isException(e.exception(), keyErrorType));
+    }
 }
 
 TEST_F(FoundationTest, ExceptionScaffolding) {
@@ -1586,8 +1613,8 @@ TEST_F(FoundationTest, MathLdexpFrexpModfE) {
     const proto::ProtoList* argsFrexp = context->newList()->appendLast(context, context->fromDouble(8.0));
     const proto::ProtoObject* resFrexp = frexpM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, argsFrexp)), nullptr);
     ASSERT_NE(resFrexp, nullptr);
-    ASSERT_TRUE(resFrexp->asTuple(context));
-    const proto::ProtoTuple* tupFrexp = resFrexp->asTuple(context);
+    const protoPython::TupleView tupFrexp = PythonEnvironment::tupleView(context, resFrexp);
+    ASSERT_TRUE(static_cast<bool>(tupFrexp));
     ASSERT_GE(tupFrexp->getSize(context), 2u);
     double mantissa = tupFrexp->getAt(context, 0)->isDouble(context) ? tupFrexp->getAt(context, 0)->asDouble(context) : static_cast<double>(tupFrexp->getAt(context, 0)->asLong(context));
     EXPECT_NEAR(mantissa, 0.5, 1e-10);  // frexp(8) -> (0.5, 4)
@@ -1595,8 +1622,8 @@ TEST_F(FoundationTest, MathLdexpFrexpModfE) {
     const proto::ProtoList* argsModf = context->newList()->appendLast(context, context->fromDouble(2.5));
     const proto::ProtoObject* resModf = modfM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, argsModf)), nullptr);
     ASSERT_NE(resModf, nullptr);
-    ASSERT_TRUE(resModf->asTuple(context));
-    const proto::ProtoTuple* tupModf = resModf->asTuple(context);
+    const protoPython::TupleView tupModf = PythonEnvironment::tupleView(context, resModf);
+    ASSERT_TRUE(static_cast<bool>(tupModf));
     ASSERT_GE(tupModf->getSize(context), 2u);
     double frac = tupModf->getAt(context, 0)->isDouble(context) ? tupModf->getAt(context, 0)->asDouble(context) : static_cast<double>(tupModf->getAt(context, 0)->asLong(context));
     double intpart = tupModf->getAt(context, 1)->isDouble(context) ? tupModf->getAt(context, 1)->asDouble(context) : static_cast<double>(tupModf->getAt(context, 1)->asLong(context));
@@ -1969,11 +1996,12 @@ TEST_F(FoundationTest, ItertoolsAccumulate) {
     const proto::ProtoList* args = context->newList()->appendLast(context, listObj);
     const proto::ProtoObject* accIt = invokeCallable(context, accumulateM, itertoolsMod, protoPython::argsView(proto::ProtoListArguments(context, args)));
     ASSERT_NE(accIt, nullptr);
-    const proto::ProtoObject* nextM = accIt->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
-    ASSERT_NE(nextM, nullptr);
-    const proto::ProtoObject* v1 = invokeCallable(context, nextM, accIt, protoPython::argsView(proto::ProtoArguments(nullptr, 0)));
-    const proto::ProtoObject* v2 = invokeCallable(context, nextM, accIt, protoPython::argsView(proto::ProtoArguments(nullptr, 0)));
-    const proto::ProtoObject* v3 = invokeCallable(context, nextM, accIt, protoPython::argsView(proto::ProtoArguments(nullptr, 0)));
+    // accumulate is implemented in Python: next() calls its __next__ bound to accIt.
+    const proto::ProtoObject* pyNext = env.resolve("next");
+    ASSERT_NE(pyNext, nullptr);
+    const proto::ProtoObject* v1 = env.callObject(pyNext, {accIt});
+    const proto::ProtoObject* v2 = env.callObject(pyNext, {accIt});
+    const proto::ProtoObject* v3 = env.callObject(pyNext, {accIt});
     ASSERT_NE(v1, nullptr);
     ASSERT_NE(v2, nullptr);
     ASSERT_NE(v3, nullptr);
@@ -1981,9 +2009,15 @@ TEST_F(FoundationTest, ItertoolsAccumulate) {
     EXPECT_EQ(v2->asLong(context), 3);
     EXPECT_EQ(v3->asLong(context), 6);
     
-    // Check end of iterator (returns PROTO_NONE or nullptr)
-    const proto::ProtoObject* vEnd = invokeCallable(context, nextM, accIt, protoPython::argsView(proto::ProtoArguments(nullptr, 0)));
-    EXPECT_TRUE(vEnd == PROTO_NONE || vEnd == nullptr);
+    // The exhausted iterator raises StopIteration.
+    const proto::ProtoObject* stopIterationType = env.resolve("StopIteration");
+    ASSERT_NE(stopIterationType, nullptr);
+    try {
+        env.callObject(pyNext, {accIt});
+        ADD_FAILURE() << "next() of an exhausted accumulate did not raise";
+    } catch (const protoPython::PyException& e) {
+        EXPECT_TRUE(env.isException(e.exception(), stopIterationType));
+    }
 }
 
 TEST_F(FoundationTest, ListInsertRemoveClear) {

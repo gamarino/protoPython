@@ -16,7 +16,8 @@ namespace protoPython {
  */
 class HPyModuleProvider : public proto::ModuleProvider {
 public:
-    explicit HPyModuleProvider(std::vector<std::string> basePaths);
+    /** `suffix` tells a later environment's provider apart (PythonEnvironment::providerSuffix). */
+    explicit HPyModuleProvider(std::vector<std::string> basePaths, const std::string& suffix = "");
     virtual ~HPyModuleProvider();
 
     virtual const proto::ProtoObject* tryLoad(const std::string& logicalPath, proto::ProtoContext* ctx) override;

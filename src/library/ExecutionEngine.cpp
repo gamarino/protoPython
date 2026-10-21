@@ -392,6 +392,22 @@ static bool attrGroupApplies(proto::ProtoContext* ctx, PythonEnvironment* env,
     return true;
 }
 
+// The limit reached: raise RecursionError. Building it may itself recurse;
+// the flag allows that, and is reset when the raise (a throw) leaves. Out of
+// line: the constructor stays small enough to inline on every call.
+#if defined(_MSC_VER)
+__declspec(noinline)
+#else
+__attribute__((noinline))
+#endif
+static void raiseRecursionLimit(PythonEnvironment* env, proto::ProtoContext* ctx) {
+    struct InRecursionError {
+        InRecursionError() { PythonEnvironment::s_inRecursionError = true; }
+        ~InRecursionError() { PythonEnvironment::s_inRecursionError = false; }
+    } inRecursionError;
+    env->raiseRecursionError(ctx);
+}
+
 RecursionScope::RecursionScope(PythonEnvironment* env, proto::ProtoContext* ctx) : env_(env), ctx_(ctx) {
     if (!env_) return;
     
@@ -409,10 +425,8 @@ RecursionScope::RecursionScope(PythonEnvironment* env, proto::ProtoContext* ctx)
     }
 
     if (PythonEnvironment::s_recursionDepth >= limit) {
-        PythonEnvironment::s_inRecursionError = true;
-        env_->raiseRecursionError(ctx_);
-        PythonEnvironment::s_inRecursionError = false;
         overflowed_ = true;
+        raiseRecursionLimit(env_, ctx_);
     } else {
         PythonEnvironment::s_recursionDepth++;
         incremented_ = true;
@@ -539,6 +553,26 @@ struct CurrentFrameRestore {
     CurrentFrameRestore& operator=(const CurrentFrameRestore&) = delete;
     const proto::ProtoObject* saved;
     bool active;
+};
+
+// The running code object for the duration of a scope, restored on every
+// exit path (a Python exception is a C++ exception).
+struct CodeObjectScope {
+    explicit CodeObjectScope(const proto::ProtoObject* code) : prev(PythonEnvironment::getCurrentCodeObject()) {
+        PythonEnvironment::setCurrentCodeObject(code);
+    }
+    ~CodeObjectScope() { PythonEnvironment::setCurrentCodeObject(prev); }
+    CodeObjectScope(const CodeObjectScope&) = delete;
+    CodeObjectScope& operator=(const CodeObjectScope&) = delete;
+    const proto::ProtoObject* prev;
+};
+
+// One scope-globals entry (sys._getframemodulename) for a scope's duration.
+struct ScopeGlobalsEntry {
+    explicit ScopeGlobalsEntry(const proto::ProtoObject* globals) { PythonEnvironment::pushScopeGlobals(globals); }
+    ~ScopeGlobalsEntry() { PythonEnvironment::popScopeGlobals(); }
+    ScopeGlobalsEntry(const ScopeGlobalsEntry&) = delete;
+    ScopeGlobalsEntry& operator=(const ScopeGlobalsEntry&) = delete;
 };
 
 struct GlobalsScope {
@@ -974,8 +1008,7 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         // builtins that need to inspect the running function's
         // metadata (locals(), dir() bare-case, sys._getframe().f_code)
         // see the function's code object rather than the module's.
-        const proto::ProtoObject* prevCodeObj = PythonEnvironment::getCurrentCodeObject();
-        PythonEnvironment::setCurrentCodeObject(codeObj);
+        CodeObjectScope codeScope(codeObj);
 
         const proto::ProtoObject* bytecodeObj = codeObj->getAttribute(calleeCtx, env->getCoCodeString());
         const proto::ProtoObject* constsObj = codeObj->getAttribute(calleeCtx, env->getCoConstsString());
@@ -1007,7 +1040,6 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         } else {
             result = PROTO_NONE;
         }
-        PythonEnvironment::setCurrentCodeObject(prevCodeObj);
     }
     promote(calleeCtx, result);
     } // ContextScope destroyed here
@@ -1175,8 +1207,7 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
         // the slow runUserFunctionCall path above.  Needed so
         // builtins like dir() / locals() can read co_varnames of
         // the currently-running function instead of the module's.
-        const proto::ProtoObject* prevCodeObj_raw = PythonEnvironment::getCurrentCodeObject();
-        PythonEnvironment::setCurrentCodeObject(codeObj);
+        CodeObjectScope codeScope(codeObj);
 
         // Use values cached at BUILD_FUNCTION time — avoids 4 cross-DSO getAttribute calls
         // and 3 asTuple conversions on every function invocation.
@@ -1195,7 +1226,6 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
         } else {
             result = PROTO_NONE;
         }
-        PythonEnvironment::setCurrentCodeObject(prevCodeObj_raw);
     }
     promote(calleeCtx, result);
     } // ContextScope destroyed here
@@ -1721,13 +1751,19 @@ static const proto::ProtoObject* binaryOpDispatch(proto::ProtoContext* ctx, cons
         if (isStrictSubclassOf(ctx, env, bCls, aCls)
             && typeOwnsAttribute(ctx, bCls, rdunderS)) {
             const proto::ProtoList* argsA = ctx->newList()->appendLast(ctx, a);
-            const proto::ProtoObject* res = invokeDunder(ctx, b, rdunderS, argsA);
+            // An error from b.__rop__ is dropped and the normal order tried,
+            // as before the C++-exceptions change (CPython propagates it).
+            const proto::ProtoObject* res = nullptr;
+            try {
+                res = invokeDunder(ctx, b, rdunderS, argsA);
+            } catch (const PyException&) {
+                res = nullptr;
+            }
             if (res && (!env || res != env->getNotImplementedPrototype())) {
                 return res;
             }
             // Fall through to the normal forward-then-reflected order
             // when b.__rop__ returned NotImplemented or nullptr.
-            if (env && env->hasPendingException()) env->clearPendingException();
         }
     }
 
@@ -2464,12 +2500,16 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
                     }
                     if (dispatchHere) {
                         const proto::ProtoList* args = ctx->newList()->appendLast(ctx, a);
-                        const proto::ProtoObject* res = invokeDunder(ctx, b, containsS, args);
+                        const proto::ProtoObject* res = nullptr;
+                        try {
+                            res = invokeDunder(ctx, b, containsS, args);
+                        } catch (const PyException&) {
+                            res = nullptr;   // dropped, as before: the fallback below decides
+                        }
                         if (res) {
                             found = isTruthy(ctx, res);
                             return ((op == 6) ? found : !found) ? PROTO_TRUE : PROTO_FALSE;
                         }
-                        if (env_dunder->hasPendingException()) env_dunder->clearPendingException();
                     }
                 }
             }
@@ -2631,20 +2671,29 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
                 // synthesises an iterator over getitem(0), getitem(1), …
                 // until IndexError, so this branch covers both __iter__
                 // and the old-style sequence protocol.
-                const proto::ProtoObject* it = env->iter(b);
+                const proto::ProtoObject* it = nullptr;
+                bool notIterable = false;
+                try {
+                    it = env->iter(b);
+                } catch (const PyException&) {
+                    notIterable = true;
+                }
                 if (it) {
                     for (;;) {
-                        const proto::ProtoObject* item = env->next(it);
-                        if (!item) {
-                            if (env->hasPendingException()) env->clearPendingException();
-                            break;
+                        // An error from the iteration ends it, as before.
+                        const proto::ProtoObject* item = nullptr;
+                        try {
+                            item = env->next(it);
+                        } catch (const PyException&) {
+                            item = nullptr;
                         }
+                        if (!item) break;
                         if (env->objectsEqual(ctx, a, item)) {
                             found = true;
                             break;
                         }
                     }
-                } else if (env->hasPendingException()) {
+                } else if (notIterable) {
                     // env->iter raised because b is not iterable.  CPython
                     // surfaces this as:
                     //   TypeError: argument of type 'X' is not iterable
@@ -2652,7 +2701,6 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
                     // CPython uses for `x in non_container`.  Without this
                     // both `5 in 10` and `1 in None` silently returned
                     // False — a real correctness gap, not a tolerance.
-                    env->clearPendingException();
                     std::string clsName = "object";
                     const proto::ProtoObject* cls = env->getType(ctx, b);
                     if (cls) {
@@ -2864,21 +2912,30 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
                 if (am && am != PROTO_NONE) {
                     const proto::ProtoString* lenS =
                         PythonEnvironment::getInternedString(ctx, "__len__");
-                    const proto::ProtoObject* lenM = env->getAttribute(ctx, am, lenS, false);
-                    if (env->hasPendingException()) env->clearPendingException();
+                    // Errors from probing __abstractmethods__ are dropped:
+                    // the class is then instantiated.
+                    const proto::ProtoObject* lenM = nullptr;
+                    try {
+                        lenM = env->getAttribute(ctx, am, lenS, false);
+                    } catch (const PyException&) {
+                        lenM = nullptr;
+                    }
                     bool nonEmpty = false;
                     if (lenM && lenM != PROTO_NONE) {
                         const proto::ProtoObject* lenRes = nullptr;
-                        if (lenM->asMethod(ctx)) {
-                            lenRes = lenM->asMethod(ctx)(ctx,
-                                const_cast<proto::ProtoObject*>(am), nullptr,
-                                argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
-                        } else {
-                            const proto::ProtoList* la =
-                                ctx->newList()->appendLast(ctx, am);
-                            lenRes = invokePythonCallable(ctx, lenM, la, nullptr);
+                        try {
+                            if (lenM->asMethod(ctx)) {
+                                lenRes = lenM->asMethod(ctx)(ctx,
+                                    const_cast<proto::ProtoObject*>(am), nullptr,
+                                    argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
+                            } else {
+                                const proto::ProtoList* la =
+                                    ctx->newList()->appendLast(ctx, am);
+                                lenRes = invokePythonCallable(ctx, lenM, la, nullptr);
+                            }
+                        } catch (const PyException&) {
+                            lenRes = nullptr;
                         }
-                        if (env->hasPendingException()) env->clearPendingException();
                         if (lenRes && lenRes->isInteger(ctx)) {
                             nonEmpty = lenRes->asLong(ctx) > 0;
                         }
@@ -3152,11 +3209,16 @@ static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const pr
 
 } // anonymous namespace
 
-const proto::ProtoObject* py_generator_send_impl(
+// `finished`, when given, receives the end of the generator: it then answers
+// nullptr instead of raising StopIteration (iteration's exhaustion is not an
+// exception internally; py_generator_step). Without it, a finished generator
+// raises StopIteration carrying its return value, as __next__ / send do.
+static const proto::ProtoObject* py_generator_resume(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ProtoObject* sendVal,
-    const proto::ProtoObject* throwExc = nullptr) {
+    const proto::ProtoObject* throwExc,
+    bool* finished) {
     
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env) return PROTO_NONE;
@@ -3184,19 +3246,15 @@ const proto::ProtoObject* py_generator_send_impl(
         // and close(), the exception to raise at the suspended yield; it
         // updates gi_pc and gi_locals on the generator itself.
 
-        // 1. Mark as running
+        // Running until the callback returns or throws.
         self->setAttribute(ctx, env->getGiRunningString(), PROTO_TRUE);
-
-        try {
-            const proto::ProtoObject* result = throwExc
-                ? env->callObject(nativeCb, {self, sendVal ? sendVal : PROTO_NONE, throwExc})
-                : env->callObject(nativeCb, {self, sendVal ? sendVal : PROTO_NONE});
-            self->setAttribute(ctx, env->getGiRunningString(), PROTO_FALSE);
-            return result;
-        } catch (const proto::ProtoObject* exc) {
-            self->setAttribute(ctx, env->getGiRunningString(), PROTO_FALSE);
-            throw exc;
-        }
+        struct NotRunning {
+            proto::ProtoContext* ctx; PythonEnvironment* env; const proto::ProtoObject* gen;
+            ~NotRunning() { gen->setAttribute(ctx, env->getGiRunningString(), PROTO_FALSE); }
+        } notRunning{ctx, env, self};
+        return throwExc
+            ? env->callObject(nativeCb, {self, sendVal ? sendVal : PROTO_NONE, throwExc})
+            : env->callObject(nativeCb, {self, sendVal ? sendVal : PROTO_NONE});
     }
 
     // 3. Get bytecode state
@@ -3247,18 +3305,16 @@ const proto::ProtoObject* py_generator_send_impl(
     
     if (pc >= co_code_tuple->getSize(ctx)) {
         if (get_env_diag()) fprintf(stderr, "DEBUG HANG: generator pc >= co_code_tuple! pc=%llu size=%llu\n", static_cast<unsigned long long>(pc), static_cast<unsigned long long>(co_code_tuple->getSize(ctx)));
+        if (finished && !throwExc) { *finished = true; return nullptr; }
         env->raiseStopIteration(ctx, PROTO_NONE);
         return PROTO_NONE;
     }
 
     // 3. Restore stack (moved inside block below)
 
-    // 5. Run
+    // 5. Run (gen.throw's exception is raised at the resume point, inside
+    // the generator's rebuilt tries: executeBytecodeRange's throwOnResume).
     self->setAttribute(ctx, env->getGiRunningString(), PROTO_TRUE);
-    
-    if (throwExc) {
-        env->setPendingException(throwExc);
-    }
     
     proto::proto_ulong nextPc = pc; 
     proto::proto_ulong finalTop = 0;
@@ -3334,22 +3390,29 @@ const proto::ProtoObject* py_generator_send_impl(
 
         // As in runUserFunctionCall: LOAD_FAST / DELETE_FAST name an unbound
         // local from the running code object's co_varnames.
-        const proto::ProtoObject* prevCodeObj = PythonEnvironment::getCurrentCodeObject();
-        PythonEnvironment::setCurrentCodeObject(codeObj);
-        result = executeBytecodeRange(calleeCtx,
-            co_consts,
-            reinterpret_cast<const proto::ProtoObject*>(co_code_tuple)->asTuple(calleeCtx),
-            co_names,
-            frame,
-            pc,
-            co_code_tuple->getSize(calleeCtx),
-            stackOffset,
-            &nextPc,
-            &yielded,
-            &blockStack,
-            initialTop,
-            &finalTop);
-        PythonEnvironment::setCurrentCodeObject(prevCodeObj);
+        try {
+            CodeObjectScope codeScope(codeObj);
+            result = executeBytecodeRange(calleeCtx,
+                co_consts,
+                reinterpret_cast<const proto::ProtoObject*>(co_code_tuple)->asTuple(calleeCtx),
+                co_names,
+                frame,
+                pc,
+                co_code_tuple->getSize(calleeCtx),
+                stackOffset,
+                &nextPc,
+                &yielded,
+                &blockStack,
+                initialTop,
+                &finalTop,
+                nullptr, nullptr, nullptr,
+                throwExc);
+        } catch (const PyException&) {
+            // An exception out of the body finishes the generator.
+            self->setAttribute(ctx, env->getGiRunningString(), PROTO_FALSE);
+            self->setAttribute(ctx, env->getGiPCString(), ctx->fromInteger(co_code_tuple->getSize(ctx)));
+            throw;
+        }
 
         // Save the variable slots only, [0, stackOffset): the operand stack
         // is saved below up to its live top.  Saving every automatic slot
@@ -3416,8 +3479,9 @@ const proto::ProtoObject* py_generator_send_impl(
         fflush(stderr);
     }
 
-    if (!yielded && !env->hasPendingException()) {
+    if (!yielded) {
         if (get_env_diag()) fprintf(stderr, "DEBUG HANG: generator exhausted cleanly! raising StopIteration\n");
+        if (finished) { *finished = true; return nullptr; }
         env->raiseStopIteration(ctx, result);
         return nullptr;
     }
@@ -3455,11 +3519,25 @@ const proto::ProtoObject* py_generator_repr(
     return PythonEnvironment::getInternedString(ctx, buf)->asObject(ctx);
 }
 
+const proto::ProtoObject* py_generator_send_impl(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ProtoObject* sendVal,
+    const proto::ProtoObject* throwExc = nullptr) {
+    return py_generator_resume(ctx, self, sendVal, throwExc, nullptr);
+}
+
+const proto::ProtoObject* py_generator_step(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
+    bool finished = false;
+    const proto::ProtoObject* r = py_generator_resume(ctx, self, PROTO_NONE, nullptr, &finished);
+    return finished ? nullptr : r;
+}
+
 const proto::ProtoObject* py_generator_next(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
-    return py_generator_send_impl(ctx, self, PROTO_NONE);
+    return py_generator_send_impl(ctx, self, PROTO_NONE, nullptr);
 }
 
 // PF: Drive a class-defined async iterator's __anext__() inline so the
@@ -3495,34 +3573,30 @@ const proto::ProtoObject* py_class_aiter_next(
     }
 
     const proto::ProtoObject* coro = nullptr;
-    if (anext->asMethod(ctx) && anext->asMethodSelf(ctx) != nullptr) {
-        // Bound native method — self already captured.
-        coro = anext->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(self),
-                                     nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
-    } else {
-        // Python-level async def __anext__ — call as a callable, prepending self
-        // explicitly because async def methods are not auto-bound by descriptor
-        // protocol at attribute lookup time in protopy.
-        const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, self);
-        coro = invokePythonCallable(ctx, anext, selfArgs, nullptr);
-    }
-    if (env->hasPendingException()) {
-        const proto::ProtoObject* exc = env->peekPendingException();
-        // Resolve StopAsyncIteration via the env's cached type and
-        // delegate to isInstanceOf — exc->__class__ can resolve through
-        // the metaclass and return `type` instead of the actual
-        // exception class for some allocation paths, so a string-name
-        // compare against "StopAsyncIteration" is unreliable.
+    // StopAsyncIteration from __anext__ ends the iteration: StopIteration.
+    // Resolved via the env's cached type and isInstanceOf — exc->__class__
+    // can resolve through the metaclass and return `type` instead of the
+    // actual exception class for some allocation paths, so a string-name
+    // compare against "StopAsyncIteration" is unreliable.
+    auto isStopAsync = [&](const proto::ProtoObject* exc) {
         const proto::ProtoObject* sasType = env->getStopAsyncIterationType();
-        bool isSAS = false;
-        if (exc && sasType) {
-            isSAS = (exc->isInstanceOf(ctx, sasType) == PROTO_TRUE);
+        return exc && sasType && exc->isInstanceOf(ctx, sasType) == PROTO_TRUE;
+    };
+    try {
+        if (anext->asMethod(ctx) && anext->asMethodSelf(ctx) != nullptr) {
+            // Bound native method — self already captured.
+            coro = anext->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(self),
+                                         nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
+        } else {
+            // Python-level async def __anext__ — call as a callable, prepending self
+            // explicitly because async def methods are not auto-bound by descriptor
+            // protocol at attribute lookup time in protopy.
+            const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, self);
+            coro = invokePythonCallable(ctx, anext, selfArgs, nullptr);
         }
-        if (isSAS) {
-            env->clearPendingException();
-            env->raiseStopIteration(ctx, PROTO_NONE);
-        }
-        return nullptr;
+    } catch (const PyException& e) {
+        if (!isStopAsync(e.exception())) throw;
+        env->raiseStopIteration(ctx, PROTO_NONE);
     }
     if (!coro || coro == PROTO_NONE) {
         env->raiseStopIteration(ctx, PROTO_NONE);
@@ -3542,34 +3616,23 @@ const proto::ProtoObject* py_class_aiter_next(
     // "can't send non-None value to a just-started generator".
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PROTO_NONE);
     const proto::ProtoObject* sendResult = nullptr;
-    if (sendMethod->asMethod(ctx)) {
-        sendResult = sendMethod->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(coro),
-                                                nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
-    } else {
-        sendResult = invokePythonCallable(ctx, sendMethod, args, nullptr);
-    }
-
-    if (env->hasPendingException()) {
-        const proto::ProtoObject* exc = env->peekPendingException();
+    try {
+        if (sendMethod->asMethod(ctx)) {
+            sendResult = sendMethod->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(coro),
+                                                    nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
+        } else {
+            sendResult = invokePythonCallable(ctx, sendMethod, args, nullptr);
+        }
+    } catch (const PyException& e) {
+        // StopIteration carries the step's value; StopAsyncIteration ends
+        // the iteration (as StopIteration, so FOR_ITER ends cleanly).
+        const proto::ProtoObject* exc = e.exception();
         if (env->isStopIteration(ctx, exc)) {
             const proto::ProtoObject* val = env->getStopIterationValue(ctx, exc);
-            env->clearPendingException();
             return val ? val : PROTO_NONE;
         }
-        // StopAsyncIteration → StopIteration so FOR_ITER ends cleanly.
-        // Use isInstanceOf; class name resolution can disagree with
-        // the metaclass-walked __class__ attribute.
-        const proto::ProtoObject* sasType = env->getStopAsyncIterationType();
-        bool isSAS = false;
-        if (exc && sasType) {
-            isSAS = (exc->isInstanceOf(ctx, sasType) == PROTO_TRUE);
-        }
-        if (isSAS) {
-            env->clearPendingException();
-            env->raiseStopIteration(ctx, PROTO_NONE);
-            return nullptr;
-        }
-        return nullptr;
+        if (!isStopAsync(exc)) throw;
+        env->raiseStopIteration(ctx, PROTO_NONE);
     }
 
     // Non-yielding async __anext__ that completes via implicit return None.
@@ -3624,18 +3687,14 @@ static const proto::ProtoObject* py_asend_wrapper_send(
         const proto::ProtoObject* self,
         const proto::ProtoObject* sendVal,
         const proto::ProtoObject* throwExc);
-    const proto::ProtoObject* val = py_generator_send_impl(ctx, target, sendVal, nullptr);
-
-    if (env->hasPendingException()) {
-        // StopIteration from the underlying agen → translate to
-        // StopAsyncIteration so callers awaiting `agen.asend(v)` see
-        // the async-iteration sentinel.
-        const proto::ProtoObject* exc = env->peekPendingException();
-        if (env->isStopIteration(ctx, exc)) {
-            env->clearPendingException();
-            env->raiseStopAsyncIteration(ctx);
-        }
-        return nullptr;
+    const proto::ProtoObject* val = nullptr;
+    try {
+        val = py_generator_send_impl(ctx, target, sendVal, nullptr);
+    } catch (const PyException& e) {
+        // StopIteration from the underlying agen → StopAsyncIteration, so
+        // callers awaiting `agen.asend(v)` see the async-iteration sentinel.
+        if (!env->isStopIteration(ctx, e.exception())) throw;
+        env->raiseStopAsyncIteration(ctx);
     }
 
     // val is the yielded value.  Wrap it as the StopIteration return value
@@ -3732,12 +3791,16 @@ const proto::ProtoObject* py_generator_throw(
                 // Caller supplied an already-built instance (or args tuple).
                 exc = value;
             } else {
-                // Instantiate the type
-                const proto::ProtoObject* instance = invokePythonCallable(ctx, exc, ctx->newList(), nullptr);
-                if (instance && instance != PROTO_NONE && !env->hasPendingException()) {
+                // Instantiate the type (an error doing so is dropped: the type
+                // itself is thrown, as before).
+                const proto::ProtoObject* instance = nullptr;
+                try {
+                    instance = invokePythonCallable(ctx, exc, ctx->newList(), nullptr);
+                } catch (const PyException&) {
+                    instance = nullptr;
+                }
+                if (instance && instance != PROTO_NONE) {
                     exc = instance;
-                } else if (env->hasPendingException()) {
-                    env->clearPendingException();
                 }
             }
         }
@@ -3776,45 +3839,35 @@ const proto::ProtoObject* py_generator_close(
     // Create GeneratorExit instance via proper Python constructor call so that
     // the prototype chain is fully set up for isInstanceOf to work correctly.
     const proto::ProtoList* emptyArgs = ctx->newList();
-    const proto::ProtoObject* genExit = invokePythonCallable(ctx, genExitType, emptyArgs, nullptr);
+    const proto::ProtoObject* genExit = nullptr;
+    try {
+        genExit = invokePythonCallable(ctx, genExitType, emptyArgs, nullptr);
+    } catch (const PyException&) {
+        genExit = nullptr;   // an error constructing it: the fallback below
+    }
     if (!genExit || genExit == PROTO_NONE) {
         // Fallback: bare object with parent (may not be fully recognized by isinstance)
         genExit = ctx->newObject(true);
         genExit = genExit->addParent(ctx, genExitType);
     }
-    // Clear any exception that may have been set during instance construction.
-    if (env->hasPendingException()) {
-        env->clearPendingException();
-    }
 
+    // The generator that does not handle GeneratorExit (the common case)
+    // lets it out. Python semantics: close() swallows GeneratorExit and
+    // StopIteration; any other exception propagates to the caller.
     const proto::ProtoObject* sendResult = nullptr;
+    bool finished = false;
     try {
         sendResult = py_generator_send_impl(ctx, self, PROTO_NONE, genExit);
-    } catch (...) {
-        // C++ exception: clear any pending protoPython exception and return.
-        if (env->hasPendingException()) {
-            env->clearPendingException();
-        }
-        return PROTO_NONE;
+    } catch (const PyException& e) {
+        const proto::ProtoObject* exc = e.exception();
+        const bool isGenExit = exc && ((exc == genExitType) ||
+                                       (exc->getPrototype(ctx) == genExitType) ||
+                                       (exc->isInstanceOf(ctx, genExitType) == PROTO_TRUE));
+        if (!isGenExit && !env->isStopIteration(ctx, exc)) throw;
+        finished = true;
     }
-
-    // py_generator_send_impl sets a pending exception when the generator
-    // does not handle GeneratorExit (the common case for a simple generator).
-    // Python semantics: close() must swallow GeneratorExit and StopIteration;
-    // any other exception propagates to the caller.
-    if (env->hasPendingException()) {
-        const proto::ProtoObject* exc = env->peekPendingException();
-        bool isGenExit = false;
-        if (genExitType && exc) {
-            isGenExit = (exc == genExitType) ||
-                        (exc->getPrototype(ctx) == genExitType) ||
-                        (exc->isInstanceOf(ctx, genExitType) == PROTO_TRUE);
-        }
-        bool isStopIt = env->isStopIteration(ctx, exc);
-        if (isGenExit || isStopIt) {
-            env->clearPendingException();
-        }
-        // Otherwise leave the exception pending so it propagates.
+    if (finished) {
+        // closed
     } else if (sendResult && sendResult != PROTO_NONE) {
         // PB6: the generator caught GeneratorExit and *yielded* a new
         // value rather than letting close() finish.  CPython contract:
@@ -4301,34 +4354,24 @@ PROTOPY_EXC_NOINLINE static void chainCaughtException(proto::ProtoContext* ctx, 
     if (env) env->chainException(ctx, exc, active);
 }
 
-// Set by OP_RERAISE and a bare `raise`: the exception the dispatch loop finds
-// pending next (at once, in the same frame) is one this frame already caught,
-// so it already has this frame's traceback entry and its context.
-static thread_local bool t_reraising = false;
-
-// A bare `raise` and OP_RERAISE: `exc` is pending again.
-PROTOPY_EXC_NOINLINE static void reraiseException(PythonEnvironment* env, const proto::ProtoObject* exc) {
-    env->setPendingException(exc);
-    t_reraising = true;
+// A bare `raise` and OP_RERAISE: `exc` is thrown again. The activation that
+// caught it notes nothing more for it (executeBytecodeRange's noteFrame).
+[[noreturn]] PROTOPY_EXC_NOINLINE static void reraiseException(PythonEnvironment* env, const proto::ProtoObject* exc) {
+    throw PyException(env, exc);
 }
 
-// `raise exc` (an instance): chained to the active exception.
-PROTOPY_EXC_NOINLINE static void raiseChainedException(proto::ProtoContext* ctx, PythonEnvironment* env,
-                                                       const proto::ProtoObject* exc) {
+// `raise exc` (an instance): chained to the active exception, then thrown.
+[[noreturn]] PROTOPY_EXC_NOINLINE static void raiseChainedException(proto::ProtoContext* ctx, PythonEnvironment* env,
+                                                                    const proto::ProtoObject* exc) {
     setExceptionContext(ctx, exc, env->getActiveException());
-    env->setPendingException(exc);
+    throw PyException(env, exc);
 }
 
-// The dispatch loop caught `exc` in this frame: give it this frame's
-// traceback entry and chain it to the active exception, unless it is one this
-// frame re-raised.
+// An exception crossing an activation: give it the activation's traceback
+// entry and chain it to the active exception.
 PROTOPY_EXC_NOINLINE static void noteCaughtException(proto::ProtoContext* ctx, PythonEnvironment* env,
                                                      const proto::ProtoObject* exc, const proto::ProtoObject* tbFrame,
                                                      int lasti, int line) {
-    if (t_reraising) {
-        t_reraising = false;
-        return;
-    }
     env->addTraceback(exc, tbFrame, lasti, line);
     chainCaughtException(ctx, exc, env->getActiveException());
 }
@@ -4368,7 +4411,7 @@ PROTOPY_EXC_NOINLINE static void raiseExceptionFrom(proto::ProtoContext* ctx, Py
                           PROTO_TRUE);
     }
     setExceptionContext(ctx, exc, env->getActiveException());
-    env->setPendingException(exc);
+    throw PyException(env, exc);
 }
 
 static const proto::ProtoObject* runningCodeObject(proto::ProtoContext* ctx, PythonEnvironment* env,
@@ -4446,10 +4489,12 @@ static const proto::ProtoObject* classNamespaceLookup(proto::ProtoContext* ctx, 
         return nullptr;
     const proto::ProtoObject* getitem = env->getAttribute(ctx, nsType, env->getGetItemString(), false);
     if (!getitem || getitem == PROTO_NONE) return nullptr;
-    const proto::ProtoObject* val = invokeDunder(ctx, ns, env->getGetItemString(),
-                                                 ctx->newList()->appendLast(ctx, nameS->asObject(ctx)));
-    if (env->hasPendingException()) {
-        env->clearPendingException();
+    // An error from the namespace's __getitem__ (KeyError) means "not here".
+    const proto::ProtoObject* val = nullptr;
+    try {
+        val = invokeDunder(ctx, ns, env->getGetItemString(),
+                           ctx->newList()->appendLast(ctx, nameS->asObject(ctx)));
+    } catch (const PyException&) {
         return nullptr;
     }
     return (val && val != PROTO_NONE) ? val : nullptr;
@@ -4507,8 +4552,11 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
             const proto::ProtoObject* base = baseTuple->getAt(ctx, static_cast<int>(bi));
             const proto::ProtoObject* entries = nullptr;
             if (base && base != PROTO_NONE && !env->isActuallyAClass(ctx, base)) {
-                entries = env->getAttribute(ctx, base, mroEntriesS, false);
-                if (env->hasPendingException()) env->clearPendingException();
+                try {
+                    entries = env->getAttribute(ctx, base, mroEntriesS, false);
+                } catch (const PyException&) {
+                    entries = nullptr;
+                }
             }
             if (!entries || entries == PROTO_NONE) {
                 resolved = resolved->appendLast(ctx, base);
@@ -5248,12 +5296,16 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
                         if (!k) break;
                         if (k->isString(ctx)) {
                             const proto::ProtoString* nameS_ = k->asString(ctx);
-                            const proto::ProtoObject* v = env->getAttribute(ctx, ns, nameS_, false);
-                            if (env->hasPendingException()) env->clearPendingException();
+                            // Errors probing __isabstractmethod__ are dropped.
+                            const proto::ProtoObject* v = nullptr;
+                            const proto::ProtoObject* isAbs = nullptr;
+                            try {
+                                v = env->getAttribute(ctx, ns, nameS_, false);
+                                if (v && v != PROTO_NONE) isAbs = env->getAttribute(ctx, v, abstractS, false);
+                            } catch (const PyException&) {
+                                isAbs = nullptr;
+                            }
                             if (v && v != PROTO_NONE) {
-                                const proto::ProtoObject* isAbs =
-                                    env->getAttribute(ctx, v, abstractS, false);
-                                if (env->hasPendingException()) env->clearPendingException();
                                 if (isAbs == PROTO_TRUE) {
                                     absNames = absNames->appendLast(ctx, k);
                                 }
@@ -5319,163 +5371,128 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
     return targetClass ? targetClass : PROTO_NONE;
 }
 
-const proto::ProtoObject* executeBytecodeRange(
-    proto::ProtoContext* ctx,
-    const proto::ProtoTuple* constants,
-    const proto::ProtoTuple* bytecode,
-    const proto::ProtoTuple* names,
-    proto::ProtoObject*& frame,
-    proto::proto_ulong pcStart,
-    proto::proto_ulong pcEnd,
-    proto::proto_ulong stackOffset,
-    proto::proto_ulong* outPc,
-    bool* yielded,
-    std::vector<Block>* externalBlockStack,
-    proto::proto_ulong initialTop,
-    proto::proto_ulong* finalTopPtr,
-    const int* nativeBc,
-    const proto::ProtoObject** nativeConsts,
-    const proto::ProtoObject** nativeNames) {
-    if (!ctx || !constants || !bytecode) return nullptr;
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+namespace {
 
-    RecursionScope recScope(env, ctx);
-    if (recScope.overflowed()) return nullptr;
-    
-    // Hoist the diagnostic-tracing flag once per dispatcher invocation.
-    // get_env_diag() is `inline bool ... { return g_diag_enabled; }` over a
-    // namespace-scope const bool, but every call still emitted a PLT-trampolined
-    // function call from inside the dispatch loop (the symbol survives in the
-    // shared library because address-taken instances exist in other TUs).
-    // 61 call sites in this dispatch loop × millions of iterations on
-    // call_recursion = ~5 % of total CPU time spent on PLT stubs around a check
-    // that is constant for the process lifetime.  One local read replaces all
-    // of that.
-    const bool diag_local = get_env_diag();
+enum class LevelExit { Return, PopBlock, PopExcept };
 
-    FrameScope fscope(frame, ctx);
-    proto::proto_ulong n = bytecode->getSize(ctx);
-    if (n == 0) {
-        if (diag_local) {
-            fprintf(stderr, "DEBUG: executeBytecodeRange n=0, returning nullptr\n");
-        }
-        return nullptr;
-    }
-    if (pcEnd >= n) pcEnd = n - 1;
+// One activation of executeBytecodeRange: its state, and the levels of its
+// try nesting as member functions (a Python try is a C++ try, see Block).
+// The state lives here once per call; lambdas capturing it by reference
+// stored a pointer per captured variable per closure on every call.
+struct Activation {
+    // Invariants of the activation.
+    proto::ProtoContext* ctx;
+    PythonEnvironment* env;
+    const int* bc;
+    proto::proto_ulong n;
+    proto::proto_ulong pcEnd;
+    bool diag_local;
+    const proto::ProtoTuple* constants;
+    const proto::ProtoTuple* bytecode;
+    const proto::ProtoTuple* names;
+    const proto::ProtoObject** nativeConsts;
+    const proto::ProtoObject** nativeNames;
+    const int* nativeBc;
+    proto::proto_ulong pcStart;
+    proto::proto_ulong stackOffset;
+    proto::proto_ulong* outPc;
+    bool* yielded;
+    std::vector<Block>* externalBlockStack;
+    proto::proto_ulong initialTop;
+    proto::proto_ulong* finalTopPtr;
+    const proto::ProtoObject** frameAnchor;
+    bool sync_globals;
+    // A constructor, not aggregate initialization: initializing the aggregate
+    // zero-filled the whole object first (rep stos), on every call.
+    Activation(proto::ProtoContext* ctx_, PythonEnvironment* env_, const int* bc_, proto::proto_ulong n_,
+               proto::proto_ulong pcEnd_, bool diag_, const proto::ProtoTuple* constants_,
+               const proto::ProtoTuple* bytecode_, const proto::ProtoTuple* names_,
+               const proto::ProtoObject** nativeConsts_, const proto::ProtoObject** nativeNames_,
+               const int* nativeBc_, proto::proto_ulong pcStart_, proto::proto_ulong stackOffset_,
+               proto::proto_ulong* outPc_, bool* yielded_, std::vector<Block>* externalBlockStack_,
+               proto::proto_ulong initialTop_, proto::proto_ulong* finalTopPtr_,
+               const proto::ProtoObject** frameAnchor_, bool syncGlobals_, proto::ProtoObject*& frame_,
+               GCStack& stack_, std::vector<Block>& blockStack_, const std::vector<Block>& savedLevels_,
+               const proto::ProtoObject* throwOnResume_)
+        : ctx(ctx_), env(env_), bc(bc_), n(n_), pcEnd(pcEnd_), diag_local(diag_), constants(constants_),
+          bytecode(bytecode_), names(names_), nativeConsts(nativeConsts_), nativeNames(nativeNames_),
+          nativeBc(nativeBc_), pcStart(pcStart_), stackOffset(stackOffset_), outPc(outPc_), yielded(yielded_),
+          externalBlockStack(externalBlockStack_), initialTop(initialTop_), finalTopPtr(finalTopPtr_),
+          frameAnchor(frameAnchor_), sync_globals(syncGlobals_), frame(frame_), stack(stack_),
+          blockStack(blockStack_), savedLevels(savedLevels_), throwOnResume(throwOnResume_),
+          lastPc(pcStart_) {}
+    Activation(const Activation&) = delete;
+    Activation& operator=(const Activation&) = delete;
 
-    // Use pre-computed native bytecode int[] from co_bytecode_native (built once at compile time
-    // by makeCodeObject). Falls back to building a local vector if not available (module-level
-    // code or generators resuming without nativeBc). The hot path (user function calls) always
-    // has nativeBc set by runUserFunctionCall, so the fallback is cold.
-    std::vector<int> bc_fallback;
-    const int* bc = nativeBc;
-    if (!bc) {
-        bc_fallback.resize(n);
-        for (proto::proto_ulong j = 0; j < n; ++j) {
-            const proto::ProtoObject* obj = bytecode->getAt(ctx, static_cast<int>(j));
-            bc_fallback[j] = (obj && obj->isInteger(ctx)) ? static_cast<int>(obj->asLong(ctx)) : 0;
-        }
-        bc = bc_fallback.data();
-    }
-
-    unsigned int nSlots = ctx->getAutomaticLocalsCount();
-    // A context with no automatic slots at all gets them here, so that the
-    // operand stack and the frame anchor below are GC roots.  Code compiled by
-    // this runtime always asks for slots (Compiler.cpp); this covers contexts
-    // built elsewhere.  Only an empty context is resized: a context that has
-    // slots may be running an outer activation whose stack points into them.
-    if (nSlots == 0) {
-        ctx->resizeAutomaticLocals(static_cast<unsigned int>(stackOffset) + 4096u + 1u);
-        nSlots = ctx->getAutomaticLocalsCount();
-    }
-    const proto::ProtoObject** allSlots = ctx->getAutomaticLocals();
-
-    // Fallback stack for contexts whose few slots cannot hold the stack. It is
-    // not scanned by the collector.
-    std::vector<const proto::ProtoObject*> fallbackStack;
-    const proto::ProtoObject** stackBase = nullptr;
-    size_t stackCap = 0;
-
-    // The frame is anchored in the context's last automatic slot, which the
-    // operand stack never uses.  A frame is a cell of the context that runs
-    // it, and nothing in protoCore's heap references it while it runs: it is
-    // held by this function's `frame`, by the caller's C++ locals and by the
-    // thread-local current frame, none of which the collector scans.  That
-    // is safe only while the frame is in the context's young generation, and
-    // the ctx->safepoint() below hands the young generation to the collector
-    // once the context has allocated maxAllocatedCellsPerContext cells (rule
-    // 3 of protoCore's docs/EMBEDDER-CONFORMANCE.md).  Without the anchor the
-    // next cycle freed the frame of any long-running call, its cell was
-    // reused, and LOAD_DEREF / STORE_DEREF walked a stranger (a nested
-    // function's NameError on a variable of its enclosing function).
-    const proto::ProtoObject** frameAnchor = nullptr;
-    if (allSlots && nSlots > stackOffset + 1) {
-        stackBase = allSlots + stackOffset;
-        stackCap = nSlots - stackOffset - 1;
-        frameAnchor = allSlots + (nSlots - 1);
-    } else if (allSlots && nSlots > stackOffset) {
-        stackBase = allSlots + stackOffset;
-        stackCap = nSlots - stackOffset;
-    } else {
-        fallbackStack.resize(4096); // Default capacity for manual/test execution
-        stackBase = fallbackStack.data();
-        stackCap = fallbackStack.size();
-    }
-
-    GCStack stack(stackBase, stackCap);
-    stack.top = initialTop;
-    // A nested activation on the same context restores the outer anchor.
-    struct FrameAnchorScope {
-        const proto::ProtoObject** slot;
-        const proto::ProtoObject* saved;
-        ~FrameAnchorScope() { if (slot) *slot = saved; }
-    } frameAnchorScope{frameAnchor, frameAnchor ? *frameAnchor : nullptr};
-    if (frameAnchor) *frameAnchor = frame;
-
-    // The try nesting of this activation (see Block). A resumed generator's
-    // saved levels are rebuilt below (runLevel), before dispatching.
-    std::vector<Block> blockStack;
-    std::vector<Block> savedLevels;
-    if (externalBlockStack) {
-        savedLevels = *externalBlockStack;
-    }
-    const bool sync_globals = (frame == PythonEnvironment::getCurrentGlobals());
-    // Cooperative GC safepoint counter.  Most Python opcodes execute without
-    // touching the cell allocator (LOAD_FAST, BINARY_ADD on SmallIntegers,
-    // tight integer loops), so the per-allocation STW poll inside allocCell
-    // never fires for CPU-bound threads.  Without an in-loop safepoint, a
-    // GC stop-the-world request will starve indefinitely against a
-    // pure-bytecode thread, deadlocking every other thread that is already
-    // parked.  Polling every 256 opcodes keeps the fast path branch-only
-    // while bounding pause-acquisition latency to a few µs.
+    // The frame's state, shared by every level.
+    proto::ProtoObject*& frame;
+    GCStack& stack;
+    std::vector<Block>& blockStack;
+    const std::vector<Block>& savedLevels;
+    const proto::ProtoObject* throwOnResume;
     unsigned int sp_ctr = 0;
     // Attribute write group in progress (see "Attribute write groups"):
     // 0 none, 1 grouped (values held on the stack), 2 written per write.
     int attrGroupState = 0;
-    // Slot index of the instruction executed last: the one that raised when
-    // an exception is found pending at the top of the loop.
-    proto::proto_ulong lastPc = pcStart;
-
+    // Slot index of the instruction executed last: the one that raised.
+    proto::proto_ulong lastPc;
     // A Python try is a C++ try (see Block). A nested dispatch ends at its
     // range's POP_BLOCK or, for a handler, at its POP_EXCEPT: levelExit says
     // which and levelExitPc where the enclosing level continues. RETURN_VALUE
     // and a yield end every level.
-    enum class LevelExit { Return, PopBlock, PopExcept };
     LevelExit levelExit = LevelExit::Return;
     proto::proto_ulong levelExitPc = 0;
-    // An opcode that still reports an error by returning nullptr with the
-    // exception pending ends its level as a throw would.
-    auto throwIfPending = [&](const proto::ProtoObject* r) {
-        if (levelExit == LevelExit::Return && !r && env && env->hasPendingException()) {
-            const proto::ProtoObject* pending = env->peekPendingException();
-            env->clearPendingException();
-            throw PyException(env, pending);
+    // A Python exception crossing this activation (caught by one of its
+    // tries, or leaving it) gets the activation's traceback entry, at the
+    // instruction executed last, and its __context__. Once: the exception this
+    // activation noted last, its traceback unchanged since, is one it
+    // re-raised (CPython adds no entry for a re-raise either). Only the last
+    // one is kept: a loop raising and catching would otherwise grow a list
+    // scanned on every raise.
+    const proto::ProtoObject* notedExc = nullptr;
+    const proto::ProtoObject* notedTb = nullptr;
+    void noteFrame(const proto::ProtoObject* exc) {
+        if (!env || !exc || exc == PROTO_NONE) return;
+        static const proto::ProtoString* const tbS = PythonEnvironment::getInternedString(ctx, "__traceback__");
+        const proto::ProtoObject* tbNow = exc->getAttribute(ctx, tbS);
+        if (notedExc == exc && notedTb == tbNow) return;
+        const proto::ProtoObject* runningCode = runningCodeObject(ctx, env, frame, bytecode);
+        const int tbLine = updateContextLocation(ctx, env, runningCode, lastPc / 2);
+        // A frame stands for this activation only when its f_code is the
+        // running code object: module-level code and exec/eval run with the
+        // namespace as `frame`, and CO_OPTIMIZED calls run without one. Any
+        // other case gets a synthesised frame carrying the running code
+        // object, the globals and the line (what traceback formatting and
+        // unittest's tb_frame.f_globals walk read).
+        const proto::ProtoObject* tbFrame = frame;
+        if (!tbFrame) tbFrame = PythonEnvironment::getCurrentFrame();
+        const bool frameIsActivation = tbFrame && tbFrame != PROTO_NONE &&
+            (!runningCode || tbFrame->getAttribute(ctx, env->getFCodeString()) == runningCode);
+        if (!frameIsActivation) {
+            proto::ProtoObject* synth = const_cast<proto::ProtoObject*>(ctx->newObject(false));
+            if (env->getFramePrototype()) {
+                synth = const_cast<proto::ProtoObject*>(synth->addParent(ctx, env->getFramePrototype()));
+            }
+            const proto::ProtoObject* curGlobals = PythonEnvironment::getCurrentGlobals();
+            if (curGlobals) {
+                synth = const_cast<proto::ProtoObject*>(synth->setAttribute(ctx, env->getFGlobalsString(), curGlobals));
+            }
+            if (runningCode) {
+                synth = const_cast<proto::ProtoObject*>(synth->setAttribute(ctx, env->getFCodeString(), runningCode));
+            }
+            synth = const_cast<proto::ProtoObject*>(synth->setAttribute(ctx,
+                PythonEnvironment::getInternedString(ctx, "f_lineno"), ctx->fromInteger(tbLine)));
+            tbFrame = synth;
         }
-    };
+        noteCaughtException(ctx, env, exc, tbFrame, static_cast<int>(lastPc), tbLine);
+        notedExc = exc;
+        notedTb = exc->getAttribute(ctx, tbS);
+    }
     // A handler level runs inside the catch of the exception it handles,
     // which is the active one (bare raise, sys.exc_info) while it runs; a
     // RERAISE rethrows that catch's exception.
-    auto runHandler = [&](const proto::ProtoObject* handled, auto&& handlerBody) -> const proto::ProtoObject* {
+    template <typename HandlerBody>
+    const proto::ProtoObject* runHandler(const proto::ProtoObject* handled, HandlerBody&& handlerBody) {
         Block handlerLevel{0, stack.size()};
         handlerLevel.isHandler = true;
         handlerLevel.exc = handled;
@@ -5486,23 +5503,22 @@ const proto::ProtoObject* executeBytecodeRange(
             PythonEnvironment* env;
             ~HandlerGuard() {
                 levels.pop_back();
+                // popActiveException can raise TypeError (list removeAt): a
+                // destructor, possibly run while unwinding, must not throw.
                 if (env) {
-                    env->popActiveException();
-                    // popActiveException can set TypeError (list removeAt).
-                    if (env->hasPendingException()) env->clearPendingException();
+                    try { env->popActiveException(); } catch (const PyException&) {}
                 }
             }
         } handlerGuard{blockStack, env};
         levelExit = LevelExit::Return;
-        const proto::ProtoObject* r = handlerBody();
-        throwIfPending(r);
-        return r;
-    };
+        return handlerBody();
+    }
     // A protected range: a nested dispatch inside a C++ try. On a Python
     // exception the operand stack is cut to the depth the range started at,
     // the exception pushed ([tb, exc, exc], or exc alone for a with block)
     // and the handler run inside the catch.
-    auto runRange = [&](const Block& tryRange, auto&& rangeBody, auto&& handlerBody) -> const proto::ProtoObject* {
+    template <typename RangeBody, typename HandlerBody>
+    const proto::ProtoObject* runRange(const Block& tryRange, RangeBody&& rangeBody, HandlerBody&& handlerBody) {
         try {
             blockStack.push_back(tryRange);
             struct RangeGuard {
@@ -5510,11 +5526,10 @@ const proto::ProtoObject* executeBytecodeRange(
                 ~RangeGuard() { levels.pop_back(); }
             } rangeGuard{blockStack};
             levelExit = LevelExit::Return;
-            const proto::ProtoObject* r = rangeBody();
-            throwIfPending(r);
-            return r;
+            return rangeBody();
         } catch (const PyException& raised) {
             const proto::ProtoObject* handled = raised.exception();
+            noteFrame(handled);
             while (stack.size() > tryRange.stackDepth) stack.pop_back();
             if (tryRange.isWithBlock) {
                 stack.push_back(handled);
@@ -5525,9 +5540,52 @@ const proto::ProtoObject* executeBytecodeRange(
             }
             return runHandler(handled, handlerBody);
         }
-    };
+    }
+    // The activation's hottest invariants enter as parameters of the same
+    // names: a parameter shadows the member and is a true local, which the
+    // compiler can keep in a register; a member is reloaded after every call
+    // (the activation escapes into the nested tries).
+    const proto::ProtoObject* dispatch(proto::proto_ulong pcFrom,
+                        proto::ProtoContext* const ctx, PythonEnvironment* const env,
+                        const int* const bc, const proto::proto_ulong n, const proto::proto_ulong pcEnd);
+    // A resumed generator rebuilds its try nesting, outermost first: a
+    // protected range is entered again (its body continues at the resume
+    // point) and a handler runs again inside a catch of the exception it was
+    // handling. Each level then continues where its nested level ended.
+    const proto::ProtoObject* runLevel(size_t k) {
+        if (k == savedLevels.size()) {
+            // gen.throw(): raised at the suspended yield, inside the rebuilt
+            // tries; a YIELD_FROM forwards it to its sub-iterator instead.
+            if (throwOnResume && !(pcStart < n && bc[pcStart] == OP_YIELD_FROM)) {
+                const proto::ProtoObject* injected = throwOnResume;
+                throwOnResume = nullptr;
+                throw PyException(env, injected);
+            }
+            return dispatch(pcStart, ctx, env, bc, n, pcEnd);
+        }
+        const Block saved = savedLevels[k];
+        const proto::ProtoObject* r;
+        if (saved.isHandler) {
+            try {
+                throw PyException(env, saved.exc);
+            } catch (const PyException&) {
+                r = runHandler(saved.exc, [&]() { return runLevel(k + 1); });
+            }
+        } else {
+            r = runRange(saved, [&]() { return runLevel(k + 1); },
+                         [&]() { return dispatch(saved.handlerPc, ctx, env, bc, n, pcEnd); });
+        }
+        if (levelExit != LevelExit::Return) {
+            levelExit = LevelExit::Return;
+            return dispatch(levelExitPc, ctx, env, bc, n, pcEnd);
+        }
+        return r;
+    }
+};
 
-    auto dispatch = [&](auto& nest, proto::proto_ulong pcFrom) -> const proto::ProtoObject* {
+const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
+                        proto::ProtoContext* const ctx, PythonEnvironment* const env,
+                        const int* const bc, const proto::proto_ulong n, const proto::proto_ulong pcEnd) {
     for (proto::proto_ulong i = pcFrom; i <= pcEnd; ) {
         if ((++sp_ctr & 0x3F) == 0 && ctx) {
             // Opcodes may have replaced `frame` (an immutable frame's
@@ -5578,114 +5636,6 @@ const proto::ProtoObject* executeBytecodeRange(
         // case; if subIter has no `throw` method or subIter's throw
         // re-raises, the exception falls back to the normal handler
         // because YIELD_FROM leaves it on the env's pending slot.
-        if (op == OP_YIELD_FROM && env && env->hasPendingException()) {
-            // Skip the handler-dispatch below; YIELD_FROM owns it.
-        } else
-        if (env && env->hasPendingException()) {
-            const proto::ProtoObject* exc = env->peekPendingException();
-            const proto::ProtoObject* runningCode = nullptr;
-            int tbLine = 0;
-            if (exc) {
-                
-                // The exception was raised by the instruction executed last
-                // (`lastPc`); `i` already names the next one.
-                runningCode = runningCodeObject(ctx, env, frame, bytecode);
-                tbLine = updateContextLocation(ctx, env, runningCode, lastPc / 2);
-
-                // Name and message are only read by the diagnostic trace below;
-                // computing str(exc) on every unwound frame ran user __str__
-                // code on the exception path.
-                std::string excName = "unknown";
-                std::string excMsg = "";
-                if (diag_local) {
-                    const proto::ProtoObject* cls = exc->getAttribute(ctx, env->getClassString());
-                    if (cls) {
-                         const proto::ProtoObject* nameAttr = cls->getAttribute(ctx, env->getNameString());
-                         if (nameAttr && nameAttr->isString(ctx)) nameAttr->asString(ctx)->toUTF8String(ctx, excName);
-                    }
-                
-                    const proto::ProtoObject* strFunc = exc->getAttribute(ctx, env->getStrString());
-                    if (strFunc) {
-                        if (strFunc->isString(ctx)) {
-                            strFunc->asString(ctx)->toUTF8String(ctx, excMsg);
-                        } else if (strFunc->asMethod(ctx)) {
-                            const proto::ProtoObject* funcSelf = strFunc->asMethodSelf(ctx);
-                            const proto::ProtoObject* strRes = strFunc->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(funcSelf), nullptr, argsView(proto::ProtoArguments(nullptr, 0)), kwargsView(proto::ProtoSparseListKeywordArguments(ctx, ctx->newSparseList())));
-                            if (strRes && strRes->isString(ctx)) {
-                                strRes->asString(ctx)->toUTF8String(ctx, excMsg);
-                            }
-                        }
-                    }
-                }
-                
-                if (diag_local) {
-                    fprintf(stderr, "DEBUG: Exception %s at %s:%d (PC %llu)\n", 
-                            excName.c_str(), 
-                            ctx->currentFileName ? ctx->currentFileName : "unknown", 
-                            ctx->currentLineNumber, 
-                            static_cast<unsigned long long>(i));
-                    fprintf(stderr, "DEBUG: Exception message: '%s'\n", excMsg.c_str());
-                    fprintf(stderr, "DEBUG: raw exception pointer %p\n", exc);
-                    fflush(stderr);
-                }
-            }
-            
-            if (diag_local) {
-                fprintf(stderr, "DEBUG: Calling addTraceback...\n");
-                fflush(stderr);
-            }
-            // runUserFunctionCall skips frame construction for CO_OPTIMIZED
-            // hot-path functions that have no closure and no inner functions
-            // (the local `frame` parameter is nullptr in that case). For
-            // traceback purposes we still need an object that exposes
-            // f_globals so unittest's `tb.tb_frame.f_globals` walk works,
-            // so synthesise a minimal frame on demand here. The synthesised
-            // frame parents off framePrototype and stores the executing
-            // code object plus the current globals — enough for the
-            // observed traceback callers, with no overhead on the
-            // exception-free hot path.
-            //
-            // A frame stands for this activation only when its f_code is the
-            // running code object: module-level code and exec/eval run with
-            // the namespace as `frame`, so exec'd code would otherwise be
-            // reported under the caller module's file and name. Any other
-            // case gets a synthesised frame carrying the running code object
-            // and line, which is what traceback formatting reads.
-            const proto::ProtoObject* tbFrame = frame;
-            if (!tbFrame) tbFrame = PythonEnvironment::getCurrentFrame();
-            const bool frameIsActivation = tbFrame && tbFrame != PROTO_NONE &&
-                (!runningCode || tbFrame->getAttribute(ctx, env->getFCodeString()) == runningCode);
-            if (!frameIsActivation) {
-                proto::ProtoObject* synth = const_cast<proto::ProtoObject*>(ctx->newObject(false));
-                if (env && env->getFramePrototype()) {
-                    synth = const_cast<proto::ProtoObject*>(synth->addParent(ctx, env->getFramePrototype()));
-                }
-                if (env) {
-                    const proto::ProtoObject* curGlobals = PythonEnvironment::getCurrentGlobals();
-                    if (curGlobals) {
-                        synth = const_cast<proto::ProtoObject*>(synth->setAttribute(ctx, env->getFGlobalsString(), curGlobals));
-                    }
-                    if (runningCode) {
-                        synth = const_cast<proto::ProtoObject*>(synth->setAttribute(ctx, env->getFCodeString(), runningCode));
-                    }
-                    synth = const_cast<proto::ProtoObject*>(synth->setAttribute(ctx,
-                        PythonEnvironment::getInternedString(ctx, "f_lineno"), ctx->fromInteger(tbLine)));
-                }
-                tbFrame = synth;
-            }
-            noteCaughtException(ctx, env, exc, tbFrame, static_cast<int>(lastPc), tbLine);
-            if (diag_local) {
-                fprintf(stderr, "DEBUG: addTraceback returned. blockStack.empty()=%s\n", blockStack.empty() ? "true" : "false");
-                fflush(stderr);
-            }
-            
-            // A Python exception is a C++ exception: thrown to the innermost
-            // try of this activation (a nested dispatch) or out of it.
-            // noteCaughtException may have replaced the pending object.
-            const proto::ProtoObject* inFlight = env->peekPendingException();
-            env->clearPendingException();
-            throw PyException(env, inFlight ? inFlight : exc);
-        }
         
         bool diag_env = diag_local;
         int diag_level = diag_env ? 1 : 0;
@@ -5777,45 +5727,48 @@ const proto::ProtoObject* executeBytecodeRange(
             // If subIter has no `throw` method, leave the exception
             // alone; the hasPendingException branch below will let it
             // propagate normally.
-            bool injectedThrow = false;
-            if (env && env->hasPendingException()) {
-                const proto::ProtoString* throwS = PythonEnvironment::getInternedString(ctx, "throw");
-                const proto::ProtoObject* throwMethod = subIter->getAttribute(ctx, throwS);
-                if (throwMethod && throwMethod != PROTO_NONE && throwMethod->asMethod(ctx)) {
-                    const proto::ProtoObject* exc = env->peekPendingException();
-                    env->clearPendingException();
-                    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, exc);
-                    result = throwMethod->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(subIter), nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
-                    injectedThrow = true;
-                }
-            }
-
-            if (!injectedThrow) {
-                const proto::ProtoObject* sendMethod = subIter->getAttribute(ctx, sendS);
-                if (sendMethod && sendMethod != PROTO_NONE) {
-                    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, sendVal);
-                    result = subIter->call(ctx, nullptr, sendS, subIter, args, nullptr);
-                } else {
-                    if (sendVal != PROTO_NONE) {
-                        if (env) env->raiseTypeError(ctx, "can't send non-None value to a plain iterator");
-                        return PROTO_NONE;
+            // gen.throw() on the delegating generator: thrown INTO subIter
+            // through subIter.throw(exc), the yield-from contract; without a
+            // throw method it is raised here.
+            const proto::ProtoObject* injected = throwOnResume;
+            throwOnResume = nullptr;
+            const proto::ProtoObject* stopVal = nullptr;
+            bool stopped = false;
+            try {
+                if (injected) {
+                    const proto::ProtoString* throwS = PythonEnvironment::getInternedString(ctx, "throw");
+                    const proto::ProtoObject* throwMethod = subIter->getAttribute(ctx, throwS);
+                    if (!(throwMethod && throwMethod != PROTO_NONE && throwMethod->asMethod(ctx))) {
+                        throw PyException(env, injected);
                     }
-                    const proto::ProtoString* nextS = env ? env->getNextString() : protoPython::PythonEnvironment::getInternalString(ctx, "__next__");
-                    result = subIter->call(ctx, nullptr, nextS, subIter, ctx->newList(), nullptr);
+                    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, injected);
+                    result = throwMethod->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(subIter), nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
+                } else {
+                    const proto::ProtoObject* sendMethod = subIter->getAttribute(ctx, sendS);
+                    if (sendMethod && sendMethod != PROTO_NONE) {
+                        const proto::ProtoList* args = ctx->newList()->appendLast(ctx, sendVal);
+                        result = subIter->call(ctx, nullptr, sendS, subIter, args, nullptr);
+                    } else {
+                        if (sendVal != PROTO_NONE) {
+                            if (env) env->raiseTypeError(ctx, "can't send non-None value to a plain iterator");
+                            return PROTO_NONE;
+                        }
+                        const proto::ProtoString* nextS = env ? env->getNextString() : protoPython::PythonEnvironment::getInternalString(ctx, "__next__");
+                        result = subIter->call(ctx, nullptr, nextS, subIter, ctx->newList(), nullptr);
+                    }
                 }
+            } catch (const PyException& e) {
+                // StopIteration ends the delegation with its value; anything
+                // else propagates.
+                if (!env || !env->isStopIteration(ctx, e.exception())) throw;
+                stopVal = env->getStopIterationValue(ctx, e.exception());
+                stopped = true;
             }
 
-            if (env && env->hasPendingException()) {
-                const proto::ProtoObject* exc = env->peekPendingException();
-                if (env->isStopIteration(ctx, exc)) {
-                    const proto::ProtoObject* stopVal = env->getStopIterationValue(ctx, exc);
-                    env->clearPendingException();
-                    stack.pop_back(); // Remove subIter
-                    stack.push_back(stopVal);
-                    // Will continue to i+1
-                } else {
-                    continue;
-                }
+            if (stopped) {
+                stack.pop_back(); // Remove subIter
+                stack.push_back(stopVal);
+                // Will continue to i+1
             } else if (result == nullptr) {
                 // PB7: many native iterators (list_iterator, dict_keys,
                 // tuple_iterator, ...) signal exhaustion by returning
@@ -5942,11 +5895,11 @@ const proto::ProtoObject* executeBytecodeRange(
                             const proto::ProtoObject* getitem = env->getAttribute(ctx, frameType, env->getGetItemString(), false);
                             if (getitem && getitem != PROTO_NONE) {
                                 const proto::ProtoList* giArgs = ctx->newList()->appendLast(ctx, nameObj);
-                                val = invokeDunder(ctx, frame, env->getGetItemString(), giArgs);
-                                if (env->hasPendingException()) {
-                                    env->clearPendingException(); // KeyError means not found
-                                } else if (val && val != PROTO_NONE) {
-                                    found = true;
+                                try {
+                                    val = invokeDunder(ctx, frame, env->getGetItemString(), giArgs);
+                                    if (val && val != PROTO_NONE) found = true;
+                                } catch (const PyException&) {
+                                    val = nullptr;   // KeyError means not found
                                 }
                             }
                         }
@@ -6384,9 +6337,9 @@ const proto::ProtoObject* executeBytecodeRange(
                 return nullptr;
             }
             if (env) {
-                env->popActiveException();
-                // popActiveException (e.g. list removeAt) can set TypeError; clear so module continues
-                if (env->hasPendingException()) env->clearPendingException();
+                // popActiveException (e.g. list removeAt) can raise TypeError;
+                // dropped so the module continues.
+                try { env->popActiveException(); } catch (const PyException&) {}
             }
         } break;
         case OP_BINARY_POWER: {
@@ -6470,16 +6423,15 @@ const proto::ProtoObject* executeBytecodeRange(
                 result = invokeDunder(ctx, a, ipowS, args);
                 if (env && result == env->getNotImplementedPrototype()) result = nullptr;
             }
-            if (!result && (!env || !env->hasPendingException())) {
-                result = binaryPower(ctx, a, b);
+            if (!result) {
                 // CPython parity: failed `**=` should mention `**=` in
                 // the TypeError, not `**`. binaryPower routes through
                 // binaryOpDispatch which only knows the binary operator
-                // symbol, so rewrite the message here for the in-place
-                // op.  binaryPower returns PROTO_NONE on error (its
-                // `r ? r : PROTO_NONE` tail), so compare against both.
-                if ((!result || result == PROTO_NONE) && env && env->hasPendingException()) {
-                    const proto::ProtoObject* exc = env->peekPendingException();
+                // symbol, so rewrite the message here for the in-place op.
+                try {
+                    result = binaryPower(ctx, a, b);
+                } catch (const PyException& raised) {
+                    const proto::ProtoObject* exc = raised.exception();
                     const proto::ProtoObject* excType = exc ? env->getType(ctx, exc) : nullptr;
                     const proto::ProtoObject* tnObj = excType ? excType->getAttribute(ctx, env->getNameString()) : nullptr;
                     std::string tn;
@@ -6496,10 +6448,10 @@ const proto::ProtoObject* executeBytecodeRange(
                         };
                         extractName(aCls, aName);
                         extractName(bCls, bName);
-                        env->clearPendingException();
                         env->raiseTypeError(ctx,
                             "unsupported operand type(s) for **=: '" + aName + "' and '" + bName + "'");
                     }
+                    throw;
                 }
             }
             stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
@@ -6991,11 +6943,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         importedFromAll = true;
                         while (true) {
                             const proto::ProtoObject* nameObj = env->next(iterObj);
-                            if (!nameObj) {
-                                if (env->hasPendingException() && env->isStopIteration(ctx, env->peekPendingException()))
-                                    env->clearPendingException();
-                                break;
-                            }
+                            if (!nameObj) break;   // exhausted (env->next does not throw for it)
                             if (proto::ProtoObject::isStringTagFast(nameObj)) {
                                 const proto::ProtoString* nameS = nameObj->asString(ctx);
                                 const proto::ProtoObject* val = mod->getAttribute(ctx, nameS);
@@ -7080,18 +7028,21 @@ const proto::ProtoObject* executeBytecodeRange(
                 
                 if (proto::ProtoObject::isStringTagFast(nameObj)) {
                     const proto::ProtoString* nameS = nameObj->asString(ctx);
-                    const proto::ProtoObject* val = (env) 
-                        ? env->getAttribute(ctx, mod, nameS) 
-                        : mod->getAttribute(ctx, nameS);
-                    
+                    // An error from the lookup (AttributeError) becomes the
+                    // ImportError below.
+                    const proto::ProtoObject* val = nullptr;
+                    try {
+                        val = (env)
+                            ? env->getAttribute(ctx, mod, nameS)
+                            : mod->getAttribute(ctx, nameS);
+                    } catch (const PyException&) {
+                        val = nullptr;
+                    }
+
                     if (val && (val != PROTO_NONE || mod->hasAttribute(ctx, nameS) == PROTO_TRUE)) {
-                        if (env) env->clearPendingException();
                         stack.push_back(val);
                     } else {
                         if (env) {
-                            // Clear any pending AttributeError from getAttribute so that
-                            // raiseImportError can set the correct ImportError.
-                            env->clearPendingException();
                             std::string n;
                             nameS->toUTF8String(ctx, n);
                             std::string msg = "cannot import name '" + n + "'";
@@ -7154,8 +7105,8 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.push_back(enterResult);
             const proto::proto_ulong rangeStart = next_i;
             const proto::ProtoObject* r = runRange(withRange,
-                [&]() { return nest(nest, rangeStart); },
-                [&]() { return nest(nest, withRange.handlerPc); });
+                [&]() { return dispatch(rangeStart, ctx, env, bc, n, pcEnd); },
+                [&]() { return dispatch(withRange.handlerPc, ctx, env, bc, n, pcEnd); });
             if (levelExit != LevelExit::Return) {
                 levelExit = LevelExit::Return;
                 i = levelExitPc;
@@ -8326,8 +8277,11 @@ const proto::ProtoObject* executeBytecodeRange(
                                                     a.push_back(nsKey);
                                                 }
                                                 a.push_back(nameObj);
-                                                env->callObject(eqM, a);
-                                                if (env->hasPendingException()) env->clearPendingException();
+                                                try {
+                                                    env->callObject(eqM, a);
+                                                } catch (const PyException&) {
+                                                    // dropped, as before
+                                                }
                                             }
                                         }
                                     }
@@ -8661,10 +8615,11 @@ const proto::ProtoObject* executeBytecodeRange(
                 // metaclass __getitem__ (EnumType: Color["RED"]) wins over
                 // cls.__class_getitem__, and its exceptions propagate.
                 const proto::ProtoObject* meta = env->getType(ctx, container);
-                const proto::ProtoObject* metaGetItem = (meta && meta != env->getTypePrototype())
-                    ? env->getAttribute(ctx, meta, getItemS, false) : nullptr;
-                if (env->hasPendingException()) {
-                    env->clearPendingException();
+                const proto::ProtoObject* metaGetItem = nullptr;
+                try {
+                    metaGetItem = (meta && meta != env->getTypePrototype())
+                        ? env->getAttribute(ctx, meta, getItemS, false) : nullptr;
+                } catch (const PyException&) {
                     metaGetItem = nullptr;
                 }
                 if (metaGetItem && metaGetItem != PROTO_NONE) {
@@ -9220,15 +9175,9 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* it = env->iter(starargs);
                 if (it) {
                     const proto::ProtoList* L = ctx->newList();
+                    // env->next answers nullptr when exhausted; errors throw.
                     while (const proto::ProtoObject* nextVal = env->next(it)) {
                         L = L->appendLast(ctx, nextVal);
-                    }
-                    if (env->hasPendingException()) {
-                        const proto::ProtoObject* exc = env->takePendingException();
-                        if (!env->isStopIteration(ctx, exc)) {
-                            env->setPendingException(exc);
-                            i = next_i; continue;
-                        }
                     }
                     posArgs = L;
                 }
@@ -9452,7 +9401,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.push_back(PROTO_NONE);
                 const proto::ProtoObject** nsAnchor = &stack.back();
                 const proto::ProtoObject* targetClass = env->buildClass(ctx, name, bases, kwds,
-                    [ctx, env, body, nsAnchor, diag_local](proto::ProtoObject*& ns) -> bool {
+                    [ctx, env, body, nsAnchor, diag_local = diag_local](proto::ProtoObject*& ns) -> bool {
                         // Captured by value: a by-reference capture would take the
                         // address of the dispatch loop's locals and keep them out of
                         // registers for the whole loop.
@@ -9471,9 +9420,10 @@ const proto::ProtoObject* executeBytecodeRange(
                             if (codeObj && codeObj != PROTO_NONE) {
                                 if (diag_local) fprintf(stderr, "DEBUG OP_BUILD_CLASS: before body run ns=%p\n", (void*)ns);
                                 // The class body is a Python-level scope of its own.
-                                PythonEnvironment::pushScopeGlobals(PythonEnvironment::getCurrentGlobals());
-                                runCodeObject(ctx, codeObj, ns, closureCells);
-                                PythonEnvironment::popScopeGlobals();
+                                {
+                                    ScopeGlobalsEntry bodyScope(PythonEnvironment::getCurrentGlobals());
+                                    runCodeObject(ctx, codeObj, ns, closureCells);
+                                }
                                 if (env && env->hasPendingException()) {
                                     // Class body raised — let the dispatch loop
                                     // unwind through the enclosing SETUP_FINALLY
@@ -9536,32 +9486,10 @@ const proto::ProtoObject* executeBytecodeRange(
             if (val) {
                 stack.push_back(val);
             } else {
-                if (env && env->hasPendingException()) {
-                    if (env->isStopIteration(ctx, env->peekPendingException())) {
-                        env->clearPendingException();
-                        stack.pop_back();
-                        i = static_cast<proto::proto_ulong>(arg);
-                        continue;
-                    } else {
-                        // the unhandled exception will be picked up at the top of the next iteration
-                        if (diag_local) {
-                            const proto::ProtoObject* pendExc = env->peekPendingException();
-                            const proto::ProtoObject* cls = pendExc ? env->getAttribute(ctx, pendExc, env->getClassString()) : nullptr;
-                            const proto::ProtoObject* name = cls ? env->getAttribute(ctx, cls, env->getNameString()) : nullptr;
-                            std::string excName = "unknown";
-                            if (name && name->isString(ctx)) name->asString(ctx)->toUTF8String(ctx, excName);
-                            fprintf(stderr, "DEBUG: OP_FOR_ITER falling through on pending exception: %s\n", excName.c_str());
-                            fflush(stderr);
-                        }
-                        i = next_i;
-                        continue; 
-                    }
-                } else {
-                    // exhaustion
-                    stack.pop_back();
-                    i = static_cast<proto::proto_ulong>(arg);
-                    continue;
-                }
+                // Exhausted (env->next answers nullptr; an error throws).
+                stack.pop_back();
+                i = static_cast<proto::proto_ulong>(arg);
+                continue;
             }
             // continue normal execution after pushing val
         } break;
@@ -9590,18 +9518,12 @@ const proto::ProtoObject* executeBytecodeRange(
                 for (int j = 0; j < arg; ++j) {
                     const proto::ProtoObject* val = env->next(iterObj);
                     if (!val) {
-                        if (env->hasPendingException() && env->isStopIteration(ctx, env->peekPendingException())) {
-                            env->clearPendingException();
-                        }
-                        if (!env->hasPendingException()) {
-                            // CPython embeds the expected and got counts:
-                            //   ValueError: not enough values to unpack (expected 3, got 2)
-                            std::string msg = "not enough values to unpack (expected "
-                                + std::to_string(arg) + ", got " + std::to_string(got) + ")";
-                            env->raiseValueError(ctx,
-                                PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx));
-                        }
-                        break;
+                        // CPython embeds the expected and got counts:
+                        //   ValueError: not enough values to unpack (expected 3, got 2)
+                        std::string msg = "not enough values to unpack (expected "
+                            + std::to_string(arg) + ", got " + std::to_string(got) + ")";
+                        env->raiseValueError(ctx,
+                            PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx));
                     }
                     items.push_back(val);
                     got++;
@@ -9620,8 +9542,6 @@ const proto::ProtoObject* executeBytecodeRange(
                     env->raiseValueError(ctx,
                         PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx));
                     i = next_i; continue;
-                } else if (env->hasPendingException() && env->isStopIteration(ctx, env->peekPendingException())) {
-                    env->clearPendingException();
                 }
 
                 // Push onto stack in reverse order so the first unpacked name gets the top of the stack
@@ -9675,11 +9595,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 PythonEnvironment::TransientPin pinIt(env, iterObj);
                 while (true) {
                     const proto::ProtoObject* val = env->next(iterObj);
-                    if (!val) {
-                        if (env->hasPendingException() && env->isStopIteration(ctx, env->peekPendingException()))
-                            env->clearPendingException();
-                        break;
-                    }
+                    if (!val) break;   // exhausted
                     all.push_back(val);
                 }
                 if (env->hasPendingException()) { i = next_i; continue; }
@@ -9950,17 +9866,16 @@ const proto::ProtoObject* executeBytecodeRange(
                     const proto::ProtoObject* delitem = env->getAttribute(ctx, frameType, env->getDelItemString(), false);
                     if (delitem && delitem != PROTO_NONE) {
                         const proto::ProtoList* delArgs = ctx->newList()->appendLast(ctx, nameObj);
-                        invokeDunder(ctx, target, env->getDelItemString(), delArgs);
-                        env->invalidateResolveCache();
-                        if (env->hasPendingException()) {
+                        try {
+                            invokeDunder(ctx, target, env->getDelItemString(), delArgs);
+                        } catch (const PyException&) {
                             // CPython reports the mapping's failure as NameError.
+                            env->invalidateResolveCache();
                             std::string nStr;
                             nS->toUTF8String(ctx, nStr);
-                            env->clearPendingException();
                             env->raiseNameError(ctx, nStr);
-                            i = next_i;
-                            continue;
                         }
+                        env->invalidateResolveCache();
                         break;
                     }
                 }
@@ -10349,8 +10264,8 @@ const proto::ProtoObject* executeBytecodeRange(
             const Block tryRange{static_cast<proto::proto_ulong>(arg), stack.size()};
             const proto::proto_ulong rangeStart = next_i;
             const proto::ProtoObject* r = runRange(tryRange,
-                [&]() { return nest(nest, rangeStart); },
-                [&]() { return nest(nest, tryRange.handlerPc); });
+                [&]() { return dispatch(rangeStart, ctx, env, bc, n, pcEnd); },
+                [&]() { return dispatch(tryRange.handlerPc, ctx, env, bc, n, pcEnd); });
             if (levelExit != LevelExit::Return) {
                 levelExit = LevelExit::Return;
                 i = levelExitPc;
@@ -10475,8 +10390,8 @@ const proto::ProtoObject* executeBytecodeRange(
             const Block withRange{static_cast<proto::proto_ulong>(arg), stack.size()};
             const proto::proto_ulong rangeStart = next_i;
             const proto::ProtoObject* r = runRange(withRange,
-                [&]() { return nest(nest, rangeStart); },
-                [&]() { return nest(nest, withRange.handlerPc); });
+                [&]() { return dispatch(rangeStart, ctx, env, bc, n, pcEnd); },
+                [&]() { return dispatch(withRange.handlerPc, ctx, env, bc, n, pcEnd); });
             if (levelExit != LevelExit::Return) {
                 levelExit = LevelExit::Return;
                 i = levelExitPc;
@@ -10657,39 +10572,152 @@ const proto::ProtoObject* executeBytecodeRange(
         i = next_i;
     }
     return stack.empty() ? PROTO_NONE : stack.back();
-    };
+}
 
-    // A resumed generator rebuilds its try nesting, outermost first: a
-    // protected range is entered again (its body continues at the resume
-    // point) and a handler runs again inside a catch of the exception it was
-    // handling. Each level then continues where its nested level ended.
-    auto runLevel = [&](auto& level, size_t k) -> const proto::ProtoObject* {
-        if (k == savedLevels.size()) return dispatch(dispatch, pcStart);
-        const Block saved = savedLevels[k];
-        const proto::ProtoObject* r;
-        if (saved.isHandler) {
-            try {
-                throw PyException(env, saved.exc);
-            } catch (const PyException&) {
-                r = runHandler(saved.exc, [&]() { return level(level, k + 1); });
-            }
-        } else {
-            r = runRange(saved, [&]() { return level(level, k + 1); },
-                         [&]() { return dispatch(dispatch, saved.handlerPc); });
+}  // namespace
+
+const proto::ProtoObject* executeBytecodeRange(
+    proto::ProtoContext* ctx,
+    const proto::ProtoTuple* constants,
+    const proto::ProtoTuple* bytecode,
+    const proto::ProtoTuple* names,
+    proto::ProtoObject*& frame,
+    proto::proto_ulong pcStart,
+    proto::proto_ulong pcEnd,
+    proto::proto_ulong stackOffset,
+    proto::proto_ulong* outPc,
+    bool* yielded,
+    std::vector<Block>* externalBlockStack,
+    proto::proto_ulong initialTop,
+    proto::proto_ulong* finalTopPtr,
+    const int* nativeBc,
+    const proto::ProtoObject** nativeConsts,
+    const proto::ProtoObject** nativeNames,
+    const proto::ProtoObject* throwOnResume) {
+    if (!ctx || !constants || !bytecode) return nullptr;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+
+    RecursionScope recScope(env, ctx);
+    if (recScope.overflowed()) return nullptr;
+    
+    // Hoist the diagnostic-tracing flag once per dispatcher invocation.
+    // get_env_diag() is `inline bool ... { return g_diag_enabled; }` over a
+    // namespace-scope const bool, but every call still emitted a PLT-trampolined
+    // function call from inside the dispatch loop (the symbol survives in the
+    // shared library because address-taken instances exist in other TUs).
+    // 61 call sites in this dispatch loop × millions of iterations on
+    // call_recursion = ~5 % of total CPU time spent on PLT stubs around a check
+    // that is constant for the process lifetime.  One local read replaces all
+    // of that.
+    const bool diag_local = get_env_diag();
+
+    FrameScope fscope(frame, ctx);
+    proto::proto_ulong n = bytecode->getSize(ctx);
+    if (n == 0) {
+        if (diag_local) {
+            fprintf(stderr, "DEBUG: executeBytecodeRange n=0, returning nullptr\n");
         }
-        if (levelExit != LevelExit::Return) {
-            levelExit = LevelExit::Return;
-            return dispatch(dispatch, levelExitPc);
-        }
-        return r;
-    };
-    // Transitional (tasks/cpp_exceptions_plan.md, S2.4 / S2.5): the callers
-    // still expect nullptr with the exception pending.
-    try {
-        return runLevel(runLevel, 0);
-    } catch (const PyException& uncaught) {
-        if (env) env->setPendingException(uncaught.exception());
         return nullptr;
+    }
+    if (pcEnd >= n) pcEnd = n - 1;
+
+    // Use pre-computed native bytecode int[] from co_bytecode_native (built once at compile time
+    // by makeCodeObject). Falls back to building a local vector if not available (module-level
+    // code or generators resuming without nativeBc). The hot path (user function calls) always
+    // has nativeBc set by runUserFunctionCall, so the fallback is cold.
+    std::vector<int> bc_fallback;
+    const int* bc = nativeBc;
+    if (!bc) {
+        bc_fallback.resize(n);
+        for (proto::proto_ulong j = 0; j < n; ++j) {
+            const proto::ProtoObject* obj = bytecode->getAt(ctx, static_cast<int>(j));
+            bc_fallback[j] = (obj && obj->isInteger(ctx)) ? static_cast<int>(obj->asLong(ctx)) : 0;
+        }
+        bc = bc_fallback.data();
+    }
+
+    unsigned int nSlots = ctx->getAutomaticLocalsCount();
+    // A context with no automatic slots at all gets them here, so that the
+    // operand stack and the frame anchor below are GC roots.  Code compiled by
+    // this runtime always asks for slots (Compiler.cpp); this covers contexts
+    // built elsewhere.  Only an empty context is resized: a context that has
+    // slots may be running an outer activation whose stack points into them.
+    if (nSlots == 0) {
+        ctx->resizeAutomaticLocals(static_cast<unsigned int>(stackOffset) + 4096u + 1u);
+        nSlots = ctx->getAutomaticLocalsCount();
+    }
+    const proto::ProtoObject** allSlots = ctx->getAutomaticLocals();
+
+    // Fallback stack for contexts whose few slots cannot hold the stack. It is
+    // not scanned by the collector.
+    std::vector<const proto::ProtoObject*> fallbackStack;
+    const proto::ProtoObject** stackBase = nullptr;
+    size_t stackCap = 0;
+
+    // The frame is anchored in the context's last automatic slot, which the
+    // operand stack never uses.  A frame is a cell of the context that runs
+    // it, and nothing in protoCore's heap references it while it runs: it is
+    // held by this function's `frame`, by the caller's C++ locals and by the
+    // thread-local current frame, none of which the collector scans.  That
+    // is safe only while the frame is in the context's young generation, and
+    // the ctx->safepoint() below hands the young generation to the collector
+    // once the context has allocated maxAllocatedCellsPerContext cells (rule
+    // 3 of protoCore's docs/EMBEDDER-CONFORMANCE.md).  Without the anchor the
+    // next cycle freed the frame of any long-running call, its cell was
+    // reused, and LOAD_DEREF / STORE_DEREF walked a stranger (a nested
+    // function's NameError on a variable of its enclosing function).
+    const proto::ProtoObject** frameAnchor = nullptr;
+    if (allSlots && nSlots > stackOffset + 1) {
+        stackBase = allSlots + stackOffset;
+        stackCap = nSlots - stackOffset - 1;
+        frameAnchor = allSlots + (nSlots - 1);
+    } else if (allSlots && nSlots > stackOffset) {
+        stackBase = allSlots + stackOffset;
+        stackCap = nSlots - stackOffset;
+    } else {
+        fallbackStack.resize(4096); // Default capacity for manual/test execution
+        stackBase = fallbackStack.data();
+        stackCap = fallbackStack.size();
+    }
+
+    GCStack stack(stackBase, stackCap);
+    stack.top = initialTop;
+    // A nested activation on the same context restores the outer anchor.
+    struct FrameAnchorScope {
+        const proto::ProtoObject** slot;
+        const proto::ProtoObject* saved;
+        ~FrameAnchorScope() { if (slot) *slot = saved; }
+    } frameAnchorScope{frameAnchor, frameAnchor ? *frameAnchor : nullptr};
+    if (frameAnchor) *frameAnchor = frame;
+
+    // The try nesting of this activation (see Block). A resumed generator's
+    // saved levels are rebuilt below (runLevel), before dispatching.
+    std::vector<Block> blockStack;
+    std::vector<Block> savedLevels;
+    if (externalBlockStack) {
+        savedLevels = *externalBlockStack;
+    }
+    const bool sync_globals = (frame == PythonEnvironment::getCurrentGlobals());
+    // Cooperative GC safepoint counter.  Most Python opcodes execute without
+    // touching the cell allocator (LOAD_FAST, BINARY_ADD on SmallIntegers,
+    // tight integer loops), so the per-allocation STW poll inside allocCell
+    // never fires for CPU-bound threads.  Without an in-loop safepoint, a
+    // GC stop-the-world request will starve indefinitely against a
+    // pure-bytecode thread, deadlocking every other thread that is already
+    // parked.  Polling every 256 opcodes keeps the fast path branch-only
+    // while bounding pause-acquisition latency to a few µs.
+
+    Activation act(ctx, env, bc, n, pcEnd, diag_local, constants, bytecode, names, nativeConsts, nativeNames,
+                   nativeBc, pcStart, stackOffset, outPc, yielded, externalBlockStack, initialTop, finalTopPtr,
+                   frameAnchor, sync_globals, frame, stack, blockStack, savedLevels, throwOnResume);
+    try {
+        // A resumed generator rebuilds its try nesting first; any other
+        // activation dispatches at once.
+        if (savedLevels.empty() && !throwOnResume) return act.dispatch(pcStart, ctx, env, bc, n, pcEnd);
+        return act.runLevel(0);
+    } catch (const PyException& uncaught) {
+        act.noteFrame(uncaught.exception());
+        throw;
     }
 }
 
@@ -10709,10 +10737,11 @@ const proto::ProtoObject* executeMinimalBytecode(
     // Set globals to frame so BUILD_FUNCTION captures the correct __globals__, and so that
     // sync_globals=true enables STORE_NAME to keep getCurrentGlobals() in sync with frame CoW.
     PythonEnvironment::setCurrentGlobals(frame);
-    const proto::ProtoObject* result = executeBytecodeRange(ctx, constants, bytecode, names, frame, 0, n ? n - 1 : 0, 0, nullptr, nullptr, nullptr, 0, nullptr);
-    PythonEnvironment::setCurrentFrame(savedFrame);
-    PythonEnvironment::setCurrentGlobals(savedGlobals);
-    return result;
+    struct Restore {
+        const proto::ProtoObject* frame; const proto::ProtoObject* globals;
+        ~Restore() { PythonEnvironment::setCurrentFrame(frame); PythonEnvironment::setCurrentGlobals(globals); }
+    } restore{savedFrame, savedGlobals};
+    return executeBytecodeRange(ctx, constants, bytecode, names, frame, 0, n ? n - 1 : 0, 0, nullptr, nullptr, nullptr, 0, nullptr);
 }
 
 

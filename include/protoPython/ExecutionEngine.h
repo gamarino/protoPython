@@ -367,7 +367,8 @@ const proto::ProtoObject* executeBytecodeRange(
     proto::proto_ulong* finalTopPtr = nullptr,
     const int* nativeBc = nullptr,
     const proto::ProtoObject** nativeConsts = nullptr,
-    const proto::ProtoObject** nativeNames  = nullptr);
+    const proto::ProtoObject** nativeNames  = nullptr,
+    const proto::ProtoObject* throwOnResume = nullptr);
 
 /**
  * @brief Python-compatible generator methods.
@@ -375,6 +376,9 @@ const proto::ProtoObject* executeBytecodeRange(
 const proto::ProtoObject* py_self_iter(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs);
 const proto::ProtoObject* py_generator_repr(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs);
 const proto::ProtoObject* py_generator_next(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs);
+/** One step of an interpreted generator for iteration: the next value, or
+ *  nullptr when it has finished (no StopIteration is built or thrown). */
+const proto::ProtoObject* py_generator_step(proto::ProtoContext* ctx, const proto::ProtoObject* self);
 const proto::ProtoObject* py_generator_send(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs);
 const proto::ProtoObject* py_generator_throw(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs);
 const proto::ProtoObject* py_generator_close(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs);

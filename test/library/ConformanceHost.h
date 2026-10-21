@@ -23,6 +23,16 @@ public:
 
     const char* name() const override { return "protoPython"; }
 
+    // Runs `src` in __main__; false when it raised (a Python exception is a
+    // C++ exception, protoPython::PyException).
+    bool run(const std::string& src, const char* where) {
+        try {
+            return env_.executeString(src, where) == 0;
+        } catch (const PyException&) {
+            return false;
+        }
+    }
+
     proto::ProtoContext* mainContext() override { return env_.getContext(); }
 
     // --- rule 1 ------------------------------------------------------------
@@ -135,8 +145,7 @@ public:
             "    return total\n"
             "_conf_pc_result = _conf_pc(" + std::to_string(rounds) + ", "
                 + std::to_string(perRound) + ")\n";
-        if (env_.executeString(src, "<conformance:producer_consumer>") != 0) {
-            env_.takePendingException();
+        if (!run(src, "<conformance:producer_consumer>")) {
             return false;
         }
         return readIntGlobal("_conf_pc_result") ==
@@ -206,8 +215,7 @@ public:
             "_conf_t.start()\n"
             "_conf_t.join()\n"
             "_conf_joined = 1\n";
-        if (env_.executeString(src, "<conformance:join>") != 0) {
-            env_.takePendingException();
+        if (!run(src, "<conformance:join>")) {
             return false;
         }
         return readIntGlobal("_conf_joined") == 1;
@@ -250,8 +258,7 @@ public:
     // See TestMutableCycles.cpp for the shape-by-shape census with real bounds,
     // and docs/CONFORMANCE.md for why declaredMutableCycles() is NOT overridden.
     proto::proto_ulong makeMutableGraph() override {
-        if (env_.executeString(mutableProbeSource(), "<conformance:mutables>") != 0) {
-            env_.takePendingException();
+        if (!run(mutableProbeSource(), "<conformance:mutables>")) {
             return 0;
         }
         const long long built = readIntGlobal("_conf_mutables_built");
@@ -372,12 +379,9 @@ private:
     // that reds it).  What changes is that "settled" now includes the runtime,
     // which is what the case asked to measure.
     void warmRuntime() {
-        if (env_.executeString("import threading\n"
-                               "import time\n"
-                               "from collections import deque\n",
-                               "<conformance:warm>") != 0) {
-            env_.takePendingException();
-        }
+        (void)run("import threading\n"
+                  "import time\n"
+                  "from collections import deque\n", "<conformance:warm>");
     }
 
     static std::string stdlibPath() {
@@ -402,8 +406,7 @@ private:
         const proto::proto_long floor = inUse() + (proto::proto_long) (requestedCells + requestedCells / 2);
         proto::proto_ulong rounds = 0;
         while (inUse() < floor && rounds < 4096) {
-            if (env_.executeString(snippet, "<conformance:garbage>") != 0) {
-                env_.takePendingException();
+            if (!run(snippet, "<conformance:garbage>")) {
                 return rounds;
             }
             ++rounds;

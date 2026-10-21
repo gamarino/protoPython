@@ -107,7 +107,7 @@ static const proto::ProtoObject* sys_displayhook(
     const proto::ProtoObject* text = reprFn->asMethod(context)(context,
         const_cast<proto::ProtoObject*>(builtins), nullptr,
         argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, value))), nullptr);
-    if (env->hasPendingException() || !text || !text->isString(context)) return nullptr;
+    if (!text || !text->isString(context)) return nullptr;
 
     // sys.stdout.write(text + "\n").  `write` is looked up on the stream
     // object, so a Python-level method comes back bound.
@@ -117,7 +117,6 @@ static const proto::ProtoObject* sys_displayhook(
     if (!out || out == PROTO_NONE) return PROTO_NONE;
     const proto::ProtoObject* writeFn =
         env->getAttribute(context, out, PythonEnvironment::getInternedString(context, "write"), false);
-    if (env->hasPendingException()) return nullptr;
     if (!writeFn || writeFn == PROTO_NONE) return PROTO_NONE;
     std::string line;
     text->asString(context)->toUTF8String(context, line);
@@ -129,7 +128,6 @@ static const proto::ProtoObject* sys_displayhook(
     } else {
         invokePythonCallable(context, writeFn, context->newList()->appendLast(context, lineObj), nullptr);
     }
-    if (env->hasPendingException()) return nullptr;
 
     env->setBuiltinsAttribute(context, underscoreS, value);
     return PROTO_NONE;
@@ -539,7 +537,6 @@ static const proto::ProtoObject* sys_set_asyncgen_hooks(
         }
         if (!v) continue;
         env->setAttribute(context, sysMod, PythonEnvironment::getInternedString(context, kAsyncgenHookAttrs[w]), v);
-        if (env->hasPendingException()) return nullptr;
     }
     return PROTO_NONE;
 }
@@ -633,7 +630,7 @@ static const proto::ProtoObject* sys_module_getattr(
             ? env->getDictPrototype()->newChild(ctx, true) : ctx->newObject(true);
         mutableSys->setAttribute(ctx, cacheS, env->initDictStorage(ctx, cache));
     }
-    if (!env->resolveModule("importlib", ctx) && env->hasPendingException()) return nullptr;
+    env->resolveModule("importlib", ctx);
     return sysMod->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, name.c_str()));
 }
 
@@ -649,9 +646,13 @@ static const proto::ProtoObject* sys_unraisablehook(
     if (!env || !args || args->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* unraisable = args->getAt(ctx, 0);
     auto field = [&](const char* name) -> const proto::ProtoObject* {
-        const proto::ProtoObject* v = env->getAttribute(ctx, unraisable,
-            PythonEnvironment::getInternedString(ctx, name), false);
-        if (!v && env->hasPendingException()) env->clearPendingException();
+        const proto::ProtoObject* v = nullptr;
+        try {
+            v = env->getAttribute(ctx, unraisable,
+                PythonEnvironment::getInternedString(ctx, name), false);
+        } catch (const PyException&) {
+            // An unreadable field is reported as absent.
+        }
         return (v && v != PROTO_NONE) ? v : nullptr;
     };
     std::string errMsg;

@@ -43,10 +43,11 @@ int main() {
             "    closed = e.errno\n"
             "else:\n"
             "    closed = None\n";
-        if (env.executeString(code, "<embedded>") == -2) {
-            const proto::ProtoObject* exc = env.takePendingException();
+        try {
+            env.executeString(code, "<embedded>");
+        } catch (const protoPython::PyException& e) {
             std::ostringstream text;
-            if (exc && exc != PROTO_NONE) env.handleException(exc, nullptr, text);
+            env.handleException(e.exception(), nullptr, text);
             return fail("the Python code raised: " + text.str());
         }
         proto::ProtoContext* ctx = env.getContext();

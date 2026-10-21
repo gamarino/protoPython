@@ -1083,7 +1083,7 @@ static const proto::ProtoObject* py_io_writelines(
     const proto::ProtoObject* listType = env && env->getBuiltins()
         ? env->getBuiltins()->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "list")) : nullptr;
     const proto::ProtoObject* asList = (listType && listType != PROTO_NONE) ? env->callObject(listType, {lines}) : nullptr;
-    if (!asList) return env && env->hasPendingException() ? nullptr : PROTO_NONE;
+    if (!asList) return PROTO_NONE;
     const proto::ProtoObject* data = asList->getAttribute(ctx, env->getDataString());
     const proto::ProtoList* items = data ? data->asList(ctx) : asList->asList(ctx);
     if (!items) return PROTO_NONE;
@@ -1225,8 +1225,7 @@ static const proto::ProtoObject* py_io_open(
     // A str or an os.PathLike (such as pathlib.Path), as CPython accepts.
     std::string filename;
     if (!PythonEnvironment::fsPathArgument(context, fileArg, filename)) {
-        PythonEnvironment* pathEnv = PythonEnvironment::fromContext(context);
-        return (pathEnv && pathEnv->hasPendingException()) ? nullptr : PROTO_NONE;
+        return PROTO_NONE;
     }
 
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
@@ -2069,12 +2068,16 @@ static const proto::ProtoObject* py_io_text_encoding(
     bool utf8Mode = false;
     const proto::ProtoObject* sys = env ? env->getSysModule() : nullptr;
     if (sys) {
-        const proto::ProtoObject* flags = env->getAttribute(ctx, sys,
-            PythonEnvironment::getInternedString(ctx, "flags"), false);
-        const proto::ProtoObject* mode = (flags && flags != PROTO_NONE)
-            ? env->getAttribute(ctx, flags, PythonEnvironment::getInternedString(ctx, "utf8_mode"), false)
-            : nullptr;
-        if (env->hasPendingException()) env->clearPendingException();
+        const proto::ProtoObject* mode = nullptr;
+        try {
+            const proto::ProtoObject* flags = env->getAttribute(ctx, sys,
+                PythonEnvironment::getInternedString(ctx, "flags"), false);
+            mode = (flags && flags != PROTO_NONE)
+                ? env->getAttribute(ctx, flags, PythonEnvironment::getInternedString(ctx, "utf8_mode"), false)
+                : nullptr;
+        } catch (const PyException&) {
+            // An unreadable sys.flags.utf8_mode means "not UTF-8 mode".
+        }
         utf8Mode = mode && mode->isInteger(ctx) && mode->asLong(ctx) != 0;
     }
     return PythonEnvironment::getInternedString(ctx, utf8Mode ? "utf-8" : "locale")->asObject(ctx);

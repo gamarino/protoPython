@@ -68,8 +68,8 @@ const proto::ProtoList* listElements(proto::ProtoContext* ctx, PythonEnvironment
 
 } // anonymous namespace
 
-PythonModuleProvider::PythonModuleProvider(std::vector<std::string> basePaths)
-    : basePaths_(std::move(basePaths)), guid_("protoPython.stdlib"), alias_("python_stdlib") {}
+PythonModuleProvider::PythonModuleProvider(std::vector<std::string> basePaths, const std::string& suffix)
+    : basePaths_(std::move(basePaths)), guid_("protoPython.stdlib" + suffix), alias_("python_stdlib" + suffix) {}
 
 /**
  * The directories to search, in order: the live `sys.path` first, then the

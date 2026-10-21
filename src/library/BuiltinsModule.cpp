@@ -194,7 +194,6 @@ static const proto::ProtoObject* py_import(
     const proto::ProtoObject* leaf = env->resolveModule(moduleName, context);
     
     if (!leaf || leaf == PROTO_NONE) {
-        if (env->hasPendingException()) return nullptr;
         env->raiseImportError("No module named '" + moduleName + "'", moduleName);
         return nullptr;
     }
@@ -425,7 +424,6 @@ static const proto::ProtoObject* py_len(
             if (res != PROTO_NONE) {
                 const proto::ProtoObject* checked = checkLenResult(res);
                 if (checked) return checked;
-                if (env && env->hasPendingException()) return nullptr;
             }
         } else {
             // Python-level callable: covers user `def __len__(self)`
@@ -452,7 +450,6 @@ static const proto::ProtoObject* py_len(
             if (res != PROTO_NONE) {
                 const proto::ProtoObject* checked = checkLenResult(res);
                 if (checked) return checked;
-                if (env && env->hasPendingException()) return nullptr;
             }
         }
     }
@@ -667,7 +664,6 @@ static const proto::ProtoObject* py_print(
                     // A __str__ written in Python (user classes, Enum): it was
                     // skipped, so print() showed repr() instead.
                     const proto::ProtoObject* out = env->callObject(strMethod, {obj});
-                    if (!out && env->hasPendingException()) return nullptr;
                     if (out && out->isString(context)) {
                         out->asString(context)->toUTF8String(context, rendered);
                         gotStr = true;
@@ -737,9 +733,6 @@ static const proto::ProtoObject* py_print(
                         context, "write");
                     const proto::ProtoObject* writeFn =
                         env->getAttribute(context, fileObj, writeS, false);
-                    if (env->hasPendingException()) {
-                        return nullptr;
-                    }
                     // If `write` wasn't found on the receiver/type chain,
                     // invoke `__getattr__('write')` per CPython's attribute
                     // protocol (test_file_fault's StdoutGuard relies on
@@ -762,7 +755,6 @@ static const proto::ProtoObject* py_print(
                                     ->appendLast(context, writeS->asObject(context));
                                 writeFn = invokePythonCallable(context, getattrFn, fullArgs, nullptr);
                             }
-                            if (env->hasPendingException()) return nullptr;
                         }
                     }
                     if (writeFn && writeFn != PROTO_NONE) {
@@ -781,7 +773,6 @@ static const proto::ProtoObject* py_print(
                             invokePythonCallable(context, writeFn, fullArgs, nullptr);
                         }
                         wroteViaWrite = true;
-                        if (env->hasPendingException()) return nullptr;
                     }
                 }
             }
@@ -921,7 +912,6 @@ static const proto::ProtoObject* py_next(
             || (codeS && nextMethod->hasOwnAttribute(context, codeS) == PROTO_TRUE));
     if (!directHit) {
         nextMethod = env ? env->getAttribute(context, obj, nextS, false) : (obj->hasOwnAttribute(context, nextS) == PROTO_TRUE ? obj->getAttribute(context, nextS) : nullptr);
-        if (env && env->hasPendingException()) return nullptr;
     }
     // A __next__ defined in Python is looked up on the receiver's prototype
     // chain and called with the receiver prepended, as env->next does. Only
@@ -936,20 +926,19 @@ static const proto::ProtoObject* py_next(
         && nextMethod->hasOwnAttribute(context, codeS) == PROTO_TRUE;
     if (nativeNext || pythonNext) {
         const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
-        const proto::ProtoObject* result = nativeNext
-            ? nextMethod->asMethod(context)(context, obj, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr)
-            : ::protoPython::invokePythonCallable(context, nextMethod,
-                  context->newList()->appendLast(context, obj), nullptr);
-        if (env && env->hasPendingException()) {
+        const proto::ProtoObject* result = nullptr;
+        try {
+            result = nativeNext
+                ? nextMethod->asMethod(context)(context, obj, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr)
+                : ::protoPython::invokePythonCallable(context, nextMethod,
+                      context->newList()->appendLast(context, obj), nullptr);
+        } catch (const PyException& e) {
             // next(it, default) returns the default when __next__ raises
             // StopIteration; the exception used to propagate, which broke
             // `next(<generator expression>, None)` (site.venv) and every
             // generator given a default. Other exceptions propagate.
-            if (defaultVal && env->isStopIteration(context, env->peekPendingException())) {
-                env->clearPendingException();
-                return defaultVal;
-            }
-            return nullptr;
+            if (defaultVal && env && env->isStopIteration(context, e.exception())) return defaultVal;
+            throw;
         }
         if (!result) {
             // Native iterators return nullptr without an exception when exhausted.
@@ -1942,12 +1931,16 @@ static const proto::ProtoObject* py_reversed(
         // env->iter calls __iter__: a native method takes it as self (it got
         // none, so reversed([1, 2]) was empty), a Python function as its
         // first argument.
-        const proto::ProtoObject* r = revMethod->asMethod(context)
-            ? revMethod->asMethod(context)(context, obj, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr)
-            : ::protoPython::invokePythonCallable(context, revMethod,
-                  context->newList()->appendLast(context, obj), nullptr);
+        const proto::ProtoObject* r = nullptr;
+        try {
+            r = revMethod->asMethod(context)
+                ? revMethod->asMethod(context)(context, obj, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr)
+                : ::protoPython::invokePythonCallable(context, revMethod,
+                      context->newList()->appendLast(context, obj), nullptr);
+        } catch (const PyException&) {
+            r = nullptr;  // fall back to the sequence protocol below
+        }
         if (r) return r;
-        if (env) env->clearPendingException(); // fallback if exception
     }
 
     const proto::ProtoObject* lenMethod = env ? env->getAttribute(context, obj, lenS, false) : (obj->hasOwnAttribute(context, lenS) == PROTO_TRUE ? obj->getAttribute(context, lenS) : nullptr);
@@ -2044,32 +2037,30 @@ static const proto::ProtoObject* py_reversed_next(
     }
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromInteger(idx));
     const proto::ProtoObject* value = nullptr;
-    if (getitemMethod->asMethod(context)) {
-        // Native bound method (e.g. dict's MappingProxy __getitem__).
-        value = getitemMethod->asMethod(context)(context, obj, nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
-    } else {
-        // Python-level method: invokePythonCallable already understands
-        // bound methods (asMethodSelf carries `obj`) and unbound functions.
-        value = ::protoPython::invokePythonCallable(context, getitemMethod, args, nullptr);
-    }
-    if (env && env->hasPendingException()) {
+    try {
+        if (getitemMethod->asMethod(context)) {
+            // Native bound method (e.g. dict's MappingProxy __getitem__).
+            value = getitemMethod->asMethod(context)(context, obj, nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
+        } else {
+            // Python-level method: invokePythonCallable already understands
+            // bound methods (asMethodSelf carries `obj`) and unbound functions.
+            value = ::protoPython::invokePythonCallable(context, getitemMethod, args, nullptr);
+        }
+    } catch (const PyException& e) {
         // CPython contract: if obj[idx] raises IndexError, reversed yields
         // StopIteration.  Other exceptions propagate.
-        const proto::ProtoObject* exc = env->peekPendingException();
-        if (exc) {
+        const proto::ProtoObject* exc = e.exception();
+        if (env && exc) {
             const proto::ProtoObject* cls = env->getType(context, exc);
             const proto::ProtoString* nameS = env->getNameString();
             const proto::ProtoObject* nameAttr = cls ? cls->getAttribute(context, nameS) : nullptr;
             if (nameAttr && nameAttr->isString(context)) {
                 std::string clsName;
                 nameAttr->asString(context)->toUTF8String(context, clsName);
-                if (clsName == "IndexError") {
-                    env->clearPendingException();
-                    env->raiseStopIteration(context);
-                }
+                if (clsName == "IndexError") env->raiseStopIteration(context);
             }
         }
-        return nullptr;
+        throw;
     }
     // Persist the decremented index — setAttribute returns a new
     // immutable cell version so we have to assign the result back.
@@ -2103,10 +2094,7 @@ static const proto::ProtoObject* py_sum(
     // asMethod gate that preceded this branch silently returned None
     // for any Python callable.
     const proto::ProtoObject* it = env ? env->iter(iterable) : nullptr;
-    if (!it) {
-        if (env && env->hasPendingException()) return nullptr;
-        return start;
-    }
+    if (!it) return start;
     PythonEnvironment::TransientPin pinIt(env, it);
     // Bignum-safe accumulator: keep the partial sum as a ProtoObject so
     // values exceeding int64 are handled correctly by Integer::add.
@@ -2115,10 +2103,7 @@ static const proto::ProtoObject* py_sum(
     bool accIsFloat = acc && acc->isDouble(context);
     for (;;) {
         const proto::ProtoObject* val = env->next(it);
-        if (!val) {
-            if (env && env->hasPendingException()) return nullptr;
-            break;
-        }
+        if (!val) break;
         // Promote ints + floats; defer to operator + for anything else.
         if (val->isInteger(context) && accIsInt) {
             acc = acc->add(context, val);
@@ -2177,17 +2162,11 @@ static const proto::ProtoObject* py_all(
     // __iter__ method and returned True for any user iterable —
     // making `all(MyIter())` always True regardless of contents.
     const proto::ProtoObject* it = env ? env->iter(iterable) : nullptr;
-    if (!it) {
-        if (env && env->hasPendingException()) return nullptr;
-        return PROTO_TRUE;
-    }
+    if (!it) return PROTO_TRUE;
     PythonEnvironment::TransientPin pinIt(env, it);
     for (;;) {
         const proto::ProtoObject* val = env->next(it);
-        if (!val) {
-            if (env->hasPendingException()) return nullptr;
-            break;
-        }
+        if (!val) break;
         if (!env->isTrue(val)) return PROTO_FALSE;
     }
     return PROTO_TRUE;
@@ -2203,17 +2182,11 @@ static const proto::ProtoObject* py_any(
     const proto::ProtoObject* iterable = positionalParameters->getAt(context, 0);
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoObject* it = env ? env->iter(iterable) : nullptr;
-    if (!it) {
-        if (env && env->hasPendingException()) return nullptr;
-        return PROTO_FALSE;
-    }
+    if (!it) return PROTO_FALSE;
     PythonEnvironment::TransientPin pinIt(env, it);
     for (;;) {
         const proto::ProtoObject* val = env->next(it);
-        if (!val) {
-            if (env->hasPendingException()) return nullptr;
-            break;
-        }
+        if (!val) break;
         if (env->isTrue(val)) return PROTO_TRUE;
     }
     return PROTO_FALSE;
@@ -2752,19 +2725,21 @@ static const proto::ProtoObject* py_getattr(
     if (!env) return obj->getAttribute(context, key);
     // The read LOAD_ATTR does (PythonEnvironment::loadAttr): descriptors,
     // __getattribute__, then __getattr__, AttributeError when missing.
-    const proto::ProtoObject* val = env->loadAttr(context, obj, key);
-    if (val) return val;
-    if (argCount >= 3 && env->hasPendingException()) {
+    const proto::ProtoObject* val = nullptr;
+    try {
+        val = env->loadAttr(context, obj, key);
+    } catch (const PyException& e) {
         // getattr(obj, name, default) answers the default for a missing
         // attribute only: any other exception propagates.
-        const proto::ProtoObject* exc = env->peekPendingException();
+        const proto::ProtoObject* exc = e.exception();
         const proto::ProtoObject* aeType = env->getAttributeErrorType();
-        if (exc && aeType && (env->getType(context, exc) == aeType ||
+        if (argCount >= 3 && exc && aeType && (env->getType(context, exc) == aeType ||
                               exc->isInstanceOf(context, aeType) == PROTO_TRUE)) {
-            env->clearPendingException();
             return positionalParameters->getAt(context, 2);
         }
+        throw;
     }
+    if (val) return val;
     return nullptr;
 }
 
@@ -3123,7 +3098,6 @@ static const proto::ProtoObject* py_dir(
         if (hasOverride) {
             const proto::ProtoObject* dictResult =
                 env_dir->getAttribute(context, target, dictS, false);
-            if (env_dir->hasPendingException()) return nullptr;
             const proto::ProtoObject* dictType = dictResult
                 ? env_dir->getType(context, dictResult) : nullptr;
             if (dictType != env_dir->getDictPrototype()) {
@@ -3257,14 +3231,14 @@ static const proto::ProtoObject* input_from_stream(proto::ProtoContext* context,
 
 // stream.name(*args) for input(): the method looked up as the interpreter's
 // LOAD_METHOD does (a native method gets `stream` as self, an unbound Python
-// function gets it as its first argument). nullptr with an exception pending.
+// function gets it as its first argument). An exception it raises propagates.
 static const proto::ProtoObject* input_call(proto::ProtoContext* context, PythonEnvironment* env,
                                             const proto::ProtoObject* stream, const char* name,
                                             const std::vector<const proto::ProtoObject*>& args) {
     bool unbound = false;
     const proto::ProtoObject* fn = env->getAttribute(context, stream,
         PythonEnvironment::getInternedString(context, name), true, &unbound);
-    if (!fn || env->hasPendingException()) return nullptr;
+    if (!fn) return nullptr;
     if (unbound) {
         std::vector<const proto::ProtoObject*> full;
         full.reserve(args.size() + 1);
@@ -3307,7 +3281,7 @@ static const proto::ProtoObject* py_input(
         const proto::ProtoObject* strType = env->getBuiltins()
             ? env->getBuiltins()->getAttribute(context, PythonEnvironment::getInternedString(context, "str")) : nullptr;
         promptStr = (strType && strType != PROTO_NONE) ? env->callObject(strType, {promptObj}) : nullptr;
-        if (!promptStr || env->hasPendingException()) return nullptr;
+        if (!promptStr) return nullptr;
     }
 
     if (env->getStdin() != &std::cin) {
@@ -3335,18 +3309,19 @@ static const proto::ProtoObject* py_input(
     // As CPython: sys.stderr is flushed first (its errors ignored), then the
     // prompt written and sys.stdout flushed.
     if (const proto::ProtoObject* err = stream("stderr")) {
-        input_call(context, env, err, "flush", {});
-        if (env->hasPendingException()) env->clearPendingException();
+        try {
+            input_call(context, env, err, "flush", {});
+        } catch (const PyException&) {
+            // Errors flushing sys.stderr are ignored, as in CPython.
+        }
     }
     if (promptStr) {
         input_call(context, env, out, "write", {promptStr});
-        if (env->hasPendingException()) return nullptr;
     }
     input_call(context, env, out, "flush", {});
-    if (env->hasPendingException()) return nullptr;
 
     const proto::ProtoObject* line = input_call(context, env, in, "readline", {});
-    if (!line || env->hasPendingException()) return nullptr;
+    if (!line) return nullptr;
     if (!line->isString(context)) {
         env->raiseTypeError(context, "object.readline() returned non-string");
         return nullptr;
@@ -4294,7 +4269,6 @@ static const proto::ProtoObject* py_super_setattr(
     if (env) {
         const proto::ProtoObject* result = env->setAttribute(context, obj,
             nameObj->asString(context), valueObj);
-        if (env->hasPendingException()) return nullptr;
         (void)result;
         return PROTO_NONE;
     }
@@ -5046,8 +5020,9 @@ static const proto::ProtoObject* py_exec(
             }
         }
     }
-    // exec() returns None; an exception raised by the code stays pending.
-    return (env && env->hasPendingException()) ? nullptr : PROTO_NONE;
+    // exec() returns None; an exception raised by the code propagates.
+    (void)env;
+    return PROTO_NONE;
 }
 
 /** breakpoint(): no-op stub; real breakpoint requires debugger integration. */
@@ -5193,15 +5168,13 @@ static int sorted_compare(proto::ProtoContext* context, const proto::ProtoObject
     // Everything else sorts by <, through compareObjects: a user __lt__, the
     // reflected __gt__, and TypeError for operands that cannot be ordered
     // (sorted([3, 'a'])).  CPython sorts purely by < (a < b means a sorts
-    // before b).  Once a comparison raised, the rest answer "equal" and
-    // py_sorted propagates the exception.
+    // before b).  A comparison that raises propagates out of the sort
+    // (std::stable_sort is exception-safe).
     {
         ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
         if (env) {
-            if (env->hasPendingException()) return 0;
             const proto::ProtoObject* lt = env->compareObjects(context, a, b, 2);
             if (lt == PROTO_TRUE) return -1;
-            if (env->hasPendingException()) return 0;
             return env->compareObjects(context, b, a, 2) == PROTO_TRUE ? 1 : 0;
         }
     }
@@ -5230,7 +5203,7 @@ static const proto::ProtoObject* py_sorted(
     // set.__iter__) and Python-level iterators work; looking __iter__ up on
     // the instance and requiring a native method returned None for them.
     const proto::ProtoObject* it = env->iter(iterable);
-    if (!it) return env->hasPendingException() ? nullptr : PROTO_NONE;
+    if (!it) return PROTO_NONE;
     PythonEnvironment::TransientPin pinIt(env, it);
 
     // Resolve key / reverse from kwargs.  CPython accepts both as
@@ -5341,8 +5314,6 @@ static const proto::ProtoObject* py_sorted(
             });
     }
 
-    // A comparison raised (unorderable items).
-    if (env && env->hasPendingException()) return nullptr;
     const proto::ProtoList* resultList = context->newList();
     for (const proto::ProtoObject* obj : elems)
         resultList = resultList->appendLast(context, obj);
@@ -5470,34 +5441,32 @@ static const proto::ProtoObject* py_hasattr(
     // AttributeError must report hasattr=False even though the
     // descriptor itself sits on the class's MRO (the chain probe
     // would say True).  Use env->getAttribute with raiseError=false
-    // and treat a pending AttributeError as "missing".
+    // and treat a raised AttributeError as "missing".
     {
         protoPython::PythonEnvironment* envInner = protoPython::PythonEnvironment::fromContext(context);
         if (envInner) {
-            envInner->clearPendingException();
-            const proto::ProtoObject* val = envInner->getAttribute(context, obj, nameStr, false);
-            if (envInner->hasPendingException()) {
-                const proto::ProtoObject* exc = envInner->peekPendingException();
+            const proto::ProtoObject* val = nullptr;
+            try {
+                val = envInner->getAttribute(context, obj, nameStr, false);
+            } catch (const PyException& e) {
+                const proto::ProtoObject* exc = e.exception();
                 const proto::ProtoObject* excCls = exc ? envInner->getType(context, exc) : nullptr;
                 const proto::ProtoObject* excName = excCls ? excCls->getAttribute(context, envInner->getNameString()) : nullptr;
                 std::string en;
                 if (excName && excName->isString(context)) excName->asString(context)->toUTF8String(context, en);
-                if (en == "AttributeError") {
-                    envInner->clearPendingException();
-                    // env->getAttribute already exhausted the
-                    // descriptor protocol and __getattr__ fallback;
-                    // an AttributeError here means CPython's
-                    // hasattr would return False.  Falling through
-                    // to the legacy chain probe would wrongly
-                    // resurface the descriptor's own presence on
-                    // the type's MRO and report True even though
-                    // accessing the attribute raised.
-                    return PROTO_FALSE;
-                } else {
-                    // Non-AttributeError — propagate.
-                    return nullptr;
-                }
-            } else if (val && val != PROTO_NONE) {
+                // Non-AttributeError — propagate.
+                if (en != "AttributeError") throw;
+                // env->getAttribute already exhausted the
+                // descriptor protocol and __getattr__ fallback;
+                // an AttributeError here means CPython's
+                // hasattr would return False.  Falling through
+                // to the legacy chain probe would wrongly
+                // resurface the descriptor's own presence on
+                // the type's MRO and report True even though
+                // accessing the attribute raised.
+                return PROTO_FALSE;
+            }
+            if (val && val != PROTO_NONE) {
                 return PROTO_TRUE;
             } else if (val == PROTO_NONE) {
                 // env->getAttribute returns PROTO_NONE for "missing"
@@ -5554,12 +5523,14 @@ static const proto::ProtoObject* py_hasattr(
             std::vector<const proto::ProtoObject*> args = getattrIsOwn
                 ? std::vector<const proto::ProtoObject*>{nameObj}
                 : std::vector<const proto::ProtoObject*>{obj, nameObj};
-            const proto::ProtoObject* probe = env->callObject(getattrFn, args);
-            if (env->hasPendingException()) {
+            const proto::ProtoObject* probe = nullptr;
+            try {
+                probe = env->callObject(getattrFn, args);
+            } catch (const PyException& e) {
                 // __getattr__ itself raised — by CPython contract, hasattr
                 // suppresses AttributeError but lets others propagate.  We
                 // still want hasattr() to return False for AttributeError.
-                const proto::ProtoObject* exc = env->peekPendingException();
+                const proto::ProtoObject* exc = e.exception();
                 if (exc) {
                     const proto::ProtoObject* cls2 = env->getType(context, exc);
                     const proto::ProtoString* nameS = env->getNameString();
@@ -5567,13 +5538,10 @@ static const proto::ProtoObject* py_hasattr(
                     if (nameAttr && nameAttr->isString(context)) {
                         std::string clsName;
                         nameAttr->asString(context)->toUTF8String(context, clsName);
-                        if (clsName == "AttributeError") {
-                            env->clearPendingException();
-                            return PROTO_FALSE;
-                        }
+                        if (clsName == "AttributeError") return PROTO_FALSE;
                     }
                 }
-                return nullptr; // propagate non-AttributeError
+                throw; // propagate non-AttributeError
             }
             if (probe) return PROTO_TRUE;
         }
@@ -5683,16 +5651,20 @@ static const proto::ProtoObject* py_delattr(
         return PROTO_NONE;
     }
     const proto::ProtoObject* type = env->getType(context, obj);
-    const proto::ProtoObject* delattrM = (type && type != PROTO_NONE)
-        ? env->getAttribute(context, type, PythonEnvironment::getInternedString(context, "__delattr__"), false)
-        : nullptr;
-    if (env->hasPendingException()) env->clearPendingException();
+    const proto::ProtoObject* delattrM = nullptr;
+    if (type && type != PROTO_NONE) {
+        try {
+            delattrM = env->getAttribute(context, type, PythonEnvironment::getInternedString(context, "__delattr__"), false);
+        } catch (const PyException&) {
+            // A failing __delattr__ lookup falls back to the generic delete.
+        }
+    }
     if (delattrM && delattrM != PROTO_NONE) {
         env->callObject(delattrM, {obj, key->asObject(context)});
     } else {
         env->deleteAttribute(context, obj, key);
     }
-    return env->hasPendingException() ? nullptr : PROTO_NONE;
+    return PROTO_NONE;
 }
 
 static bool areSameClasses(proto::ProtoContext* context, const proto::ProtoObject* c1, const proto::ProtoObject* c2) {
@@ -6994,7 +6966,12 @@ const proto::ProtoObject* py_type(
                                         ->appendLast(context, rwT)
                                         ->appendLast(context, PythonEnvironment::getInternedString(context, "<class>")->asObject(context))
                                         ->appendLast(context, context->fromInteger(0));
-                                    env->callObject(warnE, { a->getAt(context, 0), a->getAt(context, 1), a->getAt(context, 2), a->getAt(context, 3) });
+                                    bool emitted = true;
+                                    try {
+                                        env->callObject(warnE, { a->getAt(context, 0), a->getAt(context, 1), a->getAt(context, 2), a->getAt(context, 3) });
+                                    } catch (const PyException&) {
+                                        emitted = false;
+                                    }
                                     // STRUCT-309: when _py_warnings.warn_explicit
                                     // didn't actually emit (assertWarnsRegex
                                     // captures it, fine; but if no
@@ -7005,8 +6982,6 @@ const proto::ProtoObject* py_type(
                                     // test_type_lookup_mro_reference's
                                     // assertRegex(err, 'RuntimeWarning:.*X')
                                     // to match the subprocess's stderr.
-                                    bool emitted = !env->hasPendingException();
-                                    if (env->hasPendingException()) env->clearPendingException();
                                     if (!emitted) {
                                         // unreachable usually — warn_explicit
                                         // either succeeds or raises.  Kept
@@ -7022,10 +6997,13 @@ const proto::ProtoObject* py_type(
                                         const proto::ProtoObject* warnFn = warningsMod->getAttribute(context,
                                             PythonEnvironment::getInternedString(context, "warn"));
                                         if (warnFn && warnFn != PROTO_NONE) {
-                                            env->callObject(warnFn,
-                                                { PythonEnvironment::getInternedString(context, msg.c_str())->asObject(context),
-                                                  rwT });
-                                            if (env->hasPendingException()) env->clearPendingException();
+                                            try {
+                                                env->callObject(warnFn,
+                                                    { PythonEnvironment::getInternedString(context, msg.c_str())->asObject(context),
+                                                      rwT });
+                                            } catch (const PyException&) {
+                                                // A failing warnings.warn is ignored, as before.
+                                            }
                                         }
                                     }
                                 }
@@ -7579,8 +7557,10 @@ const proto::ProtoObject* py_type(
                 else if (svL) nonEmptySlots = svL->getSize(context) > 0;
                 if (nonEmptySlots) {
                     // STRUCT-185: refine STRUCT-157.  CPython's reject list is
-                    // int / bytes / str (variable-length immutable types
-                    // without room for slot descriptors).  Tuple is NOT in
+                    // int / bytes (variable-length immutable types without
+                    // room for slot descriptors); CPython 3.14 accepts them
+                    // on a str subclass (configparser's `class _Line(str)`
+                    // has `__slots__ = 'clean', 'has_comments'`).  Tuple is NOT in
                     // the reject list — `class C(tuple): __slots__=['a']`
                     // works in CPython (test_slots_after_items).  And the
                     // reject must skip when __slots__ contains ONLY the
@@ -7610,7 +7590,6 @@ const proto::ProtoObject* py_type(
                             varLenBases[] = {
                                 { env->getIntPrototype(),   "int" },
                                 { env->getBytesPrototype(), "bytes" },
-                                { env->getStrPrototype(),   "str" },
                             };
                         const proto::ProtoObject* mroAttr2 = env->getAttribute(context,
                             targetClass, env->getMroString(), false);
@@ -7728,7 +7707,6 @@ const proto::ProtoObject* py_type(
                         if (setName && setName != PROTO_NONE) {
                             const proto::ProtoList* setNameArgs = context->newList()->appendLast(context, val)->appendLast(context, targetClass)->appendLast(context, keyObj);
                             protoPython::invokePythonCallable(context, setName, setNameArgs, nullptr);
-                            if (pe && pe->hasPendingException()) { return nullptr; }
                         }
                     }
                 }
@@ -8199,19 +8177,21 @@ static const proto::ProtoObject* py_isinstance(
                 }
             }
             if (gaM && gaM != PROTO_NONE) {
-                env->clearPendingException();
                 const proto::ProtoList* args = context->newList()->appendLast(context, classStr->asObject(context));
                 const proto::ProtoObject* dynamicClass = nullptr;
-                if (gaM->asMethod(context)) {
-                    dynamicClass = gaM->asMethod(context)(context,
-                        const_cast<proto::ProtoObject*>(obj), nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
-                } else {
-                    const proto::ProtoList* selfArgs = context->newList()
-                        ->appendLast(context, obj)
-                        ->appendLast(context, classStr->asObject(context));
-                    dynamicClass = ::protoPython::invokePythonCallable(context, gaM, selfArgs, nullptr);
+                try {
+                    if (gaM->asMethod(context)) {
+                        dynamicClass = gaM->asMethod(context)(context,
+                            const_cast<proto::ProtoObject*>(obj), nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
+                    } else {
+                        const proto::ProtoList* selfArgs = context->newList()
+                            ->appendLast(context, obj)
+                            ->appendLast(context, classStr->asObject(context));
+                        dynamicClass = ::protoPython::invokePythonCallable(context, gaM, selfArgs, nullptr);
+                    }
+                } catch (const PyException&) {
+                    dynamicClass = nullptr;  // an unreadable __class__ is ignored
                 }
-                if (env->hasPendingException()) env->clearPendingException();
                 if (dynamicClass && dynamicClass != PROTO_NONE && dynamicClass != objClass) {
                     if (py_issubclass_check_single(context, dynamicClass, cls)) return PROTO_TRUE;
                 }
@@ -8550,11 +8530,10 @@ static const proto::ProtoObject* py_min_max(
         if (iterObj && iterObj != PROTO_NONE) {
             ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
             while (true) {
-                const proto::ProtoObject* item = py_next(context, nullptr, nullptr, argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, iterObj))), nullptr);
-                if (!item) {
-                    if (env && env->handleExhaustion(context)) break;
-                    return nullptr;
-                }
+                // env->next answers nullptr when exhausted (builtin next()
+                // would raise StopIteration); errors throw.
+                const proto::ProtoObject* item = env ? env->next(iterObj) : nullptr;
+                if (!item) break;
                 if (item == PROTO_NONE) break;
                 items.push_back(item);
             }
@@ -10549,9 +10528,15 @@ static const proto::ProtoObject* py_zip_next(
         const proto::ProtoObject* it = iters->getAt(context, static_cast<int>(i));
         const proto::ProtoObject* nextM = it ? it->getAttribute(context, nextS) : nullptr;
         if (!nextM || !nextM->asMethod(context)) return nullptr;
-        const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr);
+        // Any exception from an argument's __next__ ends the zip, as when
+        // it was cleared from the pending state.
+        const proto::ProtoObject* val = nullptr;
+        try {
+            val = nextM->asMethod(context)(context, it, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr);
+        } catch (const PyException&) {
+            val = nullptr;
+        }
         if (!val) {
-            if (env && env->hasPendingException()) env->clearPendingException();
             if (!strict) return nullptr;
             firstExhaustedAt = static_cast<long long>(i);
             break;
@@ -10575,7 +10560,12 @@ static const proto::ProtoObject* py_zip_next(
             const proto::ProtoObject* it = iters->getAt(context, static_cast<int>(j));
             const proto::ProtoObject* nextM = it ? it->getAttribute(context, nextS) : nullptr;
             if (!nextM || !nextM->asMethod(context)) continue;
-            const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr);
+            const proto::ProtoObject* val = nullptr;
+            try {
+                val = nextM->asMethod(context)(context, it, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr);
+            } catch (const PyException&) {
+                val = nullptr;
+            }
             if (val) {
                 if (env) env->raiseValueError(context,
                     PythonEnvironment::getInternedString(context,
@@ -10583,7 +10573,6 @@ static const proto::ProtoObject* py_zip_next(
                          + " is longer than argument 1").c_str())->asObject(context));
                 return nullptr;
             }
-            if (env && env->hasPendingException()) env->clearPendingException();
         }
         return nullptr;
     }
@@ -10827,13 +10816,12 @@ static const proto::ProtoObject* py_map_next(
         vals.reserve(n);
         const bool strict = self->getAttribute(context,
             PythonEnvironment::getInternedString(context, "__map_strict__")) == PROTO_TRUE;
-        // After a __next__ returned nothing: true for plain exhaustion (a
-        // pending StopIteration is cleared); any other exception propagates.
-        auto exhausted = [&]() -> bool {
-            if (!env || !env->hasPendingException()) return true;
-            if (!env->isStopIteration(context, env->peekPendingException())) return false;
-            env->clearPendingException();
-            return true;
+        // One __next__ call. With strict=True a StopIteration it raises reads
+        // as plain exhaustion (nullptr); any other exception propagates.
+        // env->next drives a native or a Python __next__ alike: nullptr when
+        // the iterator is exhausted, an error thrown.
+        auto pull = [&](const proto::ProtoObject* target) -> const proto::ProtoObject* {
+            return env ? env->next(target) : nullptr;
         };
         // CPython's wording: "map() argument 2 is shorter than argument 1",
         // "map() argument 3 is longer than arguments 1-2".
@@ -10845,26 +10833,21 @@ static const proto::ProtoObject* py_map_next(
         };
         for (proto::proto_ulong i = 0; i < n; ++i) {
             const proto::ProtoObject* it = itersList->getAt(context, static_cast<int>(i));
-            const proto::ProtoObject* nextM = it->getAttribute(context, nextS);
-            if (!nextM || !nextM->asMethod(context)) return nullptr;
-            const proto::ProtoObject* v = nextM->asMethod(context)(context, it, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr);
+            const proto::ProtoObject* v = pull(it);
             if (!v) {
                 // Any iterator exhausted → end of map, unless strict=True
                 // requires all of them to end together.
-                if (!strict || !exhausted()) return nullptr;
+                if (!strict) return nullptr;
                 if (i > 0) {
                     lengthMismatch(i, "shorter");
                     return nullptr;
                 }
                 for (proto::proto_ulong j = 1; j < n; ++j) {
                     const proto::ProtoObject* itj = itersList->getAt(context, static_cast<int>(j));
-                    const proto::ProtoObject* nextJ = itj->getAttribute(context, nextS);
-                    if (!nextJ || !nextJ->asMethod(context)) return nullptr;
-                    if (nextJ->asMethod(context)(context, itj, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr)) {
+                    if (pull(itj)) {
                         lengthMismatch(j, "longer");
                         return nullptr;
                     }
-                    if (!exhausted()) return nullptr;
                 }
                 return nullptr;
             }
@@ -10872,15 +10855,7 @@ static const proto::ProtoObject* py_map_next(
         }
     } else {
         const proto::ProtoObject* it = iterStorage;
-        const proto::ProtoObject* nextM = it->getAttribute(context, nextS);
-        if (!nextM || !nextM->asMethod(context)) {
-            if (get_env_diag()) {
-                fprintf(stderr, "DEBUG: py_map_next failing: it=%p nextM=%p\n", (void*)it, (void*)nextM);
-                fflush(stderr);
-            }
-            return nullptr;
-        }
-        const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr);
+        const proto::ProtoObject* val = env ? env->next(it) : nullptr;
         if (!val) {
             if (get_env_diag()) {
                 fprintf(stderr, "DEBUG: py_map_next: it=%p __next__ returned nullptr (end of iteration)\n", (void*)it);
@@ -10941,9 +10916,6 @@ static const proto::ProtoObject* py_map_next(
         } else {
             res = env->callObject(func, std::vector<const proto::ProtoObject*>(vals.begin(), vals.end()));
         }
-    }
-    if (!res && env && env->hasPendingException()) {
-        return nullptr;
     }
     return res;
 }
@@ -11289,14 +11261,11 @@ const proto::ProtoObject* py_bytearray_fallback(proto::ProtoContext* ctx, const 
                 // An iterable of ints (list, range, generator, ...) left the
                 // buffer empty.
                 const proto::ProtoObject* it = env->iter(initArg);
-                if (!it) return env->hasPendingException() ? nullptr : PROTO_NONE;
+                if (!it) return PROTO_NONE;
                 PythonEnvironment::TransientPin pinIt(env, it);
                 for (;;) {
                     const proto::ProtoObject* item = env->next(it);
-                    if (!item) {
-                        if (env->hasPendingException()) return nullptr;
-                        break;
-                    }
+                    if (!item) break;
                     if (!item->isInteger(ctx) && !item->isBoolean(ctx)) {
                         env->raiseTypeError(ctx, "'" + std::string("object") + "' object cannot be interpreted as an integer");
                         return nullptr;
@@ -11404,10 +11373,11 @@ static const proto::ProtoObject* py_bytearray_iadd(
                 const proto::ProtoObject* nextM = it->getAttribute(ctx, nextS);
                 if (nextM && nextM->asMethod(ctx)) {
                     for (;;) {
-                        const proto::ProtoObject* v = nextM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(it), nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
-                        if (env && env->peekPendingException()) {
-                            if (env->isStopIteration(ctx, env->peekPendingException()))
-                                env->clearPendingException();
+                        const proto::ProtoObject* v = nullptr;
+                        try {
+                            v = nextM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(it), nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
+                        } catch (const PyException& e) {
+                            if (!env || !env->isStopIteration(ctx, e.exception())) throw;
                             break;
                         }
                         if (!v || v == PROTO_NONE) break;
@@ -11869,14 +11839,11 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                         // An iterable of ints (list, range, generator, ...):
                         // it left the buffer empty.
                         const proto::ProtoObject* it = env->iter(src);
-                        if (!it) return env->hasPendingException() ? nullptr : PROTO_NONE;
+                        if (!it) return PROTO_NONE;
                         PythonEnvironment::TransientPin pinIt(env, it);
                         for (;;) {
                             const proto::ProtoObject* item = env->next(it);
-                            if (!item) {
-                                if (env->hasPendingException()) return nullptr;
-                                break;
-                            }
+                            if (!item) break;
                             const long long v = item == PROTO_TRUE ? 1 : item == PROTO_FALSE ? 0
                                 : item->isInteger(context) ? item->asLong(context) : -1;
                             if (!item->isInteger(context) && !item->isBoolean(context)) {

@@ -478,8 +478,7 @@ static const proto::ProtoObject* py_compare_digest(
                     return nullptr;
                 }
     } else if (!digestOctets(ctx, env, a, x) || !digestOctets(ctx, env, b, y)) {
-        if (!env->hasPendingException())
-            env->raiseTypeError(ctx, "unsupported operand types(s) or combination of types");
+        env->raiseTypeError(ctx, "unsupported operand types(s) or combination of types");
         return nullptr;
     }
     // Visit every byte of `y` whatever the lengths, as CPython does.

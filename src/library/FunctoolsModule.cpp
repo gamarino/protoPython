@@ -91,7 +91,6 @@ static const proto::ProtoObject* py_reduce(
         // only in this local across the next callObject's allocations.
         PythonEnvironment::TransientPin pinRes(env, res);
         res = env->callObject(func, {res, item});
-        if (env->hasPendingException()) return nullptr;
     }
     return res;
 }

@@ -46,7 +46,7 @@ static bool collectFds(proto::ProtoContext* ctx, const proto::ProtoObject* obj,
         if (!item || !item->isInteger(ctx)) {
             const proto::ProtoObject* r = env ? env->callMethod(item, "fileno", {}) : nullptr;
             if (!r || !r->isInteger(ctx)) {
-                if (env && !env->hasPendingException()) {
+                if (env) {
                     env->raiseTypeError(ctx, "argument must be an int, or have a fileno() method.");
                 }
                 return false;

@@ -1436,7 +1436,7 @@ static bool substitute(proto::ProtoContext* ctx, const proto::ProtoObject* patOb
             PythonEnvironment::TransientPin pinMatch(env, mo);
             const proto::ProtoObject* r = env->callObject(replObj, { mo });
             if (!r) {
-                if (env->hasPendingException()) { ok = false; return false; }
+                // No result and no exception: nothing to insert.
             } else if (r->isString(ctx)) {
                 ReString piece;
                 wideArg(ctx, r, piece);

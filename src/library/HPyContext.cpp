@@ -61,6 +61,37 @@ void HPyContext::close(HPy h) {
     freeList.push_back(h - 1);
 }
 
+// --- Errors ---
+
+namespace {
+
+// Every API function that can run Python code runs it through this guard: a
+// Python exception becomes the context's error and the function's error
+// return value, as HPy and CPython's C API report errors.
+template <typename R, typename Body>
+R hpyGuarded(HPyContext* hctx, R onError, Body&& body) {
+    try {
+        return body();
+    } catch (const PyException& e) {
+        hctx->setError(e.exception());
+        return onError;
+    }
+}
+
+// The extension returned: its pending error, if any, is raised in Python.
+void raiseHPyError(proto::ProtoContext* ctx, HPyContext& hctx) {
+    if (!hctx.error) return;
+    const proto::ProtoObject* exc = hctx.asProtoObject(hctx.error);
+    if (!exc) return;
+    throw PyException(PythonEnvironment::fromContext(ctx), exc);   // pins exc before hctx goes
+}
+
+}  // namespace
+
+void raisePendingHPyError(proto::ProtoContext* ctx, HPyContext& hctx) {
+    raiseHPyError(ctx, hctx);
+}
+
 // --- Core ABI ---
 
 HPy HPy_FromPyObject(HPyContext* hctx, const proto::ProtoObject* obj) {
@@ -129,10 +160,11 @@ HPy HPy_Call(HPyContext* hctx, HPy callable, const HPy* args, size_t nargs) {
         const proto::ProtoObject* a = hctx->asProtoObject(args[i]);
         argList = argList->appendLast(hctx->ctx, a ? a : nullptr);
     }
-    const proto::ProtoObject* result = callee->call(hctx->ctx, nullptr, callName, callee,
-        argList, nullptr);
-    if (!result || result == nullptr) return 0;
-    return hctx->fromProtoObject(result);
+    return hpyGuarded<HPy>(hctx, 0, [&]() -> HPy {
+        const proto::ProtoObject* result = callee->call(hctx->ctx, nullptr, callName, callee,
+            argList, nullptr);
+        return result ? hctx->fromProtoObject(result) : 0;
+    });
 }
 
 HPy HPy_Type(HPyContext* hctx, HPy obj) {
@@ -182,6 +214,7 @@ const proto::ProtoObject* hpy_method_wrapper(
         hArgs[i] = hctx.fromProtoObject(positionalParameters->getAt(context, static_cast<int>(i)));
     }
     const HPy hResult = meth(&hctx, hSelf, hArgs.data(), nargs);
+    raiseHPyError(context, hctx);
     if (hResult == HPy_NULL) return PROTO_NONE;
     const proto::ProtoObject* result = hctx.asProtoObject(hResult);
     return result ? result : PROTO_NONE;
@@ -309,20 +342,22 @@ void HPyErr_SetString(HPyContext* hctx, HPy type, const char* msg) {
     if (!hctx || !hctx->ctx) return;
     const proto::ProtoObject* t = hctx->asProtoObject(type);
     if (!t) return;
-    const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, PythonEnvironment::getInternedString(hctx->ctx, msg)->asObject(hctx->ctx));
-    const proto::ProtoObject* exc = t->call(hctx->ctx, nullptr, proto::ProtoString::createSymbol(hctx->ctx, "__call__"), t, args, nullptr);
-    if (exc) {
-        // protoPython-specific exception setter would be called here if available via HPyContext
-        // For now we just log it or set it if we have access to the PythonEnvironment (Phase 4 integration)
-    }
+    const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, PythonEnvironment::getInternedString(hctx->ctx, msg ? msg : "")->asObject(hctx->ctx));
+    // The exception the call builds becomes the context's error; an error
+    // building it (its own exception) takes its place.
+    hpyGuarded<int>(hctx, -1, [&]() -> int {
+        const proto::ProtoObject* exc = t->call(hctx->ctx, nullptr, proto::ProtoString::createSymbol(hctx->ctx, "__call__"), t, args, nullptr);
+        if (exc && exc != PROTO_NONE) hctx->setError(exc);
+        return 0;
+    });
 }
 
 int HPyErr_Occurred(HPyContext* hctx) {
-    return 0; // Stub for Phase 3
+    return (hctx && hctx->error) ? 1 : 0;
 }
 
 void HPyErr_Clear(HPyContext* hctx) {
-    // Stub for Phase 3
+    if (hctx) hctx->clearError();
 }
 
 HPy HPy_Add(HPyContext* hctx, HPy h1, HPy h2) {
@@ -332,8 +367,10 @@ HPy HPy_Add(HPyContext* hctx, HPy h1, HPy h2) {
     if (!o1 || !o2) return 0;
     const proto::ProtoString* addName = proto::ProtoString::createSymbol(hctx->ctx, "__add__");
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, o2);
-    const proto::ProtoObject* res = o1->call(hctx->ctx, nullptr, addName, o1, args, nullptr);
-    return hctx->fromProtoObject(res);
+    return hpyGuarded<HPy>(hctx, 0, [&]() -> HPy {
+        const proto::ProtoObject* res = o1->call(hctx->ctx, nullptr, addName, o1, args, nullptr);
+        return res ? hctx->fromProtoObject(res) : 0;
+    });
 }
 
 HPy HPy_Sub(HPyContext* hctx, HPy h1, HPy h2) {
@@ -342,8 +379,10 @@ HPy HPy_Sub(HPyContext* hctx, HPy h1, HPy h2) {
     const proto::ProtoObject* o2 = hctx->asProtoObject(h2);
     const proto::ProtoString* subName = proto::ProtoString::createSymbol(hctx->ctx, "__sub__");
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, o2);
-    const proto::ProtoObject* res = o1->call(hctx->ctx, nullptr, subName, o1, args, nullptr);
-    return hctx->fromProtoObject(res);
+    return hpyGuarded<HPy>(hctx, 0, [&]() -> HPy {
+        const proto::ProtoObject* res = o1->call(hctx->ctx, nullptr, subName, o1, args, nullptr);
+        return res ? hctx->fromProtoObject(res) : 0;
+    });
 }
 
 HPy HPy_Mul(HPyContext* hctx, HPy h1, HPy h2) {
@@ -352,8 +391,10 @@ HPy HPy_Mul(HPyContext* hctx, HPy h1, HPy h2) {
     const proto::ProtoObject* o2 = hctx->asProtoObject(h2);
     const proto::ProtoString* mulName = proto::ProtoString::createSymbol(hctx->ctx, "__mul__");
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, o2);
-    const proto::ProtoObject* res = o1->call(hctx->ctx, nullptr, mulName, o1, args, nullptr);
-    return hctx->fromProtoObject(res);
+    return hpyGuarded<HPy>(hctx, 0, [&]() -> HPy {
+        const proto::ProtoObject* res = o1->call(hctx->ctx, nullptr, mulName, o1, args, nullptr);
+        return res ? hctx->fromProtoObject(res) : 0;
+    });
 }
 
 HPy HPy_Div(HPyContext* hctx, HPy h1, HPy h2) {
@@ -362,8 +403,10 @@ HPy HPy_Div(HPyContext* hctx, HPy h1, HPy h2) {
     const proto::ProtoObject* o2 = hctx->asProtoObject(h2);
     const proto::ProtoString* divName = proto::ProtoString::createSymbol(hctx->ctx, "__truediv__");
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, o2);
-    const proto::ProtoObject* res = o1->call(hctx->ctx, nullptr, divName, o1, args, nullptr);
-    return hctx->fromProtoObject(res);
+    return hpyGuarded<HPy>(hctx, 0, [&]() -> HPy {
+        const proto::ProtoObject* res = o1->call(hctx->ctx, nullptr, divName, o1, args, nullptr);
+        return res ? hctx->fromProtoObject(res) : 0;
+    });
 }
 
 HPy HPy_GetItem(HPyContext* hctx, HPy obj, HPy key) {
@@ -373,8 +416,10 @@ HPy HPy_GetItem(HPyContext* hctx, HPy obj, HPy key) {
     if (!o || !k) return 0;
     const proto::ProtoString* giName = proto::ProtoString::createSymbol(hctx->ctx, "__getitem__");
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, k);
-    const proto::ProtoObject* res = o->call(hctx->ctx, nullptr, giName, o, args, nullptr);
-    return hctx->fromProtoObject(res);
+    return hpyGuarded<HPy>(hctx, 0, [&]() -> HPy {
+        const proto::ProtoObject* res = o->call(hctx->ctx, nullptr, giName, o, args, nullptr);
+        return res ? hctx->fromProtoObject(res) : 0;
+    });
 }
 
 int HPy_SetItem(HPyContext* hctx, HPy obj, HPy key, HPy value) {
@@ -385,8 +430,10 @@ int HPy_SetItem(HPyContext* hctx, HPy obj, HPy key, HPy value) {
     if (!o || !k) return -1;
     const proto::ProtoString* siName = proto::ProtoString::createSymbol(hctx->ctx, "__setitem__");
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, k)->appendLast(hctx->ctx, v);
-    const proto::ProtoObject* res = o->call(hctx->ctx, nullptr, siName, o, args, nullptr);
-    return (res != nullptr) ? 0 : -1;
+    return hpyGuarded<int>(hctx, -1, [&]() -> int {
+        const proto::ProtoObject* res = o->call(hctx->ctx, nullptr, siName, o, args, nullptr);
+        return (res != nullptr) ? 0 : -1;
+    });
 }
 
 size_t HPy_Length(HPyContext* hctx, HPy obj) {
@@ -394,8 +441,11 @@ size_t HPy_Length(HPyContext* hctx, HPy obj) {
     const proto::ProtoObject* o = hctx->asProtoObject(obj);
     if (!o) return 0;
     const proto::ProtoString* lenName = proto::ProtoString::createSymbol(hctx->ctx, "__len__");
-    const proto::ProtoObject* res = o->call(hctx->ctx, nullptr, lenName, o, nullptr, nullptr);
-    return (res && res->isInteger(hctx->ctx)) ? static_cast<size_t>(res->asLong(hctx->ctx)) : 0;
+    // (size_t)-1 is HPy_Length's error value (HPy_ssize_t -1).
+    return hpyGuarded<size_t>(hctx, static_cast<size_t>(-1), [&]() -> size_t {
+        const proto::ProtoObject* res = o->call(hctx->ctx, nullptr, lenName, o, nullptr, nullptr);
+        return (res && res->isInteger(hctx->ctx)) ? static_cast<size_t>(res->asLong(hctx->ctx)) : 0;
+    });
 }
 
 int HPy_Contains(HPyContext* hctx, HPy container, HPy item) {
@@ -405,8 +455,10 @@ int HPy_Contains(HPyContext* hctx, HPy container, HPy item) {
     if (!c || !i) return 0;
     const proto::ProtoString* hasName = proto::ProtoString::createSymbol(hctx->ctx, "__contains__");
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, i);
-    const proto::ProtoObject* res = c->call(hctx->ctx, nullptr, hasName, c, args, nullptr);
-    return (res && res->isBoolean(hctx->ctx)) ? (res->asBoolean(hctx->ctx) ? 1 : 0) : 0;
+    return hpyGuarded<int>(hctx, -1, [&]() -> int {
+        const proto::ProtoObject* res = c->call(hctx->ctx, nullptr, hasName, c, args, nullptr);
+        return (res && res->isBoolean(hctx->ctx)) ? (res->asBoolean(hctx->ctx) ? 1 : 0) : 0;
+    });
 }
 
 int HPy_IsTrue(HPyContext* hctx, HPy h) {
@@ -467,7 +519,10 @@ HPy HPy_And(HPyContext* hctx, HPy h1, HPy h2) {
     const proto::ProtoObject* o2 = hctx->asProtoObject(h2);
     const proto::ProtoString* name = proto::ProtoString::createSymbol(hctx->ctx, "__and__");
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, o2);
-    return hctx->fromProtoObject(o1->call(hctx->ctx, nullptr, name, o1, args, nullptr));
+    return hpyGuarded<HPy>(hctx, 0, [&]() -> HPy {
+        const proto::ProtoObject* res = o1->call(hctx->ctx, nullptr, name, o1, args, nullptr);
+        return res ? hctx->fromProtoObject(res) : 0;
+    });
 }
 
 HPy HPy_Or(HPyContext* hctx, HPy h1, HPy h2) {
@@ -476,7 +531,10 @@ HPy HPy_Or(HPyContext* hctx, HPy h1, HPy h2) {
     const proto::ProtoObject* o2 = hctx->asProtoObject(h2);
     const proto::ProtoString* name = proto::ProtoString::createSymbol(hctx->ctx, "__or__");
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, o2);
-    return hctx->fromProtoObject(o1->call(hctx->ctx, nullptr, name, o1, args, nullptr));
+    return hpyGuarded<HPy>(hctx, 0, [&]() -> HPy {
+        const proto::ProtoObject* res = o1->call(hctx->ctx, nullptr, name, o1, args, nullptr);
+        return res ? hctx->fromProtoObject(res) : 0;
+    });
 }
 
 HPy HPy_Xor(HPyContext* hctx, HPy h1, HPy h2) {
@@ -485,7 +543,10 @@ HPy HPy_Xor(HPyContext* hctx, HPy h1, HPy h2) {
     const proto::ProtoObject* o2 = hctx->asProtoObject(h2);
     const proto::ProtoString* name = proto::ProtoString::createSymbol(hctx->ctx, "__xor__");
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, o2);
-    return hctx->fromProtoObject(o1->call(hctx->ctx, nullptr, name, o1, args, nullptr));
+    return hpyGuarded<HPy>(hctx, 0, [&]() -> HPy {
+        const proto::ProtoObject* res = o1->call(hctx->ctx, nullptr, name, o1, args, nullptr);
+        return res ? hctx->fromProtoObject(res) : 0;
+    });
 }
 
 HPy HPy_LShift(HPyContext* hctx, HPy h1, HPy h2) {
@@ -494,7 +555,10 @@ HPy HPy_LShift(HPyContext* hctx, HPy h1, HPy h2) {
     const proto::ProtoObject* o2 = hctx->asProtoObject(h2);
     const proto::ProtoString* name = proto::ProtoString::createSymbol(hctx->ctx, "__lshift__");
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, o2);
-    return hctx->fromProtoObject(o1->call(hctx->ctx, nullptr, name, o1, args, nullptr));
+    return hpyGuarded<HPy>(hctx, 0, [&]() -> HPy {
+        const proto::ProtoObject* res = o1->call(hctx->ctx, nullptr, name, o1, args, nullptr);
+        return res ? hctx->fromProtoObject(res) : 0;
+    });
 }
 
 HPy HPy_RShift(HPyContext* hctx, HPy h1, HPy h2) {
@@ -503,7 +567,10 @@ HPy HPy_RShift(HPyContext* hctx, HPy h1, HPy h2) {
     const proto::ProtoObject* o2 = hctx->asProtoObject(h2);
     const proto::ProtoString* name = proto::ProtoString::createSymbol(hctx->ctx, "__rshift__");
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, o2);
-    return hctx->fromProtoObject(o1->call(hctx->ctx, nullptr, name, o1, args, nullptr));
+    return hpyGuarded<HPy>(hctx, 0, [&]() -> HPy {
+        const proto::ProtoObject* res = o1->call(hctx->ctx, nullptr, name, o1, args, nullptr);
+        return res ? hctx->fromProtoObject(res) : 0;
+    });
 }
 
 HPy HPy_RichCompare(HPyContext* hctx, HPy h1, HPy h2, int op) {
@@ -522,7 +589,10 @@ HPy HPy_RichCompare(HPyContext* hctx, HPy h1, HPy h2, int op) {
     }
     const proto::ProtoString* name = proto::ProtoString::createSymbol(hctx->ctx, method);
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, o2);
-    return hctx->fromProtoObject(o1->call(hctx->ctx, nullptr, name, o1, args, nullptr));
+    return hpyGuarded<HPy>(hctx, 0, [&]() -> HPy {
+        const proto::ProtoObject* res = o1->call(hctx->ctx, nullptr, name, o1, args, nullptr);
+        return res ? hctx->fromProtoObject(res) : 0;
+    });
 }
 
 HPy HPyList_New(HPyContext* hctx, size_t len) {
@@ -563,14 +633,25 @@ HPy HPy_GetIter(HPyContext* hctx, HPy obj) {
     if (!hctx || !hctx->ctx) return 0;
     const proto::ProtoObject* o = hctx->asProtoObject(obj);
     const proto::ProtoString* name = proto::ProtoString::createSymbol(hctx->ctx, "__iter__");
-    return hctx->fromProtoObject(o->call(hctx->ctx, nullptr, name, o, nullptr, nullptr));
+    return hpyGuarded<HPy>(hctx, 0, [&]() -> HPy {
+        const proto::ProtoObject* res = o->call(hctx->ctx, nullptr, name, o, nullptr, nullptr);
+        return res ? hctx->fromProtoObject(res) : 0;
+    });
 }
 
 HPy HPy_Next(HPyContext* hctx, HPy iter) {
     if (!hctx || !hctx->ctx) return 0;
     const proto::ProtoObject* i = hctx->asProtoObject(iter);
     const proto::ProtoString* name = proto::ProtoString::createSymbol(hctx->ctx, "__next__");
-    return hctx->fromProtoObject(i->call(hctx->ctx, nullptr, name, i, nullptr, nullptr));
+    // Exhaustion is HPy_NULL without an error, as PyIter_Next answers.
+    try {
+        const proto::ProtoObject* res = i->call(hctx->ctx, nullptr, name, i, nullptr, nullptr);
+        return res ? hctx->fromProtoObject(res) : 0;
+    } catch (const PyException& e) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(hctx->ctx);
+        if (!(env && env->isStopIteration(hctx->ctx, e.exception()))) hctx->setError(e.exception());
+        return 0;
+    }
 }
 
 HPy HPySlice_New(HPyContext* hctx, HPy start, HPy stop, HPy step) {
@@ -612,7 +693,10 @@ HPy HPy_CallMethod(HPyContext* hctx, HPy obj, const char* name, const HPy* args,
         const proto::ProtoObject* a = hctx->asProtoObject(args[i]);
         pyArgs = pyArgs->appendLast(hctx->ctx, a ? a : PROTO_NONE);
     }
-    return hctx->fromProtoObject(o->call(hctx->ctx, nullptr, attrName, o, pyArgs, nullptr));
+    return hpyGuarded<HPy>(hctx, 0, [&]() -> HPy {
+        const proto::ProtoObject* res = o->call(hctx->ctx, nullptr, attrName, o, pyArgs, nullptr);
+        return res ? hctx->fromProtoObject(res) : 0;
+    });
 }
 
 void HPy_Dump(HPyContext* hctx, HPy h) {

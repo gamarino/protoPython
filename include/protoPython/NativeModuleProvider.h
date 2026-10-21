@@ -12,7 +12,8 @@ using ModuleInitializer = std::function<const proto::ProtoObject*(proto::ProtoCo
 
 class NativeModuleProvider : public proto::ModuleProvider {
 public:
-    NativeModuleProvider();
+    /** `suffix` tells a later environment's provider apart (PythonEnvironment::providerSuffix). */
+    explicit NativeModuleProvider(const std::string& suffix = "");
     virtual ~NativeModuleProvider() = default;
 
     void registerModule(const std::string& name, ModuleInitializer init);

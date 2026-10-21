@@ -8,7 +8,8 @@ namespace protoPython {
 
 class PythonModuleProvider : public proto::ModuleProvider {
 public:
-    PythonModuleProvider(std::vector<std::string> basePaths);
+    /** `suffix` tells a later environment's provider apart (PythonEnvironment::providerSuffix). */
+    PythonModuleProvider(std::vector<std::string> basePaths, const std::string& suffix = "");
     virtual ~PythonModuleProvider() = default;
 
     virtual const proto::ProtoObject* tryLoad(const std::string& logicalPath, proto::ProtoContext* ctx) override;

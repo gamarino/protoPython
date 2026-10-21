@@ -2,6 +2,7 @@
 #include <protoPython/PythonEnvironment.h>
 #include <cmath>
 #include <limits>
+#include <vector>
 
 namespace protoPython {
 namespace math {
@@ -493,6 +494,77 @@ static const proto::ProtoObject* py_factorial(
     return ctx->fromInteger(r);
 }
 
+// math.fsum(iterable): the correctly rounded sum, by CPython's algorithm
+// (Shewchuk's exact partial sums, then a round-half-even correction of the
+// last partial). An infinity or NaN term makes the result inf / nan, and
+// opposite infinities a ValueError, as CPython answers.
+static const proto::ProtoObject* py_fsum(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env || posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* it = env->iter(posArgs->getAt(ctx, 0));
+    if (!it) {
+        env->raiseTypeError(ctx, "fsum() argument must be iterable");
+        return nullptr;
+    }
+    PythonEnvironment::TransientPin pinIt(env, it);
+    std::vector<double> partials;
+    double specialSum = 0.0;   // sum of the inf / nan terms
+    double infSum = 0.0;       // to tell +inf + -inf apart from nan
+    while (const proto::ProtoObject* item = env->next(it)) {
+        if (!item->isDouble(ctx) && !item->isInteger(ctx)) {
+            env->raiseTypeError(ctx, "must be real number");
+            return nullptr;
+        }
+        double x = toDouble(ctx, item);
+        if (!std::isfinite(x)) {
+            if (std::isinf(x)) infSum += x;
+            specialSum += x;
+            continue;
+        }
+        size_t i = 0;
+        for (double y : partials) {
+            if (std::fabs(x) < std::fabs(y)) std::swap(x, y);
+            const double hi = x + y;
+            const double lo = y - (hi - x);
+            if (lo != 0.0) partials[i++] = lo;
+            x = hi;
+        }
+        partials.resize(i);
+        partials.push_back(x);
+    }
+    if (specialSum != 0.0 || std::isnan(specialSum)) {
+        if (std::isnan(infSum)) {
+            env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, "-inf + inf in fsum")->asObject(ctx));
+            return nullptr;
+        }
+        return ctx->fromDouble(specialSum);
+    }
+    double hi = 0.0;
+    size_t n = partials.size();
+    if (n > 0) {
+        hi = partials[--n];
+        double lo = 0.0;
+        while (n > 0) {
+            const double x = hi;
+            const double y = partials[--n];
+            hi = x + y;
+            const double yr = hi - x;
+            lo = y - yr;
+            if (lo != 0.0) break;
+        }
+        // Round half to even when the remaining partials push it that way.
+        if (n > 0 && ((lo < 0.0 && partials[n - 1] < 0.0) || (lo > 0.0 && partials[n - 1] > 0.0))) {
+            const double y = lo * 2.0;
+            const double x = hi + y;
+            const double yr = x - hi;
+            if (y == yr) hi = x;
+        }
+    }
+    return ctx->fromDouble(hi);
+}
+
 static const proto::ProtoObject* py_prod(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
@@ -854,6 +926,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_comb));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "factorial"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_factorial));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "fsum"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_fsum));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "prod"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_prod));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "sumprod"),

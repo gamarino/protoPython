@@ -30,16 +30,15 @@ int main() {
         "result = greet('C++ Developer')\n"
         "print(result)\n";
 
-    // Python exceptions are not C++ exceptions: a failing run returns -2 and
-    // leaves the exception pending for this thread.
-    if (env.executeString(code, "<embedded>") == -2) {
-        const proto::ProtoObject* exc = env.takePendingException();
-        if (exc && exc != PROTO_NONE) {
-            std::ostringstream text;
-            env.handleException(exc, nullptr, text);
-            if (text.str().empty()) return env.getExitRequested();  // SystemExit
-            std::cerr << text.str();
-        }
+    // A Python exception is a C++ exception: a failing run throws
+    // protoPython::PyException, carrying the Python exception object.
+    try {
+        env.executeString(code, "<embedded>");
+    } catch (const protoPython::PyException& e) {
+        std::ostringstream text;
+        env.handleException(e.exception(), nullptr, text);
+        if (text.str().empty()) return env.getExitRequested();  // SystemExit
+        std::cerr << text.str();
         return 70;
     }
 

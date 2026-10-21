@@ -8,8 +8,8 @@
 
 namespace protoPython {
 
-HPyModuleProvider::HPyModuleProvider(std::vector<std::string> basePaths)
-    : basePaths_(std::move(basePaths)), guid_("protoPython.hpy"), alias_("hpy") {}
+HPyModuleProvider::HPyModuleProvider(std::vector<std::string> basePaths, const std::string& suffix)
+    : basePaths_(std::move(basePaths)), guid_("protoPython.hpy" + suffix), alias_("hpy" + suffix) {}
 
 HPyModuleProvider::~HPyModuleProvider() {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -71,6 +71,7 @@ const proto::ProtoObject* HPyModuleProvider::tryLoad(const std::string& logicalP
     {
         HPyContext hctx(ctx);
         const HPy hMod = initFunc(&hctx);
+        raisePendingHPyError(ctx, hctx);   // the init function's error, raised in Python
         mod = (hMod == HPy_NULL) ? nullptr : hctx.asProtoObject(hMod);
         if (!mod || mod == PROTO_NONE) return PROTO_NONE;
 

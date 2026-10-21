@@ -398,7 +398,15 @@ static const proto::ProtoObject* thread_bootstrap(
         const proto::ProtoList* argList = context->newList();
         for (proto::proto_ulong i = callableIdx + 1; i < args->getSize(context); ++i)
             argList = argList->appendLast(context, args->getAt(context, static_cast<int>(i)));
-        result = protoPython::invokePythonCallable(context, callable, argList, nullptr);
+        try {
+            result = protoPython::invokePythonCallable(context, callable, argList, nullptr);
+        } catch (const protoPython::PyException&) {
+            // An exception escaping the thread body is dropped, as it was
+            // when it stayed pending (releaseThreadState discarded it). It
+            // must not leave this entry: protoCore's thread trampoline
+            // catches only std::exception, so it would terminate the process.
+            result = nullptr;
+        }
         if (spawnerGlobals) {
             protoPython::PythonEnvironment::setCurrentGlobals(oldGlobals);
         }

@@ -134,13 +134,18 @@ static const proto::ProtoObject* py_run_exitfuncs(
         // CPython reports an exception raised by a handler through
         // sys.unraisablehook ("Exception ignored in atexit callback
         // <repr>:" and the traceback) and goes on with the next handler.
-        invokePythonCallable(ctx, callable, argsView(proto::ProtoListArguments(ctx, args)), kwargsView(proto::ProtoSparseListKeywordArguments(ctx, kwargs)));
-        if (env && env->hasPendingException()) {
-            const proto::ProtoObject* exc = env->takePendingException();
-            std::string errMsg = "Exception ignored in atexit callback "
-                + PythonEnvironment::reprObject(ctx, callable);
-            if (env->hasPendingException()) env->clearPendingException();
-            env->reportUnraisable(ctx, exc, errMsg);
+        try {
+            invokePythonCallable(ctx, callable, argsView(proto::ProtoListArguments(ctx, args)), kwargsView(proto::ProtoSparseListKeywordArguments(ctx, kwargs)));
+        } catch (const PyException& e) {
+            if (env) {
+                std::string errMsg = "Exception ignored in atexit callback ";
+                // A failing repr of the handler must not stop the report.
+                try {
+                    errMsg += PythonEnvironment::reprObject(ctx, callable);
+                } catch (const PyException&) {
+                }
+                env->reportUnraisable(ctx, e.exception(), errMsg);
+            }
         }
     }
 

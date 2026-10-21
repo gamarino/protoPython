@@ -63,13 +63,13 @@ static void scandir_finalizer(void* ptr) {
 }
 
 // What a path function returns when PythonEnvironment::fsPathArgument
-// rejects its argument: nullptr when __fspath__ raised, otherwise None (the
-// behaviour these functions already had for a non-str argument). They used
+// rejects its argument without raising: None (the behaviour these functions
+// already had for a non-str argument; a raising __fspath__ propagates). They used
 // to accept only str, so an os.PathLike such as pathlib.Path was ignored:
 // os.stat(Path) returned None and os.path.exists(Path) was always True.
 static const proto::ProtoObject* notAPath(proto::ProtoContext* ctx) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    return (env && env->hasPendingException()) ? nullptr : PROTO_NONE;
+    (void)ctx;
+    return PROTO_NONE;
 }
 
 // The follow_symlinks keyword of DirEntry.is_dir/is_file/stat (default
@@ -366,11 +366,15 @@ static const proto::ProtoObject* py_os_fspath(
     const proto::ProtoObject* path = posArgs->getAt(ctx, 0);
     if (!path) path = PROTO_NONE;
     if (isStrOrBytes(path)) return path;
-    const proto::ProtoObject* method = (path != PROTO_NONE)
-        ? env->getAttribute(ctx, path, PythonEnvironment::getInternedString(ctx, "__fspath__"), false)
-        : nullptr;
+    const proto::ProtoObject* method = nullptr;
+    if (path != PROTO_NONE) {
+        try {
+            method = env->getAttribute(ctx, path, PythonEnvironment::getInternedString(ctx, "__fspath__"), false);
+        } catch (const PyException&) {
+            // A failing __fspath__ lookup reads as "not a path": TypeError below.
+        }
+    }
     if (!method || method == PROTO_NONE) {
-        if (env->hasPendingException()) env->clearPendingException();
         env->raiseTypeError(ctx, "expected str, bytes or os.PathLike object, not " + typeName(path));
         return nullptr;
     }
@@ -400,7 +404,7 @@ static const proto::ProtoObject* py_os_fspath(
     std::string p;
     if (!posArgs || posArgs->getSize(ctx) != 1
         || !PythonEnvironment::fsPathArgument(ctx, posArgs->getAt(ctx, 0), p)) {
-        if (env && !env->hasPendingException())
+        if (env)
             env->raiseTypeError(ctx, "_path_splitroot() argument must be str or os.PathLike");
         return nullptr;
     }
@@ -472,10 +476,8 @@ static const proto::ProtoObject* py_listdir(
     std::string path = ".";
     if (posArgs->getSize(ctx) >= 1) {
         const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
-        if (pathObj != PROTO_NONE && !PythonEnvironment::fsPathArgument(ctx, pathObj, path)) {
-            PythonEnvironment* pathEnv = PythonEnvironment::fromContext(ctx);
-            if (pathEnv && pathEnv->hasPendingException()) return nullptr;
-        }
+        // A non-path argument leaves path as "."; a raising __fspath__ propagates.
+        if (pathObj != PROTO_NONE) PythonEnvironment::fsPathArgument(ctx, pathObj, path);
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
@@ -510,10 +512,8 @@ static const proto::ProtoObject* py_scandir(
     std::string path = ".";
     if (posArgs->getSize(ctx) >= 1) {
         const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
-        if (pathObj != PROTO_NONE && !PythonEnvironment::fsPathArgument(ctx, pathObj, path)) {
-            PythonEnvironment* pathEnv = PythonEnvironment::fromContext(ctx);
-            if (pathEnv && pathEnv->hasPendingException()) return nullptr;
-        }
+        // A non-path argument leaves path as "."; a raising __fspath__ propagates.
+        if (pathObj != PROTO_NONE) PythonEnvironment::fsPathArgument(ctx, pathObj, path);
     }
 
     DIR* d = opendir(path.c_str());

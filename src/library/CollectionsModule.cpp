@@ -176,19 +176,20 @@ static const proto::ProtoList* deque_trim_back(proto::ProtoContext* ctx, const D
 }
 
 // The items of `iterable`, collected before the deque is changed: iterating
-// runs Python code, which a retried publish must not repeat. nullptr, with the
-// exception pending, when iterating raises.
+// runs Python code, which a retried publish must not repeat. An exception
+// raised while iterating propagates.
 static const proto::ProtoList* deque_collect(proto::ProtoContext* ctx, PythonEnvironment* env,
                                              const proto::ProtoObject* iterable) {
     const proto::ProtoList* items = ctx->newList();
     const proto::ProtoObject* it = env->iter(iterable);
-    if (!it) return env->hasPendingException() ? nullptr : items;
+    if (!it) return items;
     PythonEnvironment::TransientPin pinIt(env, it);
     for (;;) {
-        const proto::ProtoObject* item = env->next(it);
-        if (env->hasPendingException()) {
-            if (!env->isStopIteration(ctx, env->peekPendingException())) return nullptr;
-            env->clearPendingException();
+        const proto::ProtoObject* item = nullptr;
+        try {
+            item = env->next(it);
+        } catch (const PyException& e) {
+            if (!env->isStopIteration(ctx, e.exception())) throw;
             break;
         }
         if (!item) break;
@@ -401,11 +402,7 @@ static const proto::ProtoObject* py_deque_count(
         const proto::ProtoObject* item = items->getAt(ctx, static_cast<int>(i));
         if (item == value) { ++count; continue; }
         if (!env) continue;
-        if (env->objectsEqual(ctx, item, value)) {
-            ++count;
-        } else if (env->hasPendingException()) {
-            return nullptr;
-        }
+        if (env->objectsEqual(ctx, item, value)) ++count;
     }
     return ctx->fromInteger(count);
 }
@@ -439,7 +436,6 @@ static const proto::ProtoObject* py_deque_remove(
             bool eq = item == value;
             if (!eq && env) {
                 const proto::ProtoObject* r = env->compareObjects(ctx, item, value, 0);
-                if (!r && env->hasPendingException()) return nullptr;
                 eq = (r == PROTO_TRUE);
             }
             if (eq) found = static_cast<proto::proto_long>(i);

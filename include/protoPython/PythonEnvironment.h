@@ -2029,7 +2029,25 @@ public:
 private:
 
     /** Incremented on invalidateResolveCache(); per-thread caches check this (lock-free). */
-    mutable std::atomic<uint64_t> resolveCacheGeneration_{0};
+    // This environment's number in the process (1 for the first). Environments
+    // share the process's ProtoSpace, and with it protoCore's module cache,
+    // keyed by provider GUID and path: a later environment's providers carry a
+    // suffix (providerSuffix), so its modules -- built on its own object, type
+    // and builtins -- are its own. Its resolve-cache generations start at a
+    // value no other environment used (the serial in the high 32 bits): the
+    // thread-local caches keyed by object address and generation (getType's,
+    // LOAD_ATTR's, the resolve cache) never match an earlier environment's
+    // entries, whose addresses a later one reuses.
+    static uint64_t nextEnvironmentSerial() {
+        static std::atomic<uint64_t> environments{0};
+        return environments.fetch_add(1, std::memory_order_relaxed) + 1;
+    }
+    const uint64_t envSerial_{nextEnvironmentSerial()};
+    mutable std::atomic<uint64_t> resolveCacheGeneration_{envSerial_ << 32};
+public:
+    /** "" for the process's first environment, "#<n>" for a later one. */
+    std::string providerSuffix() const { return envSerial_ == 1 ? std::string() : "#" + std::to_string(envSerial_); }
+private:
     std::istream* stdin_{&std::cin};
 
 public:

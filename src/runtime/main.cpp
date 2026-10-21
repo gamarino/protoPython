@@ -357,19 +357,30 @@ void finishInterpreter(protoPython::PythonEnvironment& env) {
 }
 
 int executeModule(protoPython::PythonEnvironment& env, const std::string& moduleName, bool asMain = false) {
-    int ret = env.executeModule(moduleName, asMain);
+    int ret = 0;
+    try {
+        ret = env.executeModule(moduleName, asMain);
+    } catch (const protoPython::PyException& e) {
+        // SystemExit writes nothing and sets the exit status, as in
+        // PythonEnvironment::executeModule's own report.
+        std::ostringstream excOut;
+        env.handleException(e.exception(), nullptr, excOut);
+        if (excOut.str().empty()) {
+            finishInterpreter(env);
+            return env.getExitRequested();
+        }
+        std::cerr << "protopy: unhandled exception during execution of '" << moduleName << "':\n"
+                  << excOut.str();
+        finishInterpreter(env);
+        return EXIT_RUNTIME;
+    }
     if (ret == -1) {
         std::cerr << "protopy: could not resolve module '" << moduleName << "'" << std::endl;
         return EXIT_RESOLVE;
     }
     if (ret == -2) {
-        const proto::ProtoObject* exc = env.takePendingException();
-        if (exc && exc != PROTO_NONE) {
-            std::cerr << "protopy: unhandled exception during execution of '" << moduleName << "':\n";
-            env.handleException(exc, nullptr, std::cerr);
-        } else {
-            std::cerr << "protopy: module '" << moduleName << "' exited with runtime error" << std::endl;
-        }
+        // The exception, if any, was reported where it was caught.
+        std::cerr << "protopy: module '" << moduleName << "' exited with runtime error" << std::endl;
         finishInterpreter(env);
         return EXIT_RUNTIME;
     }
@@ -513,23 +524,26 @@ int main(int argc, char* argv[]) {
             });
             env.enableDefaultTrace();
         }
-        int ret = env.executeString(source, sourceName);
+        int ret = 0;
+        try {
+            ret = env.executeString(source, sourceName);
+        } catch (const protoPython::PyException& e) {
+            // SystemExit writes nothing here and sets the exit status,
+            // as in script execution (PythonEnvironment::executeModule).
+            std::ostringstream excOut;
+            env.handleException(e.exception(), nullptr, excOut);
+            if (excOut.str().empty()) {
+                finishInterpreter(env);
+                return env.getExitRequested();
+            }
+            std::cerr << "protopy: unhandled exception in "
+                      << (sourceName == "<stdin>" ? "standard input program" : "-c execution")
+                      << ":\n" << excOut.str();
+            finishInterpreter(env);
+            return EXIT_RUNTIME;
+        }
 
         if (ret == -2) {
-            const proto::ProtoObject* exc = env.takePendingException();
-            if (exc && exc != PROTO_NONE) {
-                // SystemExit writes nothing here and sets the exit status,
-                // as in script execution (PythonEnvironment::executeModule).
-                std::ostringstream excOut;
-                env.handleException(exc, nullptr, excOut);
-                if (excOut.str().empty()) {
-                    finishInterpreter(env);
-                    return env.getExitRequested();
-                }
-                std::cerr << "protopy: unhandled exception in "
-                          << (sourceName == "<stdin>" ? "standard input program" : "-c execution")
-                          << ":\n" << excOut.str();
-            }
             finishInterpreter(env);
             return EXIT_RUNTIME;
         }

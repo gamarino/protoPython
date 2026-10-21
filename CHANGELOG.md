@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Python exceptions are C++ exceptions (2026-10-21)
+
+- **A Python exception is a C++ exception** (`protoPython::PyException`,
+  PythonEnvironment.h, which keeps the exception object rooted while it
+  travels) and **a Python `try` is a C++ `try`**: each protected range
+  (SETUP_FINALLY, SETUP_WITH, SETUP_ASYNC_WITH) runs as a nested dispatch of
+  the activation inside a C++ try, its handler inside the catch; RERAISE is
+  `throw;`. The pending-exception flag is no longer polled on every opcode,
+  and `raise*` / `setPendingException` throw. Natives, the module loader,
+  the REPL, thread entry, atexit, the embedding API (`executeString`) and
+  protopyc's generated code use try / catch; every site that inspected,
+  swallowed or converted a pending exception catches instead.
+- **Generators** record their try nesting (protected ranges, and handlers
+  with the exception they handle) only to rebuild it on resume; `gen.throw`
+  raises at the resume point. An interpreted generator that finishes answers
+  iteration with nullptr instead of building and throwing a StopIteration
+  (`py_generator_step`, used by `PythonEnvironment::next`).
+- **HPy** keeps C frames free of C++ exceptions: every `HPy_*` call that can
+  run Python code catches the exception, stores it in the context and
+  returns the API's error value (`HPy_NULL`, -1, `(size_t)-1`);
+  `HPyErr_SetString` / `HPyErr_Occurred` / `HPyErr_Clear` work on it, and the
+  method wrapper and the module loader rethrow it when the extension returns.
+- **Several environments in one process** no longer share state: native
+  module initialisers resolve the importing thread's environment instead of
+  capturing their own, a later environment's module providers carry a suffix
+  so protoCore's process-wide module cache keeps its modules apart, its
+  resolve-cache generations never overlap an earlier one's, and an
+  environment's destructor resets the thread's mirrors of its state. A
+  second environment received the first one's `_collections_abc`, whose
+  classes were built on the first environment's `object` and `type`.
+- **Bugs the swallowed errors hid**, now fixed: `map` stopped at a Python
+  `__next__` (it required a native one); `min` / `max` drove their iterable
+  with builtin `next`; `int.from_bytes` accepted only bytes (ipaddress, and
+  so urllib.parse, failed to import); `math.fsum` was missing; `int` had no
+  `numerator`, `denominator` or `as_integer_ratio`; `ABCMeta.__subclasscheck__`
+  consulted the registries of the ABC's bases instead of its own and its
+  subclasses' (`isinstance(1, numbers.Rational)` was False); a non-empty
+  `__slots__` on a str subclass was rejected (configparser).
+- The interpreter's activation is a struct whose try levels are member
+  functions; closures capturing it by reference cost 270 instructions per
+  call.
+- New regression test `exception_nesting` (CPython oracle). The GoogleTest
+  suite's checks of pending exceptions use exceptions; 13 tests that passed
+  only because an error was silently ignored now test valid inputs.
+- Measured (benchmarks/reports/2026-10-21-cpp-exceptions/): suite geomean
+  against CPython 3.14t 2.82x -> 2.53x (protopy), 1.92x -> 1.90x (protopyc);
+  `pyperf_binary_trees` 14.21x -> 6.81x; a raise and catch 192,657 -> 108,671
+  cycles (CPython 1,052); the empty loop 139 -> 116 cycles an iteration
+  (CPython 175); `pyperf_fib` +4.5 % instructions, the same CPython ratio.
+- Known gaps, unchanged: a raise costs about 100 times CPython's (the C++
+  floor is 5,300 cycles; unwinding the 118 KB dispatch function and building
+  the exception object are the rest); the active-exception stack behind
+  `sys.exc_info()` is still per thread; `zip`, `reversed` and a few
+  collections.abc mixins still swallow every exception where CPython only
+  converts StopIteration; `configparser.read_string` fails further in.
+
 ### Changed — instantiation and the exception object (2026-10-21)
 
 - **Instantiation by protoCore**: `__new__` and `__init__` are annotations of

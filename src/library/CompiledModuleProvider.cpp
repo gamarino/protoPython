@@ -7,8 +7,8 @@
 
 namespace protoPython {
 
-CompiledModuleProvider::CompiledModuleProvider(std::vector<std::string> basePaths)
-    : basePaths_(std::move(basePaths)), guid_("protoPython.compiled"), alias_("compiled") {}
+CompiledModuleProvider::CompiledModuleProvider(std::vector<std::string> basePaths, const std::string& suffix)
+    : basePaths_(std::move(basePaths)), guid_("protoPython.compiled" + suffix), alias_("compiled" + suffix) {}
 
 CompiledModuleProvider::~CompiledModuleProvider() {
     std::lock_guard<std::mutex> lock(mutex_);

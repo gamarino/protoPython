@@ -66,6 +66,22 @@ struct HPyContext {
 
     /** Release the handle's pin and recycle its slot. */
     void close(HPy h);
+
+    /** The exception of the failed API call, held through a handle (pinned);
+     *  0 when none. HPy reports an error by its return value (HPy_NULL, -1)
+     *  with the exception kept here, as CPython's C API does: a Python
+     *  exception (a C++ PyException) never unwinds through an extension's C
+     *  frames. hpy_method_wrapper and the module loader rethrow it when the
+     *  extension returns. */
+    HPy error{0};
+    void setError(const proto::ProtoObject* exc) {
+        if (error) close(error);
+        error = exc ? fromProtoObject(exc) : 0;
+    }
+    void clearError() {
+        if (error) close(error);
+        error = 0;
+    }
 };
 
 // --- Core ABI (C-linkage style names for HPy compatibility) ---
@@ -93,6 +109,10 @@ HPy HPy_Call(HPyContext* hctx, HPy callable, const HPy* args, size_t nargs);
 
 /** Return type (prototype) of obj as handle. */
 HPy HPy_Type(HPyContext* hctx, HPy obj);
+
+/** Raise (throw) the context's pending error, if any: an extension entry point
+ *  returned to Python. */
+void raisePendingHPyError(proto::ProtoContext* ctx, HPyContext& hctx);
 
 /** Create a module from HPyModuleDef. (Step 1214) */
 struct HPyModuleDef; // Forward decl

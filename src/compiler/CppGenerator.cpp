@@ -29,39 +29,34 @@ namespace {
 // __moduleNamespace, the namespace of the module this file initialised, and
 // free variables read as None.
 //
-// Exceptions.  The runtime reports an exception by leaving it pending in the
-// PythonEnvironment, as the interpreter does.  Generated code tests the
-// pending flag after every operation that can raise (__ck, __truth) and
-// after every statement; when one is pending it throws __PyUnwind, which
-// leaves the rest of the statement and of its statement list.  A `try` or
-// `with` statement catches __PyUnwind around each of its clauses to run its
-// handlers, its finally clause or __exit__; the callable catches it and
-// returns nullptr with the exception still pending, which is how the
-// interpreter and every native method report it to their caller.  `return`,
-// `break` and `continue` inside a `try` statement with a finally clause, or
-// inside a `with` statement, record what they do in a slot and jump to the
-// finally clause (or the __exit__ call), which does it afterwards.
+// Exceptions.  A Python exception in flight is a C++ exception,
+// protoPython::PyException (PythonEnvironment.h), as in the runtime: every
+// operation that raises throws it, so nothing after it in the statement or
+// in its statement list runs, and a compiled callable lets it propagate to
+// its caller.  A Python `try` statement is a C++ try: the exception a clause
+// raises is caught, kept in an anchor slot (where the collector sees it, and
+// where a generator saves it across a yield) and handled after the C++ try,
+// by the except clauses, the finally clause or __exit__, which rethrow it
+// when it is not handled.  Handlers never run inside a C++ catch block: a
+// generator suspended in one must be able to re-enter it.  `return`, `break`
+// and `continue` inside a `try` statement with a finally clause, or inside a
+// `with` statement, record what they do in a slot and jump to the finally
+// clause (or the __exit__ call), which does it afterwards.
 // MSVC limits one string literal to 16380 bytes (C2026): the preamble is
 // several adjacent raw literals.
 const char* const kGeneratedPreamble =
 R"PREAMBLE(namespace {
-struct __PyUnwind {};
-
-// The pending-exception flag of the running thread: every compiled callable
-// reads its address once (protoPython::PythonEnvironment::
-// pendingExceptionFlagAddress) and tests it after each operation.
-inline const proto::ProtoObject* __ck(const bool* pending, const proto::ProtoObject* v) {
-    if (*pending) throw __PyUnwind{};
-    return v;
+// True when a slot that records a caught exception holds one (it holds
+// PROTO_NONE, or nullptr, otherwise).
+inline bool __inFlight(const proto::ProtoObject* exc) {
+    return exc && exc != PROTO_NONE;
 }
 
-inline bool __truth(protoPython::PythonEnvironment* env, const bool* pending, const proto::ProtoObject* v) {
+inline bool __truth(protoPython::PythonEnvironment* env, const proto::ProtoObject* v) {
     // A comparison's result needs no call.
     if (v == PROTO_TRUE) return true;
     if (v == PROTO_FALSE) return false;
-    const bool b = env->isTrue(v);
-    if (*pending) throw __PyUnwind{};
-    return b;
+    return env->isTrue(v);
 }
 
 // The exception an except clause (or an __exit__ call) handles: sys.exc_info()
@@ -73,11 +68,11 @@ struct __Handling {
     __Handling& operator=(const __Handling&) = delete;
 };
 
-// The same for a finally clause, when it runs for an exception (`exc` is not
-// null).
+// The same for a finally clause, when it runs for an exception (`exc` is
+// neither null nor None).
 struct __HandlingIf {
     const bool active;
-    explicit __HandlingIf(const proto::ProtoObject* exc) : active(exc != nullptr) {
+    explicit __HandlingIf(const proto::ProtoObject* exc) : active(__inFlight(exc)) {
         if (active) protoPython::PythonEnvironment::pushActiveException(exc);
     }
     ~__HandlingIf() { if (active) protoPython::PythonEnvironment::popActiveException(); }
@@ -110,27 +105,18 @@ bool __isClass(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env, co
 
 // `raise exc` and `raise exc from cause` (not named `__raise`, an MSVC
 // keyword).  A class is instantiated with no arguments, as the interpreter's
-// RAISE_VARARGS does.
+// RAISE_VARARGS does.  The raise helpers of the runtime (raiseTypeError, ...)
+// throw too.
 [[noreturn]] void __pyRaise(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env,
                           const proto::ProtoObject* exc, bool hasCause, const proto::ProtoObject* cause) {
-    if (__isClass(ctx, env, exc)) {
-        exc = env->callObject(exc, {});
-        if (env->hasPendingException()) throw __PyUnwind{};
-    }
-    if (!exc || exc == PROTO_NONE) {
-        env->raiseTypeError(ctx, "exceptions must derive from BaseException");
-        throw __PyUnwind{};
-    }
+    if (__isClass(ctx, env, exc)) exc = env->callObject(exc, {});
+    if (!exc || exc == PROTO_NONE) env->raiseTypeError(ctx, "exceptions must derive from BaseException");
     if (hasCause) {
-        if (__isClass(ctx, env, cause)) {
-            cause = env->callObject(cause, {});
-            if (env->hasPendingException()) throw __PyUnwind{};
-        }
+        if (__isClass(ctx, env, cause)) cause = env->callObject(cause, {});
         env->setAttr(exc, "__cause__", cause ? cause : PROTO_NONE);
         env->setAttr(exc, "__suppress_context__", PROTO_TRUE);
     }
-    env->raiseException(exc);
-    throw __PyUnwind{};
+    throw protoPython::PyException(env, exc);
 }
 
 // Zero-argument super() in a method: the class of the method, from the class
@@ -140,10 +126,7 @@ const proto::ProtoObject* __classFromCell(proto::ProtoContext* ctx, protoPython:
     const proto::ProtoObject* cell =
         fs ? fs->getAttribute(ctx, protoPython::PythonEnvironment::getInternedString(ctx, "__class__")) : nullptr;
     const proto::ProtoObject* cls = (cell && cell != PROTO_NONE) ? env->cellGet(ctx, cell) : nullptr;
-    if (!cls || cls == PROTO_NONE) {
-        env->raiseRuntimeError(ctx, "super(): __class__ cell not found");
-        throw __PyUnwind{};
-    }
+    if (!cls || cls == PROTO_NONE) env->raiseRuntimeError(ctx, "super(): __class__ cell not found");
     return cls;
 }
 
@@ -152,16 +135,17 @@ void __extendArgs(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env,
                   const proto::ProtoObject** listSlot, const proto::ProtoObject* iterable) {
     const proto::ProtoObject* it = env->iter(iterable);
     if (!it) {
-        if (!env->hasPendingException()) env->raiseTypeError(ctx, "argument after * must be an iterable");
-        throw __PyUnwind{};
+        env->raiseTypeError(ctx, "argument after * must be an iterable");
+        return;
     }
     protoPython::PythonEnvironment::TransientPin pin(env, it);
-    while (const proto::ProtoObject* v = env->next(it)) {
-        *listSlot = (*listSlot)->asList(ctx)->appendLast(ctx, v)->asObject(ctx);
-    }
-    if (env->hasPendingException()) {
-        if (!env->isStopIteration(ctx, env->peekPendingException())) throw __PyUnwind{};
-        env->clearPendingException();
+    // A StopIteration that reaches here ends the iteration.
+    try {
+        while (const proto::ProtoObject* v = env->next(it)) {
+            *listSlot = (*listSlot)->asList(ctx)->appendLast(ctx, v)->asObject(ctx);
+        }
+    } catch (const protoPython::PyException& e) {
+        if (!env->isStopIteration(ctx, e.exception())) throw;
     }
 }
 
@@ -170,20 +154,15 @@ void __extendArgs(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env,
 void __mergeKwargs(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env,
                    const proto::ProtoObject** dictSlot, const proto::ProtoObject* mapping) {
     (void)ctx;
-    if (!*dictSlot || *dictSlot == PROTO_NONE) {
-        *dictSlot = env->callObject(env->lookupName("dict"), {});
-        if (env->hasPendingException()) throw __PyUnwind{};
-    }
+    if (!*dictSlot || *dictSlot == PROTO_NONE) *dictSlot = env->callObject(env->lookupName("dict"), {});
     env->callMethod(*dictSlot, "update", {mapping});
-    if (env->hasPendingException()) throw __PyUnwind{};
 }
 
 // A bare `raise`: the exception the innermost running except clause handles.
 [[noreturn]] void __pyReraise(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env) {
     const proto::ProtoObject* exc = protoPython::PythonEnvironment::getActiveException();
-    if (exc) env->raiseException(exc);
-    else env->raiseRuntimeError(ctx, "reraise outside of except block");
-    throw __PyUnwind{};
+    if (!exc) env->raiseRuntimeError(ctx, "reraise outside of except block");
+    throw protoPython::PyException(env, exc);
 }
 
 // The namespace of the module proto_module_init initialised.  It stays alive
@@ -247,21 +226,22 @@ void __unpack(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env, con
               unsigned n, int star, const proto::ProtoObject** out) {
     const proto::ProtoObject* it = env->iter(value);
     if (!it) {
-        if (!env->hasPendingException()) env->raiseTypeError(ctx, "cannot unpack non-iterable object");
-        throw __PyUnwind{};
+        env->raiseTypeError(ctx, "cannot unpack non-iterable object");
+        return;
     }
     protoPython::PythonEnvironment::TransientPin pin(env, it);
     // The values are collected in a list kept in out[0], a slot, so the
-    // collector sees them while the iteration runs Python code.
+    // collector sees them while the iteration runs Python code.  A
+    // StopIteration that reaches here ends the iteration.
     out[0] = ctx->newList()->asObject(ctx);
     size_t got = 0;
-    while (const proto::ProtoObject* v = env->next(it)) {
-        out[0] = out[0]->asList(ctx)->appendLast(ctx, v)->asObject(ctx);
-        if (star < 0 && ++got > n) break;
-    }
-    if (env->hasPendingException()) {
-        if (!env->isStopIteration(ctx, env->peekPendingException())) throw __PyUnwind{};
-        env->clearPendingException();
+    try {
+        while (const proto::ProtoObject* v = env->next(it)) {
+            out[0] = out[0]->asList(ctx)->appendLast(ctx, v)->asObject(ctx);
+            if (star < 0 && ++got > n) break;
+        }
+    } catch (const protoPython::PyException& e) {
+        if (!env->isStopIteration(ctx, e.exception())) throw;
     }
     const proto::ProtoList* collected = out[0]->asList(ctx);
     got = collected->getSize(ctx);
@@ -273,8 +253,7 @@ void __unpack(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env, con
             const proto::ProtoObject* valueError = env->lookupName("ValueError");
             std::string msg = got > n ? "too many values to unpack (expected " + std::to_string(n) + ")"
                                       : "not enough values to unpack (expected " + std::to_string(n) + ", got " + std::to_string(got) + ")";
-            env->raiseException(env->callObject(valueError, {ctx->fromUTF8String(msg.c_str())}));
-            throw __PyUnwind{};
+            throw protoPython::PyException(env, env->callObject(valueError, {ctx->fromUTF8String(msg.c_str())}));
         }
         for (unsigned i = 0; i < n; ++i) out[i] = values[i];
         return;
@@ -282,8 +261,7 @@ void __unpack(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env, con
     if (got + 1 < n) {
         const proto::ProtoObject* valueError = env->lookupName("ValueError");
         std::string msg = "not enough values to unpack (expected at least " + std::to_string(n - 1) + ", got " + std::to_string(got) + ")";
-        env->raiseException(env->callObject(valueError, {ctx->fromUTF8String(msg.c_str())}));
-        throw __PyUnwind{};
+        throw protoPython::PyException(env, env->callObject(valueError, {ctx->fromUTF8String(msg.c_str())}));
     }
     const size_t after = n - static_cast<size_t>(star) - 1;
     for (int i = 0; i < star; ++i) out[i] = values[static_cast<size_t>(i)];
@@ -295,7 +273,6 @@ void __unpack(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env, con
                                                       values.data() + star)->asObject(ctx);
     out[star] = restData;
     const proto::ProtoObject* rest = env->callObject(env->lookupName("list"), {});
-    if (!rest) throw __PyUnwind{};
     // The new list is held only here until it is in its slot: no collection
     // may start in between (protoCore embedder rule 3).
     proto::ProtoContext::CriticalSection holdYoung(ctx);
@@ -311,7 +288,7 @@ inline const proto::ProtoObject* __cellLoad(proto::ProtoContext* ctx, protoPytho
     if (isFree) env->raiseFreeVariableError(ctx, name);
     else env->raiseUnboundLocalError(ctx, std::string("cannot access local variable '") + name +
                                           "' where it is not associated with a value");
-    throw __PyUnwind{};
+    return nullptr;
 }
 
 // A class body's read of a free variable: the class namespace's binding when
@@ -375,9 +352,7 @@ const proto::ProtoObject* __bindMethod(proto::ProtoContext* ctx, const proto::Pr
 const proto::ProtoObject* __withEnter(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env,
                                       const proto::ProtoObject* manager, const proto::ProtoObject** exitSlot) {
     const proto::ProtoObject* enter = __bindMethod(ctx, manager, env->lookupBoundSpecialMethod(ctx, manager, env->getEnterString()));
-    if (env->hasPendingException()) throw __PyUnwind{};
     *exitSlot = enter ? __bindMethod(ctx, manager, env->lookupBoundSpecialMethod(ctx, manager, env->getExitString())) : nullptr;
-    if (env->hasPendingException()) throw __PyUnwind{};
     if (!enter || !*exitSlot) {
         *exitSlot = PROTO_NONE;
         std::string type = "object";
@@ -385,44 +360,35 @@ const proto::ProtoObject* __withEnter(proto::ProtoContext* ctx, protoPython::Pyt
         const proto::ProtoObject* nm = cls ? cls->getAttribute(ctx, env->getNameString()) : nullptr;
         if (nm && nm->isString(ctx)) { type.clear(); nm->asString(ctx)->toUTF8String(ctx, type); }
         env->raiseTypeError(ctx, "'" + type + "' object does not support the context manager protocol");
-        throw __PyUnwind{};
+        return nullptr;
     }
-    const proto::ProtoObject* value = env->callObject(enter, {});
-    if (env->hasPendingException()) throw __PyUnwind{};
-    return value;
+    return env->callObject(enter, {});
 }
 
-// Leaving a `with` item: calls __exit__ with the exception that is
-// propagating (its type, the exception and its traceback) or with three
-// None.  Returns when the item completed or __exit__ suppressed the
-// exception; otherwise throws __PyUnwind with the exception (or the one
-// __exit__ raised) pending.  The exception is kept in `excSlot` while
-// __exit__ runs.
+// Leaving a `with` item: calls __exit__ with the exception the body raised
+// (its type, the exception and its traceback), or with three None when
+// `exc` is not in flight.  Returns when the body completed or __exit__
+// suppressed the exception; otherwise throws the exception again.  An
+// exception __exit__ raises propagates instead, with the body's exception as
+// its __context__.  The caller keeps `exc` in a slot while __exit__ runs.
 void __withExit(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env,
-                const proto::ProtoObject* exit, const proto::ProtoObject** excSlot) {
-    if (env->hasPendingException()) {
-        *excSlot = env->takePendingException();
-        const proto::ProtoObject* exc = *excSlot;
-        const proto::ProtoObject* tb = exc->getAttribute(ctx, protoPython::PythonEnvironment::getInternedString(ctx, "__traceback__"));
-        const proto::ProtoObject* suppress;
-        {
-            __Handling handling(exc);
-            suppress = env->callObject(exit, {env->getType(ctx, exc), exc, tb ? tb : PROTO_NONE});
-        }
-        if (env->hasPendingException()) {
-            env->chainPendingException(exc);
-            throw __PyUnwind{};
-        }
-        const bool suppressed = env->isTrue(suppress);
-        if (env->hasPendingException()) throw __PyUnwind{};
-        if (!suppressed) {
-            env->raiseException(*excSlot);
-            throw __PyUnwind{};
-        }
+                const proto::ProtoObject* exit, const proto::ProtoObject* exc) {
+    if (!__inFlight(exc)) {
+        env->callObject(exit, {PROTO_NONE, PROTO_NONE, PROTO_NONE});
         return;
     }
-    env->callObject(exit, {PROTO_NONE, PROTO_NONE, PROTO_NONE});
-    if (env->hasPendingException()) throw __PyUnwind{};
+    const proto::ProtoObject* tb = exc->getAttribute(ctx, protoPython::PythonEnvironment::getInternedString(ctx, "__traceback__"));
+    const proto::ProtoObject* suppress;
+    {
+        __Handling handling(exc);
+        try {
+            suppress = env->callObject(exit, {env->getType(ctx, exc), exc, tb ? tb : PROTO_NONE});
+        } catch (const protoPython::PyException& e) {
+            env->chainException(ctx, e.exception(), exc);
+            throw;
+        }
+    }
+    if (!env->isTrue(suppress)) throw protoPython::PyException(env, exc);
 }
 
 } // namespace
@@ -838,11 +804,9 @@ bool CppGenerator::generate(ModuleNode* module, const std::string& filename) {
     *out_ << "        fprintf(stderr, \"[mod] lookupName('print')=%p\\n\", (void*)p);\n";
     *out_ << "        fflush(stderr);\n";
     *out_ << "    }\n\n";
-    // An exception the module body raises stays pending: the import fails
-    // with it.
-    *out_ << "    try {\n";
+    // An exception the module body raises propagates to the importer
+    // (CompiledModuleProvider): the import fails with it.
     *out_ << moduleBody.str();
-    *out_ << "    } catch (const __PyUnwind&) {}\n";
     leaveSlotFrame(moduleSlots);
     *out_ << "    return nullptr;\n";
     *out_ << "}\n";
@@ -924,7 +888,7 @@ void CppGenerator::popAnchor() {
     tempTop_ = anchorTop_;
 }
 
-std::string CppGenerator::openContextScope(const std::string& callerCtx, bool pendingFlagParam) const {
+std::string CppGenerator::openContextScope(const std::string& callerCtx, bool /*unused*/) const {
     // The context is chained to the thread's current context (chainParent),
     // so the collector's root scan reaches its slots; the slot array lives
     // on the C++ stack for up to ContextScope::SBO_SLOTS slots.
@@ -935,13 +899,7 @@ std::string CppGenerator::openContextScope(const std::string& callerCtx, bool pe
     o << "    proto::ProtoContext* ctx = __scope.context();\n";
     o << "    const proto::ProtoObject** __slot = ctx->getAutomaticLocals();\n";
     o << "    constexpr unsigned __nslots = " << nSlots << ";\n";
-    // The pending-exception flag (kGeneratedPreamble): a callable's body
-    // receives its address from the entry point, or from itself when it
-    // recurses.
-    if (!pendingFlagParam) {
-        o << "    const bool* const __pexc = protoPython::PythonEnvironment::pendingExceptionFlagAddress();\n";
-    }
-    o << "    (void)__slot; (void)__nslots; (void)__pexc;\n";
+    o << "    (void)__slot; (void)__nslots;\n";
     return o.str();
 }
 
@@ -979,12 +937,12 @@ bool CppGenerator::generateNode(ASTNode* node) {
     if (!needsTempSlot(node)) return generateNodeUnrooted(node);
     // Store the value in a temporary slot as it is produced.  The slot is
     // taken before the children's, which therefore get higher ones.
-    // An operation that raised leaves its exception pending: __ck throws
-    // __PyUnwind, so nothing after it in the statement runs.
+    // An operation that raises throws, so nothing after it in the statement
+    // runs.
     const int slot = allocTempSlot();
-    *out_ << "__ck(__pexc, (__slot[" << slot << "] = (";
+    *out_ << "(__slot[" << slot << "] = (";
     if (!generateNodeUnrooted(node)) return false;
-    *out_ << ")))";
+    *out_ << "))";
     return true;
 }
 
@@ -1098,7 +1056,7 @@ bool CppGenerator::generateConditionalExpr(ConditionalExprNode* n) {
     // same way Python does (only one of body/orelse is evaluated), so the
     // straight lowering works as long as test goes through __truth (that
     // is, env->isTrue) to honour Python truthiness on arbitrary objects.
-    *out_ << "(__truth(env, __pexc, ";
+    *out_ << "(__truth(env, ";
     if (!generateNode(n->test.get())) return false;
     *out_ << ") ? (";
     if (!generateNode(n->body.get())) return false;
@@ -1276,7 +1234,7 @@ bool CppGenerator::generateCall(CallNode* n) {
                     *out_ << "        auto* __args = ctx->newList(" << n->args.size()
                           << "u, __selfArgs);\n";
                     *out_ << "        return " << currentFuncCppName_
-                          << "_body(ctx, __fs, nullptr, __args, nullptr, __pexc);\n";
+                          << "_body(ctx, __fs, nullptr, __args, nullptr);\n";
                     *out_ << "    })()";
                     return true;
                 }
@@ -1376,7 +1334,7 @@ bool CppGenerator::generateAnnAssign(AnnAssignNode* n) {
         if (!generateNode(n->annotation.get())) return false;
         *out_ << ")";
         if (!n->value) return true;
-        *out_ << ";\n    if (*__pexc) throw __PyUnwind{};\n    ";
+        *out_ << ";\n    ";
     }
     if (n->value) {
         std::ostringstream valStream;
@@ -1399,8 +1357,7 @@ bool CppGenerator::generateAssignToTarget(ASTNode* target, const std::string& va
         emitAssignName(nameNode->id, valueExpr);
         return true;
     } else if (auto* attrNode = dynamic_cast<AttributeNode*>(target)) {
-        // Python's attribute write (data descriptors, __setattr__); an
-        // exception it raises is pending, seen after the statement.
+        // Python's attribute write (data descriptors, __setattr__).
         *out_ << "env->storeAttr(ctx, ";
         if (!generateNode(attrNode->value.get())) return false;
         *out_ << ", " << internedKey(attrNode->attr) << ", " << valueExpr << ")";
@@ -1432,7 +1389,6 @@ bool CppGenerator::generateAssignToTarget(ASTNode* target, const std::string& va
             if (!generateAssignToTarget(t, "__slot[" + std::to_string(first + static_cast<int>(i)) + "]")) return false;
             *out_ << ";\n";
         }
-        *out_ << "    if (*__pexc) throw __PyUnwind{}";
         return true;
     }
     *out_ << "/* Unsupported assignment target */";
@@ -1494,9 +1450,9 @@ bool CppGenerator::generateIf(IfNode* n) {
     const int nBody = inStateMachine_ ? countYields(n->body.get()) : 0;
     const int nElse = inStateMachine_ ? countYields(n->orelse.get()) : 0;
     if (nBody + nElse > 0) {
-        *out_ << "if (__resume != 0 ? " << resumeIn(base + 1, nBody) << " : __truth(env, __pexc, ";
+        *out_ << "if (__resume != 0 ? " << resumeIn(base + 1, nBody) << " : __truth(env, ";
     } else {
-        *out_ << "if (__truth(env, __pexc, ";
+        *out_ << "if (__truth(env, ";
     }
     if (!generateNode(n->test.get())) return false;
     *out_ << ")) {\n";
@@ -1536,9 +1492,9 @@ bool CppGenerator::generateWhile(WhileNode* n) {
         *out_ << "while (true) {\n";
         emitLoopSafepoint();
         if (resumable) {
-            *out_ << "    if (__resume != 0 ? " << resumeIn(base + nBody + 1, nElse) << " : !__truth(env, __pexc, ";
+            *out_ << "    if (__resume != 0 ? " << resumeIn(base + nBody + 1, nElse) << " : !__truth(env, ";
         } else {
-            *out_ << "    if (!__truth(env, __pexc, ";
+            *out_ << "    if (!__truth(env, ";
         }
         if (!generateNode(n->test.get())) return false;
         *out_ << ")) {\n";
@@ -1555,7 +1511,7 @@ bool CppGenerator::generateWhile(WhileNode* n) {
         *out_ << ";\n}\n";
         *out_ << "}\n";
     } else {
-        *out_ << (resumable ? "while (__resume != 0 || __truth(env, __pexc, " : "while (__truth(env, __pexc, ");
+        *out_ << (resumable ? "while (__resume != 0 || __truth(env, " : "while (__truth(env, ");
         if (!generateNode(n->test.get())) return false;
         *out_ << ")) {\n";
         emitLoopSafepoint();
@@ -1638,11 +1594,11 @@ bool CppGenerator::generateBinOp(BinOpNode* n) {
     // (__contains__, else iteration).  They fell through to binaryOp,
     // which concatenated: `"a" in "abc"` was "aabc".
     if (n->op == TokenType::In || n->op == TokenType::NotIn) {
-        *out_ << "__ck(__pexc, env->compareOperation(ctx, ";
+        *out_ << "env->compareOperation(ctx, ";
         if (!generateNode(n->left.get())) return false;
         *out_ << ", ";
         if (!generateNode(n->right.get())) return false;
-        *out_ << ", " << (n->op == TokenType::In ? 6 : 7) << "))";
+        *out_ << ", " << (n->op == TokenType::In ? 6 : 7) << ")";
         return true;
     }
 
@@ -1666,7 +1622,7 @@ bool CppGenerator::generateBinOp(BinOpNode* n) {
         // `or` : short-circuit on truthy left → return left.
         // Otherwise evaluate and return the right-hand side.
         *out_ << "        if (" << (isAnd ? "!" : "")
-              << "__truth(env, __pexc, __a)) return __a;\n";
+              << "__truth(env, __a)) return __a;\n";
         *out_ << "        return ";
         if (!generateNode(n->right.get())) return false;
         *out_ << ";\n";
@@ -1786,17 +1742,17 @@ bool CppGenerator::generateContinue(ContinueNode* n) {
 // ---------------------------------------------------------------------------
 // Exceptions and non-local exits.
 //
-// Every statement is followed by a test of the pending-exception flag, and
-// every operation inside it by __ck: an exception stops the statement and
-// its statement list by throwing __PyUnwind (kGeneratedPreamble).  A `try`
-// statement catches __PyUnwind around each clause; its handlers take the
-// pending exception, and its finally clause runs with the propagating
-// exception set aside in a slot.  `return`, `break` and `continue` inside a
-// `try` statement with a finally clause, or inside a `with` statement, store
-// their kind (and a return value, in the callable's return slot) and jump to
-// the finally clause, or the __exit__ call; once it has run, the exit carries
-// on outwards from there (emitExitDispatch), unless the clause raised or
-// left by its own exit.
+// An operation that raises throws protoPython::PyException, which leaves
+// the statement and its statement list (kGeneratedPreamble).  A `try`
+// statement catches it around its body and around its other clauses, keeps
+// it in a slot and runs its handlers or its finally clause after the C++
+// try, outside the catch block; an exception that is not handled is thrown
+// again.  `return`, `break` and `continue` inside a `try` statement with a
+// finally clause, or inside a `with` statement, store their kind (and a
+// return value, in the callable's return slot) and jump to the finally
+// clause, or the __exit__ call; once it has run, the exit carries on
+// outwards from there (emitExitDispatch), unless the clause raised or left
+// by its own exit.
 // ---------------------------------------------------------------------------
 
 bool CppGenerator::emitStatement(ASTNode* stmt) {
@@ -1804,15 +1760,7 @@ bool CppGenerator::emitStatement(ASTNode* stmt) {
     beginStatement();
     if (!generateNode(stmt)) return false;
     *out_ << ";\n";
-    if (!dynamic_cast<PassNode*>(stmt) && !dynamic_cast<BreakNode*>(stmt) &&
-        !dynamic_cast<ContinueNode*>(stmt) && !dynamic_cast<ReturnNode*>(stmt)) {
-        emitPendingCheck();
-    }
     return true;
-}
-
-void CppGenerator::emitPendingCheck() {
-    *out_ << "if (*__pexc) throw __PyUnwind{};\n";
 }
 
 void CppGenerator::emitExit(int kind, const std::string& returnValue) {
@@ -1841,12 +1789,13 @@ void CppGenerator::emitExit(int kind, const std::string& returnValue) {
 void CppGenerator::emitTerminalReturn(const std::string& valueExpr) {
     if (inStateMachine_) {
         // A generator's return finishes it: the value travels in the
-        // StopIteration that the resumer sees.
+        // StopIteration that the resumer sees.  The StopIteration is raised
+        // after the body (generateDef, `__gen_return`), not here: raised here
+        // it would reach the except clauses of the try statements around the
+        // return.
         *out_ << "{\n";
-        *out_ << "    const proto::ProtoObject* __rv = " << valueExpr << ";\n";
-        *out_ << "    __finish();\n";
-        *out_ << "    env->raiseStopIteration(ctx, __rv);\n";
-        *out_ << "    return nullptr;\n";
+        *out_ << "    __genReturn = " << valueExpr << ";\n";
+        *out_ << "    goto __gen_return;\n";
         *out_ << "}";
         return;
     }
@@ -1855,9 +1804,10 @@ void CppGenerator::emitTerminalReturn(const std::string& valueExpr) {
 
 void CppGenerator::emitExitDispatch(const ControlEntry& entry) {
     // Only the exits that jumped to this finally clause are dispatched: a
-    // `break` emitted where there is no loop would not compile.
+    // `break` emitted where there is no loop would not compile.  The code
+    // runs only when the finally clause (or __exit__) did not raise.
     if (!entry.exitReturn && !entry.exitBreak && !entry.exitContinue) return;
-    *out_ << "if (!*__pexc) {\n";
+    *out_ << "{\n";
     const std::string why = "__slot[" + std::to_string(entry.exitSlot) + "]";
     const std::pair<int, bool> kinds[] = {{1, entry.exitReturn}, {2, entry.exitBreak}, {3, entry.exitContinue}};
     for (const auto& k : kinds) {
@@ -1936,15 +1886,16 @@ bool CppGenerator::emitPrologue(const ScopeInfo* s, const std::vector<std::strin
     const bool simple = nKwOnly == 0 && !hasVarargs && !hasKwargs;
     if (simple) {
         // A call with exactly the positional parameters (the common case)
-        // binds them directly; anything else takes bindArguments.
+        // binds them directly; anything else takes bindArguments, which
+        // raises CPython's TypeError when the call does not match.
         *out_ << indent << "if ((!kwargs || kwargs->getSize(ctx) == 0) && args && args->getSize(ctx) == " << nPositional << "u) {\n";
         for (size_t i = 0; i < nPositional; ++i)
             *out_ << indent << "    __slot[" << i << "] = args->getAt(ctx, " << i << ");\n";
-        *out_ << indent << "} else if (!env->bindArguments(ctx, __sig_" << id << ", args, kwargs, __fs, __slot)) {\n";
-        *out_ << indent << "    throw __PyUnwind{};\n";
+        *out_ << indent << "} else {\n";
+        *out_ << indent << "    (void)env->bindArguments(ctx, __sig_" << id << ", args, kwargs, __fs, __slot);\n";
         *out_ << indent << "}\n";
     } else {
-        *out_ << indent << "if (!env->bindArguments(ctx, __sig_" << id << ", args, kwargs, __fs, __slot)) throw __PyUnwind{};\n";
+        *out_ << indent << "(void)env->bindArguments(ctx, __sig_" << id << ", args, kwargs, __fs, __slot);\n";
     }
     for (size_t i = 0; i < layout.size(); ++i) {
         const std::string& v = layout[i];
@@ -2032,7 +1983,7 @@ bool CppGenerator::generateDef(DefNode* n, bool isAsync) {
     out_ = &funcStream;
     // A generator's continuation calls the generator function's body (a
     // recursive call by name), which is emitted after it.
-    *out_ << "\nstatic const proto::ProtoObject* " << cppFuncName << "_body(proto::ProtoContext*, const proto::ProtoObject*, const proto::ProtoObject*, const proto::ProtoList*, const proto::ProtoSparseList*, const bool* const);\n";
+    *out_ << "\nstatic const proto::ProtoObject* " << cppFuncName << "_body(proto::ProtoContext*, const proto::ProtoObject*, const proto::ProtoObject*, const proto::ProtoList*, const proto::ProtoSparseList*);\n";
 
     // Every compiled callable runs in a context of its own, with its locals
     // in that context's automatic slots (see enterSlotFrame), and in the
@@ -2053,8 +2004,8 @@ bool CppGenerator::generateDef(DefNode* n, bool isAsync) {
     // self-recursive call runs the body directly: it is already in the
     // namespace, with the same storage.
     auto emitScopedCall = [&](const std::string& cppName, const std::string& innerText) {
-        *out_ << "\nstatic const proto::ProtoObject* " << cppName << "_body(proto::ProtoContext* __callerCtx, const proto::ProtoObject* __fs, const proto::ProtoObject* __receiver, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs, const bool* const __pexc) {\n";
-        *out_ << openContextScope("__callerCtx", true);
+        *out_ << "\nstatic const proto::ProtoObject* " << cppName << "_body(proto::ProtoContext* __callerCtx, const proto::ProtoObject* __fs, const proto::ProtoObject* __receiver, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {\n";
+        *out_ << openContextScope("__callerCtx");
         *out_ << "    auto* env = protoPython::PythonEnvironment::get(ctx);\n";
         *out_ << "    (void)kwargs;\n";
         *out_ << "    if (__receiver) args = __withReceiver(ctx, __receiver, args);\n";
@@ -2064,10 +2015,8 @@ bool CppGenerator::generateDef(DefNode* n, bool isAsync) {
         *out_ << "        __result = [&]() -> const proto::ProtoObject* {\n";
         *out_ << innerText;
         *out_ << "        }();\n";
-        *out_ << "    } catch (const __PyUnwind&) {\n";
-        // The exception stays pending: the caller sees it with the nullptr
-        // result, as from any native method.
-        *out_ << "        __result = nullptr;\n";
+        // A Python exception (protoPython::PyException) propagates to the
+        // caller as it is.
         *out_ << "    } catch (const proto::ProtoObject* __thrown) {\n";
         *out_ << "        protoPython::promote(ctx, __thrown);\n";
         *out_ << "        throw;\n";
@@ -2091,8 +2040,7 @@ bool CppGenerator::generateDef(DefNode* n, bool isAsync) {
         }
         *out_ << "    protoPython::ModuleNamespaceScope __ns(__moduleNamespaceOf(__callerCtx, __fs));\n";
         *out_ << "    return " << cppName << "_body(__callerCtx, __fs, __isStorage ? nullptr : self,\n"
-              << "        args ? args->asList(__callerCtx) : nullptr, kwargs ? kwargs->asSparseList(__callerCtx) : nullptr,\n"
-              << "        protoPython::PythonEnvironment::pendingExceptionFlagAddress());\n";
+              << "        args ? args->asList(__callerCtx) : nullptr, kwargs ? kwargs->asSparseList(__callerCtx) : nullptr);\n";
         *out_ << "}\n";
     };
     auto emitBindings = [&]() -> bool {
@@ -2135,16 +2083,17 @@ bool CppGenerator::generateDef(DefNode* n, bool isAsync) {
         *out_ << "        gen->setAttribute(ctx, env->getGiPCString(), ctx->fromInteger(-1));\n";
         *out_ << "        gen->setAttribute(ctx, env->getGiLocalsString(), PROTO_NONE);\n";
         *out_ << "    };\n";
+        // A finished generator raises the exception throw() passes, or
+        // StopIteration.
         *out_ << "    if (__resume < 0) {\n";
-        *out_ << "        if (__throw) env->raiseException(__throw);\n";
-        *out_ << "        else env->raiseStopIteration(ctx, PROTO_NONE);\n";
+        *out_ << "        if (__throw) throw protoPython::PyException(env, __throw);\n";
+        *out_ << "        env->raiseStopIteration(ctx, PROTO_NONE);\n";
         *out_ << "        return nullptr;\n";
         *out_ << "    }\n";
         // throw() or close() before the first resumption: the body never runs.
         *out_ << "    if (__resume == 0 && __throw) {\n";
         *out_ << "        __finish();\n";
-        *out_ << "        env->raiseException(__throw);\n";
-        *out_ << "        return nullptr;\n";
+        *out_ << "        throw protoPython::PyException(env, __throw);\n";
         *out_ << "    }\n";
         *out_ << "    {\n";
         *out_ << "        const proto::ProtoObject* __saved = env->getAttribute(ctx, gen, env->getGiLocalsString());\n";
@@ -2152,15 +2101,25 @@ bool CppGenerator::generateDef(DefNode* n, bool isAsync) {
         *out_ << "        const proto::proto_ulong __n = __savedList ? std::min<proto::proto_ulong>(__savedList->getSize(ctx), __nslots) : 0;\n";
         *out_ << "        for (proto::proto_ulong __i = 0; __i < __n; ++__i) __slot[__i] = __savedList->getAt(ctx, static_cast<int>(__i));\n";
         *out_ << "    }\n";
+        // The body finishes the generator when it raises, returns
+        // (emitTerminalReturn jumps to __gen_return with the value) or runs
+        // to its end; a return and the end raise StopIteration, the
+        // completion that py_generator_send_impl passes to the resumer.
+        *out_ << "    const proto::ProtoObject* __genReturn = PROTO_NONE;\n";
         *out_ << "    try {\n";
         beginStatement();
         ok = generateBody(body);
         if (ok) {
             *out_ << ";\n";
-            *out_ << "    } catch (const __PyUnwind&) {}\n";
-            // The body ran to its end, or an exception left it.
+            *out_ << "    } catch (const protoPython::PyException&) {\n";
+            *out_ << "        __finish();\n";
+            *out_ << "        throw;\n";
+            *out_ << "    }\n";
+            // The label only when a return jumps to it (an unused label is
+            // a warning).
+            if (contBody.str().find("goto __gen_return;") != std::string::npos) *out_ << "__gen_return:\n";
             *out_ << "    __finish();\n";
-            *out_ << "    if (!env->hasPendingException()) env->raiseStopIteration(ctx, PROTO_NONE);\n";
+            *out_ << "    env->raiseStopIteration(ctx, __genReturn);\n";
             *out_ << "    return nullptr;\n";
             out_ = &funcStream;
             emitScopedCall(cppContName, contBody.str());
@@ -2255,18 +2214,16 @@ bool CppGenerator::generateDef(DefNode* n, bool isAsync) {
         *out_ << "    __slot[" << fsSlot << "] = __withDefaults(ctx, __slot[" << fsSlot << "], {";
         for (size_t i = 0; i < n->defaults.size(); ++i) {
             if (i) *out_ << ", ";
-            *out_ << "__ck(__pexc, ";
             if (!generateNode(n->defaults[i].get())) return false;
-            *out_ << ")";
         }
         *out_ << "});\n";
     }
     for (size_t i = 0; i < n->kw_defaults.size() && i < n->kwonlyargs.size(); ++i) {
         if (!n->kw_defaults[i]) continue;
         beginStatement();
-        *out_ << "    __slot[" << fsSlot << "] = __withKwDefault(ctx, __slot[" << fsSlot << "], \"" << n->kwonlyargs[i] << "\", __ck(__pexc, ";
+        *out_ << "    __slot[" << fsSlot << "] = __withKwDefault(ctx, __slot[" << fsSlot << "], \"" << n->kwonlyargs[i] << "\", ";
         if (!generateNode(n->kw_defaults[i].get())) return false;
-        *out_ << "));\n";
+        *out_ << ");\n";
     }
     beginStatement();
     *out_ << "    const proto::ProtoObject* __fn = ctx->fromMethod(const_cast<proto::ProtoObject*>(__slot[" << fsSlot << "]), "
@@ -2279,9 +2236,9 @@ bool CppGenerator::generateDef(DefNode* n, bool isAsync) {
         *out_ << ";\n";
     }
     for (auto it = n->decorator_list.rbegin(); it != n->decorator_list.rend(); ++it) {
-        *out_ << "    __fn = __ck(__pexc, env->callObject(";
+        *out_ << "    __fn = env->callObject(";
         if (!generateNode(it->get())) return false;
-        *out_ << ", {__fn}));\n";
+        *out_ << ", {__fn});\n";
     }
     *out_ << "    ";
     emitAssignName(name, "__fn");
@@ -2324,7 +2281,7 @@ bool CppGenerator::generateClassDef(ClassDefNode* n) {
         // class C(metaclass=M, **kw): a dict of the keywords.
         kwdsSlot = pushAnchor();
         classAnchors.push_back(kwdsSlot);
-        *out_ << "    __slot[" << kwdsSlot << "] = __ck(__pexc, env->callObject(env->lookupName(\"dict\"), {}));\n";
+        *out_ << "    __slot[" << kwdsSlot << "] = env->callObject(env->lookupName(\"dict\"), {});\n";
         for (auto& kw : n->keywords) {
             if (kw.first.empty()) {
                 *out_ << "    env->callMethod(__slot[" << kwdsSlot << "], \"update\", {";
@@ -2336,7 +2293,6 @@ bool CppGenerator::generateClassDef(ClassDefNode* n) {
                 if (!generateNode(kw.second.get())) return false;
                 *out_ << ");\n";
             }
-            *out_ << "    if (*__pexc) throw __PyUnwind{};\n";
             beginStatement();
         }
     }
@@ -2355,8 +2311,8 @@ bool CppGenerator::generateClassDef(ClassDefNode* n) {
           << "__slot[" << basesSlot << "], "
           << (kwdsSlot >= 0 ? "__slot[" + std::to_string(kwdsSlot) + "]" : std::string("PROTO_NONE")) << ",\n";
     *out_ << "        [&](proto::ProtoObject*& __ns) -> bool {\n";
+    // An exception the body raises propagates through buildClass.
     *out_ << "        __FrameScope __classFrame(__ns);\n";
-    *out_ << "        try {\n";
     *out_ << "        env->storeName(\"__qualname__\", protoPython::PythonEnvironment::getInternedString(ctx, \""
           << qualname << "\")->asObject(ctx));\n";
     bool hasAnnotations = false;
@@ -2366,7 +2322,7 @@ bool CppGenerator::generateClassDef(ClassDefNode* n) {
         }
     }
     if (hasAnnotations) {
-        *out_ << "        env->storeName(\"__annotations__\", __ck(__pexc, env->callObject(env->lookupName(\"dict\"), {})));\n";
+        *out_ << "        env->storeName(\"__annotations__\", env->callObject(env->lookupName(\"dict\"), {}));\n";
     }
     // Names the class body binds go to the class namespace (the current
     // frame), not to the enclosing function's locals.
@@ -2387,21 +2343,19 @@ bool CppGenerator::generateClassDef(ClassDefNode* n) {
     if (!bodyOk) return false;
     *out_ << ";\n";
     *out_ << "        env->storeName(\"__classcell__\", __slot[" << cellSlot << "]);\n";
-    *out_ << "        } catch (const __PyUnwind&) { return false; }\n";
     // The body may have rebound the frame (a namespace that is not mutable).
     *out_ << "        __ns = const_cast<proto::ProtoObject*>(protoPython::PythonEnvironment::getCurrentFrame());\n";
     *out_ << "        return true;\n";
     *out_ << "    }, &__slot[" << nsSlot << "]);\n";
-    *out_ << "    if (!var_cls_" << n->name << ") throw __PyUnwind{};\n";
     *out_ << "    __slot[" << nsSlot << "] = var_cls_" << n->name << ";\n";
 
     // Apply decorators Bottom-to-Top
     if (!n->decorator_list.empty()) {
         for (auto it = n->decorator_list.rbegin(); it != n->decorator_list.rend(); ++it) {
             beginStatement();
-            *out_ << "    var_cls_" << n->name << " = __ck(__pexc, env->callObject(";
+            *out_ << "    var_cls_" << n->name << " = env->callObject(";
             if (!generateNode(it->get())) return false;
-            *out_ << ", {var_cls_" << n->name << "}));\n";
+            *out_ << ", {var_cls_" << n->name << "});\n";
             *out_ << "    __slot[" << nsSlot << "] = var_cls_" << n->name << ";\n";
         }
     }
@@ -2423,7 +2377,7 @@ bool CppGenerator::generateAugAssign(AugAssignNode* n) {
         const NameKind kind = nameKind(nameNode->id);
         if (kind == NameKind::Cell || kind == NameKind::Free) {
             // x op= v on a cell: read the cell, compute, write the cell.
-            *out_ << "env->cellSet(ctx, local_" << nameNode->id << ", __ck(__pexc, env->binaryOp("
+            *out_ << "env->cellSet(ctx, local_" << nameNode->id << ", env->binaryOp("
                   << nameRead(nameNode->id) << ", protoPython::TokenType::";
             switch (n->op) {
                 case TokenType::PlusAssign:        *out_ << "Plus"; break;
@@ -2443,7 +2397,7 @@ bool CppGenerator::generateAugAssign(AugAssignNode* n) {
             }
             *out_ << ", ";
             if (!generateNode(n->value.get())) return false;
-            *out_ << ")))";
+            *out_ << "))";
             return true;
         }
         if (kind == NameKind::Local) {
@@ -2462,7 +2416,7 @@ bool CppGenerator::generateAugAssign(AugAssignNode* n) {
             }
             if (arithOp) {
                 *out_ << "local_" << nameNode->id
-                      << " = __ck(__pexc, ([&]() -> const proto::ProtoObject* {\n"
+                      << " = ([&]() -> const proto::ProtoObject* {\n"
                       << "        const proto::ProtoObject* __a = local_" << nameNode->id << ";\n"
                       << "        const proto::ProtoObject* __b = ";
                 if (!generateNode(n->value.get())) return false;
@@ -2485,10 +2439,10 @@ bool CppGenerator::generateAugAssign(AugAssignNode* n) {
                     default: *out_ << "Plus"; break;
                 }
                 *out_ << ", __b);\n"
-                      << "    })())";
+                      << "    })()";
                 return true;
             }
-            *out_ << "local_" << nameNode->id << " = __ck(__pexc, env->binaryOp(local_"
+            *out_ << "local_" << nameNode->id << " = env->binaryOp(local_"
                   << nameNode->id << ", protoPython::TokenType::";
             switch (n->op) {
                 case TokenType::PlusAssign:        *out_ << "Plus"; break;
@@ -2508,7 +2462,7 @@ bool CppGenerator::generateAugAssign(AugAssignNode* n) {
             }
             *out_ << ", ";
             if (!generateNode(n->value.get())) return false;
-            *out_ << "))";
+            *out_ << ")";
             return true;
         }
         *out_ << "env->augAssignName(\"" << nameNode->id << "\", ";
@@ -2590,8 +2544,7 @@ std::string CppGenerator::internedKey(const std::string& name) {
 }
 
 bool CppGenerator::generateAttribute(AttributeNode* n) {
-    // Python's attribute read (descriptors, __getattr__, AttributeError):
-    // nullptr with the exception pending when it raised.
+    // Python's attribute read (descriptors, __getattr__, AttributeError).
     *out_ << "env->loadAttr(ctx, ";
     if (!generateNode(n->value.get())) return false;
     *out_ << ", " << internedKey(n->attr) << ")";
@@ -2760,9 +2713,9 @@ bool CppGenerator::generateFor(ForNode* n) {
     // kept in an anchor slot, not only in a C++ variable.
     const int iterSlot = pushAnchor();
     *out_ << "{\n";
-    *out_ << "        " << (resumable ? "if (__resume == 0) " : "") << "__slot[" << iterSlot << "] = __ck(__pexc, env->iter(";
+    *out_ << "        " << (resumable ? "if (__resume == 0) " : "") << "__slot[" << iterSlot << "] = env->iter(";
     if (!generateNode(n->iter.get())) return false;
-    *out_ << "));\n";
+    *out_ << ");\n";
     *out_ << "        const proto::ProtoObject* const& __iter_" << id << " = __slot[" << iterSlot << "];\n";
     // The else clause runs after the loop, outside it (see generateWhile):
     // emitted after the C++ loop, when the iterator was exhausted.
@@ -2772,10 +2725,10 @@ bool CppGenerator::generateFor(ForNode* n) {
     emitLoopSafepoint();
     if (resumable) *out_ << "            if (__resume == 0) {\n";
     // env->next returns nullptr when the iterator is exhausted (None is an
-    // ordinary item) or raised; an exception it raised stays pending.
+    // ordinary item); an exception it raises propagates.
     *out_ << "            auto* __val_" << id << " = env->next(__iter_" << id << ");\n";
     *out_ << "            if (!__val_" << id << ") {\n";
-    if (n->orelse) *out_ << "                if (!env->hasPendingException()) __for_done_" << id << " = true;\n";
+    if (n->orelse) *out_ << "                __for_done_" << id << " = true;\n";
     *out_ << "                break;\n";
     *out_ << "            }\n";
 
@@ -2821,23 +2774,26 @@ bool CppGenerator::generateFor(ForNode* n) {
 }
 
 bool CppGenerator::generateTry(TryNode* n) {
-    // Exceptions in generated code are pending in the PythonEnvironment, and
-    // an operation or statement that leaves one pending throws __PyUnwind.
-    // Each clause is a C++ try that stops the unwinding here.  The body
-    // runs; if it left an exception pending, the first handler that matches
-    // takes it (and handles it, for sys.exc_info() and a bare `raise`, until
-    // it is left), and an unmatched one stays pending.  The else clause runs
-    // when the body raised nothing.  The finally clause always runs, with
-    // the exception that is propagating set aside, and that exception is
-    // pending again afterwards unless the clause raised its own or left by
-    // `return`, `break` or `continue`; a `return`, `break` or `continue`
-    // that left the other clauses jumps to it and carries on after it
-    // (emitExit, emitExitDispatch).
+    // A Python try is a C++ try.  The body runs in a C++ try whose catch
+    // keeps the exception (protoPython::PyException) in an anchor slot; the
+    // handlers then run after it, outside the catch block: the first one
+    // that matches handles the exception (for sys.exc_info() and a bare
+    // `raise`, until it is left), and an unmatched one is thrown again.  An
+    // exception raised while matching or by a handler has the handled one as
+    // its __context__ (PEP 3134).  The else clause runs when the body raised
+    // nothing.  With a finally clause, the body, the handlers and the else
+    // clause are inside another C++ try, whose catch sets the propagating
+    // exception aside in a slot; the finally clause always runs, and that
+    // exception is thrown again afterwards unless the clause raised its own
+    // or left by `return`, `break` or `continue`.  A `return`, `break` or
+    // `continue` that left the other clauses jumps to the finally clause and
+    // carries on after it (emitExit, emitExitDispatch).
     //
     // In a generator a resumption re-enters the clause that holds the
-    // suspended yield; the caught exception, the one the finally clause set
-    // aside and the pending exit are in anchor slots, which are restored
-    // with the others.
+    // suspended yield; no clause runs inside a catch block, so every clause
+    // can be re-entered.  The caught exception, the one the finally clause
+    // set aside and the pending exit are in anchor slots, which are restored
+    // with the others; a slot holds None when there is no exception.
     const int base = stateCount_;
     std::vector<int> nHandler;
     int nHandlers = 0;
@@ -2850,45 +2806,56 @@ bool CppGenerator::generateTry(TryNode* n) {
     const int nFinally = inStateMachine_ ? countYields(n->finalbody.get()) : 0;
     const bool resumable = nBody + nHandlers + nElse + nFinally > 0;
     const std::string resumeIdle = resumable ? "__resume == 0" : "true";
+    const bool hasHandlers = !n->handlers.empty();
 
-    auto emitClause = [&](ASTNode* clause, int first, int count) -> bool {
+    // A clause runs normally, or when a resumption re-enters it.
+    auto openClause = [&](int first, int count) {
         if (resumable) *out_ << "if (__resume == 0 || " << resumeIn(first, count) << ") ";
         *out_ << "{\n";
-        *out_ << "try {\n";
-        if (!generateBody(clause)) return false;
-        *out_ << ";\n";
-        *out_ << "} catch (const __PyUnwind&) {}\n";
-        *out_ << "}\n";
-        return true;
     };
 
     *out_ << "{\n";
     // With a finally clause, the exits that leave the other clauses go
-    // through it: they are recorded in an anchor slot.
+    // through it: they are recorded in an anchor slot, and the exception
+    // that propagates out of them in another.
     ControlEntry fin{false, 0, -1};
+    int propagatingSlot = -1;
     if (n->finalbody) {
         fin.id = finallyCounter_++;
         fin.exitSlot = pushAnchor();
-        *out_ << "if (" << resumeIdle << ") __slot[" << fin.exitSlot << "] = PROTO_NONE;\n";
+        propagatingSlot = pushAnchor();
+        *out_ << "if (" << resumeIdle << ") {\n";
+        *out_ << "    __slot[" << fin.exitSlot << "] = PROTO_NONE;\n";
+        *out_ << "    __slot[" << propagatingSlot << "] = PROTO_NONE;\n";
+        *out_ << "}\n";
         ctl_.push_back(fin);
+        *out_ << "try {\n";
     }
-    bool ok = emitClause(n->body.get(), base + 1, nBody);
     // The caught exception is used across the handlers' bodies, which may
     // loop: it is kept in an anchor slot.
-    const int excSlot = pushAnchor();
+    const int excSlot = hasHandlers ? pushAnchor() : -1;
+    const std::string caught = "__slot[" + std::to_string(excSlot) + "]";
+    if (hasHandlers) *out_ << "if (" << resumeIdle << ") " << caught << " = PROTO_NONE;\n";
+    openClause(base + 1, nBody);
+    if (hasHandlers) *out_ << "try {\n";
+    bool ok = generateBody(n->body.get());
+    *out_ << ";\n";
+    if (hasHandlers) {
+        *out_ << "} catch (const protoPython::PyException& __e) {\n";
+        *out_ << "    " << caught << " = __e.exception();\n";
+        *out_ << "}\n";
+    }
+    *out_ << "}\n";
     int first = base + nBody + 1;
-    if (ok && !n->handlers.empty()) {
-        *out_ << "        if (" << (nHandlers > 0 ? resumeIn(first, nHandlers) + " || " : std::string())
-              << "(" << resumeIdle << " && *__pexc)) {\n";
-        *out_ << "            if (" << resumeIdle << ") __slot[" << excSlot << "] = env->takePendingException();\n";
-        *out_ << "            const proto::ProtoObject* __exc = __slot[" << excSlot << "];\n";
-        *out_ << "            bool __handled = false;\n";
-        // An exception raised while matching (evaluating a handler's type)
-        // propagates after the finally clause, like one a handler raises.
-        *out_ << "            try {\n";
+    if (ok && hasHandlers) {
+        *out_ << "if (" << (nHandlers > 0 ? resumeIn(first, nHandlers) + " || " : std::string())
+              << "(" << resumeIdle << " && __inFlight(" << caught << "))) {\n";
+        *out_ << "    const proto::ProtoObject* __exc = " << caught << ";\n";
+        *out_ << "    bool __handled = false;\n";
+        *out_ << "    try {\n";
         for (size_t i = 0; ok && i < n->handlers.size(); ++i) {
             auto& h = n->handlers[i];
-            *out_ << "            if (" << (nHandler[i] > 0 ? resumeIn(first, nHandler[i]) + " || " : std::string())
+            *out_ << "    if (" << (nHandler[i] > 0 ? resumeIn(first, nHandler[i]) + " || " : std::string())
                   << "(" << resumeIdle << " && !__handled";
             if (h.type) {
                 // Evaluating the type may raise: that exception replaces
@@ -2898,65 +2865,69 @@ bool CppGenerator::generateTry(TryNode* n) {
                 *out_ << ")";
             }
             *out_ << ")) {\n";
-            *out_ << "                __handled = true;\n";
-            *out_ << "                __Handling __handling(__exc);\n";
+            *out_ << "        __handled = true;\n";
+            *out_ << "        __Handling __handling(__exc);\n";
             if (!h.name.empty()) {
-                *out_ << "                if (" << resumeIdle << ") ";
+                *out_ << "        if (" << resumeIdle << ") ";
                 emitAssignName(h.name, "__exc");
                 *out_ << ";\n";
             }
-            *out_ << "try {\n";
             if (!generateBody(h.body.get())) { ok = false; break; }
             *out_ << ";\n";
-            // An exception the clause raises was raised while handling
-            // __exc: its __context__ (PEP 3134).
-            *out_ << "} catch (const __PyUnwind&) { env->chainPendingException(__exc); }\n";
-            *out_ << "            }\n";
+            *out_ << "    }\n";
             first += nHandler[i];
         }
-        *out_ << "            if (!__handled) env->raiseException(__exc);\n";
-        *out_ << "            } catch (const __PyUnwind&) {}\n";
-        *out_ << "        }";
-        if (n->orelse) *out_ << " else ";
-        else *out_ << "\n";
+        *out_ << "    if (!__handled) throw protoPython::PyException(env, __exc);\n";
+        // Rethrowing the unmatched exception chains nothing: it is its own
+        // context.
+        *out_ << "    } catch (const protoPython::PyException& __e) {\n";
+        *out_ << "        env->chainException(ctx, __e.exception(), __exc);\n";
+        *out_ << "        throw;\n";
+        *out_ << "    }\n";
+        *out_ << "}\n";
     }
     if (ok && n->orelse) {
         // Runs only when the body raised nothing (a resumption inside it
         // has been through the body already).
-        *out_ << "if (" << (nElse > 0 ? resumeIn(first, nElse) + " || " : std::string())
-              << "(" << resumeIdle << " && !*__pexc)) {\n";
-        *out_ << "try {\n";
+        *out_ << "if (" << (nElse > 0 ? resumeIn(first, nElse) + " || " : std::string()) << "(" << resumeIdle
+              << (hasHandlers ? " && !__inFlight(" + caught + ")" : std::string()) << ")) {\n";
         ok = generateBody(n->orelse.get());
         *out_ << ";\n";
-        *out_ << "} catch (const __PyUnwind&) {}\n";
         *out_ << "}\n";
         first += nElse;
     }
-    popAnchor();
+    if (hasHandlers) popAnchor();
     if (ok && n->finalbody) {
         // The exits recorded above (exitReturn, ...) are known now.
         fin = ctl_.back();
         ctl_.pop_back();
-        const int pendingSlot = pushAnchor();
-        *out_ << "        __finally_" << fin.id << ": ;\n";
-        *out_ << "        if (" << resumeIdle << ") __slot[" << pendingSlot
-              << "] = *__pexc ? env->takePendingException() : nullptr;\n";
+        const std::string propagating = "__slot[" + std::to_string(propagatingSlot) + "]";
+        *out_ << "} catch (const protoPython::PyException& __e) {\n";
+        *out_ << "    " << propagating << " = __e.exception();\n";
+        *out_ << "}\n";
+        *out_ << "__finally_" << fin.id << ": ;\n";
         // While the finally clause runs for an exception, that exception is
         // the active one (sys.exc_info()), and the __context__ of one the
         // clause raises.
-        *out_ << "        {\n";
-        *out_ << "        __HandlingIf __finallyHandling(__slot[" << pendingSlot << "]);\n";
-        ok = emitClause(n->finalbody.get(), first, nFinally);
-        *out_ << "        }\n";
-        *out_ << "        if (__slot[" << pendingSlot << "] && *__pexc) env->chainPendingException(__slot["
-              << pendingSlot << "]);\n";
-        *out_ << "        if (__slot[" << pendingSlot << "] && !*__pexc) env->raiseException(__slot["
-              << pendingSlot << "]);\n";
+        *out_ << "{\n";
+        *out_ << "    __HandlingIf __finallyHandling(" << propagating << ");\n";
+        openClause(first, nFinally);
+        *out_ << "try {\n";
+        ok = generateBody(n->finalbody.get());
+        *out_ << ";\n";
+        *out_ << "} catch (const protoPython::PyException& __e) {\n";
+        *out_ << "    if (__inFlight(" << propagating << ")) env->chainException(ctx, __e.exception(), " << propagating << ");\n";
+        *out_ << "    throw;\n";
+        *out_ << "}\n";
+        *out_ << "}\n";
+        *out_ << "}\n";
+        *out_ << "if (__inFlight(" << propagating << ")) throw protoPython::PyException(env, " << propagating << ");\n";
         popAnchor();
         emitExitDispatch(fin);
         popAnchor();
     } else if (n->finalbody) {
         ctl_.pop_back();
+        popAnchor();
         popAnchor();
     }
     *out_ << "    }";
@@ -2990,16 +2961,17 @@ bool CppGenerator::generateWith(WithNode* n) {
 bool CppGenerator::emitWithItems(WithNode* n, size_t index, bool resumable) {
     // `with a as x, b as y: body` is `with a as x: with b as y: body`.  Each
     // item: evaluate the context manager, look up __exit__ and call
-    // __enter__ (__withEnter), bind the target, run the rest in a C++ try,
-    // then call __exit__ with the exception that is propagating, if any
-    // (__withExit): an exception __exit__ does not suppress propagates.  A
-    // `return`, `break` or `continue` leaves through the __exit__ call, like
-    // a finally clause.
+    // __enter__ (__withEnter), then bind the target and run the rest in a C++
+    // try whose catch keeps the exception in an anchor slot, and call
+    // __exit__ with that exception, if any (__withExit): an exception
+    // __exit__ does not suppress is thrown again.  A `return`, `break` or
+    // `continue` leaves through the __exit__ call, like a finally clause.
     if (index == n->items.size()) return generateBody(n->body.get());
     const WithItem& item = n->items[index];
     ControlEntry entry{false, finallyCounter_++, -1};
     const int exitFnSlot = pushAnchor();
     entry.exitSlot = pushAnchor();
+    const int excSlot = pushAnchor();
     *out_ << "{\n";
     if (resumable) *out_ << "if (__resume == 0) {\n";
     beginStatement();
@@ -3010,26 +2982,29 @@ bool CppGenerator::emitWithItems(WithNode* n, size_t index, bool resumable) {
     const int valueSlot = allocTempSlot();
     *out_ << "    __slot[" << valueSlot << "] = __withEnter(ctx, env, __slot[" << managerSlot
           << "], &__slot[" << exitFnSlot << "]);\n";
-    if (item.optional_vars) {
-        *out_ << "    ";
-        if (!generateAssignToTarget(item.optional_vars.get(), "__slot[" + std::to_string(valueSlot) + "]")) return false;
-        *out_ << ";\n";
-    }
     *out_ << "    __slot[" << entry.exitSlot << "] = PROTO_NONE;\n";
+    *out_ << "    __slot[" << excSlot << "] = PROTO_NONE;\n";
     if (resumable) *out_ << "}\n";
-    // A target that could not be bound raised: __exit__ is called for it.
     ctl_.push_back(entry);
     *out_ << "try {\n";
-    *out_ << "    if (*__pexc) throw __PyUnwind{};\n";
+    // A target that cannot be bound raises inside the try: __exit__ is
+    // called for it.
+    if (item.optional_vars) {
+        *out_ << "    " << (resumable ? "if (__resume == 0) {\n    " : "");
+        if (!generateAssignToTarget(item.optional_vars.get(), "__slot[" + std::to_string(valueSlot) + "]")) return false;
+        *out_ << ";\n";
+        if (resumable) *out_ << "    }\n";
+    }
     const bool ok = emitWithItems(n, index + 1, resumable);
     *out_ << ";\n";
-    *out_ << "} catch (const __PyUnwind&) {}\n";
+    *out_ << "} catch (const protoPython::PyException& __e) {\n";
+    *out_ << "    __slot[" << excSlot << "] = __e.exception();\n";
+    *out_ << "}\n";
     entry = ctl_.back();
     ctl_.pop_back();
     if (!ok) return false;
-    const int excSlot = pushAnchor();
     *out_ << "__finally_" << entry.id << ": ;\n";
-    *out_ << "__withExit(ctx, env, __slot[" << exitFnSlot << "], &__slot[" << excSlot << "]);\n";
+    *out_ << "__withExit(ctx, env, __slot[" << exitFnSlot << "], __slot[" << excSlot << "]);\n";
     popAnchor();
     emitExitDispatch(entry);
     popAnchor();
@@ -3040,7 +3015,7 @@ bool CppGenerator::emitWithItems(WithNode* n, size_t index, bool resumable) {
 
 bool CppGenerator::generateImport(ImportNode* n) {
     *out_ << "{\n";
-    *out_ << "        const proto::ProtoObject* __mod = __ck(__pexc, env->importModule(\"" << n->moduleName << "\"));\n";
+    *out_ << "        const proto::ProtoObject* __mod = env->importModule(\"" << n->moduleName << "\");\n";
     if (n->isAs) {
         // `import a.b as c` binds the submodule a.b.
         *out_ << "        ";
@@ -3065,7 +3040,6 @@ bool CppGenerator::generateImportFrom(ImportFromNode* n) {
         if (i < n->names.size() - 1) *out_ << ", ";
     }
     *out_ << "});\n";
-    *out_ << "        if (*__pexc) throw __PyUnwind{};\n";
     if (n->names.size() == 1 && n->names[0].first == "*") {
         *out_ << "        env->importStar(__mod);\n";
     } else {
@@ -3134,17 +3108,13 @@ bool CppGenerator::generateLambda(LambdaNode* n) {
         *out_ << "        const proto::ProtoObject*& local_" << layout[i]
               << " = __slot[" << i << "];\n";
     }
-    // An exception the prologue or the body raises stays pending; the
-    // lambda returns nullptr.
-    *out_ << "        const proto::ProtoObject* __result = nullptr;\n";
-    *out_ << "        try {\n";
+    // An exception the prologue or the body raises propagates to the caller.
     ok = emitPrologue(lscope, params, layout, qualname, n->parameters.size(), n->posonlyargcount,
                       n->kwonlyargs.size(), !n->vararg.empty(), !n->kwarg.empty(), "        ");
     if (ok) {
-        *out_ << "        __result = ";
+        *out_ << "        const proto::ProtoObject* const __result = ";
         ok = generateNode(n->body.get());
         *out_ << ";\n";
-        *out_ << "        } catch (const __PyUnwind&) { __result = nullptr; }\n";
         *out_ << "        protoPython::promote(ctx, __result);\n";
         *out_ << "        return __result;\n";
     }
@@ -3184,17 +3154,15 @@ bool CppGenerator::generateLambda(LambdaNode* n) {
         *out_ << "        __slot[" << fsSlot << "] = __withDefaults(ctx, __slot[" << fsSlot << "], {";
         for (size_t i = 0; i < n->defaults.size(); ++i) {
             if (i) *out_ << ", ";
-            *out_ << "__ck(__pexc, ";
             if (!generateNode(n->defaults[i].get())) return false;
-            *out_ << ")";
         }
         *out_ << "});\n";
     }
     for (size_t i = 0; i < n->kw_defaults.size() && i < n->kwonlyargs.size(); ++i) {
         if (!n->kw_defaults[i]) continue;
-        *out_ << "        __slot[" << fsSlot << "] = __withKwDefault(ctx, __slot[" << fsSlot << "], \"" << n->kwonlyargs[i] << "\", __ck(__pexc, ";
+        *out_ << "        __slot[" << fsSlot << "] = __withKwDefault(ctx, __slot[" << fsSlot << "], \"" << n->kwonlyargs[i] << "\", ";
         if (!generateNode(n->kw_defaults[i].get())) return false;
-        *out_ << "));\n";
+        *out_ << ");\n";
     }
     *out_ << "        return ctx->fromMethod(const_cast<proto::ProtoObject*>(__slot[" << fsSlot << "]), " << lambdaFn.str() << ");\n";
     *out_ << "    })()";
@@ -3249,7 +3217,7 @@ bool CppGenerator::generateDeleteNode(DeleteNode* n) {
 }
 
 bool CppGenerator::generateAssert(AssertNode* n) {
-    *out_ << "if (!__truth(env, __pexc, ";
+    *out_ << "if (!__truth(env, ";
     if (!generateNode(n->test.get())) return false;
     *out_ << ")) {\n";
     *out_ << "        env->raiseAssertionError(ctx, ";
@@ -3363,8 +3331,6 @@ bool CppGenerator::emitStatementList(const std::vector<ASTNode*>& stmts) {
         if (!ok) return false;
         *out_ << ";\n";
         if (total > 0) *out_ << "}\n";
-        // A statement that raised leaves the statement list.
-        emitPendingCheck();
     }
     return true;
 }
@@ -3387,7 +3353,9 @@ bool CppGenerator::emitYieldStatement(ASTNode* node, ASTNode* target) {
         // sub-iterator is in an anchor slot; a resumption sends the value
         // sent to it (with send(), or with __next__ when it has no send()
         // and the value is None) and forwards throw() and close() to its
-        // throw(); its StopIteration value is the result.
+        // throw(); its StopIteration value is the result.  A sub-iterator
+        // without throw() gets the exception raised at the yield instead.
+        // A native iterator that is exhausted returns nullptr.
         const int itSlot = pushAnchor();
         const int valSlot = allocTempSlot();
         *out_ << "{\n";
@@ -3395,50 +3363,46 @@ bool CppGenerator::emitYieldStatement(ASTNode* node, ASTNode* target) {
         *out_ << "    __slot[" << itSlot << "] = env->iter(";
         if (!generateNode(value)) return false;
         *out_ << ");\n";
-        *out_ << "    if (env->hasPendingException()) throw __PyUnwind{};\n";
         *out_ << "}\n";
         *out_ << "const proto::ProtoObject* __yf_res_" << k << " = PROTO_NONE;\n";
         *out_ << "while (true) {\n";
         *out_ << "    proto::ProtoObject* __sub = const_cast<proto::ProtoObject*>(__slot[" << itSlot << "]);\n";
         *out_ << "    const proto::ProtoObject* __yf_in = PROTO_NONE;\n";
-        *out_ << "    bool __advance = true;\n";
+        *out_ << "    const proto::ProtoObject* __t = nullptr;\n";
+        *out_ << "    const proto::ProtoObject* __tm = nullptr;\n";
         *out_ << "    if (__resume != 0) {\n";
         *out_ << "        __resume = 0;\n";
         *out_ << "        __yf_in = __sent;\n";
         *out_ << "        if (__throw) {\n";
-        *out_ << "            const proto::ProtoObject* __t = __throw;\n";
+        *out_ << "            __t = __throw;\n";
         *out_ << "            __throw = nullptr;\n";
-        *out_ << "            const proto::ProtoObject* __tm = __sub->getAttribute(ctx, protoPython::PythonEnvironment::getInternedString(ctx, \"throw\"));\n";
-        *out_ << "            if (!__tm || __tm == PROTO_NONE || !__tm->asMethod(ctx)) {\n";
-        *out_ << "                env->raiseException(__t);\n";
-        *out_ << "                throw __PyUnwind{};\n";
-        *out_ << "            }\n";
+        *out_ << "            __tm = __sub->getAttribute(ctx, protoPython::PythonEnvironment::getInternedString(ctx, \"throw\"));\n";
+        *out_ << "            if (!__tm || __tm == PROTO_NONE || !__tm->asMethod(ctx)) throw protoPython::PyException(env, __t);\n";
+        *out_ << "        }\n";
+        *out_ << "    }\n";
+        *out_ << "    bool __yf_done = false;\n";
+        *out_ << "    try {\n";
+        *out_ << "        if (__t) {\n";
         // __t came in the generator's own throw() arguments, which its caller
         // holds: the array call form reads it in place (protoCore 3.0.0).
         *out_ << "            __slot[" << valSlot << "] = __tm->asMethod(ctx)(ctx, __sub, nullptr, protoPython::argsView(proto::ProtoArguments(&__t, 1)), nullptr);\n";
-        *out_ << "            __advance = false;\n";
-        *out_ << "        }\n";
-        *out_ << "    }\n";
-        *out_ << "    if (__advance) {\n";
-        *out_ << "        const proto::ProtoObject* __sm = __sub->getAttribute(ctx, env->getSendString());\n";
-        *out_ << "        if (__sm && __sm != PROTO_NONE) {\n";
-        *out_ << "            __slot[" << valSlot << "] = __sub->call(ctx, nullptr, env->getSendString(), __sub, ctx->newList()->appendLast(ctx, __yf_in), nullptr);\n";
-        *out_ << "        } else if (__yf_in != PROTO_NONE) {\n";
-        *out_ << "            env->raiseTypeError(ctx, \"can't send non-None value to a plain iterator\");\n";
-        *out_ << "            throw __PyUnwind{};\n";
         *out_ << "        } else {\n";
-        *out_ << "            __slot[" << valSlot << "] = __sub->call(ctx, nullptr, env->getNextString(), __sub, ctx->newList(), nullptr);\n";
+        *out_ << "            const proto::ProtoObject* __sm = __sub->getAttribute(ctx, env->getSendString());\n";
+        *out_ << "            if (__sm && __sm != PROTO_NONE) {\n";
+        *out_ << "                __slot[" << valSlot << "] = __sub->call(ctx, nullptr, env->getSendString(), __sub, ctx->newList()->appendLast(ctx, __yf_in), nullptr);\n";
+        *out_ << "            } else if (__yf_in != PROTO_NONE) {\n";
+        *out_ << "                env->raiseTypeError(ctx, \"can't send non-None value to a plain iterator\");\n";
+        *out_ << "            } else {\n";
+        *out_ << "                __slot[" << valSlot << "] = __sub->call(ctx, nullptr, env->getNextString(), __sub, ctx->newList(), nullptr);\n";
+        *out_ << "            }\n";
         *out_ << "        }\n";
-        *out_ << "    }\n";
-        *out_ << "    if (env->hasPendingException()) {\n";
-        *out_ << "        const proto::ProtoObject* __e = env->peekPendingException();\n";
-        *out_ << "        if (!env->isStopIteration(ctx, __e)) throw __PyUnwind{};\n";
-        *out_ << "        __yf_res_" << k << " = env->getStopIterationValue(ctx, __e);\n";
-        *out_ << "        env->clearPendingException();\n";
+        *out_ << "    } catch (const protoPython::PyException& __e) {\n";
+        *out_ << "        if (!env->isStopIteration(ctx, __e.exception())) throw;\n";
+        *out_ << "        __yf_res_" << k << " = env->getStopIterationValue(ctx, __e.exception());\n";
         *out_ << "        if (!__yf_res_" << k << ") __yf_res_" << k << " = PROTO_NONE;\n";
-        *out_ << "        break;\n";
+        *out_ << "        __yf_done = true;\n";
         *out_ << "    }\n";
-        *out_ << "    if (!__slot[" << valSlot << "]) break;\n";
+        *out_ << "    if (__yf_done || !__slot[" << valSlot << "]) break;\n";
         emitSuspend("__slot[" + std::to_string(valSlot) + "]");
         *out_ << "}\n";
         if (target) {
@@ -3460,7 +3424,6 @@ bool CppGenerator::emitYieldStatement(ASTNode* node, ASTNode* target) {
         *out_ << "PROTO_NONE";
     }
     *out_ << ";\n";
-    *out_ << "    if (env->hasPendingException()) throw __PyUnwind{};\n";
     emitSuspend("__slot[" + std::to_string(valSlot) + "]");
     *out_ << "}\n";
     // Resumed here: throw() and close() raise their exception at the yield;
@@ -3469,8 +3432,7 @@ bool CppGenerator::emitYieldStatement(ASTNode* node, ASTNode* target) {
     *out_ << "if (__throw) {\n";
     *out_ << "    const proto::ProtoObject* __t = __throw;\n";
     *out_ << "    __throw = nullptr;\n";
-    *out_ << "    env->raiseException(__t);\n";
-    *out_ << "    throw __PyUnwind{};\n";
+    *out_ << "    throw protoPython::PyException(env, __t);\n";
     *out_ << "}\n";
     if (target) {
         if (!generateAssignToTarget(target, "__sent")) return false;
@@ -3766,21 +3728,20 @@ bool CppGenerator::emitComprehensionBody(const std::vector<Comprehension>& gener
     const Comprehension& g = generators[depth];
 
     *out_ << "        {\n";
-    *out_ << "            auto* __cit_" << id << " = __ck(__pexc, env->iter(";
+    *out_ << "            auto* __cit_" << id << " = env->iter(";
     if (!generateNode(g.iter.get())) return false;
-    *out_ << "));\n";
+    *out_ << ");\n";
     *out_ << "            while (true) {\n";
     *out_ << "                auto* __cval_" << id << " = env->next(__cit_" << id << ");\n";
-    // nullptr: exhausted, or the iterator raised (the exception stays
-    // pending and propagates).
-    *out_ << "                if (!__cval_" << id << ") { if (*__pexc) throw __PyUnwind{}; break; }\n";
+    // nullptr: exhausted (an exception the iterator raises propagates).
+    *out_ << "                if (!__cval_" << id << ") break;\n";
 
     std::ostringstream valVar;
     valVar << "__cval_" << id;
     if (!emitComprehensionAssign(g.target.get(), valVar.str())) return false;
 
     for (auto& f : g.ifs) {
-        *out_ << "            if (__truth(env, __pexc, ";
+        *out_ << "            if (__truth(env, ";
         if (!generateNode(f.get())) return false;
         *out_ << ")) {\n";
     }

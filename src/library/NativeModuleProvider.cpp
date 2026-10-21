@@ -4,8 +4,8 @@
 
 namespace protoPython {
 
-NativeModuleProvider::NativeModuleProvider() 
-    : guid_("protoPython.native"), alias_("native") {}
+NativeModuleProvider::NativeModuleProvider(const std::string& suffix)
+    : guid_("protoPython.native" + suffix), alias_("native" + suffix) {}
 
 void NativeModuleProvider::registerModule(const std::string& name, ModuleInitializer init) {
     modules_[name] = std::move(init);

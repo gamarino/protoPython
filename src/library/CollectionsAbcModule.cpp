@@ -94,18 +94,24 @@ static const proto::ProtoList* collectMappingItems(proto::ProtoContext* ctx, con
 
     const proto::ProtoList* result = ctx->newList();
     for (;;) {
-        const proto::ProtoObject* key = callMethod(nextM, itObj, emptyL);
-        if (env && env->peekPendingException()) {
-            if (env->isStopIteration(ctx, env->peekPendingException()))
-                env->clearPendingException();
+        const proto::ProtoObject* key = nullptr;
+        try {
+            key = callMethod(nextM, itObj, emptyL);
+        } catch (const PyException& e) {
+            if (!env || !env->isStopIteration(ctx, e.exception())) throw;
             break;
         }
         if (!key || key == PROTO_NONE) break;
         // Get value via __getitem__. Pin `key` while we call getItem,
         // since getItem may call user code that triggers GC.
         PythonEnvironment::TransientPin pinKey(env, key);
-        const proto::ProtoObject* val = env ? env->getItem(mapping, key, ctx) : PROTO_NONE;
-        if (env && env->peekPendingException()) { env->clearPendingException(); val = PROTO_NONE; }
+        // Any exception from __getitem__ reads as a None value.
+        const proto::ProtoObject* val = PROTO_NONE;
+        try {
+            val = env ? env->getItem(mapping, key, ctx) : PROTO_NONE;
+        } catch (const PyException&) {
+            val = PROTO_NONE;
+        }
         // Yield as (key, value) tuple
         const proto::ProtoList* pair = ctx->newList()->appendLast(ctx, key)->appendLast(ctx, val ? val : PROTO_NONE);
         result = result->appendLast(ctx, ::protoPython::PythonEnvironment::tupleFromList(ctx, pair));
@@ -165,9 +171,11 @@ static const proto::ProtoObject* py_mapping_keys(
 
     const proto::ProtoList* result = ctx->newList();
     for (;;) {
-        const proto::ProtoObject* key = callM(nextM, itObj);
-        if (env && env->peekPendingException()) {
-            if (env->isStopIteration(ctx, env->peekPendingException())) env->clearPendingException();
+        const proto::ProtoObject* key = nullptr;
+        try {
+            key = callM(nextM, itObj);
+        } catch (const PyException& e) {
+            if (!env || !env->isStopIteration(ctx, e.exception())) throw;
             break;
         }
         if (!key || key == PROTO_NONE) break;
@@ -217,15 +225,16 @@ static const proto::ProtoObject* py_mapping_contains(
 
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key);
     const proto::ProtoObject* val = nullptr;
-    if (getM->asMethod(ctx)) {
-        val = getM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(self), nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
-    } else {
-        const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, self)->appendLast(ctx, key);
-        val = invokePythonCallable(ctx, getM, argsView(proto::ProtoListArguments(ctx, selfArgs)), nullptr);
-    }
-    if (env && env->peekPendingException()) {
+    try {
+        if (getM->asMethod(ctx)) {
+            val = getM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(self), nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
+        } else {
+            const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, self)->appendLast(ctx, key);
+            val = invokePythonCallable(ctx, getM, argsView(proto::ProtoListArguments(ctx, selfArgs)), nullptr);
+        }
+    } catch (const PyException&) {
         // Any exception during __getitem__ (typically KeyError) means the
-        // key is not present; clear and return False. Mirrors the .py
+        // key is not present; return False. Mirrors the .py
         // reference's `try: self[key] except KeyError: return False`. We
         // intentionally absorb broader exceptions here because the ABC
         // stub is the only contract — the original exception was raised
@@ -233,9 +242,9 @@ static const proto::ProtoObject* py_mapping_contains(
         // CPython only propagates non-LookupError exceptions; this is the
         // closest behaviour we can offer without exception-class plumbing
         // through the ABC stub.
-        env->clearPendingException();
         return PROTO_FALSE;
     }
+    (void)env;
     (void)val;
     return PROTO_TRUE;
 }
@@ -315,10 +324,11 @@ static const proto::ProtoObject* py_mutable_mapping_update(
                             PythonEnvironment::TransientPin pinIt(env, it);
                             const proto::ProtoObject* nextM2 = it->getAttribute(ctx, nextS);
                             for (;;) {
-                                const proto::ProtoObject* k = nextM2 ? invokeBound(nextM2, it, ctx->newList()) : nullptr;
-                                if (env && env->peekPendingException()) {
-                                    if (env->isStopIteration(ctx, env->peekPendingException()))
-                                        env->clearPendingException();
+                                const proto::ProtoObject* k = nullptr;
+                                try {
+                                    k = nextM2 ? invokeBound(nextM2, it, ctx->newList()) : nullptr;
+                                } catch (const PyException& e) {
+                                    if (!env || !env->isStopIteration(ctx, e.exception())) throw;
                                     break;
                                 }
                                 if (!k || k == PROTO_NONE) break;
@@ -355,10 +365,11 @@ static const proto::ProtoObject* py_mutable_mapping_update(
                         PythonEnvironment::TransientPin pinIt(env, it);
                         const proto::ProtoObject* nextM3 = it->getAttribute(ctx, nextS);
                         for (;;) {
-                            const proto::ProtoObject* pair = nextM3 ? invokeBound(nextM3, it, ctx->newList()) : nullptr;
-                            if (env && env->peekPendingException()) {
-                                if (env->isStopIteration(ctx, env->peekPendingException()))
-                                    env->clearPendingException();
+                            const proto::ProtoObject* pair = nullptr;
+                            try {
+                                pair = nextM3 ? invokeBound(nextM3, it, ctx->newList()) : nullptr;
+                            } catch (const PyException& e) {
+                                if (!env || !env->isStopIteration(ctx, e.exception())) throw;
                                 break;
                             }
                             if (!pair || pair == PROTO_NONE) break;
@@ -466,8 +477,12 @@ const proto::ProtoObject* ownState(proto::ProtoContext* ctx, const proto::ProtoO
 bool mroContains(proto::ProtoContext* ctx, PythonEnvironment* env,
                  const proto::ProtoObject* cls, const proto::ProtoObject* base) {
     if (cls == base) return true;
-    const proto::ProtoObject* mro = env->getAttribute(ctx, cls, env->getMroString(), false);
-    if (env->hasPendingException()) env->clearPendingException();
+    const proto::ProtoObject* mro = nullptr;
+    try {
+        mro = env->getAttribute(ctx, cls, env->getMroString(), false);
+    } catch (const PyException&) {
+        // An unreadable __mro__ reads as no __mro__.
+    }
     if (!mro || mro == PROTO_NONE) return false;
     if (::protoPython::TupleView t = ::protoPython::PythonEnvironment::tupleView(ctx, mro)) {
         for (proto::proto_ulong i = 0; i < t->getSize(ctx); ++i)
@@ -485,8 +500,12 @@ bool mroContains(proto::ProtoContext* ctx, PythonEnvironment* env,
 bool definesAll(proto::ProtoContext* ctx, PythonEnvironment* env,
                 const proto::ProtoObject* cls, const char* const* methods) {
     if (!methods[0]) return false;
-    const proto::ProtoObject* mro = env->getAttribute(ctx, cls, env->getMroString(), false);
-    if (env->hasPendingException()) env->clearPendingException();
+    const proto::ProtoObject* mro = nullptr;
+    try {
+        mro = env->getAttribute(ctx, cls, env->getMroString(), false);
+    } catch (const PyException&) {
+        // An unreadable __mro__ reads as no __mro__.
+    }
     ::protoPython::TupleView mroT = mro && mro != PROTO_NONE ? ::protoPython::PythonEnvironment::tupleView(ctx, mro) : nullptr;
     const proto::ProtoList* mroL = mro && mro != PROTO_NONE && !mroT ? mro->asList(ctx) : nullptr;
     const proto::proto_ulong n = mroT ? mroT->getSize(ctx) : (mroL ? mroL->getSize(ctx) : 0);
@@ -670,18 +689,13 @@ static const proto::ProtoObject* py_mutable_mapping_pop(
     const proto::ProtoString* delItemS = PythonEnvironment::getInternedString(ctx, "__delitem__");
 
     const proto::ProtoList* gargs = ctx->newList()->appendLast(ctx, key);
-    const proto::ProtoObject* val = abc_invoke_method(ctx, self, getItemS, gargs);
-    if (env->hasPendingException()) {
-        const proto::ProtoObject* exc = env->peekPendingException();
+    const proto::ProtoObject* val = nullptr;
+    try {
+        val = abc_invoke_method(ctx, self, getItemS, gargs);
+    } catch (const PyException& e) {
         const proto::ProtoObject* keyError = env->lookupName("KeyError");
-        if (keyError && env->isException(exc, keyError)) {
-            if (hasDefault) {
-                env->clearPendingException();
-                return def;
-            }
-            return nullptr;
-        }
-        return nullptr;
+        if (hasDefault && keyError && env->isException(e.exception(), keyError)) return def;
+        throw;
     }
     if (!val) {
         if (hasDefault) return def;
@@ -691,7 +705,6 @@ static const proto::ProtoObject* py_mutable_mapping_pop(
     PythonEnvironment::TransientPin pinVal(env, val);
     const proto::ProtoList* dargs = ctx->newList()->appendLast(ctx, key);
     abc_invoke_method(ctx, self, delItemS, dargs);
-    if (env->hasPendingException()) return nullptr;
     return val;
 }
 
@@ -707,12 +720,17 @@ static const proto::ProtoObject* py_mutable_mapping_popitem(
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env || !self) return PROTO_NONE;
     const proto::ProtoObject* it = env->iter(self);
-    if (!it || env->hasPendingException()) return nullptr;
+    if (!it) return nullptr;
     PythonEnvironment::TransientPin pinIt(env, it);
-    const proto::ProtoObject* key = env->next(it);
-    if (!key || env->hasPendingException()) {
-        if (env->hasPendingException() && env->isStopIteration(ctx, env->peekPendingException()))
-            env->clearPendingException();
+    const proto::ProtoObject* key = nullptr;
+    try {
+        key = env->next(it);
+    } catch (const PyException&) {
+        // Any exception from the iterator is replaced by the KeyError below,
+        // as when the raise overwrote the pending exception.
+        key = nullptr;
+    }
+    if (!key) {
         env->raiseKeyError(ctx, PythonEnvironment::getInternedString(ctx, "popitem(): mapping is empty")->asObject(ctx));
         return nullptr;
     }
@@ -721,11 +739,10 @@ static const proto::ProtoObject* py_mutable_mapping_popitem(
     const proto::ProtoString* delItemS = PythonEnvironment::getInternedString(ctx, "__delitem__");
     const proto::ProtoList* gargs = ctx->newList()->appendLast(ctx, key);
     const proto::ProtoObject* val = abc_invoke_method(ctx, self, getItemS, gargs);
-    if (!val || env->hasPendingException()) return nullptr;
+    if (!val) return nullptr;
     PythonEnvironment::TransientPin pinVal(env, val);
     const proto::ProtoList* dargs = ctx->newList()->appendLast(ctx, key);
     abc_invoke_method(ctx, self, delItemS, dargs);
-    if (env->hasPendingException()) return nullptr;
     const proto::ProtoList* pair = ctx->newList()->appendLast(ctx, key)->appendLast(ctx, val);
     return env->newTuple(pair);
 }
@@ -740,15 +757,13 @@ static const proto::ProtoObject* py_mutable_mapping_clear(
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env || !self) return PROTO_NONE;
     for (;;) {
-        py_mutable_mapping_popitem(ctx, self, nullptr, nullptr, nullptr);
-        if (!env->hasPendingException()) continue;
-        const proto::ProtoObject* exc = env->peekPendingException();
-        const proto::ProtoObject* keyError = env->lookupName("KeyError");
-        if (keyError && env->isException(exc, keyError)) {
-            env->clearPendingException();
-            return PROTO_NONE;
+        try {
+            py_mutable_mapping_popitem(ctx, self, nullptr, nullptr, nullptr);
+        } catch (const PyException& e) {
+            const proto::ProtoObject* keyError = env->lookupName("KeyError");
+            if (keyError && env->isException(e.exception(), keyError)) return PROTO_NONE;
+            throw;
         }
-        return nullptr;
     }
 }
 
@@ -768,23 +783,17 @@ static const proto::ProtoObject* py_mutable_mapping_setdefault(
     const proto::ProtoString* getItemS = PythonEnvironment::getInternedString(ctx, "__getitem__");
     const proto::ProtoString* setItemS = PythonEnvironment::getInternedString(ctx, "__setitem__");
     const proto::ProtoList* gargs = ctx->newList()->appendLast(ctx, key);
-    const proto::ProtoObject* val = abc_invoke_method(ctx, self, getItemS, gargs);
-    if (env->hasPendingException()) {
-        const proto::ProtoObject* exc = env->peekPendingException();
+    const proto::ProtoObject* val = nullptr;
+    try {
+        val = abc_invoke_method(ctx, self, getItemS, gargs);
+    } catch (const PyException& e) {
         const proto::ProtoObject* keyError = env->lookupName("KeyError");
-        if (keyError && env->isException(exc, keyError)) {
-            env->clearPendingException();
-            const proto::ProtoList* sargs = ctx->newList()->appendLast(ctx, key)->appendLast(ctx, def);
-            abc_invoke_method(ctx, self, setItemS, sargs);
-            if (env->hasPendingException()) return nullptr;
-            return def;
-        }
-        return nullptr;
+        if (!keyError || !env->isException(e.exception(), keyError)) throw;
+        val = nullptr;  // missing key: store the default below
     }
     if (!val) {
         const proto::ProtoList* sargs = ctx->newList()->appendLast(ctx, key)->appendLast(ctx, def);
         abc_invoke_method(ctx, self, setItemS, sargs);
-        if (env->hasPendingException()) return nullptr;
         return def;
     }
     return val;
@@ -819,7 +828,7 @@ static const proto::ProtoObject* py_mutable_sequence_append(
         return invokePythonCallable(ctx, m, argsView(proto::ProtoListArguments(ctx, sa)), nullptr);
     };
     const proto::ProtoObject* lenObj = invoke(lenM, self, ctx->newList());
-    if (!lenObj || env->hasPendingException()) return nullptr;
+    if (!lenObj) return nullptr;
     proto::proto_long n = lenObj->asLong(ctx);
     const proto::ProtoList* a = ctx->newList()->appendLast(ctx, ctx->fromInteger(n))->appendLast(ctx, value);
     invoke(insM, self, a);
@@ -839,19 +848,19 @@ static const proto::ProtoObject* py_mutable_sequence_extend(
     const proto::ProtoObject* iterable = args->getAt(ctx, 0);
 
     const proto::ProtoObject* it = env->iter(iterable);
-    if (!it || env->hasPendingException()) return nullptr;
+    if (!it) return nullptr;
     PythonEnvironment::TransientPin pinIt(env, it);
     for (;;) {
-        const proto::ProtoObject* v = env->next(it);
-        if (!v) {
-            if (env->hasPendingException() && env->isStopIteration(ctx, env->peekPendingException()))
-                env->clearPendingException();
-            break;
+        const proto::ProtoObject* v = nullptr;
+        try {
+            v = env->next(it);
+        } catch (const PyException& e) {
+            if (!env->isStopIteration(ctx, e.exception())) throw;
         }
+        if (!v) break;
         PythonEnvironment::TransientPin pinV(env, v);
         const proto::ProtoList* a = ctx->newList()->appendLast(ctx, v);
         py_mutable_sequence_append(ctx, self, nullptr, argsView(proto::ProtoListArguments(ctx, a)), nullptr);
-        if (env->hasPendingException()) return nullptr;
     }
     return PROTO_NONE;
 }
@@ -890,18 +899,16 @@ static const proto::ProtoObject* py_abc_get(
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env) return def;
 
-    const proto::ProtoObject* val = env->getItem(self, key, ctx);
+    const proto::ProtoObject* val = nullptr;
+    try {
+        val = env->getItem(self, key, ctx);
+    } catch (const PyException& e) {
+        const proto::ProtoObject* keyError = env->lookupName("KeyError");
+        if (keyError && env->isException(e.exception(), keyError)) return def;
+        throw;
+    }
     if (val && val != PROTO_NONE) return val;
     if (val == PROTO_NONE) return val; // If found and is None, return None
-    
-    if (env->hasPendingException()) {
-        const proto::ProtoObject* exc = env->peekPendingException();
-        const proto::ProtoObject* keyError = env->lookupName("KeyError");
-        if (keyError && env->isException(exc, keyError)) {
-            env->clearPendingException();
-            return def;
-        }
-    }
     return def;
 }
 

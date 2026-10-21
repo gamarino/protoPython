@@ -73,19 +73,28 @@ class ABCMeta(type):
                 return True
         except AttributeError:
             pass
-        # Registered virtual subclasses on cls or any of cls's bases.
-        for base in cls.__mro__:
-            registry = getattr(base, '_abc_registry', None)
-            if registry:
-                for reg in registry:
-                    if reg is subclass:
+        # As CPython's ABCMeta: a class registered with cls (or a subclass
+        # of one), or a subclass of one of cls's subclasses -- whose own
+        # registrations count, e.g. int registered with numbers.Integral is
+        # a numbers.Rational. A registration on one of cls's BASES does not
+        # make the class a subclass of cls.
+        registry = cls.__dict__.get('_abc_registry')
+        if registry:
+            for reg in registry:
+                if reg is subclass:
+                    return True
+                try:
+                    if reg in subclass.__mro__:
                         return True
-                    # Indirect: subclass inherits from a registered class.
-                    try:
-                        if reg in subclass.__mro__:
-                            return True
-                    except AttributeError:
-                        pass
+                except AttributeError:
+                    pass
+        try:
+            subclasses = type.__subclasses__(cls)
+        except Exception:
+            subclasses = ()
+        for scls in subclasses:
+            if scls is not cls and issubclass(subclass, scls):
+                return True
         return False
 
 
