@@ -71,8 +71,8 @@ namespace collections_abc {
 // __mro__ and the protoCore parent chain in that order), and keeps their
 // registries of virtual subclasses and subclass hooks (below).  The methods
 // the ABCs define, mixins and abstract defaults alike, are CPython's own,
-// in lib/python3.14/_collections_abc_mixins.py, loaded lazily (see "Lazy
-// methods" below).  What an import needs at once is computed here: each
+// in the package lib/python3.14/_collections_abc_mixins, loaded lazily (see
+// "Lazy methods" below).  What an import needs at once is computed here: each
 // ABC's __abstractmethods__, those of every class derived from one (a
 // native __init_subclass__ on the root ABCs, in place of ABCMeta.__new__),
 // the attributes CPython's class bodies set to None, the names, and the
@@ -374,15 +374,16 @@ bool isVirtualSubclass(proto::ProtoContext* ctx, const proto::ProtoObject* cls,
 // ---------------------------------------------------------------------------
 // Lazy methods
 //
-// Compiling and running _collections_abc_mixins.py costs several times the
-// rest of an import of this module, and most programs that import it (os
-// does, for os._Environ) never call a mixin.  So every method CPython's
-// class bodies define starts as a native trampoline, one C++ function per
-// (ABC, name) entry of kMethods.  The first call of any of them imports the
-// mixins module, whose install() replaces every trampoline with CPython's
-// function, and then calls the real function for its receiver.
+// Compiling and running CPython's method bodies costs several times the rest
+// of an import of this module, and most programs that import it (os does,
+// for os._Environ) call few of them or none.  So every method CPython's class
+// bodies define starts as a native trampoline, one C++ function per (ABC,
+// name) entry of kMethods.  The first call of one imports the module of its
+// ABC's family (kFamilies), whose install() replaces that family's
+// trampolines with CPython's functions, and then calls the real function for
+// its receiver: os.environ.get(...) compiles Mapping's methods only.
 //
-// Threads reaching trampolines at once install once (installMixins).  A
+// Threads reaching trampolines at once install once (installFamily).  A
 // trampoline someone kept a reference to (f = Mapping.get) keeps
 // forwarding.
 //
@@ -495,23 +496,53 @@ const proto::ProtoObject* ownValue(proto::ProtoContext* ctx, const proto::ProtoO
     return obj->hasOwnAttribute(ctx, key) == PROTO_TRUE ? obj->getOwnAttributeDirect(ctx, key) : nullptr;
 }
 
-// One thread at a time imports the mixins module and runs install(): an
-// import does not wait for another thread's import of the same module to
-// finish, so a second importer would find a module without install().  The
-// others wait at a GC safepoint (the installer allocates, and a collection
-// needs every thread parked), holding nothing, then find the methods in
-// place.  A failed install releases the flag, and the next call retries.
+// The module of lib/python3.14/_collections_abc_mixins that defines each
+// ABC's methods.  A family needs no other loaded: its methods reach other
+// ABCs' methods through the classes, as trampolines until those load.
+struct FamilySpec {
+    const char* module;
+    const char* abcs[6];
+};
+const FamilySpec kFamilies[] = {
+    {"_collections_abc_mixins.one_trick", {"Hashable", "Sized", "Container", "Buffer", "Callable"}},
+    {"_collections_abc_mixins.iterators", {"Iterable", "Iterator", "Reversible", "Generator"}},
+    {"_collections_abc_mixins.async_abcs",
+     {"Awaitable", "Coroutine", "AsyncIterable", "AsyncIterator", "AsyncGenerator"}},
+    {"_collections_abc_mixins.sets", {"Set", "MutableSet"}},
+    {"_collections_abc_mixins.mapping", {"Mapping"}},
+    {"_collections_abc_mixins.mapping_views", {"MappingView", "KeysView", "ItemsView", "ValuesView"}},
+    {"_collections_abc_mixins.mutable_mapping", {"MutableMapping"}},
+    {"_collections_abc_mixins.sequences", {"Sequence", "MutableSequence"}},
+};
+
+const FamilySpec* familyOf(const char* abc) {
+    for (const FamilySpec& f : kFamilies)
+        for (const char* a : f.abcs)
+            if (a && std::string(a) == abc) return &f;
+    return nullptr;
+}
+
+// One thread at a time imports a family's module and runs its install():
+// an import does not wait for another thread's import of the same module
+// (or of the package) to finish, so a second importer could find a module
+// without install().  The others wait at a GC safepoint (the installer
+// allocates, and a collection needs every thread parked), holding nothing,
+// and then find their method in place or install its family themselves.
+// A failed install releases the flag; the next call retries.
 std::atomic<bool> g_installing{false};
 thread_local bool t_installing = false;
 
-void installMixins(proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* mod) {
+void installFamily(proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* mod,
+                   const FamilySpec& family, const proto::ProtoObject* abc, const proto::ProtoString* key) {
     if (t_installing) {
         env->raiseRuntimeError(ctx, "_collections_abc_mixins called a method of an ABC while it was installed");
     }
-    bool expected = false;
-    if (!g_installing.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+    for (;;) {
+        const proto::ProtoObject* value = ownValue(ctx, abc, key);
+        if (value && !isTrampoline(ctx, value)) return;
+        bool expected = false;
+        if (g_installing.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) break;
         while (g_installing.load(std::memory_order_acquire)) ctx->safepoint();
-        return;
     }
     struct Release {
         ~Release() {
@@ -520,7 +551,7 @@ void installMixins(proto::ProtoContext* ctx, PythonEnvironment* env, const proto
         }
     } release;
     t_installing = true;
-    const proto::ProtoObject* mixins = env->importModule("_collections_abc_mixins");
+    const proto::ProtoObject* mixins = env->importModule(family.module, 0, {"install"});
     env->callMethod(mixins, "install", {mod});
 }
 
@@ -534,8 +565,8 @@ const proto::ProtoObject* callMethodOf(proto::ProtoContext* ctx, size_t index,
     const proto::ProtoObject* abc = mod->getAttribute(ctx, sym(ctx, spec.abc));
     const proto::ProtoString* key = sym(ctx, spec.name);
     const proto::ProtoObject* real = ownValue(ctx, abc, key);
-    for (int attempt = 0; attempt < 2 && (!real || isTrampoline(ctx, real)); ++attempt) {
-        installMixins(ctx, env, mod);
+    if (!real || isTrampoline(ctx, real)) {
+        if (const FamilySpec* family = familyOf(spec.abc)) installFamily(ctx, env, mod, *family, abc, key);
         real = ownValue(ctx, abc, key);
     }
     if (!real || isTrampoline(ctx, real)) {
