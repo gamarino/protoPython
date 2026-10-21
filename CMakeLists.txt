@@ -1454,6 +1454,8 @@ set_tests_properties(protopy_closure_semantics protopy_closure_semantics_gc PROP
 #     Mapping, Sequence, their mutable forms, the views, Generator, ...),
 #     the exceptions they catch and let through, the ABC hierarchy,
 #     __abstractmethods__ and abstract instantiation.
+#   collections_abc_first_use_threads: threads calling ABC methods for the
+#     first time at once, while the methods are being loaded.
 set(PROTOPY_STDLIB_ORACLE_TESTS
     tuple_semantics
     attribute_access
@@ -1464,6 +1466,7 @@ set(PROTOPY_STDLIB_ORACLE_TESTS
     ordered_dict_iterables
     abc_virtual_subclasses
     collections_abc_mixins
+    collections_abc_first_use_threads
     counter_methods
     regex_empty_matches
     argparse_nargs

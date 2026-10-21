@@ -7,10 +7,13 @@
 
 protoPython's ``_collections_abc`` is a native module: it creates the ABC
 class objects with CPython's hierarchy, keeps their registries of virtual
-subclasses and answers isinstance/issubclass through the subclass hooks.
-The methods the ABCs define are CPython's own and live here, unchanged
-wherever possible.  The native module calls ``install(module)`` once, while
-it is being imported; this module must therefore import nothing but
+subclasses, answers isinstance/issubclass through the subclass hooks, and
+computes __abstractmethods__ (of the ABCs and of every class derived from
+one), the attributes the class bodies set to None and the names.  The
+methods the ABCs define are CPython's own and live here, unchanged wherever
+possible.  Each starts on its ABC as a native trampoline; the first call of
+one imports this module and calls ``install(module)``, which puts the
+functions in their place.  This module must therefore import nothing but
 ``sys`` (never ``_collections_abc`` or ``collections``).
 
 The methods are module-level functions attached to the classes, not class
@@ -21,14 +24,7 @@ Differences from Lib/_collections_abc.py:
 * The ABC names used inside the methods (``Set``, ``Mapping``, ...) are the
   native classes; install() binds them as globals of this module.
 * MutableMapping's private ``__marker`` default is the module's ``_marker``.
-* ``@abstractmethod`` is applied by hand (``__isabstractmethod__``), and
-  ``__abstractmethods__`` is computed the way ABCMeta does: by install()
-  for the ABCs, and for every class derived from one by an
-  ``__init_subclass__`` the root ABCs carry, as they have no ABCMeta.
-* A class that defines ``__eq__`` without ``__hash__`` gets ``__hash__ =
-  None`` from ``type``; install() sets it explicitly on Set and Mapping.
-* install() makes the registrations of built-in types the native module
-  does not make (iterator and dict view types).
+* ``@abstractmethod`` is applied by hand (``__isabstractmethod__``).
 """
 
 import sys
@@ -825,108 +821,19 @@ def _mutable_sequence_iadd(self, values):
 # The class methods of the ABCs.
 _CLASS_METHODS = ("_from_iterable",)
 
-# Attributes CPython's class bodies set to None: Mapping is not reversible,
-# and a class defining __eq__ without __hash__ is unhashable.
-_NONE_ATTRIBUTES = {
-    "Set": ("__hash__",),
-    "Mapping": ("__hash__", "__reversed__"),
-}
-
-
-def _update_abstractmethods(cls):
-    """Set cls.__abstractmethods__ as ABCMeta.__new__ (abc._abc_init) does:
-    the names cls defines as abstract, and those of its bases it does not
-    override with a concrete attribute."""
-    abstracts = set()
-    for name, value in vars(cls).items():
-        if getattr(value, "__isabstractmethod__", False):
-            abstracts.add(name)
-    for base in cls.__bases__:
-        for name in getattr(base, "__abstractmethods__", ()):
-            value = getattr(cls, name, None)
-            if getattr(value, "__isabstractmethod__", False):
-                abstracts.add(name)
-    cls.__abstractmethods__ = frozenset(abstracts)
-
-
-def _abc_init_subclass(owner):
-    """An __init_subclass__ for the root ABC `owner`.
-
-    The native ABCs have no ABCMeta, whose __new__ computes the abstract
-    methods of every class derived from an ABC; this hook does it instead.
-    It continues the cooperative chain past `owner`.  A class whose own
-    __init_subclass__ does not call super() leaves its subclasses without
-    __abstractmethods__ of their own, which only makes them instantiable.
-    """
-    def __init_subclass__(cls, /, **kwargs):
-        _update_abstractmethods(cls)
-        super(owner, cls).__init_subclass__(**kwargs)
-    __init_subclass__.__qualname__ = owner.__name__ + ".__init_subclass__"
-    return classmethod(__init_subclass__)
-
-
-# CPython's registrations of built-in types that the native module does not
-# make itself (it registers dict, list, tuple, str, bytes, set, frozenset,
-# range, memoryview, bytearray, mappingproxy, generator, coroutine and
-# async_generator).  longrange_iterator is left out: range(1 << 1000) needs
-# a big-integer range.  A type that reads as `object` (the range iterator's
-# does) is skipped: registering it would make every class an Iterator.
-def _register_builtin_types():
-    registrations = (
-        (Iterator, iter(b'')),
-        (Iterator, iter(bytearray())),
-        (Iterator, iter({}.keys())),
-        (Iterator, iter({}.values())),
-        (Iterator, iter({}.items())),
-        (Iterator, iter([])),
-        (Iterator, iter(reversed([]))),
-        (Iterator, iter(range(0))),
-        (Iterator, iter(set())),
-        (Iterator, iter("")),
-        (Iterator, iter(())),
-        (Iterator, iter(zip())),
-        (KeysView, {}.keys()),
-        (ValuesView, {}.values()),
-        (ItemsView, {}.items()),
-    )
-    for abc, sample in registrations:
-        if type(sample) is not object:
-            abc.register(type(sample))
-
 
 def install(module):
-    """Attach the methods to the ABCs of the native `module`.
-
-    The ABCs are visited in __mro__-compatible order (every base before its
-    subclasses), so each one's __abstractmethods__ can be computed from its
-    bases' as ABCMeta.__new__ does.
-    """
+    """Replace the native trampolines of the ABCs of `module` with the
+    functions above.  Running it twice (two threads reaching a trampoline at
+    once) assigns the same functions again."""
     g = globals()
-    done = set()
-
-    def visit(cls):
-        if cls in done or cls is object:
-            return
-        for base in cls.__bases__:
-            visit(base)
-        done.add(cls)
-        name = cls.__name__
-        # Lib/_collections_abc.py runs as `collections.abc`.
-        cls.__module__ = "collections.abc"
-        cls.__qualname__ = name
-        for attr, func in _METHODS.get(name, {}).items():
+    for abc_name in _METHODS:
+        g[abc_name] = getattr(module, abc_name)
+    # The ABCs the methods name without defining any.
+    for abc_name in ("Iterable", "Set", "Mapping", "KeysView", "ItemsView", "ValuesView"):
+        g[abc_name] = getattr(module, abc_name)
+    for abc_name, methods in _METHODS.items():
+        cls = g[abc_name]
+        for attr, func in methods.items():
             func.__module__ = "collections.abc"
             setattr(cls, attr, classmethod(func) if attr in _CLASS_METHODS else func)
-        for attr in _NONE_ATTRIBUTES.get(name, ()):
-            setattr(cls, attr, None)
-        if cls.__bases__ == (object,):
-            cls.__init_subclass__ = _abc_init_subclass(cls)
-        _update_abstractmethods(cls)
-
-    names = [name for name in module.__all__
-             if not name.startswith("_") and name != "ABCMeta"]
-    for name in names:
-        g[name] = getattr(module, name)
-    for name in names:
-        visit(g[name])
-    _register_builtin_types()

@@ -1,11 +1,23 @@
 #include <protoPython/CollectionsAbcModule.h>
 #include <protoPython/DiagUtils.h>
 #include <protoPython/PythonEnvironment.h>
+#include <array>
+#include <atomic>
 #include <string>
+#include <utility>
 #include <vector>
 #include <protoCore.h>
 
 namespace protoPython {
+
+// Implemented in ExecutionEngine.cpp.
+extern const proto::ProtoObject* invokePythonCallable(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* callable,
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments* kwargs);
+// The class whose __init_subclass__ chain runs on this thread.
+extern thread_local const proto::ProtoObject* g_initSubclassClass;
 
 static const proto::ProtoObject* py_check_methods(
     proto::ProtoContext* ctx,
@@ -59,8 +71,12 @@ namespace collections_abc {
 // __mro__ and the protoCore parent chain in that order), and keeps their
 // registries of virtual subclasses and subclass hooks (below).  The methods
 // the ABCs define, mixins and abstract defaults alike, are CPython's own,
-// in lib/python3.14/_collections_abc_mixins.py: initialize() imports that
-// module and calls its install() with this module once the classes exist.
+// in lib/python3.14/_collections_abc_mixins.py, loaded lazily (see "Lazy
+// methods" below).  What an import needs at once is computed here: each
+// ABC's __abstractmethods__, those of every class derived from one (a
+// native __init_subclass__ on the root ABCs, in place of ABCMeta.__new__),
+// the attributes CPython's class bodies set to None, the names, and the
+// registrations of the built-in types.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -81,38 +97,40 @@ namespace {
 
 struct AbcSpec {
     const char* name;
-    const char* bases[3];   // direct ABC bases (CPython's hierarchy)
-    const char* hook[6];    // methods of a one-trick __subclasshook__, if any
+    const char* bases[3];     // direct ABC bases (CPython's hierarchy)
+    const char* hook[6];      // methods of a one-trick __subclasshook__, if any
+    const char* abstract[3];  // the methods its class body declares abstract
 };
 
-// The hierarchy and subclass hooks of Lib/_collections_abc.py.
+// The hierarchy, subclass hooks and @abstractmethod declarations of
+// Lib/_collections_abc.py.
 const AbcSpec kAbcSpecs[] = {
-    {"Hashable", {}, {"__hash__"}},
-    {"Awaitable", {}, {"__await__"}},
-    {"Coroutine", {"Awaitable"}, {"__await__", "send", "throw", "close"}},
-    {"AsyncIterable", {}, {"__aiter__"}},
-    {"AsyncIterator", {"AsyncIterable"}, {"__anext__", "__aiter__"}},
-    {"AsyncGenerator", {"AsyncIterator"}, {"__aiter__", "__anext__", "asend", "athrow", "aclose"}},
-    {"Iterable", {}, {"__iter__"}},
-    {"Iterator", {"Iterable"}, {"__iter__", "__next__"}},
-    {"Reversible", {"Iterable"}, {"__reversed__", "__iter__"}},
-    {"Generator", {"Iterator"}, {"__iter__", "__next__", "send", "throw", "close"}},
-    {"Sized", {}, {"__len__"}},
-    {"Container", {}, {"__contains__"}},
-    {"Collection", {"Sized", "Iterable", "Container"}, {"__len__", "__iter__", "__contains__"}},
-    {"Buffer", {}, {"__buffer__"}},
-    {"Callable", {}, {"__call__"}},
-    {"Set", {"Collection"}, {}},
-    {"MutableSet", {"Set"}, {}},
-    {"Mapping", {"Collection"}, {}},
-    {"MutableMapping", {"Mapping"}, {}},
-    {"MappingView", {"Sized"}, {}},
-    {"KeysView", {"MappingView", "Set"}, {}},
-    {"ItemsView", {"MappingView", "Set"}, {}},
-    {"ValuesView", {"MappingView", "Collection"}, {}},
-    {"Sequence", {"Reversible", "Collection"}, {}},
-    {"MutableSequence", {"Sequence"}, {}},
-    {"ByteString", {"Sequence"}, {}},
+    {"Hashable", {}, {"__hash__"}, {"__hash__"}},
+    {"Awaitable", {}, {"__await__"}, {"__await__"}},
+    {"Coroutine", {"Awaitable"}, {"__await__", "send", "throw", "close"}, {"send", "throw"}},
+    {"AsyncIterable", {}, {"__aiter__"}, {"__aiter__"}},
+    {"AsyncIterator", {"AsyncIterable"}, {"__anext__", "__aiter__"}, {"__anext__"}},
+    {"AsyncGenerator", {"AsyncIterator"}, {"__aiter__", "__anext__", "asend", "athrow", "aclose"}, {"asend", "athrow"}},
+    {"Iterable", {}, {"__iter__"}, {"__iter__"}},
+    {"Iterator", {"Iterable"}, {"__iter__", "__next__"}, {"__next__"}},
+    {"Reversible", {"Iterable"}, {"__reversed__", "__iter__"}, {"__reversed__"}},
+    {"Generator", {"Iterator"}, {"__iter__", "__next__", "send", "throw", "close"}, {"send", "throw"}},
+    {"Sized", {}, {"__len__"}, {"__len__"}},
+    {"Container", {}, {"__contains__"}, {"__contains__"}},
+    {"Collection", {"Sized", "Iterable", "Container"}, {"__len__", "__iter__", "__contains__"}, {}},
+    {"Buffer", {}, {"__buffer__"}, {"__buffer__"}},
+    {"Callable", {}, {"__call__"}, {"__call__"}},
+    {"Set", {"Collection"}, {}, {}},
+    {"MutableSet", {"Set"}, {}, {"add", "discard"}},
+    {"Mapping", {"Collection"}, {}, {"__getitem__"}},
+    {"MutableMapping", {"Mapping"}, {}, {"__setitem__", "__delitem__"}},
+    {"MappingView", {"Sized"}, {}, {}},
+    {"KeysView", {"MappingView", "Set"}, {}, {}},
+    {"ItemsView", {"MappingView", "Set"}, {}, {}},
+    {"ValuesView", {"MappingView", "Collection"}, {}, {}},
+    {"Sequence", {"Reversible", "Collection"}, {}, {"__getitem__"}},
+    {"MutableSequence", {"Sequence"}, {}, {"__setitem__", "__delitem__", "insert"}},
+    {"ByteString", {"Sequence"}, {}, {}},
 };
 
 const AbcSpec* specByName(const std::string& name) {
@@ -353,6 +371,401 @@ bool isVirtualSubclass(proto::ProtoContext* ctx, const proto::ProtoObject* cls,
     return virtualSubclass(ctx, env, cls, abc, 0);
 }
 
+// ---------------------------------------------------------------------------
+// Lazy methods
+//
+// Compiling and running _collections_abc_mixins.py costs several times the
+// rest of an import of this module, and most programs that import it (os
+// does, for os._Environ) never call a mixin.  So every method CPython's
+// class bodies define starts as a native trampoline, one C++ function per
+// (ABC, name) entry of kMethods.  The first call of any of them imports the
+// mixins module, whose install() replaces every trampoline with CPython's
+// function, and then calls the real function for its receiver.
+//
+// Threads reaching trampolines at once install once (installMixins).  A
+// trampoline someone kept a reference to (f = Mapping.get) keeps
+// forwarding.
+//
+// A trampoline has no __isabstractmethod__; the abstract-method computation
+// below answers from kAbcSpecs instead, so it is right before and after the
+// install.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+struct MethodSpec {
+    const char* abc;
+    const char* name;
+    bool classMethod;
+};
+
+// Every attribute Lib/_collections_abc.py defines with `def` in a class body.
+const MethodSpec kMethods[] = {
+    {"Hashable", "__hash__", false},
+    {"Awaitable", "__await__", false},
+    {"Coroutine", "send", false}, {"Coroutine", "throw", false}, {"Coroutine", "close", false},
+    {"AsyncIterable", "__aiter__", false},
+    {"AsyncIterator", "__anext__", false}, {"AsyncIterator", "__aiter__", false},
+    {"AsyncGenerator", "__anext__", false}, {"AsyncGenerator", "asend", false},
+    {"AsyncGenerator", "athrow", false}, {"AsyncGenerator", "aclose", false},
+    {"Iterable", "__iter__", false},
+    {"Iterator", "__next__", false}, {"Iterator", "__iter__", false},
+    {"Reversible", "__reversed__", false},
+    {"Generator", "__next__", false}, {"Generator", "send", false},
+    {"Generator", "throw", false}, {"Generator", "close", false},
+    {"Sized", "__len__", false},
+    {"Container", "__contains__", false},
+    {"Buffer", "__buffer__", false},
+    {"Callable", "__call__", false},
+    {"Set", "__le__", false}, {"Set", "__lt__", false}, {"Set", "__gt__", false},
+    {"Set", "__ge__", false}, {"Set", "__eq__", false}, {"Set", "_from_iterable", true},
+    {"Set", "__and__", false}, {"Set", "__rand__", false}, {"Set", "isdisjoint", false},
+    {"Set", "__or__", false}, {"Set", "__ror__", false}, {"Set", "__sub__", false},
+    {"Set", "__rsub__", false}, {"Set", "__xor__", false}, {"Set", "__rxor__", false},
+    {"Set", "_hash", false},
+    {"MutableSet", "add", false}, {"MutableSet", "discard", false},
+    {"MutableSet", "remove", false}, {"MutableSet", "pop", false},
+    {"MutableSet", "clear", false}, {"MutableSet", "__ior__", false},
+    {"MutableSet", "__iand__", false}, {"MutableSet", "__ixor__", false},
+    {"MutableSet", "__isub__", false},
+    {"Mapping", "__getitem__", false}, {"Mapping", "get", false},
+    {"Mapping", "__contains__", false}, {"Mapping", "keys", false},
+    {"Mapping", "items", false}, {"Mapping", "values", false}, {"Mapping", "__eq__", false},
+    {"MappingView", "__init__", false}, {"MappingView", "__len__", false},
+    {"MappingView", "__repr__", false},
+    {"KeysView", "_from_iterable", true}, {"KeysView", "__contains__", false},
+    {"KeysView", "__iter__", false},
+    {"ItemsView", "_from_iterable", true}, {"ItemsView", "__contains__", false},
+    {"ItemsView", "__iter__", false},
+    {"ValuesView", "__contains__", false}, {"ValuesView", "__iter__", false},
+    {"MutableMapping", "__setitem__", false}, {"MutableMapping", "__delitem__", false},
+    {"MutableMapping", "pop", false}, {"MutableMapping", "popitem", false},
+    {"MutableMapping", "clear", false}, {"MutableMapping", "update", false},
+    {"MutableMapping", "setdefault", false},
+    {"Sequence", "__getitem__", false}, {"Sequence", "__iter__", false},
+    {"Sequence", "__contains__", false}, {"Sequence", "__reversed__", false},
+    {"Sequence", "index", false}, {"Sequence", "count", false},
+    {"MutableSequence", "__setitem__", false}, {"MutableSequence", "__delitem__", false},
+    {"MutableSequence", "insert", false}, {"MutableSequence", "append", false},
+    {"MutableSequence", "clear", false}, {"MutableSequence", "reverse", false},
+    {"MutableSequence", "extend", false}, {"MutableSequence", "pop", false},
+    {"MutableSequence", "remove", false}, {"MutableSequence", "__iadd__", false},
+};
+constexpr size_t kMethodCount = sizeof(kMethods) / sizeof(kMethods[0]);
+
+const proto::ProtoObject* callMethodOf(proto::ProtoContext* ctx, size_t index,
+                                       const proto::ProtoObject* self,
+                                       const proto::ProtoArguments* args,
+                                       const proto::ProtoKeywordArguments* kwargs);
+
+template <size_t I>
+const proto::ProtoObject* trampoline(proto::ProtoContext* ctx, const proto::ProtoObject* self,
+                                     const proto::ParentLink*, const proto::ProtoArguments* args,
+                                     const proto::ProtoKeywordArguments* kwargs) {
+    return callMethodOf(ctx, I, self, args, kwargs);
+}
+
+template <size_t... Is>
+constexpr std::array<proto::ProtoMethod, sizeof...(Is)> makeTrampolines(std::index_sequence<Is...>) {
+    return {{&trampoline<Is>...}};
+}
+constexpr std::array<proto::ProtoMethod, kMethodCount> kTrampolines =
+    makeTrampolines(std::make_index_sequence<kMethodCount>{});
+
+const proto::ProtoString* sym(proto::ProtoContext* ctx, const char* s) {
+    return PythonEnvironment::getInternedString(ctx, s);
+}
+
+// `value` is a trampoline, bare or (for _from_iterable) in a classmethod.
+bool isTrampoline(proto::ProtoContext* ctx, const proto::ProtoObject* value) {
+    if (!value || value == PROTO_NONE) return false;
+    proto::ProtoMethod m = value->asMethod(ctx);
+    if (!m) {
+        const proto::ProtoObject* func = value->getAttribute(ctx, sym(ctx, "__func__"));
+        m = func && func != PROTO_NONE ? func->asMethod(ctx) : nullptr;
+    }
+    if (!m) return false;
+    for (proto::ProtoMethod t : kTrampolines)
+        if (t == m) return true;
+    return false;
+}
+
+const proto::ProtoObject* ownValue(proto::ProtoContext* ctx, const proto::ProtoObject* obj,
+                                   const proto::ProtoString* key) {
+    return obj->hasOwnAttribute(ctx, key) == PROTO_TRUE ? obj->getOwnAttributeDirect(ctx, key) : nullptr;
+}
+
+// One thread at a time imports the mixins module and runs install(): an
+// import does not wait for another thread's import of the same module to
+// finish, so a second importer would find a module without install().  The
+// others wait at a GC safepoint (the installer allocates, and a collection
+// needs every thread parked), holding nothing, then find the methods in
+// place.  A failed install releases the flag, and the next call retries.
+std::atomic<bool> g_installing{false};
+thread_local bool t_installing = false;
+
+void installMixins(proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* mod) {
+    if (t_installing) {
+        env->raiseRuntimeError(ctx, "_collections_abc_mixins called a method of an ABC while it was installed");
+    }
+    bool expected = false;
+    if (!g_installing.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+        while (g_installing.load(std::memory_order_acquire)) ctx->safepoint();
+        return;
+    }
+    struct Release {
+        ~Release() {
+            t_installing = false;
+            g_installing.store(false, std::memory_order_release);
+        }
+    } release;
+    t_installing = true;
+    const proto::ProtoObject* mixins = env->importModule("_collections_abc_mixins");
+    env->callMethod(mixins, "install", {mod});
+}
+
+const proto::ProtoObject* callMethodOf(proto::ProtoContext* ctx, size_t index,
+                                       const proto::ProtoObject* self,
+                                       const proto::ProtoArguments* args,
+                                       const proto::ProtoKeywordArguments* kwargs) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const MethodSpec& spec = kMethods[index];
+    const proto::ProtoObject* mod = env->importModule("_collections_abc");
+    const proto::ProtoObject* abc = mod->getAttribute(ctx, sym(ctx, spec.abc));
+    const proto::ProtoString* key = sym(ctx, spec.name);
+    const proto::ProtoObject* real = ownValue(ctx, abc, key);
+    for (int attempt = 0; attempt < 2 && (!real || isTrampoline(ctx, real)); ++attempt) {
+        installMixins(ctx, env, mod);
+        real = ownValue(ctx, abc, key);
+    }
+    if (!real || isTrampoline(ctx, real)) {
+        env->raiseRuntimeError(ctx, std::string("_collections_abc_mixins did not define ")
+            + spec.abc + "." + spec.name);
+    }
+    // A classmethod receives its class as the first argument already.
+    if (spec.classMethod) {
+        const proto::ProtoObject* func = real->getAttribute(ctx, sym(ctx, "__func__"));
+        if (func && func != PROTO_NONE) real = func;
+    }
+    // Called on an instance the receiver is `self`; through the class
+    // (Mapping.get(d, k)) it is the first argument.
+    const proto::ProtoList* callArgs = ctx->newList();
+    if (self && self != PROTO_NONE) callArgs = callArgs->appendLast(ctx, self);
+    const proto::proto_ulong n = args ? args->getSize(ctx) : 0;
+    for (proto::proto_ulong i = 0; i < n; ++i)
+        callArgs = callArgs->appendLast(ctx, args->getAt(ctx, static_cast<int>(i)));
+    return invokePythonCallable(ctx, real, argsView(proto::ProtoListArguments(ctx, callArgs)), kwargs);
+}
+
+// ---------------------------------------------------------------------------
+// Abstract methods
+//
+// ABCMeta.__new__ computes __abstractmethods__ for every class it creates,
+// and the abstract-instantiation check reads the class's own value.  The
+// native ABCs have no ABCMeta: their values are computed by initialize(),
+// those of a class derived from one by the __init_subclass__ the root ABCs
+// carry, with CPython's rule: the names the class defines as abstract, and
+// the abstract names of its bases it does not override with a concrete
+// attribute.
+// ---------------------------------------------------------------------------
+
+const char* const kRoots[] = {
+    "Hashable", "Awaitable", "AsyncIterable", "Iterable", "Sized", "Container", "Buffer", "Callable",
+};
+constexpr size_t kRootCount = sizeof(kRoots) / sizeof(kRoots[0]);
+
+const AbcSpec* specOf(proto::ProtoContext* ctx, const proto::ProtoObject* abc) {
+    const proto::ProtoObject* st = ownState(ctx, abc);
+    if (!st) return nullptr;
+    const proto::ProtoObject* nameObj = st->getAttribute(ctx, abcNameKey(ctx));
+    if (!nameObj || !nameObj->isString(ctx)) return nullptr;
+    std::string name;
+    nameObj->asString(ctx)->toUTF8String(ctx, name);
+    return specByName(name);
+}
+
+bool declaresAbstract(const AbcSpec* spec, const std::string& name) {
+    for (const char* a : spec->abstract)
+        if (a && name == a) return true;
+    return false;
+}
+
+bool isAbstractValue(proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* value) {
+    if (!value || value == PROTO_NONE) return false;
+    const proto::ProtoObject* flag = env->loadAttr(ctx, value, sym(ctx, "__isabstractmethod__"), nullptr, false);
+    return flag && flag != PROTO_NONE && env->isTrue(flag);
+}
+
+TupleView mroOf(proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* cls) {
+    const proto::ProtoObject* mro = env->getAttribute(ctx, cls, env->getMroString(), false);
+    return mro && mro != PROTO_NONE ? PythonEnvironment::tupleView(ctx, mro) : nullptr;
+}
+
+// getattr(cls, name).__isabstractmethod__, where an ABC's own method counts
+// as abstract when its class body declares it so (trampolines included).
+bool resolvesAbstract(proto::ProtoContext* ctx, PythonEnvironment* env,
+                      const proto::ProtoObject* cls, TupleView mro, const std::string& name) {
+    const proto::ProtoString* key = sym(ctx, name.c_str());
+    const proto::proto_ulong n = mro ? mro->getSize(ctx) : 0;
+    for (proto::proto_ulong i = 0; i <= n; ++i) {
+        // cls first: not every class lists itself in its own __mro__.
+        const proto::ProtoObject* c = i == 0 ? cls : mro->getAt(ctx, static_cast<int>(i - 1));
+        if (!c || c == PROTO_NONE) continue;
+        const proto::ProtoObject* value = ownValue(ctx, c, key);
+        if (!value) continue;
+        if (const AbcSpec* spec = specOf(ctx, c)) return declaresAbstract(spec, name);
+        return isAbstractValue(ctx, env, value);
+    }
+    return false;
+}
+
+void updateAbstractMethods(proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* cls) {
+    std::vector<std::string> names;
+    auto add = [&](const std::string& n) {
+        for (const auto& x : names)
+            if (x == n) return;
+        names.push_back(n);
+    };
+    if (const AbcSpec* spec = specOf(ctx, cls)) {
+        for (const char* a : spec->abstract)
+            if (a) add(a);
+    } else if (const proto::ProtoSparseList* own = cls->getOwnAttributes(ctx)) {
+        auto* it = const_cast<proto::ProtoSparseListIterator*>(own->getIterator(ctx));
+        while (it && it->hasNext(ctx)) {
+            const proto::ProtoObject* k = reinterpret_cast<const proto::ProtoObject*>(it->nextKey(ctx));
+            if (k && k->isString(ctx)) {
+                const proto::ProtoObject* value = cls->getOwnAttributeDirect(ctx, k->asString(ctx));
+                if (isAbstractValue(ctx, env, value)) {
+                    std::string n;
+                    k->asString(ctx)->toUTF8String(ctx, n);
+                    add(n);
+                }
+            }
+            it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
+        }
+    }
+    TupleView mro = mroOf(ctx, env, cls);
+    const proto::ProtoObject* basesObj = env->getAttribute(ctx, cls, env->getBasesString(), false);
+    TupleView bases = basesObj && basesObj != PROTO_NONE ? PythonEnvironment::tupleView(ctx, basesObj) : nullptr;
+    const proto::proto_ulong nb = bases ? bases->getSize(ctx) : 0;
+    for (proto::proto_ulong b = 0; b < nb; ++b) {
+        const proto::ProtoObject* inherited = env->loadAttr(ctx, bases->getAt(ctx, static_cast<int>(b)),
+            sym(ctx, "__abstractmethods__"), nullptr, false);
+        if (!inherited || inherited == PROTO_NONE) continue;
+        const proto::ProtoObject* it = env->iter(inherited);
+        PythonEnvironment::TransientPin pinIt(env, it);
+        while (const proto::ProtoObject* n = it ? env->next(it) : nullptr) {
+            if (!n->isString(ctx)) continue;
+            std::string name;
+            n->asString(ctx)->toUTF8String(ctx, name);
+            if (resolvesAbstract(ctx, env, cls, mro, name)) add(name);
+        }
+    }
+    const proto::ProtoList* list = ctx->newList();
+    for (const auto& n : names) list = list->appendLast(ctx, sym(ctx, n.c_str())->asObject(ctx));
+    const proto::ProtoObject* frozen = env->callObject(env->getFrozensetPrototype(), {env->newList(list)});
+    env->storeAttr(ctx, cls, sym(ctx, "__abstractmethods__"), frozen);
+}
+
+const proto::ProtoObject* initSubclass(proto::ProtoContext* ctx, size_t root,
+                                       const proto::ProtoObject* self,
+                                       const proto::ProtoArguments* args,
+                                       const proto::ProtoKeywordArguments* kwargs);
+
+template <size_t R>
+const proto::ProtoObject* initSubclassHook(proto::ProtoContext* ctx, const proto::ProtoObject* self,
+                                           const proto::ParentLink*, const proto::ProtoArguments* args,
+                                           const proto::ProtoKeywordArguments* kwargs) {
+    return initSubclass(ctx, R, self, args, kwargs);
+}
+
+template <size_t... Rs>
+constexpr std::array<proto::ProtoMethod, sizeof...(Rs)> makeHooks(std::index_sequence<Rs...>) {
+    return {{&initSubclassHook<Rs>...}};
+}
+constexpr std::array<proto::ProtoMethod, kRootCount> kHooks =
+    makeHooks(std::make_index_sequence<kRootCount>{});
+
+bool isHook(proto::ProtoContext* ctx, const proto::ProtoObject* cls) {
+    const proto::ProtoObject* v = ownValue(ctx, cls, sym(ctx, "__init_subclass__"));
+    proto::ProtoMethod m = v ? v->asMethod(ctx) : nullptr;
+    if (!m) return false;
+    for (proto::ProtoMethod h : kHooks)
+        if (h == m) return true;
+    return false;
+}
+
+// The root ABC `root`'s __init_subclass__: computes the new class's
+// __abstractmethods__ (once, in the first of these hooks its MRO reaches)
+// and continues the cooperative chain: super(root, cls).__init_subclass__.
+const proto::ProtoObject* initSubclass(proto::ProtoContext* ctx, size_t root,
+                                       const proto::ProtoObject* self,
+                                       const proto::ProtoArguments* args,
+                                       const proto::ProtoKeywordArguments* kwargs) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    // Implicitly a classmethod: the class arrives first or as the receiver;
+    // through super().__init_subclass__() from a hook of a class in front
+    // of this root it arrives as neither, and is the class being created.
+    const proto::ProtoObject* cls = self && self != PROTO_NONE ? self : g_initSubclassClass;
+    if (args && args->getSize(ctx) > 0 && env->isActuallyAClass(ctx, args->getAt(ctx, 0)))
+        cls = args->getAt(ctx, 0);
+    if (!cls || cls == PROTO_NONE) return PROTO_NONE;
+    TupleView mro = mroOf(ctx, env, cls);
+    const proto::ProtoObject* owner = nullptr;
+    bool first = true;
+    const proto::proto_ulong n = mro ? mro->getSize(ctx) : 0;
+    for (proto::proto_ulong i = 1; i < n && !owner; ++i) {
+        const proto::ProtoObject* c = mro->getAt(ctx, static_cast<int>(i));
+        const AbcSpec* spec = specOf(ctx, c);
+        if (spec && std::string(spec->name) == kRoots[root]) owner = c;
+        else if (isHook(ctx, c)) first = false;
+    }
+    if (first) updateAbstractMethods(ctx, env, cls);
+    if (!owner) return PROTO_NONE;
+    const proto::ProtoObject* superType = env->getBuiltins()->getAttribute(ctx, sym(ctx, "super"));
+    const proto::ProtoObject* bound = env->callObject(superType, {owner, cls});
+    const proto::ProtoObject* next = env->loadAttr(ctx, bound, sym(ctx, "__init_subclass__"));
+    invokePythonCallable(ctx, next, argsView(proto::ProtoListArguments(ctx, ctx->newList())), kwargs);
+    return PROTO_NONE;
+}
+
+// The class-body attributes initialize() sets: trampolines, the None
+// attributes, the names, the root hooks, __abstractmethods__.
+void installNativeAttributes(proto::ProtoContext* ctx, PythonEnvironment* env,
+                             const proto::ProtoObject* all, const char* const* names, size_t count) {
+    auto abcNamed = [&](const char* n) {
+        return all->getAttribute(ctx, sym(ctx, n));
+    };
+    const proto::ProtoObject* classmethodType = env->getBuiltins()->getAttribute(ctx, sym(ctx, "classmethod"));
+    for (size_t i = 0; i < kMethodCount; ++i) {
+        proto::ProtoObject* abc = const_cast<proto::ProtoObject*>(abcNamed(kMethods[i].abc));
+        const proto::ProtoObject* method = ctx->fromMethod(nullptr, kTrampolines[i]);
+        if (kMethods[i].classMethod) method = env->callObject(classmethodType, {method});
+        abc->setAttribute(ctx, sym(ctx, kMethods[i].name), method);
+    }
+    // A class body defining __eq__ without __hash__ gets __hash__ = None;
+    // Mapping says `__reversed__ = None`.
+    const proto::ProtoObject* none = PROTO_NONE;
+    const_cast<proto::ProtoObject*>(abcNamed("Set"))->setAttribute(ctx, sym(ctx, "__hash__"), none);
+    const_cast<proto::ProtoObject*>(abcNamed("Mapping"))->setAttribute(ctx, sym(ctx, "__hash__"), none);
+    const_cast<proto::ProtoObject*>(abcNamed("Mapping"))->setAttribute(ctx, sym(ctx, "__reversed__"), none);
+    for (size_t r = 0; r < kRootCount; ++r) {
+        const_cast<proto::ProtoObject*>(abcNamed(kRoots[r]))->setAttribute(ctx,
+            sym(ctx, "__init_subclass__"), ctx->fromMethod(nullptr, kHooks[r]));
+    }
+    // Lib/_collections_abc.py runs as `collections.abc`.
+    const proto::ProtoObject* moduleName = sym(ctx, "collections.abc")->asObject(ctx);
+    for (size_t i = 0; i < count; ++i) {
+        proto::ProtoObject* abc = const_cast<proto::ProtoObject*>(abcNamed(names[i]));
+        abc->setAttribute(ctx, sym(ctx, "__module__"), moduleName);
+        abc->setAttribute(ctx, sym(ctx, "__qualname__"), sym(ctx, names[i])->asObject(ctx));
+    }
+    // kAbcSpecs lists every base before the classes deriving from it.
+    for (const AbcSpec& spec : kAbcSpecs) updateAbstractMethods(ctx, env, abcNamed(spec.name));
+}
+
+} // namespace
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     auto createAbc = [&](const char* name) {
@@ -476,6 +889,13 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         reg("Generator", env->getGeneratorPrototype());
         reg("Coroutine", env->getCoroutinePrototype());
         reg("AsyncGenerator", env->getAsyncGeneratorPrototype());
+        // The dict views.  The built-in iterator types CPython registers with
+        // Iterator pass its subclass hook already.
+        const proto::ProtoObject* emptyDict = env->callObject(env->getDictPrototype(), {});
+        PythonEnvironment::TransientPin pinDict(env, emptyDict);
+        reg("KeysView", env->getType(ctx, env->callMethod(emptyDict, "keys", {})));
+        reg("ValuesView", env->getType(ctx, env->callMethod(emptyDict, "values", {})));
+        reg("ItemsView", env->getType(ctx, env->callMethod(emptyDict, "items", {})));
     }
 
     const proto::ProtoObject* checkMethodsFunc = ctx->fromMethod(nullptr, py_check_methods);
@@ -506,15 +926,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__loader__"), PROTO_NONE); 
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__executed__"), PROTO_TRUE);
 
-    // CPython's methods of the ABCs.  A failure propagates: an import of
-    // _collections_abc without them would hand out unusable classes.
+    // The class bodies' attributes; CPython's methods arrive on first use.
     if (env) {
         PythonEnvironment::TransientPin pinMod(env, mod);
-        const proto::ProtoObject* mixins = env->importModule("_collections_abc_mixins");
-        if (!mixins || mixins == PROTO_NONE) {
-            env->raiseImportError("cannot import _collections_abc_mixins", "_collections_abc_mixins");
-        }
-        env->callMethod(mixins, "install", {mod});
+        installNativeAttributes(ctx, env, all, names, sizeof(names) / sizeof(names[0]));
     }
 
     return mod;
