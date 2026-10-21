@@ -561,7 +561,8 @@ static const proto::ProtoObject* sys_exception(
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
-    const proto::ProtoObject* exc = PythonEnvironment::getActiveException();
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* exc = env ? env->getActiveException(context) : nullptr;
     return exc ? exc : PROTO_NONE;
 }
 
@@ -679,7 +680,7 @@ static const proto::ProtoObject* sys_exc_info(
     const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoObject* exc = PythonEnvironment::getActiveException();
+    const proto::ProtoObject* exc = env ? env->getActiveException(context) : nullptr;
     if (!exc || exc == PROTO_NONE) {
         const proto::ProtoList* l = context->newList()->appendLast(context, PROTO_NONE)->appendLast(context, PROTO_NONE)->appendLast(context, PROTO_NONE);
         const proto::ProtoObject* tupleObj = ::protoPython::PythonEnvironment::tupleFromList(context, l);

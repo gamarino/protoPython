@@ -98,19 +98,18 @@ env->callObject(env->lookupName("print"), {env->callObject(env->lookupName("next
 #line 9 "tests/test_generators_native.py"
 env->callObject(env->lookupName("print"), {env->callObject(env->lookupName("next"), {env->lookupName("g")})});
 #line 10 "tests/test_generators_native.py"
-{
+try {
 #line 11 "source.py"
 env->callObject(env->lookupName("next"), {env->lookupName("g")});
-        if (env->hasPendingException()) {
-            auto* __exc = env->takePendingException();
+        } catch (const protoPython::PyException& __e) {
+            const proto::ProtoObject* __exc = __e.exception();
             bool __handled = false;
             if (!__handled && env->isException(__exc, env->lookupName("StopIteration"))) {
                 __handled = true;
 #line 13 "source.py"
 env->callObject(env->lookupName("print"), {ctx->fromUTF8String("Done")});
             }
-            if (!__handled) env->raiseException(__exc);
+            if (!__handled) throw;
         }
-    };
     return nullptr;
 }

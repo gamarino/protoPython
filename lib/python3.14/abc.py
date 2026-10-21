@@ -7,6 +7,15 @@ def get_cache_token():
     return 0
 
 
+def _ns_lookup(ns, name):
+    # Subscription, not ns.get(): on protoPython's class namespace a body
+    # that defines `get` (a Mapping) shadows the dict method.
+    try:
+        return ns[name]
+    except KeyError:
+        return None
+
+
 class ABCMeta(type):
     def __new__(mcls, name, bases, ns, **kw):
         cls = type.__new__(mcls, name, bases, ns)
@@ -20,7 +29,7 @@ class ABCMeta(type):
             inherited = getattr(base, "__abstractmethods__", None) or ()
             for n in inherited:
                 # Concrete override in cls drops the inherited abstract.
-                v = ns.get(n) if hasattr(ns, "get") else None
+                v = _ns_lookup(ns, n)
                 if v is None:
                     v = getattr(cls, n, None)
                 if v is None or getattr(v, "__isabstractmethod__", False):
@@ -28,7 +37,7 @@ class ABCMeta(type):
         # Direct abstracts declared in this class body.
         keys = getattr(ns, "__keys__", None) or list(ns)
         for n in keys:
-            v = ns.get(n) if hasattr(ns, "get") else getattr(cls, n, None)
+            v = _ns_lookup(ns, n)
             if v is None:
                 v = getattr(cls, n, None)
             if getattr(v, "__isabstractmethod__", False):

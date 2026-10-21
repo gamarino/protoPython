@@ -4433,7 +4433,6 @@ static int compare_lists(proto::ProtoContext* context, const proto::ProtoObject*
         if (env) {
             if (a == b || env->objectsEqual(context, a, b)) continue;
             if (ok) *ok = true;
-            if (env->hasPendingException()) return 0;
             if (decided && haveDecided) {
                 *decided = env->compareObjects(context, a, b, op);
                 *haveDecided = true;
@@ -4482,7 +4481,6 @@ static const proto::ProtoObject* list_order_result(proto::ProtoContext* context,
     const proto::ProtoObject* decided = nullptr;
     const int cmp = (self && other) ? compare_lists(context, self, other, &ok, op, &decided, &haveDecided) : 0;
     if (!ok) return env ? env->getNotImplementedPrototype() : PROTO_FALSE;
-    if (env && env->hasPendingException()) return nullptr;
     if (haveDecided) return decided;
     return holds(cmp) ? PROTO_TRUE : PROTO_FALSE;
 }
@@ -4697,7 +4695,6 @@ static bool keyHash(proto::ProtoContext* context, const proto::ProtoObject* key,
                     }
                     return true;
                 }
-                if (raiseUnhashable && env->hasPendingException()) return false;
             }
         }
     }
@@ -4793,7 +4790,6 @@ static const proto::ProtoObject* py_dict_getitem(
             // STRUCT-225: if the lookup itself triggered an exception
             // (e.g. a descriptor's __get__ raised), propagate it instead
             // of silently falling through to KeyError.
-            if (env->hasPendingException()) return nullptr;
             if (missM && missM != PROTO_NONE) {
                 const proto::ProtoList* a = context->newList()->appendLast(context, key);
                 if (missM->asMethod(context)) {
@@ -5648,7 +5644,7 @@ static const proto::ProtoObject* py_list_extend(
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         const proto::ProtoObject* iterator = env ? env->iter(otherObj) : nullptr;
         if (!iterator) {
-            if (env && !env->hasPendingException()) {
+            if (env) {
                 env->raiseTypeError(context, "object is not iterable");
             }
             return PROTO_NONE;
@@ -5839,10 +5835,8 @@ static int py_sort_cmp(proto::ProtoContext* ctx,
     // so the list is left as it was.
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (env) {
-        if (env->hasPendingException()) return 0;
         const proto::ProtoObject* lt = env->compareObjects(ctx, a, b, 2);
         if (lt == PROTO_TRUE) return -1;
-        if (env->hasPendingException()) return 0;
         return env->compareObjects(ctx, b, a, 2) == PROTO_TRUE ? 1 : 0;
     }
     return a->compare(ctx, b);
@@ -6918,7 +6912,6 @@ static const proto::ProtoObject* py_bytes_call(
     for (;;) {
         const proto::ProtoObject* item = env->next(iterResult);
         if (!item) {
-            if (env->hasPendingException()) return nullptr;
             break;
         }
         if (!item->isInteger(context) && !item->isBoolean(context)) {
@@ -7495,13 +7488,11 @@ static const proto::ProtoObject* py_dict_call(
                         // env->iter already raised TypeError for
                         // non-iterables; propagate it instead of silently
                         // returning an empty dict.
-                        if (env->hasPendingException()) return nullptr;
                     }
                     if (it) {
                         for (;;) {
                             const proto::ProtoObject* pairObj = env->next(it);
                             if (!pairObj) {
-                                if (env->hasPendingException()) return nullptr;
                                 break; // Normal exhaustion (StopIteration already cleared).
                             }
 
@@ -7548,24 +7539,16 @@ static const proto::ProtoObject* py_dict_call(
                                 // already consumes StopIteration on
                                 // exhaustion and returns nullptr.
                                 const proto::ProtoObject* pairIt = env->iter(pairObj);
-                                if (env->hasPendingException()) {
-                                    // env->iter raised — non-iterable
-                                    // element.  Propagate as TypeError.
-                                    return nullptr;
-                                }
                                 if (!pairIt) {
                                     env->raiseTypeError(context,
                                         "cannot convert dictionary update sequence element to a sequence");
                                     return nullptr;
                                 }
                                 const proto::ProtoObject* a = env->next(pairIt);
-                                if (env->hasPendingException()) return nullptr;
                                 if (a) {
                                     const proto::ProtoObject* b = env->next(pairIt);
-                                    if (env->hasPendingException()) return nullptr;
                                     if (b) {
                                         const proto::ProtoObject* extra = env->next(pairIt);
-                                        if (env->hasPendingException()) return nullptr;
                                         if (!extra) {
                                             k = a;
                                             v = b;
@@ -7839,7 +7822,6 @@ static const proto::ProtoSet* set_items_from_iterable(
     // callable and rejected the iterable as not iterable.
     const proto::ProtoObject* it = env->iter(iterable);
     if (!it) {
-        if (env->hasPendingException()) return nullptr;
         std::string clsName = "object";
         const proto::ProtoObject* cls2 = env->getType(context, iterable);
         if (cls2) {
@@ -7855,7 +7837,6 @@ static const proto::ProtoSet* set_items_from_iterable(
     for (;;) {
         const proto::ProtoObject* item = env->next(it);
         if (!item) {
-            if (env->hasPendingException()) return nullptr;
             break;
         }
         s = PythonEnvironment::setAdd(context, s, item);
@@ -8181,7 +8162,7 @@ static bool add_iterable_to_set(proto::ProtoContext* context, const proto::Proto
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* iterator = env ? env->iter(iterable) : nullptr;
-    if (!iterator) return !(env && env->hasPendingException());
+    if (!iterator) return true;
     PythonEnvironment::TransientPin pinIt(env, iterator);
     for (;;) {
         const proto::ProtoObject* val = env->next(iterator);
@@ -8766,7 +8747,7 @@ static const proto::ProtoObject* py_set_pop(
         const proto::ProtoSet* s = data && data->asSet(context) ? data->asSet(context) : self->asSet(context);
         if (!s || s->getSize(context) == 0) {
             PythonEnvironment* env = PythonEnvironment::fromContext(context);
-            if (env) env->raiseKeyError(context, PythonEnvironment::getInternedString(context, "pop from empty set")->asObject(context));
+            if (env) env->raiseKeyError(context, PythonEnvironment::getInternedString(context, "pop from an empty set")->asObject(context));
             return PROTO_NONE;
         }
         const proto::ProtoSetIterator* it = s->getIterator(context);
@@ -8806,7 +8787,6 @@ static const proto::ProtoObject* py_set_reduce(
     }
     if (getState && getState != PROTO_NONE) {
         const proto::ProtoObject* st = env->callObject(getState, {});
-        if (!st && env->hasPendingException()) return nullptr;
         if (st) state = st;
     }
     const proto::ProtoList* argList = context->newList()
@@ -10606,7 +10586,6 @@ static int compare_tuples(proto::ProtoContext* context,
         if (env) {
             if (env->objectsEqual(context, ea, eb)) continue;
             *ok = true;
-            if (env->hasPendingException()) return 0;
             // Raises for unorderable elements; py_tuple_cmp_dispatch checks.
             const proto::ProtoObject* r = env->compareObjects(context, ea, eb, decided ? op : 2 /*lt*/);
             if (decided && haveDecided) {
@@ -10649,7 +10628,6 @@ static const proto::ProtoObject* py_tuple_cmp_dispatch(proto::ProtoContext* ctx,
     const proto::ProtoObject* decided = nullptr;
     int c = compare_tuples(ctx, self, other, &ok, op + 2, &decided, &haveDecided);
     if (!ok) return env ? env->getNotImplementedPrototype() : PROTO_FALSE;
-    if (env && env->hasPendingException()) return nullptr;
     if (haveDecided) return decided;
     switch (op) {
         case 0: return c <  0 ? PROTO_TRUE : PROTO_FALSE;
@@ -13300,7 +13278,6 @@ static const proto::ProtoObject* py_str_format(
             } else {
                 // str(val), which honours a __str__ written in Python.
                 const proto::ProtoObject* sv = env ? env->callObject(env->getStrPrototype(), {val}) : nullptr;
-                if (!sv && env && env->hasPendingException()) return nullptr;
                 if (sv && sv->isString(context)) sv->asString(context)->toUTF8String(context, s);
                 else s = PythonEnvironment::reprObject(context, val);
             }
@@ -13318,7 +13295,6 @@ static const proto::ProtoObject* py_str_format(
                 if (formatFn && formatFn != PROTO_NONE) {
                     const proto::ProtoObject* specObj = PythonEnvironment::getInternedString(context, formatSpec.c_str())->asObject(context);
                     const proto::ProtoObject* r = env->callObject(formatFn, {val, specObj});
-                    if (!r && env->hasPendingException()) return nullptr;
                     if (r && r->isString(context)) {
                         std::string rs;
                         r->asString(context)->toUTF8String(context, rs);
@@ -14955,7 +14931,7 @@ static const proto::ProtoObject* py_str_join(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* it = env ? env->iter(iterable) : nullptr;
     if (!it) {
-        if (env && !env->hasPendingException()) {
+        if (env) {
             env->raiseTypeError(context, "join() arg must be an iterable");
         }
         if (get_env_diag()) fprintf(stderr, "DEBUG: py_str_join not iterable\n");
@@ -16050,7 +16026,6 @@ static const proto::ProtoObject* py_dict_update(
                                 for (;;) {
                                     const proto::ProtoObject* k = env->next(keyIt);
                                     if (!k) {
-                                        if (env->hasPendingException()) return nullptr;
                                         break;
                                     }
                                     const proto::ProtoList* ga = context->newList()->appendLast(context, k);
@@ -16074,7 +16049,7 @@ static const proto::ProtoObject* py_dict_update(
             // list caused the loop above to be skipped entirely.
             const proto::ProtoObject* it = env->iter(other);
             if (!it) {
-                if (!env->hasPendingException()) {
+                {
                     std::string clsName = "object";
                     if (const proto::ProtoObject* cls = env->getType(context, other)) {
                         const proto::ProtoObject* nameAttr = cls->getAttribute(context, env->getNameString());
@@ -16090,7 +16065,6 @@ static const proto::ProtoObject* py_dict_update(
                 for (;;) {
                     const proto::ProtoObject* pair = env->next(it);
                     if (!pair) {
-                        if (env->hasPendingException()) return nullptr;
                         break;
                     }
                     PythonEnvironment::TransientPin pinPair(env, pair);
@@ -16274,7 +16248,7 @@ static const proto::ProtoObject* py_dict_fromkeys(
     // a key like any other (iteration used to stop at the first one).
     const proto::ProtoObject* itObj = env->iter(iterable);
     if (!itObj) {
-        if (!env->hasPendingException()) {
+        {
             // CPython: dict.fromkeys(non_iterable) raises TypeError.
             std::string clsName = "object";
             const proto::ProtoObject* cls = env->getType(context, iterable);
@@ -16295,7 +16269,6 @@ static const proto::ProtoObject* py_dict_fromkeys(
     for (;;) {
         const proto::ProtoObject* key = env->next(itObj);
         if (!key) {
-            if (env->hasPendingException()) return nullptr;
             break;
         }
         proto::proto_ulong hash = dictKeyHash(context, key);
@@ -16671,10 +16644,6 @@ static const proto::ProtoObject* py_dict_popitem(
 /** thread_local member initialization */
 thread_local PythonEnvironment* PythonEnvironment::s_threadEnv = nullptr;
 thread_local proto::ProtoContext* PythonEnvironment::s_threadContext = nullptr;
-thread_local bool PythonEnvironment::s_pendingExcFlag = false;
-thread_local const proto::ProtoObject* PythonEnvironment::s_pendingExc = nullptr;
-thread_local std::vector<const proto::ProtoObject*> PythonEnvironment::s_activeExcs;
-thread_local std::vector<proto::ProtoRootSet::Handle> PythonEnvironment::s_activeExcsHandles;
 thread_local int PythonEnvironment::s_recursionDepth = 0;
 thread_local bool PythonEnvironment::s_inRecursionError = false;
 thread_local const proto::ProtoObject* PythonEnvironment::s_currentFrame = nullptr;
@@ -16729,17 +16698,6 @@ void PythonEnvironment::releaseThreadState(proto::ProtoContext* ctx) {
     (void) ctx;
     PythonEnvironment* env = s_threadEnv;
 
-    // An exception that propagated out of the thread body leaves pushes
-    // unmatched, and each one is a root.  Drain them newest-first so the
-    // set is empty whatever the body did.
-    while (!s_activeExcsHandles.empty()) {
-        const proto::ProtoRootSet::Handle h = s_activeExcsHandles.back();
-        s_activeExcsHandles.pop_back();
-        if (env && env->activeExcsRoots_ && h != proto::ProtoRootSet::kNullHandle)
-            env->activeExcsRoots_->remove(h);
-    }
-    s_activeExcs.clear();
-
     if (env && env->pyThreadRoots_ &&
         s_currentPyThreadRoot != proto::ProtoRootSet::kNullHandle) {
         env->pyThreadRoots_->remove(s_currentPyThreadRoot);
@@ -16750,8 +16708,6 @@ void PythonEnvironment::releaseThreadState(proto::ProtoContext* ctx) {
     // Every remaining thread-local ProtoObject* is a raw, unrooted mirror.
     // Clearing them is not about reclamation — it is so that nothing can read
     // a pointer belonging to a thread that no longer exists.
-    s_pendingExc = nullptr;
-    s_pendingExcFlag = false;
     s_currentFrame = nullptr;
     s_currentGlobals = nullptr;
     s_currentCodeObject = nullptr;
@@ -16861,110 +16817,27 @@ const proto::ProtoObject* PythonEnvironment::getTraceFunction() const {
     return func == PROTO_NONE ? nullptr : func;
 }
 
-void PythonEnvironment::setPendingException(const proto::ProtoObject* exc) {
-    // A Python exception is a C++ exception (tasks/cpp_exceptions_plan.md):
-    // raising one throws it. Every raise helper ends here.
-    if (exc && exc != PROTO_NONE) throw PyException(this, exc);
-    if (!s_threadContext) return;
-    const proto::ProtoString* key = s_threadEnv ? s_threadEnv->pendingExcString : proto::ProtoString::fromUTF8(getCurrentContext(), "_pending_exc");
-    // Authoritative storage write — keeps the exception object reachable
-    // through the GC root chain (py_thread → s_globalThreadRootsDict).
-    s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(getCurrentContext(), key, exc ? exc : PROTO_NONE);
-    // Mirror in TLS so the read path is completely cache-independent.
-    // See SP0-P2.5 fix in PythonEnvironment.h `s_pendingExc` doc.
-    bool real = (exc != nullptr && exc != PROTO_NONE);
-    s_pendingExc = real ? exc : nullptr;
-    s_pendingExcFlag = real;
+bool PythonEnvironment::markActivation(proto::ProtoContext* ctx) const {
+    const unsigned n = ctx ? ctx->getAutomaticLocalsCount() : 0;
+    if (n < kActivationSlots || !activationMark_) return false;
+    ctx->getAutomaticLocals()[n - 3] = activationMark_;
+    return true;
 }
 
-const proto::ProtoObject* PythonEnvironment::takePendingException() {
-    if (!s_threadContext) return nullptr;
-    const proto::ProtoString* key = s_threadEnv ? s_threadEnv->pendingExcString : proto::ProtoString::fromUTF8(getCurrentContext(), "_pending_exc");
-    // Prefer the TLS mirror — it is updated in lockstep with the
-    // storage and is immune to the protoCore mutable-cache desync that
-    // caused SP0-P2.5.  Fall back to the authoritative read only if
-    // the mirror is empty (e.g. an exception set before the mirror
-    // existed in some embedding scenario).
-    const proto::ProtoObject* e = s_pendingExc;
-    if (!e) {
-        e = getPyThread(s_threadContext)->getAttribute(s_threadContext, key);
-        if (e == PROTO_NONE) e = nullptr;
-    }
-    s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(getCurrentContext(), key, PROTO_NONE);
-    s_pendingExc = nullptr;
-    s_pendingExcFlag = false;
-    return e;
+const proto::ProtoObject** PythonEnvironment::handledExceptionSlot(proto::ProtoContext* ctx) const {
+    const unsigned n = ctx ? ctx->getAutomaticLocalsCount() : 0;
+    if (n < kActivationSlots || !activationMark_) return nullptr;
+    const proto::ProtoObject** slots = ctx->getAutomaticLocals();
+    return slots[n - 3] == activationMark_ ? slots + (n - 2) : nullptr;
 }
 
-// hasPendingException() is now `inline` in the header — it does a single
-// TLS-bool read instead of a getAttribute walk.  See PythonEnvironment.h
-// for the rationale.
-
-const proto::ProtoObject* PythonEnvironment::peekPendingException() const {
-    if (!s_threadContext) return nullptr;
-    // Read the TLS mirror directly.  This bypasses the protoCore
-    // attribute cache entirely, eliminating the mutable-shard cache
-    // desync that surfaced as the SP0-P2.5 silent-halt bug.  The
-    // mirror is updated in lockstep with the authoritative storage in
-    // setPendingException / clearPendingException / takePendingException,
-    // so consistency is guaranteed by construction.
-    return s_pendingExc;
-}
-
-void PythonEnvironment::clearPendingException() {
-    if (!s_threadContext) return;
-    const proto::ProtoString* key = pendingExcString ? pendingExcString : proto::ProtoString::fromUTF8(getCurrentContext(), "_pending_exc");
-    s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(getCurrentContext(), key, PROTO_NONE);
-    s_pendingExc = nullptr;
-    s_pendingExcFlag = false;
-}
-
-void PythonEnvironment::pushActiveException(const proto::ProtoObject* exc) {
-    if (!s_threadContext) return;
-    // Read path — authoritative TLS mirror (cache-free; see `s_activeExcs`).
-    s_activeExcs.push_back(exc ? exc : PROTO_NONE);
-    // GC anchor — pin the exception in the per-environment ProtoRootSet
-    // so the tracing GC sees it as a root for as long as the except
-    // block's bounded lifetime holds it.  Replaces the prior
-    // `_active_excs` ProtoList attribute on py_thread, whose read path
-    // (used to rebuild the list on push) was the same mutable-shard
-    // attribute cache that motivated the TLS mirror in the first place
-    // (SP-G/B5).  The handle stack `s_activeExcsHandles` is kept in
-    // lockstep with `s_activeExcs` so pop releases exactly what push
-    // pinned.
-    proto::ProtoRootSet::Handle h = proto::ProtoRootSet::kNullHandle;
-    if (s_threadEnv && s_threadEnv->activeExcsRoots_ && exc && exc != PROTO_NONE) {
-        h = s_threadEnv->activeExcsRoots_->add(exc);
-    }
-    s_activeExcsHandles.push_back(h);
-}
-
-void PythonEnvironment::popActiveException() {
-    if (!s_threadContext) return;
-    if (!s_activeExcs.empty()) s_activeExcs.pop_back();
-    // Release the matching root-set pin.  Stacks always grow/shrink in
-    // lockstep, but guard for the underflow case (e.g. a stray pop on a
-    // freshly-attached thread whose push happened before this env was
-    // bound).  ProtoRootSet treats kNullHandle and recycled handles as
-    // silent no-ops (generation check in protoCore.h).
-    if (!s_activeExcsHandles.empty()) {
-        proto::ProtoRootSet::Handle h = s_activeExcsHandles.back();
-        s_activeExcsHandles.pop_back();
-        if (s_threadEnv && s_threadEnv->activeExcsRoots_ && h != proto::ProtoRootSet::kNullHandle) {
-            s_threadEnv->activeExcsRoots_->remove(h);
-        }
-    }
-}
-
-const proto::ProtoObject* PythonEnvironment::getActiveException() {
-    if (!s_threadContext) return nullptr;
-    // Prefer the TLS mirror — it bypasses the protoCore attribute cache
-    // entirely (see s_pendingExc / SP0-P2.5).  This is the same desync
-    // that caused the OP_RAISE_VARARGS bare-reraise to fire spuriously
-    // inside `with` blocks across nested module-import contexts.
-    if (!s_activeExcs.empty()) {
-        const proto::ProtoObject* e = s_activeExcs.back();
-        return (e == PROTO_NONE || e == nullptr) ? nullptr : e;
+const proto::ProtoObject* PythonEnvironment::getActiveException(proto::ProtoContext* ctx) const {
+    // The innermost activation of the call chain that handles one; an
+    // activation handling none (a generator resumed outside its except
+    // clause, a function called from a handler) defers to its callers.
+    for (proto::ProtoContext* c = ctx; c; c = c->previous) {
+        const proto::ProtoObject** slot = handledExceptionSlot(c);
+        if (slot && *slot && *slot != PROTO_NONE) return *slot;
     }
     return nullptr;
 }
@@ -17042,15 +16915,12 @@ proto::ProtoSpace* PythonEnvironment::getProcessSpace() {
 /** Singleton enforcement: L-Shape mandates one ProtoSpace per process. Log if multiple PythonEnvironment instances exist. */
 static std::atomic<int> s_pythonEnvInstanceCount{0};
 
-const bool* PythonEnvironment::pendingExceptionFlagAddress() { return &s_pendingExcFlag; }
-
 #if defined(_WIN32)
 // The exported accessors of the thread_local state (PythonEnvironment.h).
 proto::ProtoContext* PythonEnvironment::threadContextOutOfLine() { return s_threadContext; }
 void PythonEnvironment::setThreadContextOutOfLine(proto::ProtoContext* ctx) { s_threadContext = ctx; }
 PythonEnvironment* PythonEnvironment::threadEnvOutOfLine() { return s_threadEnv; }
 void PythonEnvironment::setThreadEnvOutOfLine(PythonEnvironment* env) { s_threadEnv = env; }
-bool PythonEnvironment::pendingExceptionFlagOutOfLine() { return s_pendingExcFlag; }
 
 #endif
 
@@ -17091,10 +16961,6 @@ PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::v
 #endif
     s_mainThreadId = std::this_thread::get_id();
     registerContext(rootContext_, this);
-    // GC anchor for active exceptions (see `activeExcsRoots_` doc and
-    // `s_activeExcsHandles`).  Replaces the prior `_active_excs` attribute
-    // anchor whose read path was vulnerable to mutable-shard cache desync.
-    activeExcsRoots_ = space_->createRootSet("protopython-active-excs");
     // GC anchor for one py_thread record per LIVE OS thread, released by
     // releaseThreadState when the thread finishes.  See `pyThreadRoots_`.
     pyThreadRoots_ = space_->createRootSet("protopython-py-threads");
@@ -17111,6 +16977,10 @@ PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::v
     // destroyRootSet releases the whole set when this environment dies — which
     // matters because space_ is a process singleton that outlives it.
     gcRoots_ = space_->createRootSet("protopython-gc-roots");
+    // Created before any code runs: every activation marks its context
+    // with it (see kActivationSlots).
+    activationMark_ = rootContext_->newObject(true);
+    (void) gcRoots_->add(activationMark_);
     initializeRootObjects(stdLibPath, searchPaths);
 }
 
@@ -17136,14 +17006,6 @@ PythonEnvironment::~PythonEnvironment() {
         builtinsRoot_ = proto::ProtoRootSet::kNullHandle;
     }
 
-    // Tear down the active-exception root set before the ProtoSpace
-    // outlives us (see `activeExcsRoots_`).  The space's destructor
-    // cleans up orphans, but releasing eagerly keeps shutdown GC pauses
-    // tidy.
-    if (activeExcsRoots_ && space_) {
-        space_->destroyRootSet(activeExcsRoots_);
-        activeExcsRoots_ = nullptr;
-    }
     // The main thread's py_thread pin goes with the set; spawned threads
     // released theirs in releaseThreadState as they finished.
     if (pyThreadRoots_ && space_) {
@@ -17169,8 +17031,6 @@ PythonEnvironment::~PythonEnvironment() {
         s_currentFrame = nullptr;
         s_currentGlobals = nullptr;
         s_currentCodeObject = nullptr;
-        s_pendingExc = nullptr;
-        s_pendingExcFlag = false;
     }
 
     unregisterContext(rootContext_);
@@ -17195,7 +17055,7 @@ void PythonEnvironment::raiseKeyError(proto::ProtoContext* ctx, const proto::Pro
         exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__suppress_context__"), PROTO_FALSE);
     }
     if (exc && exc != PROTO_NONE) {
-        setPendingException(exc);
+        raiseException(exc);
     }
 }
 
@@ -17204,7 +17064,7 @@ void PythonEnvironment::raiseValueError(proto::ProtoContext* ctx, const proto::P
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, msg);
     const proto::ProtoObject* exc = invokePythonCallable(ctx, valueErrorType, args, nullptr);
     if (exc && exc != PROTO_NONE) {
-        setPendingException(exc);
+        raiseException(exc);
     }
 }
 
@@ -17266,7 +17126,7 @@ void PythonEnvironment::raiseImportError(const std::string& msg, const std::stri
             exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "name"),
                 PythonEnvironment::getInternedString(ctx, name.c_str())->asObject(ctx));
         }
-        setPendingException(exc);
+        raiseException(exc);
     }
 }
 
@@ -17305,7 +17165,7 @@ void PythonEnvironment::raiseNameError(proto::ProtoContext* ctx, const std::stri
     const proto::ProtoObject* exc = invokePythonCallable(ctx, nameErrorType, args, nullptr);
     if (exc) {
         exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "name"), PythonEnvironment::getInternedString(ctx, name.c_str())->asObject(ctx));
-        setPendingException(exc);
+        raiseException(exc);
     }
 }
 
@@ -17317,7 +17177,7 @@ void PythonEnvironment::raiseFreeVariableError(proto::ProtoContext* ctx, const s
     const proto::ProtoObject* exc = invokePythonCallable(ctx, nameErrorType, args, nullptr);
     if (exc) {
         exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "name"), PythonEnvironment::getInternedString(ctx, name.c_str())->asObject(ctx));
-        setPendingException(exc);
+        raiseException(exc);
     }
 }
 
@@ -17329,7 +17189,7 @@ void PythonEnvironment::raiseUnboundLocalError(proto::ProtoContext* ctx, const s
     }
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx));
     const proto::ProtoObject* exc = invokePythonCallable(ctx, unboundLocalErrorType, args, nullptr);
-    if (exc) setPendingException(exc);
+    if (exc) raiseException(exc);
 }
 
 void PythonEnvironment::raiseAttributeError(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const std::string& attr) {
@@ -17338,7 +17198,7 @@ void PythonEnvironment::raiseAttributeError(proto::ProtoContext* ctx, const prot
         if (get_env_diag()) {
         }
         // Use a generic object as exception marker if types aren't ready
-        this->setPendingException(PythonEnvironment::getInternedString(ctx, ("AttributeError: " + attr).c_str())->asObject(ctx));
+        raiseException(PythonEnvironment::getInternedString(ctx, ("AttributeError: " + attr).c_str())->asObject(ctx));
         return;
     }
     std::string typeName = "object";
@@ -17373,7 +17233,7 @@ void PythonEnvironment::raiseAttributeError(proto::ProtoContext* ctx, const prot
     if (exc) {
         exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "name"), PythonEnvironment::getInternedString(ctx, attr.c_str())->asObject(ctx));
         exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "obj"), obj);
-        setPendingException(exc);
+        raiseException(exc);
     }
 }
 
@@ -17383,7 +17243,7 @@ void PythonEnvironment::raiseAttributeErrorWithMessage(proto::ProtoContext* ctx,
                                                        const std::string& attr) {
     if (!attributeErrorType) {
         // Fallback during bootstrap: surface the message as a generic marker.
-        this->setPendingException(PythonEnvironment::getInternedString(ctx, ("AttributeError: " + message).c_str())->asObject(ctx));
+        raiseException(PythonEnvironment::getInternedString(ctx, ("AttributeError: " + message).c_str())->asObject(ctx));
         return;
     }
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, message.c_str())->asObject(ctx));
@@ -17394,7 +17254,7 @@ void PythonEnvironment::raiseAttributeErrorWithMessage(proto::ProtoContext* ctx,
         if (obj) {
             exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "obj"), obj);
         }
-        setPendingException(exc);
+        raiseException(exc);
     }
 }
 
@@ -17403,7 +17263,7 @@ void PythonEnvironment::raiseTypeError(proto::ProtoContext* ctx, const std::stri
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx));
     const proto::ProtoObject* exc = invokePythonCallable(ctx, typeErrorType, args, nullptr);
     if (exc && exc != PROTO_NONE) {
-        setPendingException(exc);
+        raiseException(exc);
     }
 }
 
@@ -17412,7 +17272,7 @@ void PythonEnvironment::raiseRuntimeError(proto::ProtoContext* ctx, const std::s
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx));
     const proto::ProtoObject* exc = invokePythonCallable(ctx, runtimeErrorType, args, nullptr);
     if (exc && exc != PROTO_NONE) {
-        setPendingException(exc);
+        raiseException(exc);
     }
 }
 
@@ -17433,7 +17293,7 @@ void PythonEnvironment::raiseOSError(proto::ProtoContext* ctx, int errnum, const
         args = args->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, filename.c_str())->asObject(ctx));
     }
     const proto::ProtoObject* exc = invokePythonCallable(ctx, osErrorType, args, nullptr);
-    if (exc && exc != PROTO_NONE) setPendingException(exc);
+    if (exc && exc != PROTO_NONE) raiseException(exc);
 }
 
 void PythonEnvironment::raiseImportError(proto::ProtoContext* ctx, const std::string& msg, const std::string& name,
@@ -17459,7 +17319,7 @@ void PythonEnvironment::raiseImportError(proto::ProtoContext* ctx, const std::st
             exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "path"),
                 proto::ProtoString::fromStdString(ctx, path)->asObject(ctx));
         }
-        setPendingException(exc);
+        raiseException(exc);
     }
 }
 
@@ -17468,7 +17328,7 @@ void PythonEnvironment::raiseKeyboardInterrupt(proto::ProtoContext* ctx) {
     const proto::ProtoList* args = ctx->newList();
     const proto::ProtoObject* exc = invokePythonCallable(ctx, keyboardInterruptType, args, nullptr);
     if (exc && exc != PROTO_NONE) {
-        setPendingException(exc);
+        raiseException(exc);
     }
 }
 
@@ -17483,7 +17343,7 @@ void PythonEnvironment::raiseSyntaxError(proto::ProtoContext* ctx, const std::st
         exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "text"), PythonEnvironment::getInternedString(ctx, text.c_str())->asObject(ctx));
         if (!filename.empty())
             exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "filename"), newStr(ctx, filename));
-        setPendingException(exc);
+        raiseException(exc);
     }
 }
 
@@ -17555,7 +17415,7 @@ void PythonEnvironment::raiseEOFError(proto::ProtoContext* ctx) {
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "EOF when reading a line")->asObject(ctx));
     const proto::ProtoObject* exc = invokePythonCallable(ctx, eofErrorType, args, nullptr);
     if (exc && exc != PROTO_NONE) {
-        setPendingException(exc);
+        raiseException(exc);
     }
 }
 
@@ -17566,14 +17426,14 @@ void PythonEnvironment::raiseSystemExit(proto::ProtoContext* ctx, const proto::P
     const proto::ProtoList* args = ctx->newList();
     if (code) args = args->appendLast(ctx, code);
     const proto::ProtoObject* exc = invokePythonCallable(ctx, systemExitType, args, nullptr);
-    if (exc) setPendingException(exc);
+    if (exc) raiseException(exc);
 }
 
 void PythonEnvironment::raiseRecursionError(proto::ProtoContext* ctx) {
     if (!recursionErrorType) return;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "maximum recursion depth exceeded")->asObject(ctx));
     const proto::ProtoObject* exc = invokePythonCallable(ctx, recursionErrorType, args, nullptr);
-    if (exc && exc != PROTO_NONE) setPendingException(exc);
+    if (exc && exc != PROTO_NONE) raiseException(exc);
 }
 
 void PythonEnvironment::raiseAssertionError(proto::ProtoContext* ctx, const proto::ProtoObject* msg) {
@@ -17581,14 +17441,14 @@ void PythonEnvironment::raiseAssertionError(proto::ProtoContext* ctx, const prot
     const proto::ProtoList* args = ctx->newList();
     if (msg) args = args->appendLast(ctx, msg);
     const proto::ProtoObject* exc = invokePythonCallable(ctx, assertionErrorType, args, nullptr);
-    if (exc && exc != PROTO_NONE) setPendingException(exc);
+    if (exc && exc != PROTO_NONE) raiseException(exc);
 }
 
 void PythonEnvironment::raiseZeroDivisionError(proto::ProtoContext* ctx) {
     if (!zeroDivisionErrorType) return;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "division by zero")->asObject(ctx));
     const proto::ProtoObject* exc = invokePythonCallable(ctx, zeroDivisionErrorType, args, nullptr);
-    if (exc && exc != PROTO_NONE) setPendingException(exc);
+    if (exc && exc != PROTO_NONE) raiseException(exc);
 }
 
 void PythonEnvironment::raiseOverflowError(proto::ProtoContext* ctx, const std::string& msg) {
@@ -17600,14 +17460,14 @@ void PythonEnvironment::raiseOverflowError(proto::ProtoContext* ctx, const std::
     }
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, newStr(ctx, msg));
     const proto::ProtoObject* exc = invokePythonCallable(ctx, type, args, nullptr);
-    if (exc && exc != PROTO_NONE) setPendingException(exc);
+    if (exc && exc != PROTO_NONE) raiseException(exc);
 }
 
 void PythonEnvironment::raiseIndexError(proto::ProtoContext* ctx, const std::string& msg) {
     if (!indexErrorType) return;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx));
     const proto::ProtoObject* exc = invokePythonCallable(ctx, indexErrorType, args, nullptr);
-    if (exc && exc != PROTO_NONE) setPendingException(exc);
+    if (exc && exc != PROTO_NONE) raiseException(exc);
 }
 
 void PythonEnvironment::raiseStopIteration(proto::ProtoContext* ctx, const proto::ProtoObject* value) {
@@ -17615,14 +17475,14 @@ void PythonEnvironment::raiseStopIteration(proto::ProtoContext* ctx, const proto
     const proto::ProtoList* args = ctx->newList();
     if (value && value != PROTO_NONE) args = args->appendLast(ctx, value);
     const proto::ProtoObject* exc = invokePythonCallable(ctx, stopIterationType, args, nullptr);
-    if (exc && exc != PROTO_NONE) setPendingException(exc);
+    if (exc && exc != PROTO_NONE) raiseException(exc);
 }
 
 void PythonEnvironment::raiseStopAsyncIteration(proto::ProtoContext* ctx) {
     if (!stopAsyncIterationType) return;
     const proto::ProtoList* args = ctx->newList();
     const proto::ProtoObject* exc = invokePythonCallable(ctx, stopAsyncIterationType, args, nullptr);
-    if (exc && exc != PROTO_NONE) setPendingException(exc);
+    if (exc && exc != PROTO_NONE) raiseException(exc);
 }
 
 
@@ -18649,7 +18509,6 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     setItemString = getInternedString(rootContext_, "__setitem__");
     delItemString = getInternedString(rootContext_, "__delitem__");
 
-    pendingExcString = PythonEnvironment::getInternedString(rootContext_, "_pending_exc");
     activeExcsString = PythonEnvironment::getInternedString(rootContext_, "_active_excs");
 
     classString = getInternedString(rootContext_, "__class__");
@@ -23444,14 +23303,11 @@ int PythonEnvironment::executeString(const std::string& source, const std::strin
                 ->appendLast(context, PythonEnvironment::getInternedString(context, "exec")->asObject(context));
             const proto::ProtoObject* code = compileFn->asMethod(context)(
                 context, const_cast<proto::ProtoObject*>(builtinsModule), nullptr, argsView(proto::ProtoListArguments(context, compileArgs)), nullptr);
-            if (!hasPendingException() && code && code != PROTO_NONE) {
+            if (code && code != PROTO_NONE) {
                 const proto::ProtoList* args = context->newList()
                     ->appendLast(context, code)
                     ->appendLast(context, const_cast<proto::ProtoObject*>(mod));
                 execFn->asMethod(context)(context, const_cast<proto::ProtoObject*>(builtinsModule), nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
-            }
-            if (hasPendingException()) {
-                result = -2;
             }
         }
     }
@@ -26628,7 +26484,7 @@ bool PythonEnvironment::deleteAttribute(proto::ProtoContext* ctx, const proto::P
                 invokePythonCallable(ctx, delM,
                     ctx->newList()->appendLast(ctx, descr)->appendLast(ctx, obj), nullptr);
             }
-            return !hasPendingException();
+            return true;
         }
     }
     // No descriptor: delete the object's own attribute.  CPython raises
@@ -28338,7 +28194,6 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                         ctx->newList()->appendLast(ctx, descr)->appendLast(ctx, obj)->appendLast(ctx, value);
                     invokePythonCallable(ctx, setM, setArgs, nullptr);
                 }
-                if (hasPendingException()) return obj;
                 return obj;
             }
         }
@@ -28791,7 +28646,9 @@ skip_cache_label:
             const bool parentLoading = inProgress != cache.end()
                 && inProgress->second && inProgress->second != PROTO_NONE;
             if (!parentLoading && !sysModulesGet(parentName)) {
-                if (!resolveModule(parentName, ctx) && hasPendingException()) return nullptr;
+                // Importing the parent may import this module itself (its
+                // __init__ does), and raises if the parent fails.
+                resolveModule(parentName, ctx);
                 if (const proto::ProtoObject* loaded = sysModulesGet(nameStr)) return loaded;
             }
         }
@@ -28938,7 +28795,6 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
                 } else {
                     return nullptr;
                 }
-                if (!res && hasPendingException()) raised = true;
                 return res;
             };
             // self's answer to `self <op> other`. A Python-level __ne__
@@ -29441,7 +29297,6 @@ void PythonEnvironment::storeName(const std::string& name, const proto::ProtoObj
             if (setitem && setitem != PROTO_NONE) {
                 handledBySetitem = true;
                 callObject(setitem, {frame, key->asObject(ctx), val});
-                if (hasPendingException()) return;
             }
         }
         const proto::ProtoSparseList* own = frame->getOwnAttributes(ctx);
@@ -29502,7 +29357,6 @@ const proto::ProtoObject* PythonEnvironment::callObjectEx(const proto::ProtoObje
         const proto::ProtoObject* it = this->iter(starargs);
         if (it) {
             while (const proto::ProtoObject* val = this->next(it)) {
-                if (this->hasPendingException()) break;
                 if (!val) break;
                 plArgs = plArgs->appendLast(ctx, val);
             }
@@ -29515,7 +29369,6 @@ const proto::ProtoObject* PythonEnvironment::callObjectEx(const proto::ProtoObje
     if (noKeywords) {
         const proto::ProtoObject* result = invokePythonCallable(ctx, callable, plArgs,
                                                                 static_cast<const proto::ProtoSparseList*>(nullptr));
-        if (!result && this->hasPendingException()) return nullptr;
         return result ? result : PROTO_NONE;
     }
 
@@ -29571,7 +29424,6 @@ const proto::ProtoObject* PythonEnvironment::getItem(const proto::ProtoObject* c
         // Native method cell: container will be passed as self by asMethod() call
         args = args->appendLast(ctx, key);
         const proto::ProtoObject* result = method->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(container), nullptr, argsView(proto::ProtoListArguments(ctx, args)), kwargsView(proto::ProtoSparseListKeywordArguments(ctx, this->getEmptySparseList())));
-        if (this->hasPendingException()) return nullptr;
         return result;
     } else {
         // Python callable: check if bound, otherwise prepend self
@@ -29582,7 +29434,6 @@ const proto::ProtoObject* PythonEnvironment::getItem(const proto::ProtoObject* c
         }
         args = args->appendLast(ctx, key);
         const proto::ProtoObject* result = invokePythonCallable(ctx, method, args, getEmptySparseList());
-        if (this->hasPendingException()) return nullptr;
         return result;
     }
 }
@@ -29857,19 +29708,16 @@ const proto::ProtoObject* PythonEnvironment::loadAttr(proto::ProtoContext* ctx, 
             } else {
                 const proto::ProtoObject* cls = getType(ctx, obj);
                 if (cls && cls != PROTO_NONE) getattrFn = getAttribute(ctx, cls, getattrKey, false);
-                if (hasPendingException()) return nullptr;
             }
             if (getattrFn && getattrFn != PROTO_NONE) {
                 // Module-level __getattr__(name) takes only the name;
                 // class-level __getattr__(self, name) takes both.
                 const proto::ProtoObject* nameObj = key->asObject(ctx);
                 val = getattrIsOwn ? callObject(getattrFn, {nameObj}) : callObject(getattrFn, {obj, nameObj});
-                if (hasPendingException()) return nullptr;
                 attrFound = val != nullptr;
             }
         }
     }
-    if (hasPendingException()) return nullptr;
     if (attrFound) return val;
     std::string nameStr;
     key->toUTF8String(ctx, nameStr);
@@ -29881,14 +29729,6 @@ const proto::ProtoObject* PythonEnvironment::loadAttr(const proto::ProtoObject* 
     proto::ProtoContext* ctx = getCurrentContext();
     if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     return loadAttr(ctx, obj, PythonEnvironment::getInternedString(ctx, name));
-}
-
-void PythonEnvironment::chainPendingException(const proto::ProtoObject* context) {
-    // There is no pending exception any more: an exception in flight is a
-    // PyException. Code that must chain one catches it and calls
-    // chainException(ctx, e.exception(), context) before rethrowing; this
-    // entry point (used by protopyc-generated code) is now a no-op.
-    (void)context;
 }
 
 namespace {
@@ -30512,7 +30352,11 @@ const proto::ProtoObject* PythonEnvironment::next(const proto::ProtoObject* obj)
 }
 
 void PythonEnvironment::raiseException(const proto::ProtoObject* exc) {
-    if (exc) setPendingException(exc);
+    // A Python exception is a C++ exception: raising one throws it, pinned
+    // by the PyException while it travels.
+    if (exc && exc != PROTO_NONE) throw PyException(this, exc);
+    // Nothing to raise is an internal error, never a silent return.
+    throw std::logic_error("raiseException: no exception object");
 }
 
 // V75: Construct traceback object (linked list of stack frames)
@@ -30634,7 +30478,7 @@ void PythonEnvironment::augAssignAttr(const proto::ProtoObject* obj, const std::
     const proto::ProtoObject* oldVal = loadAttr(obj, attr.c_str());
     if (!oldVal) return;
     const proto::ProtoObject* newVal = binaryOp(oldVal, binOp, value);
-    if (!newVal || hasPendingException()) return;
+    if (!newVal) return;
     storeAttr(obj, attr.c_str(), newVal);
 }
 
@@ -30889,7 +30733,7 @@ const proto::ProtoObject* PythonEnvironment::getScopeModuleName(proto::proto_ulo
 // (SEGV in ProtoList::appendLast under ASAN), and one thread could read or
 // pop another thread's names. A std::vector is invisible to the GC, so
 // each entry is pinned in transientArgsRoots_ while it is on the stack
-// (same pattern as s_activeExcs / activeExcsRoots_).
+// (same pattern as the py_thread records / pyThreadRoots_).
 static thread_local std::vector<const proto::ProtoTuple*> s_kwNamesStack;
 static thread_local std::vector<proto::ProtoRootSet::Handle> s_kwNamesHandles;
 

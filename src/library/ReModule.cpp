@@ -241,26 +241,43 @@ static long long resolveGroupRef(proto::ProtoContext* ctx,
     return -1;
 }
 
-// match.group([index]) — return the string for a group (default group 0 = full match)
-static const proto::ProtoObject* py_match_group(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
-{
-    const proto::ProtoObject* ref = nullptr;
-    if (posArgs && posArgs->getSize(ctx) >= 1) ref = posArgs->getAt(ctx, 0);
+// One group of a match: its string, None for a group that did not take part;
+// IndexError ("no such group") for a reference to no group, as in CPython.
+static const proto::ProtoObject* matchGroup(proto::ProtoContext* ctx, const proto::ProtoObject* self,
+                                            const proto::ProtoObject* ref) {
     long long idx = resolveGroupRef(ctx, self, ref);
-    if (idx == -2 || ref == nullptr) {
+    if (idx == -2) {
         const proto::ProtoObject* s = self->getAttribute(ctx,
             proto::ProtoString::createSymbol(ctx, "__re_match_str__"));
         return s ? s : PROTO_NONE;
     }
-    if (idx < 1) return PROTO_NONE;
     const proto::ProtoObject* groupsObj = self->getAttribute(ctx,
         proto::ProtoString::createSymbol(ctx, "__re_groups__"));
-    if (!groupsObj || !groupsObj->asList(ctx)) return PROTO_NONE;
-    const proto::ProtoList* groups = groupsObj->asList(ctx);
-    if (idx > (long long)groups->getSize(ctx)) return PROTO_NONE;
+    const proto::ProtoList* groups = groupsObj ? groupsObj->asList(ctx) : nullptr;
+    const long long ngroups = groups ? static_cast<long long>(groups->getSize(ctx)) : 0;
+    if (idx < 1 || idx > ngroups) {
+        if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx)) {
+            env->raiseIndexError(ctx, "no such group");
+        }
+        return nullptr;
+    }
     return groups->getAt(ctx, static_cast<int>(idx - 1));
+}
+
+// match.group([group1, ...]): group 0 (the whole match) without arguments,
+// the group's string for one, a tuple of them for several.
+static const proto::ProtoObject* py_match_group(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
+{
+    const proto::proto_ulong n = posArgs ? posArgs->getSize(ctx) : 0;
+    if (n == 0) return matchGroup(ctx, self, nullptr);
+    if (n == 1) return matchGroup(ctx, self, posArgs->getAt(ctx, 0));
+    const proto::ProtoList* items = ctx->newList();
+    for (proto::proto_ulong i = 0; i < n; ++i) {
+        items = items->appendLast(ctx, matchGroup(ctx, self, posArgs->getAt(ctx, static_cast<int>(i))));
+    }
+    return PythonEnvironment::tupleFromList(ctx, items);
 }
 
 // match.groupdict([default]) — return {name: matched_string} for all named groups.

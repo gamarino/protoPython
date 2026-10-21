@@ -2158,12 +2158,12 @@ TEST_F(FoundationTest, AtexitRegister) {
 
 TEST_F(FoundationTest, ShutilCopyfile) {
     proto::ProtoContext* ctx = env.getContext();
-    const proto::ProtoObject* shutilMod = env.resolve("shutil");
-    if (!shutilMod && env.hasPendingException()) {
-        const proto::ProtoObject* exc = env.peekPendingException();
-        std::string repr = PythonEnvironment::reprObject(ctx, exc);
+    const proto::ProtoObject* shutilMod = nullptr;
+    try {
+        shutilMod = env.resolve("shutil");
+    } catch (const PyException& e) {
+        std::string repr = PythonEnvironment::reprObject(ctx, e.exception());
         printf("Uncaught exception during shutil import: %s\n", repr.c_str());
-        env.clearPendingException();
     }
     ASSERT_NE(shutilMod, nullptr);
     ASSERT_NE(shutilMod, PROTO_NONE);

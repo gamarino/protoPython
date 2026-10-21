@@ -139,15 +139,17 @@ protected:
     static constexpr proto::proto_long kNotMeasured = std::numeric_limits<proto::proto_long>::min();
 
     proto::proto_long retentionOf(const std::string& defs, const std::string& call) {
-        if (env_.executeString(defs, "<retention:defs>") != 0) {
-            env_.takePendingException();
+        try {
+            env_.executeString(defs, "<retention:defs>");
+        } catch (const PyException&) {
             ADD_FAILURE() << "definitions failed to execute";
             return kNotMeasured;
         }
         settle();
         const proto::proto_long before = markedCells(space());
-        if (env_.executeString(call, "<retention:call>") != 0) {
-            env_.takePendingException();
+        try {
+            env_.executeString(call, "<retention:call>");
+        } catch (const PyException&) {
             ADD_FAILURE() << "workload failed to execute";
             return kNotMeasured;
         }

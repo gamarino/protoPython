@@ -68,10 +68,13 @@ protected:
     // Runs `src`, which asserts with _chain_ok() itself; returns the
     // traceback of an uncaught exception, or "" on success.
     static std::string run(const std::string& src, const char* name) {
-        if (env().executeString(src, name) == 0) return "";
         std::ostringstream out;
-        const proto::ProtoObject* exc = env().takePendingException();
-        if (exc && exc != PROTO_NONE) env().handleException(exc, nullptr, out);
+        try {
+            env().executeString(src, name);
+            return "";
+        } catch (const PyException& e) {
+            env().handleException(e.exception(), nullptr, out);
+        }
         return out.str().empty() ? std::string("failed") : out.str();
     }
 };

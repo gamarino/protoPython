@@ -1,0 +1,25 @@
+zip_err raised ValueError boom
+zip_err2 raised ValueError boom
+zip_strict raised ValueError zip() argument 2 is longer than argument 1
+map_err raised ValueError boom
+enumerate_err raised ValueError boom
+filter_err raised ValueError boom
+sum_err raised ValueError boom
+sorted_err raised ValueError boom
+tuple_err raised ValueError boom
+set_err raised ValueError boom
+dict_fromkeys_err raised ValueError boom
+any_err raised ValueError boom
+join_err raised ValueError boom
+reversed_badlen raised ValueError len boom
+reversed_badget raised ValueError get boom
+reversed_idx -> []
+iter_getitem_err raised ValueError get boom
+popitem_empty raised KeyError 'popitem(): dictionary is empty'
+set_pop_empty raised KeyError 'pop from an empty set'
+list_pop_empty raised IndexError pop from empty list
+group_many -> ('ab', None, None)
+group_mixed -> ('ab', 'ab-')
+group_missing raised IndexError no such group
+group_missing_name raised IndexError no such group
+configparser -> (['a', 'b'], '1', 'two', 3)

@@ -61,23 +61,17 @@ inline bool __truth(protoPython::PythonEnvironment* env, const proto::ProtoObjec
 
 // The exception an except clause (or an __exit__ call) handles: sys.exc_info()
 // and a bare `raise` see it until the clause is left, however it is left.
-struct __Handling {
-    explicit __Handling(const proto::ProtoObject* exc) { protoPython::PythonEnvironment::pushActiveException(exc); }
-    ~__Handling() { protoPython::PythonEnvironment::popActiveException(); }
-    __Handling(const __Handling&) = delete;
-    __Handling& operator=(const __Handling&) = delete;
+// It is kept in the callable's context (PythonEnvironment::kActivationSlots).
+struct __Handling : protoPython::PythonEnvironment::HandledExceptionScope {
+    __Handling(protoPython::PythonEnvironment* env, proto::ProtoContext* ctx, const proto::ProtoObject* exc)
+        : HandledExceptionScope(env, ctx, exc) {}
 };
 
 // The same for a finally clause, when it runs for an exception (`exc` is
 // neither null nor None).
-struct __HandlingIf {
-    const bool active;
-    explicit __HandlingIf(const proto::ProtoObject* exc) : active(__inFlight(exc)) {
-        if (active) protoPython::PythonEnvironment::pushActiveException(exc);
-    }
-    ~__HandlingIf() { if (active) protoPython::PythonEnvironment::popActiveException(); }
-    __HandlingIf(const __HandlingIf&) = delete;
-    __HandlingIf& operator=(const __HandlingIf&) = delete;
+struct __HandlingIf : protoPython::PythonEnvironment::HandledExceptionScope {
+    __HandlingIf(protoPython::PythonEnvironment* env, proto::ProtoContext* ctx, const proto::ProtoObject* exc)
+        : HandledExceptionScope(__inFlight(exc) ? env->handledExceptionSlot(ctx) : nullptr, exc) {}
 };
 
 // A class body binds names in its namespace, the current frame while it
@@ -160,8 +154,8 @@ void __mergeKwargs(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env
 
 // A bare `raise`: the exception the innermost running except clause handles.
 [[noreturn]] void __pyReraise(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env) {
-    const proto::ProtoObject* exc = protoPython::PythonEnvironment::getActiveException();
-    if (!exc) env->raiseRuntimeError(ctx, "reraise outside of except block");
+    const proto::ProtoObject* exc = env->getActiveException(ctx);
+    if (!exc) env->raiseRuntimeError(ctx, "No active exception to reraise");
     throw protoPython::PyException(env, exc);
 }
 
@@ -380,7 +374,7 @@ void __withExit(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env,
     const proto::ProtoObject* tb = exc->getAttribute(ctx, protoPython::PythonEnvironment::getInternedString(ctx, "__traceback__"));
     const proto::ProtoObject* suppress;
     {
-        __Handling handling(exc);
+        __Handling handling(env, ctx, exc);
         try {
             suppress = env->callObject(exit, {env->getType(ctx, exc), exc, tb ? tb : PROTO_NONE});
         } catch (const protoPython::PyException& e) {
@@ -891,12 +885,17 @@ void CppGenerator::popAnchor() {
 std::string CppGenerator::openContextScope(const std::string& callerCtx, bool /*unused*/) const {
     // The context is chained to the thread's current context (chainParent),
     // so the collector's root scan reaches its slots; the slot array lives
-    // on the C++ stack for up to ContextScope::SBO_SLOTS slots.
+    // on the C++ stack for up to ContextScope::SBO_SLOTS slots.  The
+    // callable's own slots are followed by the activation slots
+    // (PythonEnvironment::kActivationSlots), which hold the exception its
+    // except or finally clause handles; __nslots counts only its own.
     std::ostringstream o;
     const int nSlots = std::max(slotHigh_, 1);
     o << "    protoPython::ContextScope __scope(" << callerCtx << "->space, " << callerCtx
-      << ", nullptr, nullptr, nullptr, nullptr, " << nSlots << ");\n";
+      << ", nullptr, nullptr, nullptr, nullptr, " << nSlots
+      << " + protoPython::PythonEnvironment::kActivationSlots);\n";
     o << "    proto::ProtoContext* ctx = __scope.context();\n";
+    o << "    protoPython::PythonEnvironment::get(ctx)->markActivation(ctx);\n";
     o << "    const proto::ProtoObject** __slot = ctx->getAutomaticLocals();\n";
     o << "    constexpr unsigned __nslots = " << nSlots << ";\n";
     o << "    (void)__slot; (void)__nslots;\n";
@@ -2866,7 +2865,7 @@ bool CppGenerator::generateTry(TryNode* n) {
             }
             *out_ << ")) {\n";
             *out_ << "        __handled = true;\n";
-            *out_ << "        __Handling __handling(__exc);\n";
+            *out_ << "        __Handling __handling(env, ctx, __exc);\n";
             if (!h.name.empty()) {
                 *out_ << "        if (" << resumeIdle << ") ";
                 emitAssignName(h.name, "__exc");
@@ -2910,7 +2909,7 @@ bool CppGenerator::generateTry(TryNode* n) {
         // the active one (sys.exc_info()), and the __context__ of one the
         // clause raises.
         *out_ << "{\n";
-        *out_ << "    __HandlingIf __finallyHandling(" << propagating << ");\n";
+        *out_ << "    __HandlingIf __finallyHandling(env, ctx, " << propagating << ");\n";
         openClause(first, nFinally);
         *out_ << "try {\n";
         ok = generateBody(n->finalbody.get());

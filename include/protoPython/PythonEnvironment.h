@@ -413,12 +413,11 @@ public:
      *  the __context__ of `exc` (an exception raised while `context` was
      *  handled), first cutting a cycle through `exc` in context's chain, as
      *  CPython does. chainException does so only when `exc` has no context
-     *  yet; chainPendingException applies it to the pending exception. */
+     *  yet. */
     void setExceptionContext(proto::ProtoContext* ctx, const proto::ProtoObject* exc,
                              const proto::ProtoObject* context);
     void chainException(proto::ProtoContext* ctx, const proto::ProtoObject* exc,
                         const proto::ProtoObject* context);
-    void chainPendingException(const proto::ProtoObject* context);
 
     /** Closure cells (docs/INTERNALS_DEEP_DIVE.md, "Closures").  A cell is
      *  the one mutable box a nested scope shares with the scope that binds the
@@ -563,7 +562,9 @@ public:
     const proto::ProtoObject* unaryOp(TokenType op, const proto::ProtoObject* a);
     const proto::ProtoObject* iter(const proto::ProtoObject* obj);
     const proto::ProtoObject* next(const proto::ProtoObject* obj);
-    void raiseException(const proto::ProtoObject* exc);
+    /** Raises `exc`: throws it as a PyException (a Python exception is a
+     *  C++ exception). Every raise helper ends here. */
+    [[noreturn]] void raiseException(const proto::ProtoObject* exc);
     void addTraceback(const proto::ProtoObject* exc, const proto::ProtoObject* frame, int lasti, int lineno);
     // name: the module the import failed for, stored as ImportError.name.
     void raiseImportError(const std::string& msg, const std::string& name = "");
@@ -893,7 +894,8 @@ public:
      * @brief Executes a string of Python code in the current environment's __main__ context.
      * @param source The source code to execute.
      * @param name The name of the source (e.g. "<string>").
-     * @return 0 on success, -2 on runtime failure.
+     * @return 0 on success. A Python exception the code does not handle
+     *         propagates as a PyException.
      */
     int executeString(const std::string& source, const std::string& name = "<string>");
 
@@ -982,48 +984,46 @@ public:
     void incrementSysStats(const char* key);
 
     /**
-     * @brief Sets the pending exception for the current thread. No lock; thread-local.
+     * Activation contexts and the exception being handled.
+     *
+     * Each activation (an interpreted or compiled call, a module or class
+     * body) reserves the last kActivationSlots automatic slots of its
+     * context: [n - 3] holds activationMark(), which tells an activation's
+     * context from a native call's; [n - 2] the exception its running
+     * except or finally clause handles (None when none); [n - 1] belongs to
+     * the activation (the interpreter anchors its frame there).  The
+     * exception being handled (sys.exc_info(), a bare `raise`, the
+     * __context__ of a new exception) is the one of the innermost
+     * activation in the call chain that handles one: it lives in the
+     * contexts, which keep it reachable, and needs no per-thread state.
      */
-    void setPendingException(const proto::ProtoObject* exc);
+    static constexpr unsigned kActivationSlots = 3;
+    const proto::ProtoObject* activationMark() const { return activationMark_; }
+    /** Marks `ctx` as an activation's context; false when it has fewer
+     *  than kActivationSlots automatic slots. */
+    bool markActivation(proto::ProtoContext* ctx) const;
+    /** The handled-exception slot of an activation's context, or nullptr
+     *  when `ctx` is not one. */
+    const proto::ProtoObject** handledExceptionSlot(proto::ProtoContext* ctx) const;
+    /** The exception being handled where `ctx` runs, or nullptr. */
+    const proto::ProtoObject* getActiveException(proto::ProtoContext* ctx) const;
 
-    /**
-     * @brief Gets and clears the pending exception for the current thread. No lock; thread-local.
-     */
-    const proto::ProtoObject* takePendingException();
-
-    /**
-     * @brief Pushes an exception to the active exception stack (used by except blocks).
-     */
-    static void pushActiveException(const proto::ProtoObject* exc);
-
-    /**
-     * @brief Pops the top exception from the active exception stack (used by OP_POP_EXCEPT).
-     */
-    static void popActiveException();
-
-    /**
-     * @brief Gets the currently active exception in the innermost except block.
-     */
-    static const proto::ProtoObject* getActiveException();
-
-    /**
-     * @brief Helper to save the thread's pending exception context and restore it on destruction.
-     * Mirrors CPython's PyErr_Fetch / PyErr_Restore semantics to protect surrounding try-except
-     * blocks from being overwritten by internal C++ exception handling.
-     */
-    class ExceptionStateSaver {
-        PythonEnvironment* env;
-        const proto::ProtoObject* savedExc;
+    /** While in scope, `exc` is the exception the activation whose
+     *  handled-exception slot is `slot` handles (the slot's previous value
+     *  is restored however the scope is left). A null slot does nothing. */
+    class HandledExceptionScope {
+        const proto::ProtoObject** slot_;
+        const proto::ProtoObject* saved_;
     public:
-        ExceptionStateSaver(PythonEnvironment* e) : env(e), savedExc(nullptr) {
-            if (env) savedExc = env->peekPendingException();
+        HandledExceptionScope(const proto::ProtoObject** slot, const proto::ProtoObject* exc)
+            : slot_(slot), saved_(slot ? *slot : nullptr) {
+            if (slot_) *slot_ = exc ? exc : PROTO_NONE;
         }
-        ~ExceptionStateSaver() {
-            if (env) {
-                // Restore the saved pending exception (protects surrounding Python blocks).
-                env->setPendingException(savedExc);
-            }
-        }
+        HandledExceptionScope(PythonEnvironment* env, proto::ProtoContext* ctx, const proto::ProtoObject* exc)
+            : HandledExceptionScope(env ? env->handledExceptionSlot(ctx) : nullptr, exc) {}
+        ~HandledExceptionScope() { if (slot_) *slot_ = saved_; }
+        HandledExceptionScope(const HandledExceptionScope&) = delete;
+        HandledExceptionScope& operator=(const HandledExceptionScope&) = delete;
     };
 
     /**
@@ -1111,14 +1111,6 @@ public:
      */
     static const proto::ProtoObject* getScopeModuleName(proto::proto_ulong depth);
     
-    /** The address of the current thread's pending-exception flag, the
-     *  value hasPendingException() reads. It stays valid while the thread
-     *  runs, so code protopyc generates reads it once per call and then
-     *  tests the flag after each operation without a thread-local lookup
-     *  (a cross-library thread_local access costs a __tls_get_addr call, and
-     *  on Windows needs an exported function). */
-    static const bool* pendingExceptionFlagAddress();
-
     // Windows: thread_local data cannot be imported from a DLL, so outside
     // protoPython.dll (protopy, tests, extension modules) the inline accessors
     // below call these exported functions instead of reading the variables.
@@ -1128,7 +1120,6 @@ public:
     static void setThreadContextOutOfLine(proto::ProtoContext* ctx);
     static PythonEnvironment* threadEnvOutOfLine();
     static void setThreadEnvOutOfLine(PythonEnvironment* env);
-    static bool pendingExceptionFlagOutOfLine();
 #endif
 #if defined(_WIN32) && !defined(protoPython_EXPORTS)
     /** Sets the current thread-local context (for RAII management). */
@@ -1176,114 +1167,6 @@ public:
     static thread_local const LiveFrame* s_liveFrames;
     static thread_local const proto::ProtoObject* s_currentGlobals;
     static thread_local const proto::ProtoObject* s_currentCodeObject;
-    /**
-     * @brief Fast-path mirror of the per-thread pending-exception slot.
-     *
-     * The authoritative storage is the `_pending_exc` attribute on the
-     * per-thread Python thread object (see `setPendingException` /
-     * `peekPendingException`).  Every call to `hasPendingException()` from
-     * the bytecode dispatcher would otherwise pay a full `getAttribute`
-     * resolution (cache check, mutable-snapshot resolution, attribute walk)
-     * on every iteration that needs an exception check — 52 such call sites
-     * inside `executeBytecodeRange`, called millions of times on
-     * call_recursion (≈ 4 % of total CPU per profile).  This bool mirrors
-     * the slot's set/clear state so the hot check collapses to a single TLS
-     * bool read; `peekPendingException` / `takePendingException` still walk
-     * the authoritative attribute path because they need the actual value.
-     */
-    static thread_local bool s_pendingExcFlag;
-
-    /**
-     * @brief TLS mirror of the pending-exception object.
-     *
-     * The authoritative storage remains the `_pending_exc` attribute on
-     * the per-thread Python thread object — that is what keeps the
-     * exception alive across GC cycles (the py_thread is rooted via
-     * `s_globalThreadRootsDict`).  Reading the storage through
-     * `getAttribute`, however, is mediated by protoCore's per-thread
-     * attribute cache, which is keyed on the resolved snapshot pointer
-     * for mutable objects.  Under sustained mutable-shard contention
-     * (observed empirically at 4+ consecutive `json.dumps` calls in a
-     * module body) the cache could occasionally serve a stale entry
-     * that returned `nullptr` even though `setPendingException` had
-     * just stored a valid exception object.  The dispatcher would then
-     * see `hasPendingException()==true` (TLS bool) but
-     * `peekPendingException()==nullptr` and bail out of the frame
-     * silently — the SP0-P2.5 silent-halt bug.
-     *
-     * Mirroring the pointer in TLS makes the read path completely
-     * cache-independent: `peekPendingException()` returns the TLS
-     * pointer directly.  The TLS slot is updated in lockstep with the
-     * authoritative storage in `setPendingException`,
-     * `clearPendingException`, and `takePendingException`, so the two
-     * stay consistent by construction.  Because the storage write
-     * still happens on every set/clear, the GC reachability story is
-     * unchanged.
-     */
-    static thread_local const proto::ProtoObject* s_pendingExc;
-
-    /**
-     * @brief TLS mirror of the active-exception stack (per-thread).
-     *
-     * Read path for `getActiveException`.  Same rationale as
-     * `s_pendingExc`: the prior authoritative storage on `_active_excs`
-     * (a ProtoList attribute on the per-thread py_thread object) went
-     * through protoCore's mutable-shard attribute cache, which could
-     * serve stale (null) results when a value was set in context A and
-     * read back in context B even though both share the same OS thread.
-     * That manifested as the `RuntimeError: reraise outside of except
-     * block` SP-G/B5 bug.
-     *
-     * GC reachability is provided by `activeExcsRoots_` (Mechanism B,
-     * `ProtoRootSet`): every push pins the exception there, every pop
-     * releases the corresponding handle (parallel-stacked in
-     * `s_activeExcsHandles`).  The plain `std::vector` of bare
-     * `ProtoObject*` is safe precisely because the root set keeps
-     * each entry reachable from the GC's mark phase — and a
-     * `std::vector` (rather than a ProtoList) sidesteps the
-     * cross-context safety footguns of cached protoCore collection
-     * pointers (a ProtoList allocated in context A and reused from
-     * context B trips dirty-segment assertions).
-     */
-    static thread_local std::vector<const proto::ProtoObject*> s_activeExcs;
-
-    /**
-     * @brief TLS stack of `ProtoRootSet::Handle` pins parallel to
-     *        `s_activeExcs`.  See `activeExcsRoots_`.
-     *
-     * On `pushActiveException`: `h = activeExcsRoots_->add(exc);
-     *                            s_activeExcsHandles.push_back(h);`.
-     * On `popActiveException`:  `activeExcsRoots_->remove(s_activeExcsHandles.back());
-     *                            s_activeExcsHandles.pop_back();`.
-     *
-     * The handle is a 64-bit integer with embedded generation, so a
-     * stale `remove` is a silent no-op (see protoCore.h ProtoRootSet
-     * docs).  The two stacks (`s_activeExcs`, `s_activeExcsHandles`)
-     * grow and shrink in lockstep; their sizes must always match.
-     */
-    static thread_local std::vector<proto::ProtoRootSet::Handle> s_activeExcsHandles;
-
-    /**
-     * @brief Returns true if there is a pending exception.
-     *
-     * Inline fast path: a single TLS bool read.  Defined in the header so
-     * the hot dispatcher inlines it instead of paying a cross-DSO call.
-     */
-#if defined(_WIN32) && !defined(protoPython_EXPORTS)
-    bool hasPendingException() const {
-        return threadContextOutOfLine() != nullptr && pendingExceptionFlagOutOfLine();
-    }
-#else
-    bool hasPendingException() const {
-        return s_threadContext != nullptr && s_pendingExcFlag;
-    }
-#endif
-
-    /**
-     * @brief Returns the pending exception without clearing it.
-     */
-    const proto::ProtoObject* peekPendingException() const;
-
     /**
      * @brief Returns the environment for the given context (for use by dunder methods).
      */
@@ -1380,11 +1263,6 @@ public:
     const proto::ProtoObject* getStopIterationValue(proto::ProtoContext* ctx, const proto::ProtoObject* exc) const;
 
     /**
-     * @brief Clears the pending exception.
-     */
-    void clearPendingException();
-
-    /**
      * @brief Returns true if this environment is running in interactive mode.
      */
     bool isInteractive() const { return isInteractive_; }
@@ -1453,24 +1331,9 @@ private:
     proto::ProtoSpace* space_;
     proto::ProtoContext* rootContext_;
 
-    /**
-     * @brief GC root set that pins active exceptions for their
-     *        bounded lifetime (push/pop in `pushActiveException`
-     *        / `popActiveException`).
-     *
-     * Replaces the prior `_active_excs` ProtoList attribute on
-     * py_thread.  That attribute path round-tripped through the
-     * mutable-shard attribute cache — the same cache whose stale-read
-     * behaviour motivated the TLS read mirror in the first place
-     * (SP-G/B5).  Pinning each pushed exception in a `ProtoRootSet`
-     * keeps the values reachable from the tracing GC without the
-     * cache hazard, and lets the read path stay on the cache-free
-     * `s_activeExcs` TLS vector.
-     *
-     * Owned by this `PythonEnvironment`: created in the constructor,
-     * destroyed in the destructor (`space_->destroyRootSet`).
-     */
-    proto::ProtoRootSet* activeExcsRoots_{nullptr};
+    /** See kActivationSlots: a mutable object nothing else references,
+     *  so no Python value can be mistaken for it. A root. */
+    const proto::ProtoObject* activationMark_{nullptr};
 
     /**
      * @brief GC root set that pins each OS thread's `py_thread` object for
@@ -1821,7 +1684,6 @@ private:
     const proto::ProtoString* pathS{nullptr};
     const proto::ProtoString* modulesS{nullptr};
 
-    const proto::ProtoString* pendingExcString{nullptr};
     const proto::ProtoString* activeExcsString{nullptr};
 
     const proto::ProtoString* lenString{nullptr};
@@ -1963,8 +1825,6 @@ private:
     const proto::ProtoString* getExceptionRootString() const { return exceptionRootS; }
     const proto::ProtoString* getAddS() const { return addS; }
 
-    void clearExceptionsWrapper() { clearPendingException(); }
-    void setPendingExceptionWrapper(const proto::ProtoObject* exc) { setPendingException(exc); };
 
     const proto::ProtoObject* zeroInteger{nullptr};
     const proto::ProtoObject* oneInteger{nullptr};

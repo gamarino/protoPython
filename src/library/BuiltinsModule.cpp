@@ -1874,14 +1874,10 @@ static const proto::ProtoObject* py_enumerate_next(
         return nullptr;
     }
 
-    const proto::ProtoObject* nextMethod = it->getAttribute(context, nextS);
-    if (!nextMethod || !nextMethod->asMethod(context)) {
-        if (get_env_diag()) fprintf(stderr, "DEBUG: py_enumerate_next nextMethod missing or not a method\n");
-        return nullptr;
-    }
-    
-    const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
-    const proto::ProtoObject* value = nextMethod->asMethod(context)(context, it, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr);
+    (void)nextS;
+    // env->next drives a native or a Python __next__ and answers
+    // StopIteration with nullptr; any other exception propagates.
+    const proto::ProtoObject* value = env ? env->next(it) : nullptr;
     if (!value) {
         if (get_env_diag()) fprintf(stderr, "DEBUG: py_enumerate_next nextMethod returned nullptr\n");
         return nullptr;
@@ -1931,15 +1927,11 @@ static const proto::ProtoObject* py_reversed(
         // env->iter calls __iter__: a native method takes it as self (it got
         // none, so reversed([1, 2]) was empty), a Python function as its
         // first argument.
-        const proto::ProtoObject* r = nullptr;
-        try {
-            r = revMethod->asMethod(context)
-                ? revMethod->asMethod(context)(context, obj, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr)
-                : ::protoPython::invokePythonCallable(context, revMethod,
-                      context->newList()->appendLast(context, obj), nullptr);
-        } catch (const PyException&) {
-            r = nullptr;  // fall back to the sequence protocol below
-        }
+        // Its exceptions propagate, as in CPython.
+        const proto::ProtoObject* r = revMethod->asMethod(context)
+            ? revMethod->asMethod(context)(context, obj, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr)
+            : ::protoPython::invokePythonCallable(context, revMethod,
+                  context->newList()->appendLast(context, obj), nullptr);
         if (r) return r;
     }
 
@@ -5558,7 +5550,7 @@ static const proto::ProtoObject* py_raise(
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
     if (!env) return PROTO_NONE;
     if (positionalParameters->getSize(context) > 0) {
-        env->setPendingException(positionalParameters->getAt(context, 0));
+        env->raiseException(positionalParameters->getAt(context, 0));
     }
     return PROTO_NONE;
 }
@@ -10526,16 +10518,9 @@ static const proto::ProtoObject* py_zip_next(
 
     for (proto::proto_ulong i = 0; i < n; ++i) {
         const proto::ProtoObject* it = iters->getAt(context, static_cast<int>(i));
-        const proto::ProtoObject* nextM = it ? it->getAttribute(context, nextS) : nullptr;
-        if (!nextM || !nextM->asMethod(context)) return nullptr;
-        // Any exception from an argument's __next__ ends the zip, as when
-        // it was cleared from the pending state.
-        const proto::ProtoObject* val = nullptr;
-        try {
-            val = nextM->asMethod(context)(context, it, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr);
-        } catch (const PyException&) {
-            val = nullptr;
-        }
+        // A native or a Python __next__: StopIteration ends the zip (as in
+        // CPython), any other exception propagates.
+        const proto::ProtoObject* val = env ? env->next(it) : nullptr;
         if (!val) {
             if (!strict) return nullptr;
             firstExhaustedAt = static_cast<long long>(i);
@@ -10558,14 +10543,7 @@ static const proto::ProtoObject* py_zip_next(
         }
         for (proto::proto_ulong j = firstExhaustedAt + 1; j < n; ++j) {
             const proto::ProtoObject* it = iters->getAt(context, static_cast<int>(j));
-            const proto::ProtoObject* nextM = it ? it->getAttribute(context, nextS) : nullptr;
-            if (!nextM || !nextM->asMethod(context)) continue;
-            const proto::ProtoObject* val = nullptr;
-            try {
-                val = nextM->asMethod(context)(context, it, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr);
-            } catch (const PyException&) {
-                val = nullptr;
-            }
+            const proto::ProtoObject* val = env ? env->next(it) : nullptr;
             if (val) {
                 if (env) env->raiseValueError(context,
                     PythonEnvironment::getInternedString(context,
@@ -10673,16 +10651,7 @@ static const proto::ProtoObject* py_filter_next(
         }
         return nullptr;
     }
-    const proto::ProtoObject* nextM = it->getAttribute(context, nextS);
-    if (!nextM || !nextM->asMethod(context)) {
-        if (get_env_diag()) {
-            fprintf(stderr, "DEBUG: py_map_next failing: it=%p nextM=%p\n", (void*)it, (void*)nextM);
-            fflush(stderr);
-        }
-        return nullptr;
-    }
-
-    const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
+    (void)nextS;
 
     // CPython convention: filter(None, iterable) treats `None` as the
     // truthiness predicate (i.e. yields val whenever bool(val) is True).
@@ -10692,7 +10661,9 @@ static const proto::ProtoObject* py_filter_next(
     bool noneFunc = (!func || func == PROTO_NONE);
 
     for (;;) {
-        const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr);
+        // A native or a Python __next__; StopIteration ends the filter,
+        // any other exception propagates.
+        const proto::ProtoObject* val = env ? env->next(it) : nullptr;
         if (!val) return nullptr;
 
         if (noneFunc) {

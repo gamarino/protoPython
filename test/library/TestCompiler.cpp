@@ -39,12 +39,6 @@ protected:
 
     void SetUp() override { ctx = env.getContext(); }
 
-    void TearDown() override {
-        // Clear any pending exception left by a failing test so subsequent tests
-        // start with a clean execution state (shared env means shared exception slot).
-        env.takePendingException();
-    }
-
     // Fresh mutable ProtoObject used as module frame.
     proto::ProtoObject* newFrame() {
         return const_cast<proto::ProtoObject*>(ctx->newObject(true));

@@ -74,15 +74,15 @@ env->storeName("coro", env->callObject(env->lookupName("async_func"), {}));
 #line 8 "../tests/test_async_native.py"
 env->callObject(env->lookupName("print"), {ctx->fromUTF8String("Starting coro")});
 #line 9 "../tests/test_async_native.py"
-{
+try {
 #line 10 "source.py"
 env->callObject(env->lookupName("print"), {ctx->fromUTF8String("Yielded:"), env->callObject(env->getAttr(env->lookupName("coro"), "send"), {PROTO_NONE})});
 #line 11 "source.py"
 env->callObject(env->lookupName("print"), {ctx->fromUTF8String("Resuming...")});
 #line 12 "source.py"
 env->callObject(env->getAttr(env->lookupName("coro"), "send"), {PROTO_NONE});
-        if (env->hasPendingException()) {
-            auto* __exc = env->takePendingException();
+        } catch (const protoPython::PyException& __e) {
+            const proto::ProtoObject* __exc = __e.exception();
             bool __handled = false;
             if (!__handled && env->isException(__exc, env->lookupName("StopIteration"))) {
                 __handled = true;
@@ -96,8 +96,7 @@ env->callObject(env->lookupName("print"), {ctx->fromUTF8String("Result:"), env->
 #line 16 "source.py"
 env->callObject(env->lookupName("print"), {ctx->fromUTF8String("Error:"), env->lookupName("e")});
             }
-            if (!__handled) env->raiseException(__exc);
+            if (!__handled) throw;
         }
-    };
     return nullptr;
 }

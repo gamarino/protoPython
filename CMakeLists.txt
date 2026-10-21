@@ -1446,11 +1446,17 @@ set_tests_properties(protopy_closure_semantics protopy_closure_semantics_gc PROP
 #   exception_nesting: Python try / except / finally / with as C++ try /
 #     catch: yields at every level, gen.throw / close, the handled exception
 #     after a resume, chaining, suppression, break / continue through finally.
+#   exc_info_semantics: the exception being handled (sys.exc_info(), a bare
+#     raise, __context__) across callees, generators, finally and threads.
+#   iteration_errors: errors raised while builtins iterate propagate (zip,
+#     map, enumerate, filter, reversed, ...); Match.group; configparser.
 set(PROTOPY_STDLIB_ORACLE_TESTS
     tuple_semantics
     attribute_access
     instantiation
     exception_nesting
+    exc_info_semantics
+    iteration_errors
     ordered_dict_iterables
     abc_virtual_subclasses
     counter_methods

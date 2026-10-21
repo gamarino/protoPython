@@ -1,0 +1,21 @@
+top None None
+in handler ('ValueError', 'a')
+callee sees ('ValueError', 'a')
+nested ('KeyError', "'b'")
+after nested ('ValueError', 'a')
+after None
+gen1 ('TypeError', 'g')
+caller between None
+gen2 under handler ('TypeError', 'g')
+gen3 under handler ('IndexError', 'outer')
+finally ('ValueError', 'f')
+bare raise from callee re
+bare raise outside No active exception to reraise
+context ValueError('ctx')
+getattr sees ('ValueError', 'ga')
+getattr outside None
+throw ('ValueError', 'thrown')
+exit sees ('ZeroDivisionError', 'cm')
+after with None
+thread None
+end (None, None, None)

@@ -324,7 +324,7 @@ bool PythonEnvironment::storeAttr(proto::ProtoContext* ctx, const proto::ProtoOb
     }
     setAttribute(ctx, obj, nameS, value);
     if (obj == getBuiltinsModule() || getType(ctx, obj) == getModulePrototype()) invalidateResolveCache();
-    return !hasPendingException();
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -1778,15 +1778,6 @@ static const proto::ProtoObject* binaryOpDispatch(proto::ProtoContext* ctx, cons
     const proto::ProtoObject* res = invokeDunder(ctx, a, dunderS, argsB);
     if (env && res == env->getNotImplementedPrototype()) sawNotImplemented = true;
     if (!res || (env && res == env->getNotImplementedPrototype())) {
-        if (env && env->hasPendingException()) {
-            // STRUCT-242: invokeDunder raised TypeError due to wrapper-
-            // receiver mismatch on an explicit misbinding (e.g.
-            // `class A(int): __add__ = str.__add__`).  Propagate the
-            // exception instead of attempting the reflected __radd__
-            // fallback (which would dispatch to int's inherited adder
-            // and silently produce a wrong result).
-            return nullptr;
-        }
         const proto::ProtoList* argsA = ctx->newList()->appendLast(ctx, a);
         res = invokeDunder(ctx, b, rdunderS, argsA);
         if (env && res == env->getNotImplementedPrototype()) sawNotImplemented = true;
@@ -1801,8 +1792,7 @@ static const proto::ProtoObject* binaryOpDispatch(proto::ProtoContext* ctx, cons
     // point rather than letting the operator-level dispatcher swallow
     // null silently.
     (void)sawNotImplemented;
-    if ((!res || (env && res == env->getNotImplementedPrototype()))
-        && env && !env->hasPendingException()) {
+    if ((!res || (env && res == env->getNotImplementedPrototype())) && env) {
         std::string aName = "?", bName = "?";
         const proto::ProtoString* nameS = env->getNameString();
         const proto::ProtoObject* aCls2 = env->getType(ctx, a);
@@ -2646,18 +2636,6 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
             const proto::ProtoObject* res = invokeDunder(ctx, b, containsS, args);
             if (res) {
                 found = isTruthy(ctx, res);
-            } else if (env && env->hasPendingException()) {
-                // CPython rule: a __contains__ implementation that raises
-                // — e.g. str.__contains__(non_str) → TypeError — must
-                // propagate; previously this branch swallowed every
-                // pending exception under the rationale "frame.__contains__
-                // can set TypeError, treat as not found".  The blanket
-                // suppression hid genuine type errors at user-facing
-                // sites like `5 in 'hello'`.  Only swallow when the
-                // dunder is missing (no exception path); a raised
-                // TypeError propagates so the caller sees the same
-                // diagnostic CPython emits.
-                return nullptr;
             } else if (b->isString(ctx) && a->isString(ctx)) {
                 std::string s_sub, s_full;
                 a->asString(ctx)->toUTF8String(ctx, s_sub);
@@ -2847,7 +2825,6 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
         fflush(stderr);
     }
 
-    if (env && env->hasPendingException()) return nullptr;
     RecursionScope recScope(env, ctx);
     if (recScope.overflowed()) return nullptr;
 
@@ -2882,7 +2859,7 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
         // calls the method itself (`it.__next__()`, as heapq.merge does) must
         // see StopIteration, as CPython's __next__ slot wrapper raises it;
         // it received None instead.
-        if (!result && env && self && !env->hasPendingException()) {
+        if (!result && env && self) {
             const proto::ProtoObject* nextAttr = self->getAttribute(ctx, env->getNextString());
             if (nextAttr && nextAttr->asMethod(ctx) == method) env->raiseStopIteration(ctx);
         }
@@ -2971,7 +2948,6 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
     }
 
     if (!callAttr || callAttr == PROTO_NONE) {
-        if (env && env->hasPendingException()) return nullptr;
         if (env) {
             std::string repr = PythonEnvironment::reprObject(ctx, callable);
             env->raiseTypeError(ctx, "'" + repr + "' object is not callable");
@@ -3470,12 +3446,8 @@ static const proto::ProtoObject* py_generator_resume(
     self->setAttribute(ctx, env->getGiPCString(), ctx->fromInteger(nextPc));
 
     if (get_env_diag()) {
-        fprintf(stderr, "DEBUG: py_generator_send_impl finished. yielded=%d, result=%p, hasPendingException=%d\n", 
-                (int)yielded, (void*)result, (int)env->hasPendingException());
-        if (env->hasPendingException()) {
-             const proto::ProtoObject* exc = env->peekPendingException();
-             fprintf(stderr, "DEBUG: py_generator_send_impl pending exception: %p\n", (void*)exc);
-        }
+        fprintf(stderr, "DEBUG: py_generator_send_impl finished. yielded=%d, result=%p\n",
+                (int)yielded, (void*)result);
         fflush(stderr);
     }
 
@@ -3984,7 +3956,7 @@ bool invokeInitSubclass(proto::ProtoContext* ctx,
         invokeCallable(ctx, hook, ctx->newList()->appendLast(ctx, cls), kw);
         g_initSubclassClass = outerClass;
         if (pushNames) env->popKwNames();
-        return !env->hasPendingException();
+        return true;
     }
     return true;
 }
@@ -4043,7 +4015,6 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
                 }
                 const proto::ProtoObject* initRes = invokePythonCallable(ctx, initM, initArgs,
                     kwargs ? kwargs->asSparseList(ctx) : nullptr);
-                if (env->hasPendingException()) return nullptr;
                 // CPython: a Python __init__ must return None.
                 if (initRes && initRes != PROTO_NONE && env->getCodeString()
                         && initM->hasOwnAttribute(ctx, env->getCodeString()) == PROTO_TRUE) {
@@ -4073,10 +4044,6 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
         
         obj = const_cast<proto::ProtoObject*>(invokeCallable(ctx, newM, newArgs, kwargs ? kwargs->asSparseList(ctx) : nullptr));
         if (!obj || obj == PROTO_NONE) {
-             if (env && env->hasPendingException()) {
-                 if (get_env_diag()) fprintf(stderr, "DEBUG runUserClassCall: Pending exception detected!\n");
-                 return nullptr; 
-             }
         }
     }
 
@@ -4212,10 +4179,6 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
                 }
                 const proto::ProtoObject* initRes = invokePythonCallable(ctx, initM, initArgs,
                     kwargs ? kwargs->asSparseList(ctx) : nullptr);
-                if (env && env->hasPendingException()) {
-                    if (get_env_diag()) fprintf(stderr, "DEBUG runUserClassCall: initM raised an exception!\n");
-                    return nullptr;
-                }
                 // CPython: __init__ MUST return None.  Restrict to
                 // Python-user __init__ functions (i.e. those carrying
                 // own __code__) so native helpers in our bundled
@@ -4363,29 +4326,28 @@ PROTOPY_EXC_NOINLINE static void chainCaughtException(proto::ProtoContext* ctx, 
 // `raise exc` (an instance): chained to the active exception, then thrown.
 [[noreturn]] PROTOPY_EXC_NOINLINE static void raiseChainedException(proto::ProtoContext* ctx, PythonEnvironment* env,
                                                                     const proto::ProtoObject* exc) {
-    setExceptionContext(ctx, exc, env->getActiveException());
+    setExceptionContext(ctx, exc, env->getActiveException(ctx));
     throw PyException(env, exc);
 }
 
 // An exception crossing an activation: give it the activation's traceback
-// entry and chain it to the active exception.
+// entry. The innermost activation it crosses (`first`: it has no traceback
+// yet) also chains it to the exception handled where it was raised, as a
+// raise in Python code is chained when it is raised; an outer activation
+// does not chain it again.
 PROTOPY_EXC_NOINLINE static void noteCaughtException(proto::ProtoContext* ctx, PythonEnvironment* env,
                                                      const proto::ProtoObject* exc, const proto::ProtoObject* tbFrame,
-                                                     int lasti, int line) {
+                                                     int lasti, int line, bool first) {
     env->addTraceback(exc, tbFrame, lasti, line);
-    chainCaughtException(ctx, exc, env->getActiveException());
+    if (first) chainCaughtException(ctx, exc, env->getActiveException(ctx));
 }
 
-// OP_RERAISE: re-raise the active exception (the one the innermost running
-// except or finally clause handles) after popping `pops` entries of the
-// active-exception stack: 1 when it leaves its own clause, 2 when a clause
-// raised a new exception (now the active one) while handling another.
-PROTOPY_EXC_NOINLINE static void reraiseActiveException(proto::ProtoContext* ctx, PythonEnvironment* env, int pops) {
-    const proto::ProtoObject* activeExc = env->getActiveException();
-    for (int k = 0; k < pops; ++k) env->popActiveException();
+// OP_RERAISE outside a handler level: re-raise the exception being handled.
+PROTOPY_EXC_NOINLINE static void reraiseActiveException(proto::ProtoContext* ctx, PythonEnvironment* env) {
+    const proto::ProtoObject* activeExc = env->getActiveException(ctx);
     if (activeExc) {
         reraiseException(env, activeExc);
-    } else if (!env->hasPendingException()) {
+    } else {
         env->raiseRuntimeError(ctx, "No active exception to reraise");
     }
 }
@@ -4410,7 +4372,7 @@ PROTOPY_EXC_NOINLINE static void raiseExceptionFrom(proto::ProtoContext* ctx, Py
         exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__suppress_context__"),
                           PROTO_TRUE);
     }
-    setExceptionContext(ctx, exc, env->getActiveException());
+    setExceptionContext(ctx, exc, env->getActiveException(ctx));
     throw PyException(env, exc);
 }
 
@@ -4564,7 +4526,6 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
             }
             const proto::ProtoObject* result =
                 invokeCallable(ctx, entries, ctx->newList()->appendLast(ctx, bases));
-            if (env->hasPendingException()) { failed = true; break; }
             ::protoPython::TupleView resultTuple = result ? ::protoPython::PythonEnvironment::tupleView(ctx, result) : nullptr;
             if (!resultTuple) {
                 env->raiseTypeError(ctx, "__mro_entries__ must return a tuple");
@@ -4874,11 +4835,6 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
                     bestMeta = baseMeta;
                 }
             }
-        }
-        if (!bestMeta && env && env->hasPendingException()) {
-            // Metaclass conflict raised — unwind through the
-            // dispatch loop's exception handling.
-            return nullptr;
         }
         metaclass = bestMeta;
     }
@@ -5362,12 +5318,6 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
         // unwinds below.
     }
 
-    if (env && env->hasPendingException()) {
-        // The metaclass call or __init_subclass__ raised: let the
-        // dispatch loop unwind through the enclosing handlers, as the
-        // class-body path above does.
-        return nullptr;
-    }
     return targetClass ? targetClass : PROTO_NONE;
 }
 
@@ -5401,6 +5351,9 @@ struct Activation {
     proto::proto_ulong initialTop;
     proto::proto_ulong* finalTopPtr;
     const proto::ProtoObject** frameAnchor;
+    // This activation's handled-exception slot (see kActivationSlots), or
+    // nullptr when its context has no room for one.
+    const proto::ProtoObject** handledSlot = nullptr;
     bool sync_globals;
     // A constructor, not aggregate initialization: initializing the aggregate
     // zero-filled the whole object first (rep stos), on every call.
@@ -5484,7 +5437,8 @@ struct Activation {
                 PythonEnvironment::getInternedString(ctx, "f_lineno"), ctx->fromInteger(tbLine)));
             tbFrame = synth;
         }
-        noteCaughtException(ctx, env, exc, tbFrame, static_cast<int>(lastPc), tbLine);
+        noteCaughtException(ctx, env, exc, tbFrame, static_cast<int>(lastPc), tbLine,
+                            !tbNow || tbNow == PROTO_NONE);
         notedExc = exc;
         notedTb = exc->getAttribute(ctx, tbS);
     }
@@ -5497,19 +5451,11 @@ struct Activation {
         handlerLevel.isHandler = true;
         handlerLevel.exc = handled;
         blockStack.push_back(handlerLevel);
-        if (env) env->pushActiveException(handled);
         struct HandlerGuard {
             std::vector<Block>& levels;
-            PythonEnvironment* env;
-            ~HandlerGuard() {
-                levels.pop_back();
-                // popActiveException can raise TypeError (list removeAt): a
-                // destructor, possibly run while unwinding, must not throw.
-                if (env) {
-                    try { env->popActiveException(); } catch (const PyException&) {}
-                }
-            }
-        } handlerGuard{blockStack, env};
+            ~HandlerGuard() { levels.pop_back(); }
+        } handlerGuard{blockStack};
+        PythonEnvironment::HandledExceptionScope handling(handledSlot, handled);
         levelExit = LevelExit::Return;
         return handlerBody();
     }
@@ -5604,11 +5550,6 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             // the handler could observe the receiver between them.
             if (attrGroupState != 1 && signal_module::hasPendingSignal()) {
                 signal_module::checkAndDeliverPendingSignals(ctx, env);
-                if (env && env->hasPendingException()) {
-                    // The handler raised (e.g. KeyboardInterrupt). Let
-                    // the standard exception-unwinding path pick it up
-                    // by falling through; do NOT clear it here.
-                }
             }
         }
         int op = bc[i];
@@ -5656,9 +5597,8 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
         // escape the bytecode loop, hit std::terminate, and SIGABRT the
         // process — making any test that hits a code path with weakly-typed
         // dispatch (test_re, test_types, test_descr…) into a hard crash
-        // instead of a recoverable Python-level error.  Catch them here, set
-        // a pending RuntimeError, and let the normal hasPendingException
-        // unwinding take over so the user sees a proper Python traceback.
+        // instead of a recoverable Python-level error.  Catch them here and
+        // raise a RuntimeError, so the user sees a proper Python traceback.
         lastPc = i;
         try {
         switch (op) {
@@ -5721,12 +5661,6 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             const proto::ProtoString* sendS = env ? env->getSendString() : PythonEnvironment::getInternedString(ctx, "send");
             const proto::ProtoObject* result = nullptr;
 
-            // PB8: if the outer generator carries a pending exception
-            // (caller did .throw()), forward it INTO subIter via
-            // subIter.throw(exc) — that's the yield-from contract.
-            // If subIter has no `throw` method, leave the exception
-            // alone; the hasPendingException branch below will let it
-            // propagate normally.
             // gen.throw() on the delegating generator: thrown INTO subIter
             // through subIter.throw(exc), the yield-from contract; without a
             // throw method it is raised here.
@@ -5917,7 +5851,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                     } else {
                         std::string nStr;
                         nameS->toUTF8String(ctx, nStr);
-                        if (env && !env->hasPendingException()) env->raiseNameError(ctx, nStr);
+                        if (env) env->raiseNameError(ctx, nStr);
                         i = next_i;
                         continue;
                     }
@@ -5970,11 +5904,6 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                                 const proto::ProtoList* args = ctx->newList()->appendLast(ctx, nameObj)->appendLast(ctx, val);
                                 const proto::ProtoObject* setRet = invokeDunder(ctx, frame, env->getSetItemString(), args);
                                 (void)setRet;
-                                if (env->hasPendingException()) {
-                                    stack.pop_back();
-                                    i = next_i;
-                                    continue;
-                                }
                             }
                         }
                     }
@@ -6114,12 +6043,11 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 result = invokeDunder(ctx, a, iaddS, args);
                 if (env && result == env->getNotImplementedPrototype()) result = nullptr;
             }
-            if (!result && (!env || !env->hasPendingException())) {
+            if (!result) {
                 result = binaryAdd(ctx, a, b);
             }
             stack.pop_back();
             stack.back() = result ? result : PROTO_NONE;
-            if (!result && env && env->hasPendingException()) continue;
         } break;
         case OP_BINARY_SUBTRACT: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -6138,7 +6066,6 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             const proto::ProtoObject* r = binarySubtract(ctx, a, b);
             stack.pop_back(); // Pop b
             stack.back() = r;
-            if (!r && env && env->hasPendingException()) continue;
         } break;
         case OP_INPLACE_SUBTRACT: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -6168,11 +6095,10 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 result = invokeDunder(ctx, a, isubS, args);
                 if (env && result == env->getNotImplementedPrototype()) result = nullptr;
             }
-            if (!result && (!env || !env->hasPendingException())) {
+            if (!result) {
                 result = binarySubtract(ctx, a, b);
             }
             if (result) stack.push_back(result);
-            else if (env && env->hasPendingException()) continue;
             else stack.push_back(PROTO_NONE);
         } break;
         case OP_BINARY_MULTIPLY: {
@@ -6214,12 +6140,11 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 result = invokeDunder(ctx, a, imulS, args);
                 if (env && result == env->getNotImplementedPrototype()) result = nullptr;
             }
-            if (!result && (!env || !env->hasPendingException())) {
+            if (!result) {
                 result = binaryMultiply(ctx, a, b);
             }
             stack.pop_back();
             stack.back() = result ? result : PROTO_NONE;
-            if (!result && env && env->hasPendingException()) continue;
         } break;
         case OP_BINARY_TRUE_DIVIDE: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -6249,7 +6174,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             // to a TypeError because matmul has no legacy stdlib
             // contract that relies on the silent behaviour.
             const proto::ProtoObject* r = binaryOpDispatch(ctx, a, b, "__matmul__", "__rmatmul__");
-            if (!r && env && !env->hasPendingException()) {
+            if (!r && env) {
                 std::string aName = "?", bName = "?";
                 const proto::ProtoString* nameS = env->getNameString();
                 const proto::ProtoObject* aCls = env->getType(ctx, a);
@@ -6266,7 +6191,6 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             }
             stack.pop_back();
             stack.back() = r ? r : PROTO_NONE;
-            if (!r && env && env->hasPendingException()) continue;
         } break;
         case OP_INPLACE_MATRIX_MULTIPLY: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -6288,9 +6212,9 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                     ctx->newList()->appendLast(ctx, right), nullptr);
                 if (env && res == env->getNotImplementedPrototype()) res = nullptr;
             }
-            if (!res && (!env || !env->hasPendingException())) {
+            if (!res) {
                 res = binaryOpDispatch(ctx, left, right, "__matmul__", "__rmatmul__");
-                if (!res && env && !env->hasPendingException()) {
+                if (!res && env) {
                     std::string aName = "?", bName = "?";
                     const proto::ProtoString* nameS = env->getNameString();
                     const proto::ProtoObject* aCls = env->getType(ctx, left);
@@ -6309,18 +6233,13 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             stack.pop_back();           // right
             stack.pop_back();           // left
             stack.push_back(res ? res : PROTO_NONE);
-            if (!res && env && env->hasPendingException()) continue;
         } break;
         case OP_RERAISE: {
-            // Re-raise the active exception (the one the innermost running
-            // except or finally clause handles) after popping `arg` entries
-            // of the active-exception stack: 1 when it leaves its own
-            // clause, 2 when a clause raised a new exception (the active
-            // one) while handling another. No traceback entry is added: the
-            // exception already has this frame's. In a handler level that is
-            // the exception of the catch it runs in: rethrow it.
+            // Re-raise the exception being handled. No traceback entry is
+            // added: the exception already has this frame's. In a handler
+            // level that is the exception of the catch it runs in: rethrow it.
             if (!blockStack.empty() && blockStack.back().isHandler && std::current_exception()) throw;
-            if (env) reraiseActiveException(ctx, env, arg);
+            if (env) reraiseActiveException(ctx, env);
             i = next_i;
             continue;
         } break;
@@ -6335,11 +6254,6 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 levelExit = LevelExit::PopExcept;
                 levelExitPc = next_i;
                 return nullptr;
-            }
-            if (env) {
-                // popActiveException (e.g. list removeAt) can raise TypeError;
-                // dropped so the module continues.
-                try { env->popActiveException(); } catch (const PyException&) {}
             }
         } break;
         case OP_BINARY_POWER: {
@@ -6455,7 +6369,6 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 }
             }
             stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
-            if (!result && env && env->hasPendingException()) continue;
         } break;
         case OP_INPLACE_LSHIFT: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -6475,12 +6388,11 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 else av = static_cast<long long>(static_cast<unsigned long long>(av) << bv);
                 result = ctx->fromInteger(av);
             }
-            if (!result && (!env || !env->hasPendingException())) {
+            if (!result) {
                 result = binaryOpDispatch(ctx, a, b, "__lshift__", "__rlshift__");
             }
             stack.pop_back();
             stack.back() = result ? result : PROTO_NONE;
-            if (!result && env && env->hasPendingException()) continue;
         } break;
         case OP_INPLACE_RSHIFT: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -6500,12 +6412,11 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 else av = av >> bv;
                 result = ctx->fromInteger(av);
             }
-            if (!result && (!env || !env->hasPendingException())) {
+            if (!result) {
                 result = binaryOpDispatch(ctx, a, b, "__rshift__", "__rrshift__");
             }
             stack.pop_back();
             stack.back() = result ? result : PROTO_NONE;
-            if (!result && env && env->hasPendingException()) continue;
         } break;
         case OP_INPLACE_AND: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -6521,12 +6432,11 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             if (!result && a->isInteger(ctx) && b->isInteger(ctx)) {
                 result = a->bitwiseAnd(ctx, b);
             }
-            if (!result && (!env || !env->hasPendingException())) {
+            if (!result) {
                 result = binaryOpDispatch(ctx, a, b, "__and__", "__rand__");
             }
             stack.pop_back();
             stack.back() = result ? result : PROTO_NONE;
-            if (!result && env && env->hasPendingException()) continue;
         } break;
         case OP_INPLACE_OR: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -6542,12 +6452,11 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             if (!result && a->isInteger(ctx) && b->isInteger(ctx)) {
                 result = a->bitwiseOr(ctx, b);
             }
-            if (!result && (!env || !env->hasPendingException())) {
+            if (!result) {
                 result = binaryOpDispatch(ctx, a, b, "__or__", "__ror__");
             }
             stack.pop_back();
             stack.back() = result ? result : PROTO_NONE;
-            if (!result && env && env->hasPendingException()) continue;
         } break;
         case OP_INPLACE_XOR: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -6563,12 +6472,11 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             if (!result && a->isInteger(ctx) && b->isInteger(ctx)) {
                 result = a->bitwiseXor(ctx, b);
             }
-            if (!result && (!env || !env->hasPendingException())) {
+            if (!result) {
                 result = binaryOpDispatch(ctx, a, b, "__xor__", "__rxor__");
             }
             stack.pop_back();
             stack.back() = result ? result : PROTO_NONE;
-            if (!result && env && env->hasPendingException()) continue;
         } break;
         case OP_BINARY_LSHIFT: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -6741,7 +6649,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                     }
                 }
 
-                if (!result && (!env || !env->hasPendingException())) {
+                if (!result) {
                     // Non-PEP 604 path: delegate to the shared dispatcher
                     // which handles forward + reflected dunder, NotImplemented
                     // propagation and TypeError raising in strict mode.
@@ -6751,7 +6659,6 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
 
                 stack.pop_back();
                 stack.back() = (result ? result : PROTO_NONE);
-                if (!result && env && env->hasPendingException()) continue;
             }
         } break;
         case OP_BINARY_XOR: {
@@ -6856,7 +6763,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
         } break;
         case OP_RAISE_VARARGS: {
             if (arg == 0) {
-                 const proto::ProtoObject* activeExc = env ? env->getActiveException() : nullptr;
+                 const proto::ProtoObject* activeExc = env ? env->getActiveException(ctx) : nullptr;
                  if (!activeExc && !stack.empty()) {
                      activeExc = stack.back();
                      stack.pop_back();
@@ -6864,8 +6771,8 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                  if (activeExc) {
                      if (env) reraiseException(env, activeExc);
                  } else {
-                     if (env && !env->hasPendingException()) {
-                         env->raiseRuntimeError(ctx, "reraise outside of except block");
+                     if (env) {
+                         env->raiseRuntimeError(ctx, "No active exception to reraise");
                      }
                  }
                  i = next_i;
@@ -7097,7 +7004,6 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             } else {
                 enterResult = manager;
             }
-            if (!enterResult && env && env->hasPendingException()) continue;
 
             // The with body runs as a nested dispatch inside a C++ try; the
             // handler at arg (which calls __exit__) inside the catch.
@@ -7228,7 +7134,6 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             const proto::ProtoObject* r = compareOp(ctx, a, b, arg);
             stack.pop_back();
             stack.back() = (r ? r : PROTO_NONE);
-            if (!r && env && env->hasPendingException()) continue;
             // (Note: if r is null, we set PROTO_NONE to avoid null on stack)
         } break;
         case OP_POP_JUMP_IF_FALSE: {
@@ -7740,7 +7645,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             }
             if (!val && env) val = env->cellGet(ctx, ctx->getAutomaticLocal(static_cast<unsigned int>(arg)));
             if (!val) {
-                if (env && !env->hasPendingException()) raiseEmptyCell(ctx, env, arg);
+                if (env) raiseEmptyCell(ctx, env, arg);
                 i = next_i;
                 continue;
             }
@@ -8001,8 +7906,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                                 // PIC MISS — do the slow path, then populate
                                 // only with receiver-independent results.
                                 val = env->getAttribute(ctx, obj, attrName, false, &isUnboundFunc);
-                                if (val && val != PROTO_NONE
-                                        && (!env->hasPendingException())) {
+                                if (val && val != PROTO_NONE) {
                                     if (isUnboundFunc) {
                                         slot->type         = type;
                                         slot->name         = attrName;
@@ -8030,11 +7934,6 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                         val = env ? env->getAttribute(ctx, obj, attrName, false,
                                                       pushNull ? &isUnboundFunc : nullptr)
                                   : obj->getAttribute(ctx, attrName);
-                    }
-                    if (!val && env && env->hasPendingException()) {
-                        // A descriptor or __getattr__ already raised an exception — propagate it.
-                        stack.pop_back();
-                        continue;
                     }
 
                     if (diag_local) {
@@ -8089,9 +7988,6 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                                 ? ctx->newList()->appendLast(ctx, nameObj)
                                 : ctx->newList()->appendLast(ctx, obj)->appendLast(ctx, nameObj);
                             val = invokePythonCallable(ctx, getattr, posArgs, nullptr);
-                            if (env && env->hasPendingException()) {
-                                stack.pop_back(); continue;
-                            }
                             if (val) {
                                 isMissing = false;
                             } else {
@@ -8152,9 +8048,6 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                             }
                         } else {
                             if (!val) {
-                                if (env && env->hasPendingException()) {
-                                    stack.pop_back(); continue;
-                                }
                                 if (diag_local) {
                                      fprintf(stderr, "DEBUG_OP_LOAD_ATTR: val is NULL, pushing None! (no pending exc)\n");
                                      fflush(stderr);
@@ -8181,7 +8074,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                                         val->asMethod(ctx)(ctx,
                                             const_cast<proto::ProtoObject*>(val->asMethodSelf(ctx)),
                                             nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
-                                    if (dictResult && !env->hasPendingException()) {
+                                    if (dictResult) {
                                         val = dictResult;
                                     }
                                 }
@@ -8203,10 +8096,8 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                                             fget->asMethod(ctx)(ctx,
                                                 const_cast<proto::ProtoObject*>(obj),
                                                 nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
-                                        if (dictResult && !env->hasPendingException()) {
+                                        if (dictResult) {
                                             val = dictResult;
-                                        } else if (env->hasPendingException()) {
-                                            stack.pop_back(); continue;
                                         }
                                     }
                                 }
@@ -8627,11 +8518,9 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                         ? metaGetItem->asMethod(ctx)(ctx, container, nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr)
                         : invokeCallable(ctx, metaGetItem,
                               ctx->newList()->appendLast(ctx, container)->appendLast(ctx, key), nullptr);
-                    if (!result && env->hasPendingException()) continue;
                 } else {
                     const proto::ProtoString* classGetItemS = PythonEnvironment::getInternedString(ctx, "__class_getitem__");
                     result = invokeDunder(ctx, container, classGetItemS, args);
-                    if (env->hasPendingException()) result = nullptr;
                 }
             }
             if (!result) {
@@ -8653,14 +8542,9 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 fflush(stderr);
             }
 
-            if (result && env && env->hasPendingException()) {
-                // __getitem__ raised an exception (e.g. KeyError) — honour it even if a value was returned
-                continue;
-            } else if (result) {
+            if (result) {
                 stack.pop_back();
                 stack.back() = result;
-            } else if (env && env->hasPendingException()) {
-                continue;
             } else {
                 bool handled = false;
                 // Fallback for minimal objects without __getitem__ (e.g. built-in lists/tuples if dunder is missing)
@@ -8765,7 +8649,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                     stack.back() = PROTO_NONE;
                 }
                 
-                if (!handled && stack.back() == PROTO_NONE && !env->hasPendingException()) {
+                if (!handled && stack.back() == PROTO_NONE) {
                     // Start of Error Handling for unsubscriptable objects
                     std::string typeName = "unknown";
                     if (container) {
@@ -8899,7 +8783,6 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 ? env->getAttribute(ctx, container, setItemS, false)
                 : container->getAttribute(ctx, setItemS);
             if (setitem && setitem != PROTO_NONE) {
-                if (env && env->hasPendingException()) continue;
                 const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key)->appendLast(ctx, value);
                 invokeDunder(ctx, container, setItemS, args);
             } else {
@@ -9021,9 +8904,6 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             for (int j = 0; j < itemsToPop; ++j) {
                 if (!stack.empty()) stack.pop_back(); 
             }
-            if (!result && env && env->hasPendingException()) {
-                continue;
-            }
             stack.push_back(result ? result : (env ? env->getNonePrototype() : PROTO_NONE));
         } break;
         case OP_CALL_FUNCTION: {
@@ -9140,9 +9020,6 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 if (!stack.empty()) stack.pop_back();
             }
             
-            if (!result && env && env->hasPendingException()) {
-                continue;
-            }
             stack.push_back(result ? result : (env ? env->getNonePrototype() : PROTO_NONE));
         } break;
         case OP_CALL_FUNCTION_EX: {
@@ -9252,9 +9129,6 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             int itemsToPop = (isModern ? 1 : 0) + 2 + ((arg & 1) ? 1 : 0);
             for (int j = 0; j < itemsToPop; ++j) {
                 if (!stack.empty()) stack.pop_back();
-            }
-            if (!result && env && env->hasPendingException()) {
-                continue;
             }
             stack.push_back(result ? result : (env ? env->getNonePrototype() : PROTO_NONE));
         } break;
@@ -9424,13 +9298,6 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                                     ScopeGlobalsEntry bodyScope(PythonEnvironment::getCurrentGlobals());
                                     runCodeObject(ctx, codeObj, ns, closureCells);
                                 }
-                                if (env && env->hasPendingException()) {
-                                    // Class body raised — let the dispatch loop
-                                    // unwind through the enclosing SETUP_FINALLY
-                                    // (e.g. `with assertRaises(NameError): class
-                                    // CBad: nonexistent.attr: int = 0`).
-                                    return false;
-                                }
                                 if (diag_local) {
                                     const proto::ProtoObject* keysObj = ns->getAttribute(ctx, env ? env->getKeysString() : protoPython::PythonEnvironment::getInternalString(ctx, "__keys__"));
                                     const proto::ProtoList* keysList = keysObj ? keysObj->asList(ctx) : nullptr;
@@ -9441,7 +9308,6 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                                 const proto::ProtoObject* callM = body->getAttribute(ctx, callS);
                                 if (callM && callM->asMethod(ctx)) {
                                     callM->asMethod(ctx)(ctx, body, nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
-                                    if (env && env->hasPendingException()) { return false; }
                                 }
                             }
                         }
@@ -9466,7 +9332,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 stack.back() = iterObj;
             } else {
                 if (env) {
-                    if (!env->hasPendingException()) {
+                    {
                         env->raiseTypeError(ctx, "object is not iterable");
                     }
                     i = next_i;
@@ -9506,7 +9372,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 if (diag_local) fprintf(stderr, "DEBUG: UNPACK_SEQUENCE calling iter(seq)\n");
                 const proto::ProtoObject* iterObj = env->iter(seq);
                 if (!iterObj) {
-                    if (!env->hasPendingException()) env->raiseTypeError(ctx, "cannot unpack non-iterable object");
+                    env->raiseTypeError(ctx, "cannot unpack non-iterable object");
                     i = next_i; continue;
                 }
                 // Pin iterObj across user __next__ callbacks. The seq
@@ -9527,9 +9393,6 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                     }
                     items.push_back(val);
                     got++;
-                }
-                if (env->hasPendingException()) {
-                    i = next_i; continue;
                 }
 
                 // Check if there are too many values
@@ -9588,7 +9451,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             if (env) {
                 const proto::ProtoObject* iterObj = env->iter(seq);
                 if (!iterObj) {
-                    if (!env->hasPendingException()) env->raiseTypeError(ctx, "cannot unpack non-iterable object");
+                    env->raiseTypeError(ctx, "cannot unpack non-iterable object");
                     i = next_i; continue;
                 }
                 // Pin iterObj across user __next__ callbacks (seq was popped).
@@ -9598,7 +9461,6 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                     if (!val) break;   // exhausted
                     all.push_back(val);
                 }
-                if (env->hasPendingException()) { i = next_i; continue; }
             } else {
                 const proto::ProtoList* list = seq->asList(ctx);
                 ::protoPython::TupleView tup = ::protoPython::PythonEnvironment::tupleView(ctx, seq);
@@ -9669,7 +9531,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                         if (pushNull) stack.push_back(nullptr);
                         stack.push_back(val);
                     } else {
-                        if (!env->hasPendingException()) {
+                        {
                             std::string n;
                             nameS->toUTF8String(ctx, n);
                             env->raiseNameError(ctx, n);
@@ -10178,11 +10040,6 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key);
                 const proto::ProtoObject* result = invokeDunder(ctx, container, delItemS, args);
                 if (!result) {
-                    if (env && env->hasPendingException()) {
-                        stack.pop_back(); // Pop key
-                        stack.pop_back(); // Pop container
-                        continue;
-                    }
                     // Fallback for genuine wrapped list / dict instances.
                     // ProtoObject::asSparseList resolves the attribute
                     // SparseList of any object (every instance has one),
@@ -10336,11 +10193,8 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             if (awaitable) {
                 stack.push_back(awaitable);
             } else {
-                if (env && !env->hasPendingException()) {
+                if (env) {
                     env->raiseTypeError(ctx, "async for item must be an async iterator");
-                }
-                if (diag_local && env && env->hasPendingException()) {
-                    if (diag_local) {}
                 }
                 continue;
             }
@@ -10557,7 +10411,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             // so the bytecode loop can unwind it the normal way.  Don't
             // overwrite an exception that was already set inside the
             // handler — that one carries more specific information.
-            if (env && !env->hasPendingException()) {
+            if (env) {
                 std::string msg = std::string("internal C++ exception: ") + e.what();
                 env->raiseRuntimeError(ctx, msg);
             }
@@ -10565,7 +10419,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             // A legacy native generator throws its value (TestGeneratorsNative).
             // Not catch (...): a Python exception (PyException) must pass to
             // the enclosing try without being caught and rethrown here.
-            if (env && !env->hasPendingException()) {
+            if (env) {
                 env->raiseRuntimeError(ctx, std::string("internal C++ exception (unknown type)"));
             }
         }
@@ -10666,8 +10520,18 @@ const proto::ProtoObject* executeBytecodeRange(
     // next cycle freed the frame of any long-running call, its cell was
     // reused, and LOAD_DEREF / STORE_DEREF walked a stranger (a nested
     // function's NameError on a variable of its enclosing function).
+    // The two slots before it mark the context as an activation's and hold
+    // the exception the activation handles (PythonEnvironment's
+    // kActivationSlots); a nested activation on the same context shares them.
     const proto::ProtoObject** frameAnchor = nullptr;
-    if (allSlots && nSlots > stackOffset + 1) {
+    const proto::ProtoObject** handledSlot = nullptr;
+    if (allSlots && nSlots > stackOffset + PythonEnvironment::kActivationSlots && env) {
+        stackBase = allSlots + stackOffset;
+        stackCap = nSlots - stackOffset - PythonEnvironment::kActivationSlots;
+        frameAnchor = allSlots + (nSlots - 1);
+        env->markActivation(ctx);
+        handledSlot = allSlots + (nSlots - 2);
+    } else if (allSlots && nSlots > stackOffset + 1) {
         stackBase = allSlots + stackOffset;
         stackCap = nSlots - stackOffset - 1;
         frameAnchor = allSlots + (nSlots - 1);
@@ -10710,6 +10574,7 @@ const proto::ProtoObject* executeBytecodeRange(
     Activation act(ctx, env, bc, n, pcEnd, diag_local, constants, bytecode, names, nativeConsts, nativeNames,
                    nativeBc, pcStart, stackOffset, outPc, yielded, externalBlockStack, initialTop, finalTopPtr,
                    frameAnchor, sync_globals, frame, stack, blockStack, savedLevels, throwOnResume);
+    act.handledSlot = handledSlot;
     try {
         // A resumed generator rebuilds its try nesting first; any other
         // activation dispatches at once.

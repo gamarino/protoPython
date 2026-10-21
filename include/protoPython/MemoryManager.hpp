@@ -142,8 +142,6 @@ public:
             space, parent_, parameterNames, localNames, args, kwargs, totalSlots, extSlots);
         // NOTE: setCurrentContext is intentionally omitted. s_threadContext is set once by
         // registerContext() at thread startup and remains valid for the lifetime of the thread.
-        // All getPendingException/setPendingException callers only need a valid (non-null)
-        // context on the same thread — the root context works fine for those operations.
     }
 
     ~ContextScope() {
