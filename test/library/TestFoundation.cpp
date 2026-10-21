@@ -176,14 +176,14 @@ TEST_F(FoundationTest, BuiltinFunctions) {
     ASSERT_NE(pyLen, nullptr);
     
     const proto::ProtoList* args = context->newList()->appendLast(context, my_list);
-    const proto::ProtoObject* result = pyLen->asMethod(context)(context, PROTO_NONE, nullptr, args, nullptr);
+    const proto::ProtoObject* result = pyLen->asMethod(context)(context, PROTO_NONE, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->asLong(context), 1);
     
     // Test id()
     const proto::ProtoObject* pyId = env.resolve("id");
     ASSERT_NE(pyId, nullptr);
-    const proto::ProtoObject* idResult = pyId->asMethod(context)(context, PROTO_NONE, nullptr, args, nullptr);
+    const proto::ProtoObject* idResult = pyId->asMethod(context)(context, PROTO_NONE, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(idResult, nullptr);
     EXPECT_EQ(idResult->asLong(context), reinterpret_cast<long long>(my_list));
     
@@ -191,7 +191,7 @@ TEST_F(FoundationTest, BuiltinFunctions) {
     const proto::ProtoObject* pyPrint = env.resolve("print");
     ASSERT_NE(pyPrint, nullptr);
     ASSERT_TRUE(pyPrint->asMethod(context));
-    const proto::ProtoObject* printResult = pyPrint->asMethod(context)(context, PROTO_NONE, nullptr, args, nullptr);
+    const proto::ProtoObject* printResult = pyPrint->asMethod(context)(context, PROTO_NONE, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     (void)printResult;
 }
 
@@ -252,7 +252,7 @@ TEST_F(FoundationTest, IOModule) {
     ASSERT_NE(pyOpen, nullptr);
 
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromUTF8String(tmpPath));
-    const proto::ProtoObject* fileObj = pyOpen->asMethod(context)(context, PROTO_NONE, nullptr, args, nullptr);
+    const proto::ProtoObject* fileObj = pyOpen->asMethod(context)(context, PROTO_NONE, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
 
     ASSERT_NE(fileObj, nullptr);
     const proto::ProtoObject* fileName = fileObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "name"));
@@ -273,13 +273,13 @@ TEST_F(FoundationTest, ThreadModule) {
     ASSERT_NE(logFn, nullptr);
     ASSERT_TRUE(logFn->isMethod(context));
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromUTF8String("test"));
-    logFn->asMethod(context)(context, const_cast<proto::ProtoObject*>(threadMod), nullptr, args, nullptr);
+    logFn->asMethod(context)(context, const_cast<proto::ProtoObject*>(threadMod), nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     const proto::ProtoObject* getIdentFn = threadMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "get_ident"));
     ASSERT_NE(getIdentFn, nullptr);
     ASSERT_TRUE(getIdentFn->isMethod(context));
     const proto::ProtoList* emptyArgs = context->newList();
     const proto::ProtoObject* identResult = getIdentFn->asMethod(context)(
-        context, const_cast<proto::ProtoObject*>(threadMod), nullptr, emptyArgs, nullptr);
+        context, const_cast<proto::ProtoObject*>(threadMod), nullptr, protoPython::argsView(proto::ProtoListArguments(context, emptyArgs)), nullptr);
     ASSERT_NE(identResult, nullptr);
     EXPECT_TRUE(identResult->isInteger(context));
 }
@@ -303,7 +303,7 @@ TEST_F(FoundationTest, SysPathAndModules) {
     ASSERT_NE(getItem, nullptr);
     
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromUTF8String("sys"));
-    const proto::ProtoObject* sysInModules = invokeCallable(context, getItem, modules, args);
+    const proto::ProtoObject* sysInModules = invokeCallable(context, getItem, modules, protoPython::argsView(proto::ProtoListArguments(context, args)));
     ASSERT_NE(sysInModules, nullptr);
     
     // They should at least have the same version
@@ -325,7 +325,7 @@ TEST_F(FoundationTest, SysTraceHooks) {
     // Set a mock trace function
     const proto::ProtoObject* mockFunc = context->newObject(false);
     const proto::ProtoList* args = context->newList()->appendLast(context, mockFunc);
-    pySetTrace->asMethod(context)(context, sys, nullptr, args, nullptr);
+    pySetTrace->asMethod(context)(context, sys, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     
     // Verify it's set
     const proto::ProtoObject* currentTrace = pyGetTrace->asMethod(context)(context, sys, nullptr, nullptr, nullptr);
@@ -351,14 +351,14 @@ TEST_F(FoundationTest, ListGetItemSetItem) {
     ASSERT_NE(getitemMethod, nullptr);
     ASSERT_NE(setitemMethod, nullptr);
     const proto::ProtoList* getArgs = context->newList()->appendLast(context, context->fromInteger(1));
-    const proto::ProtoObject* val = getitemMethod->asMethod(context)(context, my_list, nullptr, getArgs, nullptr);
+    const proto::ProtoObject* val = getitemMethod->asMethod(context)(context, my_list, nullptr, protoPython::argsView(proto::ProtoListArguments(context, getArgs)), nullptr);
     ASSERT_NE(val, nullptr);
     EXPECT_EQ(val->asLong(context), 20);
 
     const proto::ProtoList* setArgs = context->newList()
         ->appendLast(context, context->fromInteger(1))
         ->appendLast(context, context->fromInteger(99));
-    setitemMethod->asMethod(context)(context, my_list, nullptr, setArgs, nullptr);
+    setitemMethod->asMethod(context)(context, my_list, nullptr, protoPython::argsView(proto::ProtoListArguments(context, setArgs)), nullptr);
     const proto::ProtoObject* updated = my_list->getAttribute(context, dataName);
     EXPECT_EQ(updated->asList(context)->getAt(context, 1)->asLong(context), 99);
 
@@ -366,7 +366,7 @@ TEST_F(FoundationTest, ListGetItemSetItem) {
         ->appendLast(context, context->fromInteger(1))
         ->appendLast(context, context->fromInteger(3));
     const proto::ProtoList* sliceArgs = context->newList()->appendLast(context, sliceSpec->asObject(context));
-    const proto::ProtoObject* sliceObj = getitemMethod->asMethod(context)(context, my_list, nullptr, sliceArgs, nullptr);
+    const proto::ProtoObject* sliceObj = getitemMethod->asMethod(context)(context, my_list, nullptr, protoPython::argsView(proto::ProtoListArguments(context, sliceArgs)), nullptr);
     ASSERT_NE(sliceObj, nullptr);
     const proto::ProtoList* sliceList = sliceObj->asList(context);
     ASSERT_NE(sliceList, nullptr);
@@ -421,12 +421,12 @@ TEST_F(FoundationTest, ListIterNext) {
     ASSERT_NE(pyNext, nullptr);
 
     const proto::ProtoList* iterArgs = context->newList()->appendLast(context, my_list);
-    const proto::ProtoObject* it = pyIter->asMethod(context)(context, PROTO_NONE, nullptr, iterArgs, nullptr);
+    const proto::ProtoObject* it = pyIter->asMethod(context)(context, PROTO_NONE, nullptr, protoPython::argsView(proto::ProtoListArguments(context, iterArgs)), nullptr);
     ASSERT_NE(it, nullptr);
 
     const proto::ProtoList* nextArgs = context->newList()->appendLast(context, it);
-    const proto::ProtoObject* v1 = pyNext->asMethod(context)(context, PROTO_NONE, nullptr, nextArgs, nullptr);
-    const proto::ProtoObject* v2 = pyNext->asMethod(context)(context, PROTO_NONE, nullptr, nextArgs, nullptr);
+    const proto::ProtoObject* v1 = pyNext->asMethod(context)(context, PROTO_NONE, nullptr, protoPython::argsView(proto::ProtoListArguments(context, nextArgs)), nullptr);
+    const proto::ProtoObject* v2 = pyNext->asMethod(context)(context, PROTO_NONE, nullptr, protoPython::argsView(proto::ProtoListArguments(context, nextArgs)), nullptr);
     ASSERT_NE(v1, nullptr);
     ASSERT_NE(v2, nullptr);
     EXPECT_EQ(v1->asLong(context), 1);
@@ -452,16 +452,16 @@ TEST_F(FoundationTest, DictIterKeys) {
     const proto::ProtoObject* v2 = context->fromInteger(2);
     const proto::ProtoList* setArgs1 = context->newList()->appendLast(context, k1)->appendLast(context, v1);
     const proto::ProtoList* setArgs2 = context->newList()->appendLast(context, k2)->appendLast(context, v2);
-    setitem->asMethod(context)(context, my_dict, nullptr, setArgs1, nullptr);
-    setitem->asMethod(context)(context, my_dict, nullptr, setArgs2, nullptr);
+    setitem->asMethod(context)(context, my_dict, nullptr, protoPython::argsView(proto::ProtoListArguments(context, setArgs1)), nullptr);
+    setitem->asMethod(context)(context, my_dict, nullptr, protoPython::argsView(proto::ProtoListArguments(context, setArgs2)), nullptr);
 
     const proto::ProtoList* iterArgs = context->newList()->appendLast(context, my_dict);
-    const proto::ProtoObject* it = pyIter->asMethod(context)(context, PROTO_NONE, nullptr, iterArgs, nullptr);
+    const proto::ProtoObject* it = pyIter->asMethod(context)(context, PROTO_NONE, nullptr, protoPython::argsView(proto::ProtoListArguments(context, iterArgs)), nullptr);
     ASSERT_NE(it, nullptr);
 
     const proto::ProtoList* nextArgs = context->newList()->appendLast(context, it);
-    const proto::ProtoObject* r1 = pyNext->asMethod(context)(context, PROTO_NONE, nullptr, nextArgs, nullptr);
-    const proto::ProtoObject* r2 = pyNext->asMethod(context)(context, PROTO_NONE, nullptr, nextArgs, nullptr);
+    const proto::ProtoObject* r1 = pyNext->asMethod(context)(context, PROTO_NONE, nullptr, protoPython::argsView(proto::ProtoListArguments(context, nextArgs)), nullptr);
+    const proto::ProtoObject* r2 = pyNext->asMethod(context)(context, PROTO_NONE, nullptr, protoPython::argsView(proto::ProtoListArguments(context, nextArgs)), nullptr);
     ASSERT_NE(r1, nullptr);
     ASSERT_NE(r2, nullptr);
 
@@ -487,7 +487,7 @@ TEST_F(FoundationTest, ContainsDunder) {
     const proto::ProtoObject* listContains = my_list->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__contains__"));
     ASSERT_NE(listContains, nullptr);
     const proto::ProtoList* listArgs = context->newList()->appendLast(context, context->fromInteger(6));
-    const proto::ProtoObject* listResult = listContains->asMethod(context)(context, my_list, nullptr, listArgs, nullptr);
+    const proto::ProtoObject* listResult = listContains->asMethod(context)(context, my_list, nullptr, protoPython::argsView(proto::ProtoListArguments(context, listArgs)), nullptr);
     EXPECT_EQ(listResult, PROTO_TRUE);
 
     const proto::ProtoObject* my_dict = context->newObject(true);
@@ -497,12 +497,12 @@ TEST_F(FoundationTest, ContainsDunder) {
     ASSERT_NE(setitem, nullptr);
     const proto::ProtoObject* key = context->fromUTF8String("k");
     const proto::ProtoList* setArgs = context->newList()->appendLast(context, key)->appendLast(context, context->fromInteger(7));
-    setitem->asMethod(context)(context, my_dict, nullptr, setArgs, nullptr);
+    setitem->asMethod(context)(context, my_dict, nullptr, protoPython::argsView(proto::ProtoListArguments(context, setArgs)), nullptr);
 
     const proto::ProtoObject* dictContains = my_dict->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__contains__"));
     ASSERT_NE(dictContains, nullptr);
     const proto::ProtoList* dictArgs = context->newList()->appendLast(context, key);
-    const proto::ProtoObject* dictResult = dictContains->asMethod(context)(context, my_dict, nullptr, dictArgs, nullptr);
+    const proto::ProtoObject* dictResult = dictContains->asMethod(context)(context, my_dict, nullptr, protoPython::argsView(proto::ProtoListArguments(context, dictArgs)), nullptr);
     EXPECT_EQ(dictResult, PROTO_TRUE);
 }
 
@@ -521,7 +521,7 @@ TEST_F(FoundationTest, EqualsDunder) {
     const proto::ProtoObject* listEq = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__eq__"));
     ASSERT_NE(listEq, nullptr);
     const proto::ProtoList* listArgs = context->newList()->appendLast(context, listObj2);
-    const proto::ProtoObject* listEqResult = listEq->asMethod(context)(context, listObj, nullptr, listArgs, nullptr);
+    const proto::ProtoObject* listEqResult = listEq->asMethod(context)(context, listObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, listArgs)), nullptr);
     EXPECT_EQ(listEqResult, PROTO_TRUE);
 
     const proto::ProtoObject* dict1 = context->newObject(true)->addParent(context, env.getDictPrototype());
@@ -533,13 +533,13 @@ TEST_F(FoundationTest, EqualsDunder) {
     const proto::ProtoObject* key = context->fromUTF8String("k");
     const proto::ProtoObject* val = context->fromInteger(7);
     const proto::ProtoList* setArgs = context->newList()->appendLast(context, key)->appendLast(context, val);
-    setitem->asMethod(context)(context, dict1, nullptr, setArgs, nullptr);
-    setitem->asMethod(context)(context, dict2, nullptr, setArgs, nullptr);
+    setitem->asMethod(context)(context, dict1, nullptr, protoPython::argsView(proto::ProtoListArguments(context, setArgs)), nullptr);
+    setitem->asMethod(context)(context, dict2, nullptr, protoPython::argsView(proto::ProtoListArguments(context, setArgs)), nullptr);
 
     const proto::ProtoObject* dictEq = dict1->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__eq__"));
     ASSERT_NE(dictEq, nullptr);
     const proto::ProtoList* dictArgs = context->newList()->appendLast(context, dict2);
-    const proto::ProtoObject* dictEqResult = dictEq->asMethod(context)(context, dict1, nullptr, dictArgs, nullptr);
+    const proto::ProtoObject* dictEqResult = dictEq->asMethod(context)(context, dict1, nullptr, protoPython::argsView(proto::ProtoListArguments(context, dictArgs)), nullptr);
     EXPECT_EQ(dictEqResult, PROTO_TRUE);
 }
 
@@ -559,8 +559,8 @@ TEST_F(FoundationTest, OrderingDunder) {
     ASSERT_NE(lt, nullptr);
     ASSERT_NE(ge, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, list2);
-    const proto::ProtoObject* ltRes = lt->asMethod(context)(context, list1, nullptr, args, nullptr);
-    const proto::ProtoObject* geRes = ge->asMethod(context)(context, list1, nullptr, args, nullptr);
+    const proto::ProtoObject* ltRes = lt->asMethod(context)(context, list1, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
+    const proto::ProtoObject* geRes = ge->asMethod(context)(context, list1, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     EXPECT_EQ(ltRes, PROTO_TRUE);
     EXPECT_EQ(geRes, PROTO_FALSE);
 
@@ -588,7 +588,7 @@ TEST_F(FoundationTest, ReprStrDunder) {
     const proto::ProtoObject* key = context->fromUTF8String("k");
     const proto::ProtoObject* val = context->fromInteger(9);
     const proto::ProtoList* setArgs = context->newList()->appendLast(context, key)->appendLast(context, val);
-    setitem->asMethod(context)(context, dictObj, nullptr, setArgs, nullptr);
+    setitem->asMethod(context)(context, dictObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, setArgs)), nullptr);
 
     const proto::ProtoObject* dictRepr = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__repr__"));
     ASSERT_NE(dictRepr, nullptr);
@@ -625,7 +625,7 @@ TEST_F(FoundationTest, BoolDunder) {
     const proto::ProtoObject* setitem = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__setitem__"));
     const proto::ProtoObject* key = context->fromUTF8String("k");
     const proto::ProtoList* setArgs = context->newList()->appendLast(context, key)->appendLast(context, context->fromInteger(1));
-    setitem->asMethod(context)(context, dictObj, nullptr, setArgs, nullptr);
+    setitem->asMethod(context)(context, dictObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, setArgs)), nullptr);
     const proto::ProtoObject* dictTrue = dictBool->asMethod(context)(context, dictObj, nullptr, nullptr, nullptr);
     EXPECT_EQ(dictTrue, PROTO_TRUE);
 }
@@ -639,7 +639,7 @@ TEST_F(FoundationTest, DictViews) {
     const proto::ProtoObject* key = context->fromUTF8String("k");
     const proto::ProtoObject* val = context->fromInteger(5);
     const proto::ProtoList* setArgs = context->newList()->appendLast(context, key)->appendLast(context, val);
-    setitem->asMethod(context)(context, dictObj, nullptr, setArgs, nullptr);
+    setitem->asMethod(context)(context, dictObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, setArgs)), nullptr);
 
     const proto::ProtoObject* keysMethod = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "keys"));
     const proto::ProtoObject* valuesMethod = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "values"));
@@ -671,14 +671,14 @@ TEST_F(FoundationTest, DictGetSetDefault) {
     const proto::ProtoObject* key = context->fromUTF8String("k");
     const proto::ProtoObject* defaultVal = context->fromInteger(7);
     const proto::ProtoList* getArgs = context->newList()->appendLast(context, key)->appendLast(context, defaultVal);
-    const proto::ProtoObject* getVal = getMethod->asMethod(context)(context, dictObj, nullptr, getArgs, nullptr);
+    const proto::ProtoObject* getVal = getMethod->asMethod(context)(context, dictObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, getArgs)), nullptr);
     EXPECT_EQ(getVal, defaultVal);
 
     const proto::ProtoList* setArgs = context->newList()->appendLast(context, key)->appendLast(context, defaultVal);
-    const proto::ProtoObject* setVal = setdefaultMethod->asMethod(context)(context, dictObj, nullptr, setArgs, nullptr);
+    const proto::ProtoObject* setVal = setdefaultMethod->asMethod(context)(context, dictObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, setArgs)), nullptr);
     EXPECT_EQ(setVal, defaultVal);
 
-    const proto::ProtoObject* getVal2 = getMethod->asMethod(context)(context, dictObj, nullptr, getArgs, nullptr);
+    const proto::ProtoObject* getVal2 = getMethod->asMethod(context)(context, dictObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, getArgs)), nullptr);
     EXPECT_EQ(getVal2, defaultVal);
 }
 
@@ -698,9 +698,9 @@ TEST_F(FoundationTest, ListPopExtend) {
     const proto::ProtoObject* append = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "append"));
     ASSERT_NE(append, nullptr);
     const proto::ProtoList* appendArgs1 = context->newList()->appendLast(context, context->fromInteger(3));
-    append->asMethod(context)(context, listObj, nullptr, appendArgs1, nullptr);
+    append->asMethod(context)(context, listObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, appendArgs1)), nullptr);
     const proto::ProtoList* appendArgs2 = context->newList()->appendLast(context, context->fromInteger(4));
-    append->asMethod(context)(context, listObj, nullptr, appendArgs2, nullptr);
+    append->asMethod(context)(context, listObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, appendArgs2)), nullptr);
 
     const proto::ProtoObject* data = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"));
     const proto::ProtoList* list = data->asList(context);
@@ -718,7 +718,7 @@ TEST_F(FoundationTest, LenStringTuple) {
     ASSERT_NE(pyLen, nullptr);
     const proto::ProtoObject* strObj = context->fromUTF8String("abcd");
     const proto::ProtoList* lenArgs = context->newList()->appendLast(context, strObj);
-    const proto::ProtoObject* strLen = pyLen->asMethod(context)(context, PROTO_NONE, nullptr, lenArgs, nullptr);
+    const proto::ProtoObject* strLen = pyLen->asMethod(context)(context, PROTO_NONE, nullptr, protoPython::argsView(proto::ProtoListArguments(context, lenArgs)), nullptr);
     ASSERT_NE(strLen, nullptr);
     EXPECT_EQ(strLen->asLong(context), 4);
 
@@ -727,7 +727,7 @@ TEST_F(FoundationTest, LenStringTuple) {
     const proto::ProtoTuple* tuple = context->newTupleFromList(tupleList);
     tupleObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), tuple->asObject(context));
     const proto::ProtoList* tupleArgs = context->newList()->appendLast(context, tupleObj);
-    const proto::ProtoObject* tupleLen = pyLen->asMethod(context)(context, PROTO_NONE, nullptr, tupleArgs, nullptr);
+    const proto::ProtoObject* tupleLen = pyLen->asMethod(context)(context, PROTO_NONE, nullptr, protoPython::argsView(proto::ProtoListArguments(context, tupleArgs)), nullptr);
     ASSERT_NE(tupleLen, nullptr);
     EXPECT_EQ(tupleLen->asLong(context), 2);
 }
@@ -752,49 +752,49 @@ TEST_F(FoundationTest, TupleDunders) {
     const proto::ProtoObject* getItem = tupleObj->getAttribute(context, pyGetItem);
     ASSERT_NE(getItem, nullptr);
     const proto::ProtoList* args0 = context->newList()->appendLast(context, context->fromInteger(0));
-    const proto::ProtoObject* v0 = getItem->asMethod(context)(context, tupleObj, nullptr, args0, nullptr);
+    const proto::ProtoObject* v0 = getItem->asMethod(context)(context, tupleObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args0)), nullptr);
     ASSERT_NE(v0, nullptr);
     EXPECT_EQ(v0->asLong(context), 10);
 
     const proto::ProtoList* args1 = context->newList()->appendLast(context, context->fromInteger(-1));
-    const proto::ProtoObject* vLast = getItem->asMethod(context)(context, tupleObj, nullptr, args1, nullptr);
+    const proto::ProtoObject* vLast = getItem->asMethod(context)(context, tupleObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args1)), nullptr);
     ASSERT_NE(vLast, nullptr);
     EXPECT_EQ(vLast->asLong(context), 30);
 
     const proto::ProtoObject* iterM = tupleObj->getAttribute(context, pyIter);
     ASSERT_NE(iterM, nullptr);
-    const proto::ProtoObject* it = iterM->asMethod(context)(context, tupleObj, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* it = iterM->asMethod(context)(context, tupleObj, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     ASSERT_NE(it, nullptr);
 
     const proto::ProtoObject* nextM = it->getAttribute(context, pyNext);
     ASSERT_NE(nextM, nullptr);
-    const proto::ProtoObject* n0 = nextM->asMethod(context)(context, it, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* n0 = nextM->asMethod(context)(context, it, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     EXPECT_EQ(n0->asLong(context), 10);
-    const proto::ProtoObject* n1 = nextM->asMethod(context)(context, it, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* n1 = nextM->asMethod(context)(context, it, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     EXPECT_EQ(n1->asLong(context), 20);
-    const proto::ProtoObject* n2 = nextM->asMethod(context)(context, it, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* n2 = nextM->asMethod(context)(context, it, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     EXPECT_EQ(n2->asLong(context), 30);
-    const proto::ProtoObject* nEnd = nextM->asMethod(context)(context, it, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* nEnd = nextM->asMethod(context)(context, it, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     EXPECT_TRUE(nEnd == PROTO_NONE || nEnd == nullptr);
 
     const proto::ProtoObject* containsM = tupleObj->getAttribute(context, pyContains);
     ASSERT_NE(containsM, nullptr);
     const proto::ProtoList* args20 = context->newList()->appendLast(context, context->fromInteger(20));
-    const proto::ProtoObject* has20 = containsM->asMethod(context)(context, tupleObj, nullptr, args20, nullptr);
+    const proto::ProtoObject* has20 = containsM->asMethod(context)(context, tupleObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args20)), nullptr);
     EXPECT_EQ(has20, PROTO_TRUE);
     const proto::ProtoList* args99 = context->newList()->appendLast(context, context->fromInteger(99));
-    const proto::ProtoObject* has99 = containsM->asMethod(context)(context, tupleObj, nullptr, args99, nullptr);
+    const proto::ProtoObject* has99 = containsM->asMethod(context)(context, tupleObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args99)), nullptr);
     EXPECT_EQ(has99, PROTO_FALSE);
 
     const proto::ProtoObject* boolM = tupleObj->getAttribute(context, pyBool);
     ASSERT_NE(boolM, nullptr);
-    const proto::ProtoObject* nonEmpty = boolM->asMethod(context)(context, tupleObj, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* nonEmpty = boolM->asMethod(context)(context, tupleObj, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     EXPECT_EQ(nonEmpty, PROTO_TRUE);
 
     const proto::ProtoObject* emptyTupleObj = context->newObject(true)->addParent(context, env.getTuplePrototype());
     const proto::ProtoTuple* emptyTuple = context->newTupleFromList(context->newList());
     emptyTupleObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), emptyTuple->asObject(context));
-    const proto::ProtoObject* emptyBool = boolM->asMethod(context)(context, emptyTupleObj, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* emptyBool = boolM->asMethod(context)(context, emptyTupleObj, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     EXPECT_EQ(emptyBool, PROTO_FALSE);
 }
 
@@ -842,7 +842,7 @@ TEST_F(FoundationTest, FilterBuiltin) {
     ASSERT_TRUE(nextM->asMethod(context));
     std::vector<long long> collected;
     for (int i = 0; i < 5; ++i) {
-        const proto::ProtoObject* val = nextM->asMethod(context)(context, result, nullptr, context->newList(), nullptr);
+        const proto::ProtoObject* val = nextM->asMethod(context)(context, result, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
         if (!val || val == PROTO_NONE) break;
         if (val->isInteger(context)) collected.push_back(val->asLong(context));
     }
@@ -866,7 +866,7 @@ TEST_F(FoundationTest, DictPopitem) {
     dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), data->asObject(context));
     const proto::ProtoObject* popitemM = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "popitem"));
     ASSERT_NE(popitemM, nullptr);
-    const proto::ProtoObject* pair = popitemM->asMethod(context)(context, dictObj, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* pair = popitemM->asMethod(context)(context, dictObj, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     ASSERT_NE(pair, nullptr);
     ASSERT_NE(pair->asTuple(context), nullptr);
     const proto::ProtoTuple* tup = pair->asTuple(context);
@@ -894,23 +894,23 @@ TEST_F(FoundationTest, BreakpointGlobalsLocals) {
     PythonEnvironment::setCurrentGlobals(builtins);
 
     const proto::ProtoList* emptyArgs = context->newList();
-    const proto::ProtoObject* breakpointResult = invokeCallable(context, breakpointFn, builtins, emptyArgs);
+    const proto::ProtoObject* breakpointResult = invokeCallable(context, breakpointFn, builtins, protoPython::argsView(proto::ProtoListArguments(context, emptyArgs)));
     EXPECT_TRUE(breakpointResult == PROTO_NONE || breakpointResult == nullptr);
     
-    const proto::ProtoObject* g = invokeCallable(context, globalsFn, builtins, emptyArgs);
+    const proto::ProtoObject* g = invokeCallable(context, globalsFn, builtins, protoPython::argsView(proto::ProtoListArguments(context, emptyArgs)));
     ASSERT_NE(g, nullptr);
     const proto::ProtoObject* lenAttr = g->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__len__"));
     ASSERT_NE(lenAttr, nullptr);
-    const proto::ProtoObject* lenResult = invokeCallable(context, lenAttr, g, emptyArgs);
+    const proto::ProtoObject* lenResult = invokeCallable(context, lenAttr, g, protoPython::argsView(proto::ProtoListArguments(context, emptyArgs)));
     ASSERT_NE(lenResult, nullptr);
     EXPECT_TRUE(lenResult->isInteger(context)) << "globals().__len__() returned " << PythonEnvironment::reprObject(context, lenResult);
     
     // RESTORED locals() assignment
-    const proto::ProtoObject* l = invokeCallable(context, localsFn, builtins, emptyArgs);
+    const proto::ProtoObject* l = invokeCallable(context, localsFn, builtins, protoPython::argsView(proto::ProtoListArguments(context, emptyArgs)));
     ASSERT_NE(l, nullptr);
     const proto::ProtoObject* lLenAttr = l->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__len__"));
     ASSERT_NE(lLenAttr, nullptr);
-    const proto::ProtoObject* lLenResult = invokeCallable(context, lLenAttr, l, emptyArgs);
+    const proto::ProtoObject* lLenResult = invokeCallable(context, lLenAttr, l, protoPython::argsView(proto::ProtoListArguments(context, emptyArgs)));
     ASSERT_NE(lLenResult, nullptr);
     EXPECT_TRUE(lLenResult->isInteger(context)) << "locals().__len__() returned " << PythonEnvironment::reprObject(context, lLenResult);
 
@@ -938,7 +938,7 @@ TEST_F(FoundationTest, MapBuiltin) {
     ASSERT_TRUE(nextM->asMethod(context));
     std::vector<long long> collected;
     for (int i = 0; i < 5; ++i) {
-        const proto::ProtoObject* val = nextM->asMethod(context)(context, result, nullptr, context->newList(), nullptr);
+        const proto::ProtoObject* val = nextM->asMethod(context)(context, result, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
         if (!val || val == PROTO_NONE) break;
         if (val->isInteger(context)) collected.push_back(val->asLong(context));
     }
@@ -971,7 +971,7 @@ TEST_F(FoundationTest, StringDunders) {
     ASSERT_NE(pyLen, nullptr);
     const proto::ProtoObject* strObj = context->fromUTF8String("abc");
     const proto::ProtoList* lenArgs = context->newList()->appendLast(context, strObj);
-    const proto::ProtoObject* strLen = pyLen->asMethod(context)(context, PROTO_NONE, nullptr, lenArgs, nullptr);
+    const proto::ProtoObject* strLen = pyLen->asMethod(context)(context, PROTO_NONE, nullptr, protoPython::argsView(proto::ProtoListArguments(context, lenArgs)), nullptr);
     EXPECT_EQ(strLen->asLong(context), 3);
 
     const proto::ProtoObject* builtins = env.resolve("builtins");
@@ -985,19 +985,19 @@ TEST_F(FoundationTest, StringDunders) {
     ASSERT_NE(pyBoolCall, nullptr);
 
     const proto::ProtoList* boolArgs = context->newList()->appendLast(context, strObj);
-    const proto::ProtoObject* nonEmptyBool = pyBoolCall->asMethod(context)(context, pyBoolType, nullptr, boolArgs, nullptr);
+    const proto::ProtoObject* nonEmptyBool = pyBoolCall->asMethod(context)(context, pyBoolType, nullptr, protoPython::argsView(proto::ProtoListArguments(context, boolArgs)), nullptr);
     EXPECT_EQ(nonEmptyBool, PROTO_TRUE);
 
     const proto::ProtoList* containsArgs = context->newList()->appendLast(context, context->fromUTF8String("b"))->appendLast(context, strObj);
-    const proto::ProtoObject* hasB = pyContains->asMethod(context)(context, PROTO_NONE, nullptr, containsArgs, nullptr);
+    const proto::ProtoObject* hasB = pyContains->asMethod(context)(context, PROTO_NONE, nullptr, protoPython::argsView(proto::ProtoListArguments(context, containsArgs)), nullptr);
     EXPECT_EQ(hasB, PROTO_TRUE);
 
     const proto::ProtoList* containsX = context->newList()->appendLast(context, context->fromUTF8String("x"))->appendLast(context, strObj);
-    const proto::ProtoObject* hasX = pyContains->asMethod(context)(context, PROTO_NONE, nullptr, containsX, nullptr);
+    const proto::ProtoObject* hasX = pyContains->asMethod(context)(context, PROTO_NONE, nullptr, protoPython::argsView(proto::ProtoListArguments(context, containsX)), nullptr);
     EXPECT_EQ(hasX, PROTO_FALSE);
 
     const proto::ProtoObject* emptyStr = context->fromUTF8String("");
-    const proto::ProtoObject* emptyBool = pyBoolCall->asMethod(context)(context, pyBoolType, nullptr, context->newList()->appendLast(context, emptyStr), nullptr);
+    const proto::ProtoObject* emptyBool = pyBoolCall->asMethod(context)(context, pyBoolType, nullptr, protoPython::argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, emptyStr))), nullptr);
     EXPECT_EQ(emptyBool, PROTO_FALSE);
 
     const proto::ProtoObject* strPrototype = env.getStrPrototype();
@@ -1008,7 +1008,7 @@ TEST_F(FoundationTest, StringDunders) {
     const proto::ProtoObject* wrapped = context->newObject(true)->addParent(context, strPrototype);
     wrapped->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String("HeLLo"));
     /* lower() result: strFromResult returns null in some contexts (v48 TODO). */
-    const proto::ProtoObject* l = lowerM->asMethod(context)(context, wrapped, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* l = lowerM->asMethod(context)(context, wrapped, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     ASSERT_NE(l, nullptr);
     const proto::ProtoString* lsStr = strFromResult(context, l);
     if (lsStr) {
@@ -1016,7 +1016,7 @@ TEST_F(FoundationTest, StringDunders) {
         lsStr->toUTF8String(context, ls);
         EXPECT_EQ(ls, "hello");
     }
-    const proto::ProtoObject* u = upperM->asMethod(context)(context, wrapped, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* u = upperM->asMethod(context)(context, wrapped, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     ASSERT_NE(u, nullptr);
     const proto::ProtoString* usStr = strFromResult(context, u);
     ASSERT_NE(usStr, nullptr);
@@ -1026,7 +1026,7 @@ TEST_F(FoundationTest, StringDunders) {
 
     const proto::ProtoObject* capitalizeM = strPrototype->getAttribute(context, proto::ProtoString::fromUTF8String(context, "capitalize"));
     ASSERT_NE(capitalizeM, nullptr);
-    const proto::ProtoObject* cap = capitalizeM->asMethod(context)(context, wrapped, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* cap = capitalizeM->asMethod(context)(context, wrapped, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     ASSERT_NE(cap, nullptr);
     const proto::ProtoString* csStr = strFromResult(context, cap);
     ASSERT_NE(csStr, nullptr);
@@ -1038,23 +1038,23 @@ TEST_F(FoundationTest, StringDunders) {
     ASSERT_NE(isdigitM, nullptr);
     const proto::ProtoObject* digits = context->newObject(true)->addParent(context, strPrototype);
     digits->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String("12345"));
-    EXPECT_EQ(isdigitM->asMethod(context)(context, digits, nullptr, context->newList(), nullptr), PROTO_TRUE);
+    EXPECT_EQ(isdigitM->asMethod(context)(context, digits, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr), PROTO_TRUE);
     const proto::ProtoObject* mixed = context->newObject(true)->addParent(context, strPrototype);
     mixed->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String("12a45"));
-    EXPECT_EQ(isdigitM->asMethod(context)(context, mixed, nullptr, context->newList(), nullptr), PROTO_FALSE);
+    EXPECT_EQ(isdigitM->asMethod(context)(context, mixed, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr), PROTO_FALSE);
 
     const proto::ProtoObject* isupperM = strPrototype->getAttribute(context, proto::ProtoString::fromUTF8String(context, "isupper"));
     ASSERT_NE(isupperM, nullptr);
     const proto::ProtoObject* upperStr = context->newObject(true)->addParent(context, strPrototype);
     upperStr->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String("ABC"));
-    EXPECT_EQ(isupperM->asMethod(context)(context, upperStr, nullptr, context->newList(), nullptr), PROTO_TRUE);
-    EXPECT_EQ(isupperM->asMethod(context)(context, wrapped, nullptr, context->newList(), nullptr), PROTO_FALSE);
+    EXPECT_EQ(isupperM->asMethod(context)(context, upperStr, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr), PROTO_TRUE);
+    EXPECT_EQ(isupperM->asMethod(context)(context, wrapped, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr), PROTO_FALSE);
 
     const proto::ProtoObject* splitlinesM = strPrototype->getAttribute(context, proto::ProtoString::fromUTF8String(context, "splitlines"));
     ASSERT_NE(splitlinesM, nullptr);
     const proto::ProtoObject* linesStr = context->newObject(true)->addParent(context, strPrototype);
     linesStr->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String("a\nb\nc"));
-    const proto::ProtoObject* lines = splitlinesM->asMethod(context)(context, linesStr, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* lines = splitlinesM->asMethod(context)(context, linesStr, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     ASSERT_NE(lines, nullptr);
     EXPECT_TRUE(lines->asList(context));
     EXPECT_EQ(lines->asList(context)->getSize(context), 3);
@@ -1069,7 +1069,7 @@ TEST_F(FoundationTest, BytesIndex) {
     const proto::ProtoObject* indexM = bytesPrototype->getAttribute(context, proto::ProtoString::fromUTF8String(context, "index"));
     ASSERT_NE(indexM, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromUTF8String("ll"));
-    const proto::ProtoObject* idx = indexM->asMethod(context)(context, b, nullptr, args, nullptr);
+    const proto::ProtoObject* idx = indexM->asMethod(context)(context, b, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(idx, nullptr);
     EXPECT_TRUE(idx->isInteger(context));
     EXPECT_EQ(idx->asLong(context), 2);
@@ -1085,7 +1085,7 @@ TEST_F(FoundationTest, ContainerExceptions) {
     const proto::ProtoObject* getitem = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__getitem__"));
     ASSERT_NE(getitem, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromUTF8String("missing_key"));
-    getitem->asMethod(context)(context, dictObj, nullptr, args, nullptr);
+    getitem->asMethod(context)(context, dictObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
 
     const proto::ProtoObject* exc = env.takePendingException();
     ASSERT_NE(exc, nullptr);
@@ -1105,7 +1105,7 @@ TEST_F(FoundationTest, ExceptionScaffolding) {
     ASSERT_NE(instance, nullptr);
     const proto::ProtoObject* reprM = instance->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__repr__"));
     ASSERT_NE(reprM, nullptr);
-    const proto::ProtoObject* reprObj = reprM->asMethod(context)(context, instance, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* reprObj = reprM->asMethod(context)(context, instance, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     ASSERT_NE(reprObj, nullptr);
     std::string reprStr;
     reprObj->asString(context)->toUTF8String(context, reprStr);
@@ -1130,42 +1130,42 @@ TEST_F(FoundationTest, SetBasic) {
     ASSERT_NE(iterM, nullptr);
 
     const proto::ProtoList* add1 = context->newList()->appendLast(context, context->fromInteger(10));
-    addM->asMethod(context)(context, setObj, nullptr, add1, nullptr);
-    addM->asMethod(context)(context, setObj, nullptr, context->newList()->appendLast(context, context->fromInteger(20)), nullptr);
-    addM->asMethod(context)(context, setObj, nullptr, context->newList()->appendLast(context, context->fromInteger(10)), nullptr);
+    addM->asMethod(context)(context, setObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, add1)), nullptr);
+    addM->asMethod(context)(context, setObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, context->fromInteger(20)))), nullptr);
+    addM->asMethod(context)(context, setObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, context->fromInteger(10)))), nullptr);
 
-    const proto::ProtoObject* lenResult = lenM->asMethod(context)(context, setObj, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* lenResult = lenM->asMethod(context)(context, setObj, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     EXPECT_EQ(lenResult->asLong(context), 2);
 
     const proto::ProtoList* contains10 = context->newList()->appendLast(context, context->fromInteger(10));
-    EXPECT_EQ(containsM->asMethod(context)(context, setObj, nullptr, contains10, nullptr), PROTO_TRUE);
+    EXPECT_EQ(containsM->asMethod(context)(context, setObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, contains10)), nullptr), PROTO_TRUE);
     const proto::ProtoList* contains99 = context->newList()->appendLast(context, context->fromInteger(99));
-    EXPECT_EQ(containsM->asMethod(context)(context, setObj, nullptr, contains99, nullptr), PROTO_FALSE);
+    EXPECT_EQ(containsM->asMethod(context)(context, setObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, contains99)), nullptr), PROTO_FALSE);
 
-    const proto::ProtoObject* it = iterM->asMethod(context)(context, setObj, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* it = iterM->asMethod(context)(context, setObj, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     ASSERT_NE(it, nullptr);
 
     const proto::ProtoList* removeArgs = context->newList()->appendLast(context, context->fromInteger(10));
-    removeM->asMethod(context)(context, setObj, nullptr, removeArgs, nullptr);
-    const proto::ProtoObject* lenAfter = lenM->asMethod(context)(context, setObj, nullptr, context->newList(), nullptr);
+    removeM->asMethod(context)(context, setObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, removeArgs)), nullptr);
+    const proto::ProtoObject* lenAfter = lenM->asMethod(context)(context, setObj, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     EXPECT_EQ(lenAfter->asLong(context), 1);
 
     const proto::ProtoObject* popM = setObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "pop"));
     ASSERT_NE(popM, nullptr);
-    const proto::ProtoObject* popped = popM->asMethod(context)(context, setObj, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* popped = popM->asMethod(context)(context, setObj, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     ASSERT_NE(popped, nullptr);
     EXPECT_TRUE(popped->isInteger(context));
-    const proto::ProtoObject* lenFinal = lenM->asMethod(context)(context, setObj, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* lenFinal = lenM->asMethod(context)(context, setObj, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     EXPECT_EQ(lenFinal->asLong(context), 0);
 
-    addM->asMethod(context)(context, setObj, nullptr, context->newList()->appendLast(context, context->fromInteger(5)), nullptr);
-    addM->asMethod(context)(context, setObj, nullptr, context->newList()->appendLast(context, context->fromInteger(7)), nullptr);
+    addM->asMethod(context)(context, setObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, context->fromInteger(5)))), nullptr);
+    addM->asMethod(context)(context, setObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, context->fromInteger(7)))), nullptr);
     const proto::ProtoObject* discardM = setObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "discard"));
     ASSERT_NE(discardM, nullptr);
-    discardM->asMethod(context)(context, setObj, nullptr, context->newList()->appendLast(context, context->fromInteger(99)), nullptr);
-    EXPECT_EQ(lenM->asMethod(context)(context, setObj, nullptr, context->newList(), nullptr)->asLong(context), 2);
-    discardM->asMethod(context)(context, setObj, nullptr, context->newList()->appendLast(context, context->fromInteger(5)), nullptr);
-    EXPECT_EQ(lenM->asMethod(context)(context, setObj, nullptr, context->newList(), nullptr)->asLong(context), 1);
+    discardM->asMethod(context)(context, setObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, context->fromInteger(99)))), nullptr);
+    EXPECT_EQ(lenM->asMethod(context)(context, setObj, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr)->asLong(context), 2);
+    discardM->asMethod(context)(context, setObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, context->fromInteger(5)))), nullptr);
+    EXPECT_EQ(lenM->asMethod(context)(context, setObj, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr)->asLong(context), 1);
 }
 
 TEST_F(FoundationTest, SetUnion) {
@@ -1181,16 +1181,16 @@ TEST_F(FoundationTest, SetUnion) {
     set1->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSet()->asObject(context));
     const proto::ProtoObject* addM = set1->getAttribute(context, proto::ProtoString::fromUTF8String(context, "add"));
     ASSERT_NE(addM, nullptr);
-    addM->asMethod(context)(context, set1, nullptr, context->newList()->appendLast(context, context->fromInteger(1)), nullptr);
-    addM->asMethod(context)(context, set1, nullptr, context->newList()->appendLast(context, context->fromInteger(2)), nullptr);
+    addM->asMethod(context)(context, set1, nullptr, protoPython::argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, context->fromInteger(1)))), nullptr);
+    addM->asMethod(context)(context, set1, nullptr, protoPython::argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, context->fromInteger(2)))), nullptr);
 
-    const proto::ProtoObject* result = copyM->asMethod(context)(context, set1, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* result = copyM->asMethod(context)(context, set1, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     ASSERT_NE(result, nullptr);
     const proto::ProtoObject* lenM = result->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__len__"));
     ASSERT_NE(lenM, nullptr);
-    EXPECT_EQ(lenM->asMethod(context)(context, result, nullptr, context->newList(), nullptr)->asLong(context), 2);
+    EXPECT_EQ(lenM->asMethod(context)(context, result, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr)->asLong(context), 2);
 
-    const proto::ProtoObject* unionResult = unionM->asMethod(context)(context, set1, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* unionResult = unionM->asMethod(context)(context, set1, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     ASSERT_NE(unionResult, nullptr);
 }
 
@@ -1202,13 +1202,13 @@ TEST_F(FoundationTest, MathIsclose) {
     ASSERT_NE(iscloseM, nullptr);
 
     const proto::ProtoList* argsSame = context->newList()->appendLast(context, context->fromDouble(1.0))->appendLast(context, context->fromDouble(1.0));
-    EXPECT_EQ(invokeCallable(context, iscloseM, mathMod, argsSame), PROTO_TRUE);
+    EXPECT_EQ(invokeCallable(context, iscloseM, mathMod, protoPython::argsView(proto::ProtoListArguments(context, argsSame))), PROTO_TRUE);
 
     const proto::ProtoList* argsClose = context->newList()->appendLast(context, context->fromDouble(1.0))->appendLast(context, context->fromDouble(1.0 + 1e-10));
-    EXPECT_EQ(invokeCallable(context, iscloseM, mathMod, argsClose), PROTO_TRUE);
+    EXPECT_EQ(invokeCallable(context, iscloseM, mathMod, protoPython::argsView(proto::ProtoListArguments(context, argsClose))), PROTO_TRUE);
 
     const proto::ProtoList* argsFar = context->newList()->appendLast(context, context->fromDouble(1.0))->appendLast(context, context->fromDouble(2.0));
-    EXPECT_EQ(invokeCallable(context, iscloseM, mathMod, argsFar), PROTO_FALSE);
+    EXPECT_EQ(invokeCallable(context, iscloseM, mathMod, protoPython::argsView(proto::ProtoListArguments(context, argsFar))), PROTO_FALSE);
 }
 
 TEST_F(FoundationTest, MathLog) {
@@ -1221,14 +1221,14 @@ TEST_F(FoundationTest, MathLog) {
     ASSERT_NE(log10M, nullptr);
     
     const proto::ProtoList* argsE = context->newList()->appendLast(context, context->fromDouble(2.718281828));
-    const proto::ProtoObject* logE = invokeCallable(context, logM, mathMod, argsE);
+    const proto::ProtoObject* logE = invokeCallable(context, logM, mathMod, protoPython::argsView(proto::ProtoListArguments(context, argsE)));
     ASSERT_NE(logE, nullptr);
     EXPECT_TRUE(logE->isDouble(context) || logE->isInteger(context));
     double valE = logE->isDouble(context) ? logE->asDouble(context) : static_cast<double>(logE->asLong(context));
     EXPECT_NEAR(valE, 1.0, 0.001);
     /* Use log(x, 10) as fallback; log10 has resolution issues in some contexts (v48). */
     const proto::ProtoList* args100 = context->newList()->appendLast(context, context->fromDouble(100.0))->appendLast(context, context->fromDouble(10.0));
-    const proto::ProtoObject* log10_100 = invokeCallable(context, logM, mathMod, args100);
+    const proto::ProtoObject* log10_100 = invokeCallable(context, logM, mathMod, protoPython::argsView(proto::ProtoListArguments(context, args100)));
     ASSERT_NE(log10_100, nullptr) << "math.log(100, 10) returned nullptr";
     double val10 = log10_100->isDouble(context) ? log10_100->asDouble(context) : static_cast<double>(log10_100->asLong(context));
     EXPECT_NEAR(val10, 2.0, 0.001);
@@ -1241,7 +1241,7 @@ TEST_F(FoundationTest, MathSqrt) {
     const proto::ProtoObject* sqrtM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "sqrt"));
     ASSERT_NE(sqrtM, nullptr);
     const proto::ProtoList* args4 = context->newList()->appendLast(context, context->fromDouble(4.0));
-    const proto::ProtoObject* result = sqrtM->asMethod(context)(context, mathMod, nullptr, args4, nullptr);
+    const proto::ProtoObject* result = sqrtM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args4)), nullptr);
     ASSERT_NE(result, nullptr);
     double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
     EXPECT_DOUBLE_EQ(val, 2.0);
@@ -1254,7 +1254,7 @@ TEST_F(FoundationTest, MathTan) {
     const proto::ProtoObject* tanM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "tan"));
     ASSERT_NE(tanM, nullptr);
     const proto::ProtoList* args0 = context->newList()->appendLast(context, context->fromDouble(0.0));
-    const proto::ProtoObject* result = tanM->asMethod(context)(context, mathMod, nullptr, args0, nullptr);
+    const proto::ProtoObject* result = tanM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args0)), nullptr);
     ASSERT_NE(result, nullptr);
     double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
     EXPECT_DOUBLE_EQ(val, 0.0);
@@ -1267,7 +1267,7 @@ TEST_F(FoundationTest, MathAtan) {
     const proto::ProtoObject* atanM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "atan"));
     ASSERT_NE(atanM, nullptr);
     const proto::ProtoList* args1 = context->newList()->appendLast(context, context->fromDouble(1.0));
-    const proto::ProtoObject* result = atanM->asMethod(context)(context, mathMod, nullptr, args1, nullptr);
+    const proto::ProtoObject* result = atanM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args1)), nullptr);
     ASSERT_NE(result, nullptr);
     double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
     EXPECT_NEAR(val, 0.78539816339744828, 1e-10);  // atan(1) == pi/4
@@ -1280,7 +1280,7 @@ TEST_F(FoundationTest, MathAtan2) {
     const proto::ProtoObject* atan2M = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "atan2"));
     ASSERT_NE(atan2M, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(1.0))->appendLast(context, context->fromDouble(1.0));
-    const proto::ProtoObject* result = atan2M->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    const proto::ProtoObject* result = atan2M->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
     EXPECT_NEAR(val, 0.78539816339744828, 1e-10);  // atan2(1, 1) == pi/4
@@ -1293,7 +1293,7 @@ TEST_F(FoundationTest, OperatorAndOrFloatHex) {
     const proto::ProtoObject* andM = opMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "and_"));
     ASSERT_NE(andM, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromInteger(12))->appendLast(context, context->fromInteger(10));
-    const proto::ProtoObject* result = andM->asMethod(context)(context, opMod, nullptr, args, nullptr);
+    const proto::ProtoObject* result = andM->asMethod(context)(context, opMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->isInteger(context));
     EXPECT_EQ(result->asLong(context), 12 & 10);  // 0b1100 & 0b1010 == 8
@@ -1308,7 +1308,7 @@ TEST_F(FoundationTest, StrSplitMaxsplit) {
     const proto::ProtoObject* splitM = s->getAttribute(context, proto::ProtoString::fromUTF8String(context, "split"));
     ASSERT_NE(splitM, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromUTF8String(" "))->appendLast(context, context->fromInteger(1));
-    const proto::ProtoObject* result = splitM->asMethod(context)(context, s, nullptr, args, nullptr);
+    const proto::ProtoObject* result = splitM->asMethod(context)(context, s, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"))->asList(context));
     const proto::ProtoList* parts = result->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"))->asList(context);
@@ -1322,7 +1322,7 @@ TEST_F(FoundationTest, MathHypot) {
     const proto::ProtoObject* hypotM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "hypot"));
     ASSERT_NE(hypotM, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(3.0))->appendLast(context, context->fromDouble(4.0));
-    const proto::ProtoObject* result = hypotM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    const proto::ProtoObject* result = hypotM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
     EXPECT_NEAR(val, 5.0, 1e-10);  // hypot(3, 4) == 5
@@ -1335,7 +1335,7 @@ TEST_F(FoundationTest, OperatorIndex) {
     const proto::ProtoObject* indexM = opMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "index"));
     ASSERT_NE(indexM, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromInteger(42));
-    const proto::ProtoObject* result = indexM->asMethod(context)(context, opMod, nullptr, args, nullptr);
+    const proto::ProtoObject* result = indexM->asMethod(context)(context, opMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->isInteger(context));
     EXPECT_EQ(result->asLong(context), 42);
@@ -1348,7 +1348,7 @@ TEST_F(FoundationTest, MathLog2) {
     const proto::ProtoObject* log2M = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "log2"));
     ASSERT_NE(log2M, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(8.0));
-    const proto::ProtoObject* result = log2M->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    const proto::ProtoObject* result = log2M->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
     EXPECT_NEAR(val, 3.0, 1e-10);  // log2(8) == 3
@@ -1361,7 +1361,7 @@ TEST_F(FoundationTest, MathRemainder) {
     const proto::ProtoObject* remainderM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "remainder"));
     ASSERT_NE(remainderM, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(5.5))->appendLast(context, context->fromDouble(2.0));
-    const proto::ProtoObject* result = remainderM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    const proto::ProtoObject* result = remainderM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
     EXPECT_NEAR(val, -0.5, 1e-10);  // remainder(5.5, 2.0) == -0.5
@@ -1374,7 +1374,7 @@ TEST_F(FoundationTest, MathErf) {
     const proto::ProtoObject* erfM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "erf"));
     ASSERT_NE(erfM, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(0.0));
-    const proto::ProtoObject* result = erfM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    const proto::ProtoObject* result = erfM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
     EXPECT_NEAR(val, 0.0, 1e-10);  // erf(0) == 0
@@ -1387,7 +1387,7 @@ TEST_F(FoundationTest, MathErfc) {
     const proto::ProtoObject* erfcM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "erfc"));
     ASSERT_NE(erfcM, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(0.0));
-    const proto::ProtoObject* result = erfcM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    const proto::ProtoObject* result = erfcM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
     EXPECT_NEAR(val, 1.0, 1e-10);  // erfc(0) == 1
@@ -1400,7 +1400,7 @@ TEST_F(FoundationTest, MathGamma) {
     const proto::ProtoObject* gammaM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "gamma"));
     ASSERT_NE(gammaM, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(2.0));
-    const proto::ProtoObject* result = gammaM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    const proto::ProtoObject* result = gammaM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
     EXPECT_NEAR(val, 1.0, 1e-10);  // gamma(2) == 1
@@ -1413,7 +1413,7 @@ TEST_F(FoundationTest, MathLgamma) {
     const proto::ProtoObject* lgammaM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "lgamma"));
     ASSERT_NE(lgammaM, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(2.0));
-    const proto::ProtoObject* result = lgammaM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    const proto::ProtoObject* result = lgammaM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
     EXPECT_NEAR(val, 0.0, 1e-10);  // lgamma(2) == 0
@@ -1433,7 +1433,7 @@ TEST_F(FoundationTest, MathDist) {
     p2->setAttribute(context, dataName,
         context->newList()->appendLast(context, context->fromInteger(3))->appendLast(context, context->fromInteger(4))->asObject(context));
     const proto::ProtoList* args = context->newList()->appendLast(context, p1)->appendLast(context, p2);
-    const proto::ProtoObject* result = distM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    const proto::ProtoObject* result = distM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     /* Handle raw double/int and Python float (object with __data__); avoid asLong on non-integer. */
     double val = 0.0;
@@ -1461,7 +1461,7 @@ TEST_F(FoundationTest, MathPerm) {
     const proto::ProtoObject* permM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "perm"));
     ASSERT_NE(permM, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromInteger(5))->appendLast(context, context->fromInteger(2));
-    const proto::ProtoObject* result = permM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    const proto::ProtoObject* result = permM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->isInteger(context));
     EXPECT_EQ(result->asLong(context), 20);  // perm(5,2) == 20
@@ -1474,7 +1474,7 @@ TEST_F(FoundationTest, MathComb) {
     const proto::ProtoObject* combM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "comb"));
     ASSERT_NE(combM, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromInteger(5))->appendLast(context, context->fromInteger(2));
-    const proto::ProtoObject* result = combM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    const proto::ProtoObject* result = combM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->isInteger(context));
     EXPECT_EQ(result->asLong(context), 10);  // comb(5,2) == 10
@@ -1487,7 +1487,7 @@ TEST_F(FoundationTest, MathIsqrt) {
     const proto::ProtoObject* isqrtM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "isqrt"));
     ASSERT_NE(isqrtM, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromInteger(10));
-    const proto::ProtoObject* result = isqrtM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    const proto::ProtoObject* result = isqrtM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->isInteger(context));
     EXPECT_EQ(result->asLong(context), 3);  // isqrt(10) == 3
@@ -1500,7 +1500,7 @@ TEST_F(FoundationTest, MathAcosh) {
     const proto::ProtoObject* acoshM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "acosh"));
     ASSERT_NE(acoshM, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(2.0));
-    const proto::ProtoObject* result = acoshM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    const proto::ProtoObject* result = acoshM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
     EXPECT_NEAR(val, 1.3169578969248168, 1e-10);  // acosh(2)
@@ -1513,7 +1513,7 @@ TEST_F(FoundationTest, MathCosh) {
     const proto::ProtoObject* coshM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "cosh"));
     ASSERT_NE(coshM, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(0.0));
-    const proto::ProtoObject* result = coshM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    const proto::ProtoObject* result = coshM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
     EXPECT_NEAR(val, 1.0, 1e-10);  // cosh(0) == 1
@@ -1526,7 +1526,7 @@ TEST_F(FoundationTest, MathSinh) {
     const proto::ProtoObject* sinhM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "sinh"));
     ASSERT_NE(sinhM, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(0.0));
-    const proto::ProtoObject* result = sinhM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    const proto::ProtoObject* result = sinhM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
     EXPECT_NEAR(val, 0.0, 1e-10);  // sinh(0) == 0
@@ -1539,7 +1539,7 @@ TEST_F(FoundationTest, MathUlp) {
     const proto::ProtoObject* ulpM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "ulp"));
     ASSERT_NE(ulpM, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(1.0));
-    const proto::ProtoObject* result = ulpM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    const proto::ProtoObject* result = ulpM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
     EXPECT_GT(val, 0.0);
@@ -1555,7 +1555,7 @@ TEST_F(FoundationTest, MathNextafter) {
     const proto::ProtoObject* nextafterM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "nextafter"));
     ASSERT_NE(nextafterM, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(1.0))->appendLast(context, infObj);
-    const proto::ProtoObject* result = nextafterM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    const proto::ProtoObject* result = nextafterM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
     EXPECT_GT(val, 1.0);
@@ -1579,12 +1579,12 @@ TEST_F(FoundationTest, MathLdexpFrexpModfE) {
     ASSERT_NE(modfM, nullptr);
     ASSERT_NE(eObj, nullptr);
     const proto::ProtoList* argsLdexp = context->newList()->appendLast(context, context->fromDouble(1.5))->appendLast(context, context->fromInteger(2));
-    const proto::ProtoObject* resLdexp = ldexpM->asMethod(context)(context, mathMod, nullptr, argsLdexp, nullptr);
+    const proto::ProtoObject* resLdexp = ldexpM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, argsLdexp)), nullptr);
     ASSERT_NE(resLdexp, nullptr);
     double valLdexp = resLdexp->isDouble(context) ? resLdexp->asDouble(context) : static_cast<double>(resLdexp->asLong(context));
     EXPECT_NEAR(valLdexp, 6.0, 1e-10);  // ldexp(1.5, 2) == 6.0
     const proto::ProtoList* argsFrexp = context->newList()->appendLast(context, context->fromDouble(8.0));
-    const proto::ProtoObject* resFrexp = frexpM->asMethod(context)(context, mathMod, nullptr, argsFrexp, nullptr);
+    const proto::ProtoObject* resFrexp = frexpM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, argsFrexp)), nullptr);
     ASSERT_NE(resFrexp, nullptr);
     ASSERT_TRUE(resFrexp->asTuple(context));
     const proto::ProtoTuple* tupFrexp = resFrexp->asTuple(context);
@@ -1593,7 +1593,7 @@ TEST_F(FoundationTest, MathLdexpFrexpModfE) {
     EXPECT_NEAR(mantissa, 0.5, 1e-10);  // frexp(8) -> (0.5, 4)
     EXPECT_EQ(tupFrexp->getAt(context, 1)->asLong(context), 4);
     const proto::ProtoList* argsModf = context->newList()->appendLast(context, context->fromDouble(2.5));
-    const proto::ProtoObject* resModf = modfM->asMethod(context)(context, mathMod, nullptr, argsModf, nullptr);
+    const proto::ProtoObject* resModf = modfM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, argsModf)), nullptr);
     ASSERT_NE(resModf, nullptr);
     ASSERT_TRUE(resModf->asTuple(context));
     const proto::ProtoTuple* tupModf = resModf->asTuple(context);
@@ -1623,17 +1623,17 @@ TEST_F(FoundationTest, MathCbrtExp2Expm1Fma) {
     ASSERT_NE(expm1M, nullptr);
     ASSERT_NE(fmaM, nullptr);
     const proto::ProtoList* argsCbrt = context->newList()->appendLast(context, context->fromDouble(27.0));
-    const proto::ProtoObject* resCbrt = cbrtM->asMethod(context)(context, mathMod, nullptr, argsCbrt, nullptr);
+    const proto::ProtoObject* resCbrt = cbrtM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, argsCbrt)), nullptr);
     ASSERT_NE(resCbrt, nullptr);
     double valCbrt = resCbrt->isDouble(context) ? resCbrt->asDouble(context) : static_cast<double>(resCbrt->asLong(context));
     EXPECT_NEAR(valCbrt, 3.0, 1e-10);  // cbrt(27) == 3.0
     const proto::ProtoList* argsExp2 = context->newList()->appendLast(context, context->fromInteger(3));
-    const proto::ProtoObject* resExp2 = exp2M->asMethod(context)(context, mathMod, nullptr, argsExp2, nullptr);
+    const proto::ProtoObject* resExp2 = exp2M->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, argsExp2)), nullptr);
     ASSERT_NE(resExp2, nullptr);
     double valExp2 = resExp2->isDouble(context) ? resExp2->asDouble(context) : static_cast<double>(resExp2->asLong(context));
     EXPECT_NEAR(valExp2, 8.0, 1e-10);  // exp2(3) == 8.0
     const proto::ProtoList* argsExpm1 = context->newList()->appendLast(context, context->fromInteger(0));
-    const proto::ProtoObject* resExpm1 = expm1M->asMethod(context)(context, mathMod, nullptr, argsExpm1, nullptr);
+    const proto::ProtoObject* resExpm1 = expm1M->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, argsExpm1)), nullptr);
     ASSERT_NE(resExpm1, nullptr);
     double valExpm1 = resExpm1->isDouble(context) ? resExpm1->asDouble(context) : static_cast<double>(resExpm1->asLong(context));
     EXPECT_NEAR(valExpm1, 0.0, 1e-10);  // expm1(0) == 0.0
@@ -1641,7 +1641,7 @@ TEST_F(FoundationTest, MathCbrtExp2Expm1Fma) {
         ->appendLast(context, context->fromDouble(2.0))
         ->appendLast(context, context->fromDouble(3.0))
         ->appendLast(context, context->fromDouble(4.0));
-    const proto::ProtoObject* resFma = fmaM->asMethod(context)(context, mathMod, nullptr, argsFma, nullptr);
+    const proto::ProtoObject* resFma = fmaM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, argsFma)), nullptr);
     ASSERT_NE(resFma, nullptr);
     double valFma = resFma->isDouble(context) ? resFma->asDouble(context) : static_cast<double>(resFma->asLong(context));
     EXPECT_NEAR(valFma, 10.0, 1e-10);  // fma(2, 3, 4) == 10.0
@@ -1665,7 +1665,7 @@ TEST_F(FoundationTest, MathSumprod) {
             ->appendLast(context, context->fromInteger(5))
             ->appendLast(context, context->fromInteger(6))->asObject(context));
     const proto::ProtoList* args = context->newList()->appendLast(context, list1)->appendLast(context, list2);
-    const proto::ProtoObject* result = sumprodM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    const proto::ProtoObject* result = sumprodM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
     EXPECT_NEAR(val, 32.0, 1e-10);  // sumprod([1,2,3], [4,5,6]) == 1*4+2*5+3*6 == 32
@@ -1678,7 +1678,7 @@ TEST_F(FoundationTest, EvalCompile) {
     ASSERT_NE(pyEval, nullptr);
     ASSERT_NE(pyCompile, nullptr);
     const proto::ProtoList* evalArgs = context->newList()->appendLast(context, context->fromUTF8String("1 + 2"));
-    const proto::ProtoObject* evalResult = pyEval->asMethod(context)(context, PROTO_NONE, nullptr, evalArgs, nullptr);
+    const proto::ProtoObject* evalResult = pyEval->asMethod(context)(context, PROTO_NONE, nullptr, protoPython::argsView(proto::ProtoListArguments(context, evalArgs)), nullptr);
     ASSERT_NE(evalResult, nullptr);
     EXPECT_TRUE(evalResult->isInteger(context));
     EXPECT_EQ(evalResult->asLong(context), 3);
@@ -1686,7 +1686,7 @@ TEST_F(FoundationTest, EvalCompile) {
         ->appendLast(context, context->fromUTF8String("3 * 4"))
         ->appendLast(context, context->fromUTF8String("<test>"))
         ->appendLast(context, context->fromUTF8String("eval"));
-    const proto::ProtoObject* codeObj = pyCompile->asMethod(context)(context, PROTO_NONE, nullptr, compileArgs, nullptr);
+    const proto::ProtoObject* codeObj = pyCompile->asMethod(context)(context, PROTO_NONE, nullptr, protoPython::argsView(proto::ProtoListArguments(context, compileArgs)), nullptr);
     ASSERT_NE(codeObj, nullptr);
 }
 
@@ -1696,7 +1696,7 @@ TEST_F(FoundationTest, CompiledSnippetListLiteralAndSubscr) {
     const proto::ProtoObject* pyEval = env.resolve("eval");
     ASSERT_NE(pyEval, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromUTF8String("[1, 2, 3][1]"));
-    const proto::ProtoObject* result = pyEval->asMethod(context)(context, PROTO_NONE, nullptr, args, nullptr);
+    const proto::ProtoObject* result = pyEval->asMethod(context)(context, PROTO_NONE, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->isInteger(context));
     EXPECT_EQ(result->asLong(context), 2);
@@ -1713,11 +1713,11 @@ TEST_F(FoundationTest, CompiledSnippetExecAssign) {
     const proto::ProtoList* execArgs = context->newList()
         ->appendLast(context, context->fromUTF8String("x = 1 + 2\n"))
         ->appendLast(context, frame);
-    pyExec->asMethod(context)(context, PROTO_NONE, nullptr, execArgs, nullptr);
+    pyExec->asMethod(context)(context, PROTO_NONE, nullptr, protoPython::argsView(proto::ProtoListArguments(context, execArgs)), nullptr);
     const proto::ProtoList* evalArgs = context->newList()
         ->appendLast(context, context->fromUTF8String("x"))
         ->appendLast(context, frame);
-    const proto::ProtoObject* result = pyEval->asMethod(context)(context, PROTO_NONE, nullptr, evalArgs, nullptr);
+    const proto::ProtoObject* result = pyEval->asMethod(context)(context, PROTO_NONE, nullptr, protoPython::argsView(proto::ProtoListArguments(context, evalArgs)), nullptr);
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->isInteger(context));
     EXPECT_EQ(result->asLong(context), 3);
@@ -1730,7 +1730,7 @@ TEST_F(FoundationTest, MathFactorial) {
     const proto::ProtoObject* factM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "factorial"));
     ASSERT_NE(factM, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromInteger(5));
-    const proto::ProtoObject* result = factM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    const proto::ProtoObject* result = factM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->isInteger(context));
     EXPECT_EQ(result->asLong(context), 120);  // factorial(5) == 120
@@ -1749,7 +1749,7 @@ TEST_F(FoundationTest, MathProd) {
             ->appendLast(context, context->fromInteger(3))
             ->appendLast(context, context->fromInteger(4))->asObject(context));
     const proto::ProtoList* args = context->newList()->appendLast(context, listObj);
-    const proto::ProtoObject* result = prodM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    const proto::ProtoObject* result = prodM->asMethod(context)(context, mathMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
     EXPECT_NEAR(val, 24.0, 1e-10);  // prod([2,3,4]) == 24
@@ -1762,7 +1762,7 @@ TEST_F(FoundationTest, ReprOrId) {
     const proto::ProtoObject* reprM = builtins->getAttribute(context, proto::ProtoString::fromUTF8String(context, "repr"));
     ASSERT_NE(reprM, nullptr);
     const proto::ProtoList* args42 = context->newList()->appendLast(context, context->fromInteger(42));
-    const proto::ProtoObject* result = reprM->asMethod(context)(context, builtins, nullptr, args42, nullptr);
+    const proto::ProtoObject* result = reprM->asMethod(context)(context, builtins, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args42)), nullptr);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isString(context));
     std::string s;
@@ -1782,7 +1782,7 @@ TEST_F(FoundationTest, ListIaddOrRemoveprefix) {
     other->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"),
         context->newList()->appendLast(context, context->fromInteger(2))->appendLast(context, context->fromInteger(3))->asObject(context));
     const proto::ProtoList* args = context->newList()->appendLast(context, other);
-    const proto::ProtoObject* result = iaddM->asMethod(context)(context, listObj, nullptr, args, nullptr);
+    const proto::ProtoObject* result = iaddM->asMethod(context)(context, listObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     const proto::ProtoObject* data = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"));
     ASSERT_NE(data, nullptr);
@@ -1801,7 +1801,7 @@ TEST_F(FoundationTest, OperatorInvert) {
     const proto::ProtoObject* invertM = opMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "invert"));
     ASSERT_NE(invertM, nullptr);
     const proto::ProtoList* args5 = context->newList()->appendLast(context, context->fromInteger(5));
-    const proto::ProtoObject* result = invokeCallable(context, invertM, opMod, args5);
+    const proto::ProtoObject* result = invokeCallable(context, invertM, opMod, protoPython::argsView(proto::ProtoListArguments(context, args5)));
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->isInteger(context));
     EXPECT_EQ(result->asLong(context), -6);  // ~5 == -6 in Python
@@ -1828,11 +1828,11 @@ TEST_F(FoundationTest, DictUnion) {
     const proto::ProtoObject* orM = d1->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__or__"));
     ASSERT_NE(orM, nullptr);
     const proto::ProtoList* orArgs = context->newList()->appendLast(context, d2);
-    const proto::ProtoObject* merged = orM->asMethod(context)(context, d1, nullptr, orArgs, nullptr);
+    const proto::ProtoObject* merged = orM->asMethod(context)(context, d1, nullptr, protoPython::argsView(proto::ProtoListArguments(context, orArgs)), nullptr);
     ASSERT_NE(merged, nullptr);
     const proto::ProtoObject* lenM = merged->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__len__"));
     ASSERT_NE(lenM, nullptr);
-    const proto::ProtoObject* lenVal = lenM->asMethod(context)(context, merged, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* lenVal = lenM->asMethod(context)(context, merged, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     ASSERT_NE(lenVal, nullptr);
     EXPECT_EQ(lenVal->asLong(context), 2);
 }
@@ -1844,7 +1844,7 @@ TEST_F(FoundationTest, OperatorNegOrGetattr) {
     const proto::ProtoObject* negM = opMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "neg"));
     ASSERT_NE(negM, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromInteger(-7));
-    const proto::ProtoObject* result = negM->asMethod(context)(context, opMod, nullptr, args, nullptr);
+    const proto::ProtoObject* result = negM->asMethod(context)(context, opMod, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->asLong(context), 7);
 }
@@ -1858,7 +1858,7 @@ TEST_F(FoundationTest, ListRepeat) {
     const proto::ProtoObject* mulM = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__mul__"));
     ASSERT_NE(mulM, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromInteger(3));
-    const proto::ProtoObject* result = mulM->asMethod(context)(context, listObj, nullptr, args, nullptr);
+    const proto::ProtoObject* result = mulM->asMethod(context)(context, listObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
     const proto::ProtoObject* data = result->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"));
     ASSERT_NE(data, nullptr);
@@ -1879,11 +1879,11 @@ TEST_F(FoundationTest, HasattrDelattr) {
     proto::ProtoObject* obj = const_cast<proto::ProtoObject*>(context->newObject(true));
     obj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "x"), context->fromInteger(42));
     const proto::ProtoList* hasX = context->newList()->appendLast(context, obj)->appendLast(context, context->fromUTF8String("x"));
-    EXPECT_EQ(hasattrM->asMethod(context)(context, builtins, nullptr, hasX, nullptr), PROTO_TRUE);
+    EXPECT_EQ(hasattrM->asMethod(context)(context, builtins, nullptr, protoPython::argsView(proto::ProtoListArguments(context, hasX)), nullptr), PROTO_TRUE);
     const proto::ProtoList* hasY = context->newList()->appendLast(context, obj)->appendLast(context, context->fromUTF8String("y"));
-    EXPECT_EQ(hasattrM->asMethod(context)(context, builtins, nullptr, hasY, nullptr), PROTO_FALSE);
+    EXPECT_EQ(hasattrM->asMethod(context)(context, builtins, nullptr, protoPython::argsView(proto::ProtoListArguments(context, hasY)), nullptr), PROTO_FALSE);
     const proto::ProtoList* delX = context->newList()->appendLast(context, obj)->appendLast(context, context->fromUTF8String("x"));
-    delattrM->asMethod(context)(context, builtins, nullptr, delX, nullptr);
+    delattrM->asMethod(context)(context, builtins, nullptr, protoPython::argsView(proto::ProtoListArguments(context, delX)), nullptr);
     EXPECT_EQ(obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "x")), PROTO_NONE);
 }
 
@@ -1910,7 +1910,7 @@ TEST_F(FoundationTest, SetattrAndCallable) {
     EXPECT_EQ(got->asLong(context), 100);
     const proto::ProtoObject* intProto = env.getIntPrototype();
     const proto::ProtoList* callableArgs = context->newList()->appendLast(context, intProto);
-    const proto::ProtoObject* callableResult = callableM->asMethod(context)(context, builtins, nullptr, callableArgs, nullptr);
+    const proto::ProtoObject* callableResult = callableM->asMethod(context)(context, builtins, nullptr, protoPython::argsView(proto::ProtoListArguments(context, callableArgs)), nullptr);
     EXPECT_EQ(callableResult, PROTO_TRUE);
 }
 
@@ -1925,7 +1925,7 @@ TEST_F(FoundationTest, ListIaddAndDictIor) {
     const proto::ProtoObject* iaddM = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__iadd__"));
     ASSERT_NE(iaddM, nullptr);
     const proto::ProtoList* iaddArgs = context->newList()->appendLast(context, otherList);
-    const proto::ProtoObject* result = iaddM->asMethod(context)(context, listObj, nullptr, iaddArgs, nullptr);
+    const proto::ProtoObject* result = iaddM->asMethod(context)(context, listObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, iaddArgs)), nullptr);
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result, listObj);
     const proto::ProtoObject* data = listObj->getAttribute(context, dataName);
@@ -1947,12 +1947,12 @@ TEST_F(FoundationTest, ListIaddAndDictIor) {
     d2->call(context, nullptr, proto::ProtoString::fromUTF8String(context, "__setitem__"), d2, context->newList()->appendLast(context, k2)->appendLast(context, context->fromInteger(2)));
     const proto::ProtoObject* iorM = d1->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__ior__"));
     ASSERT_NE(iorM, nullptr);
-    const proto::ProtoObject* iorResult = iorM->asMethod(context)(context, d1, nullptr, context->newList()->appendLast(context, d2), nullptr);
+    const proto::ProtoObject* iorResult = iorM->asMethod(context)(context, d1, nullptr, protoPython::argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, d2))), nullptr);
     ASSERT_NE(iorResult, nullptr);
     EXPECT_EQ(iorResult, d1);
     const proto::ProtoObject* lenM = d1->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__len__"));
     ASSERT_NE(lenM, nullptr);
-    EXPECT_EQ(lenM->asMethod(context)(context, d1, nullptr, context->newList(), nullptr)->asLong(context), 2);
+    EXPECT_EQ(lenM->asMethod(context)(context, d1, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr)->asLong(context), 2);
 }
 
 TEST_F(FoundationTest, ItertoolsAccumulate) {
@@ -1967,13 +1967,13 @@ TEST_F(FoundationTest, ItertoolsAccumulate) {
     listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"),
         context->newList()->appendLast(context, context->fromInteger(1))->appendLast(context, context->fromInteger(2))->appendLast(context, context->fromInteger(3))->asObject(context));
     const proto::ProtoList* args = context->newList()->appendLast(context, listObj);
-    const proto::ProtoObject* accIt = invokeCallable(context, accumulateM, itertoolsMod, args);
+    const proto::ProtoObject* accIt = invokeCallable(context, accumulateM, itertoolsMod, protoPython::argsView(proto::ProtoListArguments(context, args)));
     ASSERT_NE(accIt, nullptr);
     const proto::ProtoObject* nextM = accIt->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
     ASSERT_NE(nextM, nullptr);
-    const proto::ProtoObject* v1 = invokeCallable(context, nextM, accIt, context->newList());
-    const proto::ProtoObject* v2 = invokeCallable(context, nextM, accIt, context->newList());
-    const proto::ProtoObject* v3 = invokeCallable(context, nextM, accIt, context->newList());
+    const proto::ProtoObject* v1 = invokeCallable(context, nextM, accIt, protoPython::argsView(proto::ProtoArguments(nullptr, 0)));
+    const proto::ProtoObject* v2 = invokeCallable(context, nextM, accIt, protoPython::argsView(proto::ProtoArguments(nullptr, 0)));
+    const proto::ProtoObject* v3 = invokeCallable(context, nextM, accIt, protoPython::argsView(proto::ProtoArguments(nullptr, 0)));
     ASSERT_NE(v1, nullptr);
     ASSERT_NE(v2, nullptr);
     ASSERT_NE(v3, nullptr);
@@ -1982,7 +1982,7 @@ TEST_F(FoundationTest, ItertoolsAccumulate) {
     EXPECT_EQ(v3->asLong(context), 6);
     
     // Check end of iterator (returns PROTO_NONE or nullptr)
-    const proto::ProtoObject* vEnd = invokeCallable(context, nextM, accIt, context->newList());
+    const proto::ProtoObject* vEnd = invokeCallable(context, nextM, accIt, protoPython::argsView(proto::ProtoArguments(nullptr, 0)));
     EXPECT_TRUE(vEnd == PROTO_NONE || vEnd == nullptr);
 }
 
@@ -2003,17 +2003,17 @@ TEST_F(FoundationTest, ListInsertRemoveClear) {
     ASSERT_NE(lenM, nullptr);
 
     const proto::ProtoList* insertArgs = context->newList()->appendLast(context, context->fromInteger(0))->appendLast(context, context->fromInteger(0));
-    insertM->asMethod(context)(context, listObj, nullptr, insertArgs, nullptr);
-    const proto::ProtoObject* len1 = lenM->asMethod(context)(context, listObj, nullptr, context->newList(), nullptr);
+    insertM->asMethod(context)(context, listObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, insertArgs)), nullptr);
+    const proto::ProtoObject* len1 = lenM->asMethod(context)(context, listObj, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     EXPECT_EQ(len1->asLong(context), 4);
 
     const proto::ProtoList* removeArgs = context->newList()->appendLast(context, context->fromInteger(2));
-    removeM->asMethod(context)(context, listObj, nullptr, removeArgs, nullptr);
-    const proto::ProtoObject* len2 = lenM->asMethod(context)(context, listObj, nullptr, context->newList(), nullptr);
+    removeM->asMethod(context)(context, listObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, removeArgs)), nullptr);
+    const proto::ProtoObject* len2 = lenM->asMethod(context)(context, listObj, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     EXPECT_EQ(len2->asLong(context), 3);
 
-    clearM->asMethod(context)(context, listObj, nullptr, context->newList(), nullptr);
-    const proto::ProtoObject* len3 = lenM->asMethod(context)(context, listObj, nullptr, context->newList(), nullptr);
+    clearM->asMethod(context)(context, listObj, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
+    const proto::ProtoObject* len3 = lenM->asMethod(context)(context, listObj, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     EXPECT_EQ(len3->asLong(context), 0);
 }
 
@@ -2031,37 +2031,37 @@ TEST_F(FoundationTest, DictUpdateClearCopy) {
     const proto::ProtoObject* lenM = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__len__"));
 
     const proto::ProtoList* args1 = context->newList()->appendLast(context, context->fromInteger(1))->appendLast(context, context->fromUTF8String("a"));
-    setitem->asMethod(context)(context, dictObj, nullptr, args1, nullptr);
+    setitem->asMethod(context)(context, dictObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args1)), nullptr);
     const proto::ProtoList* args2 = context->newList()->appendLast(context, context->fromInteger(2))->appendLast(context, context->fromUTF8String("b"));
-    setitem->asMethod(context)(context, dictObj, nullptr, args2, nullptr);
+    setitem->asMethod(context)(context, dictObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args2)), nullptr);
 
     const proto::ProtoObject* other = context->newObject(true)->addParent(context, env.getDictPrototype());
     other->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
     other->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
     const proto::ProtoObject* otherSetitem = other->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__setitem__"));
     const proto::ProtoList* otherArgs1 = context->newList()->appendLast(context, context->fromInteger(2))->appendLast(context, context->fromUTF8String("B"));
-    otherSetitem->asMethod(context)(context, other, nullptr, otherArgs1, nullptr);
+    otherSetitem->asMethod(context)(context, other, nullptr, protoPython::argsView(proto::ProtoListArguments(context, otherArgs1)), nullptr);
     const proto::ProtoList* otherArgs2 = context->newList()->appendLast(context, context->fromInteger(3))->appendLast(context, context->fromUTF8String("c"));
-    otherSetitem->asMethod(context)(context, other, nullptr, otherArgs2, nullptr);
+    otherSetitem->asMethod(context)(context, other, nullptr, protoPython::argsView(proto::ProtoListArguments(context, otherArgs2)), nullptr);
 
     const proto::ProtoList* updateArgs = context->newList()->appendLast(context, other);
-    update->asMethod(context)(context, dictObj, nullptr, updateArgs, nullptr);
+    update->asMethod(context)(context, dictObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, updateArgs)), nullptr);
 
-    const proto::ProtoObject* lenResult = lenM->asMethod(context)(context, dictObj, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* lenResult = lenM->asMethod(context)(context, dictObj, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     EXPECT_EQ(lenResult->asLong(context), 3);
 
-    const proto::ProtoObject* copied = copy->asMethod(context)(context, dictObj, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* copied = copy->asMethod(context)(context, dictObj, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     ASSERT_NE(copied, nullptr);
     const proto::ProtoObject* copyLen = copied->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__len__"));
     ASSERT_NE(copyLen, nullptr);
-    const proto::ProtoObject* copyLenResult = copyLen->asMethod(context)(context, copied, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* copyLenResult = copyLen->asMethod(context)(context, copied, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     EXPECT_EQ(copyLenResult->asLong(context), 3);
 
-    clear->asMethod(context)(context, dictObj, nullptr, context->newList(), nullptr);
-    const proto::ProtoObject* lenAfterClear = lenM->asMethod(context)(context, dictObj, nullptr, context->newList(), nullptr);
+    clear->asMethod(context)(context, dictObj, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
+    const proto::ProtoObject* lenAfterClear = lenM->asMethod(context)(context, dictObj, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     EXPECT_EQ(lenAfterClear->asLong(context), 0);
 
-    const proto::ProtoObject* copyLenAfter = copyLen->asMethod(context)(context, copied, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* copyLenAfter = copyLen->asMethod(context)(context, copied, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     EXPECT_EQ(copyLenAfter->asLong(context), 3);
 }
 
@@ -2074,7 +2074,7 @@ TEST_F(FoundationTest, DequeBasic) {
     ASSERT_NE(pyDeque, nullptr);
     
     // Create deque: d = deque()
-    const proto::ProtoObject* d = invokeCallable(context, pyDeque, collections, context->newList());
+    const proto::ProtoObject* d = invokeCallable(context, pyDeque, collections, protoPython::argsView(proto::ProtoArguments(nullptr, 0)));
     ASSERT_NE(d, nullptr);
     
     const proto::ProtoObject* append = d->getAttribute(context, proto::ProtoString::fromUTF8String(context, "append"));
@@ -2086,27 +2086,27 @@ TEST_F(FoundationTest, DequeBasic) {
     // Test append
     const proto::ProtoObject* v1 = context->fromInteger(10);
     const proto::ProtoList* args1 = context->newList()->appendLast(context, v1);
-    invokeCallable(context, append, d, args1);
+    invokeCallable(context, append, d, protoPython::argsView(proto::ProtoListArguments(context, args1)));
     
     // Test appendleft
     const proto::ProtoObject* v2 = context->fromInteger(20);
     const proto::ProtoList* args2 = context->newList()->appendLast(context, v2);
-    invokeCallable(context, appendleft, d, args2);
+    invokeCallable(context, appendleft, d, protoPython::argsView(proto::ProtoListArguments(context, args2)));
     
     // Check length
-    const proto::ProtoObject* length = invokeCallable(context, lenFunc, d, context->newList());
+    const proto::ProtoObject* length = invokeCallable(context, lenFunc, d, protoPython::argsView(proto::ProtoArguments(nullptr, 0)));
     EXPECT_EQ(length->asLong(context), 2);
     
     // Test popleft (should be 20)
-    const proto::ProtoObject* p1 = invokeCallable(context, popleft, d, context->newList());
+    const proto::ProtoObject* p1 = invokeCallable(context, popleft, d, protoPython::argsView(proto::ProtoArguments(nullptr, 0)));
     EXPECT_EQ(p1->asLong(context), 20);
     
     // Test pop (should be 10)
-    const proto::ProtoObject* p2 = invokeCallable(context, pop, d, context->newList());
+    const proto::ProtoObject* p2 = invokeCallable(context, pop, d, protoPython::argsView(proto::ProtoArguments(nullptr, 0)));
     EXPECT_EQ(p2->asLong(context), 10);
 
     // Check length after pops
-    length = invokeCallable(context, lenFunc, d, context->newList());
+    length = invokeCallable(context, lenFunc, d, protoPython::argsView(proto::ProtoArguments(nullptr, 0)));
     EXPECT_EQ(length->asLong(context), 0);
 }
 
@@ -2368,7 +2368,7 @@ TEST_F(FoundationTest, ReproCrash) {
     const proto::ProtoList* setArgs = context->newList()
         ->appendLast(context, context->fromUTF8String("key"))
         ->appendLast(context, context->fromInteger(42));
-    setitem->asMethod(context)(context, dict, nullptr, setArgs, nullptr);
+    setitem->asMethod(context)(context, dict, nullptr, protoPython::argsView(proto::ProtoListArguments(context, setArgs)), nullptr);
 
     // Get items()
     const proto::ProtoObject* itemsMethod = dict->getAttribute(context, proto::ProtoString::fromUTF8String(context, "items"));
@@ -2382,7 +2382,7 @@ TEST_F(FoundationTest, ReproCrash) {
     // Let's use env.resolve("iter") to be sure we match bytecode behavior
     const proto::ProtoObject* pyIter = env.resolve("iter");
     const proto::ProtoList* iterArgs = context->newList()->appendLast(context, itemsObj);
-    const proto::ProtoObject* iterator = pyIter->asMethod(context)(context, PROTO_NONE, nullptr, iterArgs, nullptr);
+    const proto::ProtoObject* iterator = pyIter->asMethod(context)(context, PROTO_NONE, nullptr, protoPython::argsView(proto::ProtoListArguments(context, iterArgs)), nullptr);
     ASSERT_NE(iterator, nullptr);
 
     // 2. Loop
