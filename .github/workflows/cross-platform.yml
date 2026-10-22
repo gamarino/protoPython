@@ -5,7 +5,7 @@ name: Cross-platform
 # run locally, against an INSTALLED protoCore package -- the supported mode on
 # Windows -- with GoogleTest fetched so the C++ suites run too. protoCore refs,
 # exactly:
-#   * macOS and the first Windows job build protoCore 3.0.0 (commit cf52f9f5),
+#   * macOS and the first Windows job build protoCore 3.0.0 (tag v3.0.0, commit ce00a4a2),
 #     as ci.yml does on Linux;
 #   * the "floor" Windows job builds protoCore 3.0.0 as well,
 #     PROTOCORE_MIN_VERSION in CMakeLists.txt, the oldest release protoPython
@@ -41,17 +41,17 @@ jobs:
         include:
           - name: macOS (Apple clang, arm64)
             os: macos-14
-            # protoCore 3.0.0 (cf52f9f5)
-            protocore_ref: cf52f9f5056919bb07326afc7159d5b3d78c03a3
+            # protoCore 3.0.0 (tag v3.0.0, ce00a4a2)
+            protocore_ref: ce00a4a26b6583ea8a58e776eee2ea91c743469e
           - name: Windows (MSVC, x64)
             os: windows-2022
-            # protoCore 3.0.0 (cf52f9f5)
-            protocore_ref: cf52f9f5056919bb07326afc7159d5b3d78c03a3
+            # protoCore 3.0.0 (tag v3.0.0, ce00a4a2)
+            protocore_ref: ce00a4a26b6583ea8a58e776eee2ea91c743469e
           - name: Windows (MSVC, x64), protoCore 3.0.0 floor
             os: windows-2022
-            # THE FLOOR JOB, the only one: protoCore 3.0.0 (cf52f9f5),
+            # THE FLOOR JOB, the only one: protoCore 3.0.0 (tag v3.0.0, ce00a4a2),
             # PROTOCORE_MIN_VERSION in CMakeLists.txt
-            protocore_ref: cf52f9f5056919bb07326afc7159d5b3d78c03a3
+            protocore_ref: ce00a4a26b6583ea8a58e776eee2ea91c743469e
     defaults:
       run:
         shell: bash

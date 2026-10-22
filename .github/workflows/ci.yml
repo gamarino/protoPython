@@ -49,12 +49,12 @@ concurrency:
 
 env:
   PROTOCORE_REPO: numaes/protoCore
-  # protoCore 3.0.0 (branch feature/args-calling-convention, commit cf52f9f5),
+  # protoCore 3.0.0 (tag v3.0.0, commit ce00a4a2),
   # SOVERSION 4: natives receive ProtoArguments descriptors. protopy enables its
   # adaptive heap controller (README, "Memory"). It is also the minimum
   # CMakeLists.txt declares (PROTOCORE_MIN_VERSION, 3.0.0), which the floor job
   # in cross-platform.yml (Windows) tests. Bump this deliberately.
-  PROTOCORE_REF: ${{ github.event_name == 'schedule' && 'master' || 'cf52f9f5056919bb07326afc7159d5b3d78c03a3' }}
+  PROTOCORE_REF: ${{ github.event_name == 'schedule' && 'master' || 'ce00a4a26b6583ea8a58e776eee2ea91c743469e' }}
   # The clock-dependent cases in this combined suite.  protoPython's own:
   #   protopy_dict_key_hash          assert elapsed < 20.0 for 20000 dict inserts
   #                                  (test/regression/dict_key_hash.py:124)
