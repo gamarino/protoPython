@@ -360,17 +360,28 @@ int executeModule(protoPython::PythonEnvironment& env, const std::string& module
     int ret = 0;
     try {
         ret = env.executeModule(moduleName, asMain);
-    } catch (const protoPython::PyException& e) {
+    } catch (const proto::ProtoException& e) {
         // SystemExit writes nothing and sets the exit status, as in
         // PythonEnvironment::executeModule's own report.
         std::ostringstream excOut;
-        env.handleException(e.exception(), nullptr, excOut);
+        env.handleException(e.value(), nullptr, excOut);
         if (excOut.str().empty()) {
             finishInterpreter(env);
             return env.getExitRequested();
         }
         std::cerr << "protopy: unhandled exception during execution of '" << moduleName << "':\n"
                   << excOut.str();
+        finishInterpreter(env);
+        return EXIT_RUNTIME;
+    } catch (const std::exception& e) {
+        // Native code threw a C++ exception past every Python frame.
+        std::cerr << "protopy: unhandled C++ exception during execution of '" << moduleName
+                  << "': " << e.what() << std::endl;
+        finishInterpreter(env);
+        return EXIT_RUNTIME;
+    } catch (...) {
+        std::cerr << "protopy: unhandled exception of an unknown C++ type during execution of '"
+                  << moduleName << "'" << std::endl;
         finishInterpreter(env);
         return EXIT_RUNTIME;
     }
@@ -527,11 +538,11 @@ int main(int argc, char* argv[]) {
         int ret = 0;
         try {
             ret = env.executeString(source, sourceName);
-        } catch (const protoPython::PyException& e) {
+        } catch (const proto::ProtoException& e) {
             // SystemExit writes nothing here and sets the exit status,
             // as in script execution (PythonEnvironment::executeModule).
             std::ostringstream excOut;
-            env.handleException(e.exception(), nullptr, excOut);
+            env.handleException(e.value(), nullptr, excOut);
             if (excOut.str().empty()) {
                 finishInterpreter(env);
                 return env.getExitRequested();
@@ -539,6 +550,14 @@ int main(int argc, char* argv[]) {
             std::cerr << "protopy: unhandled exception in "
                       << (sourceName == "<stdin>" ? "standard input program" : "-c execution")
                       << ":\n" << excOut.str();
+            finishInterpreter(env);
+            return EXIT_RUNTIME;
+        } catch (const std::exception& e) {
+            std::cerr << "protopy: unhandled C++ exception: " << e.what() << std::endl;
+            finishInterpreter(env);
+            return EXIT_RUNTIME;
+        } catch (...) {
+            std::cerr << "protopy: unhandled exception of an unknown C++ type" << std::endl;
             finishInterpreter(env);
             return EXIT_RUNTIME;
         }

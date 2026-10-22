@@ -141,7 +141,7 @@ protected:
     proto::proto_long retentionOf(const std::string& defs, const std::string& call) {
         try {
             env_.executeString(defs, "<retention:defs>");
-        } catch (const PyException&) {
+        } catch (const proto::ProtoException&) {
             ADD_FAILURE() << "definitions failed to execute";
             return kNotMeasured;
         }
@@ -149,7 +149,7 @@ protected:
         const proto::proto_long before = markedCells(space());
         try {
             env_.executeString(call, "<retention:call>");
-        } catch (const PyException&) {
+        } catch (const proto::ProtoException&) {
             ADD_FAILURE() << "workload failed to execute";
             return kNotMeasured;
         }

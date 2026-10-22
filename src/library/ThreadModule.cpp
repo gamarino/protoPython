@@ -400,11 +400,26 @@ static const proto::ProtoObject* thread_bootstrap(
             argList = argList->appendLast(context, args->getAt(context, static_cast<int>(i)));
         try {
             result = protoPython::invokePythonCallable(context, callable, argList, nullptr);
-        } catch (const protoPython::PyException&) {
-            // An exception escaping the thread body is dropped, as it was
-            // when it stayed pending (releaseThreadState discarded it). It
-            // must not leave this entry: protoCore's thread trampoline
-            // catches only std::exception, so it would terminate the process.
+        } catch (const proto::ProtoException& e) {
+            // An exception escaping the thread body does not leave this
+            // entry. CPython reports it through sys.unraisablehook
+            // ("Exception ignored in thread started by: <callable>") and
+            // ignores SystemExit silently; a foreign value is reported too.
+            if (env) {
+                try {
+                    const proto::ProtoObject* systemExit = env->lookupName("SystemExit");
+                    if (!(systemExit && systemExit != PROTO_NONE && e.isInstanceOf(context, systemExit)))
+                        env->reportUnraisable(context, e.value(), "Exception ignored in thread started by", callable);
+                } catch (...) {
+                    // A report that raises is dropped.
+                }
+            }
+            result = nullptr;
+        } catch (const std::exception& e) {
+            std::cerr << "Exception ignored in thread started by native code: " << e.what() << std::endl;
+            result = nullptr;
+        } catch (...) {
+            std::cerr << "Exception of an unknown C++ type ignored in a thread" << std::endl;
             result = nullptr;
         }
         if (spawnerGlobals) {

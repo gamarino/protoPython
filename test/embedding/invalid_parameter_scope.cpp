@@ -45,9 +45,9 @@ int main() {
             "    closed = None\n";
         try {
             env.executeString(code, "<embedded>");
-        } catch (const protoPython::PyException& e) {
+        } catch (const proto::ProtoException& e) {
             std::ostringstream text;
-            env.handleException(e.exception(), nullptr, text);
+            env.handleException(e.value(), nullptr, text);
             return fail("the Python code raised: " + text.str());
         }
         proto::ProtoContext* ctx = env.getContext();

@@ -651,7 +651,7 @@ static const proto::ProtoObject* sys_unraisablehook(
         try {
             v = env->getAttribute(ctx, unraisable,
                 PythonEnvironment::getInternedString(ctx, name), false);
-        } catch (const PyException&) {
+        } catch (const proto::ProtoException&) {
             // An unreadable field is reported as absent.
         }
         return (v && v != PROTO_NONE) ? v : nullptr;

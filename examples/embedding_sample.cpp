@@ -31,12 +31,13 @@ int main() {
         "print(result)\n";
 
     // A Python exception is a C++ exception: a failing run throws
-    // protoPython::PyException, carrying the Python exception object.
+    // proto::ProtoException (protoCore's one exception type), whose value()
+    // is the Python exception object.
     try {
         env.executeString(code, "<embedded>");
-    } catch (const protoPython::PyException& e) {
+    } catch (const proto::ProtoException& e) {
         std::ostringstream text;
-        env.handleException(e.exception(), nullptr, text);
+        env.handleException(e.value(), nullptr, text);
         if (text.str().empty()) return env.getExitRequested();  // SystemExit
         std::cerr << text.str();
         return 70;

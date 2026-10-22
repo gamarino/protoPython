@@ -101,8 +101,8 @@ env->callObject(env->lookupName("print"), {env->callObject(env->lookupName("next
 try {
 #line 11 "source.py"
 env->callObject(env->lookupName("next"), {env->lookupName("g")});
-        } catch (const protoPython::PyException& __e) {
-            const proto::ProtoObject* __exc = __e.exception();
+        } catch (const proto::ProtoException& __e) {
+            const proto::ProtoObject* __exc = __e.value();
             bool __handled = false;
             if (!__handled && env->isException(__exc, env->lookupName("StopIteration"))) {
                 __handled = true;

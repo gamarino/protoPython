@@ -68,12 +68,25 @@ namespace {
 // Every API function that can run Python code runs it through this guard: a
 // Python exception becomes the context's error and the function's error
 // return value, as HPy and CPython's C API report errors.
+// RuntimeError(e.what()) for a C++ standard exception (docs/EXCEPTIONS.md).
+const proto::ProtoObject* foreignCppError(HPyContext* hctx, const std::exception& e) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(hctx->ctx);
+    const proto::ProtoObject* type = env ? env->lookupName("RuntimeError") : nullptr;
+    const proto::ProtoObject* exc = env ? env->newExceptionInstance(hctx->ctx, type, e.what()) : nullptr;
+    return exc ? exc : PythonEnvironment::newStr(hctx->ctx, e.what());
+}
+
 template <typename R, typename Body>
 R hpyGuarded(HPyContext* hctx, R onError, Body&& body) {
     try {
         return body();
-    } catch (const PyException& e) {
-        hctx->setError(e.exception());
+    } catch (const proto::ProtoException& e) {
+        hctx->setError(e.value());
+        return onError;
+    } catch (const std::exception& e) {
+        // A C++ exception must not unwind through the extension's C frames:
+        // it becomes RuntimeError(what()), as at every native boundary.
+        hctx->setError(foreignCppError(hctx, e));
         return onError;
     }
 }
@@ -647,9 +660,12 @@ HPy HPy_Next(HPyContext* hctx, HPy iter) {
     try {
         const proto::ProtoObject* res = i->call(hctx->ctx, nullptr, name, i, nullptr, nullptr);
         return res ? hctx->fromProtoObject(res) : 0;
-    } catch (const PyException& e) {
+    } catch (const proto::ProtoException& e) {
         PythonEnvironment* env = PythonEnvironment::fromContext(hctx->ctx);
-        if (!(env && env->isStopIteration(hctx->ctx, e.exception()))) hctx->setError(e.exception());
+        if (!(env && env->isStopIteration(hctx->ctx, e.value()))) hctx->setError(e.value());
+        return 0;
+    } catch (const std::exception& e) {
+        hctx->setError(foreignCppError(hctx, e));
         return 0;
     }
 }

@@ -415,8 +415,8 @@ TEST_F(FoundationTest, DictSetItemLen) {
     try {
         my_dict->call(context, nullptr, getitemName, my_dict, missArgs);
         ADD_FAILURE() << "d['missing'] did not raise";
-    } catch (const protoPython::PyException& e) {
-        EXPECT_TRUE(env.isException(e.exception(), keyErrorType));
+    } catch (const proto::ProtoException& e) {
+        EXPECT_TRUE(env.isException(e.value(), keyErrorType));
     }
 }
 
@@ -1113,8 +1113,8 @@ TEST_F(FoundationTest, ContainerExceptions) {
     try {
         getitem->asMethod(context)(context, dictObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
         ADD_FAILURE() << "d['missing_key'] did not raise";
-    } catch (const protoPython::PyException& e) {
-        EXPECT_TRUE(env.isException(e.exception(), keyErrorType));
+    } catch (const proto::ProtoException& e) {
+        EXPECT_TRUE(env.isException(e.value(), keyErrorType));
     }
 }
 
@@ -2015,8 +2015,8 @@ TEST_F(FoundationTest, ItertoolsAccumulate) {
     try {
         env.callObject(pyNext, {accIt});
         ADD_FAILURE() << "next() of an exhausted accumulate did not raise";
-    } catch (const protoPython::PyException& e) {
-        EXPECT_TRUE(env.isException(e.exception(), stopIterationType));
+    } catch (const proto::ProtoException& e) {
+        EXPECT_TRUE(env.isException(e.value(), stopIterationType));
     }
 }
 
@@ -2161,8 +2161,8 @@ TEST_F(FoundationTest, ShutilCopyfile) {
     const proto::ProtoObject* shutilMod = nullptr;
     try {
         shutilMod = env.resolve("shutil");
-    } catch (const PyException& e) {
-        std::string repr = PythonEnvironment::reprObject(ctx, e.exception());
+    } catch (const proto::ProtoException& e) {
+        std::string repr = PythonEnvironment::reprObject(ctx, e.value());
         printf("Uncaught exception during shutil import: %s\n", repr.c_str());
     }
     ASSERT_NE(shutilMod, nullptr);

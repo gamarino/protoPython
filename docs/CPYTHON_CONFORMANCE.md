@@ -61,6 +61,25 @@ defect and adds a `test/regression/*.py` test registered in
 
 ### Known divergences (pending)
 
+- **Exceptions of other languages and C++ modules (2026-10-21, by design;
+  docs/EXCEPTIONS.md):** a value raised by a C++ UMD module or another protoCore
+  language is not a `BaseException` instance. `except Exception`, `except
+  BaseException` and a bare `except:` catch it; `except T` also accepts `T` a foreign
+  type (a protoCore object that is not a Python object) and selects by prototype chain,
+  where CPython would raise `TypeError`. `type(e)` is the value's prototype, `str(e)`
+  its `message` attribute; it carries no `__traceback__`, `__context__` or
+  `__cause__` (protoPython never writes to it), so its top-level report has no
+  traceback lines.
+- **Import of UMD modules (2026-10-21, extension):** a dotted name no Python finder
+  resolves is looked up as a protoCore logical path (`example.geometry` ->
+  `example/geometry`); a missing parent package becomes an empty namespace package.
+- **protoCore's errors (2026-10-21):** an error protoCore raises inside a C++ module
+  (`ValueError` for a malformed integer literal, `TypeError` for an operand of the
+  wrong type or too many arguments, `OverflowError`) carries protoCore's message,
+  not CPython's text for the analogous builtin call.
+- **C++ exceptions (2026-10-21):** a C++ standard exception thrown by native code is
+  `RuntimeError(what())`; CPython has no equivalent (a C extension cannot throw).
+
 - **Namespaces (found 2026-10-21):** a class body and code run by `exec(src, d)` bind
   their names as attributes of the namespace object, so a name such as `get` or
   `keys` shadows the dict method: after `exec("def get(k): pass", d)`, `d.get(...)`

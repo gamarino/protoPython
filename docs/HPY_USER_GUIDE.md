@@ -45,10 +45,14 @@ out of Release builds, and even in diagnostic builds the loader emits no message
 
 - Module functions receive positional arguments only; keyword arguments are ignored.
 - Errors follow HPy's C convention; no C++ exception crosses the extension's frames.
-  An `HPy_*` call that runs Python code which raises returns the API's error value
+  An `HPy_*` call that runs Python code which raises (a Python exception, or an
+  error a C++ module or another language raised: protoCore's `proto::ProtoException`)
+  returns the API's error value
   (`HPy_NULL`, `-1`, or `(size_t)-1` for `HPy_Length`) and keeps the exception in the
   context; `HPyErr_SetString`, `HPyErr_Occurred` and `HPyErr_Clear` set, test and clear
   it, and `HPy_Next` returns `HPy_NULL` without an error when the iterator is exhausted.
+  A C++ standard exception thrown by native code under the call is reported the same
+  way, as `RuntimeError(what())`.
   A function that returns `HPy_NULL` with an error set raises it in Python; one that
   returns `HPy_NULL` with no error returns `None`.
 - `HPyList_New`, `HPyTuple_New` and `HPyDict_New` create raw protoCore collections

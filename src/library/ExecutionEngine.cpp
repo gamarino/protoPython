@@ -1756,7 +1756,7 @@ static const proto::ProtoObject* binaryOpDispatch(proto::ProtoContext* ctx, cons
             const proto::ProtoObject* res = nullptr;
             try {
                 res = invokeDunder(ctx, b, rdunderS, argsA);
-            } catch (const PyException&) {
+            } catch (const proto::ProtoException&) {
                 res = nullptr;
             }
             if (res && (!env || res != env->getNotImplementedPrototype())) {
@@ -2208,8 +2208,9 @@ static const proto::ProtoObject* binaryTrueDivide(proto::ProtoContext* ctx,
     // beyond that — matching CPython's OverflowError-or-inf behavior
     // modulo the exception channel).
     auto intToDouble = [&](const proto::ProtoObject* o) -> double {
-        try { return static_cast<double>(o->asLong(ctx)); }
-        catch (const std::overflow_error&) {
+        long long asInt = 0;
+        if (PythonEnvironment::tryAsLong(ctx, o, asInt)) return static_cast<double>(asInt);
+        {
             const proto::ProtoString* s = o->asIntegerString(ctx, 10);
             std::string digits;
             s->toUTF8String(ctx, digits);
@@ -2261,8 +2262,9 @@ static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
             (aa->isInteger(ctx) && bb->isDouble(ctx))) {
             auto toDouble = [&](const proto::ProtoObject* o) -> double {
                 if (o->isDouble(ctx)) return o->asDouble(ctx);
-                try { return static_cast<double>(o->asLong(ctx)); }
-                catch (const std::overflow_error&) {
+                long long asInt = 0;
+                if (PythonEnvironment::tryAsLong(ctx, o, asInt)) return static_cast<double>(asInt);
+                {
                     const proto::ProtoString* s = o->asIntegerString(ctx, 10);
                     std::string digits;
                     s->toUTF8String(ctx, digits);
@@ -2313,9 +2315,8 @@ static const proto::ProtoObject* binaryPower(proto::ProtoContext* ctx,
     if (bothExactNumericPrim(ctx, env_pow, a, b, aa_p, bb_p)
         || numericSubclassFastPathOK(ctx, env_pow, a, b, aa_p, bb_p, "__pow__", "__rpow__")) {
         if (aa_p->isInteger(ctx) && bb_p->isInteger(ctx)) {
-            long long exp;
-            try { exp = bb_p->asLong(ctx); }
-            catch (const std::overflow_error&) {
+            long long exp = 0;
+            if (!PythonEnvironment::tryAsLong(ctx, bb_p, exp)) {
                 // Exponents that don't fit int64 are astronomical; fall
                 // through to the double path (returns inf/0 as CPython
                 // does via floats).
@@ -2324,9 +2325,8 @@ static const proto::ProtoObject* binaryPower(proto::ProtoContext* ctx,
                 return ctx->fromDouble(std::pow(aa, bb));
             }
             if (exp < 0) {
-                double base_d;
-                try { base_d = static_cast<double>(aa_p->asLong(ctx)); }
-                catch (const std::overflow_error&) { base_d = 0; }
+                long long base_l = 0;
+                double base_d = PythonEnvironment::tryAsLong(ctx, aa_p, base_l) ? static_cast<double>(base_l) : 0.0;
                 // CPython: 0 ** -1 raises
                 //   ZeroDivisionError: 0.0 cannot be raised to a negative power
                 // protoPython returned `inf` (std::pow(0.0, -1) is inf in
@@ -2493,7 +2493,7 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
                         const proto::ProtoObject* res = nullptr;
                         try {
                             res = invokeDunder(ctx, b, containsS, args);
-                        } catch (const PyException&) {
+                        } catch (const proto::ProtoException&) {
                             res = nullptr;   // dropped, as before: the fallback below decides
                         }
                         if (res) {
@@ -2653,7 +2653,7 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
                 bool notIterable = false;
                 try {
                     it = env->iter(b);
-                } catch (const PyException&) {
+                } catch (const proto::ProtoException&) {
                     notIterable = true;
                 }
                 if (it) {
@@ -2662,7 +2662,7 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
                         const proto::ProtoObject* item = nullptr;
                         try {
                             item = env->next(it);
-                        } catch (const PyException&) {
+                        } catch (const proto::ProtoException&) {
                             item = nullptr;
                         }
                         if (!item) break;
@@ -2851,8 +2851,17 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
         PythonEnvironment::TransientPin pinArgs(env, args ? args->asObject(ctx) : nullptr);
         const proto::ProtoMethod method = callable->asMethod(ctx);
         const proto::ProtoObject* self = callable->asMethodSelf(ctx);
-        const proto::ProtoObject* result = method(
-            ctx, const_cast<proto::ProtoObject*>(self), nullptr, argsView(proto::ProtoListArguments(ctx, args)), kwargsView(proto::ProtoSparseListKeywordArguments(ctx, kwargs)));
+        const proto::ProtoObject* result = nullptr;
+        try {
+            result = method(
+                ctx, const_cast<proto::ProtoObject*>(self), nullptr, argsView(proto::ProtoListArguments(ctx, args)), kwargsView(proto::ProtoSparseListKeywordArguments(ctx, kwargs)));
+        } catch (const std::exception& e) {
+            // The native-call boundary of every caller (compiled code
+            // included): a C++ standard exception continues as
+            // RuntimeError(what()); a ProtoException passes untouched.
+            if (env) env->raiseForeignCppException(ctx, e);
+            throw;
+        }
         // Native iterators signal exhaustion from __next__ by returning
         // nullptr without an exception; env->next, FOR_ITER and next() rely
         // on that and never pay for a StopIteration object. Python code that
@@ -2896,7 +2905,7 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
                     const proto::ProtoObject* lenM = nullptr;
                     try {
                         lenM = env->getAttribute(ctx, am, lenS, false);
-                    } catch (const PyException&) {
+                    } catch (const proto::ProtoException&) {
                         lenM = nullptr;
                     }
                     bool nonEmpty = false;
@@ -2912,7 +2921,7 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
                                     ctx->newList()->appendLast(ctx, am);
                                 lenRes = invokePythonCallable(ctx, lenM, la, nullptr);
                             }
-                        } catch (const PyException&) {
+                        } catch (const proto::ProtoException&) {
                             lenRes = nullptr;
                         }
                         if (lenRes && lenRes->isInteger(ctx)) {
@@ -3385,7 +3394,7 @@ static const proto::ProtoObject* py_generator_resume(
                 &finalTop,
                 nullptr, nullptr, nullptr,
                 throwExc);
-        } catch (const PyException&) {
+        } catch (const proto::ProtoException&) {
             // An exception out of the body finishes the generator.
             self->setAttribute(ctx, env->getGiRunningString(), PROTO_FALSE);
             self->setAttribute(ctx, env->getGiPCString(), ctx->fromInteger(co_code_tuple->getSize(ctx)));
@@ -3568,8 +3577,8 @@ const proto::ProtoObject* py_class_aiter_next(
             const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, self);
             coro = invokePythonCallable(ctx, anext, selfArgs, nullptr);
         }
-    } catch (const PyException& e) {
-        if (!isStopAsync(e.exception())) throw;
+    } catch (const proto::ProtoException& e) {
+        if (!isStopAsync(e.value())) throw;
         env->raiseStopIteration(ctx, PROTO_NONE);
     }
     if (!coro || coro == PROTO_NONE) {
@@ -3597,10 +3606,10 @@ const proto::ProtoObject* py_class_aiter_next(
         } else {
             sendResult = invokePythonCallable(ctx, sendMethod, args, nullptr);
         }
-    } catch (const PyException& e) {
+    } catch (const proto::ProtoException& e) {
         // StopIteration carries the step's value; StopAsyncIteration ends
         // the iteration (as StopIteration, so FOR_ITER ends cleanly).
-        const proto::ProtoObject* exc = e.exception();
+        const proto::ProtoObject* exc = e.value();
         if (env->isStopIteration(ctx, exc)) {
             const proto::ProtoObject* val = env->getStopIterationValue(ctx, exc);
             return val ? val : PROTO_NONE;
@@ -3664,10 +3673,10 @@ static const proto::ProtoObject* py_asend_wrapper_send(
     const proto::ProtoObject* val = nullptr;
     try {
         val = py_generator_send_impl(ctx, target, sendVal, nullptr);
-    } catch (const PyException& e) {
+    } catch (const proto::ProtoException& e) {
         // StopIteration from the underlying agen → StopAsyncIteration, so
         // callers awaiting `agen.asend(v)` see the async-iteration sentinel.
-        if (!env->isStopIteration(ctx, e.exception())) throw;
+        if (!env->isStopIteration(ctx, e.value())) throw;
         env->raiseStopAsyncIteration(ctx);
     }
 
@@ -3770,7 +3779,7 @@ const proto::ProtoObject* py_generator_throw(
                 const proto::ProtoObject* instance = nullptr;
                 try {
                     instance = invokePythonCallable(ctx, exc, ctx->newList(), nullptr);
-                } catch (const PyException&) {
+                } catch (const proto::ProtoException&) {
                     instance = nullptr;
                 }
                 if (instance && instance != PROTO_NONE) {
@@ -3816,7 +3825,7 @@ const proto::ProtoObject* py_generator_close(
     const proto::ProtoObject* genExit = nullptr;
     try {
         genExit = invokePythonCallable(ctx, genExitType, emptyArgs, nullptr);
-    } catch (const PyException&) {
+    } catch (const proto::ProtoException&) {
         genExit = nullptr;   // an error constructing it: the fallback below
     }
     if (!genExit || genExit == PROTO_NONE) {
@@ -3832,8 +3841,8 @@ const proto::ProtoObject* py_generator_close(
     bool finished = false;
     try {
         sendResult = py_generator_send_impl(ctx, self, PROTO_NONE, genExit);
-    } catch (const PyException& e) {
-        const proto::ProtoObject* exc = e.exception();
+    } catch (const proto::ProtoException& e) {
+        const proto::ProtoObject* exc = e.value();
         const bool isGenExit = exc && ((exc == genExitType) ||
                                        (exc->getPrototype(ctx) == genExitType) ||
                                        (exc->isInstanceOf(ctx, genExitType) == PROTO_TRUE));
@@ -4284,9 +4293,14 @@ void PythonEnvironment::setExceptionContext(proto::ProtoContext* ctx, const prot
                                            const proto::ProtoObject* context) {
     if (!exc || !context || context == PROTO_NONE || context == exc) return;
     if (isEmbeddedValue(ctx, exc) || isEmbeddedValue(ctx, context)) return;
+    // A foreign value (an error a C++ module or another language raised)
+    // carries no Python chaining attributes: it belongs to its module and is
+    // never written to.  A Python exception may have one as its __context__.
+    if (!isPythonException(ctx, exc)) return;
     const proto::ProtoString* contextS = PythonEnvironment::getInternedString(ctx, "__context__");
     const proto::ProtoObject* o = context;
     for (int guard = 0; guard < 10000 && o && o != PROTO_NONE && !isEmbeddedValue(ctx, o); ++guard) {
+        if (!isPythonException(ctx, o)) break;
         const proto::ProtoObject* next = o->getAttribute(ctx, contextS);
         if (next == exc) {
             o->setAttribute(ctx, contextS, PROTO_NONE);
@@ -4300,6 +4314,7 @@ void PythonEnvironment::setExceptionContext(proto::ProtoContext* ctx, const prot
 void PythonEnvironment::chainException(proto::ProtoContext* ctx, const proto::ProtoObject* exc,
                                        const proto::ProtoObject* context) {
     if (!exc || !context || context == exc || isEmbeddedValue(ctx, exc)) return;
+    if (!isPythonException(ctx, exc)) return;
     const proto::ProtoObject* current =
         exc->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__context__"));
     if (current && current != PROTO_NONE) return;
@@ -4458,7 +4473,7 @@ static const proto::ProtoObject* classNamespaceLookup(proto::ProtoContext* ctx, 
     try {
         val = invokeDunder(ctx, ns, env->getGetItemString(),
                            ctx->newList()->appendLast(ctx, nameS->asObject(ctx)));
-    } catch (const PyException&) {
+    } catch (const proto::ProtoException&) {
         return nullptr;
     }
     return (val && val != PROTO_NONE) ? val : nullptr;
@@ -4518,7 +4533,7 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
             if (base && base != PROTO_NONE && !env->isActuallyAClass(ctx, base)) {
                 try {
                     entries = env->getAttribute(ctx, base, mroEntriesS, false);
-                } catch (const PyException&) {
+                } catch (const proto::ProtoException&) {
                     entries = nullptr;
                 }
             }
@@ -5283,7 +5298,7 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
                             try {
                                 v = env->getAttribute(ctx, ns, nameS_, false);
                                 if (v && v != PROTO_NONE) isAbs = env->getAttribute(ctx, v, abstractS, false);
-                            } catch (const PyException&) {
+                            } catch (const proto::ProtoException&) {
                                 isAbs = nullptr;
                             }
                             if (v && v != PROTO_NONE) {
@@ -5434,6 +5449,8 @@ struct Activation {
     const proto::ProtoObject* notedTb = nullptr;
     void noteFrame(const proto::ProtoObject* exc) {
         if (!env || !exc || exc == PROTO_NONE) return;
+        // A foreign value gets no traceback (PythonEnvironment::addTraceback).
+        if (!env->isPythonException(ctx, exc)) return;
         static const proto::ProtoString* const tbS = PythonEnvironment::getInternedString(ctx, "__traceback__");
         const proto::ProtoObject* tbNow = exc->getAttribute(ctx, tbS);
         if (notedExc == exc && notedTb == tbNow) return;
@@ -5507,8 +5524,8 @@ struct Activation {
             } rangeGuard{blockStack};
             levelExit = LevelExit::Return;
             return rangeBody();
-        } catch (const PyException& raised) {
-            const proto::ProtoObject* handled = raised.exception();
+        } catch (const proto::ProtoException& raised) {
+            const proto::ProtoObject* handled = raised.value();
             noteFrame(handled);
             while (stack.size() > tryRange.stackDepth) stack.pop_back();
             if (tryRange.isWithBlock) {
@@ -5548,7 +5565,7 @@ struct Activation {
         if (saved.isHandler) {
             try {
                 throw PyException(env, saved.exc);
-            } catch (const PyException&) {
+            } catch (const proto::ProtoException&) {
                 r = runHandler(saved.exc, [&]() { return runLevel(k + 1); });
             }
         } else {
@@ -5624,15 +5641,14 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
              fprintf(stderr, "\n");
         }
 
-        // C++ exception boundary.  protoCore (and other native modules) routinely
-        // throw std::runtime_error / std::overflow_error from places like
-        // Integer::asLong, ProtoString::createSymbol, etc., when given an
-        // argument they consider invalid.  Without a translation point these
-        // escape the bytecode loop, hit std::terminate, and SIGABRT the
-        // process — making any test that hits a code path with weakly-typed
-        // dispatch (test_re, test_types, test_descr…) into a hard crash
-        // instead of a recoverable Python-level error.  Catch them here and
-        // raise a RuntimeError, so the user sees a proper Python traceback.
+        // C++ exception boundary.  protoCore's own errors are ProtoExceptions
+        // built by the space's error factory (pythonErrorFactory) and pass
+        // through untouched, as every Python exception does.  A C++ standard
+        // exception thrown by native code (a module that throws
+        // std::runtime_error) is a defect of that code, not a Python value:
+        // without a translation point it would escape the bytecode loop and
+        // reach std::terminate.  It is raised here as RuntimeError(what()), so
+        // the program sees a Python exception it can handle.
         lastPc = i;
         try {
         switch (op) {
@@ -5725,11 +5741,11 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                         result = subIter->call(ctx, nullptr, nextS, subIter, ctx->newList(), nullptr);
                     }
                 }
-            } catch (const PyException& e) {
+            } catch (const proto::ProtoException& e) {
                 // StopIteration ends the delegation with its value; anything
                 // else propagates.
-                if (!env || !env->isStopIteration(ctx, e.exception())) throw;
-                stopVal = env->getStopIterationValue(ctx, e.exception());
+                if (!env || !env->isStopIteration(ctx, e.value())) throw;
+                stopVal = env->getStopIterationValue(ctx, e.value());
                 stopped = true;
             }
 
@@ -5866,7 +5882,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                                 try {
                                     val = invokeDunder(ctx, frame, env->getGetItemString(), giArgs);
                                     if (val && val != PROTO_NONE) found = true;
-                                } catch (const PyException&) {
+                                } catch (const proto::ProtoException&) {
                                     val = nullptr;   // KeyError means not found
                                 }
                             }
@@ -6378,8 +6394,8 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 // symbol, so rewrite the message here for the in-place op.
                 try {
                     result = binaryPower(ctx, a, b);
-                } catch (const PyException& raised) {
-                    const proto::ProtoObject* exc = raised.exception();
+                } catch (const proto::ProtoException& raised) {
+                    const proto::ProtoObject* exc = raised.value();
                     const proto::ProtoObject* excType = exc ? env->getType(ctx, exc) : nullptr;
                     const proto::ProtoObject* tnObj = excType ? excType->getAttribute(ctx, env->getNameString()) : nullptr;
                     std::string tn;
@@ -6541,9 +6557,10 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 // Shift amount: try asLong; bignum amounts are absurd so
                 // we cap them by routing through Integer::shiftLeft on a
                 // value of 0 (which short-circuits) rather than crashing.
-                int amount = 0;
-                try { amount = static_cast<int>(b->asLong(ctx)); }
-                catch (const std::overflow_error&) {
+                long long amountL = 0;
+                const bool amountFits = PythonEnvironment::tryAsLong(ctx, b, amountL);
+                int amount = static_cast<int>(amountL);
+                if (!amountFits) {
                     if (env) env->raiseValueError(ctx,
                         PythonEnvironment::getInternedString(ctx, "shift count too large")->asObject(ctx));
                     stack.pop_back(); stack.back() = PROTO_NONE;
@@ -6582,9 +6599,10 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 i = next_i; continue;
             }
             if (a->isInteger(ctx) && b->isInteger(ctx)) {
-                int amount = 0;
-                try { amount = static_cast<int>(b->asLong(ctx)); }
-                catch (const std::overflow_error&) {
+                long long amountL = 0;
+                const bool amountFits = PythonEnvironment::tryAsLong(ctx, b, amountL);
+                int amount = static_cast<int>(amountL);
+                if (!amountFits) {
                     if (env) env->raiseValueError(ctx,
                         PythonEnvironment::getInternedString(ctx, "shift count too large")->asObject(ctx));
                     stack.pop_back(); stack.back() = PROTO_NONE;
@@ -6976,7 +6994,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                         val = (env)
                             ? env->getAttribute(ctx, mod, nameS)
                             : mod->getAttribute(ctx, nameS);
-                    } catch (const PyException&) {
+                    } catch (const proto::ProtoException&) {
                         val = nullptr;
                     }
 
@@ -8204,7 +8222,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                                                 a.push_back(nameObj);
                                                 try {
                                                     env->callObject(eqM, a);
-                                                } catch (const PyException&) {
+                                                } catch (const proto::ProtoException&) {
                                                     // dropped, as before
                                                 }
                                             }
@@ -8544,7 +8562,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 try {
                     metaGetItem = (meta && meta != env->getTypePrototype())
                         ? env->getAttribute(ctx, meta, getItemS, false) : nullptr;
-                } catch (const PyException&) {
+                } catch (const proto::ProtoException&) {
                     metaGetItem = nullptr;
                 }
                 if (metaGetItem && metaGetItem != PROTO_NONE) {
@@ -9764,7 +9782,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                         const proto::ProtoList* delArgs = ctx->newList()->appendLast(ctx, nameObj);
                         try {
                             invokeDunder(ctx, target, env->getDelItemString(), delArgs);
-                        } catch (const PyException&) {
+                        } catch (const proto::ProtoException&) {
                             // CPython reports the mapping's failure as NameError.
                             env->invalidateResolveCache();
                             std::string nStr;
@@ -10441,14 +10459,10 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             break;
         }  // end switch (op)
         } catch (const std::exception& e) {
-            // Translate any escaped C++ exception into a Python RuntimeError
-            // so the bytecode loop can unwind it the normal way.  Don't
-            // overwrite an exception that was already set inside the
-            // handler — that one carries more specific information.
-            if (env) {
-                std::string msg = std::string("internal C++ exception: ") + e.what();
-                env->raiseRuntimeError(ctx, msg);
-            }
+            // A C++ standard exception (never a ProtoException, which does
+            // not derive from std::exception) continues as RuntimeError(what()).
+            if (env) env->raiseForeignCppException(ctx, e);
+            throw;
         } catch (const proto::ProtoObject*) {
             // A legacy native generator throws its value (TestGeneratorsNative).
             // Not catch (...): a Python exception (PyException) must pass to
@@ -10617,8 +10631,8 @@ const proto::ProtoObject* executeBytecodeRange(
         // activation dispatches at once.
         if (savedLevels.empty() && !throwOnResume) return act.dispatch(pcStart, ctx, env, bc, n, pcEnd);
         return act.runLevel(0);
-    } catch (const PyException& uncaught) {
-        act.noteFrame(uncaught.exception());
+    } catch (const proto::ProtoException& uncaught) {
+        act.noteFrame(uncaught.value());
         throw;
     }
 }

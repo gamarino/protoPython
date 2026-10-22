@@ -70,8 +70,9 @@ struct HPyContext {
     /** The exception of the failed API call, held through a handle (pinned);
      *  0 when none. HPy reports an error by its return value (HPy_NULL, -1)
      *  with the exception kept here, as CPython's C API does: a Python
-     *  exception (a C++ PyException) never unwinds through an extension's C
-     *  frames. hpy_method_wrapper and the module loader rethrow it when the
+     *  exception (a C++ proto::ProtoException) never unwinds through an
+     *  extension's C frames, nor does a C++ std::exception (it becomes
+     *  RuntimeError(what())). hpy_method_wrapper and the module loader rethrow it when the
      *  extension returns. */
     HPy error{0};
     void setError(const proto::ProtoObject* exc) {

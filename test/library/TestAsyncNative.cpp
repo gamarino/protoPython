@@ -81,8 +81,8 @@ env->callObject(env->lookupName("print"), {ctx->fromUTF8String("Yielded:"), env-
 env->callObject(env->lookupName("print"), {ctx->fromUTF8String("Resuming...")});
 #line 12 "source.py"
 env->callObject(env->getAttr(env->lookupName("coro"), "send"), {PROTO_NONE});
-        } catch (const protoPython::PyException& __e) {
-            const proto::ProtoObject* __exc = __e.exception();
+        } catch (const proto::ProtoException& __e) {
+            const proto::ProtoObject* __exc = __e.value();
             bool __handled = false;
             if (!__handled && env->isException(__exc, env->lookupName("StopIteration"))) {
                 __handled = true;

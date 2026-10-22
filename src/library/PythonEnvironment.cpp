@@ -529,7 +529,7 @@ static const proto::ProtoObject* py_type_call(
             const proto::ProtoObject* lenM = nullptr;
             try {
                 lenM = env->getAttribute(context, am, lenS, false);
-            } catch (const PyException&) {
+            } catch (const proto::ProtoException&) {
                 lenM = nullptr;
             }
             if (lenM && lenM != PROTO_NONE) {
@@ -543,7 +543,7 @@ static const proto::ProtoObject* py_type_call(
                         const proto::ProtoList* la = context->newList()->appendLast(context, am);
                         lenRes = invokePythonCallable(context, lenM, la, nullptr);
                     }
-                } catch (const PyException&) {
+                } catch (const proto::ProtoException&) {
                     lenRes = nullptr;
                 }
                 if (lenRes && lenRes->isInteger(context)) {
@@ -1142,7 +1142,7 @@ static const proto::ProtoObject* py_mappingproxy_get(
         try {
             const proto::ProtoObject* result = env->getItem(data, key, context);
             if (result) return result;
-        } catch (const PyException&) {
+        } catch (const proto::ProtoException&) {
             // Lookup miss (KeyError) or any error from __getitem__: default.
         }
         return defaultVal;
@@ -2022,6 +2022,23 @@ static const proto::ProtoObject* py_object_repr(
         return PythonEnvironment::getInternedString(context, "None")->asObject(context);
     }
 
+    // A foreign value (a C++ module's or another language's object) has no
+    // Python class: it is shown by the `name` and `message` it carries, in
+    // the form of an exception's repr ("NegativeRadius('circleArea: ...')").
+    if (env && env->isForeignObject(context, self)) {
+        const proto::ProtoObject* msgObj = self->getAttribute(context, proto::ProtoString::createSymbol(context, "message"));
+        std::ostringstream os;
+        os << PythonEnvironment::foreignValueName(context, self);
+        if (msgObj && msgObj != PROTO_NONE && msgObj->isString(context)) {
+            os << "(" << env->reprObject(context, msgObj) << ")";
+        } else {
+            os.str("");
+            os << "<foreign " << PythonEnvironment::foreignValueName(context, self) << " object at "
+               << static_cast<const void*>(self) << ">";
+        }
+        return PythonEnvironment::newStr(context, os.str());
+    }
+
     // Basic <object at 0x...> repr
     std::string name = "object";
     const proto::ProtoObject* cls = env ? env->getType(context, self) : self->getAttribute(context, PythonEnvironment::getInternalString(context, "__class__"));
@@ -2685,7 +2702,8 @@ static const proto::ProtoObject* py_float_call(
             // the decimal string (std::stod returns ±inf on overflow).
             try {
                 x = ctx->fromDouble(static_cast<double>(val->asLong(ctx)));
-            } catch (const std::overflow_error&) {
+            } catch (const proto::ProtoException& overflow) {
+                PythonEnvironment::rethrowUnlessOverflow(ctx, overflow);
                 const proto::ProtoString* s = val->asIntegerString(ctx, 10);
                 std::string digits;
                 s->toUTF8String(ctx, digits);
@@ -3407,6 +3425,14 @@ static const proto::ProtoObject* py_object_str(
     if (self->isDouble(context)) return PythonEnvironment::getInternedString(context, std::to_string(self->asDouble(context)).c_str())->asObject(context);
     if (self == PROTO_TRUE) return PythonEnvironment::getInternedString(context, "True")->asObject(context);
     if (self == PROTO_FALSE) return PythonEnvironment::getInternedString(context, "False")->asObject(context);
+
+    // A foreign value's str is its message, as an exception's str is its
+    // argument.
+    if (env && env->isForeignObject(context, self)) {
+        std::string message;
+        if (PythonEnvironment::foreignValueMessage(context, self, message))
+            return PythonEnvironment::newStr(context, message);
+    }
 
     // Default str(obj) calls repr(obj), with recursion guard
     // CPython raises RecursionError when __str__ keeps deferring to
@@ -4693,7 +4719,8 @@ static bool keyHash(proto::ProtoContext* context, const proto::ProtoObject* key,
                 if (res && res->isInteger(context)) {
                     try {
                         out = static_cast<proto::proto_ulong>(res->asLong(context));
-                    } catch (const std::exception&) {
+                    } catch (const proto::ProtoException& overflow) {
+                        PythonEnvironment::rethrowUnlessOverflow(context, overflow);
                         out = res->getHash(context);
                     }
                     return true;
@@ -5253,7 +5280,8 @@ std::string PythonEnvironment::reprObject(proto::ProtoContext* context, const pr
         // correctly instead of overflowing asLong.
         try {
             return std::to_string(obj->asLong(context));
-        } catch (const std::overflow_error&) {
+        } catch (const proto::ProtoException& overflow) {
+            PythonEnvironment::rethrowUnlessOverflow(context, overflow);
             const proto::ProtoString* s = obj->asIntegerString(context, 10);
             if (s) {
                 std::string out;
@@ -6891,7 +6919,7 @@ static const proto::ProtoObject* py_bytes_call(
     const proto::ProtoObject* iterResult = nullptr;
     try {
         iterResult = env ? env->iter(arg) : nullptr;
-    } catch (const PyException&) {
+    } catch (const proto::ProtoException&) {
         // iter() reports a non-iterable as CPython's bytes() does not.
         iterResult = nullptr;
     }
@@ -7107,7 +7135,7 @@ static const proto::ProtoList* list_items_from_iterable(
                                     } else {
                                         env->callObject(lhM, {});
                                     }
-                                } catch (const PyException&) {
+                                } catch (const proto::ProtoException&) {
                                     // An error from __length_hint__ is ignored here.
                                 }
                             }
@@ -7422,8 +7450,8 @@ static const proto::ProtoObject* py_dict_call(
                                     const proto::ProtoObject* keyArg = nullptr;
                                     try {
                                         keyArg = invokePythonCallable(context, nextM, emptyL, nullptr);
-                                    } catch (const PyException& e) {
-                                        if (!env || !env->isStopIteration(context, e.exception())) throw;
+                                    } catch (const proto::ProtoException& e) {
+                                        if (!env || !env->isStopIteration(context, e.value())) throw;
                                         break;
                                     }
                                     if (!keyArg || keyArg == PROTO_NONE || (env && keyArg == env->getNonePrototype())) break;
@@ -8785,7 +8813,7 @@ static const proto::ProtoObject* py_set_reduce(
     try {
         getState = env->getAttribute(context, receiver,
             PythonEnvironment::getInternedString(context, "__getstate__"), false);
-    } catch (const PyException&) {
+    } catch (const proto::ProtoException&) {
         getState = nullptr;
     }
     if (getState && getState != PROTO_NONE) {
@@ -8971,7 +8999,7 @@ static const proto::ProtoObject* py_int_format(
         if (data && data->isInteger(context)) intObj = data;
     }
     // STRUCT-290: bignum-safe asLong.  protoCore's Integer::asLong
-    // throws std::runtime_error for values outside long long range
+    // raises its Overflow error (OverflowError) for values outside long long range
     // (the default `int` payload type).  For format() spec='' we
     // can render the bignum via Integer::toString without converting
     // to long long.  For spec='d' / no spec, the toString path is
@@ -8981,7 +9009,8 @@ static const proto::ProtoObject* py_int_format(
     bool isBignum = false;
     try {
         v = intObj->asLong(context);
-    } catch (const std::exception&) {
+    } catch (const proto::ProtoException& overflow) {
+        PythonEnvironment::rethrowUnlessOverflow(context, overflow);
         isBignum = true;
     }
     // Parse the format spec: [[fill]align][sign][#][0][width][type]
@@ -9908,7 +9937,8 @@ static const proto::ProtoObject* py_int_hash(
         // CPython: hash(-1) == -2 to keep -1 reserved as the error marker.
         if (v == -1) return context->fromInteger(-2);
         return context->fromInteger(v);
-    } catch (const std::overflow_error&) {
+    } catch (const proto::ProtoException& overflow) {
+        PythonEnvironment::rethrowUnlessOverflow(context, overflow);
         // Bignum: hash via its digits modulo a large prime.  This keeps
         // `hash(n) == hash(n)` stable without overflowing long long.
         // Use Python's PyHASH_MODULUS (2^61 - 1) equivalent simplified:
@@ -17146,7 +17176,7 @@ bool PythonEnvironment::fsPathArgument(proto::ProtoContext* ctx, const proto::Pr
     const proto::ProtoObject* method = nullptr;
     try {
         method = env->getAttribute(ctx, obj, getInternedString(ctx, "__fspath__"), false);
-    } catch (const PyException&) {
+    } catch (const proto::ProtoException&) {
         method = nullptr;
     }
     if (!method || method == PROTO_NONE) return false;
@@ -17388,8 +17418,8 @@ bool PythonEnvironment::emitSyntaxWarning(proto::ProtoContext* ctx, const std::s
     // Any other exception propagates.
     try {
         invokePythonCallable(ctx, warnExplicit, args, nullptr);
-    } catch (const PyException& e) {
-        const proto::ProtoObject* exc = e.exception();
+    } catch (const proto::ProtoException& e) {
+        const proto::ProtoObject* exc = e.value();
         // Use isInstanceOf — the most reliable way to detect a Warning
         // subclass instance.  It walks the prototype chain and the
         // protoCore-level type relationship so it is robust to the
@@ -18931,7 +18961,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                             const proto::ProtoObject* v = nullptr;
                             try {
                                 v = env->getAttribute(ctx, obj, attrK, false);
-                            } catch (const PyException&) {
+                            } catch (const proto::ProtoException&) {
                                 v = nullptr;
                             }
                             if (!v || v == PROTO_NONE) {
@@ -18942,7 +18972,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                                 if (ga && ga != PROTO_NONE) {
                                     try {
                                         v = env->callObject(ga, { obj, attrK->asObject(ctx) });
-                                    } catch (const PyException&) {
+                                    } catch (const proto::ProtoException&) {
                                         v = nullptr;
                                     }
                                 }
@@ -19024,7 +19054,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             const proto::ProtoObject* instDict = nullptr;
             try {
                 instDict = py_object_get_dict(ctx, obj, nullptr, nullptr, nullptr);
-            } catch (const PyException&) {
+            } catch (const proto::ProtoException&) {
                 instDict = nullptr;
             }
             bool instDictEmpty = true;
@@ -19720,8 +19750,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                 const proto::ProtoObject* result = nullptr;
                 try {
                     result = py_generator_next(ctx, self, pl, posArgs, kw);
-                } catch (const PyException& e) {
-                    if (!env->isStopIteration(ctx, e.exception())) throw;
+                } catch (const proto::ProtoException& e) {
+                    if (!env->isStopIteration(ctx, e.value())) throw;
                     env->raiseStopAsyncIteration(ctx);
                     return nullptr;
                 }
@@ -22671,6 +22701,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     unboundLocalErrorType = exceptionsModule->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "UnboundLocalError"));
     generatorExitType = exceptionsModule->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "GeneratorExit"));
     zeroDivisionErrorType = exceptionsModule->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "ZeroDivisionError"));
+    overflowErrorType = exceptionsModule->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "OverflowError"));
     indexErrorType = exceptionsModule->getAttribute(rootContext_, indexErrorS);
     systemErrorType = exceptionsModule->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "SystemError"));
     osErrorType = exceptionsModule->getAttribute(rootContext_, osErrorS);
@@ -23081,6 +23112,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         addRoot(eofErrorType);
         addRoot(assertionErrorType);
         addRoot(zeroDivisionErrorType);
+        addRoot(overflowErrorType);
         addRoot(indexErrorType);
 
         addRoot(iterString ? iterString->asObject(rootContext_) : nullptr);
@@ -23221,6 +23253,12 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         addRoot(typeS->asObject(rootContext_));
         addRoot(dictString->asObject(rootContext_));
     }
+    // protoCore's own errors (an integer division by zero, a malformed
+    // integer literal, ...) arrive as Python exceptions: the space builds
+    // their values with this runtime's factory (pythonErrorFactory). The
+    // exception classes it uses are rooted above.
+    rootContext_->space->setErrorFactory(&PythonEnvironment::pythonErrorFactory);
+
     const proto::ProtoString* initS = PythonEnvironment::getInternalString(rootContext_, "__init__");
     for (auto* exc : {&exceptionType, &keyErrorType, &valueErrorType, &nameErrorType, 
                       &attributeErrorType, &syntaxErrorType, &typeErrorType, &importErrorType, 
@@ -23697,11 +23735,11 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                             // sys.modules, caches) runs as it does on success,
                             // and the exception is reported after it.
                             const proto::ProtoObject* excAfterExec = nullptr;
-                            std::optional<PyException> heldExc;
+                            std::optional<proto::ProtoException> heldExc;
                             try {
                                 runCodeObject(ctx, codeObj, framePtr);
-                            } catch (const PyException& e) {
-                                excAfterExec = e.exception();
+                            } catch (const proto::ProtoException& e) {
+                                excAfterExec = e.value();
                                 heldExc.emplace(e);
                             }
 
@@ -23814,7 +23852,7 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                     ->appendLast(ctx, PROTO_NONE);
                 try {
                     callAttr->asMethod(ctx)(ctx, tf, nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
-                } catch (const PyException&) {
+                } catch (const proto::ProtoException&) {
                     if (executionHook) executionHook(moduleName, 1);
                     // Swallowed only when running as main; an import
                     // propagates it to the importer.
@@ -23855,7 +23893,7 @@ void PythonEnvironment::runExitHandlers() {
     const proto::ProtoList* emptyArgs = ctx->newList();
     try {
         protoPython::invokePythonCallable(ctx, runFn, emptyArgs, nullptr);
-    } catch (const PyException&) {
+    } catch (const proto::ProtoException&) {
         // Runs at interpreter shutdown: an exception escaping
         // atexit._run_exitfuncs (which reports each failing handler itself)
         // is ignored, as the pending exception it left used to be.
@@ -24045,10 +24083,10 @@ void PythonEnvironment::handleException(const proto::ProtoObject* exc, const pro
                 ->appendLast(context, PROTO_NONE); // traceback
             try {
                 hook->asMethod(context)(context, const_cast<proto::ProtoObject*>(sysModule), nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
-            } catch (const PyException& hookExc) {
+            } catch (const proto::ProtoException& hookExc) {
                 // A failing hook is reported with the original exception,
                 // as CPython does; it does not escape the report.
-                out << "Error in sys.excepthook:\n" << formatException(hookExc.exception(), frame)
+                out << "Error in sys.excepthook:\n" << formatException(hookExc.value(), frame)
                     << "\nOriginal exception was:\n" << formatException(exc, frame) << std::flush;
             }
             return;
@@ -24076,7 +24114,7 @@ void PythonEnvironment::handleException(const proto::ProtoObject* exc, const pro
             if (!codeObj->isString(context)) {
                 try {
                     strObj = getStrPrototype() ? callObject(getStrPrototype(), {codeObj}) : nullptr;
-                } catch (const PyException&) {
+                } catch (const proto::ProtoException&) {
                     strObj = nullptr;
                 }
             }
@@ -24109,6 +24147,22 @@ std::string PythonEnvironment::formatException(const proto::ProtoObject* exc, co
 
     std::string out;
 
+    // A foreign value (an error a C++ module or another language raised)
+    // has no Python class, traceback or chain: it is reported by the name
+    // and the message it carries (its `name` and `message` attributes).
+    if (!isPythonException(context, exc)) {
+        std::string msg;
+        if (!foreignValueMessage(context, exc, msg)) {
+            try {
+                msg = reprObject(context, exc);
+            } catch (const proto::ProtoException&) {
+                msg.clear();
+            }
+        }
+        out += red + bold + foreignValueName(context, exc) + reset + (msg.empty() ? "" : ": " + msg) + "\n";
+        return out;
+    }
+
     // Step 1334: Exception Chaining (__cause__ and __context__)
     const proto::ProtoObject* cause = exc->getAttribute(context, PythonEnvironment::getInternedString(context, "__cause__"));
     if (cause && cause != PROTO_NONE) {
@@ -24138,7 +24192,7 @@ std::string PythonEnvironment::formatException(const proto::ProtoObject* exc, co
     const proto::ProtoObject* strObj = nullptr;
     try {
         strObj = strPrototype ? callObject(strPrototype, {exc}) : nullptr;
-    } catch (const PyException&) {
+    } catch (const proto::ProtoException&) {
         strObj = nullptr;
     }
     if (strObj && strObj->isString(context)) {
@@ -24234,7 +24288,7 @@ void PythonEnvironment::writeUnraisableReport(proto::ProtoContext* ctx, const pr
         std::string objRepr;
         try {
             objRepr = reprObject(ctx, obj);
-        } catch (const PyException&) {
+        } catch (const proto::ProtoException&) {
             // A failing repr leaves the object's part of the report empty.
         }
         text = (errMsg.empty() ? std::string("Exception ignored in") : errMsg) + ": "
@@ -24245,7 +24299,7 @@ void PythonEnvironment::writeUnraisableReport(proto::ProtoContext* ctx, const pr
     if (exc && exc != PROTO_NONE) {
         try {
             text += formatException(exc);
-        } catch (const PyException&) {
+        } catch (const proto::ProtoException&) {
             // Formatting raised: report what was gathered.
         }
     }
@@ -24261,14 +24315,14 @@ void PythonEnvironment::writeUnraisableReport(proto::ProtoContext* ctx, const pr
         try {
             callObject(write, {getInternedString(ctx, text.c_str())->asObject(ctx)});
             written = true;
-        } catch (const PyException&) {
+        } catch (const proto::ProtoException&) {
             // sys.stderr.write failed: fall back to the process stderr.
         }
         if (written) {
             try {
                 const proto::ProtoObject* flush = getAttribute(ctx, stream, getInternedString(ctx, "flush"), false);
                 if (flush && flush != PROTO_NONE) callObject(flush, {});
-            } catch (const PyException&) {
+            } catch (const proto::ProtoException&) {
                 // A failing flush is ignored.
             }
             return;
@@ -24300,9 +24354,9 @@ void PythonEnvironment::reportUnraisable(proto::ProtoContext* ctx, const proto::
         try {
             callObject(hook, {args});
             return;
-        } catch (const PyException& e) {
+        } catch (const proto::ProtoException& e) {
             // CPython reports a failing hook and then the original exception.
-            writeUnraisableReport(ctx, e.exception(), "Exception ignored in sys.unraisablehook", hook);
+            writeUnraisableReport(ctx, e.value(), "Exception ignored in sys.unraisablehook", hook);
         }
     }
     writeUnraisableReport(ctx, exc, errMsg, obj);
@@ -24381,8 +24435,8 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
             const proto::ProtoList* startupArgs = context->newList()->appendLast(context, PythonEnvironment::getInternedString(context, src.c_str())->asObject(context))->appendLast(context, frame);
             try {
                 execFn->asMethod(context)(context, const_cast<proto::ProtoObject*>(builtinsModule), nullptr, argsView(proto::ProtoListArguments(context, startupArgs)), nullptr);
-            } catch (const PyException& startupExc) {
-                handleException(startupExc.exception(), frame, out);
+            } catch (const proto::ProtoException& startupExc) {
+                handleException(startupExc.value(), frame, out);
             }
         }
     }
@@ -24455,8 +24509,8 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
                 const proto::ProtoObject* resp = nullptr;
                 try {
                     resp = completeFn->asMethod(context)(context, const_cast<proto::ProtoObject*>(builtinsModule), nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
-                } catch (const PyException& e) {
-                    handleException(e.exception(), frame, out);
+                } catch (const proto::ProtoException& e) {
+                    handleException(e.value(), frame, out);
                 }
                 if (resp && resp->asList(context)) {
                     const proto::ProtoList* rl = resp->asList(context);
@@ -24479,8 +24533,8 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
                     out << "Post-mortem debugger (stub):\n";
                     try {
                         out << formatException(lastExc, frame) << "\n";
-                    } catch (const PyException& e) {
-                        handleException(e.exception(), frame, out);
+                    } catch (const proto::ProtoException& e) {
+                        handleException(e.value(), frame, out);
                     }
                 } else {
                     out << "No exception to debug.\n";
@@ -24519,14 +24573,14 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
         try {
             // The eval exception is held (and kept pinned by the held
             // PyException) while it is classified and reported.
-            std::optional<PyException> evalExc;
+            std::optional<proto::ProtoException> evalExc;
             try {
                 result = evalFn->asMethod(context)(context, const_cast<proto::ProtoObject*>(builtinsModule), nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
-            } catch (const PyException& e) {
+            } catch (const proto::ProtoException& e) {
                 evalExc.emplace(e);
             }
 
-            const proto::ProtoObject* pending = evalExc ? evalExc->exception() : nullptr;
+            const proto::ProtoObject* pending = evalExc ? evalExc->value() : nullptr;
             if (pending && pending != PROTO_NONE) {
                 // If eval failed with SyntaxError, try exec. Otherwise report and stop.
                 std::string typeName = "Exception";
@@ -24543,8 +24597,8 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
                     // Try exec
                     try {
                         execFn->asMethod(context)(context, const_cast<proto::ProtoObject*>(builtinsModule), nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
-                    } catch (const PyException& execExc) {
-                        handleException(execExc.exception(), frame, out);
+                    } catch (const proto::ProtoException& execExc) {
+                        handleException(execExc.value(), frame, out);
                     }
                 } else {
                     handleException(pending, frame, out);
@@ -24558,17 +24612,17 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
                     out << s << "\n";
                 }
             }
-        } catch (const PyException& e) {
+        } catch (const proto::ProtoException& e) {
             // An exception raised while printing the result (repr) or while
             // reporting one.
-            handleException(e.exception(), frame, out);
+            handleException(e.value(), frame, out);
         } catch (const proto::ProtoObject* e) {
             handleException(e, frame, out);
         } catch (const std::overflow_error&) {
             try {
                 raiseRecursionError(context);
-            } catch (const PyException& e) {
-                handleException(e.exception(), frame, out);
+            } catch (const proto::ProtoException& e) {
+                handleException(e.value(), frame, out);
             }
         } catch (const std::exception& e) {
             const char* RED   = protoPython::noColor() ? "" : "\x1b[31;1m";
@@ -25753,8 +25807,8 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                         auto runGetattribute = [&](auto&& call) {
                             try {
                                 gaRes = call();
-                            } catch (const PyException& e) {
-                                const proto::ProtoObject* exc = e.exception();
+                            } catch (const proto::ProtoException& e) {
+                                const proto::ProtoObject* exc = e.value();
                                 // SP-D/B-DD2 (5th site): route through getType (own-only
                                 // `__class__` per SP-B/B1) so a metaclass-customized
                                 // exception class is identified by its actual class
@@ -27076,7 +27130,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                             const proto::ProtoList* args = ctx->newList()
                                 ->appendLast(ctx, obj);
                             bool mroRaised = false;
-                            std::optional<PyException> mroExc;
+                            std::optional<proto::ProtoException> mroExc;
                             try {
                                 if (userMro->asMethod(ctx)) {
                                     userMro->asMethod(ctx)(ctx,
@@ -27085,7 +27139,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                                 } else {
                                     invokePythonCallable(ctx, userMro, args, nullptr);
                                 }
-                            } catch (const PyException& e) {
+                            } catch (const proto::ProtoException& e) {
                                 // Held until the state below is restored,
                                 // then rethrown.
                                 mroRaised = true;
@@ -27192,7 +27246,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                                     } else {
                                         invokePythonCallable(ctx, userMro, args, nullptr);
                                     }
-                                } catch (const PyException&) {
+                                } catch (const proto::ProtoException&) {
                                     // Restore the saved __mro__; the caller
                                     // of propagate rolls back and rethrows.
                                     if (savedMro) {
@@ -27217,7 +27271,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
             bool propagated = false;
             try {
                 propagated = propagate(obj);
-            } catch (const PyException&) {
+            } catch (const proto::ProtoException&) {
                 rollbackAll();
                 throw;
             }
@@ -28552,6 +28606,97 @@ void PythonEnvironment::ensureModuleInSysModules(proto::ProtoContext* ctx, const
     }
 }
 
+bool PythonEnvironment::isForeignModule(proto::ProtoContext* ctx, const proto::ProtoObject* mod) {
+    if (!mod || mod == PROTO_NONE || !mod->isCell(ctx)) return false;
+    // Every module protoPython's providers return carries one of these: the
+    // Python and compiled providers name the module, the native provider
+    // marks it executed.
+    return mod->hasOwnAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__")) != PROTO_TRUE &&
+           mod->hasOwnAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__executed__")) != PROTO_TRUE;
+}
+
+namespace {
+
+struct ForeignModuleCopy {
+    const proto::ProtoObject* foreign;
+    const proto::ProtoObject* proxy;
+};
+
+void copyForeignAttribute(proto::ProtoContext* ctx, void* self, const proto::ProtoString* name,
+                          const proto::ProtoObject* value) {
+    auto* copy = static_cast<ForeignModuleCopy*>(self);
+    // A UMD method receives its module as `self` (ProtoObject::call with the
+    // module as receiver): an unbound one is bound to the foreign module.
+    if (value && value != PROTO_NONE && value->isMethod(ctx) && value->asMethodSelf(ctx) == nullptr) {
+        value = ctx->fromMethod(const_cast<proto::ProtoObject*>(copy->foreign), value->asMethod(ctx));
+    }
+    copy->proxy = copy->proxy->setAttribute(ctx, name, value);
+}
+
+}  // namespace
+
+const proto::ProtoObject* PythonEnvironment::importForeignModule(proto::ProtoContext* ctx, const std::string& name,
+                                                                 const proto::ProtoObject* foreign) {
+    // The foreign module itself is never written to: it belongs to its
+    // provider and may be shared with other languages.  Its attributes are
+    // the same objects in the proxy, so `except geometry.NegativeRadius`
+    // names the very prototype the module raises.
+    const proto::ProtoObject* proxy = modulePrototype ? modulePrototype->newChild(ctx, true) : ctx->newObject(true);
+    TransientPin pinProxy(this, proxy);
+    ForeignModuleCopy copy{foreign, proxy};
+    foreign->processOwnAttributes(ctx, &copy, &copyForeignAttribute);
+    proxy = copy.proxy;
+    proxy = proxy->setAttribute(ctx, getInternedString(ctx, "__name__"), getInternedString(ctx, name.c_str())->asObject(ctx));
+    proxy = proxy->setAttribute(ctx, getExecutedString(), PROTO_TRUE);
+    // The module object protoCore loaded, for code that hands it to C++.
+    proxy = proxy->setAttribute(ctx, getInternedString(ctx, "__protocore_module__"), foreign);
+    ensureModuleInSysModules(ctx, name, proxy);
+
+    // CPython binds a submodule in its parent package.  A parent that does
+    // not exist as a Python package becomes a namespace package (PEP 420)
+    // with no portions, as a directory without __init__.py would.
+    const size_t dot = name.rfind('.');
+    if (dot != std::string::npos && sysModule) {
+        const std::string parentName = name.substr(0, dot);
+        const proto::ProtoObject* parent = sysModuleEntry(ctx, parentName);
+        if (!parent) parent = importForeignNamespace(ctx, parentName);
+        if (parent) {
+            const_cast<proto::ProtoObject*>(parent)->setAttribute(
+                ctx, getInternedString(ctx, name.substr(dot + 1).c_str()), proxy);
+        }
+    }
+    return proxy;
+}
+
+const proto::ProtoObject* PythonEnvironment::importForeignNamespace(proto::ProtoContext* ctx, const std::string& name) {
+    const proto::ProtoObject* ns = modulePrototype ? modulePrototype->newChild(ctx, true) : ctx->newObject(true);
+    TransientPin pinNs(this, ns);
+    ns = ns->setAttribute(ctx, getInternedString(ctx, "__name__"), getInternedString(ctx, name.c_str())->asObject(ctx));
+    ns = ns->setAttribute(ctx, getExecutedString(), PROTO_TRUE);
+    ns = ns->setAttribute(ctx, getInternedString(ctx, "__file__"), PROTO_NONE);
+    ns = ns->setAttribute(ctx, getInternedString(ctx, "__path__"), wrapList(ctx, ctx->newList()));
+    ensureModuleInSysModules(ctx, name, ns);
+    const size_t dot = name.rfind('.');
+    if (dot != std::string::npos) {
+        const std::string parentName = name.substr(0, dot);
+        const proto::ProtoObject* parent = sysModuleEntry(ctx, parentName);
+        if (!parent) parent = importForeignNamespace(ctx, parentName);
+        const_cast<proto::ProtoObject*>(parent)->setAttribute(
+            ctx, getInternedString(ctx, name.substr(dot + 1).c_str()), ns);
+    }
+    return ns;
+}
+
+const proto::ProtoObject* PythonEnvironment::sysModuleEntry(proto::ProtoContext* ctx, const std::string& name) {
+    if (!sysModule) return nullptr;
+    const proto::ProtoObject* modules = sysModule->getAttribute(ctx, modulesS);
+    const proto::ProtoObject* dataAttr = (modules && modules != PROTO_NONE) ? modules->getAttribute(ctx, dataString) : nullptr;
+    const proto::ProtoSparseList* dict = (dataAttr && dataAttr != PROTO_NONE) ? dataAttr->asSparseList(ctx) : nullptr;
+    const proto::proto_ulong h = getInternedString(ctx, name.c_str())->getHash(ctx);
+    const proto::ProtoObject* mod = (dict && dict->has(ctx, h)) ? dict->getAt(ctx, h) : nullptr;
+    return (mod && mod != PROTO_NONE) ? mod : nullptr;
+}
+
 const proto::ProtoObject* PythonEnvironment::resolveModule(const std::string& nameStr, proto::ProtoContext* ctx) {
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG ENTER: resolveModule(name=%s)\n", nameStr.c_str());
@@ -28564,6 +28709,14 @@ const proto::ProtoObject* PythonEnvironment::resolveModule(const std::string& na
     const proto::ProtoObject* cached = ctx->space->getImportModule(ctx, nameStr.c_str(), "val");
     if (cached && cached != PROTO_NONE) {
         const proto::ProtoObject* result = cached->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "val"));
+
+        // A module of another language or of a C++ UMD provider: imported
+        // once, as a Python module over its attributes.
+        if (isForeignModule(ctx, result)) {
+            SafeImportLock foreignLock(this, ctx);
+            if (const proto::ProtoObject* imported = sysModuleEntry(ctx, nameStr)) return imported;
+            return importForeignModule(ctx, nameStr, result);
+        }
         
         // Step V75: Validate that we didn't just hit a native prototype type collider
         if (result && typePrototype) {
@@ -28687,6 +28840,20 @@ skip_cache_label:
                 result = modWrapper->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "val"));
             }
             return result;
+        }
+    }
+
+    // A dotted name no Python provider has may name a UMD module by its
+    // logical path: `example.geometry` is "example/geometry", the path a C++
+    // module or another language's module is registered under.
+    if (nameStr.find('.') != std::string::npos) {
+        std::string logicalPath = nameStr;
+        std::replace(logicalPath.begin(), logicalPath.end(), '.', '/');
+        const proto::ProtoObject* foreignWrapper = ctx->space->getImportModule(ctx, logicalPath.c_str(), "val");
+        if (foreignWrapper && foreignWrapper != PROTO_NONE) {
+            const proto::ProtoObject* foreign =
+                foreignWrapper->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "val"));
+            if (isForeignModule(ctx, foreign)) return importForeignModule(ctx, nameStr, foreign);
         }
     }
     
@@ -29231,14 +29398,15 @@ const proto::ProtoObject* PythonEnvironment::buildString(const proto::ProtoObjec
             result += s;
         } else if (obj->isInteger(ctx)) {
             // STRUCT-290: bignum-safe int → string conversion.
-            // asLong throws std::runtime_error for values outside
+            // asLong raises protoCore's Overflow error for values outside
             // long long range; fall back to Integer::asIntegerString
             // which renders the bignum without converting through
             // long long.  Affects f-string concatenation of bignum
             // values like `f"{9876543210**2}"`.
             try {
                 result += std::to_string(obj->asLong(ctx));
-            } catch (const std::exception&) {
+            } catch (const proto::ProtoException& overflow) {
+                PythonEnvironment::rethrowUnlessOverflow(ctx, overflow);
                 const proto::ProtoString* s = obj->asIntegerString(ctx, 10);
                 if (s) {
                     std::string str;
@@ -29692,8 +29860,8 @@ const proto::ProtoObject* PythonEnvironment::loadAttr(proto::ProtoContext* ctx, 
     const proto::ProtoObject* val = nullptr;
     try {
         val = getAttribute(ctx, obj, key, false, outIsUnboundFunc);
-    } catch (const PyException& e) {
-        const proto::ProtoObject* exc = e.exception();
+    } catch (const proto::ProtoException& e) {
+        const proto::ProtoObject* exc = e.value();
         if (!(exc && attributeErrorType &&
               (getType(ctx, exc) == attributeErrorType || exc->isInstanceOf(ctx, attributeErrorType) == PROTO_TRUE)))
             throw;
@@ -30177,12 +30345,12 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
                             } else {
                                 val = invokePythonCallable(c, gi, args, nullptr);
                             }
-                        } catch (const PyException& ex) {
+                        } catch (const proto::ProtoException& ex) {
                             // IndexError or StopIteration both signal end of iteration in
                             // the legacy __getitem__ protocol (nullptr, nothing raised).
                             // Detect via isInstanceOf so user-defined IndexError
                             // subclasses also terminate cleanly; anything else propagates.
-                            const proto::ProtoObject* pexc = ex.exception();
+                            const proto::ProtoObject* pexc = ex.value();
                             bool stopIter = false;
                             if (pexc) {
                                 if (e->isStopIteration(c, pexc)) stopIter = true;
@@ -30351,11 +30519,151 @@ const proto::ProtoObject* PythonEnvironment::next(const proto::ProtoObject* obj)
             }
             res = invokePythonCallable(ctx, method, args, nullptr);
         }
-    } catch (const PyException& e) {
-        if (!isStopIteration(ctx, e.exception())) throw;
+    } catch (const proto::ProtoException& e) {
+        if (!isStopIteration(ctx, e.value())) throw;
         return nullptr; // Success exhaustion
     }
     return res; // PROTO_NONE is a legitimate value; nullptr means exhaustion.
+}
+
+const proto::ProtoObject* PythonEnvironment::newExceptionInstance(proto::ProtoContext* ctx,
+                                                                 const proto::ProtoObject* type,
+                                                                 const std::string& message) {
+    if (!ctx || !type || type == PROTO_NONE) return nullptr;
+    const proto::ProtoObject* msg = newStr(ctx, message);
+    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, msg);
+    // The instance the Python constructor builds: type(message).
+    try {
+        const proto::ProtoObject* exc = invokePythonCallable(ctx, type, args, nullptr);
+        if (exc && exc != PROTO_NONE) return exc;
+    } catch (const proto::ProtoException&) {
+        // A constructor that raises: build the instance by hand below.
+    } catch (...) {
+    }
+    // What BaseException.__new__ stores, without running Python code: a
+    // mutable child of the class whose args is (message,).
+    const proto::ProtoObject* exc = type->newChild(ctx, true);
+    const proto::ProtoObject* argsTuple = makeTuple(ctx, args);
+    exc = exc->setAttribute(ctx, getInternedString(ctx, "args"), argsTuple ? argsTuple : args->asObject(ctx));
+    return exc;
+}
+
+const proto::ProtoObject* PythonEnvironment::pythonErrorFactory(proto::ProtoContext* ctx,
+                                                               proto::ProtoErrorKind kind,
+                                                               const char* message) {
+    // protoCore's ProtoErrorFactory: it must answer a value and never throw.
+    const std::string text = message ? message : "";
+    PythonEnvironment* env = fromContext(ctx);
+    const proto::ProtoObject* type = nullptr;
+    std::string pyMessage = text;
+    if (env) {
+        switch (kind) {
+            case proto::ProtoErrorKind::DivisionByZero:
+                type = env->zeroDivisionErrorType;
+                // CPython 3.14's message for every division by zero
+                // (int // 0, int % 0, divmod; "integer division or modulo
+                // by zero" before 3.14), as raiseZeroDivisionError raises.
+                pyMessage = "division by zero";
+                break;
+            case proto::ProtoErrorKind::Overflow:
+                type = env->overflowErrorType;
+                break;
+            case proto::ProtoErrorKind::InvalidArgument:
+                type = env->valueErrorType;
+                break;
+            case proto::ProtoErrorKind::TypeMismatch:
+            case proto::ProtoErrorKind::ArityMismatch:
+                type = env->typeErrorType;
+                break;
+        }
+    }
+    try {
+        if (type && type != PROTO_NONE) {
+            if (const proto::ProtoObject* exc = env->newExceptionInstance(ctx, type, pyMessage)) return exc;
+        }
+    } catch (...) {
+        // Fall back to protoCore's own error value below.
+    }
+    // No environment on this thread (a protoCore thread protoPython does
+    // not run): protoCore's default value, a child of its prototype for the
+    // kind with the message as its `message` attribute.
+    const proto::ProtoObject* error = ctx->space->getErrorPrototype(ctx, kind)->newChild(ctx);
+    return error->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "message"),
+                               ctx->fromUTF8String(text.c_str()));
+}
+
+bool PythonEnvironment::isForeignObject(proto::ProtoContext* ctx, const proto::ProtoObject* value) const {
+    // Python's classes and instances descend from `object` through their own
+    // parents.  A parentless object descends from it only by protoCore's
+    // convention (ProtoObject::isInstanceOf), so it is foreign unless it is
+    // `object` itself.
+    if (!value || value == PROTO_NONE || !value->isCell(ctx) || value->isString(ctx)) return false;
+    if (!objectPrototype || value == objectPrototype) return false;
+    if (value->getFirstParent(ctx) == PROTO_NONE) return true;
+    return value->isInstanceOf(ctx, objectPrototype) != PROTO_TRUE;
+}
+
+bool PythonEnvironment::isPythonException(proto::ProtoContext* ctx, const proto::ProtoObject* value) const {
+    if (!value || value == PROTO_NONE || !baseExceptionType || !value->isCell(ctx)) return false;
+    return value->isInstanceOf(ctx, baseExceptionType) == PROTO_TRUE;
+}
+
+bool PythonEnvironment::isOverflowError(proto::ProtoContext* ctx, const proto::ProtoException& e) const {
+    if (overflowErrorType && e.isInstanceOf(ctx, overflowErrorType)) return true;
+    return e.isInstanceOf(ctx, ctx->space->getErrorPrototype(ctx, proto::ProtoErrorKind::Overflow));
+}
+
+bool PythonEnvironment::tryAsLong(proto::ProtoContext* ctx, const proto::ProtoObject* integer, long long& out) {
+    // protoCore raises its Overflow error (an OverflowError) for an integer
+    // outside the 64-bit range; any other error propagates.
+    try {
+        out = integer->asLong(ctx);
+        return true;
+    } catch (const proto::ProtoException& e) {
+        rethrowUnlessOverflow(ctx, e);
+        return false;
+    }
+}
+
+void PythonEnvironment::rethrowUnlessOverflow(proto::ProtoContext* ctx, const proto::ProtoException& e) {
+    PythonEnvironment* env = fromContext(ctx);
+    const bool overflow = env ? env->isOverflowError(ctx, e)
+        : e.isInstanceOf(ctx, ctx->space->getErrorPrototype(ctx, proto::ProtoErrorKind::Overflow));
+    if (!overflow) throw;
+}
+
+[[noreturn]] void PythonEnvironment::raiseForeignCppException(proto::ProtoContext* ctx, const std::exception& e) {
+    // A C++ standard exception is a defect of the native code that threw it,
+    // not a Python value: it continues as RuntimeError(what()).
+    if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
+    const proto::ProtoObject* exc = newExceptionInstance(ctx, runtimeErrorType, e.what());
+    // Before the exception classes exist: the message itself is the value.
+    throw PyException(ctx, exc ? exc : newStr(ctx, e.what()));
+}
+
+std::string PythonEnvironment::foreignValueName(proto::ProtoContext* ctx, const proto::ProtoObject* value) {
+    // A module's error type names itself with a `name` attribute (protoCore's
+    // own errors and the UMD examples do); anything else is described by
+    // what protoCore says it is.
+    if (value && value->isCell(ctx)) {
+        const proto::ProtoObject* n = value->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "name"));
+        if (n && n != PROTO_NONE && n->isString(ctx)) {
+            std::string s;
+            n->asString(ctx)->toUTF8String(ctx, s);
+            if (!s.empty()) return s;
+        }
+    }
+    return "ForeignError";
+}
+
+bool PythonEnvironment::foreignValueMessage(proto::ProtoContext* ctx, const proto::ProtoObject* value,
+                                            std::string& out) {
+    if (!value || !value->isCell(ctx)) return false;
+    const proto::ProtoObject* m = value->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "message"));
+    if (!m || m == PROTO_NONE || !m->isString(ctx)) return false;
+    out.clear();
+    m->asString(ctx)->toUTF8String(ctx, out);
+    return true;
 }
 
 void PythonEnvironment::raiseException(const proto::ProtoObject* exc) {
@@ -30374,6 +30682,8 @@ void PythonEnvironment::addTraceback(const proto::ProtoObject* exc, const proto:
     // raced on its allocation state and its per-thread caches (SEGV in
     // ProtoSparseList::implSetAt under ASAN while threads raised errors).
     proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
+    // A foreign value keeps no traceback: it is not written to.
+    if (!isPythonException(ctx, exc)) return;
     
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG: addTraceback exc=%p frame=%p lasti=%d lineno=%d\n", exc, frame, lasti, lineno);
@@ -30422,9 +30732,10 @@ void PythonEnvironment::addTraceback(const proto::ProtoObject* exc, const proto:
 }
 
 bool PythonEnvironment::isException(const proto::ProtoObject* exc, const proto::ProtoObject* type) {
-    if (!exc || !type || exc == PROTO_NONE || type == PROTO_NONE) return false;
+    // The test of `except type:` for the raised value `exc`.
+    if (!exc || !type || type == PROTO_NONE) return false;
     proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
-    
+
     if (::protoPython::PythonEnvironment::isTupleValue(ctx, type)) {
         ::protoPython::TupleView tup = ::protoPython::PythonEnvironment::tupleView(ctx, type);
         for (proto::proto_ulong i = 0; i < tup->getSize(ctx); ++i) {
@@ -30432,13 +30743,30 @@ bool PythonEnvironment::isException(const proto::ProtoObject* exc, const proto::
         }
         return false;
     }
-    
-    bool match = isTrue(exc->isInstanceOf(ctx, type));
-    if (get_env_diag()) {
-        fprintf(stderr, "DEBUG: isException exc=%p type=%p -> match=%d\n", (void*)exc, (void*)type, match);
-        fflush(stderr);
+
+    // A Python exception class: CPython's isinstance test, by the value's
+    // prototype chain.  A value that is not a Python exception (an error a
+    // C++ module or another language raised) is an ordinary error to Python
+    // code: `except BaseException` and `except Exception` catch it, as a bare
+    // `except:` does, and no other Python class does.
+    const bool exceptionClass = baseExceptionType &&
+        (type == baseExceptionType || type->isInstanceOf(ctx, baseExceptionType) == PROTO_TRUE);
+    if (exceptionClass) {
+        if (exc->isCell(ctx) && exc->isInstanceOf(ctx, type) == PROTO_TRUE) return true;
+        if (isPythonException(ctx, exc)) return false;
+        return type == baseExceptionType || type == exceptionType;
     }
-    return match;
+
+    // A foreign type: a protoCore object that is not a Python object (a
+    // module's error prototype, another language's class).  It matches by
+    // the prototype chain, as every language on protoCore selects errors.
+    if (isForeignObject(ctx, type)) {
+        return exc->isCell(ctx) && exc->isInstanceOf(ctx, type) == PROTO_TRUE;
+    }
+
+    // Anything else is a Python object that is not an exception class.
+    raiseTypeError(ctx, "catching classes that do not inherit from BaseException is not allowed");
+    return false;
 }
 
 void PythonEnvironment::augAssignName(const std::string& name, TokenType op, const proto::ProtoObject* value) {

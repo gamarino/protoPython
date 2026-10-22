@@ -201,7 +201,7 @@ bool mroContains(proto::ProtoContext* ctx, PythonEnvironment* env,
     const proto::ProtoObject* mro = nullptr;
     try {
         mro = env->getAttribute(ctx, cls, env->getMroString(), false);
-    } catch (const PyException&) {
+    } catch (const proto::ProtoException&) {
         // An unreadable __mro__ reads as no __mro__.
     }
     if (!mro || mro == PROTO_NONE) return false;
@@ -224,7 +224,7 @@ bool definesAll(proto::ProtoContext* ctx, PythonEnvironment* env,
     const proto::ProtoObject* mro = nullptr;
     try {
         mro = env->getAttribute(ctx, cls, env->getMroString(), false);
-    } catch (const PyException&) {
+    } catch (const proto::ProtoException&) {
         // An unreadable __mro__ reads as no __mro__.
     }
     ::protoPython::TupleView mroT = mro && mro != PROTO_NONE ? ::protoPython::PythonEnvironment::tupleView(ctx, mro) : nullptr;

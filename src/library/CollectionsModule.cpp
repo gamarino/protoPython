@@ -188,8 +188,8 @@ static const proto::ProtoList* deque_collect(proto::ProtoContext* ctx, PythonEnv
         const proto::ProtoObject* item = nullptr;
         try {
             item = env->next(it);
-        } catch (const PyException& e) {
-            if (!env->isStopIteration(ctx, e.exception())) throw;
+        } catch (const proto::ProtoException& e) {
+            if (!env->isStopIteration(ctx, e.value())) throw;
             break;
         }
         if (!item) break;

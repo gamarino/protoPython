@@ -96,6 +96,11 @@ Earlier conformance reports, including the `test_descr.py` work, are kept in
   [docs/HPY_USER_GUIDE.md](docs/HPY_USER_GUIDE.md).
 - **Embedding.** `PythonEnvironment` exposes the runtime to C++ applications; see
   [docs/CPP_API_REFERENCE.md](docs/CPP_API_REFERENCE.md).
+- **One exception model with the other protoCore languages.** A Python exception is
+  protoCore's `proto::ProtoException`; `import example.geometry` loads a C++ (or
+  other-language) UMD module by its logical path, and `except geometry.NegativeRadius`
+  catches the error type it defines; protoCore's own errors arrive as Python's
+  built-in exceptions. See [docs/EXCEPTIONS.md](docs/EXCEPTIONS.md).
 
 Supported syntax, built-in types and modules, and differences from CPython are
 described in [docs/PYTHON_COMPATIBILITY.md](docs/PYTHON_COMPATIBILITY.md).
@@ -452,7 +457,7 @@ back to `env->binaryOp`, the runtime's generic binary-operation entry point.
 
 Each compiled function runs in a context of its own and keeps its locals and the value
 of every expression node in that context's automatic slots, so the collector sees
-them. A Python exception is a C++ exception (`protoPython::PyException`), as in the
+them. A Python exception is a C++ exception (protoCore's `proto::ProtoException`), as in the
 interpreter: an operation that raises throws it, so nothing after it in the statement
 or its statement list runs, and a Python `try` is a C++ `try`; the generated code tests
 no flag after an operation (`docs/PROTOPYC_SPECIFICATION.md`, section 4). For `i < n`
@@ -520,6 +525,8 @@ describe the design in detail.
   compiler.
 - [**HPy User Guide**](docs/HPY_USER_GUIDE.md) — the HPy bridge and its current
   limitations.
+- [**Exceptions**](docs/EXCEPTIONS.md) — the exception model, foreign errors of UMD
+  modules, protoCore's errors and the top level.
 - [**GC Bridging**](docs/GC_BRIDGING.md) — keeping protoCore objects alive across
   boundaries the garbage collector cannot see.
 - [**Changelog**](CHANGELOG.md) — notable changes by release.

@@ -81,7 +81,8 @@ int Compiler::addConstant(const proto::ProtoObject* obj) {
             constantsVec_ = constantsVec_->appendLast(ctx_, obj);
             constIntIndex_[val] = idx;
             return idx;
-        } catch (const std::overflow_error&) {
+        } catch (const proto::ProtoException& overflow) {
+            PythonEnvironment::rethrowUnlessOverflow(ctx_, overflow);
             // Bignum — no numeric cache.
             int n = static_cast<int>(constantsVec_->getSize(ctx_));
             for (int i = 0; i < n; ++i) {

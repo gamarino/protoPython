@@ -10,6 +10,20 @@ what the adaptor does and does not prove.
 - Retention regression: `test/library/TestThreadStateReleased.cpp`
 - Run: `ctest --test-dir build_release -R 'conformance' < /dev/null`
 
+## Rule 14 — 2026-10-21, protoCore 3.0.0 (SOVERSION 4)
+
+| Case | Rule | Result | Numbers |
+|---|---|---|---|
+| `exception.kernel_errors_are_proto` | 14 | **PASS** | 1 / 0 raised a ProtoException built by the host's error factory (protoPython's `pythonErrorFactory`: a `ZeroDivisionError`) |
+| `exception.value_pinned_in_flight` | 14 | **PASS** | the value survived 4 cycles |
+| `exception.foreign_type_caught` | 14 | **PASS** (was NOTAPPLICABLE) | a Python `except` naming the module's base type caught its subtype's instance with the same value; a handler for an unrelated type let it leave `executeString` unchanged |
+| `exception.language_error_escapes` | 14 | **PASS** (was NOTAPPLICABLE) | `raise ValueError(...)` left `executeString` as a `ProtoException` |
+
+`catchForeignError` makes the type and the raising method globals of `__main__` and
+runs an ordinary `try`/`except` through the interpreter; `escapeLanguageError` runs an
+unhandled `raise` (`test/library/ConformanceHost.h`). The behaviour is described in
+[EXCEPTIONS.md](EXCEPTIONS.md).
+
 ## Result — 2026-09-25, protoCore 2.4.0 (SOVERSION 3)
 
 | Case | Rule | Result | Numbers |

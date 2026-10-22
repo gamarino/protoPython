@@ -221,7 +221,9 @@ compiler diagnostics and native debuggers (GDB, LLDB) can point at Python source
   namespace as `__classcell__` and `type.__new__` fills with the class before
   `__init_subclass__` runs, as in CPython.
 - **Exceptions.** As in the interpreter, a Python exception is a C++ exception,
-  `protoPython::PyException`: an operation that raises throws it, so neither the
+  protoCore's `proto::ProtoException` (thrown as `protoPython::PyException`), and
+  every generated handler catches the base, so an error a C++ module or another
+  language raises reaches the `except` clauses too: an operation that raises throws it, so neither the
   rest of the statement (a call's other arguments, the call itself, an assignment)
   nor the rest of its statement list runs, and a compiled callable lets it propagate
   to its caller; the module initializer does the same, so the import fails with the

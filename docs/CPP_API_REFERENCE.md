@@ -39,7 +39,7 @@ Every environment uses the process-wide `proto::ProtoSpace` returned by the stat
 
 | Member | Result |
 |--------|--------|
-| `int executeString(const std::string& source, const std::string& name = "<string>")` | Runs source code in the `__main__` context and returns 0. An exception the code does not handle propagates as a `PyException`. |
+| `int executeString(const std::string& source, const std::string& name = "<string>")` | Runs source code in the `__main__` context and returns 0. An exception the code does not handle propagates as the `proto::ProtoException` carrying it. |
 | `int executeModule(const std::string& moduleName, bool asMain = false, proto::ProtoContext* ctx = nullptr)` | Resolves and runs a module (as `__main__` when `asMain` is true). Returns 0 on success, -1 if the module cannot be resolved, -2 on a runtime failure, -3 when the module raised `SystemExit` (the status is in `getExitRequested()`). |
 | `void runRepl(std::istream& in = std::cin, std::ostream& out = std::cout)` | Runs the interactive loop. |
 | `int getExitRequested() const` | Exit status requested through `SystemExit` or `sys.exit`. |
@@ -48,17 +48,26 @@ Every environment uses the process-wide `proto::ProtoSpace` returned by the stat
 
 ### Errors
 
-A Python exception is a C++ exception: a call that raises throws
-`protoPython::PyException` (`PythonEnvironment.h`), whose `exception()` is the Python
-exception object, kept reachable by the collector while the `PyException` exists.
-Embedding code catches it as any C++ exception; a native function raises with one of
-the `raise*` helpers or `raiseException`, which throw it. There is no pending-exception
-state to test or clear.
+A Python exception is a C++ exception: a call that raises throws protoCore's
+`proto::ProtoException` (protoCore 3.0.0), whose `value()` is the Python exception
+object, kept reachable by the collector while the exception exists. protoPython throws
+it through `protoPython::PyException` (`PythonEnvironment.h`), a subclass that adds
+nothing; catch the base, `const proto::ProtoException&`, because an error a C++ module
+or another language raises is a `ProtoException` too (its value is then not a Python
+exception: see [EXCEPTIONS.md](EXCEPTIONS.md#foreign-errors)). A native function raises
+with one of the `raise*` helpers or `raiseException`, which throw it. There is no
+pending-exception state to test or clear. Catch it while the `PythonEnvironment` is
+alive: the exception pins its value in the environment's space. `ProtoException` does
+not derive from `std::exception`; a C++ standard exception thrown by native code
+reaches Python code as `RuntimeError(what())`.
 
 | Member | Result |
 |--------|--------|
-| `[[noreturn]] void raiseException(const proto::ProtoObject* exc)` | Raises `exc`: throws it as a `PyException`. |
-| `bool isException(const proto::ProtoObject* exc, const proto::ProtoObject* type)` | Whether `exc` is an instance of `type` (a class or a tuple of classes), as `except type:` matches. |
+| `[[noreturn]] void raiseException(const proto::ProtoObject* exc)` | Raises `exc`: throws it as a `PyException` (a `proto::ProtoException`). |
+| `bool isException(const proto::ProtoObject* exc, const proto::ProtoObject* type)` | Whether `except type:` catches `exc`: `type` a Python exception class (CPython's `isinstance`; a foreign value matches `BaseException` and `Exception`), a foreign type (by prototype chain) or a tuple of them. Raises `TypeError` for any other Python object, as CPython. |
+| `bool isPythonException(proto::ProtoContext* ctx, const proto::ProtoObject* value) const` | Whether `value` is an instance of `BaseException` (otherwise it is a foreign value). |
+| `const proto::ProtoObject* newExceptionInstance(proto::ProtoContext* ctx, const proto::ProtoObject* type, const std::string& message)` | `type(message)`, built without raising. |
+| `static bool tryAsLong(proto::ProtoContext* ctx, const proto::ProtoObject* integer, long long& out)` | `asLong`, false when the integer does not fit in 64 bits (protoCore's `Overflow` error). |
 | `const proto::ProtoObject* getActiveException(proto::ProtoContext* ctx) const` | The exception being handled where `ctx` runs (`sys.exc_info()`), or `nullptr`. |
 | `void handleException(const proto::ProtoObject* exc, const proto::ProtoObject* frame = nullptr, std::ostream& out = std::cerr)` | Formats the exception and its traceback to `out`. For `SystemExit` it writes nothing and records the exit status. |
 
@@ -73,9 +82,9 @@ int main() {
     protoPython::PythonEnvironment env("", {"."}, {"embedded"});
     try {
         env.executeString("print('hello from protoPython')", "<embedded>");
-    } catch (const protoPython::PyException& e) {
+    } catch (const proto::ProtoException& e) {
         std::ostringstream text;
-        env.handleException(e.exception(), nullptr, text);
+        env.handleException(e.value(), nullptr, text);
         if (text.str().empty())
             return env.getExitRequested();   // SystemExit
         std::cerr << text.str();

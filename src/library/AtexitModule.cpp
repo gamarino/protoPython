@@ -136,15 +136,15 @@ static const proto::ProtoObject* py_run_exitfuncs(
         // <repr>:" and the traceback) and goes on with the next handler.
         try {
             invokePythonCallable(ctx, callable, argsView(proto::ProtoListArguments(ctx, args)), kwargsView(proto::ProtoSparseListKeywordArguments(ctx, kwargs)));
-        } catch (const PyException& e) {
+        } catch (const proto::ProtoException& e) {
             if (env) {
                 std::string errMsg = "Exception ignored in atexit callback ";
                 // A failing repr of the handler must not stop the report.
                 try {
                     errMsg += PythonEnvironment::reprObject(ctx, callable);
-                } catch (const PyException&) {
+                } catch (const proto::ProtoException&) {
                 }
-                env->reportUnraisable(ctx, e.exception(), errMsg);
+                env->reportUnraisable(ctx, e.value(), errMsg);
             }
         }
     }

@@ -24,11 +24,11 @@ public:
     const char* name() const override { return "protoPython"; }
 
     // Runs `src` in __main__; false when it raised (a Python exception is a
-    // C++ exception, protoPython::PyException).
+    // C++ exception, protoCore's proto::ProtoException).
     bool run(const std::string& src, const char* where) {
         try {
             return env_.executeString(src, where) == 0;
-        } catch (const PyException&) {
+        } catch (const proto::ProtoException&) {
             return false;
         }
     }
@@ -297,6 +297,41 @@ public:
             // front of the detector (the closure's two are no longer in a
             // cycle; see above).
             "_conf_mutables_built = 7\n";
+    }
+
+    // --- rule 14 -----------------------------------------------------------
+    //
+    // A Python `except` naming a module's error type, a protoCore prototype
+    // that is not a Python class, around a call of a method that raises an
+    // instance of it.  Both values are made globals of __main__ and the
+    // handler is ordinary Python run by protoPython's interpreter; a value
+    // the handler does not select leaves executeString as the ProtoException
+    // it arrived as (isException, docs/EXCEPTIONS.md).
+    int catchForeignError(const proto::ProtoObject* errorType, const proto::ProtoObject* raising,
+                          const proto::ProtoObject** caught) override {
+        proto::ProtoContext* ctx = env_.getContext();
+        const proto::ProtoObject* main = env_.resolve("__main__", ctx);
+        if (!main || main == PROTO_NONE) return -1;
+        env_.setAttr(main, "_conf_error_type", errorType);
+        env_.setAttr(main, "_conf_raising", raising);
+        env_.setAttr(main, "_conf_caught", PROTO_NONE);
+        env_.executeString(
+            "try:\n"
+            "    _conf_raising()\n"
+            "except _conf_error_type as _conf_e:\n"
+            "    _conf_caught = _conf_e\n",
+            "<conformance:foreign_error>");
+        *caught = env_.getAttr(main, "_conf_caught");
+        env_.setAttr(main, "_conf_caught", PROTO_NONE);
+        return 1;
+    }
+
+    // An unhandled ValueError leaves executeString, the embedding entry, as
+    // the ProtoException carrying the ValueError instance.
+    int escapeLanguageError() override {
+        env_.executeString("raise ValueError('conformance: an unhandled Python error')\n",
+                           "<conformance:escape>");
+        return -1;
     }
 
     // declaredMutableCycles() is deliberately NOT overridden, so it stays -1 and

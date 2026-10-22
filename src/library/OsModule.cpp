@@ -370,7 +370,7 @@ static const proto::ProtoObject* py_os_fspath(
     if (path != PROTO_NONE) {
         try {
             method = env->getAttribute(ctx, path, PythonEnvironment::getInternedString(ctx, "__fspath__"), false);
-        } catch (const PyException&) {
+        } catch (const proto::ProtoException&) {
             // A failing __fspath__ lookup reads as "not a path": TypeError below.
         }
     }

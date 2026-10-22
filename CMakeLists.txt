@@ -1691,6 +1691,71 @@ if(PROTOPYTHON_BUILD_EXAMPLES)
         LABELS "regression_gate")
 endif()
 
+# --- Errors of a C++ UMD module (protoCore 3.0.0 unified exceptions) ---------
+# test/regression/umd_geometry_*.py import protoCore's example geometry module,
+# a ModuleProvider in its own shared library (protoCore/examples/exceptions/),
+# as `example.geometry`, and catch the error types it defines. protopy has no
+# plug-in loader, so they run through protopy_umd_host (test/umd/), which links
+# the library, registers its provider and appends it to the resolution chain.
+# The library is protoCore's own target when protoCore is built here
+# (add_subdirectory); with an installed protoCore name it with
+# -DPROTOCORE_EXAMPLE_GEOMETRY_LIBRARY=<path> and
+# -DPROTOCORE_EXAMPLE_GEOMETRY_INCLUDE_DIR=<dir holding geometry_module/>.
+if(TARGET protocore_example_geometry)
+    set(_protopython_geometry_lib protocore_example_geometry)
+    set(_protopython_geometry_inc "${PROTOCORE_DIR}/examples/exceptions")
+else()
+    find_library(PROTOCORE_EXAMPLE_GEOMETRY_LIBRARY NAMES protocore_example_geometry
+        PATHS "${CMAKE_CURRENT_SOURCE_DIR}/../protoCore/build_release/examples/exceptions"
+        NO_DEFAULT_PATH)
+    find_path(PROTOCORE_EXAMPLE_GEOMETRY_INCLUDE_DIR geometry_module/GeometryModule.h
+        PATHS "${CMAKE_CURRENT_SOURCE_DIR}/../protoCore/examples/exceptions" NO_DEFAULT_PATH)
+    set(_protopython_geometry_lib "${PROTOCORE_EXAMPLE_GEOMETRY_LIBRARY}")
+    set(_protopython_geometry_inc "${PROTOCORE_EXAMPLE_GEOMETRY_INCLUDE_DIR}")
+endif()
+if(_protopython_geometry_lib AND _protopython_geometry_inc)
+    add_executable(protopy_umd_host test/umd/protopy_umd_host.cpp)
+    target_include_directories(protopy_umd_host PRIVATE ${_protopython_geometry_inc})
+    target_link_libraries(protopy_umd_host PRIVATE protoPython protoCore ${_protopython_geometry_lib})
+    target_compile_definitions(protopy_umd_host PRIVATE
+        STDLIB_PATH="${CMAKE_SOURCE_DIR}/lib/python3.14")
+    # Interpreted: the handlers, protoCore's errors through the factory, a
+    # C++ std::exception as RuntimeError, foreign values in Python's protocols.
+    add_test(NAME umd_geometry_errors
+        COMMAND protopy_umd_host ${CMAKE_SOURCE_DIR}/test/regression/umd_geometry_errors.py)
+    set_tests_properties(umd_geometry_errors PROPERTIES
+        TIMEOUT 120
+        PASS_REGULAR_EXPRESSION "umd_geometry_errors: PASS"
+        FAIL_REGULAR_EXPRESSION "FAIL;Traceback"
+        LABELS "regression_gate")
+    # Unhandled: the module's error reaches the top level, which reports it by
+    # its name and message and exits with status 1.
+    add_test(NAME umd_geometry_unhandled
+        COMMAND ${PROTOPYTHON_ASSERT_EXIT} 1 $<TARGET_FILE:protopy_umd_host>
+                ${CMAKE_SOURCE_DIR}/test/regression/umd_geometry_unhandled.py)
+    set_tests_properties(umd_geometry_unhandled PROPERTIES
+        TIMEOUT 120
+        PASS_REGULAR_EXPRESSION "NegativeRadius: circleArea: the radius -3.000000 is negative"
+        FAIL_REGULAR_EXPRESSION "Expected exit code"
+        LABELS "regression_gate")
+    # Compiled: the same test module built by protopyc and imported.
+    if(NOT WIN32)
+        add_test(NAME protopyc_umd_geometry
+            COMMAND ${CMAKE_SOURCE_DIR}/test/compiler/protopyc_umd_geometry.sh
+                    $<TARGET_FILE:protopyc> $<TARGET_FILE:protopy_umd_host>
+                    ${CMAKE_SOURCE_DIR}/test/regression/umd_geometry_errors.py
+                    ${CMAKE_CURRENT_BINARY_DIR}/test/compiler/umd_geometry)
+        set_tests_properties(protopyc_umd_geometry PROPERTIES
+            TIMEOUT 600
+            PASS_REGULAR_EXPRESSION "umd_geometry_errors: PASS"
+            FAIL_REGULAR_EXPRESSION "FAIL"
+            LABELS "regression_gate")
+    endif()
+else()
+    message(STATUS "protoPython: protoCore's example geometry module was not found; "
+                   "the umd_geometry tests (foreign error types) are not built")
+endif()
+
 # --- Install RPATH: installed binaries and libs find each other without LD_LIBRARY_PATH ---
 if(UNIX)
     if(APPLE)

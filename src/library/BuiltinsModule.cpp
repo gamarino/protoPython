@@ -568,12 +568,11 @@ static const proto::ProtoObject* py_print(
         } else if (obj->isInteger(context)) {
             // asLong overflows for bignums; route through reprObject which
             // falls back to Integer::toString when the value doesn't fit
-            // into long long.  STRUCT-290: the protoCore exception is
-            // a `std::runtime_error` (not std::overflow_error), so
-            // widen the catch to std::exception to cover both.
+            // into long long (protoCore raises its Overflow error).
             try {
                 buffered << std::to_string(obj->asLong(context));
-            } catch (const std::exception&) {
+            } catch (const proto::ProtoException& overflow) {
+                PythonEnvironment::rethrowUnlessOverflow(context, overflow);
                 buffered << (env ? env->reprObject(context, obj) : std::string("<int>"));
             }
         } else if (obj->isDouble(context)) {
@@ -633,7 +632,12 @@ static const proto::ProtoObject* py_print(
             // CPython's object.__str__ does.
             std::string rendered;
             bool gotStr = false;
-            if (env) {
+            // A foreign value (a C++ module's error, another language's
+            // object) prints its message, as str() does.
+            if (env && env->isForeignObject(context, obj) &&
+                PythonEnvironment::foreignValueMessage(context, obj, rendered)) {
+                buffered << rendered;
+            } else if (env) {
                 const proto::ProtoString* strS = env->getStrString();
                 const proto::ProtoObject* cls = env->getType(context, obj);
                 const proto::ProtoObject* strMethod = nullptr;
@@ -932,12 +936,12 @@ static const proto::ProtoObject* py_next(
                 ? nextMethod->asMethod(context)(context, obj, nullptr, argsView(proto::ProtoListArguments(context, emptyL)), nullptr)
                 : ::protoPython::invokePythonCallable(context, nextMethod,
                       context->newList()->appendLast(context, obj), nullptr);
-        } catch (const PyException& e) {
+        } catch (const proto::ProtoException& e) {
             // next(it, default) returns the default when __next__ raises
             // StopIteration; the exception used to propagate, which broke
             // `next(<generator expression>, None)` (site.venv) and every
             // generator given a default. Other exceptions propagate.
-            if (defaultVal && env && env->isStopIteration(context, e.exception())) return defaultVal;
+            if (defaultVal && env && env->isStopIteration(context, e.value())) return defaultVal;
             throw;
         }
         if (!result) {
@@ -2038,10 +2042,10 @@ static const proto::ProtoObject* py_reversed_next(
             // bound methods (asMethodSelf carries `obj`) and unbound functions.
             value = ::protoPython::invokePythonCallable(context, getitemMethod, args, nullptr);
         }
-    } catch (const PyException& e) {
+    } catch (const proto::ProtoException& e) {
         // CPython contract: if obj[idx] raises IndexError, reversed yields
         // StopIteration.  Other exceptions propagate.
-        const proto::ProtoObject* exc = e.exception();
+        const proto::ProtoObject* exc = e.value();
         if (env && exc) {
             const proto::ProtoObject* cls = env->getType(context, exc);
             const proto::ProtoString* nameS = env->getNameString();
@@ -2721,10 +2725,10 @@ static const proto::ProtoObject* py_getattr(
     try {
         val = env->loadAttr(context, obj, key, nullptr, argCount < 3);
         if (!val && argCount >= 3) return positionalParameters->getAt(context, 2);
-    } catch (const PyException& e) {
+    } catch (const proto::ProtoException& e) {
         // getattr(obj, name, default) answers the default for a missing
         // attribute only: any other exception propagates.
-        const proto::ProtoObject* exc = e.exception();
+        const proto::ProtoObject* exc = e.value();
         const proto::ProtoObject* aeType = env->getAttributeErrorType();
         if (argCount >= 3 && exc && aeType && (env->getType(context, exc) == aeType ||
                               exc->isInstanceOf(context, aeType) == PROTO_TRUE)) {
@@ -3304,7 +3308,7 @@ static const proto::ProtoObject* py_input(
     if (const proto::ProtoObject* err = stream("stderr")) {
         try {
             input_call(context, env, err, "flush", {});
-        } catch (const PyException&) {
+        } catch (const proto::ProtoException&) {
             // Errors flushing sys.stderr are ignored, as in CPython.
         }
     }
@@ -5444,8 +5448,8 @@ static const proto::ProtoObject* py_hasattr(
             const proto::ProtoObject* val = nullptr;
             try {
                 val = envInner->getAttribute(context, obj, nameStr, false);
-            } catch (const PyException& e) {
-                const proto::ProtoObject* exc = e.exception();
+            } catch (const proto::ProtoException& e) {
+                const proto::ProtoObject* exc = e.value();
                 const proto::ProtoObject* excCls = exc ? envInner->getType(context, exc) : nullptr;
                 const proto::ProtoObject* excName = excCls ? excCls->getAttribute(context, envInner->getNameString()) : nullptr;
                 std::string en;
@@ -5522,11 +5526,11 @@ static const proto::ProtoObject* py_hasattr(
             const proto::ProtoObject* probe = nullptr;
             try {
                 probe = env->callObject(getattrFn, args);
-            } catch (const PyException& e) {
+            } catch (const proto::ProtoException& e) {
                 // __getattr__ itself raised — by CPython contract, hasattr
                 // suppresses AttributeError but lets others propagate.  We
                 // still want hasattr() to return False for AttributeError.
-                const proto::ProtoObject* exc = e.exception();
+                const proto::ProtoObject* exc = e.value();
                 if (exc) {
                     const proto::ProtoObject* cls2 = env->getType(context, exc);
                     const proto::ProtoString* nameS = env->getNameString();
@@ -5651,7 +5655,7 @@ static const proto::ProtoObject* py_delattr(
     if (type && type != PROTO_NONE) {
         try {
             delattrM = env->getAttribute(context, type, PythonEnvironment::getInternedString(context, "__delattr__"), false);
-        } catch (const PyException&) {
+        } catch (const proto::ProtoException&) {
             // A failing __delattr__ lookup falls back to the generic delete.
         }
     }
@@ -6965,7 +6969,7 @@ const proto::ProtoObject* py_type(
                                     bool emitted = true;
                                     try {
                                         env->callObject(warnE, { a->getAt(context, 0), a->getAt(context, 1), a->getAt(context, 2), a->getAt(context, 3) });
-                                    } catch (const PyException&) {
+                                    } catch (const proto::ProtoException&) {
                                         emitted = false;
                                     }
                                     // STRUCT-309: when _py_warnings.warn_explicit
@@ -6997,7 +7001,7 @@ const proto::ProtoObject* py_type(
                                                 env->callObject(warnFn,
                                                     { PythonEnvironment::getInternedString(context, msg.c_str())->asObject(context),
                                                       rwT });
-                                            } catch (const PyException&) {
+                                            } catch (const proto::ProtoException&) {
                                                 // A failing warnings.warn is ignored, as before.
                                             }
                                         }
@@ -8185,7 +8189,7 @@ static const proto::ProtoObject* py_isinstance(
                             ->appendLast(context, classStr->asObject(context));
                         dynamicClass = ::protoPython::invokePythonCallable(context, gaM, selfArgs, nullptr);
                     }
-                } catch (const PyException&) {
+                } catch (const proto::ProtoException&) {
                     dynamicClass = nullptr;  // an unreadable __class__ is ignored
                 }
                 if (dynamicClass && dynamicClass != PROTO_NONE && dynamicClass != objClass) {
@@ -8779,7 +8783,8 @@ static const proto::ProtoObject* py_pow(
     // larger is astronomically infeasible).
     long long exp = 0;
     try { exp = expObj->asLong(context); }
-    catch (const std::overflow_error&) {
+    catch (const proto::ProtoException& overflow) {
+        PythonEnvironment::rethrowUnlessOverflow(context, overflow);
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         if (env) env->raiseValueError(context,
             PythonEnvironment::getInternedString(context, "exponent too large for pow()")->asObject(context));
@@ -11351,8 +11356,8 @@ static const proto::ProtoObject* py_bytearray_iadd(
                         const proto::ProtoObject* v = nullptr;
                         try {
                             v = nextM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(it), nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
-                        } catch (const PyException& e) {
-                            if (!env || !env->isStopIteration(ctx, e.exception())) throw;
+                        } catch (const proto::ProtoException& e) {
+                            if (!env || !env->isStopIteration(ctx, e.value())) throw;
                             break;
                         }
                         if (!v || v == PROTO_NONE) break;

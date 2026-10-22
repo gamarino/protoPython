@@ -8,6 +8,7 @@
 #include <memory>
 #include <initializer_list>
 #include <iostream>
+#include <stdexcept>
 #include <mutex>
 #include <mutex>
 #include <unordered_map>
@@ -565,6 +566,39 @@ public:
     /** Raises `exc`: throws it as a PyException (a Python exception is a
      *  C++ exception). Every raise helper ends here. */
     [[noreturn]] void raiseException(const proto::ProtoObject* exc);
+    /** An instance of the exception class `type` built as `type(message)`
+     *  builds it (args == (message,)); by hand, without running Python code,
+     *  when the constructor raises. Never throws. nullptr without a type. */
+    const proto::ProtoObject* newExceptionInstance(proto::ProtoContext* ctx, const proto::ProtoObject* type,
+                                                   const std::string& message);
+    /** protoCore's error factory for the space (ProtoSpace::setErrorFactory):
+     *  DivisionByZero -> ZeroDivisionError, Overflow -> OverflowError,
+     *  InvalidArgument -> ValueError, TypeMismatch and ArityMismatch ->
+     *  TypeError (docs/EXCEPTIONS.md). */
+    static const proto::ProtoObject* pythonErrorFactory(proto::ProtoContext* ctx, proto::ProtoErrorKind kind,
+                                                        const char* message);
+    /** True when `value` is an instance of BaseException. A thrown value
+     *  that is not one is a foreign value: an error a C++ module or another
+     *  language raised (docs/EXCEPTIONS.md, "Foreign errors"). */
+    bool isPythonException(proto::ProtoContext* ctx, const proto::ProtoObject* value) const;
+    /** True when `value` is a protoCore object that is not a Python object:
+     *  it does not descend from `object` through its own parents (a C++
+     *  module's error prototype or instance, another language's object). */
+    bool isForeignObject(proto::ProtoContext* ctx, const proto::ProtoObject* value) const;
+    /** True when `e` carries protoCore's Overflow error (an OverflowError). */
+    bool isOverflowError(proto::ProtoContext* ctx, const proto::ProtoException& e) const;
+    /** integer->asLong(ctx), false when the integer does not fit in 64 bits. */
+    static bool tryAsLong(proto::ProtoContext* ctx, const proto::ProtoObject* integer, long long& out);
+    /** Inside a catch of `e`: rethrows it unless it is protoCore's Overflow
+     *  error (an integer outside the 64-bit range, raised by asLong). */
+    static void rethrowUnlessOverflow(proto::ProtoContext* ctx, const proto::ProtoException& e);
+    /** Raises RuntimeError(e.what()): a C++ standard exception that reached
+     *  a native-call boundary (docs/EXCEPTIONS.md). */
+    [[noreturn]] void raiseForeignCppException(proto::ProtoContext* ctx, const std::exception& e);
+    /** The name a foreign value reports: its `name` attribute, else "ForeignError". */
+    static std::string foreignValueName(proto::ProtoContext* ctx, const proto::ProtoObject* value);
+    /** The foreign value's `message` attribute, when it is a string. */
+    static bool foreignValueMessage(proto::ProtoContext* ctx, const proto::ProtoObject* value, std::string& out);
     void addTraceback(const proto::ProtoObject* exc, const proto::ProtoObject* frame, int lasti, int lineno);
     // name: the module the import failed for, stored as ImportError.name.
     void raiseImportError(const std::string& msg, const std::string& name = "");
@@ -654,6 +688,21 @@ public:
                    const proto::ProtoObject* value);
     bool isTrue(const proto::ProtoObject* obj);
     const proto::ProtoObject* resolveModule(const std::string& nameStr, proto::ProtoContext* ctx = nullptr);
+    /** True for a module a provider returned that is not a Python module: a
+     *  C++ UMD module or another language's (no own __name__ / __executed__). */
+    static bool isForeignModule(proto::ProtoContext* ctx, const proto::ProtoObject* mod);
+    /** The Python module for the foreign module `foreign` imported as
+     *  `name`: a module object holding its attributes, with its methods
+     *  bound to it (a UMD method receives its module as `self`), registered
+     *  in sys.modules and bound in its parent package (docs/EXCEPTIONS.md,
+     *  "Importing a UMD module"). */
+    const proto::ProtoObject* importForeignModule(proto::ProtoContext* ctx, const std::string& name,
+                                                  const proto::ProtoObject* foreign);
+    /** A namespace package (PEP 420) with no portions for `name`, the
+     *  parent of a foreign module that has no Python package. */
+    const proto::ProtoObject* importForeignNamespace(proto::ProtoContext* ctx, const std::string& name);
+    /** sys.modules[name], or nullptr when absent. */
+    const proto::ProtoObject* sysModuleEntry(proto::ProtoContext* ctx, const std::string& name);
     const proto::ProtoObject* importModule(const std::string& name, int level = 0, const std::vector<std::string>& fromList = {});
     void importStar(const proto::ProtoObject* mod);
 
@@ -1622,6 +1671,7 @@ private:
     const proto::ProtoObject* lookupErrorType = nullptr;
     const proto::ProtoObject* unboundLocalErrorType = nullptr;
     const proto::ProtoObject* zeroDivisionErrorType = nullptr;
+    const proto::ProtoObject* overflowErrorType = nullptr;
     const proto::ProtoObject* indexErrorType{nullptr};
     const proto::ProtoObject* systemErrorType{nullptr};
     const proto::ProtoObject* stopAsyncIterationType{nullptr};
@@ -2035,19 +2085,20 @@ private:
 /**
  * A Python exception in flight: `raise` is a `throw` of this type, a Python
  * `try` is a C++ `try`, and the exception being handled is the one of the
- * active catch. The exception object is reachable only from this C++ object
- * while it travels, so it is kept in the environment's transient roots until
- * the last copy (the catch's) is destroyed.
+ * active catch.  It is protoCore's ProtoException (protoCore 3.0.0, the one
+ * exception type of every language on protoCore), which pins the exception
+ * object while it travels.  Handlers catch the base, `const
+ * proto::ProtoException&`, never this class: an error a C++ module or another
+ * language raises is a ProtoException too, and a Python `except` selects it
+ * by its value's prototype chain (PythonEnvironment::isException;
+ * docs/EXCEPTIONS.md).  This subclass only spells the throw.
  */
-class PyException {
+class PyException : public proto::ProtoException {
 public:
     PyException(PythonEnvironment* env, const proto::ProtoObject* exc)
-        : exc_(exc), pin_(std::make_shared<PythonEnvironment::TransientPin>(env, exc)) {}
-    const proto::ProtoObject* exception() const { return exc_; }
-
-private:
-    const proto::ProtoObject* exc_;
-    std::shared_ptr<PythonEnvironment::TransientPin> pin_;
+        : proto::ProtoException(env ? env->getContext() : nullptr, exc) {}
+    PyException(proto::ProtoContext* ctx, const proto::ProtoObject* exc)
+        : proto::ProtoException(ctx, exc) {}
 };
 
 } // namespace protoPython

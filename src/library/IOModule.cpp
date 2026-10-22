@@ -2075,7 +2075,7 @@ static const proto::ProtoObject* py_io_text_encoding(
             mode = (flags && flags != PROTO_NONE)
                 ? env->getAttribute(ctx, flags, PythonEnvironment::getInternedString(ctx, "utf8_mode"), false)
                 : nullptr;
-        } catch (const PyException&) {
+        } catch (const proto::ProtoException&) {
             // An unreadable sys.flags.utf8_mode means "not UTF-8 mode".
         }
         utf8Mode = mode && mode->isInteger(ctx) && mode->asLong(ctx) != 0;

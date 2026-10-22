@@ -1,5 +1,8 @@
 #include <protoPython/CppGenerator.h>
 #include <algorithm>
+#include <cmath>
+#include <limits>
+#include <sstream>
 
 namespace protoPython {
 
@@ -138,8 +141,8 @@ void __extendArgs(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env,
         while (const proto::ProtoObject* v = env->next(it)) {
             *listSlot = (*listSlot)->asList(ctx)->appendLast(ctx, v)->asObject(ctx);
         }
-    } catch (const protoPython::PyException& e) {
-        if (!env->isStopIteration(ctx, e.exception())) throw;
+    } catch (const proto::ProtoException& e) {
+        if (!env->isStopIteration(ctx, e.value())) throw;
     }
 }
 
@@ -234,8 +237,8 @@ void __unpack(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env, con
             out[0] = out[0]->asList(ctx)->appendLast(ctx, v)->asObject(ctx);
             if (star < 0 && ++got > n) break;
         }
-    } catch (const protoPython::PyException& e) {
-        if (!env->isStopIteration(ctx, e.exception())) throw;
+    } catch (const proto::ProtoException& e) {
+        if (!env->isStopIteration(ctx, e.value())) throw;
     }
     const proto::ProtoList* collected = out[0]->asList(ctx);
     got = collected->getSize(ctx);
@@ -377,8 +380,8 @@ void __withExit(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env,
         __Handling handling(env, ctx, exc);
         try {
             suppress = env->callObject(exit, {env->getType(ctx, exc), exc, tb ? tb : PROTO_NONE});
-        } catch (const protoPython::PyException& e) {
-            env->chainException(ctx, e.exception(), exc);
+        } catch (const proto::ProtoException& e) {
+            env->chainException(ctx, e.value(), exc);
             throw;
         }
     }
@@ -818,6 +821,7 @@ bool CppGenerator::generate(ModuleNode* module, const std::string& filename) {
     // Windows, and __builtin_mul_overflow is GCC/Clang only.
     finalOut_ << "#include <protoPython/CheckedArith.h>\n";
     finalOut_ << "#include <cstdint>\n";
+    finalOut_ << "#include <limits>\n";
     finalOut_ << "#include <initializer_list>\n";
     finalOut_ << "#include <string>\n";
     finalOut_ << "#include <vector>\n";
@@ -1101,7 +1105,19 @@ bool CppGenerator::generateConstant(ConstantNode* n) {
             *out_ << "ctx->fromInteger(" << n->intVal << ")";
             break;
         case ConstantNode::ConstType::Float:
-            *out_ << "ctx->fromDouble(" << n->floatVal << ")";
+            // Every digit of the literal: a stream's default precision (6
+            // significant digits) compiled 12.566370614359172 as 12.5664.
+            // A literal too large for a double (1e999) is infinity.
+            if (std::isinf(n->floatVal)) {
+                *out_ << "ctx->fromDouble(std::numeric_limits<double>::infinity())";
+            } else {
+                std::ostringstream literal;
+                literal.precision(std::numeric_limits<double>::max_digits10);
+                literal << n->floatVal;
+                std::string text = literal.str();
+                if (text.find_first_of(".eE") == std::string::npos) text += ".0";
+                *out_ << "ctx->fromDouble(" << text << ")";
+            }
             break;
         case ConstantNode::ConstType::Str:
             *out_ << "ctx->fromUTF8String(\"" << escapeCppString(n->strVal) << "\")";
@@ -2110,7 +2126,7 @@ bool CppGenerator::generateDef(DefNode* n, bool isAsync) {
         ok = generateBody(body);
         if (ok) {
             *out_ << ";\n";
-            *out_ << "    } catch (const protoPython::PyException&) {\n";
+            *out_ << "    } catch (const proto::ProtoException&) {\n";
             *out_ << "        __finish();\n";
             *out_ << "        throw;\n";
             *out_ << "    }\n";
@@ -2840,8 +2856,8 @@ bool CppGenerator::generateTry(TryNode* n) {
     bool ok = generateBody(n->body.get());
     *out_ << ";\n";
     if (hasHandlers) {
-        *out_ << "} catch (const protoPython::PyException& __e) {\n";
-        *out_ << "    " << caught << " = __e.exception();\n";
+        *out_ << "} catch (const proto::ProtoException& __e) {\n";
+        *out_ << "    " << caught << " = __e.value();\n";
         *out_ << "}\n";
     }
     *out_ << "}\n";
@@ -2879,8 +2895,8 @@ bool CppGenerator::generateTry(TryNode* n) {
         *out_ << "    if (!__handled) throw protoPython::PyException(env, __exc);\n";
         // Rethrowing the unmatched exception chains nothing: it is its own
         // context.
-        *out_ << "    } catch (const protoPython::PyException& __e) {\n";
-        *out_ << "        env->chainException(ctx, __e.exception(), __exc);\n";
+        *out_ << "    } catch (const proto::ProtoException& __e) {\n";
+        *out_ << "        env->chainException(ctx, __e.value(), __exc);\n";
         *out_ << "        throw;\n";
         *out_ << "    }\n";
         *out_ << "}\n";
@@ -2901,8 +2917,8 @@ bool CppGenerator::generateTry(TryNode* n) {
         fin = ctl_.back();
         ctl_.pop_back();
         const std::string propagating = "__slot[" + std::to_string(propagatingSlot) + "]";
-        *out_ << "} catch (const protoPython::PyException& __e) {\n";
-        *out_ << "    " << propagating << " = __e.exception();\n";
+        *out_ << "} catch (const proto::ProtoException& __e) {\n";
+        *out_ << "    " << propagating << " = __e.value();\n";
         *out_ << "}\n";
         *out_ << "__finally_" << fin.id << ": ;\n";
         // While the finally clause runs for an exception, that exception is
@@ -2914,8 +2930,8 @@ bool CppGenerator::generateTry(TryNode* n) {
         *out_ << "try {\n";
         ok = generateBody(n->finalbody.get());
         *out_ << ";\n";
-        *out_ << "} catch (const protoPython::PyException& __e) {\n";
-        *out_ << "    if (__inFlight(" << propagating << ")) env->chainException(ctx, __e.exception(), " << propagating << ");\n";
+        *out_ << "} catch (const proto::ProtoException& __e) {\n";
+        *out_ << "    if (__inFlight(" << propagating << ")) env->chainException(ctx, __e.value(), " << propagating << ");\n";
         *out_ << "    throw;\n";
         *out_ << "}\n";
         *out_ << "}\n";
@@ -2996,8 +3012,8 @@ bool CppGenerator::emitWithItems(WithNode* n, size_t index, bool resumable) {
     }
     const bool ok = emitWithItems(n, index + 1, resumable);
     *out_ << ";\n";
-    *out_ << "} catch (const protoPython::PyException& __e) {\n";
-    *out_ << "    __slot[" << excSlot << "] = __e.exception();\n";
+    *out_ << "} catch (const proto::ProtoException& __e) {\n";
+    *out_ << "    __slot[" << excSlot << "] = __e.value();\n";
     *out_ << "}\n";
     entry = ctl_.back();
     ctl_.pop_back();
@@ -3016,7 +3032,15 @@ bool CppGenerator::generateImport(ImportNode* n) {
     *out_ << "{\n";
     *out_ << "        const proto::ProtoObject* __mod = env->importModule(\"" << n->moduleName << "\");\n";
     if (n->isAs) {
-        // `import a.b as c` binds the submodule a.b.
+        // `import a.b as c` binds the submodule a.b: __import__ answers the
+        // top-level package `a`, and the submodule is its attribute chain
+        // (CPython's IMPORT_NAME + IMPORT_FROM).
+        std::string rest = n->moduleName;
+        for (size_t dot = rest.find('.'); dot != std::string::npos; dot = rest.find('.')) {
+            rest = rest.substr(dot + 1);
+            const std::string part = rest.substr(0, rest.find('.'));
+            *out_ << "        __mod = env->getAttr(__mod, \"" << part << "\");\n";
+        }
         *out_ << "        ";
         emitAssignName(n->alias, "__mod");
         *out_ << ";\n";
@@ -3395,9 +3419,9 @@ bool CppGenerator::emitYieldStatement(ASTNode* node, ASTNode* target) {
         *out_ << "                __slot[" << valSlot << "] = __sub->call(ctx, nullptr, env->getNextString(), __sub, ctx->newList(), nullptr);\n";
         *out_ << "            }\n";
         *out_ << "        }\n";
-        *out_ << "    } catch (const protoPython::PyException& __e) {\n";
-        *out_ << "        if (!env->isStopIteration(ctx, __e.exception())) throw;\n";
-        *out_ << "        __yf_res_" << k << " = env->getStopIterationValue(ctx, __e.exception());\n";
+        *out_ << "    } catch (const proto::ProtoException& __e) {\n";
+        *out_ << "        if (!env->isStopIteration(ctx, __e.value())) throw;\n";
+        *out_ << "        __yf_res_" << k << " = env->getStopIterationValue(ctx, __e.value());\n";
         *out_ << "        if (!__yf_res_" << k << ") __yf_res_" << k << " = PROTO_NONE;\n";
         *out_ << "        __yf_done = true;\n";
         *out_ << "    }\n";

@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — protoCore's unified exception model (protoCore 3.0.0, 2026-10-21)
+
+- **A Python exception is protoCore's `proto::ProtoException`.**
+  `protoPython::PyException` derives from it and adds nothing (its `TransientPin` is
+  gone: protoCore pins the value in flight). Every handler (interpreter, code protopyc
+  generates, builtins, HPy calls, threads, `protopy`, the REPL) catches
+  `const proto::ProtoException&` and reads `value()`; embedders and native modules
+  that caught `PyException` and called `exception()` must do the same.
+- **`except` selects by prototype**: a foreign type (a C++ module's error prototype,
+  another language's class) matches by the value's prototype chain; a foreign value is
+  caught by `except Exception`, `except BaseException` and a bare `except:`; `str()`,
+  `repr()`, `type()`, `sys.exc_info()`, chaining and the top-level report handle it.
+  `except T` with `T` a Python object that is not an exception class now raises
+  CPython's `TypeError` (it silently did not match before).
+- **protoCore's errors arrive as Python exceptions**, built by protoPython's error
+  factory: `DivisionByZero` -> `ZeroDivisionError`, `Overflow` -> `OverflowError`,
+  `InvalidArgument` -> `ValueError`, `TypeMismatch` / `ArityMismatch` -> `TypeError`.
+  The big-integer fallbacks that caught `std::overflow_error` test for protoCore's
+  `Overflow` error instead (`tryAsLong`, `rethrowUnlessOverflow`). Without this the
+  HEAD of this branch aborted in 20 tests against protoCore 3.0.0.
+- A C++ standard exception from native code is `RuntimeError(what())` (the prefix
+  "internal C++ exception: " is gone) at the interpreter's instruction boundary, in
+  `invokePythonCallable` (compiled code) and in the HPy API; `protopy` reports one that
+  escapes every frame instead of terminating.
+- An exception leaving a `_thread.start_new_thread` function is reported through
+  `sys.unraisablehook`, as CPython (it was dropped silently).
+- **`import example.geometry` loads a UMD module** registered under the logical path
+  `example/geometry` (any provider in the space's resolution chain): a Python module
+  over its attributes, methods bound to the module.
+- Conformance rule 14: `catchForeignError` and `escapeLanguageError` are implemented;
+  the four `exception.*` cases pass (two were NotApplicable).
+- protopyc: `import a.b as c` binds the submodule `a.b` (it bound the package `a`);
+  float literals keep every digit (`12.566370614359172` compiled as `12.5664`).
+- Tests: `umd_geometry_errors`, `umd_geometry_unhandled` and `protopyc_umd_geometry`
+  run `test/regression/umd_geometry_*.py` through `protopy_umd_host` (`test/umd/`),
+  which links protoCore's example geometry module and registers its provider.
+
 ### Changed — exceptions, follow-up (2026-10-21)
 
 - The pending-exception API is removed (`hasPendingException`, `peek`/`take`/

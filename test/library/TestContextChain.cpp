@@ -72,8 +72,8 @@ protected:
         try {
             env().executeString(src, name);
             return "";
-        } catch (const PyException& e) {
-            env().handleException(e.exception(), nullptr, out);
+        } catch (const proto::ProtoException& e) {
+            env().handleException(e.value(), nullptr, out);
         }
         return out.str().empty() ? std::string("failed") : out.str();
     }
