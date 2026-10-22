@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Requires protoCore 3.0.0** (SOVERSION 4), the declared minimum for a build from source; the `.deb` depends on `protocore (>= 3.0.0)`. CI pins protoCore tag `v3.0.0` on every job.
 
+- **Fixed: the Windows build.** `_winapi`'s argument helper still took a
+  `ProtoList`; it reads the `ProtoArguments` descriptor its natives receive.
+
 ### Changed — protoCore's unified exception model (protoCore 3.0.0, 2026-10-21)
 
 - **A Python exception is protoCore's `proto::ProtoException`.**

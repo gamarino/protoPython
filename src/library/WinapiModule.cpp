@@ -23,7 +23,7 @@
 namespace protoPython {
 namespace winapi_module {
 
-static std::string utf8Arg(proto::ProtoContext* ctx, const proto::ProtoList* args, int i) {
+static std::string utf8Arg(proto::ProtoContext* ctx, const proto::ProtoArguments* args, int i) {
     std::string s;
     if (args && args->getSize(ctx) > static_cast<proto::proto_ulong>(i)) {
         const proto::ProtoObject* o = args->getAt(ctx, i);
