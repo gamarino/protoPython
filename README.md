@@ -248,6 +248,30 @@ a shared library). See [docs/PROTOPYC_SPECIFICATION.md](docs/PROTOPYC_SPECIFICAT
 
 ## Performance
 
+**protoCore's unified exception model (measured 2026-10-22).**
+- Branch `perf/cpp-exceptions` at `1633557c`. A Python exception is now a
+  `proto::ProtoException` selected by prototype, so `except` also matches
+  error types that a C++ module or another language defines.
+- Compared against the commit just before the port (`cd43628b`, protoCore
+  `cf52f9f5`): both Release, interleaved, three rounds.
+- The machine had 2-4 busy CPUs, so absolute times run above the 2026-10-21
+  table below. Only the ratios count.
+
+| | AFTER / BEFORE | AFTER / CPython 3.14t |
+|---|---:|---:|
+| protopy, geomean of 13 benchmarks | 0.987 | 2.55x |
+| protopyc, geomean of 7 benchmarks | 1.005 (worst: `list_append_loop` 1.037, inside the spread) | 1.88x |
+| `raise ValueError("x")` caught, cycles | 1.00x (82.6k; protopyc 22.0k; CPython 644) | |
+| a raise five frames down | 1.03x (658k; protopyc 67k; CPython 3,078) | |
+| `try` that does not raise | 0.96x (129 cycles; CPython 132) | |
+| protopyc compile time, `.py` to `module.so` | 0.94-1.02x | |
+
+- The port is neutral, with every ratio within ±5 %.
+- A raise still costs 33x (protopyc) to 128x (protopy) CPython's, and about
+  110k cycles for each interpreter frame it crosses. That cost is C++
+  unwinding, and it is unchanged by this port.
+- Raw results: [`benchmarks/reports/2026-10-22-unified-exceptions/`](benchmarks/reports/2026-10-22-unified-exceptions/).
+
 **Python exceptions as C++ exceptions (measured 2026-10-21).** Branch
 `perf/cpp-exceptions` at `8a367f65`, built against protoCore 3.0.0 (not yet
 released): a Python exception is a C++ exception and a Python `try` a C++ `try`,

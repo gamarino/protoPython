@@ -1,0 +1,36 @@
+# protoPython 4-way interleaved benchmark (sprint-9)
+
+Each bench runs the four binaries interleaved (warmup x2 each, then N=5 interleaved rounds), so any system load shift hits every column equally — directly comparable wall-clocks.
+
+Columns:
+
+* **CPython** — uv-installed cpython-3.14.6-linux (Clang 22.1.3), **GIL ON**
+
+* **CPython-t** — uv-installed cpython-3.14.6+freethreaded (Clang 22.1.3), **GIL OFF**
+
+* **protopy** — bytecode interpreter (no GIL by construction)
+
+* **protopyc** — AOT-compiled C++ via `protopyc --build-so` (no GIL)
+
+
+| Benchmark              | CPython-t (ms, base) | CPython (ms) | cp/cpt | protopy (ms) | py/cpt | protopyc (ms) | pc/cpt |
+|------------------------|---------------------:|-------------:|-------:|-------------:|-------:|--------------:|-------:|
+| startup_empty          |    24.64 |    38.04 |  1.54x |    24.16 |  0.98x |    N/A   |   N/A  |
+| int_sum_loop           |   533.55 |   567.91 |  1.06x |   476.58 |  0.89x |   312.36 |  0.59x |
+| list_append_loop       |    27.54 |    39.52 |  1.44x |   159.24 |  5.78x |   173.64 |  6.30x |
+| str_concat_loop        |    25.47 |    36.69 |  1.44x |   137.22 |  5.39x |   192.25 |  7.55x |
+| range_iterate          |   322.96 |   409.82 |  1.27x |   508.47 |  1.57x |   337.82 |  1.05x |
+| multithread_cpu        |   190.99 |   664.30 |  3.48x |   125.28 |  0.66x |    66.72 |  0.35x |
+| attr_lookup            |   385.01 |   595.06 |  1.55x |  1572.97 |  4.09x |   888.74 |  2.31x |
+| call_recursion         |    36.83 |    50.29 |  1.37x |   203.66 |  5.53x |   174.38 |  4.74x |
+| memory_pressure [INFO] |    56.80 |    64.49 |  1.14x |  1693.29 | 29.81x |  1645.56 | 28.97x |
+| pyperf_fib             |    93.84 |   110.53 |  1.18x |   434.65 |  4.63x |    N/A   |   N/A  |
+| pyperf_binary_trees    |    37.26 |    50.39 |  1.35x |   254.03 |  6.82x |    N/A   |   N/A  |
+| pyperf_nqueens         |    57.58 |    60.25 |  1.05x |   108.03 |  1.88x |    N/A   |   N/A  |
+| pyperf_richards_lite   |    26.22 |    37.32 |  1.42x |    40.03 |  1.53x |    N/A   |   N/A  |
+| pyperf_sieve           |    28.20 |    38.46 |  1.36x |   101.29 |  3.59x |    N/A   |   N/A  |
+
+## Geomeans (memory_pressure excluded) — baseline is CPython-t (no GIL)
+* CPython (GIL on) / CPython-t: **1.43x** — <1.0 means GIL build is faster single-thread (the lock-cost saving)
+* protopy / CPython-t: **2.56x**
+* protopyc / CPython-t: **1.96x**

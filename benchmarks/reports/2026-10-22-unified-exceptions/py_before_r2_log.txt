@@ -1,0 +1,76 @@
+Running startup_empty...
+Running int_sum_loop...
+Running list_append_loop...
+Running str_concat_loop...
+Running range_iterate...
+Running multithread_cpu...
+Running attr_lookup...
+Running call_recursion...
+Running memory_pressure...
+Running pyperf_fib...
+    [DROPPED] pyperf_fib protopyc: last stdout line 'Done.' does not match '\\bfib\\s+n=\\d+\\s+min='
+    [DROPPED] pyperf_fib protopyc: last stdout line 'Done.' does not match '\\bfib\\s+n=\\d+\\s+min='
+    [DROPPED] pyperf_fib protopyc: last stdout line 'Done.' does not match '\\bfib\\s+n=\\d+\\s+min='
+    [DROPPED] pyperf_fib protopyc: last stdout line 'Done.' does not match '\\bfib\\s+n=\\d+\\s+min='
+    [DROPPED] pyperf_fib protopyc: last stdout line 'Done.' does not match '\\bfib\\s+n=\\d+\\s+min='
+Running pyperf_binary_trees...
+    [DROPPED] pyperf_binary_trees protopyc: last stdout line 'Done.' does not match '\\bbinary_trees\\s+depth=\\d+\\s+min='
+    [DROPPED] pyperf_binary_trees protopyc: last stdout line 'Done.' does not match '\\bbinary_trees\\s+depth=\\d+\\s+min='
+    [DROPPED] pyperf_binary_trees protopyc: last stdout line 'Done.' does not match '\\bbinary_trees\\s+depth=\\d+\\s+min='
+    [DROPPED] pyperf_binary_trees protopyc: last stdout line 'Done.' does not match '\\bbinary_trees\\s+depth=\\d+\\s+min='
+    [DROPPED] pyperf_binary_trees protopyc: last stdout line 'Done.' does not match '\\bbinary_trees\\s+depth=\\d+\\s+min='
+Running pyperf_nqueens...
+    [DROPPED] pyperf_nqueens protopyc: last stdout line 'Done.' does not match '\\bnqueens\\s+n=\\d+\\s+min='
+    [DROPPED] pyperf_nqueens protopyc: last stdout line 'Done.' does not match '\\bnqueens\\s+n=\\d+\\s+min='
+    [DROPPED] pyperf_nqueens protopyc: last stdout line 'Done.' does not match '\\bnqueens\\s+n=\\d+\\s+min='
+    [DROPPED] pyperf_nqueens protopyc: last stdout line 'Done.' does not match '\\bnqueens\\s+n=\\d+\\s+min='
+    [DROPPED] pyperf_nqueens protopyc: last stdout line 'Done.' does not match '\\bnqueens\\s+n=\\d+\\s+min='
+Running pyperf_richards_lite...
+    [DROPPED] pyperf_richards_lite protopyc: last stdout line 'Done.' does not match '\\brichards_lite\\s+rounds=\\d+'
+    [DROPPED] pyperf_richards_lite protopyc: last stdout line 'Done.' does not match '\\brichards_lite\\s+rounds=\\d+'
+    [DROPPED] pyperf_richards_lite protopyc: last stdout line 'Done.' does not match '\\brichards_lite\\s+rounds=\\d+'
+    [DROPPED] pyperf_richards_lite protopyc: last stdout line 'Done.' does not match '\\brichards_lite\\s+rounds=\\d+'
+    [DROPPED] pyperf_richards_lite protopyc: last stdout line 'Done.' does not match '\\brichards_lite\\s+rounds=\\d+'
+Running pyperf_sieve...
+    [DROPPED] pyperf_sieve protopyc: last stdout line 'Done.' does not match '\\bsieve\\s+n=\\d+\\s+min='
+    [DROPPED] pyperf_sieve protopyc: last stdout line 'Done.' does not match '\\bsieve\\s+n=\\d+\\s+min='
+    [DROPPED] pyperf_sieve protopyc: last stdout line 'Done.' does not match '\\bsieve\\s+n=\\d+\\s+min='
+    [DROPPED] pyperf_sieve protopyc: last stdout line 'Done.' does not match '\\bsieve\\s+n=\\d+\\s+min='
+    [DROPPED] pyperf_sieve protopyc: last stdout line 'Done.' does not match '\\bsieve\\s+n=\\d+\\s+min='
+# protoPython 4-way interleaved benchmark (sprint-9)
+
+Each bench runs the four binaries interleaved (warmup x2 each, then N=5 interleaved rounds), so any system load shift hits every column equally — directly comparable wall-clocks.
+
+Columns:
+
+* **CPython** — uv-installed cpython-3.14.6-linux (Clang 22.1.3), **GIL ON**
+
+* **CPython-t** — uv-installed cpython-3.14.6+freethreaded (Clang 22.1.3), **GIL OFF**
+
+* **protopy** — bytecode interpreter (no GIL by construction)
+
+* **protopyc** — AOT-compiled C++ via `protopyc --build-so` (no GIL)
+
+
+| Benchmark              | CPython-t (ms, base) | CPython (ms) | cp/cpt | protopy (ms) | py/cpt | protopyc (ms) | pc/cpt |
+|------------------------|---------------------:|-------------:|-------:|-------------:|-------:|--------------:|-------:|
+| startup_empty          |    25.14 |    37.58 |  1.49x |    23.83 |  0.95x |    N/A   |   N/A  |
+| int_sum_loop           |   537.35 |   538.16 |  1.00x |   491.04 |  0.91x |   316.77 |  0.59x |
+| list_append_loop       |    28.13 |    37.13 |  1.32x |   159.89 |  5.69x |   173.21 |  6.16x |
+| str_concat_loop        |    25.76 |    39.60 |  1.54x |   141.40 |  5.49x |   198.01 |  7.69x |
+| range_iterate          |   319.49 |   409.12 |  1.28x |   515.07 |  1.61x |   341.00 |  1.07x |
+| multithread_cpu        |   222.90 |   698.96 |  3.14x |    87.73 |  0.39x |    51.68 |  0.23x |
+| attr_lookup            |   381.72 |   585.80 |  1.53x |  1631.04 |  4.27x |   880.79 |  2.31x |
+| call_recursion         |    36.09 |    46.87 |  1.30x |   205.48 |  5.69x |   173.44 |  4.81x |
+| memory_pressure [INFO] |    56.40 |    64.86 |  1.15x |  1648.85 | 29.23x |  1614.98 | 28.63x |
+| pyperf_fib             |    99.06 |   118.08 |  1.19x |   466.91 |  4.71x |    N/A   |   N/A  |
+| pyperf_binary_trees    |    36.52 |    49.26 |  1.35x |   261.04 |  7.15x |    N/A   |   N/A  |
+| pyperf_nqueens         |    53.50 |    62.22 |  1.16x |   108.84 |  2.03x |    N/A   |   N/A  |
+| pyperf_richards_lite   |    26.61 |    37.91 |  1.42x |    41.69 |  1.57x |    N/A   |   N/A  |
+| pyperf_sieve           |    30.23 |    44.01 |  1.46x |   109.00 |  3.61x |    N/A   |   N/A  |
+
+## Geomeans (memory_pressure excluded) — baseline is CPython-t (no GIL)
+* CPython (GIL on) / CPython-t: **1.42x** — <1.0 means GIL build is faster single-thread (the lock-cost saving)
+* protopy / CPython-t: **2.52x**
+* protopyc / CPython-t: **1.86x**
+
