@@ -1,3 +1,4 @@
+#include <exception>
 #include <protoPython/ExecutionEngine.h>
 #include <protoPython/DiagUtils.h>
 #include <protoPython/Compiler.h>
@@ -4336,7 +4337,23 @@ PROTOPY_EXC_NOINLINE static void chainCaughtException(proto::ProtoContext* ctx, 
 
 // A bare `raise` and OP_RERAISE: `exc` is thrown again. The activation that
 // caught it notes nothing more for it (executeBytecodeRange's noteFrame).
+// protoCore's rule E3: a re-raised exception leaves unchanged. A handler
+// level runs inside the catch of the exception it handles, so the C++
+// exception being handled is that one: when it carries `exc` it is thrown
+// again as it is, and a runtime's ProtoException subclass keeps its extras.
+// Only a handler resumed after a yield (a generator's saved levels hold the
+// value, not the C++ object) throws a new exception with the same value.
 [[noreturn]] PROTOPY_EXC_NOINLINE static void reraiseException(PythonEnvironment* env, const proto::ProtoObject* exc) {
+    if (std::exception_ptr current = std::current_exception()) {
+        bool same = false;
+        try {
+            std::rethrow_exception(current);
+        } catch (const proto::ProtoException& e) {
+            same = e.value() == exc;
+        } catch (...) {
+        }
+        if (same) std::rethrow_exception(current);
+    }
     throw PyException(env, exc);
 }
 

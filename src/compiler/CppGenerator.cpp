@@ -155,10 +155,27 @@ void __mergeKwargs(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env
     env->callMethod(*dictSlot, "update", {mapping});
 }
 
+// An exception no handler selected leaves unchanged (protoCore's rule E3):
+// the C++ exception object the clause caught, held in the activation's frame,
+// is thrown again, so a runtime's ProtoException subclass keeps its extras.
+// Only when the frame no longer holds it (a generator resumed inside the
+// clause: C++ locals do not survive a yield) is a new exception thrown with
+// the same value.
+[[noreturn]] void __pyRethrow(protoPython::PythonEnvironment* env, const std::exception_ptr& caught,
+                              const proto::ProtoObject* exc) {
+    if (caught) std::rethrow_exception(caught);
+    throw protoPython::PyException(env, exc);
+}
+
 // A bare `raise`: the exception the innermost running except clause handles.
-[[noreturn]] void __pyReraise(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env) {
+// Inside the clause that caught it, `caught` is that clause's C++ exception
+// and `handled` its value.
+[[noreturn]] void __pyReraise(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env,
+                              const std::exception_ptr& caught = nullptr,
+                              const proto::ProtoObject* handled = nullptr) {
     const proto::ProtoObject* exc = env->getActiveException(ctx);
     if (!exc) env->raiseRuntimeError(ctx, "No active exception to reraise");
+    if (caught && exc == handled) std::rethrow_exception(caught);
     throw protoPython::PyException(env, exc);
 }
 
@@ -369,7 +386,8 @@ const proto::ProtoObject* __withEnter(proto::ProtoContext* ctx, protoPython::Pyt
 // exception __exit__ raises propagates instead, with the body's exception as
 // its __context__.  The caller keeps `exc` in a slot while __exit__ runs.
 void __withExit(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env,
-                const proto::ProtoObject* exit, const proto::ProtoObject* exc) {
+                const proto::ProtoObject* exit, const proto::ProtoObject* exc,
+                const std::exception_ptr& caught = nullptr) {
     if (!__inFlight(exc)) {
         env->callObject(exit, {PROTO_NONE, PROTO_NONE, PROTO_NONE});
         return;
@@ -385,7 +403,7 @@ void __withExit(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env,
             throw;
         }
     }
-    if (!env->isTrue(suppress)) throw protoPython::PyException(env, exc);
+    if (!env->isTrue(suppress)) __pyRethrow(env, caught, exc);
 }
 
 } // namespace
@@ -821,6 +839,7 @@ bool CppGenerator::generate(ModuleNode* module, const std::string& filename) {
     // Windows, and __builtin_mul_overflow is GCC/Clang only.
     finalOut_ << "#include <protoPython/CheckedArith.h>\n";
     finalOut_ << "#include <cstdint>\n";
+    finalOut_ << "#include <exception>\n";
     finalOut_ << "#include <limits>\n";
     finalOut_ << "#include <initializer_list>\n";
     finalOut_ << "#include <string>\n";
@@ -852,7 +871,9 @@ void CppGenerator::emitLineDirective(int line, const std::string& filename) {
 // ---------------------------------------------------------------------------
 
 CppGenerator::SlotFrame CppGenerator::enterSlotFrame(int reserved) {
-    SlotFrame saved{anchorTop_, tempTop_, slotHigh_};
+    SlotFrame saved{anchorTop_, tempTop_, slotHigh_, handlerCaught_.size()};
+    // A new callable: the clauses around it are another C++ function's.
+    handlerCaught_.push_back({std::string(), std::string()});
     anchorTop_ = reserved;
     tempTop_ = reserved;
     slotHigh_ = reserved;
@@ -860,6 +881,7 @@ CppGenerator::SlotFrame CppGenerator::enterSlotFrame(int reserved) {
 }
 
 void CppGenerator::leaveSlotFrame(const SlotFrame& saved) {
+    handlerCaught_.resize(saved.handlerDepth);
     anchorTop_ = saved.anchorTop;
     tempTop_ = saved.tempTop;
     slotHigh_ = saved.high;
@@ -2830,6 +2852,12 @@ bool CppGenerator::generateTry(TryNode* n) {
     };
 
     *out_ << "{\n";
+    // The C++ exceptions the clauses caught, held in this frame so that one
+    // no clause selects is thrown again unchanged (__pyRethrow).
+    const std::string bodyCaught = "__caught" + std::to_string(caughtCounter_++);
+    const std::string finallyCaught = "__caught" + std::to_string(caughtCounter_++);
+    if (hasHandlers) *out_ << "std::exception_ptr " << bodyCaught << ";\n";
+    if (n->finalbody) *out_ << "std::exception_ptr " << finallyCaught << ";\n";
     // With a finally clause, the exits that leave the other clauses go
     // through it: they are recorded in an anchor slot, and the exception
     // that propagates out of them in another.
@@ -2858,6 +2886,7 @@ bool CppGenerator::generateTry(TryNode* n) {
     if (hasHandlers) {
         *out_ << "} catch (const proto::ProtoException& __e) {\n";
         *out_ << "    " << caught << " = __e.value();\n";
+        *out_ << "    " << bodyCaught << " = std::current_exception();\n";
         *out_ << "}\n";
     }
     *out_ << "}\n";
@@ -2882,17 +2911,20 @@ bool CppGenerator::generateTry(TryNode* n) {
             *out_ << ")) {\n";
             *out_ << "        __handled = true;\n";
             *out_ << "        __Handling __handling(env, ctx, __exc);\n";
+            handlerCaught_.push_back({bodyCaught, "__exc"});
             if (!h.name.empty()) {
                 *out_ << "        if (" << resumeIdle << ") ";
                 emitAssignName(h.name, "__exc");
                 *out_ << ";\n";
             }
-            if (!generateBody(h.body.get())) { ok = false; break; }
+            const bool bodyOk = generateBody(h.body.get());
+            handlerCaught_.pop_back();
+            if (!bodyOk) { ok = false; break; }
             *out_ << ";\n";
             *out_ << "    }\n";
             first += nHandler[i];
         }
-        *out_ << "    if (!__handled) throw protoPython::PyException(env, __exc);\n";
+        *out_ << "    if (!__handled) __pyRethrow(env, " << bodyCaught << ", __exc);\n";
         // Rethrowing the unmatched exception chains nothing: it is its own
         // context.
         *out_ << "    } catch (const proto::ProtoException& __e) {\n";
@@ -2919,6 +2951,7 @@ bool CppGenerator::generateTry(TryNode* n) {
         const std::string propagating = "__slot[" + std::to_string(propagatingSlot) + "]";
         *out_ << "} catch (const proto::ProtoException& __e) {\n";
         *out_ << "    " << propagating << " = __e.value();\n";
+        *out_ << "    " << finallyCaught << " = std::current_exception();\n";
         *out_ << "}\n";
         *out_ << "__finally_" << fin.id << ": ;\n";
         // While the finally clause runs for an exception, that exception is
@@ -2928,7 +2961,9 @@ bool CppGenerator::generateTry(TryNode* n) {
         *out_ << "    __HandlingIf __finallyHandling(env, ctx, " << propagating << ");\n";
         openClause(first, nFinally);
         *out_ << "try {\n";
+        handlerCaught_.push_back({finallyCaught, propagating});
         ok = generateBody(n->finalbody.get());
+        handlerCaught_.pop_back();
         *out_ << ";\n";
         *out_ << "} catch (const proto::ProtoException& __e) {\n";
         *out_ << "    if (__inFlight(" << propagating << ")) env->chainException(ctx, __e.value(), " << propagating << ");\n";
@@ -2936,7 +2971,7 @@ bool CppGenerator::generateTry(TryNode* n) {
         *out_ << "}\n";
         *out_ << "}\n";
         *out_ << "}\n";
-        *out_ << "if (__inFlight(" << propagating << ")) throw protoPython::PyException(env, " << propagating << ");\n";
+        *out_ << "if (__inFlight(" << propagating << ")) __pyRethrow(env, " << finallyCaught << ", " << propagating << ");\n";
         popAnchor();
         emitExitDispatch(fin);
         popAnchor();
@@ -2951,7 +2986,13 @@ bool CppGenerator::generateTry(TryNode* n) {
 
 bool CppGenerator::generateRaise(RaiseNode* n) {
     if (!n->exc) {
-        *out_ << "__pyReraise(ctx, env)";
+        // Inside a clause of this callable, the clause's own C++ exception.
+        if (!handlerCaught_.empty() && !handlerCaught_.back().first.empty()) {
+            *out_ << "__pyReraise(ctx, env, " << handlerCaught_.back().first << ", "
+                  << handlerCaught_.back().second << ")";
+        } else {
+            *out_ << "__pyReraise(ctx, env)";
+        }
         return true;
     }
     *out_ << "__pyRaise(ctx, env, ";
@@ -2987,7 +3028,9 @@ bool CppGenerator::emitWithItems(WithNode* n, size_t index, bool resumable) {
     const int exitFnSlot = pushAnchor();
     entry.exitSlot = pushAnchor();
     const int excSlot = pushAnchor();
+    const std::string withCaught = "__caught" + std::to_string(caughtCounter_++);
     *out_ << "{\n";
+    *out_ << "std::exception_ptr " << withCaught << ";\n";
     if (resumable) *out_ << "if (__resume == 0) {\n";
     beginStatement();
     const int managerSlot = allocTempSlot();
@@ -3014,12 +3057,13 @@ bool CppGenerator::emitWithItems(WithNode* n, size_t index, bool resumable) {
     *out_ << ";\n";
     *out_ << "} catch (const proto::ProtoException& __e) {\n";
     *out_ << "    __slot[" << excSlot << "] = __e.value();\n";
+    *out_ << "    " << withCaught << " = std::current_exception();\n";
     *out_ << "}\n";
     entry = ctl_.back();
     ctl_.pop_back();
     if (!ok) return false;
     *out_ << "__finally_" << entry.id << ": ;\n";
-    *out_ << "__withExit(ctx, env, __slot[" << exitFnSlot << "], __slot[" << excSlot << "]);\n";
+    *out_ << "__withExit(ctx, env, __slot[" << exitFnSlot << "], __slot[" << excSlot << "], " << withCaught << ");\n";
     popAnchor();
     emitExitDispatch(entry);
     popAnchor();

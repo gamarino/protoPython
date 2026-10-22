@@ -206,7 +206,14 @@ private:
         int anchorTop;
         int tempTop;
         int high;
+        size_t handlerDepth;
     };
+    // The except and finally clauses being generated, innermost last: the
+    // frame variable holding the C++ exception the clause caught and the
+    // expression of its value (a bare `raise` rethrows it unchanged). An
+    // empty entry starts a new callable.
+    std::vector<std::pair<std::string, std::string>> handlerCaught_;
+    int caughtCounter_ = 0;
     int anchorTop_ = 0;   // first slot above the locals and the live anchors
     int tempTop_ = 0;     // next free temporary slot in the current statement
     int slotHigh_ = 0;    // number of slots the current callable declares

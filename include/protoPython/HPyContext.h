@@ -9,6 +9,7 @@
 
 #include <protoCore.h>
 #include <cstddef>
+#include <exception>
 #include <map>
 #include <string>
 #include <vector>
@@ -75,13 +76,23 @@ struct HPyContext {
      *  RuntimeError(what())). hpy_method_wrapper and the module loader rethrow it when the
      *  extension returns. */
     HPy error{0};
+    /** The C++ exception the error arrived as, when an HPy call caught one
+     *  (setCaughtError): raised again unchanged when the extension returns
+     *  with that same error (protoCore's rule E3). */
+    std::exception_ptr errorException;
     void setError(const proto::ProtoObject* exc) {
         if (error) close(error);
         error = exc ? fromProtoObject(exc) : 0;
+        errorException = nullptr;
+    }
+    void setCaughtError(const proto::ProtoObject* exc, std::exception_ptr caught) {
+        setError(exc);
+        errorException = std::move(caught);
     }
     void clearError() {
         if (error) close(error);
         error = 0;
+        errorException = nullptr;
     }
 };
 

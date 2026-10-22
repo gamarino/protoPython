@@ -27130,7 +27130,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                             const proto::ProtoList* args = ctx->newList()
                                 ->appendLast(ctx, obj);
                             bool mroRaised = false;
-                            std::optional<proto::ProtoException> mroExc;
+                            std::exception_ptr mroExc;
                             try {
                                 if (userMro->asMethod(ctx)) {
                                     userMro->asMethod(ctx)(ctx,
@@ -27143,7 +27143,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                                 // Held until the state below is restored,
                                 // then rethrown.
                                 mroRaised = true;
-                                mroExc.emplace(e);
+                                mroExc = std::current_exception();
                             }
                             // STRUCT-300: only restore savedMro when
                             // the user mro() did NOT recursively
@@ -27177,7 +27177,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                                         ctx, basesS2, outerOriginalBases);
                                     rollbackAll();
                                 }
-                                throw *mroExc;
+                                std::rethrow_exception(mroExc);
                             }
                         }
                     }

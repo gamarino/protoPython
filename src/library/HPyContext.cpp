@@ -81,7 +81,7 @@ R hpyGuarded(HPyContext* hctx, R onError, Body&& body) {
     try {
         return body();
     } catch (const proto::ProtoException& e) {
-        hctx->setError(e.value());
+        hctx->setCaughtError(e.value(), std::current_exception());
         return onError;
     } catch (const std::exception& e) {
         // A C++ exception must not unwind through the extension's C frames:
@@ -96,6 +96,11 @@ void raiseHPyError(proto::ProtoContext* ctx, HPyContext& hctx) {
     if (!hctx.error) return;
     const proto::ProtoObject* exc = hctx.asProtoObject(hctx.error);
     if (!exc) return;
+    // The exception the error arrived as, unchanged, when the extension
+    // returned the error an HPy call reported (rule E3).
+    // errorException is reset by every other setError and clearError, so
+    // when it is set it carries this very error.
+    if (std::exception_ptr caught = hctx.errorException) std::rethrow_exception(caught);
     throw PyException(PythonEnvironment::fromContext(ctx), exc);   // pins exc before hctx goes
 }
 
@@ -662,7 +667,8 @@ HPy HPy_Next(HPyContext* hctx, HPy iter) {
         return res ? hctx->fromProtoObject(res) : 0;
     } catch (const proto::ProtoException& e) {
         PythonEnvironment* env = PythonEnvironment::fromContext(hctx->ctx);
-        if (!(env && env->isStopIteration(hctx->ctx, e.value()))) hctx->setError(e.value());
+        if (!(env && env->isStopIteration(hctx->ctx, e.value())))
+            hctx->setCaughtError(e.value(), std::current_exception());
         return 0;
     } catch (const std::exception& e) {
         hctx->setError(foreignCppError(hctx, e));

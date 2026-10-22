@@ -35,6 +35,39 @@ the activation that handles it. HPy extensions see C error codes instead: the HP
 calls catch the exception and return the API's error value
 ([HPY_USER_GUIDE.md](HPY_USER_GUIDE.md)).
 
+## An exception no handler selects leaves unchanged
+
+protoCore's rule E3: an exception that no handler selects leaves as the same C++
+exception object that entered, so a `ProtoException` subclass another runtime threw
+keeps its extras (a traceback, a source position). protoPython never re-raises such an
+exception by value:
+
+- Interpreter: an except chain that matches nothing, a `finally` clause and a `with`
+  statement whose `__exit__` returns false end in `RERAISE`, a C++ `throw;` inside the
+  catch the clause runs in. A bare `raise` rethrows the exception being handled
+  (`std::current_exception()`, when it carries the active value).
+- protopyc: a clause runs after its C++ `try`, outside the catch (a generator must be
+  able to re-enter it), so the catch keeps `std::current_exception()` in a variable of
+  the generated function's frame; an unmatched except chain, a `finally` clause, a
+  `with` statement and a bare `raise` throw that `std::exception_ptr` again.
+- Exceptions crossing generator, `yield from` and call frames propagate as they are;
+  an HPy call keeps the exception it caught with the error it reports, and raises it
+  again when the extension returns that error.
+
+Two cases do create a new exception with the same value, by design:
+
+- **`raise e`** of a caught value is a new raise in Python (it adds a traceback entry
+  and chains as a new raise does), so it throws protoPython's own exception carrying
+  the same object; a foreign subclass's C++ extras are not carried over. Use a bare
+  `raise` to re-raise unchanged.
+- **A generator suspended inside an except or finally clause** that re-raises after it
+  is resumed: the C++ exception object does not survive the yield (generator state
+  holds values only, in protoCore objects), so the value is thrown again.
+
+`test_exception_identity` (`test/exceptions/`) checks these paths, interpreted and
+compiled (`protopyc_exception_identity`), with a `ProtoException` subclass carrying an
+extra field.
+
 ## How `except` selects an exception
 
 `except T` tests the raised value `v` (`PythonEnvironment::isException`):

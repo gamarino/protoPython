@@ -1691,6 +1691,36 @@ if(PROTOPYTHON_BUILD_EXAMPLES)
         LABELS "regression_gate")
 endif()
 
+# --- protoCore's rule E3: an unselected exception leaves unchanged ------------
+# test_exception_identity throws a proto::ProtoException subclass with an extra
+# field through the paths of test/exceptions/exception_identity_probe.py (an
+# except chain that matches nothing, finally, a bare raise, with, generators,
+# nested calls) and checks that the same C++ object reaches it: interpreted,
+# and compiled by protopyc (protopyc_exception_identity).
+add_executable(test_exception_identity test/exceptions/test_exception_identity.cpp)
+target_link_libraries(test_exception_identity PRIVATE protoPython protoCore)
+target_compile_definitions(test_exception_identity PRIVATE
+    STDLIB_PATH="${CMAKE_SOURCE_DIR}/lib/python3.14"
+    PROBE_DIR="${CMAKE_SOURCE_DIR}/test/exceptions")
+add_test(NAME exception_identity COMMAND test_exception_identity)
+set_tests_properties(exception_identity PROPERTIES
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "exception_identity: PASS"
+    FAIL_REGULAR_EXPRESSION "FAIL"
+    LABELS "regression_gate")
+if(NOT WIN32)
+    add_test(NAME protopyc_exception_identity
+        COMMAND ${CMAKE_SOURCE_DIR}/test/compiler/protopyc_exception_identity.sh
+                $<TARGET_FILE:protopyc> $<TARGET_FILE:test_exception_identity>
+                ${CMAKE_SOURCE_DIR}/test/exceptions/exception_identity_probe.py
+                ${CMAKE_CURRENT_BINARY_DIR}/test/compiler/exception_identity)
+    set_tests_properties(protopyc_exception_identity PROPERTIES
+        TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "probe: [^\n]*\\.so.*exception_identity: PASS"
+        FAIL_REGULAR_EXPRESSION "FAIL"
+        LABELS "regression_gate")
+endif()
+
 # --- Errors of a C++ UMD module (protoCore 3.0.0 unified exceptions) ---------
 # test/regression/umd_geometry_*.py import protoCore's example geometry module,
 # a ModuleProvider in its own shared library (protoCore/examples/exceptions/),

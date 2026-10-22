@@ -40,6 +40,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the four `exception.*` cases pass (two were NotApplicable).
 - protopyc: `import a.b as c` binds the submodule `a.b` (it bound the package `a`);
   float literals keep every digit (`12.566370614359172` compiled as `12.5664`).
+- **Rule E3: an exception no handler selects leaves unchanged.** protopyc's unmatched
+  except chains, finally clauses, `with` statements and bare `raise` rethrew a new
+  `PyException` with the caught value, slicing off another runtime's
+  `ProtoException` subclass; they now rethrow the frame-held `std::exception_ptr`.
+  The interpreter's bare `raise`, the `mro()` rollback path and the HPy error
+  round-trip do the same. `raise e` stays a new raise of the same value.
+  New tests `exception_identity` and `protopyc_exception_identity`.
 - Tests: `umd_geometry_errors`, `umd_geometry_unhandled` and `protopyc_umd_geometry`
   run `test/regression/umd_geometry_*.py` through `protopy_umd_host` (`test/umd/`),
   which links protoCore's example geometry module and registers its provider.
