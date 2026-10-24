@@ -7,6 +7,7 @@
 #include <protoPython/Parser.h>
 #include <protoPython/Compiler.h>
 #include <protoPython/Tokenizer.h>
+#include <protoPython/Debugger.h>
 #include <protoCore.h>
 #include <iostream>
 #include <sstream>
@@ -3501,7 +3502,7 @@ static const proto::ProtoObject* py_compile(
     // the operand stack lives inside GC-visible automaticLocals.  See
     // PythonEnvironment.cpp where the same pattern is applied to imports.
     const int moduleAutomaticCount = compiler.getMaxStack() + 32;
-    return makeCodeObject(context,
+    const proto::ProtoObject* code = makeCodeObject(context,
         compiler.getConstants(),
         compiler.getNames(),
         compiler.getBytecode(),
@@ -3510,6 +3511,9 @@ static const proto::ProtoObject* py_compile(
         PythonEnvironment::getInternedString(context, "<module>"),
         compiler.getFirstLine(),
         compiler.getLnotab());
+    // A debug session shows the text of code compiled from a string.
+    debugger::detail::noteCompiledSource(context, cenv, code, filename, source);
+    return code;
 }
 
 /** True for code objects: compile() results and function __code__. */
@@ -3574,10 +3578,12 @@ static const proto::ProtoObject* compile_eval_source(
     // py_eval: expression compile.  Size automatic_count to the operand-stack
     // max so the GC sees every value pushed during evaluation.
     const int evalAutomaticCount = compiler.getMaxStack() + 32;
-    return makeCodeObject(context, cos, compiler.getNames(), compiler.getBytecode(),
+    const proto::ProtoObject* code = makeCodeObject(context, cos, compiler.getNames(), compiler.getBytecode(),
         PythonEnvironment::getInternedString(context, "<string>"), nullptr, 0, 0,
         evalAutomaticCount, false, false, nullptr,
         compiler.getFirstLine() > 0 ? compiler.getFirstLine() : 1, compiler.getLnotab());
+    debugger::detail::noteCompiledSource(context, PythonEnvironment::fromContext(context), code, "<string>", source);
+    return code;
 }
 
 /** eval(expr, globals=None, locals=None): run a code object, or compile and
@@ -4848,10 +4854,16 @@ static const proto::ProtoObject* compile_exec_source(
     const int moduleAutomaticCount = compiler.getMaxStack() + 32;
     // co_filename '<string>' and the lnotab's own base line, so traceback
     // entries name the exec'd text and the line inside it.
-    return makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode(),
-        PythonEnvironment::getInternedString(context, "<string>"), nullptr, 0, 0,
+    const proto::ProtoObject* code = makeCodeObject(context, compiler.getConstants(), compiler.getNames(),
+        compiler.getBytecode(), PythonEnvironment::getInternedString(context, "<string>"), nullptr, 0, 0,
         moduleAutomaticCount, 0, false, nullptr,
         compiler.getFirstLine() > 0 ? compiler.getFirstLine() : 1, compiler.getLnotab());
+    {
+        std::string source;
+        sourceObj->asString(context)->toUTF8String(context, source);
+        debugger::detail::noteCompiledSource(context, PythonEnvironment::fromContext(context), code, "<string>", source);
+    }
+    return code;
 }
 
 /** exec(source, globals=None, locals=None): run a code object, or compile

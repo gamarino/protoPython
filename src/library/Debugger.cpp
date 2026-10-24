@@ -16,7 +16,9 @@
 #include <cstdio>
 #include <filesystem>
 #include <memory>
+#include <map>
 #include <mutex>
+#include <set>
 #include <unordered_map>
 
 namespace protoPython {
@@ -57,19 +59,44 @@ void dropSighting() {
     tl_seen = nullptr;
 }
 
-// Code objects seen while debugging, by their co_code tuple (what the
-// dispatcher has at hand). The code objects are pinned so a tuple is never
-// freed and its address reused while the entry exists.
+// Code objects seen while debugging, by the code object itself: two code
+// objects can share one interned co_code tuple, and keying by the tuple gave
+// the second one the file and lines of the first. The code objects are pinned
+// so an address is never reused while the entry exists.
 struct CodeCache {
     std::mutex mu;
     PythonEnvironment* env{nullptr};
     proto::ProtoRootSet* roots{nullptr};
     std::unordered_map<const void*, std::unique_ptr<CodeInfo>> byKey;
     std::string stdlibPrefix;  // normalizePath(stdlib) + '/', for CodeInfo::library
+    std::set<std::string> keysSeen;  // sources reported to onCodeLoaded
 };
 CodeCache& codeCache() {
     static CodeCache* cache = new CodeCache();  // never destroyed: used at exit
     return *cache;
+}
+
+// The texts of code compiled from strings while a listener is installed, and
+// which code objects came from which text. The code objects are pinned so an
+// address is never reused by another code object while it is known.
+struct SourceTexts {
+    std::mutex mu;
+    PythonEnvironment* env{nullptr};
+    proto::ProtoRootSet* roots{nullptr};
+    std::vector<std::pair<std::string, std::string>> texts;  // id - 1 -> (name, text)
+    std::map<std::pair<std::string, std::string>, int> byContent;
+    std::unordered_map<const proto::ProtoObject*, int> byCode;
+};
+SourceTexts& sourceTexts() {
+    static SourceTexts* s = new SourceTexts();  // never destroyed: used at exit
+    return *s;
+}
+
+int textIdOf(const proto::ProtoObject* code) {
+    SourceTexts& st = sourceTexts();
+    std::lock_guard<std::mutex> lk(st.mu);
+    auto it = st.byCode.find(code);
+    return it == st.byCode.end() ? 0 : it->second;
 }
 
 std::string toUtf8(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
@@ -527,6 +554,8 @@ const CodeInfo* detail::codeInfoFor(proto::ProtoContext* ctx, PythonEnvironment*
     if (info->file.empty()) return nullptr;
     info->path = normalizePath(info->file);
     info->displayPath = displayPath(info->file);
+    info->textId = textIdOf(codeObj);
+    info->key = info->textId ? "<text:" + std::to_string(info->textId) + ">" : info->path;
     {
         std::string prefix;
         {
@@ -547,9 +576,10 @@ const CodeInfo* detail::codeInfoFor(proto::ProtoContext* ctx, PythonEnvironment*
     const std::size_t nInstr = bc ? static_cast<std::size_t>(bc->getSize(ctx) / 2 + 1) : 0;
     info->lines = decodeLines(ctx, env, codeObj, nInstr);
 
-    std::lock_guard<std::mutex> lk(cache.mu);
+    std::unique_lock<std::mutex> lk(cache.mu);
     if (cache.env != env) {
         cache.byKey.clear();
+        cache.keysSeen.clear();
         cache.env = env;
         cache.roots = env->getSpace() ? env->getSpace()->createRootSet("protopy-debugger-code") : nullptr;
         cache.stdlibPrefix = env->getStdLibPath().empty() ? std::string() : normalizePath(env->getStdLibPath()) + "/";
@@ -560,7 +590,70 @@ const CodeInfo* detail::codeInfoFor(proto::ProtoContext* ctx, PythonEnvironment*
     info->codeObject = codeObj;
     const CodeInfo* result = info.get();
     cache.byKey.emplace(key, std::move(info));
+    const bool newSource = cache.keysSeen.insert(result->key).second;
+    lk.unlock();
+    if (newSource) {
+        if (Listener* l = g_listener.load(std::memory_order_acquire)) l->onCodeLoaded(*result);
+    }
     return result;
+}
+
+bool sourceText(int textId, std::string& name, std::string& text) {
+    SourceTexts& st = sourceTexts();
+    std::lock_guard<std::mutex> lk(st.mu);
+    if (textId <= 0 || static_cast<std::size_t>(textId) > st.texts.size()) return false;
+    name = st.texts[static_cast<std::size_t>(textId - 1)].first;
+    text = st.texts[static_cast<std::size_t>(textId - 1)].second;
+    return true;
+}
+
+void detail::noteCompiledSource(proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* code,
+                                const std::string& filename, const std::string& text) {
+    if (!code || code == PROTO_NONE || !env || tl_suspended || !listenerInstalled()) return;
+    // A real file shows as itself.
+    if (!filename.empty() && filename[0] != '<') {
+        std::error_code ec;
+        if (std::filesystem::is_regular_file(std::filesystem::path(std::u8string(filename.begin(), filename.end())), ec))
+            return;
+    }
+    // The code object and the code objects nested in its constants.
+    std::vector<const proto::ProtoObject*> codes;
+    std::vector<const proto::ProtoObject*> work{code};
+    while (!work.empty() && codes.size() < 100000) {
+        const proto::ProtoObject* c = work.back();
+        work.pop_back();
+        codes.push_back(c);
+        const proto::ProtoObject* consts = c->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_consts"));
+        TupleView t = (consts && consts != PROTO_NONE) ? PythonEnvironment::tupleView(ctx, consts) : nullptr;
+        for (proto::proto_ulong i = 0; t && i < t->getSize(ctx); ++i) {
+            const proto::ProtoObject* k = t->getAt(ctx, static_cast<int>(i));
+            if (!k || k == PROTO_NONE || proto::isSmallInt(k) || proto::ProtoObject::isStringTagFast(k)
+                    || k == PROTO_TRUE || k == PROTO_FALSE || !k->isCell(ctx))
+                continue;
+            const proto::ProtoObject* cc = k->getAttribute(ctx, env->getCoCodeString());
+            if (cc && cc != PROTO_NONE && PythonEnvironment::tupleView(ctx, cc)) work.push_back(k);
+        }
+    }
+    SourceTexts& st = sourceTexts();
+    std::lock_guard<std::mutex> lk(st.mu);
+    if (st.env != env || !st.roots) {
+        st.env = env;
+        st.roots = env->getSpace() ? env->getSpace()->createRootSet("protopy-debugger-sources") : nullptr;
+        st.byCode.clear();
+    }
+    const auto contentKey = std::make_pair(filename.empty() ? std::string("<string>") : filename, text);
+    auto it = st.byContent.find(contentKey);
+    int id;
+    if (it != st.byContent.end()) {
+        id = it->second;
+    } else {
+        st.texts.push_back(contentKey);
+        id = static_cast<int>(st.texts.size());
+        st.byContent.emplace(contentKey, id);
+    }
+    for (const proto::ProtoObject* c : codes) {
+        if (st.byCode.emplace(c, id).second && st.roots) st.roots->add(c);
+    }
 }
 
 void detail::dispatchLine(proto::ProtoContext* ctx, PythonEnvironment* env, const CodeInfo& code, int line,
@@ -695,6 +788,16 @@ std::string currentThreadName(proto::ProtoContext* ctx, PythonEnvironment* env) 
 
 void detail::environmentClosing(PythonEnvironment* env) {
     {
+        SourceTexts& st = sourceTexts();
+        std::lock_guard<std::mutex> lk(st.mu);
+        if (st.env == env) {
+            if (st.roots && env->getSpace()) env->getSpace()->destroyRootSet(st.roots);
+            st.roots = nullptr;
+            st.byCode.clear();
+            st.env = nullptr;
+        }
+    }
+    {
         Sightings& s = sightings();
         std::lock_guard<std::mutex> lk(s.mu);
         if (s.env == env) {
@@ -710,6 +813,7 @@ void detail::environmentClosing(PythonEnvironment* env) {
             if (cache.roots && env->getSpace()) env->getSpace()->destroyRootSet(cache.roots);
             cache.roots = nullptr;
             cache.byKey.clear();
+            cache.keysSeen.clear();
             cache.env = nullptr;
         }
     }

@@ -10544,7 +10544,9 @@ struct DebugStackScope {
 bool Activation::ensureDebugCode() {
     if (dbgCode) return true;
     const proto::ProtoObject* code = runningCodeObject(ctx, env, frame, bytecode);
-    dbgCode = debugger::detail::codeInfoFor(ctx, env, code, bytecode);
+    // Keyed by the code object: two functions may share one (interned)
+    // co_code tuple.
+    dbgCode = debugger::detail::codeInfoFor(ctx, env, code, code);
     if (!dbgCode) { dbgOn = false; return false; }
     dbgGlobals = PythonEnvironment::getCurrentGlobals();
     return true;

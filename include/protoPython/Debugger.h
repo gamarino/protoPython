@@ -35,7 +35,13 @@ namespace debugger {
 /** What the debugger knows about one code object (built once, cached). */
 struct CodeInfo {
     std::string file;        ///< co_filename as the compiler recorded it
-    std::string path;        ///< normalizePath(file): the key breakpoints use
+    std::string path;        ///< normalizePath(file)
+    /** What breakpoints are keyed by: `path` for code from a file, "<text:N>"
+     *  for code compiled from a string (textId). */
+    std::string key;
+    /** Code compiled from a string (exec, eval, compile with a pseudo file
+     *  name): its text is sourceText(textId); 0 for code from a file. */
+    int textId{0};
     std::string displayPath; ///< absolute, native separators: what a client opens
     std::string name;        ///< co_qualname (co_name when absent)
     std::vector<int> lines;  ///< source line of each instruction (0 = unknown)
@@ -96,6 +102,9 @@ public:
     }
     /** That thread's Python code finished (on the thread). */
     virtual void onThreadExit() {}
+    /** The debugger met a code object of a source (`code.key`) for the first
+     *  time on a thread that reports events: a module, script or string ran. */
+    virtual void onCodeLoaded(const CodeInfo& code) { (void)code; }
 };
 
 /** Installs (or with nullptr removes) the listener. */
@@ -209,7 +218,17 @@ private:
     std::vector<proto::ProtoRootSet::Handle> handles_;
 };
 
+/** The text of code compiled from a string (CodeInfo::textId): its pseudo
+ *  file name ("<string>") and source. False for an unknown id. Thread-safe;
+ *  touches no ProtoObject. */
+bool sourceText(int textId, std::string& name, std::string& text);
+
 namespace detail {
+/** compile() / exec() / eval() of a string made `code` (BuiltinsModule): with
+ *  a listener installed, remembers its text for it and its nested code
+ *  objects when `filename` names no file. */
+void noteCompiledSource(proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* code,
+                        const std::string& filename, const std::string& text);
 // Used by the dispatcher (ExecutionEngine.cpp) and PythonEnvironment.
 bool threadWantsEvents();
 bool listenerInstalled();

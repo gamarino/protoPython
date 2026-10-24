@@ -11,7 +11,10 @@
 // picked "protoPython (protopy)" in the debugger list.
 //
 // protopy is taken from the `protopy.path` setting if set, else from the default
-// install location (when present), else from PATH.
+// install location (when present), else from PATH. With a `remote` attribute
+// the adapter runs through that command instead (ssh, wsl, docker exec, ...):
+// `<command...> <remote.path> --dap`. Everything about paths (pathMappings,
+// files the client cannot open) is done by the adapter itself.
 const vscode = require("vscode");
 const fs = require("fs");
 const path = require("path");
@@ -45,6 +48,23 @@ const configurationProvider = {
         config.cwd = "${fileDirname}";
       }
     }
+    if (config.remote !== undefined) {
+      const cmd = config.remote && config.remote.command;
+      if (!Array.isArray(cmd) || cmd.length === 0 || cmd.some((a) => typeof a !== "string")) {
+        return vscode.window
+          .showErrorMessage('protoPython: "remote.command" must be a non-empty list of strings, e.g. ["ssh", "-T", "me@host"].')
+          .then(() => undefined);
+      }
+      if (!Array.isArray(config.pathMappings) || config.pathMappings.length === 0) {
+        return vscode.window
+          .showErrorMessage(
+            'protoPython: a "remote" launch needs "pathMappings": [{"localRoot": "${workspaceFolder}", ' +
+              '"remoteRoot": "<the same folder on the remote side>"}], so breakpoints and the call stack ' +
+              "name files on both sides. \"program\" and \"cwd\" are remote paths (or local ones under a localRoot)."
+          )
+          .then(() => undefined);
+      }
+    }
     if (!config.program) {
       return vscode.window
         .showInformationMessage("protoPython: open a Python file or set 'program' in launch.json.")
@@ -69,7 +89,12 @@ const configurationProvider = {
 
 function activate(context) {
   const factory = {
-    createDebugAdapterDescriptor(/* session */) {
+    createDebugAdapterDescriptor(session) {
+      const remote = session.configuration && session.configuration.remote;
+      if (remote && Array.isArray(remote.command) && remote.command.length > 0) {
+        const [command, ...prefix] = remote.command;
+        return new vscode.DebugAdapterExecutable(command, [...prefix, remote.path || "protopy", "--dap"]);
+      }
       return new vscode.DebugAdapterExecutable(protopyCommand(), ["--dap"]);
     },
   };

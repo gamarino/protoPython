@@ -39,6 +39,7 @@
 #include <deque>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <functional>
 #include <iostream>
 #include <map>
@@ -106,6 +107,84 @@ std::optional<Json> readMessage(std::istream& in) {
     auto msg = Json::parse(body);
     if (!msg) return Json::object();  // malformed JSON: ignored, the stream goes on
     return msg;
+}
+
+// --- path mappings (launch.pathMappings) ------------------------------------------
+
+// A path as Windows writes it: a drive letter, a UNC prefix or a backslash.
+bool windowsLike(const std::string& p) {
+    return (p.size() >= 2 && std::isalpha(static_cast<unsigned char>(p[0])) && p[1] == ':')
+        || p.find('\\') != std::string::npos;
+}
+
+// '/' separators, no trailing separator (but "/" and "c:/" stay).
+std::string slashed(std::string p) {
+    std::replace(p.begin(), p.end(), '\\', '/');
+    while (p.size() > 1 && p.back() == '/' && !(p.size() == 3 && p[1] == ':')) p.pop_back();
+    return p;
+}
+
+// `path` under `root`: the rest after it ('/' separators).
+bool underRoot(const std::string& path, const std::string& root, bool caseInsensitive, std::string& rest) {
+    const std::string pp = slashed(path), rr = slashed(root);
+    if (pp.size() < rr.size()) return false;
+    for (std::size_t i = 0; i < rr.size(); ++i) {
+        char a = pp[i], b = rr[i];
+        if (caseInsensitive) {
+            a = static_cast<char>(std::tolower(static_cast<unsigned char>(a)));
+            b = static_cast<char>(std::tolower(static_cast<unsigned char>(b)));
+        }
+        if (a != b) return false;
+    }
+    if (pp.size() == rr.size()) { rest.clear(); return true; }
+    if (rr.back() == '/') { rest = pp.substr(rr.size()); return true; }
+    if (pp[rr.size()] != '/') return false;
+    rest = pp.substr(rr.size() + 1);
+    return true;
+}
+
+// `rest` ('/' separators) under `root`, in the separators `root` uses.
+std::string joinRoot(const std::string& root, const std::string& rest) {
+    const char sep = windowsLike(root) ? '\\' : '/';
+    std::string r = root;
+    while (r.size() > 1 && (r.back() == '/' || r.back() == '\\') && !(r.size() == 3 && r[1] == ':')) r.pop_back();
+    if (rest.empty()) return r;
+    std::string t = rest;
+    if (sep == '\\') std::replace(t.begin(), t.end(), '/', '\\');
+    if (r.back() != '/' && r.back() != '\\') r += sep;
+    return r + t;
+}
+
+struct PathMapping {
+    std::string localRoot;   // the client's side
+    std::string remoteRoot;  // where the adapter runs
+};
+
+std::string baseName(const std::string& p) {
+    const auto slash = p.find_last_of("/\\");
+    return slash == std::string::npos ? p : p.substr(slash + 1);
+}
+
+std::vector<std::string> splitLines(const std::string& text) {
+    std::vector<std::string> lines;
+    std::size_t start = 0;
+    while (start <= text.size()) {
+        const auto nl = text.find('\n', start);
+        if (nl == std::string::npos) {
+            if (start < text.size()) lines.push_back(text.substr(start));
+            break;
+        }
+        lines.push_back(text.substr(start, nl - start));
+        start = nl + 1;
+    }
+    return lines;
+}
+
+bool readFile(const std::string& path, std::string& out) {
+    std::ifstream f(u8Path(path), std::ios::binary);
+    if (!f) return false;
+    out.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+    return true;
 }
 
 // --- the session ---------------------------------------------------------------
@@ -314,13 +393,13 @@ public:
             std::optional<Breakpoint> bp;
             {
                 std::lock_guard<std::mutex> lk(bpMu_);
-                auto it = breakpoints_.find(code.path);
+                auto it = breakpoints_.find(code.key);
                 if (it != breakpoints_.end()) {
                     auto b = it->second.find(line);
                     if (b != it->second.end()) bp = b->second;
                 }
             }
-            if (bp && breakpointStops(ctx, env, *bp, code.path, line, extra)) reason = "breakpoint";
+            if (bp && breakpointStops(ctx, env, *bp, code.key, line, extra)) reason = "breakpoint";
         }
         if (!reason) return;
         ts->step.store(Step::None);
@@ -432,6 +511,15 @@ public:
         sendEvent("thread", obj({{"reason", Json("started")}, {"threadId", Json(ts->id)}}));
     }
 
+    void onCodeLoaded(const debugger::CodeInfo& code) override {
+        if (code.file.empty()) return;
+        {
+            std::lock_guard<std::mutex> lk(srcMu_);
+            loaded_.push_back(&code);
+        }
+        sendEvent("loadedSource", obj({{"reason", Json("new")}, {"source", sourceFor(code)}}));
+    }
+
     void onThreadExit() override {
         ThreadState* ts = tl_thread;
         if (!ts) return;
@@ -473,7 +561,7 @@ private:
             if (ts->hasException) {
                 std::string trace = "Traceback (most recent call last):\n";
                 for (auto it = ts->frames.rbegin(); it != ts->frames.rend(); ++it)
-                    trace += "  File \"" + it->path + "\", line " + std::to_string(it->line) + ", in " + it->name + "\n";
+                    trace += "  File \"" + clientLabel(*it->entry.code) + "\", line " + std::to_string(it->line) + ", in " + it->name + "\n";
                 ts->excTrace = trace + (ts->excMessage.empty() ? ts->excType : ts->excType + ": " + ts->excMessage) + "\n";
             }
             ts->resume = false;
@@ -624,7 +712,8 @@ private:
                              {"supportsExceptionFilterOptions", Json(true)},
                              {"supportsConditionalBreakpoints", Json(true)},
                              {"supportsHitConditionalBreakpoints", Json(true)},
-                             {"supportsLogPoints", Json(true)}});
+                             {"supportsLogPoints", Json(true)},
+                             {"supportsLoadedSourcesRequest", Json(true)}});
             caps["exceptionBreakpointFilters"] = filters;
             respond(req, true, caps);
             sendEvent("initialized", Json::object());
@@ -670,6 +759,17 @@ private:
             handleVariables(req, args);
         } else if (command == "evaluate") {
             handleEvaluate(req, args);
+        } else if (command == "source") {
+            handleSource(req, args);
+        } else if (command == "loadedSources") {
+            Json sources = Json::array();
+            std::vector<const debugger::CodeInfo*> loaded;
+            {
+                std::lock_guard<std::mutex> lk(srcMu_);
+                loaded = loaded_;
+            }
+            for (const auto* c : loaded) sources.push(sourceFor(*c));
+            respond(req, true, obj({{"sources", sources}}));
         } else if (command == "exceptionInfo") {
             handleExceptionInfo(req, args);
         } else if (command == "disconnect" || command == "terminate") {
@@ -689,7 +789,31 @@ private:
 
     void handleLaunch(const Json& req, const Json& args) {
         DAPServer::LaunchRequest launch;
-        launch.program = args.getString("program");
+        std::vector<PathMapping> mappings;
+        const Json& pm = args.get("pathMappings");
+        if (!pm.isNull() && !pm.isArray()) {
+            respondError(req, "launch: 'pathMappings' must be a list of {\"localRoot\", \"remoteRoot\"}");
+            return;
+        }
+        for (std::size_t i = 0; i < pm.size(); ++i) {
+            PathMapping m{pm.at(i).getString("localRoot"), pm.at(i).getString("remoteRoot")};
+            if (m.localRoot.empty() || m.remoteRoot.empty()) {
+                respondError(req, "launch: pathMappings[" + std::to_string(i) +
+                                  "] needs both 'localRoot' (the client's folder) and 'remoteRoot' (the same folder "
+                                  "where protopy runs)");
+                return;
+            }
+            mappings.push_back(std::move(m));
+        }
+        // Longest roots first: the most specific mapping wins.
+        std::stable_sort(mappings.begin(), mappings.end(), [](const PathMapping& a, const PathMapping& b) {
+            return slashed(a.localRoot).size() > slashed(b.localRoot).size();
+        });
+        {
+            std::lock_guard<std::mutex> lk(srcMu_);
+            mappings_ = mappings;
+        }
+        launch.program = toAdapter(args.getString("program"));
         if (launch.program.empty()) {
             respondError(req, "launch: 'program' is required");
             return;
@@ -703,7 +827,7 @@ private:
         const Json& a = args.get("args");
         for (std::size_t i = 0; i < a.size(); ++i)
             if (a.at(i).isString()) launch.args.push_back(a.at(i).str());
-        launch.cwd = args.getString("cwd");
+        launch.cwd = args.getString("cwd").empty() ? std::string() : toAdapter(args.getString("cwd"));
         for (const auto& kv : args.get("env").members())
             if (kv.second.isString()) launch.env.emplace_back(kv.first, kv.second.str());
         {
@@ -733,11 +857,7 @@ private:
 
     // A breakpoint on a blank or comment line moves to the next line with code,
     // as the line has no instructions of its own.
-    static std::vector<int> codeLines(const std::string& path, const std::vector<int>& requested) {
-        std::vector<std::string> lines;
-        std::ifstream f(u8Path(path), std::ios::binary);
-        std::string l;
-        while (f && std::getline(f, l)) lines.push_back(l);
+    static std::vector<int> codeLines(const std::vector<std::string>& lines, const std::vector<int>& requested) {
         auto isCode = [&](int n) {
             if (n < 1 || n > static_cast<int>(lines.size())) return false;
             const std::string& s = lines[static_cast<std::size_t>(n - 1)];
@@ -760,7 +880,17 @@ private:
     }
 
     void handleSetBreakpoints(const Json& req, const Json& args) {
-        const std::string path = args.get("source").getString("path");
+        const Json& source = args.get("source");
+        std::string key;
+        std::vector<std::string> lines;
+        if (!resolveSource(source, key, lines)) {
+            Json result = Json::array();
+            const Json& bps = args.get("breakpoints");
+            for (std::size_t i = 0; i < bps.size(); ++i)
+                result.push(obj({{"verified", Json(false)}, {"message", Json("unknown source")}}));
+            respond(req, true, obj({{"breakpoints", result}}));
+            return;
+        }
         std::vector<int> requested;
         std::vector<Breakpoint> specs;
         const Json& bps = args.get("breakpoints");
@@ -777,23 +907,28 @@ private:
             for (std::size_t i = 0; i < lines.size(); ++i)
                 if (lines.at(i).isNumber()) requested.push_back(static_cast<int>(lines.at(i).num()));
         }
-        const std::vector<int> actual = codeLines(path, requested);
+        const std::vector<int> actual = codeLines(lines, requested);
+        // The breakpoints name the source as the request did.
+        Json echo = Json::object();
+        if (source.contains("sourceReference") && source.getInt("sourceReference") > 0)
+            echo["sourceReference"] = Json(source.getInt("sourceReference"));
+        if (!source.getString("path").empty()) echo["path"] = Json(source.getString("path"));
+        if (!source.getString("name").empty()) echo["name"] = Json(source.getString("name"));
         Json result = Json::array();
         std::map<int, Breakpoint> table;
         for (std::size_t i = 0; i < actual.size(); ++i) {
             Breakpoint b = i < specs.size() ? specs[i] : Breakpoint{};
             if (b.hits < 0) {
-                result.push(obj({{"verified", Json(false)}, {"line", Json(actual[i])},
+                result.push(obj({{"verified", Json(false)}, {"line", Json(actual[i])}, {"source", echo},
                                  {"message", Json("invalid hit count '" + bps.at(i).getString("hitCondition") +
                                                   "': use N, == N, >= N, > N, < N, <= N or % N")}}));
                 continue;
             }
             table[actual[i]] = std::move(b);
-            result.push(obj({{"verified", Json(true)}, {"line", Json(actual[i])}}));
+            result.push(obj({{"verified", Json(true)}, {"line", Json(actual[i])}, {"source", echo}}));
         }
         {
             std::lock_guard<std::mutex> lk(bpMu_);
-            const std::string key = debugger::normalizePath(path);
             if (table.empty()) breakpoints_.erase(key);
             else breakpoints_[key] = std::move(table);
             anyBreakpoint_.store(!breakpoints_.empty());
@@ -868,11 +1003,7 @@ private:
                     if (levels > 0 && static_cast<long long>(frames.size()) >= levels) break;
                     const FrameSnap& f = ts->frames[static_cast<std::size_t>(i)];
                     Json frame = obj({{"id", Json(f.id)}, {"name", Json(f.name)}, {"line", Json(f.line)}, {"column", Json(1)}});
-                    if (!f.path.empty() && f.path[0] != '<') {
-                        const auto slash = f.path.find_last_of("/\\");
-                        frame["source"] = obj({{"name", Json(slash == std::string::npos ? f.path : f.path.substr(slash + 1))},
-                                               {"path", Json(f.path)}});
-                    }
+                    if (f.entry.code) frame["source"] = sourceFor(*f.entry.code);
                     frames.push(std::move(frame));
                 }
             }
@@ -1019,6 +1150,140 @@ private:
         else respond(req, true, body);
     }
 
+    // --- paths and sources ------------------------------------------------------
+    // A client path as the adapter's file system names it.
+    std::string toAdapter(const std::string& clientPath) {
+        std::lock_guard<std::mutex> lk(srcMu_);
+        for (const auto& m : mappings_) {
+            std::string rest;
+            if (underRoot(clientPath, m.localRoot, windowsLike(m.localRoot), rest)) return joinRoot(m.remoteRoot, rest);
+        }
+        return clientPath;
+    }
+
+    // An adapter path as the client names it; false when no mapping covers it
+    // (there are mappings, and the client cannot open the adapter's path).
+    bool toClientLocked(const std::string& adapterPath, std::string& out) {
+        if (mappings_.empty()) { out = adapterPath; return true; }
+        const PathMapping* best = nullptr;
+        std::string bestRest;
+        for (const auto& m : mappings_) {
+            std::string rest;
+            if (underRoot(adapterPath, m.remoteRoot, windowsLike(m.remoteRoot), rest)
+                    && (!best || slashed(m.remoteRoot).size() > slashed(best->remoteRoot).size())) {
+                best = &m;
+                bestRest = rest;
+            }
+        }
+        if (!best) return false;
+        out = joinRoot(best->localRoot, bestRest);
+        return true;
+    }
+
+    int refLocked(int textId, const std::string& adapterPath) {
+        const std::string k = textId ? "t" + std::to_string(textId) : "f" + adapterPath;
+        auto it = refByKey_.find(k);
+        if (it != refByKey_.end()) return it->second;
+        refs_.push_back(SourceRef{textId, adapterPath});
+        const int ref = static_cast<int>(refs_.size());
+        refByKey_.emplace(k, ref);
+        return ref;
+    }
+
+    // The DAP source of a code object: its path (as the client names it) when
+    // the client can open it, else a reference the `source` request serves.
+    Json sourceFor(const debugger::CodeInfo& code) {
+        Json src = Json::object();
+        std::lock_guard<std::mutex> lk(srcMu_);
+        if (code.textId) {
+            src["name"] = Json(code.file.empty() ? std::string("<string>") : code.file);
+            src["sourceReference"] = Json(refLocked(code.textId, std::string()));
+            src["origin"] = Json("compiled from a string (exec, eval, compile)");
+        } else if (code.file.empty() || code.file[0] == '<') {
+            src["name"] = Json(code.file);
+        } else {
+            std::string client;
+            if (toClientLocked(code.displayPath, client)) {
+                src["name"] = Json(baseName(client));
+                src["path"] = Json(client);
+            } else {
+                src["name"] = Json(baseName(code.displayPath));
+                src["sourceReference"] = Json(refLocked(0, code.displayPath));
+                src["origin"] = Json(code.displayPath);
+            }
+        }
+        if (code.library) src["presentationHint"] = Json("deemphasize");
+        return src;
+    }
+
+    // How a traceback text names the code's file.
+    std::string clientLabel(const debugger::CodeInfo& code) {
+        if (code.file.empty() || code.file[0] == '<') return code.file;
+        std::lock_guard<std::mutex> lk(srcMu_);
+        std::string client;
+        return toClientLocked(code.displayPath, client) ? client : code.displayPath;
+    }
+
+    // The breakpoint key and the lines of a request's `source`.
+    bool resolveSource(const Json& source, std::string& key, std::vector<std::string>& lines) {
+        const long long ref = source.getInt("sourceReference", 0);
+        std::string text;
+        if (ref > 0) {
+            SourceRef r;
+            {
+                std::lock_guard<std::mutex> lk(srcMu_);
+                if (ref > static_cast<long long>(refs_.size())) return false;
+                r = refs_[static_cast<std::size_t>(ref - 1)];
+            }
+            if (r.textId) {
+                std::string name;
+                if (!debugger::sourceText(r.textId, name, text)) return false;
+                key = "<text:" + std::to_string(r.textId) + ">";
+            } else {
+                readFile(r.adapterPath, text);
+                key = debugger::normalizePath(r.adapterPath);
+            }
+        } else {
+            const std::string path = source.getString("path");
+            if (path.empty()) return false;
+            const std::string adapterPath = toAdapter(path);
+            readFile(adapterPath, text);
+            key = debugger::normalizePath(adapterPath);
+        }
+        lines = splitLines(text);
+        return true;
+    }
+
+    void handleSource(const Json& req, const Json& args) {
+        Json source = args.get("source");
+        if (args.getInt("sourceReference", 0) > 0) {
+            source = Json::object();
+            source["sourceReference"] = Json(args.getInt("sourceReference", 0));
+        }
+        const long long ref = source.getInt("sourceReference", 0);
+        std::string text;
+        bool ok = false;
+        if (ref > 0) {
+            SourceRef r;
+            {
+                std::lock_guard<std::mutex> lk(srcMu_);
+                ok = ref <= static_cast<long long>(refs_.size());
+                if (ok) r = refs_[static_cast<std::size_t>(ref - 1)];
+            }
+            if (ok) {
+                std::string name;
+                ok = r.textId ? debugger::sourceText(r.textId, name, text) : readFile(r.adapterPath, text);
+            }
+        } else if (!source.getString("path").empty()) {
+            ok = readFile(toAdapter(source.getString("path")), text);
+        }
+        if (!ok) {
+            respondError(req, "source: not available");
+            return;
+        }
+        respond(req, true, obj({{"content", Json(text)}, {"mimeType", Json("text/x-python")}}));
+    }
+
     void handleExceptionInfo(const Json& req, const Json& args) {
         Json body;
         bool found = false;
@@ -1104,6 +1369,17 @@ private:
     std::mutex bpMu_;
     std::unordered_map<std::string, std::map<int, Breakpoint>> breakpoints_;
     std::string conditionRaised_, conditionUserUnhandled_;
+
+    // Paths and sources (guarded by srcMu_).
+    struct SourceRef {
+        int textId = 0;           // code compiled from a string
+        std::string adapterPath;  // else a file the client cannot open
+    };
+    std::mutex srcMu_;
+    std::vector<PathMapping> mappings_;
+    std::vector<SourceRef> refs_;  // sourceReference - 1
+    std::unordered_map<std::string, int> refByKey_;
+    std::vector<const debugger::CodeInfo*> loaded_;
     std::atomic<bool> anyBreakpoint_{false};
     std::atomic<bool> entryPending_{false};
     std::atomic<bool> breakOnRaised_{false};

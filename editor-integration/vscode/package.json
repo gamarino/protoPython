@@ -2,7 +2,7 @@
   "name": "protopy-debug",
   "displayName": "protoPython Debugger",
   "description": "Debug Python scripts on protoPython (protopy) from VS Code, through the protopy --dap Debug Adapter Protocol adapter.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "protopython-placeholder",
   "engines": {
     "vscode": "^1.66.0"
@@ -11,6 +11,9 @@
     "Debuggers"
   ],
   "main": "./extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
   "activationEvents": [
     "onDebugResolve:protopy",
     "onDebugInitialConfigurations",
@@ -75,6 +78,54 @@
                 "type": "boolean",
                 "description": "Stop at the first line of the script.",
                 "default": false
+              },
+              "pathMappings": {
+                "type": "array",
+                "description": "Folders the client and protopy name differently (protopy on another machine, in WSL or in a container): each maps localRoot (this machine) to remoteRoot (where protopy runs). Longest prefix wins. Files under no mapping are shown read-only from protopy's side.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "localRoot",
+                    "remoteRoot"
+                  ],
+                  "properties": {
+                    "localRoot": {
+                      "type": "string",
+                      "description": "A folder on this machine, e.g. ${workspaceFolder}."
+                    },
+                    "remoteRoot": {
+                      "type": "string",
+                      "description": "The same folder where protopy runs, e.g. /home/me/project."
+                    }
+                  }
+                },
+                "default": [
+                  {
+                    "localRoot": "${workspaceFolder}",
+                    "remoteRoot": ""
+                  }
+                ]
+              },
+              "remote": {
+                "type": "object",
+                "description": "Run protopy --dap through a command (ssh, wsl, docker exec, ...): the adapter speaks DAP over that command's stdin/stdout. Requires pathMappings.",
+                "required": [
+                  "command"
+                ],
+                "properties": {
+                  "command": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "The argv prefix, e.g. [\"ssh\", \"-T\", \"-o\", \"BatchMode=yes\", \"me@host\"] or [\"wsl\", \"-d\", \"Ubuntu-24.04\", \"--\"]."
+                  },
+                  "path": {
+                    "type": "string",
+                    "description": "protopy on the remote side (default: protopy, found on its PATH).",
+                    "default": "protopy"
+                  }
+                }
               }
             }
           }
@@ -100,6 +151,59 @@
               "program": "^\"\\${file}\"",
               "cwd": "^\"\\${fileDirname}\"",
               "stopOnEntry": false
+            }
+          },
+          {
+            "label": "protoPython: Launch over SSH",
+            "description": "Run protopy --dap on another machine through ssh.",
+            "body": {
+              "type": "protopy",
+              "request": "launch",
+              "name": "protopy: over SSH",
+              "program": "^\"/home/${1:user}/${2:project}/\\${fileBasename}\"",
+              "cwd": "^\"/home/${1:user}/${2:project}\"",
+              "remote": {
+                "command": [
+                  "ssh",
+                  "-T",
+                  "-o",
+                  "BatchMode=yes",
+                  "${1:user}@${3:host}"
+                ],
+                "path": "protopy"
+              },
+              "pathMappings": [
+                {
+                  "localRoot": "^\"\\${workspaceFolder}\"",
+                  "remoteRoot": "/home/${1:user}/${2:project}"
+                }
+              ]
+            }
+          },
+          {
+            "label": "protoPython: Launch in WSL",
+            "description": "Run protopy --dap inside a WSL distribution.",
+            "body": {
+              "type": "protopy",
+              "request": "launch",
+              "name": "protopy: in WSL",
+              "program": "^\"/home/${1:user}/${2:project}/\\${fileBasename}\"",
+              "cwd": "^\"/home/${1:user}/${2:project}\"",
+              "remote": {
+                "command": [
+                  "wsl",
+                  "-d",
+                  "${3:Ubuntu-24.04}",
+                  "--"
+                ],
+                "path": "/home/${1:user}/.local/bin/protopy"
+              },
+              "pathMappings": [
+                {
+                  "localRoot": "^\"\\${workspaceFolder}\"",
+                  "remoteRoot": "/home/${1:user}/${2:project}"
+                }
+              ]
             }
           }
         ]

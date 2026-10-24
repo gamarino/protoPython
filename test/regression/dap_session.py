@@ -645,6 +645,73 @@ def session_condition_per_thread():
     check("worker 1 10" in s.output["stdout"] and "worker 2 20" in s.output["stdout"], "stdout %r" % s.output["stdout"])
 
 
+FAKE_ROOT = r"C:\Fake\Proj"  # the client's side of the mapping, on every platform
+
+
+def session_path_mappings():
+    # The client names the program's folder C:\Fake\Proj; the adapter runs it
+    # from dap_mapped/. Breakpoints and stacks use the client's paths; a file
+    # outside the mapping (dap_helper_outside.py, the standard library) and
+    # code compiled from a string come back as sourceReferences whose text
+    # the adapter serves, and breakpoints on them work.
+    real = os.path.join(HERE, "dap_mapped")
+    client_main = "c:\\fake\\proj\\main.py"  # drive and case as VS Code may send them
+    s = Session()
+    s.ok("initialize", {"adapterID": "protopy"})
+    s.event("initialized")
+    caps_ok = s.request("launch", {"program": client_main, "pathMappings": [{"localRoot": FAKE_ROOT}]})
+    check(not caps_ok["success"] and "remoteRoot" in caps_ok.get("message", ""), "bad mapping: %r" % caps_ok)
+    s.ok("launch", {"program": client_main, "cwd": FAKE_ROOT,
+                    "pathMappings": [{"localRoot": FAKE_ROOT, "remoteRoot": real}]})
+    r = s.ok("setBreakpoints", {"source": {"path": client_main}, "breakpoints": [{"line": 9}]})
+    check(r["breakpoints"][0]["verified"] and r["breakpoints"][0]["source"]["path"] == client_main,
+          "breakpoint by client path %r" % r)
+    s.ok("configurationDone")
+    frames = s.stopped("breakpoint", 9, "<module>")
+    check(frames[0]["source"].get("path", "").lower() == client_main, "client path in the stack %r" % frames[0]["source"])
+    loaded = s.ok("loadedSources")["sources"]
+    by_name = {src["name"]: src for src in loaded}
+    check("main.py" in by_name and by_name["main.py"].get("path", "").lower() == client_main, "main %r" % by_name.get("main.py"))
+    helper = by_name.get("dap_helper_outside.py")
+    check(helper and "path" not in helper and helper.get("sourceReference", 0) > 0
+          and same_path(helper.get("origin", ""), os.path.join(HERE, "dap_helper_outside.py")), "helper %r" % helper)
+    gen = by_name.get("<generated>")
+    check(gen and gen.get("sourceReference", 0) > 0 and "path" not in gen, "generated %r" % gen)
+    lib = [src for src in loaded if src.get("presentationHint") == "deemphasize"]
+    check(lib and all("path" not in src and src.get("sourceReference", 0) > 0 for src in lib),
+          "standard library modules by reference: %r" % lib[:3])
+    events = [e for e in s.pending if e.get("event") == "loadedSource"]
+    check({e["body"]["source"]["name"] for e in events} >= {"main.py", "dap_helper_outside.py", "<generated>"},
+          "loadedSource events %r" % [e["body"]["source"]["name"] for e in events][:10])
+    with open(os.path.join(HERE, "dap_helper_outside.py"), encoding="utf-8") as f:
+        helper_text = f.read()
+    got = s.ok("source", {"sourceReference": helper["sourceReference"], "source": helper})
+    check(got["content"] == helper_text, "helper text %r" % got["content"][:80])
+    got = s.ok("source", {"sourceReference": gen["sourceReference"], "source": gen})
+    check(got["content"] == "def gen_f(x):\n    y = x * 3\n    return y\n", "generated text %r" % got["content"])
+    got = s.ok("source", {"source": {"path": client_main}})
+    check("dap_helper_outside.helper(4)" in got["content"], "source by client path")
+    r = s.ok("setBreakpoints", {"source": {"name": helper["name"], "sourceReference": helper["sourceReference"]},
+                                "breakpoints": [{"line": 2}]})
+    check(r["breakpoints"][0]["verified"] and r["breakpoints"][0]["source"]["sourceReference"] == helper["sourceReference"],
+          "breakpoint on a reference %r" % r)
+    s.ok("setBreakpoints", {"source": {"name": gen["name"], "sourceReference": gen["sourceReference"]},
+                            "breakpoints": [{"line": 2}]})
+    s.ok("continue", {"threadId": 1})
+    frames = s.stopped("breakpoint", 2, "helper")
+    check(frames[0]["source"].get("sourceReference") == helper["sourceReference"] and "path" not in frames[0]["source"],
+          "helper frame %r" % frames[0]["source"])
+    check(frames[1]["source"].get("path", "").lower() == client_main, "caller frame %r" % frames[1]["source"])
+    check(s.evaluate("n", frames[0]["id"]) == "4", "helper locals")
+    s.ok("continue", {"threadId": 1})
+    frames = s.stopped("breakpoint", 2, "gen_f")
+    check(frames[0]["source"].get("sourceReference") == gen["sourceReference"], "generated frame %r" % frames[0]["source"])
+    check(s.evaluate("x", frames[0]["id"]) == "5", "generated locals")
+    s.ok("continue", {"threadId": 1})
+    check(s.finish() == 0, "exit code")
+    check(s.output["stdout"] == "helper 10\ngen 15\n", "stdout %r" % s.output["stdout"])
+
+
 def main():
     failures = 0
     only = sys.argv[3:]
@@ -652,7 +719,7 @@ def main():
                  session_gc_while_stopped, session_exception_raised, session_exception_filters_off,
                  session_exception_user_unhandled, session_threads, session_pause_thread,
                  session_gc_thread_stopped, session_line_conditions, session_exception_conditions,
-                 session_condition_per_thread):
+                 session_condition_per_thread, session_path_mappings):
         if only and test.__name__ not in only:
             continue
         try:
