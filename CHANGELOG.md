@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`include/protoPython/Debugger.h`) that costs nothing outside a session.
   `editor-integration/vscode/` registers it as the debug type `protopy` for
   Python files, next to the Python Debugger extension. See `docs/debugging.md`.
+- **Added: conditions, hit counts and logpoints.** Line breakpoints take a
+  `condition` (a Python expression in the frame), a `hitCondition` (`N`,
+  `== N`, `>= N`, `> N`, `< N`, `<= N`, `% N`; anything else is unverified)
+  and a `logMessage` (`{expr}` interpolated, `{{`/`}}` literal, errors shown
+  in place; never stops). Both exception filters take a condition with the
+  exception bound as `exc` (`supportsExceptionFilterOptions`). A condition
+  that fails stops and reports the error in the stop and on stderr.
+  Conditions run on the stopped thread with the debugger off for it.
 - **Added: exception breakpoints and threads in the debugger.** The
   `raised` (*Raised Exceptions*) and `userUnhandled` (*Uncaught Exceptions*,
   on by default) filters stop at the first frame of the user's code an

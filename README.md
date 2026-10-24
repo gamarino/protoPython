@@ -232,7 +232,11 @@ breakpoints (*Raised Exceptions*, *Uncaught Exceptions* in your code, stopping
 at the raise with the stack intact; iteration's `StopIteration` and other
 internal control flow never stop); every `threading` thread, listed by name,
 each stopping on its own while the others run (step, continue and pause act on
-one thread). Limitations: no conditional or function breakpoints, no
+one thread); conditional breakpoints, hit counts (`N`, `>= N`, `% N`, ...)
+and logpoints (`{expr}` interpolated), and conditions on the exception filters
+(the exception is `exc`: `isinstance(exc, KeyError)`), evaluated with the
+debugger off for that thread; a condition that fails stops and says why.
+Limitations: no function breakpoints, no
 "stop all threads" mode; *Uncaught Exceptions* knows `contextlib.suppress` but
 no other suppressing `with` and does not see handlers in native code; no
 attach; standard input reads end of file;

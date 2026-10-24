@@ -69,6 +69,8 @@ Exception breakpoints come from the adapter: the Breakpoints view shows
 **Raised Exceptions** (off) and **Uncaught Exceptions** (on) checkboxes. Every
 Python thread of the program is listed in the Call Stack view under its
 `threading` name; a stop holds only that thread, and Continue / Step / Pause
-act on the thread selected there.
+act on the thread selected there. Conditional breakpoints, hit counts,
+logpoints and conditions on the exception filters (the exception is `exc`)
+work as in the Python Debugger.
 
 See `docs/debugging.md` in the repository for what works and the limitations.

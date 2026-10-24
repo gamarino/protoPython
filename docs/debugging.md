@@ -119,6 +119,54 @@ evaluates (watches, hovers, the Debug Console). An exception is reported once
 as it propagates; a bare `raise` re-raising it does not stop again, `raise e`
 does.
 
+## Conditions, hit counts and logpoints
+
+Right-click a breakpoint (or the gutter) → **Edit Breakpoint…** / **Add
+Conditional Breakpoint…** / **Add Logpoint…**:
+
+- **Expression** (`condition`): a Python expression evaluated in the frame at
+  the line (its locals, then its globals and builtins); the thread stops when
+  its value is true (`bool()`).
+- **Hit Count** (`hitCondition`), counted per breakpoint over the hits whose
+  condition passed (all threads together):
+
+  | Hit count | Stops on hit |
+  |-----------|--------------|
+  | `N` or `== N` | the N-th only |
+  | `>= N`, `> N` | from the N-th / after the N-th on |
+  | `<= N`, `< N` | up to the N-th / before the N-th |
+  | `% N` | every N-th (N, 2N, ...) |
+
+  Anything else is refused: the breakpoint shows as unverified, with the
+  accepted forms in its message, and is not installed.
+- **Log Message** (`logMessage`): never stops; writes the message to the Debug
+  Console, each `{expression}` replaced by its value in the frame (`str()` of a
+  string, `repr()` of anything else; `<error: NameError: ...>` when it raises).
+  `{{` and `}}` write literal braces. With a condition or a hit count it logs
+  only the hits that pass them.
+
+**Conditions on the exception filters.** Each filter of the Breakpoints view
+has an edit button (**Edit Condition**): a Python expression evaluated in the
+frame the exception is in, with the exception bound as **`exc`** (it shadows a
+variable `exc` of that frame, for the condition only). Examples:
+`isinstance(exc, KeyError)`, `not isinstance(exc, (KeyboardInterrupt, OSError))`,
+`"timeout" in str(exc)`, `n > 3` (a local of the raising frame). *Raised
+Exceptions* is tested first; when its condition is false, *Uncaught
+Exceptions* (if enabled) is tested with its own condition.
+
+**A condition that fails** (a syntax error, or it raises) **stops** the thread,
+as if it were true, and says why: the stop's description and a line on the
+Debug Console's stderr read ``breakpoint condition `...` failed: ZeroDivisionError:
+division by zero`` (``exception breakpoint condition `...` failed: ...`` for a
+filter). A condition is compiled once per text and kept; its syntax error is
+reported the first time it is evaluated (the protocol thread cannot run Python
+code, so not when it is set).
+
+Conditions, log messages, watches, hovers and the Debug Console run on the
+thread that hit the breakpoint, with the debugger switched off for that thread
+while they run: a function they call does not stop at its breakpoints, and an
+exception they raise is not an exception stop.
+
 ## Threads
 
 Each Python thread appears in the Call Stack view with its `threading` name
@@ -140,8 +188,8 @@ outside protoCore's stop-the-world quorum, and its values stay rooted.
 
 ## Limitations
 
-- **No conditional breakpoints, logpoints, hit counts or function
-  breakpoints.** No "stop all threads" mode: a stop holds one thread.
+- **No function or data breakpoints.** No "stop all threads" mode: a stop
+  holds one thread.
 - **Exception filters are approximations of CPython's handler search.** A
   `with` block counts as handling an exception only for `contextlib.suppress`
   (another context manager's `__exit__` is not called to find out, so
@@ -202,8 +250,9 @@ callers still exist (their operand stacks, locals and try blocks intact). For
 expression in its frame and tests it as `EXCEPTION_MATCH` does. With no filter
 on, an exception costs one test of a flag.
 
-Requests: `initialize`, `launch`, `setBreakpoints`, `setExceptionBreakpoints`
-(filters `raised`, `userUnhandled`), `exceptionInfo`, `configurationDone`,
+Requests: `initialize`, `launch`, `setBreakpoints` (with `condition`,
+`hitCondition`, `logMessage`), `setExceptionBreakpoints` (filters `raised`,
+`userUnhandled`, and `filterOptions` with a `condition`), `exceptionInfo`, `configurationDone`,
 `threads`, `stackTrace`, `scopes`, `variables`, `evaluate`, `continue`, `next`,
 `stepIn`, `stepOut`, `pause`, `disconnect`, `terminate`. Events: `initialized`,
 `stopped` (`allThreadsStopped: false`), `thread` (`started`, `exited`),
@@ -216,7 +265,8 @@ Requests: `initialize`, `launch`, `setBreakpoints`, `setExceptionBreakpoints`
 breakpoints, stepping, the stack, variables, evaluation, `stopOnEntry`, more
 than 64 KiB of non-ASCII output, stdin at end of file, an uncaught exception,
 both exception filters (and no stop on internal control flow), two threads at
-one breakpoint, pausing one busy thread, and collections while a thread is held.
+one breakpoint, pausing one busy thread, collections while a thread is held,
+conditions, hit counts and logpoints, and conditions on the exception filters.
 CTest runs it as `protopy_dap_session`:
 
 ```bash
