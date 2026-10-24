@@ -179,6 +179,7 @@ print("Starts with 'Hello':", s.startswith("Hello"))
 | `protopy -c "<code>"` | Run a program passed as a string. |
 | `protopy -m <module>` | Run a module as a script. |
 | `protopy -i` / `protopy --repl` | Start the interactive REPL. |
+| `protopy --dap` | Debug Adapter Protocol server for VS Code (see below). |
 | `protopy -p <dir>` / `--path <dir>` | Append a module search path (repeatable). |
 | `protopy --help` | Show all options. |
 
@@ -190,6 +191,48 @@ as CPython does; `protopy - [args...]` always reads the program from standard in
 Exit status: `0` on success, `64` for a usage error, `65` when the script or module
 cannot be resolved, `70` for an unhandled runtime failure, and `n` when the program
 raises `SystemExit(n)` (also with `-c`).
+
+### Debugging in VS Code
+
+`protopy --dap` is a [Debug Adapter Protocol](https://microsoft.github.io/debug-adapter-protocol/)
+server, and [`editor-integration/vscode/`](editor-integration/vscode/) is a
+small extension that registers it with VS Code as the debug type `protopy` for
+Python files. It coexists with the Python and Python Debugger (debugpy)
+extensions: Python files keep VS Code's grammar and language features, and a
+launch configuration picks the runtime.
+
+Install (Node.js provides `npx`):
+
+```bash
+cd editor-integration/vscode
+npx @vscode/vsce@3.2.1 package --skip-license
+code --install-extension protopy-debug-0.1.0.vsix
+```
+
+The extension runs the `protopy` set in the `protopy.path` setting, else
+`%LOCALAPPDATA%\Programs\proto\bin\protopy.exe` (Windows) or
+`~/.local/bin/protopy` when present, else `protopy` from `PATH`.
+
+Start a session: open a `.py` file, press **F5** and pick
+**protoPython (protopy)**, or add a configuration of type `protopy`
+(**Add Configuration…** → **protoPython**; examples in
+[`examples/.vscode/launch.json`](examples/.vscode/launch.json)):
+
+```json
+{ "type": "protopy", "request": "launch", "name": "protopy: current file",
+  "program": "${file}", "cwd": "${fileDirname}", "stopOnEntry": false }
+```
+
+What works: line breakpoints, continue / step over / step into / step out /
+pause, the call stack with file and line, Locals and Globals with expandable
+lists, dicts, sets and objects, watches, hovers and the Debug Console
+(expressions in the selected frame; statements too), the script's stdout and
+stderr in the Debug Console, `stopOnEntry`, `args`, `cwd`, `env`.
+Limitations: only the script's main thread is debugged; no conditional,
+exception or function breakpoints; no attach; standard input reads end of file;
+assigning to a function's local from the console does not change it; code
+compiled with protopyc and native modules run without stops. Details in
+[docs/debugging.md](docs/debugging.md).
 
 ### Memory
 
@@ -549,6 +592,8 @@ describe the design in detail.
   compiler.
 - [**HPy User Guide**](docs/HPY_USER_GUIDE.md) — the HPy bridge and its current
   limitations.
+- [**Debugging in VS Code**](docs/debugging.md) — `protopy --dap` and the VS Code
+  extension.
 - [**Exceptions**](docs/EXCEPTIONS.md) — the exception model, foreign errors of UMD
   modules, protoCore's errors and the top level.
 - [**GC Bridging**](docs/GC_BRIDGING.md) — keeping protoCore objects alive across

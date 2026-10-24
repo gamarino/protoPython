@@ -1,0 +1,29 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "protopy",
+      "request": "launch",
+      "name": "protopy: current file",
+      "program": "${file}",
+      "cwd": "${fileDirname}",
+      "stopOnEntry": false
+    },
+    {
+      "type": "protopy",
+      "request": "launch",
+      "name": "protopy: current file (stop on entry)",
+      "program": "${file}",
+      "cwd": "${fileDirname}",
+      "stopOnEntry": true
+    },
+    {
+      "type": "protopy",
+      "request": "launch",
+      "name": "protopy: generators.py",
+      "program": "${workspaceFolder}/generators.py",
+      "cwd": "${workspaceFolder}",
+      "args": []
+    }
+  ]
+}

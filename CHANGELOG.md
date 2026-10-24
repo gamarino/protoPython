@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Added: debugging in VS Code.** `protopy --dap` is a Debug Adapter Protocol
+  server (line breakpoints, continue / step over / into / out / pause, the call
+  stack, Locals and Globals with expandable values, evaluate in the selected
+  frame, the script's output in the Debug Console, `stopOnEntry`, `args`,
+  `cwd`, `env`), driven by a per-line hook of the bytecode dispatcher
+  (`include/protoPython/Debugger.h`) that costs nothing outside a session.
+  `editor-integration/vscode/` registers it as the debug type `protopy` for
+  Python files, next to the Python Debugger extension. See `docs/debugging.md`.
+- **Fixed: the line of an `import` statement** was the next line (in
+  tracebacks too): the node took the line of the token after the module name.
+
 ## [1.1.0] - 2026-10-22
 
 **Requires protoCore 3.0.0** (SOVERSION 4), the declared minimum for a build from source; the `.deb` depends on `protocore (>= 3.0.0)`. CI pins protoCore tag `v3.0.0` on every job.

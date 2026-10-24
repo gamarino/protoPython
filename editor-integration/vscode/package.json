@@ -1,0 +1,114 @@
+{
+  "name": "protopy-debug",
+  "displayName": "protoPython Debugger",
+  "description": "Debug Python scripts on protoPython (protopy) from VS Code, through the protopy --dap Debug Adapter Protocol adapter.",
+  "version": "0.1.0",
+  "publisher": "protopython-placeholder",
+  "engines": {
+    "vscode": "^1.66.0"
+  },
+  "categories": [
+    "Debuggers"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onDebugResolve:protopy",
+    "onDebugInitialConfigurations",
+    "onDebugDynamicConfigurations:protopy"
+  ],
+  "contributes": {
+    "configuration": {
+      "title": "protoPython",
+      "properties": {
+        "protopy.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the protopy executable. Empty: the default install location (%LOCALAPPDATA%\\Programs\\proto\\bin\\protopy.exe on Windows, ~/.local/bin/protopy elsewhere), else protopy from PATH."
+        }
+      }
+    },
+    "breakpoints": [
+      {
+        "language": "python"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "protopy",
+        "label": "protoPython (protopy)",
+        "languages": [
+          "python"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "program"
+            ],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "Absolute path to the Python script to run on protopy.",
+                "default": "${file}"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Command-line arguments for the script (sys.argv[1:]).",
+                "default": []
+              },
+              "cwd": {
+                "type": "string",
+                "description": "Working directory of the script. Default: the adapter's (the workspace folder).",
+                "default": "${workspaceFolder}"
+              },
+              "env": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "Environment variables set for the script.",
+                "default": {}
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "description": "Stop at the first line of the script.",
+                "default": false
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "protopy",
+            "request": "launch",
+            "name": "protopy: current file",
+            "program": "${file}",
+            "cwd": "${fileDirname}",
+            "stopOnEntry": false
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "protoPython: Launch current file",
+            "description": "Debug the active Python file on protopy.",
+            "body": {
+              "type": "protopy",
+              "request": "launch",
+              "name": "protopy: current file",
+              "program": "^\"\\${file}\"",
+              "cwd": "^\"\\${fileDirname}\"",
+              "stopOnEntry": false
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gamarino/protoPython"
+  },
+  "license": "MIT"
+}

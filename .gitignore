@@ -60,3 +60,6 @@ repro_output.txt
 
 # Internal working notes (task lists, plans); not part of the repository
 /tasks/
+
+# VS Code extension packages
+*.vsix

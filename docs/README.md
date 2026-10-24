@@ -18,6 +18,7 @@ is still pending.
 | [README.md](../README.md) | Project overview, status, benchmarks, quick start and architecture. |
 | [INSTALLATION.md](INSTALLATION.md) | Building, testing and installing protoPython (Linux), with protoCore built alongside or installed. |
 | [USER_GUIDE.md](USER_GUIDE.md) | `protopy` command line, exit statuses, module search path, REPL, threads, troubleshooting. |
+| [debugging.md](debugging.md) | Debugging scripts in VS Code: `protopy --dap`, the extension, what works and the limitations. |
 | [PYTHON_COMPATIBILITY.md](PYTHON_COMPATIBILITY.md) | Supported syntax, built-in types and modules, and notable differences from CPython. |
 | [CPYTHON_CONFORMANCE.md](CPYTHON_CONFORMANCE.md) | Current conformance status and known divergences from CPython. |
 | [COMPATIBILITY_DASHBOARD.md](COMPATIBILITY_DASHBOARD.md) | Running CPython regression tests with `test/regression/run_and_report.py` and tracking the pass rate. |
