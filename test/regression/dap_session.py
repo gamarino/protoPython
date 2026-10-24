@@ -683,7 +683,7 @@ def session_path_mappings():
     events = [e for e in s.pending if e.get("event") == "loadedSource"]
     check({e["body"]["source"]["name"] for e in events} >= {"main.py", "dap_helper_outside.py", "<generated>"},
           "loadedSource events %r" % [e["body"]["source"]["name"] for e in events][:10])
-    with open(os.path.join(HERE, "dap_helper_outside.py"), encoding="utf-8") as f:
+    with open(os.path.join(HERE, "dap_helper_outside.py"), encoding="utf-8", newline="") as f:  # as on disk
         helper_text = f.read()
     got = s.ok("source", {"sourceReference": helper["sourceReference"], "source": helper})
     check(got["content"] == helper_text, "helper text %r" % got["content"][:80])
