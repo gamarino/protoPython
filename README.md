@@ -206,7 +206,7 @@ Install (Node.js provides `npx`):
 ```bash
 cd editor-integration/vscode
 npx @vscode/vsce@3.2.1 package --skip-license
-code --install-extension protopy-debug-0.2.0.vsix
+code --install-extension protopy-debug-0.3.0.vsix
 ```
 
 The extension runs the `protopy` set in the `protopy.path` setting, else
@@ -236,6 +236,14 @@ one thread); conditional breakpoints, hit counts (`N`, `>= N`, `% N`, ...)
 and logpoints (`{expr}` interpolated), and conditions on the exception filters
 (the exception is `exc`: `isinstance(exc, KeyError)`), evaluated with the
 debugger off for that thread; a condition that fails stops and says why.
+Code without a file the client can open (exec'd strings, files outside
+`pathMappings`) is shown read-only by `sourceReference`, with breakpoints;
+Loaded Scripts lists every module. Remote: run VS Code remotely (Remote -
+SSH / WSL / Dev Containers), or let the extension start
+`ssh ... protopy --dap` / `wsl ... protopy --dap` with `"remote"` and
+debugpy-style `"pathMappings"` (translated by the adapter, for any DAP client).
+JetBrains IDEs: through the LSP4IJ plugin's Debug Adapter Protocol
+configuration (docs/debugging.md; written from its documentation, not tried).
 Limitations: no function breakpoints, no
 "stop all threads" mode; *Uncaught Exceptions* knows `contextlib.suppress` but
 no other suppressing `with` and does not see handlers in native code; no

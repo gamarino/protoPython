@@ -25,7 +25,7 @@ over their F5 default. There is no TypeScript build step and no bundler.
 ```bash
 cd editor-integration/vscode
 npx @vscode/vsce@3.2.1 package --skip-license
-code --install-extension protopy-debug-0.2.0.vsix
+code --install-extension protopy-debug-0.3.0.vsix
 ```
 
 On Linux and macOS you can instead symlink the folder (edits are picked up
@@ -72,5 +72,20 @@ Python thread of the program is listed in the Call Stack view under its
 act on the thread selected there. Conditional breakpoints, hit counts,
 logpoints and conditions on the exception filters (the exception is `exc`)
 work as in the Python Debugger.
+
+## Remote
+
+- Run VS Code itself remotely (Remote - SSH, WSL, Dev Containers) and install
+  protopy and this `.vsix` there: the extension is a `workspace` extension.
+- Or keep VS Code local and start the adapter through a command:
+
+  ```json
+  "remote": { "command": ["ssh", "-T", "-o", "BatchMode=yes", "me@host"], "path": "protopy" },
+  "pathMappings": [{ "localRoot": "${workspaceFolder}", "remoteRoot": "/home/me/project" }]
+  ```
+
+  The extension runs `<command...> <path> --dap`; `pathMappings` (required with
+  `remote`) is applied by the adapter. Snippets: *Launch over SSH*, *Launch in
+  WSL*. The remote shell must print nothing on a non-interactive start.
 
 See `docs/debugging.md` in the repository for what works and the limitations.

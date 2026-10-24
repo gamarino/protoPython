@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`include/protoPython/Debugger.h`) that costs nothing outside a session.
   `editor-integration/vscode/` registers it as the debug type `protopy` for
   Python files, next to the Python Debugger extension. See `docs/debugging.md`.
+- **Added: sources without a file, path mappings, remote launch.** Code
+  compiled from strings (exec, eval, compile) is served by `sourceReference`
+  (the `source` request), and breakpoints can be set on it; `loadedSources` and
+  `loadedSource` events list every module, script and string the program runs;
+  library code is `deemphasize`. `launch.pathMappings` (debugpy's attribute)
+  translates paths both ways in the adapter, longest prefix first, across `\`
+  and `/` and drive-letter case; with mappings, files outside them are served by
+  reference. The VS Code extension (0.3.0) adds `remote: {command, path}` (ssh,
+  wsl, docker exec), `extensionKind: workspace` and SSH / WSL snippets. The
+  debugging guide covers remote debugging and JetBrains IDEs (LSP4IJ).
+- **Fixed: breakpoints in functions whose bytecode equals another file's.**
+  The debugger keyed code by its interned `co_code` tuple, so such functions
+  shared the first one's file and lines.
 - **Added: conditions, hit counts and logpoints.** Line breakpoints take a
   `condition` (a Python expression in the frame), a `hitCondition` (`N`,
   `== N`, `>= N`, `> N`, `< N`, `<= N`, `% N`; anything else is unverified)

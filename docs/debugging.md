@@ -22,7 +22,7 @@ runtime it uses (`"type": "protopy"` or `"type": "debugpy"`).
    ```bash
    cd editor-integration/vscode
    npx @vscode/vsce@3.2.1 package --skip-license
-   code --install-extension protopy-debug-0.2.0.vsix
+   code --install-extension protopy-debug-0.3.0.vsix
    ```
 
 The extension runs the `protopy` named by the setting **protopy.path**
@@ -60,6 +60,8 @@ location above when it exists; otherwise `protopy` from `PATH`.
 | `cwd`         | The script's working directory. |
 | `env`         | Environment variables set for the script. |
 | `stopOnEntry` | Stop at the first line of the script. |
+| `pathMappings` | `[{"localRoot": ..., "remoteRoot": ...}]`: folders this machine and protopy name differently (see [Remote debugging](#remote-debugging)). |
+| `remote`      | VS Code extension only: `{"command": [...], "path": "protopy"}` runs the adapter through ssh, wsl, docker exec, ... |
 
 ## What works
 
@@ -167,6 +169,127 @@ thread that hit the breakpoint, with the debugger switched off for that thread
 while they run: a function they call does not stop at its breakpoints, and an
 exception they raise is not an exception stop.
 
+## Sources without a file
+
+Every frame, breakpoint and loaded source names a file the client can open by
+its `path`. Code that has no file the client can open comes with a
+`sourceReference` instead, and VS Code shows its text (served by the adapter,
+read-only) when a frame or a breakpoint is in it:
+
+- code compiled from a string: `exec(src)`, `eval(src)`, `compile(src,
+  "<generated>", "exec")` and the functions it defines (the name is the pseudo
+  file name, `<string>` by default); the text is kept while the session runs;
+- with `pathMappings`, a file under none of the mappings (the standard library
+  of the remote side, a module outside the mapped folders): its `name` is the
+  file's name and its `origin` the adapter's path.
+
+Breakpoints can be set in those read-only editors: they are sent by
+reference and hit like any other. Standard library and site-packages code is
+marked `deemphasize` (VS Code greys its frames). The **Loaded Scripts** view
+(Run and Debug → ⋯ → Loaded Scripts) lists every source the program ran: the
+script, the modules it imported (standard library included) and code compiled
+from strings, as they load.
+
+protoPython has no frozen or embedded Python sources: the standard library is
+files on disk, so stepping into it shows its file (or, remotely, its text by
+reference). Modules compiled with `protopyc` and native modules still have no
+bytecode and are not seen.
+
+## Remote debugging
+
+**Option 1: the editor runs remotely** (VS Code Remote - SSH, WSL, Dev
+Containers). Install protopy and the extension's `.vsix` on the remote side
+(`code --install-extension` from a remote terminal, or Extensions → *Install
+in SSH: host*); the extension declares `extensionKind: workspace`, so it runs
+there, next to protopy. Paths are the same on both sides: nothing else to set.
+
+**Option 2: only the adapter runs remotely.** The local VS Code starts
+`protopy --dap` through a command whose stdin/stdout carry the protocol, and
+`pathMappings` tells the adapter how the two sides name the project:
+
+```json
+{
+  "type": "protopy", "request": "launch", "name": "protopy: over SSH",
+  "remote": { "command": ["ssh", "-T", "-o", "BatchMode=yes", "me@build-box"],
+              "path": "/home/me/.local/bin/protopy" },
+  "pathMappings": [{ "localRoot": "${workspaceFolder}", "remoteRoot": "/home/me/project" }],
+  "program": "${file}",
+  "cwd": "${workspaceFolder}"
+}
+```
+
+```json
+{
+  "type": "protopy", "request": "launch", "name": "protopy: in WSL",
+  "remote": { "command": ["wsl", "-d", "Ubuntu-24.04", "--"],
+              "path": "/home/me/.local/bin/protopy" },
+  "pathMappings": [{ "localRoot": "${workspaceFolder}", "remoteRoot": "/home/me/project" }],
+  "program": "${file}"
+}
+```
+
+(`docker exec -i <container>` works the same way.) The extension runs
+`<command...> <path> --dap`; the rest is done by the adapter, so any DAP client
+can use the same attributes:
+
+- `program`, `cwd`, breakpoint paths and `source` requests are translated from
+  the client's names to the adapter's; stack frames, breakpoints, loaded sources
+  and the exception traceback back to the client's. A path already on the
+  adapter's side (`/home/me/project/x.py`) is used as is.
+- The longest matching `localRoot` / `remoteRoot` wins; `\` and `/` are
+  converted both ways; a root that looks like a Windows path (`c:\...`,
+  backslashes) matches regardless of case, so VS Code's `c:` and `C:` both work.
+- A file under no mapping is shown by reference (see above), not by a path
+  the client could not open.
+- A mapping without both roots is a launch error; `remote` without
+  `pathMappings` is refused by the extension with an explanation.
+
+The command must give a clean byte stream: the remote shell must print nothing
+on a non-interactive start (no `echo` or motd in `.bashrc` / `.profile` for
+non-interactive shells), and ssh must not ask anything (`-T`, `-o
+BatchMode=yes`, a key in the agent). The script's own output is carried inside
+the protocol, so it is not a problem.
+
+## JetBrains IDEs (IntelliJ IDEA, PyCharm, CLion, ...)
+
+*This section was written from the LSP4IJ plugin's documentation and the
+adapter's protocol behaviour; it has not been clicked through in a JetBrains
+IDE, and menu names may differ between versions.*
+
+JetBrains IDEs debug through Debug Adapter Protocol servers with Red Hat's
+[LSP4IJ](https://github.com/redhat-developer/lsp4ij) plugin (Settings →
+Plugins → Marketplace → LSP4IJ):
+
+1. Run → Edit Configurations… → **+** → **Debug Adapter Protocol**.
+2. *Server* tab: a new DAP server whose command is `protopy --dap` (the full
+   path, e.g. `%LOCALAPPDATA%\Programs\proto\bin\protopy.exe --dap`; remotely,
+   the ssh form `ssh -T -o BatchMode=yes me@host /home/me/.local/bin/protopy
+   --dap`), launched by the IDE (not connected to by socket).
+3. *Mappings* tab: the files it debugs, so breakpoints can be set in them —
+   file name pattern `*.py` (or the Python language / file type).
+4. *Configuration* tab: the working directory, the file to debug, *launch*
+   mode, and the launch parameters as JSON — the same attributes as in a VS Code
+   launch.json:
+
+   ```json
+   { "type": "protopy", "request": "launch", "program": "${file}",
+     "cwd": "${workspaceFolder}", "stopOnEntry": false,
+     "pathMappings": [{ "localRoot": "...", "remoteRoot": "..." }] }
+   ```
+
+   (replace the `${...}` variables with what the plugin offers, or with
+   absolute paths).
+
+In **PyCharm** (and IntelliJ with the Python plugin) this configuration
+coexists with PyCharm's own Python debugger: a *Python* run configuration still
+debugs on CPython with PyCharm's debugger, a *Debug Adapter Protocol* one on
+protoPython. Python files keep PyCharm's highlighting and code insight, so no
+TextMate bundle is needed. The exception filters appear after a first run (the
+adapter sends them at `initialize`); per LSP4IJ's documentation, Pause,
+Loaded Scripts and exceptionInfo are not supported by the plugin itself, while
+breakpoints (with conditions), stepping, variables, evaluation and `source`
+references are.
+
 ## Threads
 
 Each Python thread appears in the Call Stack view with its `threading` name
@@ -202,7 +325,11 @@ outside protoCore's stop-the-world quorum, and its values stay rooted.
 - **Threads not started by Python code are not debugged** (threads a native
   module starts itself). A thread blocked in native code is listed, but shows
   no call stack until it stops (pause it: it stops when it returns to Python).
-- **`launch` only**: no attaching to a running `protopy`.
+- **`launch` only**: no attaching to a running `protopy`. Remote debugging
+  starts protopy through a command (`remote`); it does not attach to one.
+- **Texts of code compiled from strings are kept for the session** (with their
+  code objects): a program that compiles very many distinct strings keeps them
+  all while it is debugged.
 - **Standard input reads end of file.** The adapter's stdin carries the
   protocol, so a script reading `sys.stdin` or calling `input()` gets EOF.
 - **Locals are a snapshot.** Assigning to a function's local variable from the
@@ -250,12 +377,14 @@ callers still exist (their operand stacks, locals and try blocks intact). For
 expression in its frame and tests it as `EXCEPTION_MATCH` does. With no filter
 on, an exception costs one test of a flag.
 
-Requests: `initialize`, `launch`, `setBreakpoints` (with `condition`,
-`hitCondition`, `logMessage`), `setExceptionBreakpoints` (filters `raised`,
+Requests: `initialize`, `launch` (with `pathMappings`), `setBreakpoints` (with
+`condition`, `hitCondition`, `logMessage`; by `path` or `sourceReference`),
+`source`, `loadedSources`, `setExceptionBreakpoints` (filters `raised`,
 `userUnhandled`, and `filterOptions` with a `condition`), `exceptionInfo`, `configurationDone`,
 `threads`, `stackTrace`, `scopes`, `variables`, `evaluate`, `continue`, `next`,
 `stepIn`, `stepOut`, `pause`, `disconnect`, `terminate`. Events: `initialized`,
 `stopped` (`allThreadsStopped: false`), `thread` (`started`, `exited`),
+`loadedSource` (`new`),
 `output`, `exited`, `terminated`.
 
 ## Testing without VS Code
@@ -266,7 +395,9 @@ breakpoints, stepping, the stack, variables, evaluation, `stopOnEntry`, more
 than 64 KiB of non-ASCII output, stdin at end of file, an uncaught exception,
 both exception filters (and no stop on internal control flow), two threads at
 one breakpoint, pausing one busy thread, collections while a thread is held,
-conditions, hit counts and logpoints, and conditions on the exception filters.
+conditions, hit counts and logpoints, conditions on the exception filters, and
+a session through `pathMappings` with a fake client root (client paths, sources
+by reference, loaded sources, breakpoints on references).
 CTest runs it as `protopy_dap_session`:
 
 ```bash
