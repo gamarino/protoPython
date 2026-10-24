@@ -8,7 +8,9 @@
 #include <protoPython/Debugger.h>
 #include <protoCore.h>
 #include <protoPython/CheckedArith.h>
+#include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <cstdint>
 #include <iostream>
 #include <limits>
@@ -5545,6 +5547,7 @@ struct Activation {
         } catch (const proto::ProtoException& raised) {
             const proto::ProtoObject* handled = raised.value();
             noteFrame(handled);
+            if (dbgOn) [[unlikely]] debugException(handled, &tryRange);
             while (stack.size() > tryRange.stackDepth) stack.pop_back();
             if (tryRange.isWithBlock) {
                 stack.push_back(handled);
@@ -5566,6 +5569,12 @@ struct Activation {
     const debugger::CodeInfo* dbgCode = nullptr;
     const proto::ProtoObject* dbgGlobals = nullptr;  // the globals it started with
     PROTOPY_EXC_NOINLINE void debugInstruction(proto::proto_ulong i);
+    // An exception crossing this activation: caught by its try range `caught`,
+    // or (nullptr) leaving it. Reports the first user frame it reaches.
+    PROTOPY_EXC_NOINLINE void debugException(const proto::ProtoObject* exc, const Block* caught);
+    // Whether the except clauses of the try range `b` handle `exc`.
+    bool debugRangeHandles(const Block& b, const proto::ProtoObject* exc);
+    bool ensureDebugCode();
     // The activation's hottest invariants enter as parameters of the same
     // names: a parameter shadows the member and is a true local, which the
     // compiler can keep in a register; a member is reloaded after every call
@@ -6843,6 +6852,8 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             }
         } break;
         case OP_RAISE_VARARGS: {
+            // `raise x` raises x anew, even an exception seen before.
+            if (arg != 0 && dbgOn) [[unlikely]] debugger::detail::forgetSighting();
             if (arg == 0) {
                  const proto::ProtoObject* activeExc = env ? env->getActiveException(ctx) : nullptr;
                  if (!activeExc && !stack.empty()) {
@@ -10530,6 +10541,15 @@ struct DebugStackScope {
 };
 } // namespace
 
+bool Activation::ensureDebugCode() {
+    if (dbgCode) return true;
+    const proto::ProtoObject* code = runningCodeObject(ctx, env, frame, bytecode);
+    dbgCode = debugger::detail::codeInfoFor(ctx, env, code, bytecode);
+    if (!dbgCode) { dbgOn = false; return false; }
+    dbgGlobals = PythonEnvironment::getCurrentGlobals();
+    return true;
+}
+
 void Activation::debugInstruction(proto::proto_ulong i) {
     const proto::proto_ulong prevPc = dbgPc;
     dbgPc = i;
@@ -10537,12 +10557,7 @@ void Activation::debugInstruction(proto::proto_ulong i) {
     // Not while an attribute write group holds unpublished writes: code the
     // debugger runs could observe the receiver between them.
     if (attrGroupState == 1) return;
-    if (!dbgCode) {
-        const proto::ProtoObject* code = runningCodeObject(ctx, env, frame, bytecode);
-        dbgCode = debugger::detail::codeInfoFor(ctx, env, code, bytecode);
-        if (!dbgCode) { dbgOn = false; return; }
-        dbgGlobals = PythonEnvironment::getCurrentGlobals();
-    }
+    if (!ensureDebugCode()) return;
     const proto::proto_ulong k = i / 2;
     const int line = k < dbgCode->lines.size() ? dbgCode->lines[k] : 0;
     if (line <= 0) return;
@@ -10562,6 +10577,156 @@ void Activation::debugInstruction(proto::proto_ulong i) {
     dbgLastLine = line;
     if (frameAnchor) *frameAnchor = frame;
     debugger::detail::dispatchLine(ctx, env, *dbgCode, line, kind, tl_debugStack.size());
+}
+
+namespace {
+debugger::StackEntry debugEntryOf(const Activation* a) {
+    const proto::proto_ulong k = a->dbgPc / 2;
+    const int line = k < a->dbgCode->lines.size() ? a->dbgCode->lines[k] : 0;
+    const proto::ProtoObject* globals = a->dbgGlobals ? a->dbgGlobals : a->frame;
+    return debugger::StackEntry{a->frame, globals, a->ctx, a->dbgCode, line};
+}
+
+// The name of fast slot `slot` of `code` (co_varnames, then co_freevars:
+// the layout PythonEnvironment::forEachFastLocal reads), or "".
+std::string debugSlotName(proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* code, int slot) {
+    if (!code || slot < 0) return std::string();
+    auto nameAt = [&](const proto::ProtoObject* tupleObj, proto::proto_ulong i, proto::proto_ulong& size) -> std::string {
+        TupleView t = (tupleObj && tupleObj != PROTO_NONE) ? PythonEnvironment::tupleView(ctx, tupleObj) : nullptr;
+        size = t ? t->getSize(ctx) : 0;
+        if (!t || i >= size) return std::string();
+        const proto::ProtoObject* nm = t->getAt(ctx, static_cast<int>(i));
+        std::string out;
+        if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, out);
+        return out;
+    };
+    proto::proto_ulong nVar = 0, nFree = 0;
+    std::string n = nameAt(code->getAttribute(ctx, env->getCoVarnamesString()), static_cast<proto::proto_ulong>(slot), nVar);
+    if (!n.empty() || static_cast<proto::proto_ulong>(slot) < nVar) return n;
+    return nameAt(code->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_freevars")),
+                  static_cast<proto::proto_ulong>(slot) - nVar, nFree);
+}
+} // namespace
+
+bool Activation::debugRangeHandles(const Block& b, const proto::ProtoObject* exc) {
+    // A with block handles the exception when its __exit__ suppresses it:
+    // known for contextlib.suppress only (another __exit__ is not called).
+    // Its bound __exit__ is the operand below the block's depth.
+    if (b.isWithBlock) {
+        if (b.stackDepth == 0 || b.stackDepth > stack.top) return false;
+        return debugger::withSuppresses(ctx, env, stack.slots[b.stackDepth - 1], exc);
+    }
+    // The handler region as Compiler::compileTry lays it out: for each except
+    // clause `<type expression> EXCEPTION_MATCH POP_JUMP_IF_FALSE <next>`, a
+    // bare except or a finally clause as POP_TOP x3 SETUP_FINALLY, and
+    // RERAISE 1 when no clause matched. Anything else is taken as handling
+    // the exception (no stop rather than a wrong one).
+    auto nameOf = [&](int idx) -> std::string {
+        if (!names || idx < 0 || static_cast<proto::proto_ulong>(idx) >= names->getSize(ctx)) return std::string();
+        const proto::ProtoObject* nm = names->getAt(ctx, idx);
+        std::string out;
+        if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, out);
+        return out;
+    };
+    proto::proto_ulong pc = b.handlerPc;
+    for (int clause = 0; clause < 256; ++clause) {
+        if (pc + 1 >= n) return true;
+        const int op = bc[pc];
+        if (op == OP_RERAISE) return false;
+        if (op == OP_POP_TOP) {
+            // A finally clause ends by re-raising: its SETUP_FINALLY's
+            // cleanup target follows `RERAISE 1`.
+            const proto::proto_ulong q = pc + 6;
+            if (q + 1 < n && bc[pc + 2] == OP_POP_TOP && bc[pc + 4] == OP_POP_TOP && bc[q] == OP_SETUP_FINALLY) {
+                const int t = bc[q + 1];
+                if (t >= 2 && static_cast<proto::proto_ulong>(t) < n && bc[t - 2] == OP_RERAISE && bc[t - 1] == 1)
+                    return false;
+            }
+            return true;  // a bare except
+        }
+        std::vector<std::string> st;
+        for (int guard = 0; pc + 1 < n && bc[pc] != OP_EXCEPTION_MATCH; ++guard, pc += 2) {
+            if (guard > 64) return true;
+            const int o = bc[pc], a = bc[pc + 1];
+            std::string nm;
+            switch (o) {
+                case OP_LOAD_NAME: case OP_LOAD_GLOBAL:
+                    nm = nameOf(a >> 1);
+                    if (nm.empty()) return true;
+                    st.push_back(nm);
+                    break;
+                case OP_LOAD_FAST: case OP_LOAD_DEREF: case OP_LOAD_CLASSDEREF:
+                    nm = debugSlotName(ctx, env, dbgCode ? dbgCode->codeObject : nullptr, a);
+                    if (nm.empty()) return true;
+                    st.push_back(nm);
+                    break;
+                case OP_LOAD_ATTR:
+                    nm = nameOf(a >> 1);
+                    if (nm.empty() || st.empty()) return true;
+                    st.back() = "(" + st.back() + ")." + nm;
+                    break;
+                case OP_BUILD_TUPLE: {
+                    if (a < 0 || static_cast<std::size_t>(a) > st.size()) return true;
+                    std::string t = "(";
+                    for (std::size_t j = st.size() - static_cast<std::size_t>(a); j < st.size(); ++j) t += st[j] + ", ";
+                    t += ")";
+                    st.resize(st.size() - static_cast<std::size_t>(a));
+                    st.push_back(t);
+                } break;
+                default:
+                    return true;
+            }
+        }
+        if (pc + 3 >= n || st.size() != 1 || bc[pc + 2] != OP_POP_JUMP_IF_FALSE) return true;
+        debugger::Value type;
+        std::string error;
+        if (!debugger::evaluate(ctx, env, debugEntryOf(this), st.back(), false, type, error) || !type.object)
+            return true;
+        bool match;
+        {
+            PythonEnvironment::TransientPin pin(env, type.object);
+            match = env->isException(exc, type.object);
+        }
+        if (match) return true;
+        pc = static_cast<proto::proto_ulong>(bc[pc + 3]);
+    }
+    return true;
+}
+
+void Activation::debugException(const proto::ProtoObject* exc, const Block* caught) {
+    if (!exc || !debugger::detail::exceptionEventsWanted()) return;
+    if (!ensureDebugCode()) return;
+    const proto::proto_ulong k = dbgPc / 2;
+    const int line = k < dbgCode->lines.size() ? dbgCode->lines[k] : 0;
+    if (dbgCode->library) {
+        debugger::detail::noteLibrarySighting(exc, *dbgCode, line);
+        return;
+    }
+    if (!debugger::detail::firstSighting(ctx, env, exc)) return;
+    if (frameAnchor) *frameAnchor = frame;
+    debugger::ExceptionEvent event;
+    event.exception = exc;
+    const int op = dbgPc + 1 < n ? bc[dbgPc] : -1;
+    if (op != OP_RAISE_VARARGS && op != OP_RERAISE) {
+        event.origin = debugger::detail::librarySightingOrigin(exc);
+        if (event.origin.empty()) event.origin = "native code";
+    }
+    event.handledInUserCode = [this, exc, caught]() -> bool {
+        if (caught && debugRangeHandles(*caught, exc)) return true;
+        for (auto it = blockStack.rbegin(); it != blockStack.rend(); ++it)
+            if (!it->isHandler && debugRangeHandles(*it, exc)) return true;
+        // The callers on this thread, up to the first library frame.
+        auto self = std::find(tl_debugStack.rbegin(), tl_debugStack.rend(), this);
+        if (self == tl_debugStack.rend()) return false;
+        for (auto it = std::next(self); it != tl_debugStack.rend(); ++it) {
+            Activation* a = *it;
+            if (!a->ensureDebugCode() || a->dbgCode->library) return false;
+            for (auto b = a->blockStack.rbegin(); b != a->blockStack.rend(); ++b)
+                if (!b->isHandler && a->debugRangeHandles(*b, exc)) return true;
+        }
+        return false;
+    };
+    debugger::detail::dispatchException(ctx, env, event, tl_debugStack.size());
 }
 
 namespace debugger {
@@ -10735,6 +10900,7 @@ const proto::ProtoObject* executeBytecodeRange(
         return act.runLevel(0);
     } catch (const proto::ProtoException& uncaught) {
         act.noteFrame(uncaught.value());
+        if (act.dbgOn) [[unlikely]] act.debugException(uncaught.value(), nullptr);
         throw;
     }
 }

@@ -1,6 +1,7 @@
 #include <protoPython/ThreadModule.h>
 #include <protoPython/ExecutionEngine.h>
 #include <protoPython/PythonEnvironment.h>
+#include <protoPython/Debugger.h>
 #include <protoCore.h>
 #include <iostream>
 #include <thread>
@@ -399,6 +400,8 @@ static const proto::ProtoObject* thread_bootstrap(
         for (proto::proto_ulong i = callableIdx + 1; i < args->getSize(context); ++i)
             argList = argList->appendLast(context, args->getAt(context, static_cast<int>(i)));
         try {
+            // A debug session (protopy --dap) sees the thread from here on.
+            protoPython::debugger::ThreadScope debugged(context, env, callable);
             result = protoPython::invokePythonCallable(context, callable, argList, nullptr);
         } catch (const proto::ProtoException& e) {
             // An exception escaping the thread body does not leave this

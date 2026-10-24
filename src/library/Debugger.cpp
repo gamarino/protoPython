@@ -25,8 +25,37 @@ namespace debugger {
 namespace {
 
 std::atomic<Listener*> g_listener{nullptr};
+std::atomic<bool> g_exceptionEvents{false};
 thread_local bool tl_enabled = false;
 thread_local bool tl_suspended = false;
+
+// The exception that reached a user frame last on this thread, pinned so its
+// address is not reused by a new exception while it is remembered.
+struct Sightings {
+    std::mutex mu;
+    PythonEnvironment* env{nullptr};
+    proto::ProtoRootSet* roots{nullptr};
+};
+Sightings& sightings() {
+    static Sightings* s = new Sightings();  // never destroyed: used at exit
+    return *s;
+}
+thread_local const proto::ProtoObject* tl_seen = nullptr;
+thread_local proto::ProtoRootSet::Handle tl_seenHandle = proto::ProtoRootSet::kNullHandle;
+thread_local proto::ProtoRootSet* tl_seenRoots = nullptr;
+// Where a library frame saw an exception first (not pinned: only compared).
+thread_local const proto::ProtoObject* tl_libSeen = nullptr;
+thread_local std::string tl_libOrigin;
+
+void dropSighting() {
+    Sightings& s = sightings();
+    std::lock_guard<std::mutex> lk(s.mu);
+    if (tl_seenHandle != proto::ProtoRootSet::kNullHandle && tl_seenRoots && tl_seenRoots == s.roots)
+        s.roots->remove(tl_seenHandle);
+    tl_seenHandle = proto::ProtoRootSet::kNullHandle;
+    tl_seenRoots = nullptr;
+    tl_seen = nullptr;
+}
 
 // Code objects seen while debugging, by their co_code tuple (what the
 // dispatcher has at hand). The code objects are pinned so a tuple is never
@@ -36,6 +65,7 @@ struct CodeCache {
     PythonEnvironment* env{nullptr};
     proto::ProtoRootSet* roots{nullptr};
     std::unordered_map<const void*, std::unique_ptr<CodeInfo>> byKey;
+    std::string stdlibPrefix;  // normalizePath(stdlib) + '/', for CodeInfo::library
 };
 CodeCache& codeCache() {
     static CodeCache* cache = new CodeCache();  // never destroyed: used at exit
@@ -185,6 +215,60 @@ def _dap_eval(expr, g, l, allow_exec):
     except BaseException as e:
         return (False, None, '%s: %s' % (type(e).__name__, e), '', False)
 
+def _dap_exc_info(e):
+    try:
+        t = type(e)
+        qn = getattr(t, '__qualname__', None) or getattr(t, '__name__', '?')
+        mod = getattr(t, '__module__', None)
+        name = qn if mod in (None, '', 'builtins') else '%s.%s' % (mod, qn)
+    except BaseException:
+        name = '?'
+    try:
+        msg = str(e)
+    except BaseException as x:
+        msg = '<str() failed: %s>' % type(x).__name__
+    internal = False
+    try:
+        if isinstance(e, (StopIteration, StopAsyncIteration, GeneratorExit)):
+            internal = True
+        elif isinstance(e, SystemExit) and e.code in (None, 0):
+            internal = True
+    except BaseException:
+        pass
+    return (str(name), msg if isinstance(msg, str) else '', internal)
+
+def _dap_with_suppresses(x, e):
+    try:
+        s = getattr(x, '__self__', None)
+        t = type(s)
+        if getattr(t, '__module__', None) == 'contextlib' and t.__name__ == 'suppress':
+            return isinstance(e, s._exceptions)
+    except BaseException:
+        pass
+    return False
+
+def _dap_callable_thread_name(c):
+    try:
+        n = getattr(getattr(c, '__self__', None), 'name', None)
+        if isinstance(n, str):
+            return n
+        n = getattr(c, '__name__', None)
+        return n if isinstance(n, str) else ''
+    except BaseException:
+        return ''
+
+def _dap_current_thread_name():
+    try:
+        import sys
+        th = sys.modules.get('threading')
+        if th is None:
+            return ''
+        t = th._active.get(th.get_ident())
+        n = getattr(t, 'name', None)
+        return n if isinstance(n, str) else ''
+    except BaseException:
+        return ''
+
 def _dap_flush():
     import sys
     for s in (sys.stdout, sys.stderr):
@@ -224,7 +308,14 @@ const proto::ProtoObject* call(proto::ProtoContext* ctx, const proto::ProtoObjec
 
 // The helper function `name`, or nullptr (an error is reported on stderr once).
 const proto::ProtoObject* helper(proto::ProtoContext* ctx, PythonEnvironment* env, const char* name) {
-    std::lock_guard<std::mutex> lk(g_helpersMu);
+    // Several threads may stop (and inspect) at once. The first one compiles
+    // the helpers, allocating: a thread waiting for it here is out of the
+    // collector's quorum, or a collection that compile starts never begins.
+    std::unique_lock<std::mutex> lk(g_helpersMu, std::try_to_lock);
+    if (!lk.owns_lock()) {
+        proto::ProtoContext::UnmanagedScope unmanaged(ctx);
+        lk.lock();
+    }
     Helpers& h = helpers();
     if (h.env != env || !h.roots) {
         h.env = env;
@@ -247,6 +338,7 @@ const proto::ProtoObject* helper(proto::ProtoContext* ctx, PythonEnvironment* en
     }
     if (h.ns == proto::ProtoRootSet::kNullHandle) return nullptr;
     const proto::ProtoObject* ns = h.roots->resolve(h.ns);
+    lk.unlock();
     if (!ns) return nullptr;
     try {
         const proto::ProtoObject* f = env->callMethod(ctx, ns, PythonEnvironment::getInternedString(ctx, "__getitem__"),
@@ -389,6 +481,18 @@ const CodeInfo* detail::codeInfoFor(proto::ProtoContext* ctx, PythonEnvironment*
     if (info->file.empty()) return nullptr;
     info->path = normalizePath(info->file);
     info->displayPath = displayPath(info->file);
+    {
+        std::string prefix;
+        {
+            std::lock_guard<std::mutex> lk(cache.mu);
+            if (cache.env == env) prefix = cache.stdlibPrefix;
+        }
+        if (prefix.empty() && !env->getStdLibPath().empty()) prefix = normalizePath(env->getStdLibPath()) + "/";
+        const std::string& p = info->path;
+        info->library = (!prefix.empty() && p.compare(0, prefix.size(), prefix) == 0)
+            || p.find("/site-packages/") != std::string::npos || p.find("/dist-packages/") != std::string::npos
+            || p.compare(0, 7, "<frozen") == 0;
+    }
     info->name = toUtf8(ctx, codeObj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_qualname")));
     if (info->name.empty()) info->name = toUtf8(ctx, codeObj->getAttribute(ctx, env->getCoNameString()));
     if (info->name.empty()) info->name = "<module>";
@@ -402,6 +506,7 @@ const CodeInfo* detail::codeInfoFor(proto::ProtoContext* ctx, PythonEnvironment*
         cache.byKey.clear();
         cache.env = env;
         cache.roots = env->getSpace() ? env->getSpace()->createRootSet("protopy-debugger-code") : nullptr;
+        cache.stdlibPrefix = env->getStdLibPath().empty() ? std::string() : normalizePath(env->getStdLibPath()) + "/";
     }
     auto it = cache.byKey.find(key);
     if (it != cache.byKey.end()) return it->second.get();
@@ -420,7 +525,138 @@ void detail::dispatchLine(proto::ProtoContext* ctx, PythonEnvironment* env, cons
     l->onLine(ctx, env, code, line, kind, depth);
 }
 
+bool detail::exceptionEventsWanted() {
+    return g_exceptionEvents.load(std::memory_order_relaxed) && threadWantsEvents();
+}
+
+bool detail::firstSighting(proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* exception) {
+    (void)ctx;
+    if (!exception) return false;
+    if (exception == tl_seen) return false;
+    dropSighting();
+    Sightings& s = sightings();
+    std::lock_guard<std::mutex> lk(s.mu);
+    if (s.env != env || !s.roots) {
+        s.env = env;
+        s.roots = env && env->getSpace() ? env->getSpace()->createRootSet("protopy-debugger-exceptions") : nullptr;
+    }
+    tl_seen = exception;
+    if (s.roots) {
+        tl_seenRoots = s.roots;
+        tl_seenHandle = s.roots->add(exception);
+    }
+    return true;
+}
+
+void detail::forgetSighting() {
+    if (tl_seen) dropSighting();
+    tl_libSeen = nullptr;
+}
+
+void detail::noteLibrarySighting(const proto::ProtoObject* exception, const CodeInfo& code, int line) {
+    if (exception == tl_libSeen || exception == tl_seen) return;
+    tl_libSeen = exception;
+    std::string file = code.displayPath;
+    const auto slash = file.find_last_of("/\\");
+    if (slash != std::string::npos) file = file.substr(slash + 1);
+    tl_libOrigin = code.name + " (" + file + ":" + std::to_string(line) + ")";
+}
+
+std::string detail::librarySightingOrigin(const proto::ProtoObject* exception) {
+    return exception && exception == tl_libSeen ? tl_libOrigin : std::string();
+}
+
+void detail::dispatchException(proto::ProtoContext* ctx, PythonEnvironment* env, const ExceptionEvent& event,
+                               std::size_t depth) {
+    Listener* l = g_listener.load(std::memory_order_acquire);
+    if (!l || tl_suspended) return;
+    SuspendScope quiet;
+    l->onException(ctx, env, event, depth);
+}
+
+void setExceptionEvents(bool enable) { g_exceptionEvents.store(enable, std::memory_order_release); }
+
+ThreadScope::ThreadScope(proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* callable) {
+    Listener* l = g_listener.load(std::memory_order_acquire);
+    if (!l || !env) return;
+    std::string name;
+    {
+        SuspendScope quiet;
+        if (const proto::ProtoObject* fn = helper(ctx, env, "_dap_callable_thread_name")) {
+            try {
+                name = toUtf8(ctx, call(ctx, fn, {callable}));
+            } catch (const proto::ProtoException&) {
+            }
+        }
+        listener_ = l;
+        l->onThreadStart(ctx, env, name);
+    }
+    tl_enabled = true;
+}
+
+ThreadScope::~ThreadScope() {
+    if (!listener_) return;
+    tl_enabled = false;
+    dropSighting();
+    tl_libSeen = nullptr;
+    // The session may have ended (and removed its listener) meanwhile; the
+    // listener object itself outlives every thread (DAPServer).
+    listener_->onThreadExit();
+}
+
+bool describeException(proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* exception,
+                       ExceptionDescription& out) {
+    SuspendScope quiet;
+    const proto::ProtoObject* fn = helper(ctx, env, "_dap_exc_info");
+    if (!fn) return false;
+    try {
+        const proto::ProtoObject* r = call(ctx, fn, {exception});
+        PythonEnvironment::TransientPin pin(env, r);
+        TupleView t = (r && r != PROTO_NONE) ? PythonEnvironment::tupleView(ctx, r) : nullptr;
+        if (!t || t->getSize(ctx) < 3) return false;
+        out.typeName = toUtf8(ctx, t->getAt(ctx, 0));
+        out.message = toUtf8(ctx, t->getAt(ctx, 1));
+        out.internal = t->getAt(ctx, 2) == PROTO_TRUE;
+        return true;
+    } catch (const proto::ProtoException&) {
+        return false;
+    }
+}
+
+bool withSuppresses(proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* exitMethod,
+                    const proto::ProtoObject* exception) {
+    if (!exitMethod || exitMethod == PROTO_NONE) return false;
+    SuspendScope quiet;
+    const proto::ProtoObject* fn = helper(ctx, env, "_dap_with_suppresses");
+    if (!fn) return false;
+    try {
+        return call(ctx, fn, {exitMethod, exception}) == PROTO_TRUE;
+    } catch (const proto::ProtoException&) {
+        return false;
+    }
+}
+
+std::string currentThreadName(proto::ProtoContext* ctx, PythonEnvironment* env) {
+    SuspendScope quiet;
+    const proto::ProtoObject* fn = helper(ctx, env, "_dap_current_thread_name");
+    if (!fn) return std::string();
+    try {
+        return toUtf8(ctx, call(ctx, fn, {}));
+    } catch (const proto::ProtoException&) {
+        return std::string();
+    }
+}
+
 void detail::environmentClosing(PythonEnvironment* env) {
+    {
+        Sightings& s = sightings();
+        std::lock_guard<std::mutex> lk(s.mu);
+        if (s.env == env) {
+            if (s.roots && env->getSpace()) env->getSpace()->destroyRootSet(s.roots);
+            s.roots = nullptr;
+            s.env = nullptr;
+        }
+    }
     {
         CodeCache& cache = codeCache();
         std::lock_guard<std::mutex> lk(cache.mu);
