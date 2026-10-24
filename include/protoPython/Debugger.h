@@ -177,6 +177,18 @@ bool children(proto::ProtoContext* ctx, PythonEnvironment* env, const proto::Pro
  *  exec'd when it is not an expression. On failure `error` holds "Type: message". */
 bool evaluate(proto::ProtoContext* ctx, PythonEnvironment* env, const StackEntry& frame,
               const std::string& expression, bool allowExec, Value& out, std::string& error);
+/** A breakpoint condition evaluated in the frame: bool(eval(expression)), with
+ *  `bindName` (when not null) bound to `bindValue` in the namespace the
+ *  expression sees (shadowing a local of that name). Compiled once per text. */
+enum class ConditionResult { True, False, Error };
+ConditionResult evaluateCondition(proto::ProtoContext* ctx, PythonEnvironment* env, const StackEntry& frame,
+                                  const std::string& expression, const char* bindName,
+                                  const proto::ProtoObject* bindValue, std::string& error);
+/** A logpoint's message: each `{expression}` replaced by str() of its value in
+ *  the frame (`<error: Type: message>` when it raises); `{{` and `}}` are
+ *  literal braces. */
+std::string interpolateLogMessage(proto::ProtoContext* ctx, PythonEnvironment* env, const StackEntry& frame,
+                                  const std::string& message);
 /** sys.stdout.flush() and sys.stderr.flush(), errors ignored. */
 void flushStandardStreams(proto::ProtoContext* ctx, PythonEnvironment* env);
 

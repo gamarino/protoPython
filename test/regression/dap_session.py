@@ -22,6 +22,9 @@ Sessions:
   * dap_threads.py: two threads at one breakpoint (one-thread stops, stepping
     one while the other stays held); dap_threads_busy.py: pausing one busy
     thread while main runs, and several collections while a thread is held.
+  * dap_conditions.py: line conditions, hit counts and logpoints, conditions
+    on the exception filters (exc bound), failing conditions, a condition
+    calling a function with a breakpoint, a condition evaluated per thread.
 
 Paths are given as VS Code gives them on Windows (lower-case drive letter).
 Every byte the adapter writes must belong to a Content-Length frame. A
@@ -186,7 +189,8 @@ class Session:
             if m.get("type") == "event" and m.get("event") != "output":
                 self.pending.append(m)
 
-    def start(self, program, breakpoints, stop_on_entry=False, exception_filters=None, args=None, env=None):
+    def start(self, program, breakpoints, stop_on_entry=False, exception_filters=None, args=None, env=None,
+              filter_options=None, extra_breakpoints=None):
         caps = self.ok("initialize", {"adapterID": "protopy", "pathFormat": "path",
                                       "linesStartAt1": True, "columnsStartAt1": True})
         check(caps.get("supportsConfigurationDoneRequest"), "no configurationDone support")
@@ -197,9 +201,14 @@ class Session:
             launch["env"] = env
         self.ok("launch", launch)
         result = self.ok("setBreakpoints", {"source": {"path": program},
-                                            "breakpoints": [{"line": n} for n in breakpoints]})
+                                            "breakpoints": [b if isinstance(b, dict) else {"line": b}
+                                                            for b in breakpoints]})
+        self.bp_result = result["breakpoints"]
+        for path, bps in (extra_breakpoints or {}).items():
+            self.ok("setBreakpoints", {"source": {"path": path}, "breakpoints": bps})
         if exception_filters is not None:
-            self.ok("setExceptionBreakpoints", {"filters": exception_filters})
+            self.ok("setExceptionBreakpoints", {"filters": exception_filters,
+                                                "filterOptions": filter_options or []})
         self.ok("configurationDone")
         return [b["line"] for b in result["breakpoints"]]
 
@@ -516,13 +525,134 @@ def session_gc_thread_stopped():
     check("kept 2000" in s.output["stdout"], "stdout %r" % s.output["stdout"])
 
 
+def collect_stops(s, expr):
+    """Continues every stop until the program ends: (reason, thread, value of
+    `expr` in the top frame, description) of each stop, and the exit code."""
+    stops = []
+    while True:
+        m = None
+        for i, e in enumerate(s.pending):
+            if e.get("event") in ("stopped", "exited"):
+                m = s.pending.pop(i)
+                break
+        if m is None:
+            m = s.read()
+            check(m is not None, "adapter closed the stream")
+            if m.get("type") != "event" or m.get("event") not in ("stopped", "exited"):
+                if m.get("type") == "event" and m.get("event") != "output":
+                    s.pending.append(m)
+                continue
+        if m["event"] == "exited":
+            s.pending.append(m)
+            return stops, s.finish()
+        b = m["body"]
+        frames = s.ok("stackTrace", {"threadId": b["threadId"]})["stackFrames"]
+        r = s.request("evaluate", {"expression": expr, "frameId": frames[0]["id"], "context": "watch"})
+        stops.append((b["reason"], b["threadId"], r["body"]["result"] if r.get("success") else None,
+                      b.get("description", "")))
+        s.ok("continue", {"threadId": b["threadId"]})
+
+
+def session_line_conditions():
+    # condition, hitCondition (N, >= N, % N), the condition's errors, an
+    # invalid hitCondition, and a logpoint: which iterations of a loop stop.
+    prog = client_path("dap_conditions.py")
+    cases = [
+        ({"condition": "i == 4"}, ["4"]),
+        ({"condition": "i > 100"}, []),
+        ({"hitCondition": "3"}, ["3"]),
+        ({"hitCondition": ">= 5"}, ["5", "6"]),
+        ({"hitCondition": "% 2"}, ["2", "4", "6"]),
+        ({"condition": "i % 2 == 1", "hitCondition": "2"}, ["3"]),
+    ]
+    for spec, expected in cases:
+        s = Session()
+        s.start(prog, [dict(spec, line=12)])
+        check(s.caps.get("supportsConditionalBreakpoints") and s.caps.get("supportsHitConditionalBreakpoints")
+              and s.caps.get("supportsLogPoints"), "capabilities %r" % s.caps)
+        stops, code = collect_stops(s, "i")
+        check(code == 0, "exit code")
+        check([v for _, _, v, _ in stops] == expected, "%r stopped at i in %r, expected %r" % (spec, stops, expected))
+
+    s = Session()
+    s.start(prog, [{"line": 12, "condition": "1 / 0"}])
+    stops, code = collect_stops(s, "i")
+    check(len(stops) == 6 and "breakpoint condition `1 / 0` failed: ZeroDivisionError" in stops[0][3],
+          "condition errors stop and say so: %r" % stops[:1])
+    check("failed: ZeroDivisionError" in s.output["stderr"], "condition error output %r" % s.output["stderr"])
+
+    s = Session()
+    s.start(prog, [{"line": 12, "hitCondition": "every 2"}])
+    check(s.bp_result[0]["verified"] is False and "hit count" in s.bp_result[0].get("message", ""),
+          "invalid hitCondition: %r" % s.bp_result)
+    stops, code = collect_stops(s, "i")
+    check(stops == [] and code == 0, "an invalid hitCondition installs nothing: %r" % stops)
+
+    # A logpoint never stops; {expr} interpolated, {{ }} literal, an error
+    # shown in place, a condition filters what is logged.
+    s = Session()
+    s.start(prog, [{"line": 12, "logMessage": "i={i} {{lit}} t={total} bad={nope}", "condition": "i < 3"}])
+    stops, code = collect_stops(s, "i")
+    check(stops == [] and code == 0, "a logpoint stopped: %r" % stops)
+    lines = [l for l in s.output["console"].splitlines() if l.startswith("i=")]
+    check(lines == ["i=1 {lit} t=0 bad=<error: NameError: name 'nope' is not defined>",
+                    "i=2 {lit} t=1 bad=<error: NameError: name 'nope' is not defined>"],
+          "log lines %r" % lines)
+    check("total 21" in s.output["stdout"], "stdout %r" % s.output["stdout"])
+
+
+def session_exception_conditions():
+    # A filter's condition sees the exception as `exc` in the raising frame.
+    prog = client_path("dap_conditions.py")
+    s = Session()
+    s.start(prog, [], exception_filters=[],
+            filter_options=[{"filterId": "raised", "condition": "isinstance(exc, KeyError) and kind is KeyError"}])
+    filters = {f["filter"]: f for f in s.caps["exceptionBreakpointFilters"]}
+    check(s.caps.get("supportsExceptionFilterOptions") and filters["raised"].get("supportsCondition")
+          and "exc" in filters["raised"].get("conditionDescription", ""), "capabilities %r" % filters)
+    stops, code = collect_stops(s, "kind.__name__")
+    check([(r, v) for r, _, v, _ in stops] == [("exception", "'KeyError'")], "stops %r" % stops)
+    check(code == 0, "exit code")
+
+    s = Session()
+    s.start(prog, [], exception_filters=[], filter_options=[{"filterId": "raised", "condition": "isinstance(exc, OSError)"}])
+    stops, code = collect_stops(s, "kind")
+    check(stops == [] and code == 0, "a false condition stopped: %r" % stops)
+
+    s = Session()
+    s.start(prog, [], exception_filters=[], filter_options=[{"filterId": "raised", "condition": "exc.no_such"}])
+    stops, code = collect_stops(s, "kind.__name__")
+    check(len(stops) == 2 and all("exception breakpoint condition `exc.no_such` failed: AttributeError" in d
+                                  for _, _, _, d in stops), "a failing condition stops: %r" % stops)
+    check("failed: AttributeError" in s.output["stderr"], "stderr %r" % s.output["stderr"])
+
+    # The condition calls a function with a breakpoint: no stop there.
+    s = Session()
+    s.start(prog, [6], exception_filters=[],
+            filter_options=[{"filterId": "raised", "condition": "probe(1) or isinstance(exc, KeyError)"}])
+    stops, code = collect_stops(s, "kind.__name__")
+    check([(r, v) for r, _, v, _ in stops] == [("exception", "'KeyError'")], "stops %r" % stops)
+
+
+def session_condition_per_thread():
+    # One conditional breakpoint, two threads: each evaluates it on its own
+    # values, so only the thread with k == 2 stops.
+    prog = client_path("dap_conditions.py")
+    s = Session()
+    s.start(prog, [{"line": 25, "condition": "k == 2"}], args=["threads"])
+    stops, code = collect_stops(s, "k")
+    check([(r, v) for r, _, v, _ in stops] == [("breakpoint", "2")] and stops[0][1] != 1, "stops %r" % stops)
+    check("worker 1 10" in s.output["stdout"] and "worker 2 20" in s.output["stdout"], "stdout %r" % s.output["stdout"])
+
+
 def main():
     failures = 0
     only = sys.argv[3:]
     for test in (session_breakpoints_and_stepping, session_stop_on_entry, session_output, session_pause,
                  session_gc_while_stopped, session_exception_raised, session_exception_filters_off,
                  session_exception_user_unhandled, session_threads, session_pause_thread,
-                 session_gc_thread_stopped):
+                 session_gc_thread_stopped, session_line_conditions, session_exception_conditions,
+                 session_condition_per_thread):
         if only and test.__name__ not in only:
             continue
         try:

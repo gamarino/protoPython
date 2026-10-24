@@ -35,6 +35,7 @@
 #include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <deque>
 #include <filesystem>
 #include <fstream>
@@ -110,6 +111,61 @@ std::optional<Json> readMessage(std::istream& in) {
 // --- the session ---------------------------------------------------------------
 
 enum class Step { None, In, Over, Out };
+
+/** A breakpoint's hitCondition: N or == N, >= N, > N, < N, <= N, % N. */
+struct HitCondition {
+    enum Op { None, Eq, Ge, Gt, Lt, Le, Mod } op = None;
+    long long n = 0;
+    bool passes(long long hits) const {
+        switch (op) {
+            case None: return true;
+            case Eq:   return hits == n;
+            case Ge:   return hits >= n;
+            case Gt:   return hits > n;
+            case Lt:   return hits < n;
+            case Le:   return hits <= n;
+            case Mod:  return n > 0 && hits % n == 0;
+        }
+        return true;
+    }
+    // False when `text` is not one of the forms above.
+    static bool parse(const std::string& text, HitCondition& out) {
+        std::size_t i = 0;
+        auto skip = [&] { while (i < text.size() && std::isspace(static_cast<unsigned char>(text[i]))) ++i; };
+        skip();
+        out = HitCondition{};
+        if (i >= text.size()) return true;  // empty: none
+        auto at = [&](const char* s) { return text.compare(i, std::strlen(s), s) == 0; };
+        if (at("==")) { out.op = Eq; i += 2; }
+        else if (at(">=")) { out.op = Ge; i += 2; }
+        else if (at("<=")) { out.op = Le; i += 2; }
+        else if (at(">")) { out.op = Gt; i += 1; }
+        else if (at("<")) { out.op = Lt; i += 1; }
+        else if (at("%")) { out.op = Mod; i += 1; }
+        else out.op = Eq;
+        skip();
+        const std::size_t start = i;
+        long long n = 0;
+        while (i < text.size() && std::isdigit(static_cast<unsigned char>(text[i]))) {
+            n = n * 10 + (text[i] - '0');
+            if (n > 1000000000000LL) return false;
+            ++i;
+        }
+        if (i == start) return false;
+        skip();
+        if (i != text.size()) return false;
+        if (out.op == Mod && n == 0) return false;
+        out.n = n;
+        return true;
+    }
+};
+
+struct Breakpoint {
+    std::string condition;
+    HitCondition hit;
+    std::string logMessage;
+    long long hits = 0;  // hits whose condition passed
+};
 
 struct FrameSnap {
     int id;
@@ -253,14 +309,59 @@ public:
                 case Step::None:  break;
             }
         }
+        Json extra = Json::object();
         if (!reason && isLine && anyBreakpoint_.load(std::memory_order_relaxed)) {
-            std::lock_guard<std::mutex> lk(bpMu_);
-            auto it = breakpoints_.find(code.path);
-            if (it != breakpoints_.end() && it->second.count(line)) reason = "breakpoint";
+            std::optional<Breakpoint> bp;
+            {
+                std::lock_guard<std::mutex> lk(bpMu_);
+                auto it = breakpoints_.find(code.path);
+                if (it != breakpoints_.end()) {
+                    auto b = it->second.find(line);
+                    if (b != it->second.end()) bp = b->second;
+                }
+            }
+            if (bp && breakpointStops(ctx, env, *bp, code.path, line, extra)) reason = "breakpoint";
         }
         if (!reason) return;
         ts->step.store(Step::None);
-        hold(ctx, env, ts, reason, depth, Json::object());
+        hold(ctx, env, ts, reason, depth, extra);
+    }
+
+    // A breakpoint's condition, hit count and log message, on the thread at
+    // the line (its top frame). True when it stops.
+    bool breakpointStops(proto::ProtoContext* ctx, PythonEnvironment* env, const Breakpoint& bp,
+                         const std::string& path, int line, Json& extra) {
+        if (bp.condition.empty() && bp.hit.op == HitCondition::None && bp.logMessage.empty()) return true;
+        std::vector<debugger::StackEntry> stack;
+        debugger::currentStack(stack);
+        if (stack.empty()) return true;
+        if (!bp.condition.empty()) {
+            std::string error;
+            const auto r = debugger::evaluateCondition(ctx, env, stack[0], bp.condition, nullptr, nullptr, error);
+            if (r == debugger::ConditionResult::Error) {
+                const std::string msg = "breakpoint condition `" + bp.condition + "` failed: " + error;
+                sendOutput("stderr", msg + "\n");
+                extra["description"] = Json(msg);
+                return true;
+            }
+            if (r == debugger::ConditionResult::False) return false;
+        }
+        long long hits = 1;
+        {
+            std::lock_guard<std::mutex> lk(bpMu_);
+            auto it = breakpoints_.find(path);
+            if (it != breakpoints_.end()) {
+                auto b = it->second.find(line);
+                if (b != it->second.end()) hits = ++b->second.hits;
+            }
+        }
+        if (!bp.hit.passes(hits)) return false;
+        if (!bp.logMessage.empty()) {
+            debugger::flushStandardStreams(ctx, env);
+            sendOutput("console", debugger::interpolateLogMessage(ctx, env, stack[0], bp.logMessage) + "\n");
+            return false;
+        }
+        return true;
     }
 
     void onException(proto::ProtoContext* ctx, PythonEnvironment* env, const debugger::ExceptionEvent& event,
@@ -273,12 +374,39 @@ public:
         debugger::ExceptionDescription d;
         if (!debugger::describeException(ctx, env, event.exception, d)) d.typeName = "exception";
         if (d.internal) return;
+        std::string conditionRaised, conditionUserUnhandled;
+        {
+            std::lock_guard<std::mutex> lk(bpMu_);
+            conditionRaised = conditionRaised_;
+            conditionUserUnhandled = conditionUserUnhandled_;
+        }
+        // A filter's condition, in the frame the exception is in, with the
+        // exception bound as `exc`. A condition that fails stops (and says so).
+        std::string conditionError;
+        auto passes = [&](const std::string& condition) {
+            if (condition.empty()) return true;
+            std::vector<debugger::StackEntry> stack;
+            debugger::currentStack(stack);
+            if (stack.empty()) return true;
+            std::string error;
+            const auto r = debugger::evaluateCondition(ctx, env, stack[0], condition, "exc", event.exception, error);
+            if (r == debugger::ConditionResult::Error) {
+                conditionError = "exception breakpoint condition `" + condition + "` failed: " + error;
+                return true;
+            }
+            return r == debugger::ConditionResult::True;
+        };
         const char* mode = nullptr;
-        if (raised) mode = "always";
-        else if (event.handledInUserCode && !event.handledInUserCode()) mode = "userUnhandled";
+        if (raised && passes(conditionRaised)) mode = "always";
+        else if (userUnhandled && event.handledInUserCode && !event.handledInUserCode() && passes(conditionUserUnhandled))
+            mode = "userUnhandled";
         if (!mode) return;
         std::string description = d.message.empty() ? d.typeName : d.typeName + ": " + d.message;
         if (!event.origin.empty()) description += "  (raised in " + event.origin + ")";
+        if (!conditionError.empty()) {
+            sendOutput("stderr", conditionError + "\n");
+            description += " [" + conditionError + "]";
+        }
         {
             std::lock_guard<std::mutex> lk(mu_);
             ts->hasException = true;
@@ -475,18 +603,28 @@ private:
             Json filters = Json::array();
             filters.push(obj({{"filter", Json("raised")},
                               {"label", Json("Raised Exceptions")},
+                              {"supportsCondition", Json(true)},
+                              {"conditionDescription", Json("A Python expression; the exception is `exc`. "
+                                                            "Example: isinstance(exc, KeyError)")},
                               {"description", Json("Stop where an exception is raised in your code, or reaches it "
                                                    "from a library, even when it is handled.")},
                               {"default", Json(false)}}));
             filters.push(obj({{"filter", Json("userUnhandled")},
                               {"label", Json("Uncaught Exceptions")},
+                              {"supportsCondition", Json(true)},
+                              {"conditionDescription", Json("A Python expression; the exception is `exc`. "
+                                                            "Example: not isinstance(exc, KeyboardInterrupt)")},
                               {"description", Json("Stop where an exception is raised when no try/except of your "
                                                    "code on that thread handles it.")},
                               {"default", Json(true)}}));
             Json caps = obj({{"supportsConfigurationDoneRequest", Json(true)},
                              {"supportsEvaluateForHovers", Json(true)},
                              {"supportsTerminateRequest", Json(true)},
-                             {"supportsExceptionInfoRequest", Json(true)}});
+                             {"supportsExceptionInfoRequest", Json(true)},
+                             {"supportsExceptionFilterOptions", Json(true)},
+                             {"supportsConditionalBreakpoints", Json(true)},
+                             {"supportsHitConditionalBreakpoints", Json(true)},
+                             {"supportsLogPoints", Json(true)}});
             caps["exceptionBreakpointFilters"] = filters;
             respond(req, true, caps);
             sendEvent("initialized", Json::object());
@@ -624,24 +762,42 @@ private:
     void handleSetBreakpoints(const Json& req, const Json& args) {
         const std::string path = args.get("source").getString("path");
         std::vector<int> requested;
+        std::vector<Breakpoint> specs;
         const Json& bps = args.get("breakpoints");
-        for (std::size_t i = 0; i < bps.size(); ++i) requested.push_back(static_cast<int>(bps.at(i).getInt("line")));
+        for (std::size_t i = 0; i < bps.size(); ++i) {
+            requested.push_back(static_cast<int>(bps.at(i).getInt("line")));
+            Breakpoint b;
+            b.condition = bps.at(i).getString("condition");
+            b.logMessage = bps.at(i).getString("logMessage");
+            if (!HitCondition::parse(bps.at(i).getString("hitCondition"), b.hit)) b.hits = -1;  // invalid
+            specs.push_back(std::move(b));
+        }
         if (bps.size() == 0) {
             const Json& lines = args.get("lines");
             for (std::size_t i = 0; i < lines.size(); ++i)
                 if (lines.at(i).isNumber()) requested.push_back(static_cast<int>(lines.at(i).num()));
         }
         const std::vector<int> actual = codeLines(path, requested);
+        Json result = Json::array();
+        std::map<int, Breakpoint> table;
+        for (std::size_t i = 0; i < actual.size(); ++i) {
+            Breakpoint b = i < specs.size() ? specs[i] : Breakpoint{};
+            if (b.hits < 0) {
+                result.push(obj({{"verified", Json(false)}, {"line", Json(actual[i])},
+                                 {"message", Json("invalid hit count '" + bps.at(i).getString("hitCondition") +
+                                                  "': use N, == N, >= N, > N, < N, <= N or % N")}}));
+                continue;
+            }
+            table[actual[i]] = std::move(b);
+            result.push(obj({{"verified", Json(true)}, {"line", Json(actual[i])}}));
+        }
         {
             std::lock_guard<std::mutex> lk(bpMu_);
             const std::string key = debugger::normalizePath(path);
-            if (actual.empty()) breakpoints_.erase(key);
-            else breakpoints_[key] = std::set<int>(actual.begin(), actual.end());
+            if (table.empty()) breakpoints_.erase(key);
+            else breakpoints_[key] = std::move(table);
             anyBreakpoint_.store(!breakpoints_.empty());
         }
-        Json result = Json::array();
-        for (std::size_t i = 0; i < actual.size(); ++i)
-            result.push(obj({{"verified", Json(true)}, {"line", Json(actual[i])}}));
         respond(req, true, obj({{"breakpoints", result}}));
     }
 
@@ -651,7 +807,18 @@ private:
         for (std::size_t i = 0; i < f.size(); ++i)
             if (f.at(i).isString()) filters.push_back(f.at(i).str());
         const Json& fo = args.get("filterOptions");
-        for (std::size_t i = 0; i < fo.size(); ++i) filters.push_back(fo.at(i).getString("filterId"));
+        std::string conditionRaised, conditionUserUnhandled;
+        for (std::size_t i = 0; i < fo.size(); ++i) {
+            const std::string id = fo.at(i).getString("filterId");
+            filters.push_back(id);
+            if (id == "raised") conditionRaised = fo.at(i).getString("condition");
+            if (id == "userUnhandled") conditionUserUnhandled = fo.at(i).getString("condition");
+        }
+        {
+            std::lock_guard<std::mutex> lk(bpMu_);
+            conditionRaised_ = conditionRaised;
+            conditionUserUnhandled_ = conditionUserUnhandled;
+        }
         bool raised = false, userUnhandled = false;
         Json result = Json::array();
         for (const auto& name : filters) {
@@ -935,7 +1102,8 @@ private:
     std::string programPath_;
 
     std::mutex bpMu_;
-    std::unordered_map<std::string, std::set<int>> breakpoints_;
+    std::unordered_map<std::string, std::map<int, Breakpoint>> breakpoints_;
+    std::string conditionRaised_, conditionUserUnhandled_;
     std::atomic<bool> anyBreakpoint_{false};
     std::atomic<bool> entryPending_{false};
     std::atomic<bool> breakOnRaised_{false};

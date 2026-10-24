@@ -269,6 +269,52 @@ def _dap_current_thread_name():
     except BaseException:
         return ''
 
+_dap_code_cache = {}
+
+def _dap_compile(expr):
+    c = _dap_code_cache.get(expr)
+    if c is None:
+        c = compile(expr, '<breakpoint condition>', 'eval')
+        if len(_dap_code_cache) > 512:
+            _dap_code_cache.clear()
+        _dap_code_cache[expr] = c
+    return c
+
+def _dap_condition(expr, g, l):
+    try:
+        return (True, bool(eval(_dap_compile(expr), g, l)), '')
+    except BaseException as e:
+        return (False, False, '%s: %s' % (type(e).__name__, e))
+
+def _dap_log(template, g, l):
+    out = []
+    i = 0
+    n = len(template)
+    while i < n:
+        c = template[i]
+        if c == '{':
+            if template.startswith('{{', i):
+                out.append('{')
+                i += 2
+                continue
+            j = template.find('}', i + 1)
+            if j < 0:
+                out.append(template[i:])
+                break
+            try:
+                v = eval(_dap_compile(template[i + 1:j]), g, l)
+                out.append(v if isinstance(v, str) else _dap_repr(v))
+            except BaseException as e:
+                out.append('<error: %s: %s>' % (type(e).__name__, e))
+            i = j + 1
+        elif c == '}':
+            out.append('}')
+            i += 2 if template.startswith('}}', i) else 1
+        else:
+            out.append(c)
+            i += 1
+    return ''.join(out)
+
 def _dap_flush():
     import sys
     for s in (sys.stdout, sys.stderr):
@@ -727,6 +773,61 @@ bool evaluate(proto::ProtoContext* ctx, PythonEnvironment* env, const StackEntry
     } catch (const proto::ProtoException&) {
         error = "evaluation raised an exception";
         return false;
+    }
+}
+
+namespace {
+// The namespace a condition or log message sees, with `bindName` bound: at
+// module level a child of the module, so the binding never lands in it.
+const proto::ProtoObject* conditionNamespace(proto::ProtoContext* ctx, PythonEnvironment* env, const StackEntry& e,
+                                             const char* bindName, const proto::ProtoObject* bindValue) {
+    const proto::ProtoObject* ns = evalNamespace(ctx, env, e);
+    if (!bindName) return ns;
+    proto::ProtoObject* own = const_cast<proto::ProtoObject*>(ns);
+    if (isModuleLevel(e)) own = const_cast<proto::ProtoObject*>(ctx->newObject(true)->addParent(ctx, ns));
+    own->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, bindName), bindValue ? bindValue : PROTO_NONE);
+    return own;
+}
+} // namespace
+
+ConditionResult evaluateCondition(proto::ProtoContext* ctx, PythonEnvironment* env, const StackEntry& frame,
+                                  const std::string& expression, const char* bindName,
+                                  const proto::ProtoObject* bindValue, std::string& error) {
+    SuspendScope quiet;
+    if (!frame.globals) { error = "no frame"; return ConditionResult::Error; }
+    const proto::ProtoObject* fn = helper(ctx, env, "_dap_condition");
+    if (!fn) { error = "the debugger's helpers are not available"; return ConditionResult::Error; }
+    try {
+        const proto::ProtoObject* ns = conditionNamespace(ctx, env, frame, bindName, bindValue);
+        PythonEnvironment::TransientPin pinNs(env, ns);
+        const proto::ProtoObject* expr = proto::ProtoString::fromUTF8(ctx, expression.c_str())->asObject(ctx);
+        const proto::ProtoObject* r = call(ctx, fn, {expr, frame.globals, ns});
+        PythonEnvironment::TransientPin pin(env, r);
+        TupleView t = (r && r != PROTO_NONE) ? PythonEnvironment::tupleView(ctx, r) : nullptr;
+        if (!t || t->getSize(ctx) < 3) { error = "evaluation failed"; return ConditionResult::Error; }
+        if (t->getAt(ctx, 0) != PROTO_TRUE) {
+            error = toUtf8(ctx, t->getAt(ctx, 2));
+            return ConditionResult::Error;
+        }
+        return t->getAt(ctx, 1) == PROTO_TRUE ? ConditionResult::True : ConditionResult::False;
+    } catch (const proto::ProtoException&) {
+        error = "evaluation raised an exception";
+        return ConditionResult::Error;
+    }
+}
+
+std::string interpolateLogMessage(proto::ProtoContext* ctx, PythonEnvironment* env, const StackEntry& frame,
+                                  const std::string& message) {
+    SuspendScope quiet;
+    const proto::ProtoObject* fn = frame.globals ? helper(ctx, env, "_dap_log") : nullptr;
+    if (!fn) return message;
+    try {
+        const proto::ProtoObject* ns = conditionNamespace(ctx, env, frame, nullptr, nullptr);
+        PythonEnvironment::TransientPin pinNs(env, ns);
+        const proto::ProtoObject* text = proto::ProtoString::fromUTF8(ctx, message.c_str())->asObject(ctx);
+        return toUtf8(ctx, call(ctx, fn, {text, frame.globals, ns}));
+    } catch (const proto::ProtoException&) {
+        return message;
     }
 }
 
