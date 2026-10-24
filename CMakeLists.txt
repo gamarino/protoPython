@@ -325,6 +325,16 @@ if(Python3_FOUND)
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
         TIMEOUT 300
         LABELS "regression_gate")
+    # protopy --dap driven as VS Code drives it: breakpoints, stepping, the call
+    # stack, variables, evaluate, stopOnEntry, the script's output as `output`
+    # events (more than a pipe buffer, non-ASCII), stdin at end of file, and an
+    # uncaught exception (docs/debugging.md).
+    add_test(NAME protopy_dap_session
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/test/regression/dap_session.py
+            $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression)
+    set_tests_properties(protopy_dap_session PROPERTIES
+        TIMEOUT 300
+        LABELS "regression_gate")
 endif()
 # protopy finds the standard library in the installed layout relative to its own
 # directory, is not misled by a ../lib/python3.14 next to the working directory,

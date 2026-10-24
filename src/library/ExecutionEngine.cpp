@@ -5,6 +5,7 @@
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/MemoryManager.hpp>
 #include <protoPython/SignalModule.h>
+#include <protoPython/Debugger.h>
 #include <protoCore.h>
 #include <protoPython/CheckedArith.h>
 #include <cmath>
@@ -5555,6 +5556,16 @@ struct Activation {
             return runHandler(handled, handlerBody);
         }
     }
+    // Source-level debugging (include/protoPython/Debugger.h). dbgOn is set
+    // when the activation starts on a thread that reports line events; the
+    // dispatcher then calls debugInstruction before every instruction.
+    bool dbgOn = false;
+    bool dbgReturned = false;          // a call made by this activation returned
+    int dbgLastLine = -1;
+    proto::proto_ulong dbgPc = 0;      // the instruction about to run
+    const debugger::CodeInfo* dbgCode = nullptr;
+    const proto::ProtoObject* dbgGlobals = nullptr;  // the globals it started with
+    PROTOPY_EXC_NOINLINE void debugInstruction(proto::proto_ulong i);
     // The activation's hottest invariants enter as parameters of the same
     // names: a parameter shadows the member and is a true local, which the
     // compiler can keep in a register; a member is reloaded after every call
@@ -5667,6 +5678,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
         // reach std::terminate.  It is raised here as RuntimeError(what()), so
         // the program sees a Python exception it can handle.
         lastPc = i;
+        if (dbgOn) [[unlikely]] debugInstruction(i);
         try {
         switch (op) {
         case OP_LOAD_CONST: {
@@ -10495,6 +10507,77 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
 
 }  // namespace
 
+// ---------------------------------------------------------------------------
+// Source-level debugging: the thread's activations (innermost last) while it
+// reports line events, and the per-instruction check (Debugger.h).
+namespace {
+thread_local std::vector<Activation*> tl_debugStack;
+
+/** Links an activation into tl_debugStack for its lifetime. */
+struct DebugStackScope {
+    Activation* act;
+    explicit DebugStackScope(Activation* a) : act(a) {
+        if (act) tl_debugStack.push_back(act);
+    }
+    ~DebugStackScope() {
+        if (!act) return;
+        if (!tl_debugStack.empty() && tl_debugStack.back() == act) tl_debugStack.pop_back();
+        // The caller continues on the line of its call: tell it, for stepping.
+        if (!tl_debugStack.empty()) tl_debugStack.back()->dbgReturned = true;
+    }
+    DebugStackScope(const DebugStackScope&) = delete;
+    DebugStackScope& operator=(const DebugStackScope&) = delete;
+};
+} // namespace
+
+void Activation::debugInstruction(proto::proto_ulong i) {
+    const proto::proto_ulong prevPc = dbgPc;
+    dbgPc = i;
+    if (!debugger::detail::listenerInstalled()) { dbgOn = false; return; }
+    // Not while an attribute write group holds unpublished writes: code the
+    // debugger runs could observe the receiver between them.
+    if (attrGroupState == 1) return;
+    if (!dbgCode) {
+        const proto::ProtoObject* code = runningCodeObject(ctx, env, frame, bytecode);
+        dbgCode = debugger::detail::codeInfoFor(ctx, env, code, bytecode);
+        if (!dbgCode) { dbgOn = false; return; }
+        dbgGlobals = PythonEnvironment::getCurrentGlobals();
+    }
+    const proto::proto_ulong k = i / 2;
+    const int line = k < dbgCode->lines.size() ? dbgCode->lines[k] : 0;
+    if (line <= 0) return;
+    debugger::LineEventKind kind;
+    if (line != dbgLastLine) {
+        kind = debugger::LineEventKind::Line;
+    } else if (i <= prevPc && (k == 0 || dbgCode->lines[k - 1] != line)) {
+        // A backward jump to the first instruction of the current line (a
+        // loop on one line) starts the line again.
+        kind = debugger::LineEventKind::Line;
+    } else if (dbgReturned) {
+        kind = debugger::LineEventKind::AfterReturn;
+    } else {
+        return;
+    }
+    dbgReturned = false;
+    dbgLastLine = line;
+    if (frameAnchor) *frameAnchor = frame;
+    debugger::detail::dispatchLine(ctx, env, *dbgCode, line, kind, tl_debugStack.size());
+}
+
+namespace debugger {
+void currentStack(std::vector<StackEntry>& out) {
+    out.clear();
+    for (auto it = tl_debugStack.rbegin(); it != tl_debugStack.rend(); ++it) {
+        const Activation* a = *it;
+        if (!a->dbgCode) continue;
+        const proto::proto_ulong k = a->dbgPc / 2;
+        const int line = k < a->dbgCode->lines.size() ? a->dbgCode->lines[k] : 0;
+        const proto::ProtoObject* globals = a->dbgGlobals ? a->dbgGlobals : a->frame;
+        out.push_back(StackEntry{a->frame, globals, a->ctx, a->dbgCode, line});
+    }
+}
+} // namespace debugger
+
 const proto::ProtoObject* executeBytecodeRange(
     proto::ProtoContext* ctx,
     const proto::ProtoTuple* constants,
@@ -10643,6 +10726,8 @@ const proto::ProtoObject* executeBytecodeRange(
                    frameAnchor, sync_globals, frame, stack, blockStack, savedLevels, throwOnResume);
     act.handledSlot = handledSlot;
     act.synthFrameSlot = synthFrameSlot;
+    act.dbgOn = debugger::detail::threadWantsEvents();
+    DebugStackScope debugStackScope(act.dbgOn ? &act : nullptr);
     try {
         // A resumed generator rebuilds its try nesting first; any other
         // activation dispatches at once.

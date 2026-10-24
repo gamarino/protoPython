@@ -1,4 +1,5 @@
 #include <optional>
+#include <protoPython/Debugger.h>
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/CheckedArith.h>
 #include <protoPython/DiagUtils.h>
@@ -17018,6 +17019,8 @@ PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::v
 }
 
 PythonEnvironment::~PythonEnvironment() {
+    // The debugger's code cache and helpers are pinned in this space.
+    debugger::detail::environmentClosing(this);
 #if defined(_WIN32)
     if (invalidParameterThread_ == protopy_current_thread_id()) {
         protopy_restore_invalid_parameters(reinterpret_cast<protopy_iph>(previousInvalidParameterHandler_));

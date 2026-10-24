@@ -3,6 +3,10 @@ add_library(protoPython SHARED
     BytecodeLoader.cpp
     Compiler.cpp
     ExecutionEngine.cpp
+    Debugger.cpp
+    DAPServer.cpp
+    dap/DapJson.cpp
+    dap/DapStdio.cpp
     ThreadingStrategy.cpp
     BasicBlockAnalysis.cpp
     Parser.cpp

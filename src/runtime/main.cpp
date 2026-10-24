@@ -5,6 +5,7 @@
 
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/IOModule.h>
+#include <protoPython/DAPServer.h>
 #include <protoPython/DiagUtils.h>
 #include <protoPython/Version.h>
 #include <protoCore.h>
@@ -133,6 +134,7 @@ struct CliOptions {
     bool bytecodeOnly{false};
     bool trace{false};
     bool repl{false};
+    bool dap{false};  // --dap: serve the Debug Adapter Protocol on stdin/stdout
     bool safePath{false};  // -P (or -I): nothing prepended to sys.path
     bool stdinProgram{false};  // "-": the program is read from standard input
     std::string moduleName;
@@ -229,6 +231,7 @@ static void printUsage(const char* prog) {
                  "  --bytecode-only   Stub: validate bytecode loading path (no execution)\n"
                  "  --trace           Print module enter/leave events to stderr\n"
                  "  --repl, -i        Interactive REPL\n"
+                 "  --dap             Debug Adapter Protocol server on stdin/stdout (VS Code)\n"
                  "  --help, -h        Show this help message\n";
 }
 
@@ -274,6 +277,8 @@ static bool parseArgs(int argc, char* argv[], CliOptions& opts, std::string& err
             opts.bytecodeOnly = true;
         } else if (arg == "--trace") {
             opts.trace = true;
+        } else if (arg == "--dap") {
+            opts.dap = true;
         } else if (arg == "--repl" || arg == "-i") {
             opts.repl = true;
         } else if (arg == "--path" || arg == "-p") {
@@ -330,6 +335,11 @@ static bool parseArgs(int argc, char* argv[], CliOptions& opts, std::string& err
             error = "Unexpected positional argument: " + arg;
             return false;
         }
+    }
+    if (opts.dap && (!opts.moduleName.empty() || !opts.scriptPath.empty() || !opts.commandLine.empty()
+                     || opts.stdinProgram || opts.repl)) {
+        error = "--dap takes the program from the client's launch request";
+        return false;
     }
     int targets = (!opts.moduleName.empty()) + (!opts.scriptPath.empty()) + (!opts.commandLine.empty())
         + opts.stdinProgram;
@@ -467,6 +477,55 @@ int main(int argc, char* argv[]) {
     std::vector<std::string> searchPaths = sitePaths;
     searchPaths.insert(searchPaths.end(), options.searchPaths.begin(), options.searchPaths.end());
 
+    // A script: protopy <script.py> [args], and the program of a --dap session.
+    auto runScript = [&](const std::string& scriptPath, const std::vector<std::string>& targetArgs) -> int {
+        std::vector<std::string> scriptArgv{scriptPath};
+        scriptArgv.insert(scriptArgv.end(), targetArgs.begin(), targetArgs.end());
+        std::vector<std::string> scriptPaths = searchPaths;
+        // The script is found through its directory made absolute, so its
+        // __file__ is absolute, as CPython's __main__.__file__ since 3.9:
+        // the current directory joined with the path as given, without
+        // resolving `..` or links on POSIX (std::filesystem::absolute, like
+        // CPython's _Py_abspath), normalized on Windows (GetFullPathNameW in
+        // both). sys.argv[0] keeps the path as given.
+        std::error_code absError;
+        const std::filesystem::path absScript =
+            std::filesystem::absolute(std::filesystem::path(scriptPath), absError);
+        // The script is found through the module search: its directory as
+        // given stays a search path even with -P.
+        scriptPaths.insert(scriptPaths.begin(),
+                           dirName(absError ? scriptPath : absScript.string()));
+        // sys.path[0] is the script's directory with symbolic links resolved
+        // (realpath on POSIX, as CPython; GetFullPathNameW on Windows).
+        std::string scriptDir = dirName(absError ? scriptPath : absScript.string());
+#if !defined(_WIN32)
+        std::error_code realError;
+        const std::filesystem::path realScript = std::filesystem::canonical(absScript, realError);
+        if (!absError && !realError) scriptDir = realScript.parent_path().string();
+#endif
+        if (options.dryRun || options.bytecodeOnly) {
+            return fileExists(scriptPath) ? EXIT_OK : EXIT_RESOLVE;
+        }
+        protoPython::PythonEnvironment envWithPath(stdLibPath, scriptPaths, scriptArgv);
+        envWithPath.setSysPath(beforeStdlib(scriptDir), sitePaths);
+        if (options.trace) {
+            envWithPath.setExecutionHook([](const std::string& name, int phase) {
+                std::cerr << (phase == 0 ? "[trace] enter " : "[trace] leave ") << name << std::endl;
+            });
+            envWithPath.enableDefaultTrace();
+        }
+        std::string moduleName = moduleNameFromPath(scriptPath);
+        return executeModule(envWithPath, moduleName, true);
+    };
+
+    if (options.dap) {
+        // The program comes with the client's launch request; the session
+        // runs it as `protopy <program> <args>` would.
+        return protoPython::DAPServer::run([&](const protoPython::DAPServer::LaunchRequest& launch) {
+            return runScript(launch.program, launch.args);
+        });
+    }
+
     // No target, as CPython: the REPL when standard input is a terminal (or
     // with -i), otherwise the program read from standard input ("-" reads it
     // in every case). The whole program is read before it runs, so the
@@ -575,43 +634,7 @@ int main(int argc, char* argv[]) {
         return EXIT_USAGE;
     }
 
-    if (!options.scriptPath.empty()) {
-        std::vector<std::string> scriptPaths = searchPaths;
-        // The script is found through its directory made absolute, so its
-        // __file__ is absolute, as CPython's __main__.__file__ since 3.9:
-        // the current directory joined with the path as given, without
-        // resolving `..` or links on POSIX (std::filesystem::absolute, like
-        // CPython's _Py_abspath), normalized on Windows (GetFullPathNameW in
-        // both). sys.argv[0] keeps the path as given.
-        std::error_code absError;
-        const std::filesystem::path absScript =
-            std::filesystem::absolute(std::filesystem::path(options.scriptPath), absError);
-        // The script is found through the module search: its directory as
-        // given stays a search path even with -P.
-        scriptPaths.insert(scriptPaths.begin(),
-                           dirName(absError ? options.scriptPath : absScript.string()));
-        // sys.path[0] is the script's directory with symbolic links resolved
-        // (realpath on POSIX, as CPython; GetFullPathNameW on Windows).
-        std::string scriptDir = dirName(absError ? options.scriptPath : absScript.string());
-#if !defined(_WIN32)
-        std::error_code realError;
-        const std::filesystem::path realScript = std::filesystem::canonical(absScript, realError);
-        if (!absError && !realError) scriptDir = realScript.parent_path().string();
-#endif
-        if (options.dryRun || options.bytecodeOnly) {
-            return fileExists(options.scriptPath) ? EXIT_OK : EXIT_RESOLVE;
-        }
-        protoPython::PythonEnvironment envWithPath(stdLibPath, scriptPaths, argvVec);
-        envWithPath.setSysPath(beforeStdlib(scriptDir), sitePaths);
-        if (options.trace) {
-            envWithPath.setExecutionHook([](const std::string& name, int phase) {
-                std::cerr << (phase == 0 ? "[trace] enter " : "[trace] leave ") << name << std::endl;
-            });
-            envWithPath.enableDefaultTrace();
-        }
-        std::string moduleName = moduleNameFromPath(options.scriptPath);
-        return executeModule(envWithPath, moduleName, true);
-    }
+    if (!options.scriptPath.empty()) return runScript(options.scriptPath, options.targetArgs);
 
     // -m: the current directory is searched first.
     if (!options.safePath) searchPaths.insert(searchPaths.begin(), cwd);
