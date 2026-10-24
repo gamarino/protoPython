@@ -206,7 +206,7 @@ Install (Node.js provides `npx`):
 ```bash
 cd editor-integration/vscode
 npx @vscode/vsce@3.2.1 package --skip-license
-code --install-extension protopy-debug-0.1.0.vsix
+code --install-extension protopy-debug-0.2.0.vsix
 ```
 
 The extension runs the `protopy` set in the `protopy.path` setting, else
@@ -227,9 +227,15 @@ What works: line breakpoints, continue / step over / step into / step out /
 pause, the call stack with file and line, Locals and Globals with expandable
 lists, dicts, sets and objects, watches, hovers and the Debug Console
 (expressions in the selected frame; statements too), the script's stdout and
-stderr in the Debug Console, `stopOnEntry`, `args`, `cwd`, `env`.
-Limitations: only the script's main thread is debugged; no conditional,
-exception or function breakpoints; no attach; standard input reads end of file;
+stderr in the Debug Console, `stopOnEntry`, `args`, `cwd`, `env`; exception
+breakpoints (*Raised Exceptions*, *Uncaught Exceptions* in your code, stopping
+at the raise with the stack intact; iteration's `StopIteration` and other
+internal control flow never stop); every `threading` thread, listed by name,
+each stopping on its own while the others run (step, continue and pause act on
+one thread). Limitations: no conditional or function breakpoints, no
+"stop all threads" mode; *Uncaught Exceptions* knows `contextlib.suppress` but
+no other suppressing `with` and does not see handlers in native code; no
+attach; standard input reads end of file;
 assigning to a function's local from the console does not change it; code
 compiled with protopyc and native modules run without stops. Details in
 [docs/debugging.md](docs/debugging.md).

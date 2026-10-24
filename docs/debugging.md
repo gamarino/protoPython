@@ -22,7 +22,7 @@ runtime it uses (`"type": "protopy"` or `"type": "debugpy"`).
    ```bash
    cd editor-integration/vscode
    npx @vscode/vsce@3.2.1 package --skip-license
-   code --install-extension protopy-debug-0.1.0.vsix
+   code --install-extension protopy-debug-0.2.0.vsix
    ```
 
 The extension runs the `protopy` named by the setting **protopy.path**
@@ -82,14 +82,78 @@ location above when it exists; otherwise `protopy` from `PATH`.
 - **Output**: what the script writes to stdout and stderr appears in the Debug
   Console, in order, including an uncaught exception's traceback. The exit
   status of the script is the session's.
+- **Exception breakpoints** (the Breakpoints view's checkboxes; see below).
+- **Threads**: every `threading.Thread` (and `_thread.start_new_thread`
+  thread) is debugged, `concurrent.futures` workers included (see below).
+
+## Exception breakpoints
+
+Two filters, as the Python Debugger (debugpy) offers them:
+
+| Filter | Default | Stops |
+|--------|---------|-------|
+| **Raised Exceptions** (`raised`) | off | where any exception is raised in your code, or where one raised by a library or by the runtime reaches your code — even when a `try` handles it afterwards. |
+| **Uncaught Exceptions** (`userUnhandled`) | on | where an exception is raised when no `try`/`except` of your code on that thread would handle it: the walk goes outwards over the active `try` blocks of your frames, testing each `except` clause's type (a tuple of types, an attribute such as `mod.Error`, a local variable), up to the first frame of library code. An exception escaping a thread's target into `threading` stops too. |
+
+The thread stops at the frame the exception is in, *before* anything handles
+it: the call stack, the locals and the Debug Console show the state at the
+raise. VS Code shows the exception's type and message (the Exception widget;
+`exceptionInfo` also gives a traceback of the stopped stack). An error raised by
+the runtime itself (`1 / 0`, `{}[k]`, a `TypeError` of an operator) or inside a
+library stops in your frame that made the call, and the description says where
+it was raised (`raised in native code`, `raised in json.loads (decoder.py:355)`).
+Continuing lets the exception go on: to its handler, or to the end of the
+program.
+
+*Your code* is every file outside the standard library, `site-packages` and
+`dist-packages`. Library code never stops for exceptions (line breakpoints in it
+still work).
+
+Never a stop, under either filter: `StopIteration`, `StopAsyncIteration` and
+`GeneratorExit` (the iteration protocol, also when your `__next__` raises
+`StopIteration`), `SystemExit` with code `None` or 0, exceptions the runtime or a
+built-in raises and handles itself (the end of a `for` loop, `next(it, default)`,
+`getattr(obj, name, default)`, `hasattr`, ...), exceptions inside library code
+that library code handles, and exceptions raised by expressions the debugger
+evaluates (watches, hovers, the Debug Console). An exception is reported once
+as it propagates; a bare `raise` re-raising it does not stop again, `raise e`
+does.
+
+## Threads
+
+Each Python thread appears in the Call Stack view with its `threading` name
+(`MainThread`, `Thread-1 (worker)`, `ThreadPoolExecutor-0_0`; the name is read
+again at each stop, so a renamed thread shows its new name). A thread started
+with `_thread.start_new_thread` shows its function's name.
+
+**Only the thread that stops is stopped.** A breakpoint, a step or an exception
+holds that thread; the others keep running (and printing). Several threads can
+be stopped at once, each with its own call stack, variables and Debug Console
+frame. Continue, Step Over/Into/Out and Pause act on the thread selected in the
+Call Stack view: stepping one thread never stops another (a breakpoint still
+does). Pause on a thread blocked in native code (`time.sleep`, a lock, I/O)
+takes effect when it next runs Python code. Breakpoints and exception filters
+apply to every thread. Stopping the session releases every stopped thread.
+
+The collector keeps running while threads are stopped: a stopped thread waits
+outside protoCore's stop-the-world quorum, and its values stay rooted.
 
 ## Limitations
 
-- **One thread.** Only the thread that runs the script is debugged. Threads it
-  starts run freely: their breakpoints are not hit and they are not listed.
-- **No conditional breakpoints, logpoints, hit counts, function or exception
-  breakpoints.** An uncaught exception ends the program (its traceback is
-  shown) instead of stopping at the raise.
+- **No conditional breakpoints, logpoints, hit counts or function
+  breakpoints.** No "stop all threads" mode: a stop holds one thread.
+- **Exception filters are approximations of CPython's handler search.** A
+  `with` block counts as handling an exception only for `contextlib.suppress`
+  (another context manager's `__exit__` is not called to find out, so
+  *Uncaught Exceptions* may stop on an exception such a manager would
+  suppress). Native code between two Python frames is not seen: an
+  `AttributeError` raised by your property and caught by `hasattr()` stops
+  under *Uncaught Exceptions* unless a `try` of yours encloses the `hasattr`.
+  An `except` clause whose type is computed by anything but names, attributes
+  and tuples (a call, a subscript) is taken as matching.
+- **Threads not started by Python code are not debugged** (threads a native
+  module starts itself). A thread blocked in native code is listed, but shows
+  no call stack until it stops (pause it: it stops when it returns to Python).
 - **`launch` only**: no attaching to a running `protopy`.
 - **Standard input reads end of file.** The adapter's stdin carries the
   protocol, so a script reading `sys.stdin` or calling `input()` gets EOF.
@@ -114,27 +178,45 @@ device: the script's prints can never corrupt the protocol stream.
 
 The script runs on the main thread once the client sends `configurationDone`.
 The bytecode dispatcher reports a *line event* for each new source line of that
-thread ([`include/protoPython/Debugger.h`](../include/protoPython/Debugger.h),
+thread and of every Python thread it starts (`debugger::ThreadScope` in the
+thread bootstrap of `src/library/ThreadModule.cpp`)
+([`include/protoPython/Debugger.h`](../include/protoPython/Debugger.h),
 `Activation::debugInstruction` in `src/library/ExecutionEngine.cpp`); the
-adapter (`src/library/DAPServer.cpp`) decides whether to stop. A stopped thread
-waits outside protoCore's collector quorum (an unmanaged region) and wakes to
-run inspection requests itself, so variables and evaluation always touch
-objects on the thread that owns them; values the client can expand stay pinned
-in a root set until the program resumes. The protocol reader is a plain thread
-that never touches a Python object.
+adapter (`src/library/DAPServer.cpp`) decides whether to stop. Each thread has
+its own state in the adapter (step mode, pause request, the stop's frames, a
+queue of inspection tasks); frame and variable ids are unique across threads. A
+stopped thread waits outside protoCore's collector quorum (an unmanaged region)
+and wakes to run inspection requests itself, so variables and evaluation always
+touch objects on the thread that owns them; values the client can expand stay
+pinned in a root set until that thread resumes. The protocol reader is a plain
+thread that never touches a Python object.
+
+Exception events come from the two places where a Python exception crosses an
+activation: the C++ `catch` of a protected range (`Activation::runRange`) and
+the one of the whole activation (`executeBytecodeRange`). The first frame of the
+user's code that sees an exception reports it, while that frame and all its
+callers still exist (their operand stacks, locals and try blocks intact). For
+*Uncaught Exceptions* the adapter then asks whether a handler would take it:
+`Activation::debugRangeHandles` reads the handler code of each active try block
+(the layout `Compiler::compileTry` emits), evaluates each `except` clause's type
+expression in its frame and tests it as `EXCEPTION_MATCH` does. With no filter
+on, an exception costs one test of a flag.
 
 Requests: `initialize`, `launch`, `setBreakpoints`, `setExceptionBreakpoints`
-(accepted, no filters), `configurationDone`, `threads`, `stackTrace`, `scopes`,
-`variables`, `evaluate`, `continue`, `next`, `stepIn`, `stepOut`, `pause`,
-`disconnect`, `terminate`. Events: `initialized`, `stopped`, `output`,
-`exited`, `terminated`.
+(filters `raised`, `userUnhandled`), `exceptionInfo`, `configurationDone`,
+`threads`, `stackTrace`, `scopes`, `variables`, `evaluate`, `continue`, `next`,
+`stepIn`, `stepOut`, `pause`, `disconnect`, `terminate`. Events: `initialized`,
+`stopped` (`allThreadsStopped: false`), `thread` (`started`, `exited`),
+`output`, `exited`, `terminated`.
 
 ## Testing without VS Code
 
 `test/regression/dap_session.py` drives `protopy --dap` as VS Code does
 (Windows paths with a lower-case drive letter included) and checks
 breakpoints, stepping, the stack, variables, evaluation, `stopOnEntry`, more
-than 64 KiB of non-ASCII output, stdin at end of file and an uncaught exception.
+than 64 KiB of non-ASCII output, stdin at end of file, an uncaught exception,
+both exception filters (and no stop on internal control flow), two threads at
+one breakpoint, pausing one busy thread, and collections while a thread is held.
 CTest runs it as `protopy_dap_session`:
 
 ```bash

@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`include/protoPython/Debugger.h`) that costs nothing outside a session.
   `editor-integration/vscode/` registers it as the debug type `protopy` for
   Python files, next to the Python Debugger extension. See `docs/debugging.md`.
+- **Added: exception breakpoints and threads in the debugger.** The
+  `raised` (*Raised Exceptions*) and `userUnhandled` (*Uncaught Exceptions*,
+  on by default) filters stop at the first frame of the user's code an
+  exception reaches, before any handler runs; `userUnhandled` reads the active
+  try blocks of the user's frames to decide whether an `except` clause would
+  take it. `exceptionInfo` gives the type, message and stack. StopIteration,
+  StopAsyncIteration, GeneratorExit, SystemExit(0) and exceptions the runtime
+  handles itself never stop. Every `threading.Thread` / `_thread` thread is
+  debugged under its `threading` name with `thread` events; a stop holds only
+  that thread (`allThreadsStopped: false`), and continue / step / pause act on
+  the requested thread. The debugger's helper lock no longer stalls the
+  collector when two threads stop at once.
 - **Fixed: the line of an `import` statement** was the next line (in
   tracebacks too): the node took the line of the token after the module name.
 

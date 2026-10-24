@@ -25,14 +25,14 @@ over their F5 default. There is no TypeScript build step and no bundler.
 ```bash
 cd editor-integration/vscode
 npx @vscode/vsce@3.2.1 package --skip-license
-code --install-extension protopy-debug-0.1.0.vsix
+code --install-extension protopy-debug-0.2.0.vsix
 ```
 
 On Linux and macOS you can instead symlink the folder (edits are picked up
 after **Developer: Reload Window**):
 
 ```bash
-ln -s "$(pwd)/editor-integration/vscode" ~/.vscode/extensions/protopy-debug-0.1.0
+ln -s "$(pwd)/editor-integration/vscode" ~/.vscode/extensions/protopy-debug-0.2.0
 ```
 
 ## Use
@@ -64,5 +64,11 @@ ln -s "$(pwd)/editor-integration/vscode" ~/.vscode/extensions/protopy-debug-0.1.
 | `cwd`         | string   | no       | Working directory of the script.                |
 | `env`         | object   | no       | Environment variables for the script.           |
 | `stopOnEntry` | boolean  | no       | Stop at the script's first line (default off).  |
+
+Exception breakpoints come from the adapter: the Breakpoints view shows
+**Raised Exceptions** (off) and **Uncaught Exceptions** (on) checkboxes. Every
+Python thread of the program is listed in the Call Stack view under its
+`threading` name; a stop holds only that thread, and Continue / Step / Pause
+act on the thread selected there.
 
 See `docs/debugging.md` in the repository for what works and the limitations.

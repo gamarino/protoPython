@@ -2,7 +2,7 @@
   "name": "protopy-debug",
   "displayName": "protoPython Debugger",
   "description": "Debug Python scripts on protoPython (protopy) from VS Code, through the protopy --dap Debug Adapter Protocol adapter.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "protopython-placeholder",
   "engines": {
     "vscode": "^1.66.0"
