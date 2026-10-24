@@ -271,18 +271,29 @@ def session_pause():
     prog = client_path("dap_loop.py")
     s = Session()
     s.start(prog, [])
-    time.sleep(1)  # let the loop run
+    # Pause once the loop runs (startup can be slow on a loaded machine).
+    deadline = time.time() + 60
+    while "looping" not in s.output["stdout"]:
+        check(time.time() < deadline, "the program did not start")
+        m = s.read()
+        check(m is not None, "adapter closed the stream")
+        if m.get("type") == "event" and m.get("event") != "output":
+            s.pending.append(m)
+    time.sleep(0.2)
     s.ok("pause", {"threadId": 1})
     e = s.event("stopped")
     check(e["body"]["reason"] == "pause", "stopped for %r" % e["body"]["reason"])
     frames = s.ok("stackTrace", {"threadId": 1})["stackFrames"]
-    check(frames[0]["line"] in (2, 3), "paused at line %r" % frames[0]["line"])
+    check(frames[0]["line"] in (3, 4), "paused at line %r" % frames[0]["line"])
     fid = frames[0]["id"]
     check(s.evaluate("i > 0", fid) == "True", "loop variable")
     s.ok("evaluate", {"expression": "i = 10 ** 12", "frameId": fid, "context": "repl"})
     s.ok("continue", {"threadId": 1})
     check(s.finish() == 0, "exit code")
-    check(s.output["stdout"] == "stopped looping at 1000000000000\n", "stdout %r" % s.output["stdout"])
+    # Paused before `i += 1` the loop adds one more.
+    check(s.output["stdout"] in ("looping\nstopped looping at 1000000000000\n",
+                                 "looping\nstopped looping at 1000000000001\n"),
+          "stdout %r" % s.output["stdout"])
 
 
 def session_gc_while_stopped():
