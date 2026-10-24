@@ -1888,8 +1888,15 @@ std::unique_ptr<ASTNode> Parser::parseWith() {
 }
 
 std::unique_ptr<ASTNode> Parser::parseImport() {
+    // Every name gets the line of the import keyword: the node is created
+    // after its name, where the current token may already be the NEWLINE that
+    // ends the statement (whose line is the next one).
+    const int importLine = cur_.line;
+    const int importColumn = cur_.column;
     advance();
     auto s = createNode<SuiteNode>();
+    s->line = importLine;
+    s->column = importColumn;
     for (;;) {
         if (!isName(cur_.type)) break;
         std::string modName = cur_.value;
@@ -1901,6 +1908,8 @@ std::unique_ptr<ASTNode> Parser::parseImport() {
             advance();
         }
         auto imp = createNode<ImportNode>();
+        imp->line = importLine;
+        imp->column = importColumn;
         imp->moduleName = modName;
         if (accept(TokenType::As)) {
             if (!isName(cur_.type)) {
