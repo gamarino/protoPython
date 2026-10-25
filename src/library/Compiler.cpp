@@ -366,11 +366,17 @@ const proto::ProtoTuple* Compiler::getNames() {
 //          existing jump-patching machinery keeps working.
 //
 // In every case the remaining 6 slots are filled with OP_NOP / 0,
-// preserving the byte-offset of every later instruction.  Any
-// pre-existing jump that lands inside the rewritten block now
-// lands on a NOP and walks forward harmlessly until it reaches
-// the next real opcode — semantics-preserving, no jump-table
-// fix-up required.
+// preserving the byte-offset of every later instruction, so no jump
+// needs to be rewritten.
+//
+// A window is fused only when no jump lands inside it.  A jump target
+// on the second, third or fourth instruction means control can enter
+// the window part-way (a conditional expression feeding a comparison,
+// `while (x if c else y) < b`, jumps straight to `LOAD_FAST b`): that
+// path would land on a NOP and skip the fused work.  The targets of
+// every jump and of every protected-range handler are collected first
+// (jumpTargetSlots below); a target on the window's first instruction
+// is harmless, since the fused instruction starts there.
 //
 // The pass runs at bytecode-finalisation time, AFTER applyPatches
 // has resolved every forward jump and BEFORE the ProtoTuple is
@@ -392,6 +398,38 @@ inline int slotAt(const proto::ProtoList* vec, proto::ProtoContext* ctx,
 
 // Fits in a single byte AND in the upper byte of a packed 16-bit arg.
 inline bool fitsByte(int v) { return v >= 0 && v <= 0xFF; }
+
+// Marks every slot index that some instruction can transfer control to:
+// the absolute targets of the jumps, of FOR_ITER and of the protected-range
+// openers (their handlers), and the relative target of JUMP_FORWARD
+// (docs/VM.md, 1.2).  `bc` is the flat (op, arg) stream with patched args.
+std::vector<bool> jumpTargetSlots(const std::vector<int>& bc) {
+    std::vector<bool> target(bc.size(), false);
+    auto mark = [&](long long slot) {
+        if (slot >= 0 && static_cast<size_t>(slot) < target.size()) target[static_cast<size_t>(slot)] = true;
+    };
+    for (size_t i = 0; i + 1 < bc.size(); i += SLOTS_PER_INSTR) {
+        const int op = bc[i];
+        const int arg = bc[i + 1];
+        switch (op) {
+            case OP_JUMP_ABSOLUTE:
+            case OP_POP_JUMP_IF_FALSE:
+            case OP_POP_JUMP_IF_TRUE:
+            case OP_FOR_ITER:
+            case OP_SETUP_FINALLY:
+            case OP_SETUP_WITH:
+            case OP_SETUP_ASYNC_WITH:
+                mark(arg);
+                break;
+            case OP_JUMP_FORWARD:
+                mark(static_cast<long long>(i) + SLOTS_PER_INSTR + arg);
+                break;
+            default:
+                break;
+        }
+    }
+    return target;
+}
 
 }  // namespace
 
@@ -432,8 +470,21 @@ const proto::ProtoList* Compiler::specialiseBytecode(const proto::ProtoList* in)
             && bc[base + 1] == expected;
     };
 
+    const std::vector<bool> isTarget = jumpTargetSlots(bc);
+    // True when control can enter the window starting at `base` only at its
+    // first instruction.
+    auto enteredOnlyAtStart = [&](proto::proto_ulong base) -> bool {
+        for (proto::proto_ulong k = base + SLOTS_PER_INSTR; k < base + WINDOW_SLOTS; k += SLOTS_PER_INSTR)
+            if (isTarget[k]) return false;
+        return true;
+    };
+
     proto::proto_ulong rewrites = 0;
     for (proto::proto_ulong i = 0; i + WINDOW_SLOTS <= bc.size(); ) {
+        if (!enteredOnlyAtStart(i)) {
+            i += SLOTS_PER_INSTR;
+            continue;
+        }
         // Pattern 1: LOAD_FAST a; LOAD_FAST b; INPLACE_ADD; STORE_FAST a
         int a = matchLoadFast(i);
         int b = (a >= 0) ? matchLoadFast(i + 2) : -1;
