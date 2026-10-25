@@ -424,6 +424,12 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
 /** Run a code object with the given frame. Returns execution result.
  *  `closure` (a class body's) holds the cells for its free variables, in
  *  co_freevars order; its co_cellslots get fresh empty cells. */
+/** The net effect of instruction (op, arg) on the operand stack, as the
+ *  compiler counts it to size a frame: the larger effect where the two paths
+ *  of an instruction differ (FOR_ITER counts +1, LOAD_ATTR +1).  0 for an
+ *  instruction that leaves the depth unchanged or is not an opcode. */
+int opcodeStackEffect(int op, int arg);
+
 const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoObject* codeObj,
     proto::ProtoObject*& frame,

@@ -10854,8 +10854,9 @@ const proto::ProtoObject* executeBytecodeRange(
     // never fires for CPU-bound threads.  Without an in-loop safepoint, a
     // GC stop-the-world request will starve indefinitely against a
     // pure-bytecode thread, deadlocking every other thread that is already
-    // parked.  Polling every 256 opcodes keeps the fast path branch-only
-    // while bounding pause-acquisition latency to a few µs.
+    // parked.  Polling every 64 opcodes (`sp_ctr & 0x3F` in
+    // Activation::dispatch) keeps the fast path branch-only while bounding
+    // pause-acquisition latency to a few µs.
 
     Activation act(ctx, env, bc, n, pcEnd, diag_local, constants, bytecode, names, nativeConsts, nativeNames,
                    nativeBc, pcStart, stackOffset, outPc, yielded, externalBlockStack, initialTop, finalTopPtr,

@@ -319,6 +319,8 @@ static int stackEffect(int op, int arg) {
     }
 }
 
+int opcodeStackEffect(int op, int arg) { return stackEffect(op, arg); }
+
 void Compiler::emit(int op, int arg) {
     if (get_env_diag()) {
         fprintf(stderr, "COMPILING [%p]: offset=%zu op=%d arg=%d\n", (void*)this, static_cast<size_t>(bytecodeVec_->getSize(ctx_)), op, arg);
@@ -2030,7 +2032,10 @@ bool Compiler::compileComprehensionScope(const char* scopeName, std::vector<Comp
     emit(OP_LOAD_CONST, addConstant(codeObj));
     emit(OP_BUILD_FUNCTION, fnFlags);
     if (!compileNode(restoreIter.saved.get())) return false;
-    emit(OP_GET_ITER);
+    // An `async for` first clause gets the iterable itself: the scope's own
+    // GET_AITER turns it into the asynchronous iterator (GET_ITER would ask
+    // an async generator for __iter__).
+    if (!generators[0].is_async) emit(OP_GET_ITER);
     emit(OP_CALL_FUNCTION, 1);
 
     if (isAsync) {
