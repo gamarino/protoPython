@@ -347,6 +347,15 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
         return a;
     }
     if (cur_.type == TokenType::String || cur_.type == TokenType::FString || cur_.type == TokenType::Bytes) {
+        // The literal's position is its first token's: the node is created
+        // after the last one, where the current token may be the NEWLINE that
+        // ends the statement (on the next line, after a multi-line string).
+        const int startLine = cur_.line;
+        const int startColumn = cur_.column;
+        auto atStart = [&](ASTNode* node) {
+            node->line = startLine;
+            node->column = startColumn;
+        };
         std::vector<std::unique_ptr<ASTNode>> allValues;
         bool anyF = false;
         bool anyT = false;     // PEP 750 t-string anywhere in the concat
@@ -393,9 +402,11 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
                 n->constType = ConstantNode::ConstType::Str;
                 n->strVal = finalStr;
             }
+            atStart(n.get());
             return n;
         } else {
             auto res = createNode<JoinedStrNode>();
+            atStart(res.get());
             res->values = std::move(allValues);
             res->isTString = anyT;   // propagate PEP 750 flag
             return res;

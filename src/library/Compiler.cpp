@@ -3843,6 +3843,19 @@ bool Compiler::compileSuite(SuiteNode* n) {
                 capturedDocstring_ = c->strVal;
             }
         }
+        // A constant as a statement (a docstring, a bare number, `...`) does
+        // nothing, and CPython emits no code for it: no instruction, no line.
+        // Compiling it to LOAD_CONST + POP_TOP put the first instructions of
+        // a function with a docstring on a line of their own, and a debugger
+        // stepping into the function stopped there (on the line after the
+        // docstring, a comment or a blank line). A class body's docstring is
+        // stored as __doc__ below; an interactive compile displays the value.
+        if (!interactive_ && !(isClassBody_ && i == 0)) {
+            if (auto* c = dynamic_cast<ConstantNode*>(n->statements[i].get())) {
+                (void)c;
+                continue;
+            }
+        }
         if (!compileNode(n->statements[i].get())) return false;
         if (statementLeavesValue(n->statements[i].get())) {
             // In a class body, the first string literal expression becomes the docstring.

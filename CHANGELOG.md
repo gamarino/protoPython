@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Fixed: a function's first instructions on the line after its
+  docstring.** A constant used as a statement (a docstring, `...`, a bare
+  number) compiled to `LOAD_CONST` + `POP_TOP`, and a string literal took its
+  line from the token after it (the next line). Step Into a function with a
+  docstring stopped on the comment or blank line after it (`json.dumps`:
+  `# cached encoder`). Such statements emit no code now, as in CPython, and a
+  string literal has the line of its first token (an assignment of a
+  multi-line string is on its own line in tracebacks and line events).
 - **Added: debugging in VS Code.** `protopy --dap` is a Debug Adapter Protocol
   server (line breakpoints, continue / step over / into / out / pause, the call
   stack, Locals and Globals with expandable values, evaluate in the selected

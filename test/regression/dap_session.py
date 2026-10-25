@@ -645,6 +645,57 @@ def session_condition_per_thread():
     check("worker 1 10" in s.output["stdout"] and "worker 2 20" in s.output["stdout"], "stdout %r" % s.output["stdout"])
 
 
+def session_step_into_function_entry():
+    # Step In stops at a function's first statement, never on its docstring
+    # or on the comment / blank lines after it: a plain function, a decorated
+    # one (through its wrapper), a method, a nested def, json.dumps.
+    prog = client_path("dap_entry.py")
+    s = Session()
+    s.start(prog, [44, 45, 46, 47, 48])
+    s.stopped("breakpoint", 44)
+    s.ok("stepIn", {"threadId": 1})
+    s.stopped("step", 10, "plain")
+    s.ok("continue", {"threadId": 1})
+    s.stopped("breakpoint", 45)
+    s.ok("stepIn", {"threadId": 1})
+    s.stopped("step", 17, "deco.<locals>.wrapper")
+    s.ok("stepIn", {"threadId": 1})
+    s.stopped("step", 25, "decorated")
+    s.ok("continue", {"threadId": 1})
+    s.stopped("breakpoint", 46)
+    s.ok("stepIn", {"threadId": 1})
+    s.stopped("step", 32, "K.method")
+    s.ok("continue", {"threadId": 1})
+    s.stopped("breakpoint", 47)
+    s.ok("stepIn", {"threadId": 1})
+    s.stopped("step", 37, "outer")
+    s.ok("next", {"threadId": 1})
+    s.stopped("step", 41, "outer")
+    s.ok("stepIn", {"threadId": 1})
+    s.stopped("step", 40, "outer.<locals>.inner")
+    s.ok("continue", {"threadId": 1})
+    s.stopped("breakpoint", 48)
+    s.ok("stepIn", {"threadId": 1})
+    frames = s.stopped("step", frames_line_of_dumps(), "dumps")
+    check(frames[0]["source"]["name"] == "__init__.py", "json.dumps frame %r" % frames[0]["source"])
+    s.ok("continue", {"threadId": 1})
+    check(s.finish() == 0, "exit code")
+    check(s.output["stdout"] == "done [1]\n", "stdout %r" % s.output["stdout"])
+
+
+def frames_line_of_dumps():
+    """The first statement of json.dumps in the standard library protopy uses:
+    the line after its docstring's comment (`# cached encoder`)."""
+    lib = os.path.join(os.path.dirname(HERE), os.pardir, "lib", "python3.14", "json", "__init__.py")
+    with open(os.path.normpath(lib), encoding="utf-8") as f:
+        lines = f.read().splitlines()
+    start = next(i for i, l in enumerate(lines) if l.startswith("def dumps("))
+    for i in range(start, len(lines)):
+        if lines[i].strip() == "# cached encoder":
+            return i + 2  # 1-based, the line after the comment
+    raise Failure("no '# cached encoder' in json.dumps")
+
+
 FAKE_ROOT = r"C:\Fake\Proj"  # the client's side of the mapping, on every platform
 
 
@@ -719,7 +770,7 @@ def main():
                  session_gc_while_stopped, session_exception_raised, session_exception_filters_off,
                  session_exception_user_unhandled, session_threads, session_pause_thread,
                  session_gc_thread_stopped, session_line_conditions, session_exception_conditions,
-                 session_condition_per_thread, session_path_mappings):
+                 session_condition_per_thread, session_path_mappings, session_step_into_function_entry):
         if only and test.__name__ not in only:
             continue
         try:
