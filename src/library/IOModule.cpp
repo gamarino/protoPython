@@ -1185,9 +1185,14 @@ static const proto::ProtoObject* py_io_open(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
-
-    const proto::ProtoObject* fileArg = positionalParameters->getAt(context, 0);
+    // `file` may be given by keyword; without it CPython raises TypeError
+    // (this returned None).
+    const proto::ProtoObject* fileArg = io_open_arg(context, positionalParameters, keywordParameters, 0, "file");
+    if (!fileArg) {
+        PythonEnvironment::fromContext(context)->raiseTypeError(context,
+            "open() missing required argument 'file' (pos 1)");
+        return nullptr;
+    }
     std::string mode = "r";
     const proto::ProtoObject* modeArg = io_open_arg(context, positionalParameters, keywordParameters, 1, "mode");
     if (modeArg && modeArg->isString(context)) modeArg->asString(context)->toUTF8String(context, mode);

@@ -20,6 +20,24 @@
 #include <functional>
 
 namespace protoPython {
+
+// Raises TypeError when `args` (null counts as empty) holds fewer than
+// `minimum` positional arguments.  `message` is CPython's text for the call;
+// a "%d" in it stands for the number of arguments given, which is the count
+// minus `skipped` (the class or instance a constructor receives first).
+// Built-ins used to return None for a short argument list (`len()`).
+static void requireArgs(proto::ProtoContext* context, const proto::ProtoArguments* args,
+                        unsigned long minimum, unsigned long skipped, const char* message) {
+    const unsigned long given = args ? static_cast<unsigned long>(args->getSize(context)) : 0;
+    if (given >= minimum) return;
+    std::string text(message);
+    const size_t at = text.find("%d");
+    if (at != std::string::npos)
+        text.replace(at, 2, std::to_string(given >= skipped ? given - skipped : 0));
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    env->raiseTypeError(context, text);
+}
+
 // Forward declaration: env-aware hash used by py_dict_setitem and
 // BUILD_MAP.  STRUCT-305 reads the value of a non-string namespace
 // key from the namespace dict's __data__ SparseList; that data is
@@ -278,7 +296,7 @@ static const proto::ProtoObject* py_id(
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
     (void)self; (void)parentLink; (void)keywordParameters;
-    if (positionalParameters->getSize(context) == 0) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 1, 0, "id() takes exactly one argument (%d given)");
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     return context->fromInteger((long long)(uintptr_t)obj);
 }
@@ -384,7 +402,7 @@ static const proto::ProtoObject* py_len(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 1, 0, "len() takes exactly one argument (%d given)");
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     
     // Try calling __len__ first if it exists
@@ -888,7 +906,7 @@ static const proto::ProtoObject* py_next(
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 1, 0, "next expected at least 1 argument, got %d");
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* defaultVal = positionalParameters->getSize(context) >= 2
         ? positionalParameters->getAt(context, 1) : nullptr;
@@ -1359,7 +1377,7 @@ static const proto::ProtoObject* py_repr(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 1, 0, "repr() takes exactly one argument (%d given)");
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     if (obj == PROTO_TRUE) return PythonEnvironment::getInternedString(context, "True")->asObject(context);
     if (obj == PROTO_FALSE) return PythonEnvironment::getInternedString(context, "False")->asObject(context);
@@ -1662,7 +1680,7 @@ static const proto::ProtoObject* py_format(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 1, 0, "format expected at least 1 argument, got %d");
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     // Subclasses of int / float carry their numeric value inside __data__.
     // Unwrap so the int / float fast paths below recognise them as
@@ -1782,7 +1800,7 @@ static const proto::ProtoObject* py_enumerate(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 2, 1, "enumerate() missing required argument 'iterable'");
     const proto::ProtoObject* iterable = positionalParameters->getAt(context, 1);
     ::protoPython::PythonEnvironment* envStart = ::protoPython::PythonEnvironment::fromContext(context);
     long long start = 0;
@@ -2071,7 +2089,7 @@ static const proto::ProtoObject* py_sum(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 1, 0, "sum() takes at least 1 positional argument (%d given)");
     const proto::ProtoObject* iterable = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* start = positionalParameters->getSize(context) >= 2 ? positionalParameters->getAt(context, 1) : context->fromInteger(0);
 
@@ -2151,7 +2169,7 @@ static const proto::ProtoObject* py_all(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_TRUE;
+    requireArgs(context, positionalParameters, 1, 0, "all() takes exactly one argument (%d given)");
     const proto::ProtoObject* iterable = positionalParameters->getAt(context, 0);
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     // Route through env->iter / env->next so user iterators work.
@@ -2175,7 +2193,7 @@ static const proto::ProtoObject* py_any(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
+    requireArgs(context, positionalParameters, 1, 0, "any() takes exactly one argument (%d given)");
     const proto::ProtoObject* iterable = positionalParameters->getAt(context, 0);
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoObject* it = env ? env->iter(iterable) : nullptr;
@@ -2195,7 +2213,7 @@ static const proto::ProtoObject* py_callable(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (!positionalParameters || positionalParameters->getSize(context) < 1) return PROTO_FALSE;
+    requireArgs(context, positionalParameters, 1, 0, "callable() takes exactly one argument (%d given)");
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     // None, null, or bare integers/booleans are not callable
     if (!obj || obj == PROTO_NONE) return PROTO_FALSE;
@@ -3347,7 +3365,7 @@ static const proto::ProtoObject* py__tokenize_source(
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 1, 0, "_tokenize_source() takes exactly one argument (%d given)");
     const proto::ProtoObject* srcObj = positionalParameters->getAt(context, 0);
     if (!srcObj->isString(context)) return PROTO_NONE;
     std::string source;
@@ -3375,7 +3393,7 @@ static const proto::ProtoObject* py_compile(
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 1, 0, "compile() missing required argument 'source' (pos 1)");
     const proto::ProtoObject* sourceObj = positionalParameters->getAt(context, 0);
     if (!sourceObj->isString(context)) {
         // Source given as bytes (importlib's SourceLoader passes the file's
@@ -3597,7 +3615,7 @@ static const proto::ProtoObject* py_eval(
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 1, 0, "eval expected at least 1 argument, got %d");
     const proto::ProtoObject* exprObj = positionalParameters->getAt(context, 0);
     // eval(code) runs a compile() result as is; eval(str) compiles it first.
     const proto::ProtoObject* codeObj = nullptr;
@@ -3974,7 +3992,7 @@ static const proto::ProtoObject* py_super_getattr(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 1, 0, "expected 1 argument, got %d");
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 0);
     if (!nameObj->isString(context)) return PROTO_NONE;
 
@@ -4250,7 +4268,7 @@ static const proto::ProtoObject* py_super_setattr(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 2, 0, "expected 2 arguments, got %d");
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* valueObj = positionalParameters->getAt(context, 1);
 
@@ -4877,7 +4895,7 @@ static const proto::ProtoObject* py_exec(
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 1, 0, "exec expected at least 1 argument, got %d");
     const proto::ProtoObject* sourceObj = positionalParameters->getAt(context, 0);
     // exec(code) runs a compile() result as is; exec(str) compiles it first.
     const proto::ProtoObject* codeObj = nullptr;
@@ -5207,7 +5225,7 @@ static const proto::ProtoObject* py_sorted(
     (void)parentLink;
     (void)self;
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
-    if (!positionalParameters || positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 1, 0, "sorted expected 1 argument, got %d");
     const proto::ProtoObject* iterable = positionalParameters->getAt(context, 0);
     if (!env) return PROTO_NONE;
     // env->iter / env->next resolve __iter__ / __next__ through the type, so
@@ -5360,7 +5378,7 @@ static const proto::ProtoObject* py_hash(
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 1, 0, "hash() takes exactly one argument (%d given)");
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     // CPython contract: bool is an int subclass, so
     //   hash(True)  == hash(1) == 1
@@ -5581,7 +5599,7 @@ static const proto::ProtoObject* py_delattr(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 2, 0, "delattr expected 2 arguments, got %d");
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 1);
     if (!nameObj->isString(context)) return PROTO_NONE;
@@ -5873,7 +5891,7 @@ const proto::ProtoObject* py_genericalias_new(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) < 3) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 3, 1, "GenericAlias expected 2 arguments, got %d");
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* origin = positionalParameters->getAt(context, 1);
     const proto::ProtoObject* args = positionalParameters->getAt(context, 2);
@@ -6005,7 +6023,7 @@ const proto::ProtoObject* py_uniontype_new(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 2, 1, "cannot create 'types.UnionType' instances");
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* args = positionalParameters->getAt(context, 1);
 
@@ -7920,7 +7938,7 @@ static const proto::ProtoObject* py_isinstance(
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
-    if (positionalParameters->getSize(context) < 2) return PROTO_FALSE;
+    requireArgs(context, positionalParameters, 2, 0, "isinstance expected 2 arguments, got %d");
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 1);
 
@@ -8300,7 +8318,7 @@ static const proto::ProtoObject* py_issubclass(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) < 2) return PROTO_FALSE;
+    requireArgs(context, positionalParameters, 2, 0, "issubclass expected 2 arguments, got %d");
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* base = positionalParameters->getAt(context, 1);
 
@@ -8413,7 +8431,7 @@ static const proto::ProtoObject* py_abs(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 1, 0, "abs() takes exactly one argument (%d given)");
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     if (obj->isInteger(context)) {
         return obj->abs(context);
@@ -8889,7 +8907,7 @@ static const proto::ProtoObject* py_divmod(
         // bound call via __divmod__: self is first, positional[0] is second
         offset = -1; // handled below
     }
-    if (!positionalParameters || positionalParameters->getSize(context) < 2) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 2, 0, "divmod expected 2 arguments, got %d");
     const proto::ProtoObject* objA = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* objB = positionalParameters->getAt(context, 1);
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
@@ -8951,7 +8969,7 @@ static const proto::ProtoObject* py_ascii(
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 1, 0, "ascii() takes exactly one argument (%d given)");
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     // Use PythonEnvironment::reprObject (the same internal repr used by
     // repr()) so the int / str / list / dict fast paths fire correctly.
@@ -9065,7 +9083,7 @@ static const proto::ProtoObject* py_property_get(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 1, 0, "expected at least 1 argument, got %d");
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     if (obj == PROTO_NONE) return self;
     const proto::ProtoObject* fget = self->getAttribute(context, PythonEnvironment::getInternedString(context, "fget"));
@@ -9092,7 +9110,7 @@ static const proto::ProtoObject* py_property_set(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 2, 0, "expected 2 arguments, got %d");
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* val = positionalParameters->getAt(context, 1);
     const proto::ProtoObject* fset = self->getAttribute(context, PythonEnvironment::getInternedString(context, "fset"));
@@ -9171,7 +9189,7 @@ static const proto::ProtoObject* py_property_delete(
     const proto::ParentLink*,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments*) {
-    if (!positionalParameters || positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 1, 0, "expected 1 argument, got %d");
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* fdel = self->getAttribute(context, PythonEnvironment::getInternedString(context, "fdel"));
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
@@ -9285,7 +9303,7 @@ static const proto::ProtoObject* py_property_getter_method(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 1, 0, "getter() takes exactly one argument (%d given)");
     const proto::ProtoObject* newFget = positionalParameters->getAt(context, 0);
     return py_property_copy_with(context, self, "fget", newFget);
 }
@@ -9297,7 +9315,7 @@ static const proto::ProtoObject* py_property_setter_method(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 1, 0, "setter() takes exactly one argument (%d given)");
     const proto::ProtoObject* newFset = positionalParameters->getAt(context, 0);
     return py_property_copy_with(context, self, "fset", newFset);
 }
@@ -9309,7 +9327,7 @@ static const proto::ProtoObject* py_property_deleter_method(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 1, 0, "deleter() takes exactly one argument (%d given)");
     const proto::ProtoObject* newFdel = positionalParameters->getAt(context, 0);
     return py_property_copy_with(context, self, "fdel", newFdel);
 }
@@ -9320,7 +9338,7 @@ static const proto::ProtoObject* py_property(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 1, 0, "descriptor '__new__' of 'property' object needs an argument");
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0); // property class
 
     // Create new instance of cls and persist every setAttribute return — even
@@ -9442,7 +9460,7 @@ static const proto::ProtoObject* py_classmethod(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 2, 1, "classmethod expected 1 argument, got %d");
     PythonEnvironment* envEarly = PythonEnvironment::fromContext(context);
     // CPython: classmethod() does NOT accept keyword arguments —
     // both `classmethod(f, kw=1)` and `classmethod(func=f)` raise
@@ -9589,7 +9607,7 @@ static const proto::ProtoObject* py_staticmethod(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 2, 1, "staticmethod expected 1 argument, got %d");
     PythonEnvironment* envEarly = PythonEnvironment::fromContext(context);
     if (keywordParameters && keywordParameters->getSize(context) > 0) {
         if (envEarly) envEarly->raiseTypeError(context,
@@ -9823,7 +9841,7 @@ static const proto::ProtoObject* py_bin(
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 1, 0, "bin() takes exactly one argument (%d given)");
     const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
     if (!arg->isInteger(context)) {
         if (arg == PROTO_TRUE) arg = context->fromInteger(1);
@@ -9863,7 +9881,7 @@ static const proto::ProtoObject* py_oct(
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 1, 0, "oct() takes exactly one argument (%d given)");
     const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
     if (!arg->isInteger(context)) {
         if (arg == PROTO_TRUE) arg = context->fromInteger(1);
@@ -9897,7 +9915,7 @@ static const proto::ProtoObject* py_hex(
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 1, 0, "hex() takes exactly one argument (%d given)");
     const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
     // Unwrap a wrapped subclass-of-int instance via __data__, and
     // promote bool sentinels to 0/1, so hex(MyInt(7)) and hex(True)
@@ -10171,7 +10189,7 @@ static const proto::ProtoObject* py_range_getitem(
     const proto::ProtoArguments* args,
     const proto::ProtoKeywordArguments*) {
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
-    if (!args || args->getSize(context) < 1) return PROTO_NONE;
+    requireArgs(context, args, 1, 0, "expected 1 argument, got %d");
     const proto::ProtoObject* idxObj = args->getAt(context, 0);
     if (!idxObj) return PROTO_NONE;
     long long start = 0, stop = 0, step = 0, n = 0;
@@ -10402,6 +10420,12 @@ static const proto::ProtoObject* py_range(
     };
 
     proto::proto_ulong argsSize = positionalParameters->getSize(context);
+    requireArgs(context, positionalParameters, 1, 0, "range expected at least 1 argument, got %d");
+    if (argsSize > 3) {
+        PythonEnvironment::fromContext(context)->raiseTypeError(context,
+            "range expected at most 3 arguments, got " + std::to_string(argsSize));
+        return nullptr;
+    }
     if (argsSize == 1) {
         bool ok;
         stop = toLong(positionalParameters->getAt(context, 0), ok);
@@ -10719,7 +10743,7 @@ static const proto::ProtoObject* py_map(
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
     (void)parentLink;
-    if (positionalParameters->getSize(context) < 3) return PROTO_NONE;
+    requireArgs(context, positionalParameters, 3, 1, "map() must have at least two arguments.");
     const proto::ProtoObject* func = positionalParameters->getAt(context, 1);
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     // map(func, *iterables, strict=False), new in 3.14: with strict=True
