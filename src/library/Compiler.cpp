@@ -2118,61 +2118,18 @@ bool Compiler::compileComprehension(const std::vector<Comprehension>& generators
     int loopStart = -1;
     int endSlot = -1;
 
-    if (gen.is_async) {
-        if (!compileNode(gen.iter.get())) return false;
-        emit(OP_GET_AITER);
-        loopStart = bytecodeOffset();
-        
-        int setupFinallySlot = bytecodeOffset();
-        emit(OP_SETUP_FINALLY, 0);
-        
-        emit(OP_GET_ANEXT);
-        emit(OP_GET_AWAITABLE);
-        emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
-        emit(OP_YIELD_FROM);
-        
-        emit(OP_POP_BLOCK);
-        if (!compileTarget(gen.target.get(), TargetCtx::Store)) return false;
-        
-        int jumpToBodySlot = bytecodeOffset();
-        emit(OP_JUMP_FORWARD, 0);
-
-        // Handler
-        int handlerTarget = bytecodeOffset();
-        addPatch(setupFinallySlot + 1, handlerTarget);
-        
-        int idx = addName("StopAsyncIteration");
-        emit(OP_LOAD_GLOBAL, (idx << 1) | 1);
-        emit(OP_EXCEPTION_MATCH);
-        
-        int popJumpSlot = bytecodeOffset();
-        emit(OP_POP_JUMP_IF_FALSE, 0);
-        
-        emit(OP_POP_TOP); // exc
-        emit(OP_POP_TOP); // val
-        emit(OP_POP_TOP); // tb
-        emit(OP_POP_EXCEPT);
-        
-        int afterLoopSlot = bytecodeOffset();
-        emit(OP_JUMP_ABSOLUTE, 0); // Need to patch this to after the loop
-        endSlot = bytecodeOffset() - 1;
-
-        // Not StopAsyncIteration
-        int reRaiseTarget = bytecodeOffset();
-        addPatch(popJumpSlot + 1, reRaiseTarget);
-        emit(OP_RERAISE, 1);
-
-        // Success branch
-        int successTarget = bytecodeOffset();
-        addPatch(jumpToBodySlot + 1, successTarget);
-    } else {
-        if (!compileNode(gen.iter.get())) return false;
-        emit(OP_GET_ITER);
-        loopStart = bytecodeOffset();
-        emit(OP_FOR_ITER, 0);
-        endSlot = bytecodeOffset() - 1;
-        if (!compileTarget(gen.target.get(), TargetCtx::Store)) return false;
-    }
+    // `async for` in a comprehension is lowered as the `async for` statement
+    // is (compileAsyncFor): GET_AITER gives an iterator whose __next__ steps
+    // the asynchronous one, and FOR_ITER drives it.  (The previous lowering,
+    // GET_ANEXT and an awaited step in a protected range, patched the wrong
+    // instructions and never ended; the runtime's asynchronous iterators do
+    // not return awaitables from __anext__ either: docs/VM.md, section 6.)
+    if (!compileNode(gen.iter.get())) return false;
+    emit(gen.is_async ? OP_GET_AITER : OP_GET_ITER);
+    loopStart = bytecodeOffset();
+    emit(OP_FOR_ITER, 0);
+    endSlot = bytecodeOffset() - 1;
+    if (!compileTarget(gen.target.get(), TargetCtx::Store)) return false;
     
     std::vector<int> ifSlots;
     for (const auto& condition : gen.ifs) {
@@ -2184,8 +2141,7 @@ bool Compiler::compileComprehension(const std::vector<Comprehension>& generators
     if (!compileComprehension(generators, index + 1, innerBody)) return false;
     
     emit(OP_JUMP_ABSOLUTE, loopStart * 2);
-    int loopEnd = bytecodeOffset();
-    addPatch(endSlot, loopEnd);
+    addPatch(endSlot, bytecodeOffset());
     for (int slot : ifSlots) {
         addPatch(slot, loopStart);
     }
@@ -6413,6 +6369,21 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     proto::ProtoContext* subCtx = new proto::ProtoContext(ctx->space, chainParent(ctx), nullptr, localNames, nullptr, nullptr);
     proto::ProtoContext* execCtx = subCtx;
     PythonEnvironment::setCurrentContext(execCtx);
+    // Releases the context however the body ends.  An exception escaping a
+    // module, class body or exec() used to skip the release: the context
+    // stayed the thread's current one, every later context chained onto it,
+    // and the chain (with everything it held) grew with each caught raise.
+    struct SubContextRelease {
+        proto::ProtoContext* sub;
+        proto::ProtoContext* previous;
+        const proto::ProtoObject* result = nullptr;
+        ~SubContextRelease() {
+            PythonEnvironment::setCurrentContext(previous);
+            sub->returnValue = result;
+            checkInnermost(sub);
+            delete sub;
+        }
+    } release{subCtx, oldCtx};
 
     proto::proto_ulong stackOffset = (co_varnames && ::protoPython::PythonEnvironment::tupleView(execCtx, co_varnames)) ? ::protoPython::PythonEnvironment::tupleView(execCtx, co_varnames)->getSize(execCtx) : 0;
     // Free variables and cells (a class body's; Compiler.h, "Closures"): the
