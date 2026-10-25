@@ -1,4 +1,5 @@
 #include <protoPython/Parser.h>
+#include <algorithm>
 #include <iostream>
 #include <stdexcept>
 
@@ -88,6 +89,10 @@ static const char* tokenToName(TokenType t) {
 }
 
 Parser::Parser(const std::string& source) : tok_(source) {
+    advance();
+}
+
+Parser::Parser(const std::string& source, int firstLine) : tok_(source, firstLine) {
     advance();
 }
 
@@ -1541,6 +1546,12 @@ std::unique_ptr<ASTNode> Parser::parseLambda() {
 
 std::unique_ptr<ASTNode> Parser::parseFString() {
     std::string raw = cur_.value;
+    // Line of the f-string's first character; a part's line counts the
+    // newlines before it (a triple-quoted f-string spans lines).
+    const int fstringLine = cur_.line;
+    auto lineAt = [&](size_t offset) {
+        return fstringLine + static_cast<int>(std::count(raw.begin(), raw.begin() + static_cast<std::ptrdiff_t>(std::min(offset, raw.size())), '\n'));
+    };
     auto joined = createNode<JoinedStrNode>();
     // Propagate the lexer's t-prefix flag so downstream stages
     // (missed-comma analyzer, runtime type reporting) can distinguish
@@ -1601,6 +1612,7 @@ std::unique_ptr<ASTNode> Parser::parseFString() {
                     return nullptr;
                 }
                 std::string fullExprStr = raw.substr(i, closeBrace - i);
+                const int exprLine = lineAt(i);
                 i = closeBrace + 1;
                 
                 size_t exclamation = std::string::npos;
@@ -1633,13 +1645,14 @@ std::unique_ptr<ASTNode> Parser::parseFString() {
                     exprStr = fullExprStr.substr(0, exclamation);
                 }
 
-                Parser subParser(exprStr);
+                Parser subParser(exprStr, exprLine);
                 auto expr = subParser.parseExpression();
                 if (subParser.hasError()) {
                     error("f-string expression error: " + subParser.getLastErrorMsg());
                     return nullptr;
                 }
                 auto fv = createNode<FormattedValueNode>();
+                fv->line = exprLine;
                 fv->value = std::move(expr);
                 fv->conversion = conversion;
                 fv->format_spec = format_spec;
@@ -1658,6 +1671,11 @@ std::unique_ptr<ASTNode> Parser::parseFString() {
             }
         }
     }
+    // The literal parts were created after the f-string token was consumed;
+    // they belong to the f-string's line, not to the next token's.
+    joined->line = fstringLine;
+    for (auto& v : joined->values)
+        if (dynamic_cast<ConstantNode*>(v.get())) v->line = fstringLine;
     return joined;
 }
 
@@ -2066,6 +2084,10 @@ std::unique_ptr<ASTNode> Parser::parseClassDef() {
 }
 
 std::unique_ptr<ASTNode> Parser::parseAsync() {
+    // The statement's line and column are the `async` keyword's; the node is
+    // created after its body has been parsed.
+    const int asyncLine = cur_.line;
+    const int asyncColumn = cur_.column;
     advance(); // async
     if (cur_.type == TokenType::Def) {
         advance();
@@ -2086,6 +2108,8 @@ std::unique_ptr<ASTNode> Parser::parseAsync() {
         if (!body) return nullptr;
         
         auto fn = createNode<AsyncFunctionDefNode>();
+        fn->line = asyncLine;
+        fn->column = asyncColumn;
         fn->name = funcName;
         fn->type_params = std::move(tmpFn->type_params);
         fn->returns = std::move(tmpFn->returns);
@@ -2102,6 +2126,8 @@ std::unique_ptr<ASTNode> Parser::parseAsync() {
     } else if (cur_.type == TokenType::With) {
          advance();
          auto w = createNode<AsyncWithNode>();
+         w->line = asyncLine;
+         w->column = asyncColumn;
          bool parenthesized = accept(TokenType::LParen);
          for (;;) {
              auto ctx = parseExpression();
@@ -2128,6 +2154,8 @@ std::unique_ptr<ASTNode> Parser::parseAsync() {
          auto body = parseSuite();
          
          auto f = createNode<AsyncForNode>();
+         f->line = asyncLine;
+         f->column = asyncColumn;
          f->target = std::move(target);
          f->iter = std::move(iter);
          f->body = std::move(body);

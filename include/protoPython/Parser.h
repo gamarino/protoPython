@@ -487,6 +487,8 @@ struct NonlocalNode : ASTNode {
 class Parser {
 public:
     explicit Parser(const std::string& source);
+    /** Numbers lines from `firstLine` (an f-string expression's line). */
+    Parser(const std::string& source, int firstLine);
     std::unique_ptr<ModuleNode> parseModule();
     std::unique_ptr<ASTNode> parseExpression();
     std::unique_ptr<ASTNode> parseTestList();

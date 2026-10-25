@@ -14,6 +14,10 @@ Tokenizer::Tokenizer(const std::string& source) : source_(source) {
     indentStack_.push_back(0);
 }
 
+Tokenizer::Tokenizer(const std::string& source, int firstLine) : source_(source), line_(firstLine) {
+    indentStack_.push_back(0);
+}
+
 void Tokenizer::skipWhitespace() {
     while (pos_ < source_.size()) {
         if (source_[pos_] == ' ' || source_[pos_] == '\t' || source_[pos_] == '\r')
@@ -782,6 +786,10 @@ Token Tokenizer::next() {
     if (get_env_diag()) {
     }
     if (c == '\n') {
+        // A NEWLINE token carries the line it ends: a node the parser creates
+        // when the statement's last token has been consumed (a lambda body,
+        // a binary operation at the end of a line) takes cur_'s line.
+        Token newline = makeToken(TokenType::Newline);
         pos_++;
         line_++;
         lineStartPos_ = pos_;
@@ -789,7 +797,7 @@ Token Tokenizer::next() {
             return next();
         }
         atLineStart_ = true;
-        return makeToken(TokenType::Newline);
+        return newline;
     }
     if (c == '+') {
         if (pos_ + 1 < source_.size() && source_[pos_ + 1] == '=') {

@@ -145,6 +145,8 @@ struct Token {
 class Tokenizer {
 public:
     explicit Tokenizer(const std::string& source);
+    /** Numbers lines from `firstLine` (an f-string expression's line). */
+    Tokenizer(const std::string& source, int firstLine);
     Token next();
     const Token& peek();
     bool hasNext() const;
