@@ -136,34 +136,29 @@ private:
      *  the current scope, and leave the result on the stack. */
     bool emitAnnotationScopeCall(FunctionDefNode* scope,
         const std::vector<std::unique_ptr<ASTNode>>& args);
-    /** match/case (PEP 634). compileMatch handles the outer match/case
-     *  scaffolding; compilePattern emits per-pattern test code.
-     *
-     *  compilePattern contract:
-     *    Pre:  TOS = candidate value to be tested.
-     *    Post-success: stack returns to its pre-state (TOS consumed),
-     *                  any captured names are bound.
-     *    Post-fail:    JUMP to failLabelSlot is taken with the stack
-     *                  restored to its pre-state (TOS consumed).
-     *    The candidate is consumed in BOTH branches — the caller does
-     *    NOT need to clean up. To achieve this uniformly, compilePattern
-     *    stashes the candidate into a fresh `__match_tmp_<n>` local at
-     *    entry and accesses it via LOAD_NAME from then on. Captures
-     *    bound by sub-patterns are visible after success. */
+    /** match/case (PEP 634); the layout is described in Compiler.cpp.
+     *  Every intermediate value lives on the operand stack. */
     bool compileMatch(MatchNode* n);
-    /** Emit code that pops the candidate off TOS, tests it against pat,
-     *  and either falls through (success) or jumps to failLabelSlot
-     *  (the bytecode-arg slot of an OP_JUMP_ABSOLUTE that needs patching).
-     *  collectedNames accumulates all binding names this pattern would
-     *  introduce on success — used by Or-patterns to enforce that all
-     *  alternatives bind the same set of names. */
-    bool compilePattern(MatchPatternNode* pat, int failLabelSlot,
-        std::vector<std::string>* collectedNames);
-    /** Internal helper: collect binding names a pattern would introduce. */
-    static void collectPatternNames(const MatchPatternNode* pat,
-        std::vector<std::string>& out);
-    /** Counter for `__match_tmp_<n>` temp names. Reset per match stmt. */
-    int matchTmpCounter_ = 0;
+    /** The state of one pattern test: `onTop` counts the values the case has
+     *  pushed (the candidate included) that a failing test must pop, and
+     *  `fails` records each failing jump (instruction index, values to pop). */
+    struct PatternState {
+        int onTop = 0;
+        std::vector<std::pair<int, int>> fails;
+    };
+    /** Pre: the candidate is on top of the stack, counted in ps.onTop.
+     *  Success: the candidate is consumed (ps.onTop - 1) and the pattern's
+     *  names are bound.  Failure: a jump recorded in ps.fails.  Answers false
+     *  for an invalid pattern (a SyntaxError). */
+    bool compilePattern(MatchPatternNode* pat, PatternState& ps);
+    /** Emits `jumpOp` to the fail label for the values now on the stack. */
+    void emitPatternFailJump(int jumpOp, PatternState& ps);
+    /** Emits the fail labels of `ps`: one POP_TOP per value, falling through
+     *  to the label that pops none, where the depth is `baseDepth`. */
+    void emitPatternFailBlock(PatternState& ps, int baseDepth);
+    /** [.. c] -> [.. c fn(c, extra...)], `fn` a built-in looked up by name,
+     *  `extraArgs` emitting `nExtra` further arguments (or null). */
+    bool emitCallOnCandidate(const char* fn, const std::function<bool()>& extraArgs, int nExtra);
     bool compileComprehension(const std::vector<Comprehension>& generators, size_t index, std::function<bool()> innerBody);
     bool compileComprehensionScope(const char* scopeName, std::vector<Comprehension>& generators,
                                    const std::vector<ASTNode*>& exprs, bool isGenExpr,

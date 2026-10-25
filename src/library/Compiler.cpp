@@ -191,6 +191,10 @@ static int stackEffect(int op, int arg) {
             return -((arg & 31) + 2);
         case OP_STORE_SUBSCR: // pops value + key + container
             return -3;
+        case OP_DELETE_SUBSCR: // pops key + container
+            return -2;
+        case OP_DELETE_ATTR:   // pops the object
+            return -1;
 
         // Unary ops (0 net: pop 1, push 1)
         case OP_UNARY_NEGATIVE: case OP_UNARY_POSITIVE:
@@ -6870,428 +6874,297 @@ bool Compiler::compileTypeAlias(TypeAliasNode* n) {
 // match/case (PEP 634)
 // =========================================================================
 //
-// All pattern-test code uses the same convention:
+// The code keeps every intermediate value on the operand stack, as CPython
+// does: no temporary is ever stored in a namespace, so a match statement
+// leaves nothing behind but the names its patterns capture, and those bind
+// in the enclosing scope (a function's locals, collectDefinedNames).
 //
-//   compilePattern(pat, failLabelSlot, collectedNames):
-//       Pre:  TOS = candidate value to be matched.
-//       Post (success): stack returns to its pre-state (TOS consumed);
-//                       binding names introduced by the pattern are
-//                       stored.
-//       Post (fail):    a JUMP_ABSOLUTE to failLabelSlot is taken with
-//                       the stack restored to its pre-state.
+//   <subject>
+//   case 1:  DUP_TOP; <pattern>; [<guard>; POP_JUMP_IF_FALSE fail_0]
+//            POP_TOP                     ; the subject
+//            <body>; JUMP_ABSOLUTE end
+//   fail_k:  POP_TOP                     ; one per value left on the stack
+//            ...                         ; by the failing test
+//   fail_0:
+//   case 2:  ...
+//            POP_TOP                     ; no case matched: the subject
+//   end:
 //
-// The implementation stashes the candidate into a fresh `__match_tmp_<n>`
-// local at entry and accesses it via LOAD_NAME from then on. This avoids
-// the stack-juggling that would otherwise be needed to keep the candidate
-// reachable for sub-pattern tests, isinstance checks, and capture binding.
+// compilePattern contract: the candidate is on top of the stack and counted
+// in ps.onTop, the number of values the case has pushed above the subject
+// copy's base.  On success the candidate is consumed (ps.onTop - 1) and the
+// pattern's names are bound.  A failing test jumps to the fail label for the
+// values still on the stack (emitPatternFailJump records ps.onTop), and
+// emitPatternFailBlock pops them.  Calls of built-ins push the NULL marker of
+// the modern call layout (docs/VM.md, 1.5).
 
-void Compiler::collectPatternNames(const MatchPatternNode* pat,
-    std::vector<std::string>& out) {
-    if (!pat) return;
-    if (auto* a = dynamic_cast<const MatchAsPatternNode*>(pat)) {
-        if (!a->name.empty() && a->name != "_") out.push_back(a->name);
-        if (a->pattern) collectPatternNames(a->pattern.get(), out);
-        return;
-    }
-    if (auto* o = dynamic_cast<const MatchOrPatternNode*>(pat)) {
-        // PEP 634 requires every alt to bind the same names.  Collect
-        // from the first alt; the validity check is enforced at compile.
-        if (!o->alternatives.empty()) {
-            collectPatternNames(o->alternatives.front().get(), out);
-        }
-        return;
-    }
-    if (auto* s = dynamic_cast<const MatchSequencePatternNode*>(pat)) {
-        for (auto& p : s->patterns) collectPatternNames(p.get(), out);
-        return;
-    }
-    if (auto* st = dynamic_cast<const MatchStarPatternNode*>(pat)) {
-        if (!st->name.empty()) out.push_back(st->name);
-        return;
-    }
-    if (auto* m = dynamic_cast<const MatchMappingPatternNode*>(pat)) {
-        for (auto& p : m->patterns) collectPatternNames(p.get(), out);
-        if (!m->rest.empty()) out.push_back(m->rest);
-        return;
-    }
-    if (auto* c = dynamic_cast<const MatchClassPatternNode*>(pat)) {
-        for (auto& p : c->args) collectPatternNames(p.get(), out);
-        for (auto& kv : c->kwargs) collectPatternNames(kv.second.get(), out);
-        return;
-    }
-    // MatchValue, MatchSingleton: no bindings.
+void Compiler::emitPatternFailJump(int jumpOp, PatternState& ps) {
+    emit(jumpOp, 0);
+    ps.fails.emplace_back(bytecodeOffset() - 1, ps.onTop);
 }
 
-bool Compiler::compilePattern(MatchPatternNode* pat, int failLabelSlot,
-    std::vector<std::string>* collectedNames) {
+void Compiler::emitPatternFailBlock(PatternState& ps, int baseDepth) {
+    if (ps.fails.empty()) return;
+    int maxPops = 0;
+    for (const auto& f : ps.fails) maxPops = std::max(maxPops, f.second);
+    // label[k]: the entry that pops k values.
+    std::vector<int> label(static_cast<size_t>(maxPops) + 1, 0);
+    currentStack_ = baseDepth + maxPops;
+    for (int k = maxPops; k >= 1; --k) {
+        label[static_cast<size_t>(k)] = bytecodeOffset();
+        emit(OP_POP_TOP, 0);
+    }
+    label[0] = bytecodeOffset();
+    for (const auto& f : ps.fails) addPatch(f.first, label[static_cast<size_t>(f.second)]);
+    ps.fails.clear();
+}
+
+// [.. c] -> [.. c fn(c, <extra>)], with `fn` a built-in looked up by name.
+bool Compiler::emitCallOnCandidate(const char* fn, const std::function<bool()>& extraArgs, int nExtra) {
+    emit(OP_DUP_TOP, 0);                    // c c
+    emit(OP_PUSH_NULL, 0);                  // c c NULL
+    emit(OP_ROT_TWO, 0);                    // c NULL c
+    if (!emitNameOp(std::string(fn), TargetCtx::Load)) return false;  // c NULL c fn
+    emit(OP_ROT_TWO, 0);                    // c NULL fn c
+    if (extraArgs && !extraArgs()) return false;
+    emit(OP_CALL_FUNCTION, 1 + nExtra);     // c result
+    return true;
+}
+
+bool Compiler::compilePattern(MatchPatternNode* pat, PatternState& ps) {
     if (!pat) return false;
 
-    // ---- MatchSingleton: None / True / False -----------------------------
+    // ---- MatchSingleton: None / True / False (compared with `is`) --------
     if (auto* s = dynamic_cast<MatchSingletonPatternNode*>(pat)) {
-        // TOS = candidate.  Compare with `is`.
         const proto::ProtoObject* obj =
             (s->kind == MatchSingletonPatternNode::Kind::None_) ? PROTO_NONE :
             (s->kind == MatchSingletonPatternNode::Kind::True_) ? PROTO_TRUE :
                                                                   PROTO_FALSE;
-        int idx = addConstant(obj);
-        emit(OP_LOAD_CONST, idx);
+        emit(OP_LOAD_CONST, addConstant(obj));
         emit(OP_COMPARE_OP, 8); // 'is'
-        emit(OP_POP_JUMP_IF_FALSE, 0);
-        addPatch(bytecodeOffset() - 1, failLabelSlot);
+        --ps.onTop;
+        emitPatternFailJump(OP_POP_JUMP_IF_FALSE, ps);
         return true;
     }
 
-    // ---- MatchValue: literal or dotted attribute -------------------------
+    // ---- MatchValue: literal or dotted name (compared with ==) -----------
     if (auto* v = dynamic_cast<MatchValuePatternNode*>(pat)) {
-        // TOS = candidate.  Push value, COMPARE_OP ==, jump if false.
         if (!compileNode(v->value.get())) return false;
         emit(OP_COMPARE_OP, 0); // '=='
-        emit(OP_POP_JUMP_IF_FALSE, 0);
-        addPatch(bytecodeOffset() - 1, failLabelSlot);
+        --ps.onTop;
+        emitPatternFailJump(OP_POP_JUMP_IF_FALSE, ps);
         return true;
     }
 
-    // ---- MatchAs / Capture / Wildcard ------------------------------------
+    // ---- MatchAs / capture / wildcard -------------------------------------
     if (auto* a = dynamic_cast<MatchAsPatternNode*>(pat)) {
-        if (!a->pattern) {
-            // Bare capture or wildcard.
-            if (a->name == "_" || a->name.empty()) {
-                emit(OP_POP_TOP);
-            } else {
-                emitNameOp(a->name, TargetCtx::Store);
-            }
-            return true;
+        const bool binds = !a->name.empty() && a->name != "_";
+        if (a->pattern) {
+            emit(OP_DUP_TOP, 0);
+            ++ps.onTop;
+            if (!compilePattern(a->pattern.get(), ps)) return false;
         }
-        // <pat> as name: stash, run sub-pattern on a copy, then bind.
-        std::string tmp = "__match_tmp_" + std::to_string(matchTmpCounter_++);
-        emitNameOp(tmp, TargetCtx::Store); // consume candidate, save in tmp
-        emitNameOp(tmp, TargetCtx::Load);  // push for sub-pattern
-        if (!compilePattern(a->pattern.get(), failLabelSlot, collectedNames)) return false;
-        // Sub-pattern matched — bind name from the saved tmp.
-        if (!a->name.empty() && a->name != "_") {
-            emitNameOp(tmp, TargetCtx::Load);
-            emitNameOp(a->name, TargetCtx::Store);
+        if (binds) {
+            if (!emitNameOp(a->name, TargetCtx::Store)) return false;
+        } else {
+            emit(OP_POP_TOP, 0);
         }
+        --ps.onTop;
         return true;
     }
 
-    // ---- MatchOr ---------------------------------------------------------
+    // ---- MatchOr ------------------------------------------------------------
     if (auto* o = dynamic_cast<MatchOrPatternNode*>(pat)) {
-        // Stash candidate in tmp; for each alt, reload and try; on success
-        // jump to the shared success label. Failure of alt i (i < last)
-        // falls through to alt i+1; failure of the last alt jumps to the
-        // outer failLabelSlot.
-        size_t n = o->alternatives.size();
+        const size_t n = o->alternatives.size();
         if (n == 0) {
-            emit(OP_POP_TOP);
-            emit(OP_JUMP_ABSOLUTE, 0);
-            addPatch(bytecodeOffset() - 1, failLabelSlot);
+            emitPatternFailJump(OP_JUMP_ABSOLUTE, ps);
+            --ps.onTop;
             return true;
         }
-        std::string tmp = "__match_tmp_" + std::to_string(matchTmpCounter_++);
-        emitNameOp(tmp, TargetCtx::Store);
+        // Every alternative but the last tests a copy; on success it drops
+        // the candidate and jumps to the common exit, on failure its own fail
+        // block leaves the candidate for the next alternative.  The last one
+        // consumes the candidate under the enclosing state.
+        const int depth = currentStack_;
         std::vector<int> successJumps;
-        // For each alt we use a per-alt fail trampoline (an
-        // OP_JUMP_ABSOLUTE placed at alt-start, jumped over by an
-        // OP_JUMP_ABSOLUTE that targets the alt body). The trampoline's
-        // target gets patched to either the next-alt entry or the outer
-        // fail label.
-        for (size_t i = 0; i < n; ++i) {
-            // Skip-trampoline.
-            emit(OP_JUMP_ABSOLUTE, 0);
-            int skipSlot = bytecodeOffset() - 1;
-            // Trampoline (target patched at end of iteration).
-            emit(OP_JUMP_ABSOLUTE, 0);
-            int trampolineSlot = bytecodeOffset() - 1;
-            // Skip-target = right after trampoline.
-            addPatch(skipSlot, bytecodeOffset());
-            // Body of this alt: reload candidate from tmp, then compile alt.
-            emitNameOp(tmp, TargetCtx::Load);
-            std::vector<std::string> altNames;
-            if (!compilePattern(o->alternatives[i].get(), trampolineSlot, &altNames)) return false;
-            // Success — jump to the shared success label (patched at end).
+        for (size_t i = 0; i + 1 < n; ++i) {
+            currentStack_ = depth;
+            emit(OP_DUP_TOP, 0);
+            PatternState alt;
+            alt.onTop = 1;
+            if (!compilePattern(o->alternatives[i].get(), alt)) return false;
+            emit(OP_POP_TOP, 0);
             emit(OP_JUMP_ABSOLUTE, 0);
             successJumps.push_back(bytecodeOffset() - 1);
-            // Patch the trampoline. Last alt → outer fail; otherwise → next iter.
-            if (i + 1 == n) {
-                addPatch(trampolineSlot, failLabelSlot);
-            } else {
-                addPatch(trampolineSlot, bytecodeOffset()); // start of next alt's skip-trampoline
-            }
+            emitPatternFailBlock(alt, depth);
         }
-        // success label = current bytecode offset; patch all successJumps.
-        int succEntry = bytecodeOffset();
-        for (int slot : successJumps) addPatch(slot, succEntry);
+        currentStack_ = depth;
+        if (!compilePattern(o->alternatives[n - 1].get(), ps)) return false;
+        const int exit = bytecodeOffset();
+        for (int slot : successJumps) addPatch(slot, exit);
         return true;
     }
 
-    // ---- MatchClass ------------------------------------------------------
+    // ---- MatchClass -----------------------------------------------------------
     if (auto* c = dynamic_cast<MatchClassPatternNode*>(pat)) {
-        // Stash candidate into tmp.
-        std::string tmp = "__match_tmp_" + std::to_string(matchTmpCounter_++);
-        emitNameOp(tmp, TargetCtx::Store);
-        // Test isinstance(tmp, cls)
-        emitNameOp(std::string("isinstance"), TargetCtx::Load);
-        emitNameOp(tmp, TargetCtx::Load);
-        if (!compileNode(c->cls.get())) return false;
-        emit(OP_CALL_FUNCTION, 2);
-        emit(OP_POP_JUMP_IF_FALSE, 0);
-        addPatch(bytecodeOffset() - 1, failLabelSlot);
-        // Positional arg patterns: use cls.__match_args__[i] for the attr name.
-        if (!c->args.empty()) {
-            // For each positional, fetch attr by name from __match_args__.
-            // Stash the cls expression result in a tmp so we evaluate once.
-            std::string clsTmp = "__match_cls_" + std::to_string(matchTmpCounter_++);
-            if (!compileNode(c->cls.get())) return false;
-            emitNameOp(clsTmp, TargetCtx::Store);
-            for (size_t i = 0; i < c->args.size(); ++i) {
-                // getattr(tmp, clsTmp.__match_args__[i])
-                emitNameOp(std::string("getattr"), TargetCtx::Load);
-                emitNameOp(tmp, TargetCtx::Load);
-                emitNameOp(clsTmp, TargetCtx::Load);
-                {
-                    int n = addName(std::string("__match_args__"));
-                    emit(OP_LOAD_ATTR, n << 1);
-                }
-                emit(OP_LOAD_CONST, addConstant(ctx_->fromInteger(static_cast<long long>(i))));
-                emit(OP_BINARY_SUBSCR);
-                emit(OP_CALL_FUNCTION, 2);
-                if (!compilePattern(c->args[i].get(), failLabelSlot, collectedNames)) return false;
-            }
+        if (!emitCallOnCandidate("isinstance", [&]() { return compileNode(c->cls.get()); }, 1)) return false;
+        emitPatternFailJump(OP_POP_JUMP_IF_FALSE, ps);
+        // Positional sub-patterns: getattr(c, cls.__match_args__[i]).
+        for (size_t i = 0; i < c->args.size(); ++i) {
+            if (!emitCallOnCandidate("getattr", [&]() {
+                    if (!compileNode(c->cls.get())) return false;
+                    emit(OP_LOAD_ATTR, addName(std::string("__match_args__")) << 1);
+                    emit(OP_LOAD_CONST, addConstant(ctx_->fromInteger(static_cast<long long>(i))));
+                    emit(OP_BINARY_SUBSCR, 0);
+                    return true;
+                }, 1)) return false;
+            ++ps.onTop;
+            if (!compilePattern(c->args[i].get(), ps)) return false;
         }
-        // Keyword arg patterns: cls.kw == ... resolved via attr access.
+        // Keyword sub-patterns: c.<name>.
         for (auto& kv : c->kwargs) {
-            emitNameOp(tmp, TargetCtx::Load);
-            int n = addName(kv.first);
-            emit(OP_LOAD_ATTR, n << 1);
-            if (!compilePattern(kv.second.get(), failLabelSlot, collectedNames)) return false;
+            emit(OP_DUP_TOP, 0);
+            emit(OP_LOAD_ATTR, addName(kv.first) << 1);
+            ++ps.onTop;
+            if (!compilePattern(kv.second.get(), ps)) return false;
         }
+        emit(OP_POP_TOP, 0);
+        --ps.onTop;
         return true;
     }
 
-    // ---- MatchSequence ---------------------------------------------------
+    // ---- MatchSequence --------------------------------------------------------
     if (auto* sq = dynamic_cast<MatchSequencePatternNode*>(pat)) {
-        std::string tmp = "__match_tmp_" + std::to_string(matchTmpCounter_++);
-        emitNameOp(tmp, TargetCtx::Store);
-        // PEP 634: strings, bytes, and bytearrays are NOT considered
-        // sequences for matching purposes.  Reject them explicitly first.
-        emitNameOp(std::string("isinstance"), TargetCtx::Load);
-        emitNameOp(tmp, TargetCtx::Load);
-        emitNameOp(std::string("str"), TargetCtx::Load);
-        emitNameOp(std::string("bytes"), TargetCtx::Load);
-        emitNameOp(std::string("bytearray"), TargetCtx::Load);
-        emit(OP_BUILD_TUPLE, 3);
-        emit(OP_CALL_FUNCTION, 2);
-        emit(OP_POP_JUMP_IF_TRUE, 0);
-        addPatch(bytecodeOffset() - 1, failLabelSlot);
-        // Then accept list/tuple.  PEP 634 prescribes "Sequence" via
-        // collections.abc; the concrete builtins cover the common cases
-        // (custom Sequence subclasses can be matched with MatchClass).
-        emitNameOp(std::string("isinstance"), TargetCtx::Load);
-        emitNameOp(tmp, TargetCtx::Load);
-        emitNameOp(std::string("list"), TargetCtx::Load);
-        emitNameOp(std::string("tuple"), TargetCtx::Load);
-        emit(OP_BUILD_TUPLE, 2);
-        emit(OP_CALL_FUNCTION, 2);
-        emit(OP_POP_JUMP_IF_FALSE, 0);
-        addPatch(bytecodeOffset() - 1, failLabelSlot);
-        // Find a star pattern (at most one).
+        // PEP 634: str, bytes and bytearray are not sequences here; list and
+        // tuple are (other collections.abc.Sequence types are not recognised:
+        // a documented deviation, docs/VM.md section 6).
+        if (!emitCallOnCandidate("isinstance", [&]() {
+                for (const char* t : {"str", "bytes", "bytearray"})
+                    if (!emitNameOp(std::string(t), TargetCtx::Load)) return false;
+                emit(OP_BUILD_TUPLE, 3);
+                return true;
+            }, 1)) return false;
+        emitPatternFailJump(OP_POP_JUMP_IF_TRUE, ps);
+        if (!emitCallOnCandidate("isinstance", [&]() {
+                for (const char* t : {"list", "tuple"})
+                    if (!emitNameOp(std::string(t), TargetCtx::Load)) return false;
+                emit(OP_BUILD_TUPLE, 2);
+                return true;
+            }, 1)) return false;
+        emitPatternFailJump(OP_POP_JUMP_IF_FALSE, ps);
         int starIdx = -1;
         for (size_t i = 0; i < sq->patterns.size(); ++i) {
             if (dynamic_cast<MatchStarPatternNode*>(sq->patterns[i].get())) {
-                if (starIdx >= 0) {
-                    return false; // multiple stars — invalid
-                }
+                if (starIdx >= 0) return false; // two starred names: SyntaxError
                 starIdx = static_cast<int>(i);
             }
         }
-        int totalFixed = static_cast<int>(sq->patterns.size()) - (starIdx >= 0 ? 1 : 0);
-        // len(tmp) == totalFixed (no star)  or  len(tmp) >= totalFixed (with star)
-        emitNameOp(std::string("len"), TargetCtx::Load);
-        emitNameOp(tmp, TargetCtx::Load);
-        emit(OP_CALL_FUNCTION, 1);
-        emit(OP_LOAD_CONST, addConstant(ctx_->fromInteger(totalFixed)));
+        const int total = static_cast<int>(sq->patterns.size());
+        const int fixed = total - (starIdx >= 0 ? 1 : 0);
+        if (!emitCallOnCandidate("len", nullptr, 0)) return false;
+        emit(OP_LOAD_CONST, addConstant(ctx_->fromInteger(fixed)));
         emit(OP_COMPARE_OP, starIdx >= 0 ? 5 /* >= */ : 0 /* == */);
-        emit(OP_POP_JUMP_IF_FALSE, 0);
-        addPatch(bytecodeOffset() - 1, failLabelSlot);
-        // Fixed prefix patterns [0..starIdx) (or [0..N) if no star).
-        int prefixEnd = (starIdx >= 0) ? starIdx : static_cast<int>(sq->patterns.size());
-        for (int i = 0; i < prefixEnd; ++i) {
-            emitNameOp(tmp, TargetCtx::Load);
-            emit(OP_LOAD_CONST, addConstant(ctx_->fromInteger(i)));
-            emit(OP_BINARY_SUBSCR);
-            if (!compilePattern(sq->patterns[i].get(), failLabelSlot, collectedNames)) return false;
-        }
-        // Star binding (and capture if named).
+        emitPatternFailJump(OP_POP_JUMP_IF_FALSE, ps);
+        auto item = [&](int index, MatchPatternNode* sub) {
+            emit(OP_DUP_TOP, 0);
+            emit(OP_LOAD_CONST, addConstant(ctx_->fromInteger(index)));
+            emit(OP_BINARY_SUBSCR, 0);
+            ++ps.onTop;
+            return compilePattern(sub, ps);
+        };
+        const int prefixEnd = starIdx >= 0 ? starIdx : total;
+        for (int i = 0; i < prefixEnd; ++i)
+            if (!item(i, sq->patterns[static_cast<size_t>(i)].get())) return false;
         if (starIdx >= 0) {
-            auto* star = dynamic_cast<MatchStarPatternNode*>(sq->patterns[starIdx].get());
-            int suffixCount = static_cast<int>(sq->patterns.size()) - starIdx - 1;
-            // tmp[starIdx : len(tmp) - suffixCount]  via slice.
-            emitNameOp(tmp, TargetCtx::Load);
-            emit(OP_LOAD_CONST, addConstant(ctx_->fromInteger(starIdx)));
-            // stop = -suffixCount, or len(tmp) if suffixCount == 0
-            if (suffixCount == 0) {
-                int idxNone = addConstant(PROTO_NONE);
-                emit(OP_LOAD_CONST, idxNone);
-            } else {
-                emit(OP_LOAD_CONST, addConstant(ctx_->fromInteger(-suffixCount)));
+            auto* star = static_cast<MatchStarPatternNode*>(sq->patterns[static_cast<size_t>(starIdx)].get());
+            const int suffix = total - starIdx - 1;
+            if (!star->name.empty() && star->name != "_") {
+                // list(c[starIdx : len(c) - suffix])
+                emit(OP_DUP_TOP, 0);
+                emit(OP_LOAD_CONST, addConstant(ctx_->fromInteger(starIdx)));
+                if (suffix == 0) emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
+                else emit(OP_LOAD_CONST, addConstant(ctx_->fromInteger(-suffix)));
+                emit(OP_BUILD_SLICE, 2);
+                emit(OP_BINARY_SUBSCR, 0);           // c slice
+                emit(OP_PUSH_NULL, 0);
+                emit(OP_ROT_TWO, 0);                 // c NULL slice
+                if (!emitNameOp(std::string("list"), TargetCtx::Load)) return false;
+                emit(OP_ROT_TWO, 0);                 // c NULL list slice
+                emit(OP_CALL_FUNCTION, 1);           // c rest
+                if (!emitNameOp(star->name, TargetCtx::Store)) return false;
             }
-            emit(OP_BUILD_SLICE, 2);
-            emit(OP_BINARY_SUBSCR);
-            // Make the star binding a list (PEP 634 says so).
-            emitNameOp(std::string("list"), TargetCtx::Load);
-            emit(OP_ROT_TWO);
-            emit(OP_CALL_FUNCTION, 1);
-            if (!star->name.empty()) {
-                emitNameOp(star->name, TargetCtx::Store);
-            } else {
-                emit(OP_POP_TOP);
-            }
-            // Suffix patterns (negative indices from end).
-            for (int i = starIdx + 1; i < static_cast<int>(sq->patterns.size()); ++i) {
-                int negIdx = -(static_cast<int>(sq->patterns.size()) - i);
-                emitNameOp(tmp, TargetCtx::Load);
-                emit(OP_LOAD_CONST, addConstant(ctx_->fromInteger(negIdx)));
-                emit(OP_BINARY_SUBSCR);
-                if (!compilePattern(sq->patterns[i].get(), failLabelSlot, collectedNames)) return false;
-            }
+            for (int i = starIdx + 1; i < total; ++i)
+                if (!item(i - total, sq->patterns[static_cast<size_t>(i)].get())) return false;
         }
+        emit(OP_POP_TOP, 0);
+        --ps.onTop;
         return true;
     }
 
-    // ---- MatchMapping ----------------------------------------------------
+    // ---- MatchMapping ---------------------------------------------------------
     if (auto* mp = dynamic_cast<MatchMappingPatternNode*>(pat)) {
-        std::string tmp = "__match_tmp_" + std::to_string(matchTmpCounter_++);
-        emitNameOp(tmp, TargetCtx::Store);
-        // isinstance(tmp, dict)
-        emitNameOp(std::string("isinstance"), TargetCtx::Load);
-        emitNameOp(tmp, TargetCtx::Load);
-        emitNameOp(std::string("dict"), TargetCtx::Load);
-        emit(OP_CALL_FUNCTION, 2);
-        emit(OP_POP_JUMP_IF_FALSE, 0);
-        addPatch(bytecodeOffset() - 1, failLabelSlot);
-        // For each (key, sub-pattern): test `key in tmp`, then load and recurse.
+        if (!emitCallOnCandidate("isinstance", [&]() {
+                return emitNameOp(std::string("dict"), TargetCtx::Load);
+            }, 1)) return false;
+        emitPatternFailJump(OP_POP_JUMP_IF_FALSE, ps);
         for (size_t i = 0; i < mp->keys.size(); ++i) {
-            // key in tmp
+            // key in c
+            emit(OP_DUP_TOP, 0);                     // c c
             if (!compileNode(mp->keys[i].get())) return false;
-            emitNameOp(tmp, TargetCtx::Load);
-            emit(OP_COMPARE_OP, 6); // 'in'
-            emit(OP_POP_JUMP_IF_FALSE, 0);
-            addPatch(bytecodeOffset() - 1, failLabelSlot);
-            // tmp[key]
-            emitNameOp(tmp, TargetCtx::Load);
+            emit(OP_ROT_TWO, 0);                     // c key c
+            emit(OP_COMPARE_OP, 6);                  // c bool  ('in')
+            emitPatternFailJump(OP_POP_JUMP_IF_FALSE, ps);
+            // c[key]
+            emit(OP_DUP_TOP, 0);
             if (!compileNode(mp->keys[i].get())) return false;
-            emit(OP_BINARY_SUBSCR);
-            if (!compilePattern(mp->patterns[i].get(), failLabelSlot, collectedNames)) return false;
+            emit(OP_BINARY_SUBSCR, 0);
+            ++ps.onTop;
+            if (!compilePattern(mp->patterns[i].get(), ps)) return false;
         }
-        // **rest binding: build a dict copy minus the matched keys.
         if (!mp->rest.empty()) {
-            emitNameOp(std::string("dict"), TargetCtx::Load);
-            emitNameOp(tmp, TargetCtx::Load);
-            emit(OP_CALL_FUNCTION, 1);
-            // Stash so we can DELETE_SUBSCR in a loop.
-            std::string restTmp = "__match_rest_" + std::to_string(matchTmpCounter_++);
-            emitNameOp(restTmp, TargetCtx::Store);
+            // **rest: dict(c) without the matched keys.
+            if (!emitCallOnCandidate("dict", nullptr, 0)) return false;   // c d
             for (auto& k : mp->keys) {
-                // del restTmp[k]
-                emitNameOp(restTmp, TargetCtx::Load);
+                emit(OP_DUP_TOP, 0);
                 if (!compileNode(k.get())) return false;
-                emit(OP_DELETE_SUBSCR);
+                emit(OP_DELETE_SUBSCR, 0);
             }
-            emitNameOp(restTmp, TargetCtx::Load);
-            emitNameOp(mp->rest, TargetCtx::Store);
+            if (!emitNameOp(mp->rest, TargetCtx::Store)) return false;
         }
+        emit(OP_POP_TOP, 0);
+        --ps.onTop;
         return true;
     }
 
-    // ---- MatchStarPatternNode (only valid inside MatchSequence) ---------
-    if (dynamic_cast<MatchStarPatternNode*>(pat)) {
-        // Reaching here is a parser/compiler error — handled inside
-        // compileSequencePattern.
-        return false;
-    }
-
+    // A star pattern outside a sequence pattern is a parser error.
     return false;
 }
 
 bool Compiler::compileMatch(MatchNode* n) {
     if (!n || !n->subject) return false;
-    matchTmpCounter_ = 0;
-
-    // Stash subject in a top-level tmp once; each case loads it via tmp.
     if (!compileNode(n->subject.get())) return false;
-    std::string subjTmp = "__match_subj";
-    emitNameOp(subjTmp, TargetCtx::Store);
-
-    std::vector<int> endJumps; // success jumps from each case body to the end
-
+    const int subjectDepth = currentStack_;   // the subject is on top
+    std::vector<int> endJumps;
     for (auto& mc : n->cases) {
-        // Per-case fail label: we'll patch all pattern failures here.
-        // The pattern emits OP_JUMP_ABSOLUTE arg=0 with addPatch(slot, X);
-        // we need a single slot index for failLabelSlot. Allocate via
-        // a trampoline: emit a placeholder JUMP_ABSOLUTE here that we patch
-        // to point to the body, and have pattern failures patch to after
-        // the body.  Cleanest: make the pattern's "fail target" a TRAMPOLINE
-        // emitted just before the next case, then patch the trampoline
-        // forward to the next case's start.
-        //
-        // Implementation: emit a "skip-trampoline" that jumps over the
-        // trampoline so the success path doesn't fall into it.  Pattern
-        // failures jump to the trampoline; the trampoline's arg gets
-        // patched to the next case's start (or to the post-match end).
-        //
-        // Layout:
-        //
-        //   <load subject from subjTmp>                ←─ caseStart
-        //   <pattern bytecode>
-        //   <if guard: compile guard, POP_JUMP_IF_FALSE to caseFailJump>
-        //   <body>
-        //   JUMP_ABSOLUTE end                              (recorded)
-        // caseFailJump:
-        //   JUMP_ABSOLUTE next_case_or_end                 (single trampoline)
-        //
-        // Pattern failures and guard failure both target caseFailJump's slot.
-
-        // Load subject for this case.
-        emitNameOp(subjTmp, TargetCtx::Load);
-
-        // Reserve a forward slot: emit a trampoline-jump that we'll patch
-        // to next-case-start.  Place it AFTER the case body — so we need
-        // forward references.  Trick: emit a "skip" jump first, then the
-        // trampoline, then the body.  Pattern fails jump backward to the
-        // trampoline.
-        emit(OP_JUMP_ABSOLUTE, 0); // skip-over-trampoline
-        int skipSlot = bytecodeOffset() - 1;
-        emit(OP_JUMP_ABSOLUTE, 0); // trampoline (target = next case)
-        int trampolineSlot = bytecodeOffset() - 1;
-        // Patch skip to land RIGHT AFTER the trampoline.
-        addPatch(skipSlot, bytecodeOffset());
-
-        // Compile pattern with failLabel = trampolineSlot.
-        std::vector<std::string> caseNames;
-        if (!compilePattern(mc->pattern.get(), trampolineSlot, &caseNames)) return false;
-
-        // Optional guard.
+        currentStack_ = subjectDepth;
+        emit(OP_DUP_TOP, 0);
+        PatternState ps;
+        ps.onTop = 1;
+        if (!compilePattern(mc->pattern.get(), ps)) return false;
         if (mc->guard) {
             if (!compileNode(mc->guard.get())) return false;
-            emit(OP_POP_JUMP_IF_FALSE, 0);
-            addPatch(bytecodeOffset() - 1, trampolineSlot);
+            emitPatternFailJump(OP_POP_JUMP_IF_FALSE, ps);
         }
-
-        // Body.
+        emit(OP_POP_TOP, 0);                  // the subject
         if (!compileNode(mc->body.get())) return false;
-
-        // Jump to the end.
         emit(OP_JUMP_ABSOLUTE, 0);
         endJumps.push_back(bytecodeOffset() - 1);
-
-        // The trampoline now points to here (next-case-start).
-        addPatch(trampolineSlot, bytecodeOffset());
+        emitPatternFailBlock(ps, subjectDepth);
     }
-
-    // No case matched — fall through to end (silently).
-    int endHere = bytecodeOffset();
-    for (int slot : endJumps) addPatch(slot, endHere);
+    currentStack_ = subjectDepth;
+    emit(OP_POP_TOP, 0);                      // no case matched
+    const int end = bytecodeOffset();
+    for (int slot : endJumps) addPatch(slot, end);
     return true;
 }
 

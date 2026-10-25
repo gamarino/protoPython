@@ -71,3 +71,32 @@ This document consolidates the main architectural decisions for onboarding new c
 **Rationale:** Improves REPL UX and diagnostic clarity. `co_name` allows generators and functions to report their actual names in tracebacks and `repr()`. Standardizing dunder lookups ensures consistency across builtin and user-defined types.
 
 **Reference:** [INTERNALS_DEEP_DIVE.md](INTERNALS_DEEP_DIVE.md#5-metadata-and-prototyping)
+
+---
+
+## Asynchronous comprehensions follow `async for` (agent, pending review)
+
+**Decision (2026-10-25):** `[x async for x in it]` compiles as the `async for`
+statement does: `GET_AITER`, then `FOR_ITER`. The earlier lowering (an awaited
+`GET_ANEXT` step inside a protected range that catches `StopAsyncIteration`,
+CPython's shape) never ended, and could not work as written: the runtime's
+async generators return values, not awaitables, from `__anext__`.
+
+**Rationale:** Least surprise: a comprehension behaves exactly like the loop
+it abbreviates. The limitation both now share, synchronous asynchronous
+iteration, is listed in docs/VM.md section 6 and needs its own design
+(async generators whose `__anext__` returns an awaitable).
+
+---
+
+## `match` keeps its values on the operand stack (agent, pending review)
+
+**Decision (2026-10-25):** `compileMatch` / `compilePattern` keep the
+subject and every candidate on the operand stack, as CPython does, and a
+failing test jumps to a chain of `POP_TOP`s that clears what it left. The
+built-in calls (`isinstance`, `len`, ...) get NULL markers.
+
+**Rationale:** Named temporaries (`__match_subj`, `__match_tmp_<n>`) were
+visible in every namespace and, inside a function, were globals; a hidden
+local slot would not exist at module or class level. The stack needs neither.
+Capture names are bound in the enclosing scope (`collectDefinedNames`).
