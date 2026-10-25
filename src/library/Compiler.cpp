@@ -2538,15 +2538,25 @@ bool Compiler::compileAugAssign(AugAssignNode* n) {
     return false;
 }
 
+// True for an expression statement, whose value the caller pops; false for
+// every statement node, whose code leaves the operand stack as it found it.
+// A statement listed here by mistake gets a stray POP_TOP: inside a `for`
+// loop that pops the iterator.  The list must name every statement node of
+// Parser.h.
 bool Compiler::statementLeavesValue(ASTNode* node) {
     if (!node) return false;
-    if (dynamic_cast<AssignNode*>(node) || dynamic_cast<AugAssignNode*>(node) || dynamic_cast<ForNode*>(node) ||
-        dynamic_cast<AsyncForNode*>(node) ||
-        dynamic_cast<IfNode*>(node) || dynamic_cast<FunctionDefNode*>(node) ||
-        dynamic_cast<ClassDefNode*>(node) || dynamic_cast<WhileNode*>(node) ||
-        dynamic_cast<ImportNode*>(node) || dynamic_cast<GlobalNode*>(node) ||
-        dynamic_cast<ReturnNode*>(node) || dynamic_cast<DeleteNode*>(node) ||
-        dynamic_cast<TryNode*>(node) || dynamic_cast<WithNode*>(node) ||
+    if (dynamic_cast<AssignNode*>(node) || dynamic_cast<AugAssignNode*>(node) ||
+        dynamic_cast<AnnAssignNode*>(node) || dynamic_cast<TypeAliasNode*>(node) ||
+        dynamic_cast<ForNode*>(node) || dynamic_cast<AsyncForNode*>(node) ||
+        dynamic_cast<IfNode*>(node) || dynamic_cast<WhileNode*>(node) ||
+        dynamic_cast<FunctionDefNode*>(node) || dynamic_cast<AsyncFunctionDefNode*>(node) ||
+        dynamic_cast<ClassDefNode*>(node) ||
+        dynamic_cast<ImportNode*>(node) || dynamic_cast<ImportFromNode*>(node) ||
+        dynamic_cast<GlobalNode*>(node) || dynamic_cast<NonlocalNode*>(node) ||
+        dynamic_cast<ReturnNode*>(node) || dynamic_cast<RaiseNode*>(node) ||
+        dynamic_cast<DeleteNode*>(node) || dynamic_cast<TryNode*>(node) ||
+        dynamic_cast<WithNode*>(node) || dynamic_cast<AsyncWithNode*>(node) ||
+        dynamic_cast<MatchNode*>(node) || dynamic_cast<SuiteNode*>(node) ||
         dynamic_cast<AssertNode*>(node) || dynamic_cast<PassNode*>(node) ||
         dynamic_cast<BreakNode*>(node) || dynamic_cast<ContinueNode*>(node)) return false;
     return true;
