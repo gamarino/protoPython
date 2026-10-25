@@ -49,6 +49,16 @@ const proto::ProtoObject* chainOk(proto::ProtoContext* ctx, const proto::ProtoOb
     return onCurrentChain(ctx) ? PROTO_TRUE : PROTO_FALSE;
 }
 
+// _chain_depth(): the number of contexts from the thread's current context to
+// the root.
+const proto::ProtoObject* chainDepth(proto::ProtoContext* ctx, const proto::ProtoObject*,
+                                     const proto::ParentLink*, const proto::ProtoArguments*,
+                                     const proto::ProtoKeywordArguments*) {
+    long long n = 0;
+    for (proto::ProtoContext* c = threadCurrent(ctx); c; c = c->previous) ++n;
+    return ctx->fromInteger(n);
+}
+
 class ContextChain : public ::testing::Test {
 protected:
     static PythonEnvironment& env() {
@@ -60,6 +70,9 @@ protected:
             const_cast<proto::ProtoObject*>(builtins)->setAttribute(
                 ctx, PythonEnvironment::getInternedString(ctx, "_chain_ok"),
                 ctx->fromMethod(nullptr, chainOk));
+            const_cast<proto::ProtoObject*>(builtins)->setAttribute(
+                ctx, PythonEnvironment::getInternedString(ctx, "_chain_depth"),
+                ctx->fromMethod(nullptr, chainDepth));
             installed = true;
         }
         return instance;
@@ -127,6 +140,29 @@ TEST_F(ContextChain, AfterExecAndImport) {
         "    return ns['r'] and _chain_ok()\n"
         "assert _f(), 'frame lost after exec or import'\n";
     EXPECT_EQ(run(src, "<chain:exec>"), "");
+}
+
+TEST_F(ContextChain, ReleasedWhenExecRaises) {
+    // runCodeObject (exec, a module, a class body) released its context only
+    // on a normal return: after an exception escaped, the context stayed the
+    // thread's current one and the chain grew by one context per caught
+    // raise (20,000 raises took 24.6 s and 295 MB).
+    const char* src =
+        "def _f():\n"
+        "    before = _chain_depth()\n"
+        "    for i in range(50):\n"
+        "        try:\n"
+        "            exec('raise ValueError(1)')\n"
+        "        except ValueError:\n"
+        "            pass\n"
+        "        try:\n"
+        "            class _C:\n"
+        "                raise KeyError(2)\n"
+        "        except KeyError:\n"
+        "            pass\n"
+        "    return _chain_depth() == before and _chain_ok()\n"
+        "assert _f(), 'a raising exec or class body left its context on the chain'\n";
+    EXPECT_EQ(run(src, "<chain:exec-raise>"), "");
 }
 
 TEST(ContextChainEnvironment, RootContextIsChainedAndUnwound) {

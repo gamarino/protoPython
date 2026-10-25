@@ -6437,12 +6437,7 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
         fprintf(stderr, "DEBUG: runCodeObject result=%p\n", (void*)result);
     }
 
-    if (subCtx) {
-        PythonEnvironment::setCurrentContext(oldCtx);
-        subCtx->returnValue = result;
-        checkInnermost(subCtx);
-        delete subCtx;
-    }
+    release.result = result;
     return result;
 }
 
