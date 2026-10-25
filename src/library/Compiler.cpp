@@ -16,7 +16,22 @@ namespace protoPython {
 
 static void collectGlobalsFromNode(ASTNode* node, std::unordered_set<std::string>& globalsOut);
 static void collectUsedNames(ASTNode* node, std::unordered_set<std::string>& out);
-static void collectDefinedNames(ASTNode* node, std::unordered_set<std::string>& out);
+template <class NameSet> static void collectDefinedNames(ASTNode* node, NameSet& out);
+template <class NameSet> static void collectPatternBindings(const MatchPatternNode* pat, NameSet& out);
+
+// A set of names that remembers the order of first insertion.  Slot numbers
+// are assigned from it so that the same source compiles to the same bytecode
+// with every C++ standard library: an unordered_set's iteration order is not
+// specified (libstdc++, libc++ and MSVC differ).  The order is that of the
+// first binding in the source, as in CPython's co_varnames.
+struct OrderedNameSet {
+    std::vector<std::string> order;
+    std::unordered_set<std::string> seen;
+    void insert(const std::string& name) {
+        if (seen.insert(name).second) order.push_back(name);
+    }
+    size_t count(const std::string& name) const { return seen.count(name); }
+};
 static void collectNonlocalsFromNode(ASTNode* node, std::unordered_set<std::string>& out);
 static void collectCapturedNamesImpl(ASTNode* node, const std::unordered_set<std::string>& globalsInScope, std::unordered_set<std::string>& capturedOut, int depth = 0);
 // Buffer to reserve on the VM stack for GC-visible operand storage.
@@ -1898,7 +1913,7 @@ bool Compiler::compileComprehensionScope(const char* scopeName, std::vector<Comp
         const std::function<bool(Compiler&, int)>& emitElement,
         const std::function<void(Compiler&)>& emitEnd) {
     // Collect locals and nonlocals for the comprehension scope.
-    std::unordered_set<std::string> compLocals;
+    OrderedNameSet compLocals;
     for (const auto& gen : generators) collectDefinedNames(gen.target.get(), compLocals);
     std::unordered_set<std::string> compUsed;
     for (size_t gi = 0; gi < generators.size(); ++gi) {
@@ -1926,7 +1941,7 @@ bool Compiler::compileComprehensionScope(const char* scopeName, std::vector<Comp
         }
     }
     std::vector<std::string> orderedLocals = {".0"};
-    for (const auto& name : compLocals)
+    for (const auto& name : compLocals.order)
         if (name != ".0") orderedLocals.push_back(name);
     std::unordered_map<std::string, int> slotMap;
     for (size_t i = 0; i < orderedLocals.size(); ++i) slotMap[orderedLocals[i]] = static_cast<int>(i);
@@ -2741,31 +2756,54 @@ void Compiler::collectLocalsFromBody(ASTNode* body,
     collectGlobalsFromNode(body, globalsOut);
     collectNonlocalsFromNode(body, nonlocalsOut);
     
-    // 2. Second pass: find all names that are assigned/stored (implicitly local)
-    std::unordered_set<std::string> defined;
+    // 2. Second pass: find all names that are assigned/stored (implicitly
+    // local), in the order of their first binding in the source.
+    OrderedNameSet defined;
     collectDefinedNames(body, defined);
-    
-    // Filter out those explicitly declared global
-    std::unordered_set<std::string> seen;
-    // We want a stable order, so ideally we'd traverse the AST once more 
-    // to see the order of appearance of these 'defined' names that are NOT global.
-    // However, collectDefinedNames doesn't give us order.
-    // For now, let's just add them.
-    for (const auto& name : defined) {
-        if (globalsOut.find(name) == globalsOut.end() && nonlocalsOut.find(name) == nonlocalsOut.end()) {
-            if (seen.find(name) == seen.end()) {
-                localsOrdered.push_back(name);
-                seen.insert(name);
-            }
-        }
+
+    // Filter out those explicitly declared global or nonlocal.
+    for (const auto& name : defined.order) {
+        if (globalsOut.find(name) == globalsOut.end() && nonlocalsOut.find(name) == nonlocalsOut.end())
+            localsOrdered.push_back(name);
     }
 }
 
 /** Collect names used (read or written) in node into out. */
+// The names a pattern reads (value patterns, class names) or binds.
+static void collectPatternUsedNames(const MatchPatternNode* pat, std::unordered_set<std::string>& out) {
+    if (!pat) return;
+    collectPatternBindings(pat, out);
+    if (auto* v = dynamic_cast<const MatchValuePatternNode*>(pat)) {
+        collectUsedNames(v->value.get(), out);
+    } else if (auto* a = dynamic_cast<const MatchAsPatternNode*>(pat)) {
+        collectPatternUsedNames(a->pattern.get(), out);
+    } else if (auto* o = dynamic_cast<const MatchOrPatternNode*>(pat)) {
+        for (auto& alt : o->alternatives) collectPatternUsedNames(alt.get(), out);
+    } else if (auto* sq = dynamic_cast<const MatchSequencePatternNode*>(pat)) {
+        for (auto& p : sq->patterns) collectPatternUsedNames(p.get(), out);
+    } else if (auto* mp = dynamic_cast<const MatchMappingPatternNode*>(pat)) {
+        for (auto& k : mp->keys) collectUsedNames(k.get(), out);
+        for (auto& p : mp->patterns) collectPatternUsedNames(p.get(), out);
+    } else if (auto* c = dynamic_cast<const MatchClassPatternNode*>(pat)) {
+        collectUsedNames(c->cls.get(), out);
+        for (auto& p : c->args) collectPatternUsedNames(p.get(), out);
+        for (auto& kv : c->kwargs) collectPatternUsedNames(kv.second.get(), out);
+    }
+}
+
 static void collectUsedNames(ASTNode* node, std::unordered_set<std::string>& out) {
     if (!node) return;
     if (auto* nm = dynamic_cast<NameNode*>(node)) {
         out.insert(nm->id);
+        return;
+    }
+    if (auto* m = dynamic_cast<MatchNode*>(node)) {
+        collectUsedNames(m->subject.get(), out);
+        for (auto& mc : m->cases) {
+            collectPatternUsedNames(mc->pattern.get(), out);
+            if (mc->guard) collectUsedNames(mc->guard.get(), out);
+            collectUsedNames(mc->body.get(), out);
+        }
         return;
     }
     if (auto* a = dynamic_cast<AssignNode*>(node)) {
@@ -3016,7 +3054,42 @@ static void collectUsedNames(ASTNode* node, std::unordered_set<std::string>& out
 }
 
 /** Collect names defined in node (assigned or are params of a nested def). */
-static void collectDefinedNames(ASTNode* node, std::unordered_set<std::string>& out) {
+// The names a match/case pattern binds (captures, `as` names, star and
+// `**rest` targets), in source order.
+template <class NameSet>
+static void collectPatternBindings(const MatchPatternNode* pat, NameSet& out) {
+    if (!pat) return;
+    if (auto* a = dynamic_cast<const MatchAsPatternNode*>(pat)) {
+        if (a->pattern) collectPatternBindings(a->pattern.get(), out);
+        if (!a->name.empty() && a->name != "_") out.insert(a->name);
+        return;
+    }
+    if (auto* o = dynamic_cast<const MatchOrPatternNode*>(pat)) {
+        for (auto& alt : o->alternatives) collectPatternBindings(alt.get(), out);
+        return;
+    }
+    if (auto* sq = dynamic_cast<const MatchSequencePatternNode*>(pat)) {
+        for (auto& p : sq->patterns) collectPatternBindings(p.get(), out);
+        return;
+    }
+    if (auto* st = dynamic_cast<const MatchStarPatternNode*>(pat)) {
+        if (!st->name.empty() && st->name != "_") out.insert(st->name);
+        return;
+    }
+    if (auto* m = dynamic_cast<const MatchMappingPatternNode*>(pat)) {
+        for (auto& p : m->patterns) collectPatternBindings(p.get(), out);
+        if (!m->rest.empty()) out.insert(m->rest);
+        return;
+    }
+    if (auto* c = dynamic_cast<const MatchClassPatternNode*>(pat)) {
+        for (auto& p : c->args) collectPatternBindings(p.get(), out);
+        for (auto& kv : c->kwargs) collectPatternBindings(kv.second.get(), out);
+        return;
+    }
+}
+
+template <class NameSet>
+static void collectDefinedNames(ASTNode* node, NameSet& out) {
     if (!node) return;
     if (auto* a = dynamic_cast<AssignNode*>(node)) {
         for (auto& t : a->targets) collectDefinedNames(t.get(), out);
@@ -3149,6 +3222,20 @@ static void collectDefinedNames(ASTNode* node, std::unordered_set<std::string>& 
     }
     if (auto* lst = dynamic_cast<ListLiteralNode*>(node)) {
         for (auto& e : lst->elements) collectDefinedNames(e.get(), out);
+        return;
+    }
+    if (auto* st = dynamic_cast<StarredNode*>(node)) {
+        // The starred target of `first, *rest = seq`.
+        collectDefinedNames(st->value.get(), out);
+        return;
+    }
+    if (auto* m = dynamic_cast<MatchNode*>(node)) {
+        // Capture patterns bind in the enclosing scope, and so do the
+        // assignments in the case bodies.
+        for (auto& mc : m->cases) {
+            collectPatternBindings(mc->pattern.get(), out);
+            collectDefinedNames(mc->body.get(), out);
+        }
         return;
     }
 }
@@ -3303,6 +3390,14 @@ static void collectNestedScopeFreeVarsImpl(ASTNode* node, std::unordered_set<std
     // closed over by their own methods.
     if (auto* s = dynamic_cast<SuiteNode*>(node)) {
         for (auto& st : s->statements) collectNestedScopeFreeVarsImpl(st.get(), out);
+        return;
+    }
+    if (auto* m = dynamic_cast<MatchNode*>(node)) {
+        collectNestedScopeFreeVarsImpl(m->subject.get(), out);
+        for (auto& mc : m->cases) {
+            if (mc->guard) collectNestedScopeFreeVarsImpl(mc->guard.get(), out);
+            collectNestedScopeFreeVarsImpl(mc->body.get(), out);
+        }
         return;
     }
     if (auto* iff = dynamic_cast<IfNode*>(node)) {
