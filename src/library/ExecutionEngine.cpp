@@ -1845,6 +1845,49 @@ static inline const proto::ProtoObject* coerceBoolToInt(proto::ProtoContext* ctx
     return obj;
 }
 
+// The in-place dunder `name` (`__iand__`, ...) of `a` applied to `b`: native
+// or defined in Python, looked up on the object.  nullptr when `a` has no
+// such method or it returned NotImplemented: the caller then falls back to the
+// binary operator, as CPython does.
+static const proto::ProtoObject* inplaceDunder(proto::ProtoContext* ctx, PythonEnvironment* env,
+                                               const proto::ProtoObject* a, const proto::ProtoObject* b,
+                                               const proto::ProtoString* name) {
+    const proto::ProtoObject* method = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, name);
+    if (!method || method == PROTO_NONE) return nullptr;
+    const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
+    const proto::ProtoObject* result = method->asMethod(ctx)
+        ? method->asMethod(ctx)(ctx, a, nullptr, argsView(proto::ProtoListArguments(ctx, oneArg)), nullptr)
+        : invokeDunder(ctx, a, name, oneArg);
+    if (env && result == env->getNotImplementedPrototype()) return nullptr;
+    return result;
+}
+
+// Python's `a << b` / `a >> b` for two ints (bools already coerced), of any
+// size: a negative count raises ValueError; a count too large for protoCore's
+// shift gives 0 or -1 for `>>` and, unless `a` is 0, OverflowError for `<<`.
+// The binary opcodes take it after their SmallInteger fast path; the in-place
+// opcodes after `__ilshift__` / `__irshift__`.
+static const proto::ProtoObject* pyIntShift(proto::ProtoContext* ctx, const proto::ProtoObject* a,
+                                            const proto::ProtoObject* b, bool left) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoObject* zero = ctx->fromInteger(0);
+    long long amount = 0;
+    const bool fits = PythonEnvironment::tryAsLong(ctx, b, amount);
+    const bool negative = fits ? amount < 0 : b->compare(ctx, zero) < 0;
+    if (negative) {
+        env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, "negative shift count")->asObject(ctx));
+        return PROTO_NONE;
+    }
+    if (!fits || amount > std::numeric_limits<int>::max()) {
+        const int sign = a->compare(ctx, zero);
+        if (!left) return ctx->fromInteger(sign < 0 ? -1 : 0);
+        if (sign == 0) return zero;
+        env->raiseOverflowError(ctx, "too many digits in integer");
+        return PROTO_NONE;
+    }
+    return left ? a->shiftLeft(ctx, static_cast<int>(amount)) : a->shiftRight(ctx, static_cast<int>(amount));
+}
+
 static const proto::ProtoObject* unwrapPrimitive(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     if (obj->isInteger(ctx) || obj->isDouble(ctx)) return obj;
     // bool is a subclass of int in CPython.  PROTO_TRUE / PROTO_FALSE are
@@ -6364,45 +6407,31 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
-            const proto::ProtoObject* itruediv = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, env ? env->getITrueDivString() : PythonEnvironment::getInternedString(ctx, "__itruediv__"));
-            if (itruediv && itruediv->asMethod(ctx)) {
-                const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                const proto::ProtoObject* result = itruediv->asMethod(ctx)(ctx, a, nullptr, argsView(proto::ProtoListArguments(ctx, oneArg)), nullptr);
-                stack.pop_back();
-                stack.back() = result ? result : PROTO_NONE;
-            } else {
-                const proto::ProtoObject* r = binaryTrueDivide(ctx, a, b);
-                stack.pop_back();
-                stack.back() = r;
-            }
+            const proto::ProtoObject* result = inplaceDunder(ctx, env, a, b,
+                env ? env->getITrueDivString() : PythonEnvironment::getInternedString(ctx, "__itruediv__"));
+            if (!result) result = binaryTrueDivide(ctx, a, b);
+            stack.pop_back();
+            stack.back() = result ? result : PROTO_NONE;
         } break;
         case OP_INPLACE_FLOOR_DIVIDE: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
-            const proto::ProtoObject* ifloordiv = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, env ? env->getIFloorDivString() : PythonEnvironment::getInternedString(ctx, "__ifloordiv__"));
-            if (ifloordiv && ifloordiv->asMethod(ctx)) {
-                const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                const proto::ProtoObject* result = ifloordiv->asMethod(ctx)(ctx, a, nullptr, argsView(proto::ProtoListArguments(ctx, oneArg)), nullptr);
-                stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
-            } else {
-                const proto::ProtoObject* r = binaryFloorDivide(ctx, a, b);
-                stack.pop_back(); stack.back() = r;
-            }
+            const proto::ProtoObject* result = inplaceDunder(ctx, env, a, b,
+                env ? env->getIFloorDivString() : PythonEnvironment::getInternedString(ctx, "__ifloordiv__"));
+            if (!result) result = binaryFloorDivide(ctx, a, b);
+            stack.pop_back();
+            stack.back() = result ? result : PROTO_NONE;
         } break;
         case OP_INPLACE_MODULO: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
-            const proto::ProtoObject* imod = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, env ? env->getIModString() : PythonEnvironment::getInternedString(ctx, "__imod__"));
-            if (imod && imod->asMethod(ctx)) {
-                const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                const proto::ProtoObject* result = imod->asMethod(ctx)(ctx, a, nullptr, argsView(proto::ProtoListArguments(ctx, oneArg)), nullptr);
-                stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
-            } else {
-                const proto::ProtoObject* r = binaryModulo(ctx, a, b);
-                stack.pop_back(); stack.back() = r;
-            }
+            const proto::ProtoObject* result = inplaceDunder(ctx, env, a, b,
+                env ? env->getIModString() : PythonEnvironment::getInternedString(ctx, "__imod__"));
+            if (!result) result = binaryModulo(ctx, a, b);
+            stack.pop_back();
+            stack.back() = result ? result : PROTO_NONE;
         } break;
         case OP_INPLACE_POWER: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -6462,19 +6491,12 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
-            const proto::ProtoObject* ilshift = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, env ? env->getILShiftString() : PythonEnvironment::getInternedString(ctx, "__ilshift__"));
-            const proto::ProtoObject* result = nullptr;
-            if (ilshift && ilshift->asMethod(ctx)) {
-                const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                result = ilshift->asMethod(ctx)(ctx, a, nullptr, argsView(proto::ProtoListArguments(ctx, oneArg)), nullptr);
-                if (env && result == env->getNotImplementedPrototype()) result = nullptr;
-            }
-            if (!result && a->isInteger(ctx) && b->isInteger(ctx)) {
-                long long av = a->asLong(ctx);
-                long long bv = b->asLong(ctx);
-                if (bv < 0 || bv >= 64) av = 0;
-                else av = static_cast<long long>(static_cast<unsigned long long>(av) << bv);
-                result = ctx->fromInteger(av);
+            const proto::ProtoObject* result = inplaceDunder(ctx, env, a, b,
+                env ? env->getILShiftString() : PythonEnvironment::getInternedString(ctx, "__ilshift__"));
+            if (!result) {
+                const proto::ProtoObject* ia = coerceBoolToInt(ctx, a);
+                const proto::ProtoObject* ib = coerceBoolToInt(ctx, b);
+                if (ia->isInteger(ctx) && ib->isInteger(ctx)) result = pyIntShift(ctx, ia, ib, true);
             }
             if (!result) {
                 result = binaryOpDispatch(ctx, a, b, "__lshift__", "__rlshift__");
@@ -6486,19 +6508,12 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
-            const proto::ProtoObject* irshift = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, env ? env->getIRShiftString() : PythonEnvironment::getInternedString(ctx, "__irshift__"));
-            const proto::ProtoObject* result = nullptr;
-            if (irshift && irshift->asMethod(ctx)) {
-                const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                result = irshift->asMethod(ctx)(ctx, a, nullptr, argsView(proto::ProtoListArguments(ctx, oneArg)), nullptr);
-                if (env && result == env->getNotImplementedPrototype()) result = nullptr;
-            }
-            if (!result && a->isInteger(ctx) && b->isInteger(ctx)) {
-                long long av = a->asLong(ctx);
-                long long bv = b->asLong(ctx);
-                if (bv < 0 || bv >= 64) av = 0;
-                else av = av >> bv;
-                result = ctx->fromInteger(av);
+            const proto::ProtoObject* result = inplaceDunder(ctx, env, a, b,
+                env ? env->getIRShiftString() : PythonEnvironment::getInternedString(ctx, "__irshift__"));
+            if (!result) {
+                const proto::ProtoObject* ia = coerceBoolToInt(ctx, a);
+                const proto::ProtoObject* ib = coerceBoolToInt(ctx, b);
+                if (ia->isInteger(ctx) && ib->isInteger(ctx)) result = pyIntShift(ctx, ia, ib, false);
             }
             if (!result) {
                 result = binaryOpDispatch(ctx, a, b, "__rshift__", "__rrshift__");
@@ -6510,13 +6525,8 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
-            const proto::ProtoObject* iand = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, env ? env->getIAndString() : PythonEnvironment::getInternedString(ctx, "__iand__"));
-            const proto::ProtoObject* result = nullptr;
-            if (iand && iand->asMethod(ctx)) {
-                const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                result = iand->asMethod(ctx)(ctx, a, nullptr, argsView(proto::ProtoListArguments(ctx, oneArg)), nullptr);
-                if (env && result == env->getNotImplementedPrototype()) result = nullptr;
-            }
+            const proto::ProtoObject* result = inplaceDunder(ctx, env, a, b,
+                env ? env->getIAndString() : PythonEnvironment::getInternedString(ctx, "__iand__"));
             if (!result && a->isInteger(ctx) && b->isInteger(ctx)) {
                 result = a->bitwiseAnd(ctx, b);
             }
@@ -6530,13 +6540,8 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
-            const proto::ProtoObject* ior = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, env ? env->getIOrString() : PythonEnvironment::getInternedString(ctx, "__ior__"));
-            const proto::ProtoObject* result = nullptr;
-            if (ior && ior->asMethod(ctx)) {
-                const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                result = ior->asMethod(ctx)(ctx, a, nullptr, argsView(proto::ProtoListArguments(ctx, oneArg)), nullptr);
-                if (env && result == env->getNotImplementedPrototype()) result = nullptr;
-            }
+            const proto::ProtoObject* result = inplaceDunder(ctx, env, a, b,
+                env ? env->getIOrString() : PythonEnvironment::getInternedString(ctx, "__ior__"));
             if (!result && a->isInteger(ctx) && b->isInteger(ctx)) {
                 result = a->bitwiseOr(ctx, b);
             }
@@ -6550,13 +6555,8 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
-            const proto::ProtoObject* ixor = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, env ? env->getIXorString() : PythonEnvironment::getInternedString(ctx, "__ixor__"));
-            const proto::ProtoObject* result = nullptr;
-            if (ixor && ixor->asMethod(ctx)) {
-                const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                result = ixor->asMethod(ctx)(ctx, a, nullptr, argsView(proto::ProtoListArguments(ctx, oneArg)), nullptr);
-                if (env && result == env->getNotImplementedPrototype()) result = nullptr;
-            }
+            const proto::ProtoObject* result = inplaceDunder(ctx, env, a, b,
+                env ? env->getIXorString() : PythonEnvironment::getInternedString(ctx, "__ixor__"));
             if (!result && a->isInteger(ctx) && b->isInteger(ctx)) {
                 result = a->bitwiseXor(ctx, b);
             }
@@ -6592,25 +6592,8 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 // Large shift or overflow: fall through to bignum handler.
             }
             if (a->isInteger(ctx) && b->isInteger(ctx)) {
-                // Shift amount: try asLong; bignum amounts are absurd so
-                // we cap them by routing through Integer::shiftLeft on a
-                // value of 0 (which short-circuits) rather than crashing.
-                long long amountL = 0;
-                const bool amountFits = PythonEnvironment::tryAsLong(ctx, b, amountL);
-                int amount = static_cast<int>(amountL);
-                if (!amountFits) {
-                    if (env) env->raiseValueError(ctx,
-                        PythonEnvironment::getInternedString(ctx, "shift count too large")->asObject(ctx));
-                    stack.pop_back(); stack.back() = PROTO_NONE;
-                    i = next_i; continue;
-                }
-                if (amount < 0) {
-                    if (env) env->raiseValueError(ctx,
-                        PythonEnvironment::getInternedString(ctx, "negative shift count")->asObject(ctx));
-                    stack.pop_back(); stack.back() = PROTO_NONE;
-                    i = next_i; continue;
-                }
-                stack.pop_back(); stack.back() = a->shiftLeft(ctx, amount);
+                const proto::ProtoObject* r = pyIntShift(ctx, a, b, true);
+                stack.pop_back(); stack.back() = r;
             } else {
                 // User-class fallback: __lshift__ / __rlshift__.
                 const proto::ProtoObject* r = binaryOpDispatch(ctx, a, b, "__lshift__", "__rlshift__");
@@ -6637,22 +6620,8 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 i = next_i; continue;
             }
             if (a->isInteger(ctx) && b->isInteger(ctx)) {
-                long long amountL = 0;
-                const bool amountFits = PythonEnvironment::tryAsLong(ctx, b, amountL);
-                int amount = static_cast<int>(amountL);
-                if (!amountFits) {
-                    if (env) env->raiseValueError(ctx,
-                        PythonEnvironment::getInternedString(ctx, "shift count too large")->asObject(ctx));
-                    stack.pop_back(); stack.back() = PROTO_NONE;
-                    i = next_i; continue;
-                }
-                if (amount < 0) {
-                    if (env) env->raiseValueError(ctx,
-                        PythonEnvironment::getInternedString(ctx, "negative shift count")->asObject(ctx));
-                    stack.pop_back(); stack.back() = PROTO_NONE;
-                    i = next_i; continue;
-                }
-                stack.pop_back(); stack.back() = a->shiftRight(ctx, amount);
+                const proto::ProtoObject* r = pyIntShift(ctx, a, b, false);
+                stack.pop_back(); stack.back() = r;
             } else {
                 // User-class fallback: __rshift__ / __rrshift__.
                 const proto::ProtoObject* r = binaryOpDispatch(ctx, a, b, "__rshift__", "__rrshift__");
