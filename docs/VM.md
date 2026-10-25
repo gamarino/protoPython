@@ -606,7 +606,9 @@ Produced only by `Compiler::specialiseBytecode` (1.2), each followed by three
 ## 3. Worked examples
 
 Each example is a file in `docs/vm-examples/`; the listing after it is that
-file's golden output. Regenerate them with
+file's golden output, produced on Linux (GCC, libstdc++). The slot numbers of
+a function's non-parameter locals depend on the C++ standard library (6), so
+the ctest compares the listings on Linux only. Regenerate them with
 `python3 docs/vm-examples/disasm_examples.py build_release/src/runtime/protopy --update`
 after a compiler change, and review the notes. The module code object of most
 examples only builds functions; its listing is still shown, because the
@@ -2789,6 +2791,14 @@ document.
   `LOAD_GLOBAL` without an environment) `continue` without advancing the
   instruction pointer on an impossible stack shape, which would run the same
   instruction forever. Compiler output never reaches them.
+- **Local slot order depends on the C++ standard library.**
+  `Compiler::collectLocalsFromBody` collects a function's non-parameter
+  locals in a `std::unordered_set` and numbers them in its iteration order:
+  the same source gives `s` slot 2 and `i` slot 1 with libstdc++ (example
+  06) and the reverse with MSVC's library, and libc++ differs again in
+  example 09. Behaviour is the same; bytecode is not reproducible across
+  platforms. (Seen in the cross-platform CI of the change that added this
+  document.)
 - **Two `None` constants.** Function bodies use protoCore's `PROTO_NONE`
   (kind `none`); the module's final `return None` and an async function's use
   the environment's `None` object (kind `NoneType`, `compileModule`,
