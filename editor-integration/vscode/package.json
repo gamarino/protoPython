@@ -2,7 +2,7 @@
   "name": "protopy-debug",
   "displayName": "protoPython Debugger",
   "description": "Debug Python scripts on protoPython (protopy) from VS Code, through the protopy --dap Debug Adapter Protocol adapter.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "protopython-placeholder",
   "engines": {
     "vscode": "^1.66.0"
@@ -214,5 +214,12 @@
     "type": "git",
     "url": "https://github.com/gamarino/protoPython"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "scripts": {
+    "test": "node ./test/runTest.js"
+  },
+  "devDependencies": {
+    "@vscode/test-electron": "2.5.2",
+    "mocha": "10.8.2"
+  }
 }

@@ -22,7 +22,7 @@ runtime it uses (`"type": "protopy"` or `"type": "debugpy"`).
    ```bash
    cd editor-integration/vscode
    npx @vscode/vsce@3.2.1 package --skip-license
-   code --install-extension protopy-debug-0.3.0.vsix
+   code --install-extension protopy-debug-0.3.1.vsix
    ```
 
 The extension runs the `protopy` named by the setting **protopy.path**

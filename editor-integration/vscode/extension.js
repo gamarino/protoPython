@@ -28,8 +28,31 @@ function defaultInstallPath() {
   return path.join(os.homedir(), ".local", "bin", "protopy");
 }
 
+function configuredPath() {
+  return vscode.workspace.getConfiguration("protopy").get("path");
+}
+
+// What is wrong with the `protopy.path` setting, or null: it names a file
+// (not a bare command looked up in PATH) that does not exist. Checked before
+// the launch, so the user reads which setting is wrong instead of a spawn
+// error.
+function configuredPathProblem() {
+  const configured = configuredPath();
+  if (!configured || !/[\\/]/.test(configured) || fs.existsSync(configured)) return null;
+  return `protoPython: the protopy.path setting is "${configured}", which does not exist. ` +
+    "Fix it, or clear it to use the default install location or protopy from PATH.";
+}
+
+// Shows a message and aborts the launch, without waiting for the user to
+// close the message: a launch that waited would stay pending for as long as
+// the notification is not dismissed.
+function refuse(kind, message) {
+  vscode.window[kind](message);
+  return undefined;
+}
+
 function protopyCommand() {
-  const configured = vscode.workspace.getConfiguration("protopy").get("path");
+  const configured = configuredPath();
   if (configured) return configured;
   const installed = defaultInstallPath();
   return fs.existsSync(installed) ? installed : "protopy";
@@ -51,24 +74,26 @@ const configurationProvider = {
     if (config.remote !== undefined) {
       const cmd = config.remote && config.remote.command;
       if (!Array.isArray(cmd) || cmd.length === 0 || cmd.some((a) => typeof a !== "string")) {
-        return vscode.window
-          .showErrorMessage('protoPython: "remote.command" must be a non-empty list of strings, e.g. ["ssh", "-T", "me@host"].')
-          .then(() => undefined);
+        return refuse(
+          "showErrorMessage",
+          'protoPython: "remote.command" must be a non-empty list of strings, e.g. ["ssh", "-T", "me@host"].'
+        );
       }
       if (!Array.isArray(config.pathMappings) || config.pathMappings.length === 0) {
-        return vscode.window
-          .showErrorMessage(
-            'protoPython: a "remote" launch needs "pathMappings": [{"localRoot": "${workspaceFolder}", ' +
-              '"remoteRoot": "<the same folder on the remote side>"}], so breakpoints and the call stack ' +
-              "name files on both sides. \"program\" and \"cwd\" are remote paths (or local ones under a localRoot)."
-          )
-          .then(() => undefined);
+        return refuse(
+          "showErrorMessage",
+          'protoPython: a "remote" launch needs "pathMappings": [{"localRoot": "${workspaceFolder}", ' +
+            '"remoteRoot": "<the same folder on the remote side>"}], so breakpoints and the call stack ' +
+            "name files on both sides. \"program\" and \"cwd\" are remote paths (or local ones under a localRoot)."
+        );
       }
     }
     if (!config.program) {
-      return vscode.window
-        .showInformationMessage("protoPython: open a Python file or set 'program' in launch.json.")
-        .then(() => undefined);
+      return refuse("showInformationMessage", "protoPython: open a Python file or set 'program' in launch.json.");
+    }
+    if (config.remote === undefined) {
+      const problem = configuredPathProblem();
+      if (problem) return refuse("showErrorMessage", problem);
     }
     return config;
   },

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **VS Code extension 0.3.1: integration tests, and two launch fixes they
+  found.** `editor-integration/vscode/test/` runs the extension in a real VS
+  Code Extension Development Host (`npm install && npm test`; the extension
+  README's "Testing the extension"): a local launch with a breakpoint, stack,
+  a local and stdout; F5 without a launch.json; the executable lookup; a
+  remote launch through WSL with pathMappings; the refusal without them; the
+  `raised` exception filter; the launch schema and snippets. CI runs the
+  local ones on Linux under xvfb. Fixed: a refused launch (no `program`, a
+  bad `remote`, `remote` without `pathMappings`) waited for the user to close
+  the error notification, so the launch stayed pending as long as it was not
+  dismissed; it now ends at once. A `protopy.path` naming a file that does
+  not exist is refused with a message naming the setting, instead of a bare
+  spawn error.
 - **Fixed: a function's first instructions on the line after its
   docstring.** A constant used as a statement (a docstring, `...`, a bare
   number) compiled to `LOAD_CONST` + `POP_TOP`, and a string literal took its

@@ -25,7 +25,7 @@ over their F5 default. There is no TypeScript build step and no bundler.
 ```bash
 cd editor-integration/vscode
 npx @vscode/vsce@3.2.1 package --skip-license
-code --install-extension protopy-debug-0.3.0.vsix
+code --install-extension protopy-debug-0.3.1.vsix
 ```
 
 On Linux and macOS you can instead symlink the folder (edits are picked up
@@ -89,3 +89,48 @@ work as in the Python Debugger.
   WSL*. The remote shell must print nothing on a non-interactive start.
 
 See `docs/debugging.md` in the repository for what works and the limitations.
+
+## Testing the extension
+
+`test/` holds integration tests that run this extension inside a real VS Code
+(an Extension Development Host, through `@vscode/test-electron` and mocha)
+and debug `test/fixture/fixture.py` with `protopy`, driving VS Code's own
+debug API the way F5 does:
+
+```bash
+cd editor-integration/vscode
+npm install
+npm test
+```
+
+They check: a local launch (breakpoint hit on the right line, `stackTrace`,
+a local's value, the program's stdout as `output` events, `terminated`); F5
+without a `launch.json` on the open fixture; the executable lookup (a
+`protopy.path` that does not exist is refused with a message naming it; with
+the setting empty the default install is the process that runs); a `remote`
+launch through WSL with `pathMappings` (the breakpoint is set by the Windows
+path and the frames come back with Windows paths); a `remote` launch without
+`pathMappings` refused with its explanation; the `raised` exception filter;
+and that the launch schema, snippets and initial configurations agree.
+
+- **Which VS Code.** `$VSCODE_EXECUTABLE` if set; on Windows the per-user
+  install when present (unless it is halfway through an update, which makes
+  every new instance refuse to start); otherwise a pinned VS Code is
+  downloaded (`$VSCODE_VERSION` overrides the version) into
+  `$VSCODE_TEST_CACHE`.
+- **Isolation.** A throwaway `--user-data-dir` and `--extensions-dir` under
+  `$PROTO_VSCODE_E2E_DIR` (default `C:\tmp\protowin\vscode-e2e` on Windows,
+  `$TMPDIR/proto-vscode-e2e` elsewhere), recreated on every run, and every
+  other extension disabled: your own VS Code may stay open.
+- **Which runtime.** `$PROTO_E2E_EXE` (put into `protopy.path`), else the
+  extension's own lookup: default install, then `PATH`. The default-install
+  test is skipped when there is no default install.
+- **Remote.** Runs only on Windows with WSL (`$PROTO_E2E_WSL_DISTRO`, default
+  `Ubuntu-24.04`) and the Linux build named in `test/lang.js`; it is skipped
+  elsewhere.
+- `$PROTO_E2E_GREP` runs only the tests whose title matches.
+
+`test/runTest.js`, `test/suite/` are the same in the five proto* runtimes'
+extensions; `test/lang.js` and the fixture hold the per-language part.
+`test/` and `node_modules/` are left out of the `.vsix` (`.vscodeignore`).
+CI runs the local tests on Linux under `xvfb-run` (`.github/workflows/ci.yml`).
