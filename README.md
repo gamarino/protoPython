@@ -610,6 +610,8 @@ describe the design in detail.
   compiler.
 - [**HPy User Guide**](docs/HPY_USER_GUIDE.md) — the HPy bridge and its current
   limitations.
+- [**The virtual machine**](docs/VM.md) — for contributors: how source becomes bytecode,
+  every opcode, `protopy --disasm` examples, how to add an opcode or a primitive.
 - [**Debugging in VS Code**](docs/debugging.md) — `protopy --dap` and the VS Code
   extension.
 - [**Exceptions**](docs/EXCEPTIONS.md) — the exception model, foreign errors of UMD

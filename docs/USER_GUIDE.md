@@ -52,6 +52,7 @@ A script's module body runs once as `__main__`, as in CPython. protopy never cal
 | `--dry-run` | For a script or module target: check that the script file exists, or that the module's `.py` file or package directory is in the standard library or a search directory, then exit with status 0 or 65 without running anything. Modules implemented natively in C++ are not found by this check. |
 | `--bytecode-only` | Currently performs the same check as `--dry-run`; nothing is executed. |
 | `--trace` | Print module enter and leave events to standard error. |
+| `--disasm <file>` | Compile `<file>` and print its bytecode without running it ([VM.md](VM.md)). |
 
 For compatibility with tools that start Python subprocesses (for example
 `test.support.script_helper`), protopy accepts the CPython flag `-I` (it implies

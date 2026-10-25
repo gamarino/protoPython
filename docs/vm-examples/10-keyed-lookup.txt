@@ -1,0 +1,45 @@
+code 0: <module> (10-keyed-lookup.py, line 1)
+  flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
+  slots 33: operand stack from 0
+  constants:
+    #0   code    <code lookup, line 2>  -> code 0.0
+    #1   NoneType None
+  names:
+    #0   lookup
+  code:
+     1     0  LOAD_CONST                    0  ; <code lookup, line 2>
+           2  BUILD_FUNCTION                0
+           4  STORE_NAME                    0  ; lookup
+           6  LOAD_CONST                    1  ; None
+           8  RETURN_VALUE                  0
+
+code 0.0: lookup (10-keyed-lookup.py, line 2)
+  flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 2 (0 positional-only, 0 keyword-only)
+  slots 135: variables 0..1, operand stack from 2
+  constants:
+    #0   str     'k'
+    #1   int     1
+    #2   none    None
+  names:
+    #0   attr
+    #1   method
+  variables (slot):
+    #0   d
+    #1   obj
+  code:
+     2     0  LOAD_FAST                     1  ; obj
+           2  LOAD_ATTR                     0  ; attr
+           4  LOAD_FAST                     0  ; d
+           6  LOAD_CONST                    0  ; 'k'
+           8  STORE_SUBSCR                  0
+     3    10  LOAD_FAST                     0  ; d
+          12  LOAD_CONST                    0  ; 'k'
+          14  BINARY_SUBSCR                 0
+          16  LOAD_FAST                     1  ; obj
+          18  LOAD_ATTR                     3  ; method (method)
+          20  LOAD_CONST                    1  ; 1
+          22  CALL_FUNCTION                 1  ; 1 positional
+          24  BUILD_TUPLE                   2
+          26  RETURN_VALUE                  0
+          28  LOAD_CONST                    2  ; None
+          30  RETURN_VALUE                  0

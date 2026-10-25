@@ -1,0 +1,114 @@
+code 0: <module> (13-exceptions.py, line 1)
+  flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
+  slots 33: operand stack from 0
+  constants:
+    #0   code    <code safe_div, line 2>  -> code 0.0
+    #1   code    <code fail, line 12>  -> code 0.1
+    #2   NoneType None
+  names:
+    #0   safe_div
+    #1   fail
+  code:
+     1     0  LOAD_CONST                    0  ; <code safe_div, line 2>
+           2  BUILD_FUNCTION                0
+           4  STORE_NAME                    0  ; safe_div
+    11     6  LOAD_CONST                    1  ; <code fail, line 12>
+           8  BUILD_FUNCTION                0
+          10  STORE_NAME                    2  ; fail
+          12  LOAD_CONST                    2  ; None
+          14  RETURN_VALUE                  0
+
+code 0.0: safe_div (13-exceptions.py, line 2)
+  flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 2 (0 positional-only, 0 keyword-only)
+  slots 135: variables 0..2, operand stack from 3
+  constants:
+    #0   str     'done'
+    #1   str     'error:'
+    #2   none    None
+  names:
+    #0   print
+    #1   ZeroDivisionError
+  variables (slot):
+    #0   a
+    #1   b
+    #2   e
+  code:
+     3     0  SETUP_FINALLY                98  ; to 98
+           2  SETUP_FINALLY                28  ; to 28
+           4  LOAD_FAST                     0  ; a
+           6  LOAD_FAST                     1  ; b
+           8  BINARY_TRUE_DIVIDE            0
+          10  POP_BLOCK                     0
+          12  POP_BLOCK                     0
+     8    14  LOAD_GLOBAL                   1  ; print (+ NULL)
+          16  LOAD_CONST                    0  ; 'done'
+          18  CALL_FUNCTION                 1  ; 1 positional
+          20  POP_TOP                       0
+          22  RETURN_VALUE                  0
+          24  POP_BLOCK                     0
+          26  JUMP_ABSOLUTE                86  ; to 86
+     4    28  LOAD_GLOBAL                   2  ; ZeroDivisionError
+          30  EXCEPTION_MATCH               0
+          32  POP_JUMP_IF_FALSE            84  ; to 84
+          34  DUP_TOP                       0
+          36  STORE_FAST                    2  ; e
+          38  POP_TOP                       0
+          40  POP_TOP                       0
+          42  POP_TOP                       0
+          44  SETUP_FINALLY                80  ; to 80
+     5    46  LOAD_GLOBAL                   1  ; print (+ NULL)
+          48  LOAD_CONST                    1  ; 'error:'
+          50  LOAD_FAST                     2  ; e
+          52  CALL_FUNCTION                 2  ; 2 positional
+          54  POP_TOP                       0
+     6    56  LOAD_CONST                    2  ; None
+          58  POP_BLOCK                     0
+          60  POP_EXCEPT                    0
+          62  POP_BLOCK                     0
+     8    64  LOAD_GLOBAL                   1  ; print (+ NULL)
+          66  LOAD_CONST                    0  ; 'done'
+          68  CALL_FUNCTION                 1  ; 1 positional
+          70  POP_TOP                       0
+          72  RETURN_VALUE                  0
+          74  POP_BLOCK                     0
+          76  POP_EXCEPT                    0
+          78  JUMP_ABSOLUTE                82  ; to 82
+          80  RERAISE                       2
+          82  JUMP_ABSOLUTE                86  ; to 86
+          84  RERAISE                       1
+          86  POP_BLOCK                     0
+          88  LOAD_GLOBAL                   1  ; print (+ NULL)
+          90  LOAD_CONST                    0  ; 'done'
+          92  CALL_FUNCTION                 1  ; 1 positional
+          94  POP_TOP                       0
+          96  JUMP_ABSOLUTE               120  ; to 120
+          98  POP_TOP                       0
+         100  POP_TOP                       0
+         102  POP_TOP                       0
+         104  SETUP_FINALLY               118  ; to 118
+         106  LOAD_GLOBAL                   1  ; print (+ NULL)
+         108  LOAD_CONST                    0  ; 'done'
+         110  CALL_FUNCTION                 1  ; 1 positional
+         112  POP_TOP                       0
+         114  POP_BLOCK                     0
+         116  RERAISE                       1
+         118  RERAISE                       2
+         120  LOAD_CONST                    2  ; None
+         122  RETURN_VALUE                  0
+
+code 0.1: fail (13-exceptions.py, line 12)
+  flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 0 (0 positional-only, 0 keyword-only)
+  slots 130: operand stack from 0
+  constants:
+    #0   str     'bad'
+    #1   none    None
+  names:
+    #0   ValueError
+  code:
+    12     0  LOAD_GLOBAL                   1  ; ValueError (+ NULL)
+           2  LOAD_CONST                    0  ; 'bad'
+           4  CALL_FUNCTION                 1  ; 1 positional
+           6  RAISE_VARARGS                 1  ; raise TOS
+           8  POP_TOP                       0
+          10  LOAD_CONST                    1  ; None
+          12  RETURN_VALUE                  0

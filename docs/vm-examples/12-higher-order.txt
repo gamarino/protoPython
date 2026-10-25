@@ -1,0 +1,96 @@
+code 0: <module> (12-higher-order.py, line 1)
+  flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
+  slots 34: operand stack from 0
+  constants:
+    #0   str     'functools'
+    #1   code    <code total, line 5>  -> code 0.0
+    #2   code    <code sum_squares, line 9>  -> code 0.1
+    #3   NoneType None
+  names:
+    #0   __import__
+    #1   functools
+    #2   total
+    #3   sum_squares
+  code:
+     1     0  LOAD_GLOBAL                   1  ; __import__ (+ NULL)
+           2  LOAD_CONST                    0  ; 'functools'
+           4  CALL_FUNCTION                 1  ; 1 positional
+           6  STORE_NAME                    2  ; functools
+     4     8  LOAD_CONST                    1  ; <code total, line 5>
+          10  BUILD_FUNCTION                0
+          12  STORE_NAME                    4  ; total
+     8    14  LOAD_CONST                    2  ; <code sum_squares, line 9>
+          16  BUILD_FUNCTION                0
+          18  STORE_NAME                    6  ; sum_squares
+          20  LOAD_CONST                    3  ; None
+          22  RETURN_VALUE                  0
+
+code 0.0: total (12-higher-order.py, line 5)
+  flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
+  slots 134: variables 0..0, operand stack from 1
+  constants:
+    #0   code    <code <lambda>, line 5>  -> code 0.0.0
+    #1   int     0
+    #2   none    None
+  names:
+    #0   functools
+    #1   reduce
+  variables (slot):
+    #0   xs
+  code:
+     5     0  LOAD_GLOBAL                   0  ; functools
+           2  LOAD_ATTR                     3  ; reduce (method)
+           4  LOAD_CONST                    0  ; <code <lambda>, line 5>
+           6  BUILD_FUNCTION                0
+           8  LOAD_FAST                     0  ; xs
+          10  LOAD_CONST                    1  ; 0
+          12  CALL_FUNCTION                 3  ; 3 positional
+          14  RETURN_VALUE                  0
+          16  LOAD_CONST                    2  ; None
+          18  RETURN_VALUE                  0
+
+code 0.0.0: <lambda> (12-higher-order.py, line 5)
+  flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 2 (0 positional-only, 0 keyword-only)
+  slots 132: variables 0..1, operand stack from 2
+  variables (slot):
+    #0   a
+    #1   b
+  code:
+     5     0  LOAD_FAST                     0  ; a
+           2  LOAD_FAST                     1  ; b
+           4  BINARY_ADD                    0
+           6  RETURN_VALUE                  0
+
+code 0.1: sum_squares (12-higher-order.py, line 9)
+  flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
+  slots 133: variables 0..0, operand stack from 1
+  constants:
+    #0   code    <code <lambda>, line 9>  -> code 0.1.0
+    #1   none    None
+  names:
+    #0   sum
+    #1   map
+  variables (slot):
+    #0   xs
+  code:
+     9     0  LOAD_GLOBAL                   1  ; sum (+ NULL)
+           2  LOAD_GLOBAL                   3  ; map (+ NULL)
+           4  LOAD_CONST                    0  ; <code <lambda>, line 9>
+           6  BUILD_FUNCTION                0
+           8  LOAD_FAST                     0  ; xs
+          10  CALL_FUNCTION                 2  ; 2 positional
+          12  CALL_FUNCTION                 1  ; 1 positional
+          14  RETURN_VALUE                  0
+          16  LOAD_CONST                    1  ; None
+          18  RETURN_VALUE                  0
+
+code 0.1.0: <lambda> (12-higher-order.py, line 9)
+  flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
+  slots 131: variables 0..0, operand stack from 1
+  variables (slot):
+    #0   x
+  code:
+     9     0  LOAD_FAST                     0  ; x
+           2  LOAD_FAST                     0  ; x
+           4  BINARY_MULTIPLY               0
+           6  RETURN_VALUE                  0

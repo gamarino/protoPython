@@ -25,8 +25,8 @@ CPython 3.14 and replacing its evaluation loop, was not taken.
 - **Bytecode format**: the opcode names follow CPython, but the numbering, argument
   encoding and semantics are protoPython's own, and some opcodes have no CPython
   counterpart (raw-list and fused opcodes). CPython bytecode files and tools such as
-  `dis` do not apply. The opcodes are listed in
-  [EXECUTION_ENGINE_OPCODES.md](EXECUTION_ENGINE_OPCODES.md).
+  `dis` do not apply. The opcodes are documented in [VM.md](VM.md);
+  `protopy --disasm` lists a file's bytecode.
 - **Execution**: protopy
   1. creates a `PythonEnvironment` with the standard library path, the module search
      paths and `sys.argv`;

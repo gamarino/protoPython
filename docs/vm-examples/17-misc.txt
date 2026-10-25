@@ -1,0 +1,107 @@
+code 0: <module> (17-misc.py, line 1)
+  flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
+  slots 33: operand stack from 0
+  constants:
+    #0   code    <code read, line 2>  -> code 0.0
+    #1   code    <code largest, line 7>  -> code 0.1
+    #2   code    <code label, line 11>  -> code 0.2
+    #3   NoneType None
+  names:
+    #0   read
+    #1   largest
+    #2   label
+  code:
+     1     0  LOAD_CONST                    0  ; <code read, line 2>
+           2  BUILD_FUNCTION                0
+           4  STORE_NAME                    0  ; read
+     6     6  LOAD_CONST                    1  ; <code largest, line 7>
+           8  BUILD_FUNCTION                0
+          10  STORE_NAME                    2  ; largest
+    10    12  LOAD_CONST                    2  ; <code label, line 11>
+          14  BUILD_FUNCTION                0
+          16  STORE_NAME                    4  ; label
+          18  LOAD_CONST                    3  ; None
+          20  RETURN_VALUE                  0
+
+code 0.0: read (17-misc.py, line 2)
+  flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
+  slots 132: variables 0..1, operand stack from 2
+  constants:
+    #0   none    None
+  names:
+    #0   open
+    #1   read
+  variables (slot):
+    #0   path
+    #1   f
+  code:
+     2     0  LOAD_GLOBAL                   1  ; open (+ NULL)
+           2  LOAD_FAST                     0  ; path
+           4  CALL_FUNCTION                 1  ; 1 positional
+           6  SETUP_WITH                   38  ; to 38
+           8  STORE_FAST                    1  ; f
+     3    10  LOAD_FAST                     1  ; f
+          12  LOAD_ATTR                     3  ; read (method)
+          14  CALL_FUNCTION                 0  ; 0 positional
+          16  ROT_TWO                       0
+          18  POP_BLOCK                     0
+          20  LOAD_CONST                    0  ; None
+          22  WITH_CLEANUP                  0
+          24  POP_TOP                       0
+          26  RETURN_VALUE                  0
+          28  POP_BLOCK                     0
+          30  LOAD_CONST                    0  ; None
+          32  WITH_CLEANUP                  0
+          34  POP_TOP                       0
+          36  JUMP_ABSOLUTE                52  ; to 52
+          38  SETUP_FINALLY                48  ; to 48
+          40  WITH_CLEANUP                  0
+          42  POP_BLOCK                     0
+          44  POP_JUMP_IF_TRUE             50  ; to 50
+          46  RERAISE                       1
+          48  RERAISE                       2
+          50  POP_EXCEPT                    0
+          52  LOAD_CONST                    0  ; None
+          54  RETURN_VALUE                  0
+
+code 0.1: largest (17-misc.py, line 7)
+  flags 0x17 (OPTIMIZED | NEWLOCALS | VARARGS | NESTED), parameters 0 (0 positional-only, 0 keyword-only)
+  slots 132: variables 0..0, operand stack from 1
+  constants:
+    #0   none    None
+  names:
+    #0   max
+  variables (slot):
+    #0   args
+  code:
+     7     0  LOAD_GLOBAL                   1  ; max (+ NULL)
+           2  BUILD_LIST                    0
+           4  LOAD_FAST                     0  ; args
+           6  LIST_EXTEND                   1
+           8  LIST_TO_TUPLE                 0
+          10  CALL_FUNCTION_EX              0  ; positional sequence
+          12  RETURN_VALUE                  0
+          14  LOAD_CONST                    0  ; None
+          16  RETURN_VALUE                  0
+
+code 0.2: label (17-misc.py, line 11)
+  flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 2 (0 positional-only, 0 keyword-only)
+  slots 134: variables 0..1, operand stack from 2
+  constants:
+    #0   str     ': '
+    #1   none    None
+  names:
+    #0   repr
+  variables (slot):
+    #0   name
+    #1   n
+  code:
+     1     0  LOAD_FAST                     0  ; name
+    12     2  LOAD_CONST                    0  ; ': '
+           4  LOAD_GLOBAL                   1  ; repr (+ NULL)
+     1     6  LOAD_FAST                     1  ; n
+           8  CALL_FUNCTION                 1  ; 1 positional
+          10  BUILD_STRING                  3
+          12  RETURN_VALUE                  0
+          14  LOAD_CONST                    1  ; None
+          16  RETURN_VALUE                  0

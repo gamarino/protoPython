@@ -42,7 +42,8 @@ is still pending.
 |----------|-------------|
 | [CPP_API_REFERENCE.md](CPP_API_REFERENCE.md) | Embedding API: `PythonEnvironment` construction, execution, errors, object access, and protoCore value conversions. |
 | [PROTOPYC_SPECIFICATION.md](PROTOPYC_SPECIFICATION.md) | The `protopyc` compiler: command line, loading generated modules, generated code, unimplemented features. |
-| [EXECUTION_ENGINE_OPCODES.md](EXECUTION_ENGINE_OPCODES.md) | Reference of all opcodes defined in `ExecutionEngine.h`: instruction format, fused opcodes, meaning of each opcode. |
+| [VM.md](VM.md) | The bytecode virtual machine, for contributors: reading order through the source, instruction encoding, frames, calling conventions, every opcode, worked `protopy --disasm` examples, how to add an opcode or a primitive, known issues. |
+| [EXECUTION_ENGINE_OPCODES.md](EXECUTION_ENGINE_OPCODES.md) | Superseded by VM.md. |
 | [HPY_DEVELOPER_GUIDE.md](HPY_DEVELOPER_GUIDE.md) | The HPy-style C++ extension API and how to write a module against it. |
 | [HPY_USER_GUIDE.md](HPY_USER_GUIDE.md) | How the HPy extension loader works and its current status. |
 | [HPY_REPL_INTEGRATION.md](HPY_REPL_INTEGRATION.md) | Status of HPy support in the `protopy` REPL. |

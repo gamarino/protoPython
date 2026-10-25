@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **docs/VM.md: the virtual machine, for contributors, and `protopy
+  --disasm`.** A reading order through the source (parser, compiler, code
+  objects, VM, built-ins); the instruction encoding, the frame layout (one
+  `ProtoContext` per activation), the calling conventions, safepoints and
+  exceptions; all 119 opcodes with operand, stack effect, semantics and the
+  construct that emits them, the peephole specialiser's fused opcodes and the
+  attribute write groups included; 19 worked examples; how to add an opcode
+  and a primitive; and the defects found on the way (section 6, not fixed
+  here). `protopy --disasm file.py` compiles a file without running it and
+  prints its code objects (`src/library/Disassembler.cpp`). Every listing in
+  VM.md is real `--disasm` output: the sources and golden listings live in
+  `docs/vm-examples/`, and the ctest `docs_vm_examples` fails when a listing,
+  or VM.md's copy of it, drifts. VM.md supersedes
+  docs/EXECUTION_ENGINE_OPCODES.md.
 - **VS Code extension 0.3.1: integration tests, and two launch fixes they
   found.** `editor-integration/vscode/test/` runs the extension in a real VS
   Code Extension Development Host (`npm install && npm test`; the extension

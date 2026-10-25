@@ -2,6 +2,7 @@ add_library(protoPython SHARED
     HPyContext.cpp
     BytecodeLoader.cpp
     Compiler.cpp
+    Disassembler.cpp
     ExecutionEngine.cpp
     Debugger.cpp
     DAPServer.cpp

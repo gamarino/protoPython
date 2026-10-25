@@ -1,0 +1,82 @@
+code 0: <module> (06-loops.py, line 1)
+  flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
+  slots 33: operand stack from 0
+  constants:
+    #0   code    <code total, line 2>  -> code 0.0
+    #1   code    <code sum_squares, line 11>  -> code 0.1
+    #2   NoneType None
+  names:
+    #0   total
+    #1   sum_squares
+  code:
+     1     0  LOAD_CONST                    0  ; <code total, line 2>
+           2  BUILD_FUNCTION                0
+           4  STORE_NAME                    0  ; total
+    10     6  LOAD_CONST                    1  ; <code sum_squares, line 11>
+           8  BUILD_FUNCTION                0
+          10  STORE_NAME                    2  ; sum_squares
+          12  LOAD_CONST                    2  ; None
+          14  RETURN_VALUE                  0
+
+code 0.0: total (06-loops.py, line 2)
+  flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
+  slots 133: variables 0..2, operand stack from 3
+  constants:
+    #0   int     0
+    #1   int     1
+    #2   none    None
+  variables (slot):
+    #0   n
+    #1   i
+    #2   s
+  code:
+     2     0  LOAD_CONST                    0  ; 0
+           2  STORE_FAST                    2  ; s
+     3     4  LOAD_CONST                    0  ; 0
+           6  STORE_FAST                    1  ; i
+     4     8  LT_FAST_FAST_JF             256  ; if not i < n: to 34
+          10  NOP                           0
+          12  NOP                           0
+          14  NOP                          34
+     5    16  ACC_FAST_FAST               513  ; s += i
+          18  NOP                           0
+          20  NOP                           0
+          22  NOP                           0
+     6    24  INC_FAST_K                  257  ; i += 1
+          26  NOP                           0
+          28  NOP                           0
+          30  NOP                           0
+          32  JUMP_ABSOLUTE                 8  ; to 8
+     7    34  LOAD_FAST                     2  ; s
+          36  RETURN_VALUE                  0
+          38  LOAD_CONST                    2  ; None
+          40  RETURN_VALUE                  0
+
+code 0.1: sum_squares (06-loops.py, line 11)
+  flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
+  slots 135: variables 0..2, operand stack from 3
+  constants:
+    #0   int     0
+    #1   none    None
+  variables (slot):
+    #0   xs
+    #1   x
+    #2   out
+  code:
+    11     0  LOAD_CONST                    0  ; 0
+           2  STORE_FAST                    2  ; out
+    12     4  LOAD_FAST                     0  ; xs
+           6  GET_ITER                      0
+           8  FOR_ITER                     26  ; to 26
+          10  STORE_FAST                    1  ; x
+    13    12  LOAD_FAST                     2  ; out
+          14  LOAD_FAST                     1  ; x
+          16  LOAD_FAST                     1  ; x
+          18  BINARY_MULTIPLY               0
+          20  INPLACE_ADD                   0
+          22  STORE_FAST                    2  ; out
+          24  JUMP_ABSOLUTE                 8  ; to 8
+    14    26  LOAD_FAST                     2  ; out
+          28  RETURN_VALUE                  0
+          30  LOAD_CONST                    1  ; None
+          32  RETURN_VALUE                  0

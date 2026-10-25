@@ -1,0 +1,118 @@
+code 0: <module> (19-async.py, line 6)
+  flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
+  slots 33: operand stack from 0
+  constants:
+    #0   code    <code fetch, line 2>  -> code 0.0
+    #1   code    <code collect, line 7>  -> code 0.1
+    #2   NoneType None
+  names:
+    #0   fetch
+    #1   collect
+  code:
+     6     0  LOAD_CONST                    0  ; <code fetch, line 2>
+           2  BUILD_FUNCTION                0
+           4  STORE_NAME                    0  ; fetch
+           6  POP_TOP                       0
+    11     8  LOAD_CONST                    1  ; <code collect, line 7>
+          10  BUILD_FUNCTION                0
+          12  STORE_NAME                    2  ; collect
+          14  POP_TOP                       0
+          16  LOAD_CONST                    2  ; None
+          18  RETURN_VALUE                  0
+
+code 0.0: fetch (19-async.py, line 2)
+  flags 0x113 (OPTIMIZED | NEWLOCALS | NESTED | COROUTINE), parameters 1 (0 positional-only, 0 keyword-only), generator
+  slots 138: variables 0..1, operand stack from 2
+  constants:
+    #0   none    None
+    #1   NoneType None
+  names:
+    #0   __aenter__
+    #1   __aexit__
+    #2   __class__
+    #3   read
+  variables (slot):
+    #0   source
+    #1   s
+  code:
+     2     0  LOAD_FAST                     0  ; source
+           2  DUP_TOP                       0
+           4  LOAD_ATTR                     1  ; __aenter__ (method)
+           6  CALL_FUNCTION                 0  ; 0 positional
+           8  GET_AWAITABLE                 0
+          10  LOAD_CONST                    0  ; None
+          12  YIELD_FROM                    0
+          14  STORE_FAST                    1  ; s
+          16  SETUP_FINALLY                58  ; to 58
+     3    18  LOAD_FAST                     1  ; s
+          20  LOAD_ATTR                     7  ; read (method)
+          22  CALL_FUNCTION                 0  ; 0 positional
+          24  GET_AWAITABLE                 0
+          26  LOAD_CONST                    0  ; None
+          28  YIELD_FROM                    0
+          30  RETURN_VALUE                  0
+          32  POP_BLOCK                     0
+          34  DUP_TOP                       0
+          36  LOAD_ATTR                     3  ; __aexit__ (method)
+          38  LOAD_CONST                    0  ; None
+          40  LOAD_CONST                    0  ; None
+          42  LOAD_CONST                    0  ; None
+          44  CALL_FUNCTION                 3  ; 3 positional
+          46  GET_AWAITABLE                 0
+          48  LOAD_CONST                    0  ; None
+          50  YIELD_FROM                    0
+          52  POP_TOP                       0
+          54  POP_TOP                       0
+          56  JUMP_ABSOLUTE                98  ; to 98
+          58  POP_TOP                       0
+          60  ROT_TWO                       0
+          62  POP_TOP                       0
+          64  DUP_TOP                       0
+          66  LOAD_ATTR                     4  ; __class__
+          68  ROT_TWO                       0
+          70  LOAD_CONST                    0  ; None
+          72  BUILD_TUPLE                   3
+          74  ROT_TWO                       0
+          76  LOAD_ATTR                     2  ; __aexit__
+          78  ROT_TWO                       0
+          80  PUSH_NULL                     0
+          82  ROT_THREE                     0
+          84  CALL_FUNCTION_EX              0  ; positional sequence
+          86  GET_AWAITABLE                 0
+          88  LOAD_CONST                    0  ; None
+          90  YIELD_FROM                    0
+          92  POP_JUMP_IF_TRUE             96  ; to 96
+          94  RERAISE                       1
+          96  POP_EXCEPT                    0
+          98  POP_TOP                       0
+         100  LOAD_CONST                    1  ; None
+         102  RETURN_VALUE                  0
+
+code 0.1: collect (19-async.py, line 7)
+  flags 0x113 (OPTIMIZED | NEWLOCALS | NESTED | COROUTINE), parameters 1 (0 positional-only, 0 keyword-only), generator
+  slots 135: variables 0..2, operand stack from 3
+  constants:
+    #0   NoneType None
+  names:
+    #0   append
+  variables (slot):
+    #0   stream
+    #1   item
+    #2   out
+  code:
+     8     0  BUILD_LIST                    0
+           2  STORE_FAST                    2  ; out
+           4  LOAD_FAST                     0  ; stream
+           6  GET_AITER                     0
+           8  FOR_ITER                     24  ; to 24
+          10  STORE_FAST                    1  ; item
+     9    12  LOAD_FAST                     2  ; out
+          14  LOAD_ATTR                     1  ; append (method)
+          16  LOAD_FAST                     1  ; item
+          18  CALL_FUNCTION                 1  ; 1 positional
+          20  POP_TOP                       0
+          22  JUMP_ABSOLUTE                 8  ; to 8
+    10    24  LOAD_FAST                     2  ; out
+          26  RETURN_VALUE                  0
+          28  LOAD_CONST                    0  ; None
+          30  RETURN_VALUE                  0

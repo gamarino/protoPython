@@ -97,9 +97,9 @@ A compiled code object stores its instructions in `co_code`, a flat sequence of
 integers. Every instruction occupies two slots: the opcode and its argument, which is 0
 when the opcode takes none. Arguments are full integers, not bytes, and several opcodes
 pack more than one value into the argument (for example `UNPACK_EX` uses
-`(count_after << 8) | count_before`). The opcodes (codes 100-214) are defined in
-`include/protoPython/ExecutionEngine.h` and listed in
-[docs/EXECUTION_ENGINE_OPCODES.md](docs/EXECUTION_ENGINE_OPCODES.md). The names follow
+`(count_after << 8) | count_before`). The opcodes (codes 100-219) are defined in
+`include/protoPython/ExecutionEngine.h` and documented in
+[docs/VM.md](docs/VM.md). The names follow
 CPython, but the codes, argument encodings and semantics are protoPython's own.
 
 After jump targets are resolved, a peephole pass (`Compiler::specialiseBytecode`)

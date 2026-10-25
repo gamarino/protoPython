@@ -1,0 +1,18 @@
+code 0: <module> (01-arithmetic.py, line 1)
+  flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
+  slots 35: operand stack from 0
+  constants:
+    #0   int     1
+    #1   int     2
+    #2   NoneType None
+  names:
+    #0   print
+  code:
+     1     0  LOAD_NAME                     1  ; print (+ NULL)
+           2  LOAD_CONST                    0  ; 1
+           4  LOAD_CONST                    1  ; 2
+           6  BINARY_ADD                    0
+           8  CALL_FUNCTION                 1  ; 1 positional
+          10  POP_TOP                       0
+          12  LOAD_CONST                    2  ; None
+          14  RETURN_VALUE                  0

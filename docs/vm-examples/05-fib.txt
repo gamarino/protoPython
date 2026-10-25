@@ -1,0 +1,55 @@
+code 0: <module> (05-fib.py, line 1)
+  flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
+  slots 35: operand stack from 0
+  constants:
+    #0   code    <code fib, line 2>  -> code 0.0
+    #1   int     20
+    #2   NoneType None
+  names:
+    #0   fib
+    #1   print
+  code:
+     1     0  LOAD_CONST                    0  ; <code fib, line 2>
+           2  BUILD_FUNCTION                0
+           4  STORE_NAME                    0  ; fib
+     7     6  LOAD_NAME                     3  ; print (+ NULL)
+           8  LOAD_NAME                     1  ; fib (+ NULL)
+          10  LOAD_CONST                    1  ; 20
+          12  CALL_FUNCTION                 1  ; 1 positional
+          14  CALL_FUNCTION                 1  ; 1 positional
+          16  POP_TOP                       0
+          18  LOAD_CONST                    2  ; None
+          20  RETURN_VALUE                  0
+
+code 0.0: fib (05-fib.py, line 2)
+  flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
+  slots 132: variables 0..0, operand stack from 1
+  constants:
+    #0   int     2
+    #1   int     1
+    #2   none    None
+  names:
+    #0   fib
+  variables (slot):
+    #0   n
+  code:
+     2     0  LOAD_FAST                     0  ; n
+           2  LOAD_CONST                    0  ; 2
+           4  COMPARE_OP                    2  ; <
+           6  POP_JUMP_IF_FALSE            12  ; to 12
+     3     8  LOAD_FAST                     0  ; n
+          10  RETURN_VALUE                  0
+     4    12  LOAD_GLOBAL                   1  ; fib (+ NULL)
+          14  LOAD_FAST                     0  ; n
+          16  LOAD_CONST                    1  ; 1
+          18  BINARY_SUBTRACT               0
+          20  CALL_FUNCTION                 1  ; 1 positional
+          22  LOAD_GLOBAL                   1  ; fib (+ NULL)
+          24  LOAD_FAST                     0  ; n
+          26  LOAD_CONST                    0  ; 2
+          28  BINARY_SUBTRACT               0
+          30  CALL_FUNCTION                 1  ; 1 positional
+          32  BINARY_ADD                    0
+          34  RETURN_VALUE                  0
+          36  LOAD_CONST                    2  ; None
+          38  RETURN_VALUE                  0

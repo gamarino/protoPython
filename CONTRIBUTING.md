@@ -122,6 +122,16 @@ documented in [docs/CPYTHON_CONFORMANCE.md](docs/CPYTHON_CONFORMANCE.md).
   top level of `tests/`, and `*.log` files anywhere, are ignored by
   `.gitignore`.
 
+## The virtual machine
+
+[docs/VM.md](docs/VM.md) is the place to start on the compiler and the
+interpreter: a reading order through the source, the instruction set, worked
+examples (`protopy --disasm script.py` prints a file's bytecode) and
+walkthroughs for adding an opcode or a primitive. Its listings are checked by
+the ctest `docs_vm_examples`; after a compiler change that alters bytecode, run
+`python3 docs/vm-examples/disasm_examples.py build_release/src/runtime/protopy --update`
+and review the regenerated listings and the prose around them.
+
 ## Native code and the garbage collector
 
 protoCore's collector does not see `ProtoObject*` values held only in C++

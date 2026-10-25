@@ -6,6 +6,7 @@
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/IOModule.h>
 #include <protoPython/DAPServer.h>
+#include <protoPython/Disassembler.h>
 #include <protoPython/DiagUtils.h>
 #include <protoPython/Version.h>
 #include <protoCore.h>
@@ -135,6 +136,7 @@ struct CliOptions {
     bool trace{false};
     bool repl{false};
     bool dap{false};  // --dap: serve the Debug Adapter Protocol on stdin/stdout
+    std::string disasmPath;  // --disasm <file>: list the file's bytecode, do not run it
     bool safePath{false};  // -P (or -I): nothing prepended to sys.path
     bool stdinProgram{false};  // "-": the program is read from standard input
     std::string moduleName;
@@ -232,6 +234,7 @@ static void printUsage(const char* prog) {
                  "  --trace           Print module enter/leave events to stderr\n"
                  "  --repl, -i        Interactive REPL\n"
                  "  --dap             Debug Adapter Protocol server on stdin/stdout (VS Code)\n"
+                 "  --disasm <file>   Compile <file> and print its bytecode without running it\n"
                  "  --help, -h        Show this help message\n";
 }
 
@@ -279,6 +282,12 @@ static bool parseArgs(int argc, char* argv[], CliOptions& opts, std::string& err
             opts.trace = true;
         } else if (arg == "--dap") {
             opts.dap = true;
+        } else if (arg == "--disasm") {
+            if (i + 1 >= argc) {
+                error = "--disasm requires a value";
+                return false;
+            }
+            opts.disasmPath = argv[++i];
         } else if (arg == "--repl" || arg == "-i") {
             opts.repl = true;
         } else if (arg == "--path" || arg == "-p") {
@@ -517,6 +526,14 @@ int main(int argc, char* argv[]) {
         std::string moduleName = moduleNameFromPath(scriptPath);
         return executeModule(envWithPath, moduleName, true);
     };
+
+    if (!options.disasmPath.empty()) {
+        // docs/VM.md: the listing of the file's module code object and of
+        // every code object nested in it, compiled as a script is compiled.
+        protoPython::PythonEnvironment env(stdLibPath, searchPaths, {options.disasmPath});
+        return protoPython::disassembleFile(env.getContext(), options.disasmPath, std::cout, std::cerr) == 0
+            ? EXIT_OK : EXIT_RUNTIME;
+    }
 
     if (options.dap) {
         // The program comes with the client's launch request; the session

@@ -1,0 +1,85 @@
+code 0: <module> (16-shared-state.py, line 1)
+  flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
+  slots 36: operand stack from 0
+  constants:
+    #0   int     0
+    #1   code    <code bump, line 5>  -> code 0.0
+    #2   str     'Point'
+    #3   none    None
+    #4   code    <code Point, line 10>  -> code 0.1
+    #5   NoneType None
+  names:
+    #0   counter
+    #1   bump
+    #2   Point
+  code:
+     1     0  LOAD_CONST                    0  ; 0
+           2  STORE_NAME                    0  ; counter
+     4     4  LOAD_CONST                    1  ; <code bump, line 5>
+           6  BUILD_FUNCTION                0
+           8  STORE_NAME                    2  ; bump
+     9    10  LOAD_CONST                    2  ; 'Point'
+          12  BUILD_TUPLE                   0
+          14  LOAD_CONST                    3  ; None
+          16  LOAD_CONST                    4  ; <code Point, line 10>
+          18  BUILD_FUNCTION                0
+          20  BUILD_CLASS                   0
+          22  STORE_NAME                    4  ; Point
+          24  LOAD_CONST                    5  ; None
+          26  RETURN_VALUE                  0
+
+code 0.0: bump (16-shared-state.py, line 5)
+  flags 0x3 (OPTIMIZED | NEWLOCALS), parameters 0 (0 positional-only, 0 keyword-only)
+  slots 130: operand stack from 0
+  constants:
+    #0   int     1
+    #1   none    None
+  names:
+    #0   counter
+  code:
+     6     0  LOAD_GLOBAL                   0  ; counter
+           2  LOAD_CONST                    0  ; 1
+           4  INPLACE_ADD                   0
+           6  STORE_GLOBAL                  0  ; counter
+           8  LOAD_CONST                    1  ; None
+          10  RETURN_VALUE                  0
+
+code 0.1: Point (16-shared-state.py, line 10)
+  flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
+  slots 130: variables 0..0, operand stack from 1
+  constants:
+    #0   str     'Point'
+    #1   code    <code __init__, line 11>  -> code 0.1.0
+  names:
+    #0   __qualname__
+    #1   __init__
+  code:
+    10     0  LOAD_CONST                    0  ; 'Point'
+           2  STORE_NAME                    0  ; __qualname__
+           4  LOAD_CONST                    1  ; <code __init__, line 11>
+           6  BUILD_FUNCTION                0
+           8  STORE_NAME                    2  ; __init__
+          10  RETURN_VALUE                  0
+
+code 0.1.0: __init__ (16-shared-state.py, line 11)
+  flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 3 (0 positional-only, 0 keyword-only)
+  slots 134: variables 0..2, operand stack from 3
+  constants:
+    #0   tuple   (2, 0, 1, 2)
+    #1   none    None
+  names:
+    #0   x
+    #1   y
+  variables (slot):
+    #0   self
+    #1   x
+    #2   y
+  code:
+    11     0  LOAD_FAST                     1  ; x
+           2  LOAD_FAST                     0  ; self
+           4  STORE_ATTR_GROUP              0  ; x (write 0, descriptor #0)
+    12     6  LOAD_FAST                     2  ; y
+           8  LOAD_FAST                     0  ; self
+          10  STORE_ATTR_GROUP_END          1  ; y (write 1, descriptor #0)
+          12  LOAD_CONST                    1  ; None
+          14  RETURN_VALUE                  0

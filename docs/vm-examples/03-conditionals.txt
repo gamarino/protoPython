@@ -1,0 +1,73 @@
+code 0: <module> (03-conditionals.py, line 1)
+  flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
+  slots 33: operand stack from 0
+  constants:
+    #0   code    <code sign, line 2>  -> code 0.0
+    #1   code    <code parity, line 10>  -> code 0.1
+    #2   NoneType None
+  names:
+    #0   sign
+    #1   parity
+  code:
+     1     0  LOAD_CONST                    0  ; <code sign, line 2>
+           2  BUILD_FUNCTION                0
+           4  STORE_NAME                    0  ; sign
+     9     6  LOAD_CONST                    1  ; <code parity, line 10>
+           8  BUILD_FUNCTION                0
+          10  STORE_NAME                    2  ; parity
+          12  LOAD_CONST                    2  ; None
+          14  RETURN_VALUE                  0
+
+code 0.0: sign (03-conditionals.py, line 2)
+  flags 0x3 (OPTIMIZED | NEWLOCALS), parameters 1 (0 positional-only, 0 keyword-only)
+  slots 131: variables 0..0, operand stack from 1
+  constants:
+    #0   int     0
+    #1   int     1
+    #2   none    None
+  variables (slot):
+    #0   n
+  code:
+     2     0  LOAD_FAST                     0  ; n
+           2  LOAD_CONST                    0  ; 0
+           4  COMPARE_OP                    2  ; <
+           6  POP_JUMP_IF_FALSE            16  ; to 16
+     3     8  LOAD_CONST                    1  ; 1
+          10  UNARY_NEGATIVE                0
+          12  RETURN_VALUE                  0
+          14  JUMP_ABSOLUTE                28  ; to 28
+     4    16  LOAD_FAST                     0  ; n
+          18  LOAD_CONST                    0  ; 0
+          20  COMPARE_OP                    0  ; ==
+          22  POP_JUMP_IF_FALSE            28  ; to 28
+     5    24  LOAD_CONST                    0  ; 0
+          26  RETURN_VALUE                  0
+     6    28  LOAD_CONST                    1  ; 1
+          30  RETURN_VALUE                  0
+          32  LOAD_CONST                    2  ; None
+          34  RETURN_VALUE                  0
+
+code 0.1: parity (03-conditionals.py, line 10)
+  flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
+  slots 131: variables 0..0, operand stack from 1
+  constants:
+    #0   int     2
+    #1   int     0
+    #2   str     'even'
+    #3   str     'odd'
+    #4   none    None
+  variables (slot):
+    #0   n
+  code:
+    10     0  LOAD_FAST                     0  ; n
+           2  LOAD_CONST                    0  ; 2
+           4  BINARY_MODULO                 0
+           6  LOAD_CONST                    1  ; 0
+           8  COMPARE_OP                    0  ; ==
+          10  POP_JUMP_IF_FALSE            16  ; to 16
+          12  LOAD_CONST                    2  ; 'even'
+          14  JUMP_ABSOLUTE                18  ; to 18
+          16  LOAD_CONST                    3  ; 'odd'
+          18  RETURN_VALUE                  0
+          20  LOAD_CONST                    4  ; None
+          22  RETURN_VALUE                  0

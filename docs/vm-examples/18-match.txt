@@ -1,0 +1,98 @@
+code 0: <module> (18-match.py, line 1)
+  flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
+  slots 33: operand stack from 0
+  constants:
+    #0   code    <code kind, line 2>  -> code 0.0
+    #1   NoneType None
+  names:
+    #0   kind
+  code:
+     1     0  LOAD_CONST                    0  ; <code kind, line 2>
+           2  BUILD_FUNCTION                0
+           4  STORE_NAME                    0  ; kind
+           6  LOAD_CONST                    1  ; None
+           8  RETURN_VALUE                  0
+
+code 0.0: kind (18-match.py, line 2)
+  flags 0x3 (OPTIMIZED | NEWLOCALS), parameters 1 (0 positional-only, 0 keyword-only)
+  slots 134: variables 0..0, operand stack from 1
+  constants:
+    #0   int     0
+    #1   str     'zero'
+    #2   int     2
+    #3   int     1
+    #4   str     'pair'
+    #5   str     'other'
+    #6   none    None
+  names:
+    #0   __match_subj
+    #1   __match_tmp_0
+    #2   isinstance
+    #3   str
+    #4   bytes
+    #5   bytearray
+    #6   list
+    #7   tuple
+    #8   len
+    #9   x
+    #10  y
+  variables (slot):
+    #0   value
+  code:
+     2     0  LOAD_FAST                     0  ; value
+           2  STORE_GLOBAL                  0  ; __match_subj
+           4  LOAD_GLOBAL                   0  ; __match_subj
+           6  JUMP_ABSOLUTE                10  ; to 10
+           8  JUMP_ABSOLUTE                22  ; to 22
+     3    10  LOAD_CONST                    0  ; 0
+          12  COMPARE_OP                    0  ; ==
+          14  POP_JUMP_IF_FALSE             8  ; to 8
+     4    16  LOAD_CONST                    1  ; 'zero'
+          18  RETURN_VALUE                  0
+          20  JUMP_ABSOLUTE               108  ; to 108
+          22  LOAD_GLOBAL                   0  ; __match_subj
+          24  JUMP_ABSOLUTE                28  ; to 28
+          26  JUMP_ABSOLUTE                94  ; to 94
+          28  STORE_GLOBAL                  2  ; __match_tmp_0
+          30  LOAD_GLOBAL                   4  ; isinstance
+          32  LOAD_GLOBAL                   2  ; __match_tmp_0
+          34  LOAD_GLOBAL                   6  ; str
+          36  LOAD_GLOBAL                   8  ; bytes
+          38  LOAD_GLOBAL                  10  ; bytearray
+          40  BUILD_TUPLE                   3
+          42  CALL_FUNCTION                 2  ; 2 positional
+          44  POP_JUMP_IF_TRUE             26  ; to 26
+          46  LOAD_GLOBAL                   4  ; isinstance
+          48  LOAD_GLOBAL                   2  ; __match_tmp_0
+          50  LOAD_GLOBAL                  12  ; list
+          52  LOAD_GLOBAL                  14  ; tuple
+          54  BUILD_TUPLE                   2
+          56  CALL_FUNCTION                 2  ; 2 positional
+          58  POP_JUMP_IF_FALSE            26  ; to 26
+          60  LOAD_GLOBAL                  16  ; len
+          62  LOAD_GLOBAL                   2  ; __match_tmp_0
+          64  CALL_FUNCTION                 1  ; 1 positional
+          66  LOAD_CONST                    2  ; 2
+          68  COMPARE_OP                    0  ; ==
+          70  POP_JUMP_IF_FALSE            26  ; to 26
+          72  LOAD_GLOBAL                   2  ; __match_tmp_0
+          74  LOAD_CONST                    0  ; 0
+          76  BINARY_SUBSCR                 0
+          78  STORE_GLOBAL                 18  ; x
+          80  LOAD_GLOBAL                   2  ; __match_tmp_0
+          82  LOAD_CONST                    3  ; 1
+          84  BINARY_SUBSCR                 0
+          86  STORE_GLOBAL                 20  ; y
+     6    88  LOAD_CONST                    4  ; 'pair'
+          90  RETURN_VALUE                  0
+          92  JUMP_ABSOLUTE               108  ; to 108
+          94  LOAD_GLOBAL                   0  ; __match_subj
+          96  JUMP_ABSOLUTE               100  ; to 100
+          98  JUMP_ABSOLUTE               108  ; to 108
+         100  POP_TOP                       0
+     8   102  LOAD_CONST                    5  ; 'other'
+         104  RETURN_VALUE                  0
+         106  JUMP_ABSOLUTE               108  ; to 108
+         108  POP_TOP                       0
+         110  LOAD_CONST                    6  ; None
+         112  RETURN_VALUE                  0

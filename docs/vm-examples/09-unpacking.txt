@@ -1,0 +1,92 @@
+code 0: <module> (09-unpacking.py, line 1)
+  flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
+  slots 33: operand stack from 0
+  constants:
+    #0   code    <code unpack, line 2>  -> code 0.0
+    #1   code    <code options, line 8>  -> code 0.1
+    #2   code    <code forward, line 12>  -> code 0.2
+    #3   NoneType None
+  names:
+    #0   unpack
+    #1   options
+    #2   forward
+  code:
+     1     0  LOAD_CONST                    0  ; <code unpack, line 2>
+           2  BUILD_FUNCTION                0
+           4  STORE_NAME                    0  ; unpack
+     7     6  LOAD_CONST                    1  ; <code options, line 8>
+           8  BUILD_FUNCTION                0
+          10  STORE_NAME                    2  ; options
+    11    12  LOAD_CONST                    2  ; <code forward, line 12>
+          14  BUILD_FUNCTION                0
+          16  STORE_NAME                    4  ; forward
+          18  LOAD_CONST                    3  ; None
+          20  RETURN_VALUE                  0
+
+code 0.0: unpack (09-unpacking.py, line 2)
+  flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 2 (0 positional-only, 0 keyword-only)
+  slots 136: variables 0..4, operand stack from 5
+  constants:
+    #0   none    None
+  names:
+    #0   others
+  variables (slot):
+    #0   pair
+    #1   rest
+    #2   first
+    #3   b
+    #4   a
+  code:
+     2     0  LOAD_FAST                     0  ; pair
+           2  UNPACK_SEQUENCE               2
+           4  STORE_FAST                    4  ; a
+           6  STORE_FAST                    3  ; b
+     3     8  LOAD_FAST                     1  ; rest
+          10  UNPACK_EX                     1  ; 1 before, 0 after
+          12  STORE_FAST                    2  ; first
+          14  STORE_GLOBAL                  0  ; others
+     4    16  LOAD_FAST                     4  ; a
+          18  LOAD_FAST                     3  ; b
+          20  LOAD_FAST                     2  ; first
+          22  LOAD_GLOBAL                   0  ; others
+          24  BUILD_TUPLE                   4
+          26  RETURN_VALUE                  0
+          28  LOAD_CONST                    0  ; None
+          30  RETURN_VALUE                  0
+
+code 0.1: options (09-unpacking.py, line 8)
+  flags 0x1b (OPTIMIZED | NEWLOCALS | VARKEYWORDS | NESTED), parameters 0 (0 positional-only, 0 keyword-only)
+  slots 130: variables 0..0, operand stack from 1
+  constants:
+    #0   none    None
+  variables (slot):
+    #0   kwargs
+  code:
+     8     0  LOAD_FAST                     0  ; kwargs
+           2  RETURN_VALUE                  0
+           4  LOAD_CONST                    0  ; None
+           6  RETURN_VALUE                  0
+
+code 0.2: forward (09-unpacking.py, line 12)
+  flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 3 (0 positional-only, 0 keyword-only)
+  slots 136: variables 0..2, operand stack from 3
+  constants:
+    #0   none    None
+  variables (slot):
+    #0   f
+    #1   args
+    #2   kw
+  code:
+    12     0  PUSH_NULL                     0
+           2  LOAD_FAST                     0  ; f
+           4  BUILD_LIST                    0
+           6  LOAD_FAST                     1  ; args
+           8  LIST_EXTEND                   1
+          10  LIST_TO_TUPLE                 0
+          12  BUILD_MAP                     0
+          14  LOAD_FAST                     2  ; kw
+          16  DICT_MERGE                  257  ; dict at depth 1, call site
+          18  CALL_FUNCTION_EX              1  ; positional sequence and keyword mapping
+          20  RETURN_VALUE                  0
+          22  LOAD_CONST                    0  ; None
+          24  RETURN_VALUE                  0

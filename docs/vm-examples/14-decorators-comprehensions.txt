@@ -1,0 +1,125 @@
+code 0: <module> (14-decorators-comprehensions.py, line 1)
+  flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
+  slots 36: operand stack from 0
+  constants:
+    #0   code    <code trace, line 2>  -> code 0.0
+    #1   code    <code double, line 7>  -> code 0.1
+    #2   code    <code <listcomp>, line 10>  -> code 0.2
+    #3   int     10
+    #4   code    <code <dictcomp>, line 11>  -> code 0.3
+    #5   int     3
+    #6   NoneType None
+  names:
+    #0   trace
+    #1   double
+    #2   range
+    #3   evens
+    #4   squares
+  code:
+     1     0  LOAD_CONST                    0  ; <code trace, line 2>
+           2  BUILD_FUNCTION                0
+           4  STORE_NAME                    0  ; trace
+     6     6  LOAD_CONST                    1  ; <code double, line 7>
+           8  BUILD_FUNCTION                0
+          10  PUSH_NULL                     0
+          12  ROT_TWO                       0
+     5    14  LOAD_NAME                     0  ; trace
+          16  ROT_TWO                       0
+          18  CALL_FUNCTION                 1  ; 1 positional
+          20  STORE_NAME                    2  ; double
+    10    22  PUSH_NULL                     0
+          24  LOAD_CONST                    2  ; <code <listcomp>, line 10>
+          26  BUILD_FUNCTION                0
+          28  LOAD_NAME                     5  ; range (+ NULL)
+          30  LOAD_CONST                    3  ; 10
+          32  CALL_FUNCTION                 1  ; 1 positional
+          34  GET_ITER                      0
+          36  CALL_FUNCTION                 1  ; 1 positional
+          38  STORE_NAME                    6  ; evens
+    11    40  PUSH_NULL                     0
+          42  LOAD_CONST                    4  ; <code <dictcomp>, line 11>
+          44  BUILD_FUNCTION                0
+          46  LOAD_NAME                     5  ; range (+ NULL)
+          48  LOAD_CONST                    5  ; 3
+          50  CALL_FUNCTION                 1  ; 1 positional
+          52  GET_ITER                      0
+          54  CALL_FUNCTION                 1  ; 1 positional
+          56  STORE_NAME                    8  ; squares
+          58  LOAD_CONST                    6  ; None
+          60  RETURN_VALUE                  0
+
+code 0.0: trace (14-decorators-comprehensions.py, line 2)
+  flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
+  slots 130: variables 0..0, operand stack from 1
+  constants:
+    #0   none    None
+  variables (slot):
+    #0   f
+  code:
+     2     0  LOAD_FAST                     0  ; f
+           2  RETURN_VALUE                  0
+           4  LOAD_CONST                    0  ; None
+           6  RETURN_VALUE                  0
+
+code 0.1: double (14-decorators-comprehensions.py, line 7)
+  flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
+  slots 131: variables 0..0, operand stack from 1
+  constants:
+    #0   int     2
+    #1   none    None
+  variables (slot):
+    #0   x
+  code:
+     7     0  LOAD_CONST                    0  ; 2
+           2  LOAD_FAST                     0  ; x
+           4  BINARY_MULTIPLY               0
+           6  RETURN_VALUE                  0
+           8  LOAD_CONST                    1  ; None
+          10  RETURN_VALUE                  0
+
+code 0.2: <listcomp> (14-decorators-comprehensions.py, line 10)
+  flags 0x3 (OPTIMIZED | NEWLOCALS), parameters 1 (0 positional-only, 0 keyword-only)
+  slots 134: variables 0..1, operand stack from 2
+  constants:
+    #0   int     2
+    #1   int     0
+  variables (slot):
+    #0   .0
+    #1   x
+  code:
+    10     0  BUILD_RAW_LIST                0
+           2  LOAD_FAST                     0  ; .0
+           4  GET_ITER                      0
+           6  FOR_ITER                     28  ; to 28
+           8  STORE_FAST                    1  ; x
+          10  LOAD_FAST                     1  ; x
+          12  LOAD_CONST                    0  ; 2
+          14  BINARY_MODULO                 0
+          16  LOAD_CONST                    1  ; 0
+          18  COMPARE_OP                    0  ; ==
+          20  POP_JUMP_IF_FALSE             6  ; to 6
+          22  LOAD_FAST                     1  ; x
+          24  LIST_APPEND                   2
+          26  JUMP_ABSOLUTE                 6  ; to 6
+          28  WRAP_RAW_LIST                 0
+          30  RETURN_VALUE                  0
+
+code 0.3: <dictcomp> (14-decorators-comprehensions.py, line 11)
+  flags 0x3 (OPTIMIZED | NEWLOCALS), parameters 1 (0 positional-only, 0 keyword-only)
+  slots 134: variables 0..1, operand stack from 2
+  variables (slot):
+    #0   .0
+    #1   x
+  code:
+    11     0  BUILD_MAP                     0
+           2  LOAD_FAST                     0  ; .0
+           4  GET_ITER                      0
+           6  FOR_ITER                     22  ; to 22
+           8  STORE_FAST                    1  ; x
+          10  LOAD_FAST                     1  ; x
+          12  LOAD_FAST                     1  ; x
+          14  BINARY_MULTIPLY               0
+          16  LOAD_FAST                     1  ; x
+          18  MAP_ADD                       3
+          20  JUMP_ABSOLUTE                 6  ; to 6
+          22  RETURN_VALUE                  0

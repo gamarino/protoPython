@@ -1,0 +1,49 @@
+code 0: <module> (08-defaults.py, line 1)
+  flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
+  slots 38: operand stack from 0
+  constants:
+    #0   code    <code connect, line 2>  -> code 0.0
+    #1   int     80
+    #2   str     'timeout'
+    #3   int     10
+    #4   str     'example.org'
+    #5   int     5
+    #6   tuple   ('timeout',)
+    #7   NoneType None
+  names:
+    #0   connect
+  code:
+     1     0  LOAD_CONST                    0  ; <code connect, line 2>
+           2  LOAD_CONST                    1  ; 80
+           4  BUILD_TUPLE                   1
+           6  LOAD_CONST                    2  ; 'timeout'
+           8  LOAD_CONST                    3  ; 10
+          10  BUILD_MAP                     1
+          12  BUILD_FUNCTION                3  ; defaults, keyword defaults
+          14  STORE_NAME                    0  ; connect
+     5    16  LOAD_NAME                     1  ; connect (+ NULL)
+          18  LOAD_CONST                    4  ; 'example.org'
+          20  LOAD_CONST                    5  ; 5
+          22  LOAD_CONST                    6  ; ('timeout',)
+          24  CALL_FUNCTION_KW              2  ; 2 arguments, the last ones named by the tuple on top
+          26  POP_TOP                       0
+          28  LOAD_CONST                    7  ; None
+          30  RETURN_VALUE                  0
+
+code 0.0: connect (08-defaults.py, line 2)
+  flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 2 (0 positional-only, 1 keyword-only)
+  slots 134: variables 0..2, operand stack from 3
+  constants:
+    #0   none    None
+  variables (slot):
+    #0   host
+    #1   port
+    #2   timeout
+  code:
+     2     0  LOAD_FAST                     0  ; host
+           2  LOAD_FAST                     1  ; port
+           4  LOAD_FAST                     2  ; timeout
+           6  BUILD_TUPLE                   3
+           8  RETURN_VALUE                  0
+          10  LOAD_CONST                    0  ; None
+          12  RETURN_VALUE                  0

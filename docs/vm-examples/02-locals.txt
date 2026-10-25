@@ -1,0 +1,33 @@
+code 0: <module> (02-locals.py, line 1)
+  flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
+  slots 33: operand stack from 0
+  constants:
+    #0   code    <code area, line 2>  -> code 0.0
+    #1   NoneType None
+  names:
+    #0   area
+  code:
+     1     0  LOAD_CONST                    0  ; <code area, line 2>
+           2  BUILD_FUNCTION                0
+           4  STORE_NAME                    0  ; area
+           6  LOAD_CONST                    1  ; None
+           8  RETURN_VALUE                  0
+
+code 0.0: area (02-locals.py, line 2)
+  flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 2 (0 positional-only, 0 keyword-only)
+  slots 133: variables 0..2, operand stack from 3
+  constants:
+    #0   none    None
+  variables (slot):
+    #0   w
+    #1   h
+    #2   s
+  code:
+     2     0  LOAD_FAST                     0  ; w
+           2  LOAD_FAST                     1  ; h
+           4  BINARY_MULTIPLY               0
+           6  STORE_FAST                    2  ; s
+     3     8  LOAD_FAST                     2  ; s
+          10  RETURN_VALUE                  0
+          12  LOAD_CONST                    0  ; None
+          14  RETURN_VALUE                  0
