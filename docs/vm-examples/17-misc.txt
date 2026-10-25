@@ -96,10 +96,10 @@ code 0.2: label (17-misc.py, line 11)
     #0   name
     #1   n
   code:
-     1     0  LOAD_FAST                     0  ; name
-    12     2  LOAD_CONST                    0  ; ': '
+    11     0  LOAD_FAST                     0  ; name
+           2  LOAD_CONST                    0  ; ': '
            4  LOAD_GLOBAL                   1  ; repr (+ NULL)
-     1     6  LOAD_FAST                     1  ; n
+           6  LOAD_FAST                     1  ; n
            8  CALL_FUNCTION                 1  ; 1 positional
           10  BUILD_STRING                  3
           12  RETURN_VALUE                  0

@@ -25,30 +25,29 @@ code 0: <module> (09-unpacking.py, line 1)
 
 code 0.0: unpack (09-unpacking.py, line 2)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 2 (0 positional-only, 0 keyword-only)
-  slots 136: variables 0..4, operand stack from 5
+  slots 137: variables 0..5, operand stack from 6
   constants:
     #0   none    None
-  names:
-    #0   others
   variables (slot):
     #0   pair
     #1   rest
-    #2   first
+    #2   a
     #3   b
-    #4   a
+    #4   first
+    #5   others
   code:
      2     0  LOAD_FAST                     0  ; pair
            2  UNPACK_SEQUENCE               2
-           4  STORE_FAST                    4  ; a
+           4  STORE_FAST                    2  ; a
            6  STORE_FAST                    3  ; b
      3     8  LOAD_FAST                     1  ; rest
           10  UNPACK_EX                     1  ; 1 before, 0 after
-          12  STORE_FAST                    2  ; first
-          14  STORE_GLOBAL                  0  ; others
-     4    16  LOAD_FAST                     4  ; a
+          12  STORE_FAST                    4  ; first
+          14  STORE_FAST                    5  ; others
+     4    16  LOAD_FAST                     2  ; a
           18  LOAD_FAST                     3  ; b
-          20  LOAD_FAST                     2  ; first
-          22  LOAD_GLOBAL                   0  ; others
+          20  LOAD_FAST                     4  ; first
+          22  LOAD_FAST                     5  ; others
           24  BUILD_TUPLE                   4
           26  RETURN_VALUE                  0
           28  LOAD_CONST                    0  ; None

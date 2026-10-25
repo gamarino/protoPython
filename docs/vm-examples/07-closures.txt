@@ -4,7 +4,7 @@ code 0: <module> (07-closures.py, line 1)
   constants:
     #0   code    <code make_adder, line 2>  -> code 0.0
     #1   code    <code counter, line 8>  -> code 0.1
-    #2   code    <code <lambda>, line 17>  -> code 0.2
+    #2   code    <code <lambda>, line 16>  -> code 0.2
     #3   NoneType None
   names:
     #0   make_adder
@@ -17,7 +17,7 @@ code 0: <module> (07-closures.py, line 1)
      7     6  LOAD_CONST                    1  ; <code counter, line 8>
            8  BUILD_FUNCTION                0
           10  STORE_NAME                    2  ; counter
-    16    12  LOAD_CONST                    2  ; <code <lambda>, line 17>
+    16    12  LOAD_CONST                    2  ; <code <lambda>, line 16>
           14  BUILD_FUNCTION                0
           16  STORE_NAME                    4  ; square
           18  LOAD_CONST                    3  ; None
@@ -69,42 +69,41 @@ code 0.1: counter (07-closures.py, line 8)
     #1   code    <code bump, line 10>  -> code 0.1.0
     #2   none    None
   variables (slot):
-    #0   bump
-    #1   count
+    #0   count
+    #1   bump
   cells:
-    count in slot 1
+    count in slot 0
   code:
      8     0  LOAD_CONST                    0  ; 0
-           2  STORE_DEREF                   1  ; cell count
-     9     4  LOAD_CLOSURE                  1  ; cell count
+           2  STORE_DEREF                   0  ; cell count
+     9     4  LOAD_CLOSURE                  0  ; cell count
            6  LOAD_CONST                    1  ; <code bump, line 10>
            8  BUILD_FUNCTION              256  ; 1 closure cell
-          10  STORE_FAST                    0  ; bump
-    13    12  LOAD_FAST                     0  ; bump
+          10  STORE_FAST                    1  ; bump
+    13    12  LOAD_FAST                     1  ; bump
           14  RETURN_VALUE                  0
           16  LOAD_CONST                    2  ; None
           18  RETURN_VALUE                  0
 
 code 0.1.0: bump (07-closures.py, line 10)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 0 (0 positional-only, 0 keyword-only)
-  slots 130: variables 0..0, operand stack from 1
+  slots 131: variables 0..0, operand stack from 1
   constants:
     #0   int     1
     #1   none    None
   free variables (slot):
     #0   count
   code:
-    10     0  POP_TOP                       0
-    11     2  LOAD_DEREF                    0  ; free count
-           4  LOAD_CONST                    0  ; 1
-           6  INPLACE_ADD                   0
-           8  STORE_DEREF                   0  ; free count
-    12    10  LOAD_DEREF                    0  ; free count
-          12  RETURN_VALUE                  0
-          14  LOAD_CONST                    1  ; None
-          16  RETURN_VALUE                  0
+    11     0  LOAD_DEREF                    0  ; free count
+           2  LOAD_CONST                    0  ; 1
+           4  INPLACE_ADD                   0
+           6  STORE_DEREF                   0  ; free count
+    12     8  LOAD_DEREF                    0  ; free count
+          10  RETURN_VALUE                  0
+          12  LOAD_CONST                    1  ; None
+          14  RETURN_VALUE                  0
 
-code 0.2: <lambda> (07-closures.py, line 17)
+code 0.2: <lambda> (07-closures.py, line 16)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
   slots 131: variables 0..0, operand stack from 1
   variables (slot):

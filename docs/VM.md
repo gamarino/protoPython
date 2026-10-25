@@ -171,10 +171,15 @@ A code object is a protoCore object whose prototype is the environment's
   | `LOAD_FAST i; LOAD_CONST k; INPLACE_ADD; STORE_FAST i` | `INC_FAST_K (i << 8 \| k)` |
   | `LOAD_FAST a; LOAD_FAST b; COMPARE_OP <; POP_JUMP_IF_FALSE t` | `LT_FAST_FAST_JF (a << 8 \| b)`, `t` kept in the argument of the third `NOP` |
 
-  Every index must fit in a byte. `PROTOPY_NO_PEEPHOLE=1` in the environment
-  disables the pass (read once per process). The pass does not check
-  whether a jump lands inside a window; one does in practice, and the result
-  is wrong (6, issue 1).
+  Every index must fit in a byte. A window is fused only when control can
+  enter it at its first instruction alone: the pass first marks the target
+  of every jump (`JUMP_ABSOLUTE`, `JUMP_FORWARD`, `POP_JUMP_IF_*`,
+  `FOR_ITER`) and every handler (`SETUP_FINALLY`, `SETUP_WITH`,
+  `SETUP_ASYNC_WITH`), and skips a window with a target on its second, third
+  or fourth instruction. (`while (x if c else y) < b` jumps from the `x`
+  branch straight to `LOAD_FAST b`; fusing that window skipped the
+  comparison on that path.) `PROTOPY_NO_PEEPHOLE=1` in the environment
+  disables the pass (read once per process).
 - **Attribute write groups.** `Compiler::tryCompileAttrGroup` compiles a run
   of 2 to 16 statements `p.name = value` on the same parameter `p`, whose
   values after the first cannot run code, to `STORE_ATTR_GROUP` ...
@@ -276,12 +281,13 @@ The compiler follows CPython 3.11's layout. A call pushes a **NULL marker**
 |---|---|---|
 | plain call | `NULL, f, a1 .. an` | `f(x)`: `PUSH_NULL` before a fast or deref load, or bit 0 of `LOAD_GLOBAL`/`LOAD_NAME` |
 | method call | `func, self, a1 .. an` | `obj.m(x)`: `LOAD_ATTR` with bit 0 pushes the unbound function and the receiver when `m` is a plain Python function found on the class (or `__func__, __self__` of a method object that has them), otherwise `NULL, value` |
-| legacy | `f, a1 .. an` | a few internal sequences (pattern matching, class bodies) |
+| legacy | `f, a1 .. an` | a few internal sequences (class bodies) |
 
 `CALL_FUNCTION` does not know which shape it got: it treats the stack as
 "modern" whenever there are at least `n + 2` values on it, and then reads the
 value below the callable as a NULL marker or a receiver. A legacy call with
-anything below it on the stack is misread (6, issue 3).
+anything below it on the stack would be misread; `match` used the legacy
+shape for its built-in calls until they got NULL markers.
 
 The callee is dispatched by `invokeCallable`:
 
@@ -400,8 +406,8 @@ names the construct and the `Compiler` function. Errors are Python exceptions
 with CPython's messages unless quoted.
 
 Every handler checks its stack depth first and, on an underflow, skips the
-instruction (or, in a few handlers, re-dispatches it, see 6); an underflow
-cannot come from compiler output except through the bug in 6, issue 2.
+instruction (or, in a few handlers, re-dispatches it, see 6); compiler output
+never underflows.
 
 ### 2.1 Constants and the stack
 
@@ -451,7 +457,7 @@ cannot come from compiler output except through the bug in 6, issue 2.
 | Op | # | Operand | Stack | Semantics | Emitted by |
 |---|---|---|---|---|---|
 | `JUMP_ABSOLUTE` | 111 | absolute offset | `->` | | loops (back edge), `if`/`else`, `break`, `continue`, conditional expressions, `match` |
-| `JUMP_FORWARD` | 195 | relative offset | `->` | Jumps to `offset + 2 + arg`. | only the asynchronous comprehension, where the argument is wrong (6, issue 6) |
+| `JUMP_FORWARD` | 195 | relative offset | `->` | Jumps to `offset + 2 + arg`. | **never** (handled; see 2.12) |
 | `POP_JUMP_IF_FALSE` | 110 | absolute offset | `v ->` | Pops; jumps when the value is falsy (`isTruthy`: `__bool__`, then `__len__`). | `if`, `while`, `and`, conditional expressions, comprehension filters, `except` clause tests, `match` |
 | `POP_JUMP_IF_TRUE` | 204 | absolute offset | `v ->` | Pops; jumps when truthy. | `or`, `assert`, `with` (suppression flag), `match` |
 | `GET_ITER` | 119 | 0 | `x -> it` | `iter(x)`; `TypeError: object is not iterable`. | `for`, comprehensions |
@@ -512,8 +518,8 @@ and `compileUnaryOp` for the corresponding operator.
 | `INPLACE_MODULO` | 146 | `%=` | none |
 | `INPLACE_POWER` | 147 | `**=` | none |
 | `INPLACE_MATRIX_MULTIPLY` | 193 | `@=` | none |
-| `INPLACE_LSHIFT` | 148 | `<<=` | see 6, issue 4 |
-| `INPLACE_RSHIFT` | 149 | `>>=` | see 6, issue 4 |
+| `INPLACE_LSHIFT` | 148 | `<<=` | none (integers of any size, as `<<`) |
+| `INPLACE_RSHIFT` | 149 | `>>=` | none (integers of any size, as `>>`) |
 | `INPLACE_AND` | 150 | `&=` | none |
 | `INPLACE_OR` | 151 | `\|=` | none |
 | `INPLACE_XOR` | 152 | `^=` | none |
@@ -539,7 +545,7 @@ protoCore's tagged 56-bit integers; leaving the range promotes to a
 | `SETUP_FINALLY` | 177 | absolute offset of the handler | `->` | Runs what follows as a protected range (1.7). | `try`, the clean-up blocks of `except ... as`, `with`, `async with`, annotation blocks |
 | `POP_BLOCK` | 178 | 0 | `->` | Ends the innermost protected range; the opening level continues after this instruction. | the end of every protected range |
 | `POP_EXCEPT` | 202 | 0 | `->` | Ends the innermost handler level. | the end of an `except` clause, of `with` handlers |
-| `EXCEPTION_MATCH` | 190 | 0 | `exc type -> exc bool` | `isinstance(exc, type)` for an exception class or a tuple of them (`isException`). | `except T:` (`compileTry`), `StopAsyncIteration` in async comprehensions |
+| `EXCEPTION_MATCH` | 190 | 0 | `exc type -> exc bool` | `isinstance(exc, type)` for an exception class or a tuple of them (`isException`). | `except T:` (`compileTry`) |
 | `RAISE_VARARGS` | 166 | 0, 1 or 2 | `[exc [cause]] ->` | 0: re-raise the active exception (`RuntimeError: No active exception to reraise`); 1: raise the top (a class is instantiated first), chaining `__context__`; 2: `raise exc from cause`. | `raise`, `assert` |
 | `RERAISE` | 194 | 1 or 2 (not read) | `->` | Re-raises the exception being handled, without a new traceback entry. | the end of handlers |
 | `SETUP_WITH` | 173 | absolute offset of the handler | `mgr -> exit value` | Looks `__enter__`/`__exit__` up on the type, pushes `__exit__`, calls `__enter__` and runs the rest as a protected range whose handler receives `exc` alone. | `with` (`compileWithItems`) |
@@ -566,7 +572,7 @@ protoCore's tagged 56-bit integers; leaving the range promotes to a
 | `BUILD_RAW_LIST` | 210 | 0 | `-> raw` | Pushes a bare `ProtoList`, not a `list`. | the start of a list comprehension (`compileListComp`) |
 | `WRAP_RAW_LIST` | 209 | 0 | `raw -> list` | Wraps the accumulator in a `list` instance. | the end of a list comprehension |
 | `UNPACK_SEQUENCE` | 121 | count | `seq -> vn .. v1` | Iterates exactly `count` items; first item on top. `ValueError: not enough values to unpack (expected n, got m)` / `too many values to unpack (expected n)`. | `a, b = x`, `for a, b in ...` |
-| `UNPACK_EX` | 205 | `after << 8 \| before` | `seq -> after.. list before..` | The middle items as a `list`. | `a, *b = x` (the starred target is mis-scoped, 6, issue 5) |
+| `UNPACK_EX` | 205 | `after << 8 \| before` | `seq -> after.. list before..` | The middle items as a `list`. | `a, *b = x` |
 
 ### 2.10 Generators and coroutines
 
@@ -577,7 +583,7 @@ protoCore's tagged 56-bit integers; leaving the range promotes to a
 | `YIELD_FROM` | 176 | 0 | `it sent -> it` (suspended) or `it sent -> result` | Sends `sent` into `it` (`send`, or `__next__` for a plain iterator; `gen.throw` is forwarded through `it.throw`); a yielded value suspends the generator **at this instruction**, so the next `send` re-runs it; `StopIteration` pops `it` and pushes its value. | `yield from`, `await` |
 | `GET_AWAITABLE` | 187 | 0 | `x -> awaitable` | `x.__await__()`, or `x` itself without it. | `await`, `async with` |
 | `GET_AITER` | 188 | 0 | `x -> aiter` | `x.__aiter__()`; for a class-defined async iterator installs a `__next__` bridge that drives `__anext__`, so `FOR_ITER` can run `async for`. | `async for`, async comprehensions |
-| `GET_ANEXT` | 189 | 0 | `aiter -> aiter awaitable` | `aiter.__anext__()`. | async comprehensions only |
+| `GET_ANEXT` | 189 | 0 | `aiter -> aiter awaitable` | `aiter.__anext__()`. | **never** (see 2.12) |
 
 ### 2.11 Fused opcodes (peephole specialiser)
 
@@ -602,13 +608,16 @@ Produced only by `Compiler::specialiseBytecode` (1.2), each followed by three
 | `FORMAT_VALUE` | 196 | handled, never emitted: f-string conversions compile to calls of `repr`/`str`/`ascii` and `format`. Its handler pops the value before the format specification, the reverse of CPython's order. |
 | `ROT_FOUR` | 154 | handled, never emitted |
 | `SETUP_ASYNC_WITH` | 191 | handled, never emitted |
+| `JUMP_FORWARD` | 195 | handled, never emitted (the compiler's forward jumps are `JUMP_ABSOLUTE`) |
+| `GET_ANEXT` | 189 | handled, never emitted (`async for`, in a statement or a comprehension, is `GET_AITER` and `FOR_ITER`) |
 
 ## 3. Worked examples
 
 Each example is a file in `docs/vm-examples/`; the listing after it is that
-file's golden output, produced on Linux (GCC, libstdc++). The slot numbers of
-a function's non-parameter locals depend on the C++ standard library (6), so
-the ctest compares the listings on Linux only. Regenerate them with
+file's golden output. The compiler numbers a function's locals in the order
+of their first binding in the source, so the listings are the same with every
+C++ standard library, and the ctest compares them on every platform.
+Regenerate them with
 `python3 docs/vm-examples/disasm_examples.py build_release/src/runtime/protopy --update`
 after a compiler change, and review the notes. The module code object of most
 examples only builds functions; its listing is still shown, because the
@@ -997,27 +1006,27 @@ code 0.0: total (06-loops.py, line 2)
     #2   none    None
   variables (slot):
     #0   n
-    #1   i
-    #2   s
+    #1   s
+    #2   i
   code:
      2     0  LOAD_CONST                    0  ; 0
-           2  STORE_FAST                    2  ; s
+           2  STORE_FAST                    1  ; s
      3     4  LOAD_CONST                    0  ; 0
-           6  STORE_FAST                    1  ; i
-     4     8  LT_FAST_FAST_JF             256  ; if not i < n: to 34
+           6  STORE_FAST                    2  ; i
+     4     8  LT_FAST_FAST_JF             512  ; if not i < n: to 34
           10  NOP                           0
           12  NOP                           0
           14  NOP                          34
-     5    16  ACC_FAST_FAST               513  ; s += i
+     5    16  ACC_FAST_FAST               258  ; s += i
           18  NOP                           0
           20  NOP                           0
           22  NOP                           0
-     6    24  INC_FAST_K                  257  ; i += 1
+     6    24  INC_FAST_K                  513  ; i += 1
           26  NOP                           0
           28  NOP                           0
           30  NOP                           0
           32  JUMP_ABSOLUTE                 8  ; to 8
-     7    34  LOAD_FAST                     2  ; s
+     7    34  LOAD_FAST                     1  ; s
           36  RETURN_VALUE                  0
           38  LOAD_CONST                    2  ; None
           40  RETURN_VALUE                  0
@@ -1030,36 +1039,39 @@ code 0.1: sum_squares (06-loops.py, line 11)
     #1   none    None
   variables (slot):
     #0   xs
-    #1   x
-    #2   out
+    #1   out
+    #2   x
   code:
     11     0  LOAD_CONST                    0  ; 0
-           2  STORE_FAST                    2  ; out
+           2  STORE_FAST                    1  ; out
     12     4  LOAD_FAST                     0  ; xs
            6  GET_ITER                      0
            8  FOR_ITER                     26  ; to 26
-          10  STORE_FAST                    1  ; x
-    13    12  LOAD_FAST                     2  ; out
-          14  LOAD_FAST                     1  ; x
-          16  LOAD_FAST                     1  ; x
+          10  STORE_FAST                    2  ; x
+    13    12  LOAD_FAST                     1  ; out
+          14  LOAD_FAST                     2  ; x
+          16  LOAD_FAST                     2  ; x
           18  BINARY_MULTIPLY               0
           20  INPLACE_ADD                   0
-          22  STORE_FAST                    2  ; out
+          22  STORE_FAST                    1  ; out
           24  JUMP_ABSOLUTE                 8  ; to 8
-    14    26  LOAD_FAST                     2  ; out
+    14    26  LOAD_FAST                     1  ; out
           28  RETURN_VALUE                  0
           30  LOAD_CONST                    1  ; None
           32  RETURN_VALUE                  0
 ```
 
-- `total`: `while i < n` became `8 LT_FAST_FAST_JF 256` (`1 << 8 | 0`: slots
-  `i` and `n`); its jump target, 34, is the argument of the `NOP` at 14.
-  `s += i` became `ACC_FAST_FAST 513` (`2 << 8 | 1`) and `i += 1`
-  `INC_FAST_K 257` (slot 1, constant 1). The back edge `32 JUMP_ABSOLUTE 8`
-  lands on the fused compare.
+- `total`: the locals take slots in the order of their first binding, `s`
+  then `i`. `while i < n` became `8 LT_FAST_FAST_JF 512` (`2 << 8 | 0`:
+  slots `i` and `n`); its jump target, 34, is the argument of the `NOP` at
+  14. `s += i` became `ACC_FAST_FAST 258` (`1 << 8 | 2`) and `i += 1`
+  `INC_FAST_K 513` (slot 2, constant 1). The back edge `32 JUMP_ABSOLUTE 8`
+  lands on the fused compare, the first instruction of its window: a jump
+  into the middle of a window would stop the fusion (1.2).
 - `sum_squares`: `for x in xs` is `GET_ITER` then `FOR_ITER 26`, which jumps
   to the loop exit when the iterator is exhausted, popping it. The iterator
-  stays on the stack during the body (6, issue 2).
+  stays on the stack during the body, so no statement of the body may leave
+  a value behind or pop one (`Compiler::statementLeavesValue`).
 - `out += x * x` is not fused: `BINARY_MULTIPLY` sits inside the window.
 
 ### Example 07: closures, `nonlocal` and `lambda`
@@ -1091,7 +1103,7 @@ code 0: <module> (07-closures.py, line 1)
   constants:
     #0   code    <code make_adder, line 2>  -> code 0.0
     #1   code    <code counter, line 8>  -> code 0.1
-    #2   code    <code <lambda>, line 17>  -> code 0.2
+    #2   code    <code <lambda>, line 16>  -> code 0.2
     #3   NoneType None
   names:
     #0   make_adder
@@ -1104,7 +1116,7 @@ code 0: <module> (07-closures.py, line 1)
      7     6  LOAD_CONST                    1  ; <code counter, line 8>
            8  BUILD_FUNCTION                0
           10  STORE_NAME                    2  ; counter
-    16    12  LOAD_CONST                    2  ; <code <lambda>, line 17>
+    16    12  LOAD_CONST                    2  ; <code <lambda>, line 16>
           14  BUILD_FUNCTION                0
           16  STORE_NAME                    4  ; square
           18  LOAD_CONST                    3  ; None
@@ -1156,42 +1168,41 @@ code 0.1: counter (07-closures.py, line 8)
     #1   code    <code bump, line 10>  -> code 0.1.0
     #2   none    None
   variables (slot):
-    #0   bump
-    #1   count
+    #0   count
+    #1   bump
   cells:
-    count in slot 1
+    count in slot 0
   code:
      8     0  LOAD_CONST                    0  ; 0
-           2  STORE_DEREF                   1  ; cell count
-     9     4  LOAD_CLOSURE                  1  ; cell count
+           2  STORE_DEREF                   0  ; cell count
+     9     4  LOAD_CLOSURE                  0  ; cell count
            6  LOAD_CONST                    1  ; <code bump, line 10>
            8  BUILD_FUNCTION              256  ; 1 closure cell
-          10  STORE_FAST                    0  ; bump
-    13    12  LOAD_FAST                     0  ; bump
+          10  STORE_FAST                    1  ; bump
+    13    12  LOAD_FAST                     1  ; bump
           14  RETURN_VALUE                  0
           16  LOAD_CONST                    2  ; None
           18  RETURN_VALUE                  0
 
 code 0.1.0: bump (07-closures.py, line 10)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 0 (0 positional-only, 0 keyword-only)
-  slots 130: variables 0..0, operand stack from 1
+  slots 131: variables 0..0, operand stack from 1
   constants:
     #0   int     1
     #1   none    None
   free variables (slot):
     #0   count
   code:
-    10     0  POP_TOP                       0
-    11     2  LOAD_DEREF                    0  ; free count
-           4  LOAD_CONST                    0  ; 1
-           6  INPLACE_ADD                   0
-           8  STORE_DEREF                   0  ; free count
-    12    10  LOAD_DEREF                    0  ; free count
-          12  RETURN_VALUE                  0
-          14  LOAD_CONST                    1  ; None
-          16  RETURN_VALUE                  0
+    11     0  LOAD_DEREF                    0  ; free count
+           2  LOAD_CONST                    0  ; 1
+           4  INPLACE_ADD                   0
+           6  STORE_DEREF                   0  ; free count
+    12     8  LOAD_DEREF                    0  ; free count
+          10  RETURN_VALUE                  0
+          12  LOAD_CONST                    1  ; None
+          14  RETURN_VALUE                  0
 
-code 0.2: <lambda> (07-closures.py, line 17)
+code 0.2: <lambda> (07-closures.py, line 16)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
   slots 131: variables 0..0, operand stack from 1
   variables (slot):
@@ -1208,12 +1219,13 @@ code 0.2: <lambda> (07-closures.py, line 17)
   pops it into `add`'s closure.
 - `add`: `n` is a free variable in slot 1, after `x`; `LOAD_DEREF 1` reads
   the cell's current contents.
-- `counter`: `count = 0` is `STORE_DEREF 1` into the cell; `bump` updates it
-  with `LOAD_DEREF`, `INPLACE_ADD`, `STORE_DEREF`.
-- `bump` starts with `POP_TOP` on an empty stack: the `nonlocal` statement
-  is followed by a stray `POP_TOP` (6, issue 2). Here it is harmless.
+- `counter`: `count = 0` is `STORE_DEREF 0` into the cell in slot 0
+  (`count` is bound before `bump`); `bump` updates it with `LOAD_DEREF`,
+  `INPLACE_ADD`, `STORE_DEREF`.
+- `bump`'s `nonlocal count` compiles to nothing; the first instruction is
+  line 11's.
 - The `lambda` body ends at its `RETURN_VALUE`; there is no implicit
-  `return None`. Its code object says line 17, its instructions line 16 (6).
+  `return None`. Its code object and its instructions say line 16.
 
 ### Example 08: default and keyword-only arguments
 
@@ -1332,30 +1344,29 @@ code 0: <module> (09-unpacking.py, line 1)
 
 code 0.0: unpack (09-unpacking.py, line 2)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 2 (0 positional-only, 0 keyword-only)
-  slots 136: variables 0..4, operand stack from 5
+  slots 137: variables 0..5, operand stack from 6
   constants:
     #0   none    None
-  names:
-    #0   others
   variables (slot):
     #0   pair
     #1   rest
-    #2   first
+    #2   a
     #3   b
-    #4   a
+    #4   first
+    #5   others
   code:
      2     0  LOAD_FAST                     0  ; pair
            2  UNPACK_SEQUENCE               2
-           4  STORE_FAST                    4  ; a
+           4  STORE_FAST                    2  ; a
            6  STORE_FAST                    3  ; b
      3     8  LOAD_FAST                     1  ; rest
           10  UNPACK_EX                     1  ; 1 before, 0 after
-          12  STORE_FAST                    2  ; first
-          14  STORE_GLOBAL                  0  ; others
-     4    16  LOAD_FAST                     4  ; a
+          12  STORE_FAST                    4  ; first
+          14  STORE_FAST                    5  ; others
+     4    16  LOAD_FAST                     2  ; a
           18  LOAD_FAST                     3  ; b
-          20  LOAD_FAST                     2  ; first
-          22  LOAD_GLOBAL                   0  ; others
+          20  LOAD_FAST                     4  ; first
+          22  LOAD_FAST                     5  ; others
           24  BUILD_TUPLE                   4
           26  RETURN_VALUE                  0
           28  LOAD_CONST                    0  ; None
@@ -1402,8 +1413,9 @@ code 0.2: forward (09-unpacking.py, line 12)
 - `a, b = pair`: `UNPACK_SEQUENCE 2` pushes the items with the first on top,
   so the first `STORE_FAST` stores `a`.
 - `first, *others = rest`: `UNPACK_EX 1` (one before, none after) pushes the
-  middle `list` below `first`. **`others` is stored with `STORE_GLOBAL`**:
-  the compiler did not treat the starred target as a local (6, issue 5).
+  middle `list` below `first`; `others`, a local like `first`, is
+  `STORE_FAST 5`. Slots follow the order of first binding: `a`, `b`,
+  `first`, `others` after the parameters.
 - `options(**kwargs)` binds the keyword dictionary to slot 0 (`VARKEYWORDS`).
 - `f(*args, **kw)`: the positional arguments become a tuple (`BUILD_LIST 0`,
   `LIST_EXTEND 1`, `LIST_TO_TUPLE`), the keywords a fresh dict (`BUILD_MAP 0`,
@@ -1703,9 +1715,9 @@ code 0.0: safe_div (13-exceptions.py, line 2)
     #1   b
     #2   e
   code:
-     3     0  SETUP_FINALLY                98  ; to 98
+     2     0  SETUP_FINALLY                98  ; to 98
            2  SETUP_FINALLY                28  ; to 28
-           4  LOAD_FAST                     0  ; a
+     3     4  LOAD_FAST                     0  ; a
            6  LOAD_FAST                     1  ; b
            8  BINARY_TRUE_DIVIDE            0
           10  POP_BLOCK                     0
@@ -1779,9 +1791,8 @@ code 0.1: fail (13-exceptions.py, line 12)
            2  LOAD_CONST                    0  ; 'bad'
            4  CALL_FUNCTION                 1  ; 1 positional
            6  RAISE_VARARGS                 1  ; raise TOS
-           8  POP_TOP                       0
-          10  LOAD_CONST                    1  ; None
-          12  RETURN_VALUE                  0
+           8  LOAD_CONST                    1  ; None
+          10  RETURN_VALUE                  0
 ```
 
 - `0 SETUP_FINALLY 98` (the `finally` handler) and `2 SETUP_FINALLY 28` (the
@@ -1799,7 +1810,7 @@ code 0.1: fail (13-exceptions.py, line 12)
   and reaches the `finally` handler at `98`, which runs the `finally` body
   and re-raises.
 - `fail`: `raise ValueError("bad")` is a call and `RAISE_VARARGS 1`; the
-  `POP_TOP` after it is unreachable (6).
+  implicit `return None` after it is unreachable (6).
 
 ### Example 14: decorators and comprehensions
 
@@ -2325,10 +2336,10 @@ code 0.2: label (17-misc.py, line 11)
     #0   name
     #1   n
   code:
-     1     0  LOAD_FAST                     0  ; name
-    12     2  LOAD_CONST                    0  ; ': '
+    11     0  LOAD_FAST                     0  ; name
+           2  LOAD_CONST                    0  ; ': '
            4  LOAD_GLOBAL                   1  ; repr (+ NULL)
-     1     6  LOAD_FAST                     1  ; n
+           6  LOAD_FAST                     1  ; n
            8  CALL_FUNCTION                 1  ; 1 positional
           10  BUILD_STRING                  3
           12  RETURN_VALUE                  0
@@ -2344,8 +2355,7 @@ code 0.2: label (17-misc.py, line 11)
   it returned a true value.
 - `max(*args)` is `CALL_FUNCTION_EX 0`.
 - `f"{name}: {n!r}"` is `BUILD_STRING 3`; `!r` is a call of the global
-  `repr`. The f-string's parts carry line 1: lines inside an f-string are
-  counted from the f-string (6).
+  `repr`. Every part carries the f-string's line.
 
 ### Example 18: `match`
 
@@ -2379,7 +2389,7 @@ code 0: <module> (18-match.py, line 1)
 
 code 0.0: kind (18-match.py, line 2)
   flags 0x3 (OPTIMIZED | NEWLOCALS), parameters 1 (0 positional-only, 0 keyword-only)
-  slots 134: variables 0..0, operand stack from 1
+  slots 139: variables 0..2, operand stack from 3
   constants:
     #0   int     0
     #1   str     'zero'
@@ -2389,90 +2399,97 @@ code 0.0: kind (18-match.py, line 2)
     #5   str     'other'
     #6   none    None
   names:
-    #0   __match_subj
-    #1   __match_tmp_0
-    #2   isinstance
-    #3   str
-    #4   bytes
-    #5   bytearray
-    #6   list
-    #7   tuple
-    #8   len
-    #9   x
-    #10  y
+    #0   isinstance
+    #1   str
+    #2   bytes
+    #3   bytearray
+    #4   list
+    #5   tuple
+    #6   len
   variables (slot):
     #0   value
+    #1   x
+    #2   y
   code:
      2     0  LOAD_FAST                     0  ; value
-           2  STORE_GLOBAL                  0  ; __match_subj
-           4  LOAD_GLOBAL                   0  ; __match_subj
-           6  JUMP_ABSOLUTE                10  ; to 10
-           8  JUMP_ABSOLUTE                22  ; to 22
-     3    10  LOAD_CONST                    0  ; 0
-          12  COMPARE_OP                    0  ; ==
-          14  POP_JUMP_IF_FALSE             8  ; to 8
-     4    16  LOAD_CONST                    1  ; 'zero'
-          18  RETURN_VALUE                  0
-          20  JUMP_ABSOLUTE               108  ; to 108
-          22  LOAD_GLOBAL                   0  ; __match_subj
-          24  JUMP_ABSOLUTE                28  ; to 28
-          26  JUMP_ABSOLUTE                94  ; to 94
-          28  STORE_GLOBAL                  2  ; __match_tmp_0
-          30  LOAD_GLOBAL                   4  ; isinstance
-          32  LOAD_GLOBAL                   2  ; __match_tmp_0
-          34  LOAD_GLOBAL                   6  ; str
-          36  LOAD_GLOBAL                   8  ; bytes
-          38  LOAD_GLOBAL                  10  ; bytearray
-          40  BUILD_TUPLE                   3
-          42  CALL_FUNCTION                 2  ; 2 positional
-          44  POP_JUMP_IF_TRUE             26  ; to 26
-          46  LOAD_GLOBAL                   4  ; isinstance
-          48  LOAD_GLOBAL                   2  ; __match_tmp_0
-          50  LOAD_GLOBAL                  12  ; list
-          52  LOAD_GLOBAL                  14  ; tuple
-          54  BUILD_TUPLE                   2
-          56  CALL_FUNCTION                 2  ; 2 positional
-          58  POP_JUMP_IF_FALSE            26  ; to 26
-          60  LOAD_GLOBAL                  16  ; len
-          62  LOAD_GLOBAL                   2  ; __match_tmp_0
-          64  CALL_FUNCTION                 1  ; 1 positional
-          66  LOAD_CONST                    2  ; 2
-          68  COMPARE_OP                    0  ; ==
-          70  POP_JUMP_IF_FALSE            26  ; to 26
-          72  LOAD_GLOBAL                   2  ; __match_tmp_0
-          74  LOAD_CONST                    0  ; 0
-          76  BINARY_SUBSCR                 0
-          78  STORE_GLOBAL                 18  ; x
-          80  LOAD_GLOBAL                   2  ; __match_tmp_0
-          82  LOAD_CONST                    3  ; 1
+           2  DUP_TOP                       0
+     3     4  LOAD_CONST                    0  ; 0
+           6  COMPARE_OP                    0  ; ==
+           8  POP_JUMP_IF_FALSE            18  ; to 18
+          10  POP_TOP                       0
+     4    12  LOAD_CONST                    1  ; 'zero'
+          14  RETURN_VALUE                  0
+          16  JUMP_ABSOLUTE               122  ; to 122
+          18  DUP_TOP                       0
+          20  DUP_TOP                       0
+          22  PUSH_NULL                     0
+          24  ROT_TWO                       0
+          26  LOAD_GLOBAL                   0  ; isinstance
+          28  ROT_TWO                       0
+          30  LOAD_GLOBAL                   2  ; str
+          32  LOAD_GLOBAL                   4  ; bytes
+          34  LOAD_GLOBAL                   6  ; bytearray
+          36  BUILD_TUPLE                   3
+          38  CALL_FUNCTION                 2  ; 2 positional
+          40  POP_JUMP_IF_TRUE            106  ; to 106
+          42  DUP_TOP                       0
+          44  PUSH_NULL                     0
+          46  ROT_TWO                       0
+          48  LOAD_GLOBAL                   0  ; isinstance
+          50  ROT_TWO                       0
+          52  LOAD_GLOBAL                   8  ; list
+          54  LOAD_GLOBAL                  10  ; tuple
+          56  BUILD_TUPLE                   2
+          58  CALL_FUNCTION                 2  ; 2 positional
+          60  POP_JUMP_IF_FALSE           106  ; to 106
+          62  DUP_TOP                       0
+          64  PUSH_NULL                     0
+          66  ROT_TWO                       0
+          68  LOAD_GLOBAL                  12  ; len
+          70  ROT_TWO                       0
+          72  CALL_FUNCTION                 1  ; 1 positional
+          74  LOAD_CONST                    2  ; 2
+          76  COMPARE_OP                    0  ; ==
+          78  POP_JUMP_IF_FALSE           106  ; to 106
+          80  DUP_TOP                       0
+          82  LOAD_CONST                    0  ; 0
           84  BINARY_SUBSCR                 0
-          86  STORE_GLOBAL                 20  ; y
-     6    88  LOAD_CONST                    4  ; 'pair'
-          90  RETURN_VALUE                  0
-          92  JUMP_ABSOLUTE               108  ; to 108
-          94  LOAD_GLOBAL                   0  ; __match_subj
-          96  JUMP_ABSOLUTE               100  ; to 100
-          98  JUMP_ABSOLUTE               108  ; to 108
-         100  POP_TOP                       0
-     8   102  LOAD_CONST                    5  ; 'other'
-         104  RETURN_VALUE                  0
-         106  JUMP_ABSOLUTE               108  ; to 108
-         108  POP_TOP                       0
-         110  LOAD_CONST                    6  ; None
-         112  RETURN_VALUE                  0
+          86  STORE_FAST                    1  ; x
+          88  DUP_TOP                       0
+          90  LOAD_CONST                    3  ; 1
+          92  BINARY_SUBSCR                 0
+          94  STORE_FAST                    2  ; y
+          96  POP_TOP                       0
+          98  POP_TOP                       0
+     6   100  LOAD_CONST                    4  ; 'pair'
+         102  RETURN_VALUE                  0
+         104  JUMP_ABSOLUTE               122  ; to 122
+         106  POP_TOP                       0
+         108  DUP_TOP                       0
+         110  POP_TOP                       0
+         112  POP_TOP                       0
+     8   114  LOAD_CONST                    5  ; 'other'
+         116  RETURN_VALUE                  0
+         118  JUMP_ABSOLUTE               122  ; to 122
+         120  POP_TOP                       0
+         122  LOAD_CONST                    6  ; None
+         124  RETURN_VALUE                  0
 ```
 
 - There are no pattern opcodes: `match` compiles to comparisons and calls
-  (`Compiler::compileMatch`, `compilePattern`). The subject and each
-  pattern's candidate are stored in temporaries (`__match_subj`,
-  `__match_tmp_0`), which inside a function are **globals**
-  (`STORE_GLOBAL`), as are the capture names `x` and `y` (6, issue 3).
-- The sequence pattern calls `isinstance` and `len` with the legacy call
-  layout (no NULL marker: `LOAD_GLOBAL 4` has bit 0 clear), which
-  `CALL_FUNCTION` misreads when anything lies below on the stack (6,
-  issue 3).
-- The `JUMP_ABSOLUTE` pairs at `6`/`8`, `24`/`26`, `96`/`98` are the
-  trampolines `compilePattern` uses as failure targets.
+  (`Compiler::compileMatch`, `compilePattern`), and every intermediate value
+  lives on the operand stack, as in CPython. The subject stays on the stack
+  for the whole statement; each case tests a copy (`DUP_TOP` at 2, 18, 108)
+  and, on success, drops the subject (`POP_TOP` at 10, 98, 112) before its
+  body. The capture names `x` and `y` are locals (`STORE_FAST 1`, `2`).
+- A built-in call on the candidate (`isinstance`, `len`) copies it and gets
+  the modern layout with `DUP_TOP`, `PUSH_NULL`, `ROT_TWO`, the function,
+  `ROT_TWO`: `NULL, f, candidate` (`Compiler::emitCallOnCandidate`).
+- A failing test jumps to a pop chain after the case that removes what the
+  test left on the stack: `POP_JUMP_IF_TRUE 106` and the two later tests of
+  the sequence pattern land on `106 POP_TOP` (the copy), which falls into
+  the next case. The first case's test pops nothing and jumps straight to
+  18. The last `POP_TOP`, at 120, drops the subject when no case matched.
 
 ### Example 19: coroutines, `async with`, `async for`
 
@@ -2491,7 +2508,7 @@ async def collect(stream):
 ```
 
 ```text
-code 0: <module> (19-async.py, line 6)
+code 0: <module> (19-async.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
   slots 33: operand stack from 0
   constants:
@@ -2502,16 +2519,14 @@ code 0: <module> (19-async.py, line 6)
     #0   fetch
     #1   collect
   code:
-     6     0  LOAD_CONST                    0  ; <code fetch, line 2>
+     1     0  LOAD_CONST                    0  ; <code fetch, line 2>
            2  BUILD_FUNCTION                0
            4  STORE_NAME                    0  ; fetch
-           6  POP_TOP                       0
-    11     8  LOAD_CONST                    1  ; <code collect, line 7>
-          10  BUILD_FUNCTION                0
-          12  STORE_NAME                    2  ; collect
-          14  POP_TOP                       0
-          16  LOAD_CONST                    2  ; None
-          18  RETURN_VALUE                  0
+     6     6  LOAD_CONST                    1  ; <code collect, line 7>
+           8  BUILD_FUNCTION                0
+          10  STORE_NAME                    2  ; collect
+          12  LOAD_CONST                    2  ; None
+          14  RETURN_VALUE                  0
 
 code 0.0: fetch (19-async.py, line 2)
   flags 0x113 (OPTIMIZED | NEWLOCALS | NESTED | COROUTINE), parameters 1 (0 positional-only, 0 keyword-only), generator
@@ -2577,9 +2592,8 @@ code 0.0: fetch (19-async.py, line 2)
           92  POP_JUMP_IF_TRUE             96  ; to 96
           94  RERAISE                       1
           96  POP_EXCEPT                    0
-          98  POP_TOP                       0
-         100  LOAD_CONST                    1  ; None
-         102  RETURN_VALUE                  0
+          98  LOAD_CONST                    1  ; None
+         100  RETURN_VALUE                  0
 
 code 0.1: collect (19-async.py, line 7)
   flags 0x113 (OPTIMIZED | NEWLOCALS | NESTED | COROUTINE), parameters 1 (0 positional-only, 0 keyword-only), generator
@@ -2590,22 +2604,22 @@ code 0.1: collect (19-async.py, line 7)
     #0   append
   variables (slot):
     #0   stream
-    #1   item
-    #2   out
+    #1   out
+    #2   item
   code:
-     8     0  BUILD_LIST                    0
-           2  STORE_FAST                    2  ; out
-           4  LOAD_FAST                     0  ; stream
+     7     0  BUILD_LIST                    0
+           2  STORE_FAST                    1  ; out
+     8     4  LOAD_FAST                     0  ; stream
            6  GET_AITER                     0
            8  FOR_ITER                     24  ; to 24
-          10  STORE_FAST                    1  ; item
-     9    12  LOAD_FAST                     2  ; out
+          10  STORE_FAST                    2  ; item
+     9    12  LOAD_FAST                     1  ; out
           14  LOAD_ATTR                     1  ; append (method)
-          16  LOAD_FAST                     1  ; item
+          16  LOAD_FAST                     2  ; item
           18  CALL_FUNCTION                 1  ; 1 positional
           20  POP_TOP                       0
           22  JUMP_ABSOLUTE                 8  ; to 8
-    10    24  LOAD_FAST                     2  ; out
+    10    24  LOAD_FAST                     1  ; out
           26  RETURN_VALUE                  0
           28  LOAD_CONST                    0  ; None
           30  RETURN_VALUE                  0
@@ -2619,9 +2633,8 @@ code 0.1: collect (19-async.py, line 7)
   with `(type(exc), exc, None)`). `SETUP_ASYNC_WITH` is not used.
 - `async for` is `GET_AITER` and an ordinary `FOR_ITER` loop: `GET_AITER`
   gives a class-defined async iterator a `__next__` that drives `__anext__`.
-- The module listing shows two compiler defects around `async def` at module
-  level: `POP_TOP` after each `STORE_NAME` (6, issue 2) and line numbers that
-  do not match the source (6).
+- `collect`'s locals are numbered in binding order: `out` (line 8) before
+  `item`.
 
 ## 4. How to add an opcode
 
@@ -2693,8 +2706,8 @@ static const proto::ProtoObject* py_len(
 - **Arguments.** `positionalParameters->getSize(ctx)` and `getAt(ctx, i)`;
   keyword arguments by the interned name's hash through
   `keywordParameters`. Check the count yourself and raise CPython's
-  `TypeError`: nothing checks it for you (6, issue 8 shows what happens
-  otherwise).
+  `TypeError`: nothing checks it for you (`len()` returned `None` until it
+  did). `BuiltinsModule.cpp` has `requireArgs` for the common case.
 - **Errors.** Raise with `env->raiseTypeError(ctx, "...")`,
   `raiseValueError`, ... (`PythonEnvironment::fromContext(ctx)` gives the
   environment). They throw a C++ exception; there is no pending flag and no
@@ -2729,76 +2742,50 @@ static const proto::ProtoObject* py_len(
 
 ### Verified bugs
 
-Each was reproduced with `protopy` built from `main` at `d453de62` and
-compared with CPython 3.14. None is fixed by the change that added this
-document.
+The eight defects this section listed when it was written (at `d453de62`)
+are fixed: the peephole specialiser fused windows a jump enters part-way; a
+stray `POP_TOP` after some statements popped a loop's iterator (a hang);
+`match` stored its temporaries and captures as globals and used the legacy
+call layout; `<<=` and `>>=` truncated to 64 bits; a starred assignment
+target was a global; asynchronous comprehensions never finished; a raising
+module, class body or `exec` kept its context; `len()` returned `None`. The
+regression tests are `test/regression/peephole_jump_targets.py`,
+`statement_stack_balance.py`, `match_scoping.py`, `int_shift_big.py`,
+`starred_target_scope.py`, `async_comprehension.py`, `builtin_arity.py`
+and `TestContextChain.cpp` (`ReleasedWhenExecRaises`).
 
-1. **The peephole specialiser fuses across a jump target.** A jump into the
-   middle of a fused window lands on a `NOP`, skipping the fused work.
-   `while (x if c else y) < b:` compiles to `... JUMP_ABSOLUTE 10` (the
-   `x` branch) and `8 LT_FAST_FAST_JF` (`y < b`) with offset 10 a `NOP`: on
-   the `x` branch the comparison never runs and the loop body is entered.
-   `def f(c, x, y, b): while (x if c else y) < b: return "lt"` then `return
-   "ge"`: `f(True, 5, 0, 3)` returns `"lt"` (CPython: `"ge"`). Cause:
-   `Compiler::specialiseBytecode` assumes jumps into a window are harmless.
-2. **A stray `POP_TOP` after some statements pops the loop iterator.**
-   `Compiler::statementLeavesValue` lists the statements that leave nothing
-   on the stack; `from m import x`, an annotated assignment (`x: int = 1`),
-   `type T = ...`, `match`, `nonlocal`, `async def` and `raise` are missing,
-   so each is followed by a `POP_TOP`. Outside a loop it pops an empty stack
-   (a no-op); inside a `for` loop it pops the iterator and the program
-   **hangs**: `for i in range(3):` followed by `x: int = 1` never ends, at
-   module level and in functions alike (examples 07 and 19 show the
-   `POP_TOP`).
-3. **`match` uses globals and a legacy call layout.** Inside a function the
-   subject, the temporaries and the capture names are stored with
-   `STORE_GLOBAL` (example 18): after `kind([1, 2])`, `x` and `y` are
-   module globals. A sequence pattern calls `isinstance` without a NULL
-   marker; inside a `for` loop `CALL_FUNCTION` takes the iterator below for
-   the callable: `TypeError: '<list_iterator object at ...>' object is not
-   callable`.
-4. **`<<=` and `>>=` truncate integers.** `INPLACE_LSHIFT` and
-   `INPLACE_RSHIFT` compute on 64-bit `long long`: `x = 1; x <<= 70` gives
-   0 (CPython: 1180591620717411303424) and `y = -8; y >>= 70` gives 0
-   (CPython: -1); a bignum left operand would overflow `asLong`. The binary
-   opcodes are correct.
-5. **A starred assignment target in a function is a global.**
-   `first, *others = rest` stores `others` with `STORE_GLOBAL`
-   (example 09): the value leaks into the module's globals.
-6. **Asynchronous comprehensions never finish.** In
-   `Compiler::compileComprehension`'s async branch, three `addPatch(slot +
-   1, ...)` calls patch the argument of the instruction after the intended
-   one (`SETUP_FINALLY 0`, `GET_ANEXT 22`, `POP_TOP 38` in the listing), and
-   the `JUMP_FORWARD` is given an absolute target although the VM treats it
-   as relative. `[x async for x in agen()]` yields `None` forever
-   (`compileAsyncWith` has the off-by-one fixed, per its comment).
-7. **A module, class body or `exec` that raises does not release its
-   context.** `runCodeObject` deletes its heap-allocated `ProtoContext` and
-   restores the current context only on a normal return. Measured symptom:
-   `exec("raise ValueError")` caught in a loop takes 0.65 s for 5,000
-   iterations, 1.49 s for 10,000 and 24.6 s (295 MB) for 20,000, while
-   `exec("x = 1")` takes 1.2 s (141 MB) for 20,000.
-8. **`len()` with no argument returns `None`** instead of raising
-   `TypeError`: `py_len` returns `PROTO_NONE` when the count is short.
+Open, verified against CPython 3.14:
+
+1. **Asynchronous iteration is synchronous.** `async for` (a statement or a
+   comprehension) is `GET_AITER` and `FOR_ITER`: an async generator is
+   stepped through `__next__`, a class's `__anext__` coroutine is driven to
+   completion by the bridge `GET_AITER` installs, and an async generator's
+   `__anext__()` returns the value itself, not an awaitable. Iteration that
+   never suspends works; an async generator that awaits a pending future
+   (`await asyncio.sleep(0.01)`) hands the future to the loop body as an
+   item, and `await agen.__anext__()` does not return.
+2. **`match` deviations.** A sequence pattern accepts `list` and `tuple`
+   only (not every `collections.abc.Sequence`), a mapping pattern `dict`
+   only; a positional class sub-pattern reads `cls.__match_args__[i]` with
+   `getattr`, so a missing attribute raises `AttributeError` instead of
+   failing the match, and the built-in classes that match their subject
+   (`int(x)`, `str(s)`, ...) raise `AttributeError` (no `__match_args__`).
+   The built-ins are looked up by name (`isinstance`, `len`, `list`,
+   `dict`, ...), so a program that rebinds one changes `match`.
+3. **`match` as a soft keyword.** `match [a, b]:` and the other forms whose
+   subject starts with `[` (or `.`, `=`, `+=`, `-=` after `match`) parse as
+   an expression statement and fail with a syntax error
+   (`Parser::parseStatement`).
 
 ### Oddities
 
 - **`CALL_FUNCTION` guesses the call layout** from the stack depth (1.5).
-  It is right for every call the compiler emits with a NULL marker; issue 3
-  is the case where it is not.
+  It is right for every call the compiler emits with a NULL marker.
 - **Underflow guards that re-dispatch.** A few handlers (`BUILD_LIST`,
   `BUILD_SET`, `BUILD_MAP`, `BUILD_STRING`, `BUILD_SLICE`, `FORMAT_VALUE`,
   `LOAD_GLOBAL` without an environment) `continue` without advancing the
   instruction pointer on an impossible stack shape, which would run the same
   instruction forever. Compiler output never reaches them.
-- **Local slot order depends on the C++ standard library.**
-  `Compiler::collectLocalsFromBody` collects a function's non-parameter
-  locals in a `std::unordered_set` and numbers them in its iteration order:
-  the same source gives `s` slot 2 and `i` slot 1 with libstdc++ (example
-  06) and the reverse with MSVC's library, and libc++ differs again in
-  example 09. Behaviour is the same; bytecode is not reproducible across
-  platforms. (Seen in the cross-platform CI of the change that added this
-  document.)
 - **Two `None` constants.** Function bodies use protoCore's `PROTO_NONE`
   (kind `none`); the module's final `return None` and an async function's use
   the environment's `None` object (kind `NoneType`, `compileModule`,
@@ -2808,20 +2795,13 @@ document.
   happens for functions that read no free variable (`parity` in example 03
   has it, `sign` does not; the cause was not established). The VM never
   reads it.
-- **Line numbers.** `co_firstlineno` is the line of the first statement of
-  the body, not of the `def`; a lambda's is one more than its line; the
-  parts of an f-string carry line 1; the module listing of example 19 is
-  off around `async def`.
+- **`co_firstlineno`** is the line of the first statement of a function's
+  body, not of its `def` (CPython: the `def`, or its first decorator).
+  `frame.f_lineno` reports it (the runtime records the executing line only
+  when an exception is raised), so changing it is not a local fix.
 - **Dead code after `return`/`raise`.** The compiler does not drop
   unreachable instructions (`JUMP_ABSOLUTE` after a `return` in an `if`
-  branch, the implicit `return None` after an explicit `return`, the
-  `POP_TOP` after `raise`).
-- **Stale comments.** `executeBytecodeRange` says the safepoint is polled
-  every 256 opcodes; the loop polls every 64. `docs/EXECUTION_ENGINE_OPCODES.md`
-  (now superseded) counted 116 opcodes up to 216; 217-219 were added since.
+  branch, the implicit `return None` after an explicit `return`).
+- **Stale document.** `docs/EXECUTION_ENGINE_OPCODES.md` (superseded by
+  this one) counted 116 opcodes up to 216; 217-219 were added since.
 - **`RERAISE`'s argument** (1 or 2) is never read.
-- **The in-place division opcodes** do not treat a native `__itruediv__` /
-  `__ifloordiv__` / `__imod__` returning `NotImplemented` as absent, unlike
-  the other in-place opcodes (code reading; not reproduced).
-- **`_opcode`** lacks 8 opcodes and its `stack_effect` returns 0 for every
-  opcode (`OpcodeModule.cpp`, a stub).

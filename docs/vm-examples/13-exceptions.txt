@@ -33,9 +33,9 @@ code 0.0: safe_div (13-exceptions.py, line 2)
     #1   b
     #2   e
   code:
-     3     0  SETUP_FINALLY                98  ; to 98
+     2     0  SETUP_FINALLY                98  ; to 98
            2  SETUP_FINALLY                28  ; to 28
-           4  LOAD_FAST                     0  ; a
+     3     4  LOAD_FAST                     0  ; a
            6  LOAD_FAST                     1  ; b
            8  BINARY_TRUE_DIVIDE            0
           10  POP_BLOCK                     0
@@ -109,6 +109,5 @@ code 0.1: fail (13-exceptions.py, line 12)
            2  LOAD_CONST                    0  ; 'bad'
            4  CALL_FUNCTION                 1  ; 1 positional
            6  RAISE_VARARGS                 1  ; raise TOS
-           8  POP_TOP                       0
-          10  LOAD_CONST                    1  ; None
-          12  RETURN_VALUE                  0
+           8  LOAD_CONST                    1  ; None
+          10  RETURN_VALUE                  0

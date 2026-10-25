@@ -339,18 +339,15 @@ if(Python3_FOUND)
     # each docs/vm-examples/NN-name.py is compiled and its listing compared
     # with its golden .txt file and with VM.md's copy
     # (docs/vm-examples/disasm_examples.py; --update regenerates them).
-    # Linux only: the slot order of a function's non-parameter locals follows
-    # std::unordered_set iteration (Compiler::collectLocalsFromBody), so the
-    # listings of libc++ (macOS) and MSVC differ from the golden files, which
-    # are produced with libstdc++ (docs/VM.md, section 6).
-    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        add_test(NAME docs_vm_examples
-            COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/docs/vm-examples/disasm_examples.py
-                $<TARGET_FILE:protopy> --check)
-        set_tests_properties(docs_vm_examples PROPERTIES
-            TIMEOUT 300
-            LABELS "regression_gate")
-    endif()
+    # Every platform: the compiler numbers local slots in source order
+    # (Compiler::collectLocalsFromBody), never in a hash container's
+    # iteration order, so libstdc++, libc++ and MSVC give the same bytecode.
+    add_test(NAME docs_vm_examples
+        COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/docs/vm-examples/disasm_examples.py
+            $<TARGET_FILE:protopy> --check)
+    set_tests_properties(docs_vm_examples PROPERTIES
+        TIMEOUT 300
+        LABELS "regression_gate")
 endif()
 # protopy finds the standard library in the installed layout relative to its own
 # directory, is not misled by a ../lib/python3.14 next to the working directory,
@@ -930,6 +927,69 @@ set_tests_properties(protopy_numeric_keys PROPERTIES
 add_test(NAME protopy_aug_assign_targets
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/aug_assign_targets.py)
 set_tests_properties(protopy_aug_assign_targets PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
+# The peephole specialiser leaves alone a window a jump enters part-way.
+add_test(NAME protopy_peephole_jump_targets
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/peephole_jump_targets.py)
+set_tests_properties(protopy_peephole_jump_targets PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
+# No statement leaves a stray POP_TOP (inside a loop it popped the iterator: a hang).
+add_test(NAME protopy_statement_stack_balance
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/statement_stack_balance.py)
+set_tests_properties(protopy_statement_stack_balance PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
+# `match` binds captures in the enclosing scope, hides its temporaries, works in loops.
+add_test(NAME protopy_match_scoping
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/match_scoping.py)
+set_tests_properties(protopy_match_scoping PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
+# `<<`, `>>`, `<<=` and `>>=` on ints of any size.
+add_test(NAME protopy_int_shift_big
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/int_shift_big.py)
+set_tests_properties(protopy_int_shift_big PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
+# Augmented assignment calls in-place dunders defined in Python.
+add_test(NAME protopy_inplace_user_dunders
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/inplace_user_dunders.py)
+set_tests_properties(protopy_inplace_user_dunders PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
+# A starred assignment target binds in the enclosing scope.
+add_test(NAME protopy_starred_target_scope
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/starred_target_scope.py)
+set_tests_properties(protopy_starred_target_scope PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
+# Asynchronous comprehensions finish and give their values.
+add_test(NAME protopy_async_comprehension
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/async_comprehension.py)
+set_tests_properties(protopy_async_comprehension PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
+# Built-ins called with too few arguments raise TypeError.
+add_test(NAME protopy_builtin_arity
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/builtin_arity.py)
+set_tests_properties(protopy_builtin_arity PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    LABELS "regression_gate")
+# _opcode names every opcode and computes stack effects.
+add_test(NAME protopy_opcode_module
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/opcode_module.py)
+set_tests_properties(protopy_opcode_module PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 60
     LABELS "regression_gate")

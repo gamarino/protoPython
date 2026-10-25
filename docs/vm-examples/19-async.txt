@@ -1,4 +1,4 @@
-code 0: <module> (19-async.py, line 6)
+code 0: <module> (19-async.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
   slots 33: operand stack from 0
   constants:
@@ -9,16 +9,14 @@ code 0: <module> (19-async.py, line 6)
     #0   fetch
     #1   collect
   code:
-     6     0  LOAD_CONST                    0  ; <code fetch, line 2>
+     1     0  LOAD_CONST                    0  ; <code fetch, line 2>
            2  BUILD_FUNCTION                0
            4  STORE_NAME                    0  ; fetch
-           6  POP_TOP                       0
-    11     8  LOAD_CONST                    1  ; <code collect, line 7>
-          10  BUILD_FUNCTION                0
-          12  STORE_NAME                    2  ; collect
-          14  POP_TOP                       0
-          16  LOAD_CONST                    2  ; None
-          18  RETURN_VALUE                  0
+     6     6  LOAD_CONST                    1  ; <code collect, line 7>
+           8  BUILD_FUNCTION                0
+          10  STORE_NAME                    2  ; collect
+          12  LOAD_CONST                    2  ; None
+          14  RETURN_VALUE                  0
 
 code 0.0: fetch (19-async.py, line 2)
   flags 0x113 (OPTIMIZED | NEWLOCALS | NESTED | COROUTINE), parameters 1 (0 positional-only, 0 keyword-only), generator
@@ -84,9 +82,8 @@ code 0.0: fetch (19-async.py, line 2)
           92  POP_JUMP_IF_TRUE             96  ; to 96
           94  RERAISE                       1
           96  POP_EXCEPT                    0
-          98  POP_TOP                       0
-         100  LOAD_CONST                    1  ; None
-         102  RETURN_VALUE                  0
+          98  LOAD_CONST                    1  ; None
+         100  RETURN_VALUE                  0
 
 code 0.1: collect (19-async.py, line 7)
   flags 0x113 (OPTIMIZED | NEWLOCALS | NESTED | COROUTINE), parameters 1 (0 positional-only, 0 keyword-only), generator
@@ -97,22 +94,22 @@ code 0.1: collect (19-async.py, line 7)
     #0   append
   variables (slot):
     #0   stream
-    #1   item
-    #2   out
+    #1   out
+    #2   item
   code:
-     8     0  BUILD_LIST                    0
-           2  STORE_FAST                    2  ; out
-           4  LOAD_FAST                     0  ; stream
+     7     0  BUILD_LIST                    0
+           2  STORE_FAST                    1  ; out
+     8     4  LOAD_FAST                     0  ; stream
            6  GET_AITER                     0
            8  FOR_ITER                     24  ; to 24
-          10  STORE_FAST                    1  ; item
-     9    12  LOAD_FAST                     2  ; out
+          10  STORE_FAST                    2  ; item
+     9    12  LOAD_FAST                     1  ; out
           14  LOAD_ATTR                     1  ; append (method)
-          16  LOAD_FAST                     1  ; item
+          16  LOAD_FAST                     2  ; item
           18  CALL_FUNCTION                 1  ; 1 positional
           20  POP_TOP                       0
           22  JUMP_ABSOLUTE                 8  ; to 8
-    10    24  LOAD_FAST                     2  ; out
+    10    24  LOAD_FAST                     1  ; out
           26  RETURN_VALUE                  0
           28  LOAD_CONST                    0  ; None
           30  RETURN_VALUE                  0

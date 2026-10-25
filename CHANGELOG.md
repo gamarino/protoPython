@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Fixed: the defects docs/VM.md section 6 listed.** Each has a regression
+  test (`test/regression/*.py`, ctest `protopy_<name>`).
+  - The peephole specialiser fused a window that a jump enters part-way:
+    `while (x if c else y) < b` skipped the comparison on the `x` branch.
+    Windows with a jump or handler target past their first instruction are
+    left alone (`peephole_jump_targets`).
+  - `from m import x`, `x: int = 1`, `type T = ...`, `match`, `nonlocal`,
+    `async def`, `async with`, `raise` and `import a, b` were followed by a
+    stray `POP_TOP`; inside a `for` loop it popped the iterator and the
+    program hung (`statement_stack_balance`).
+  - `match` stored its temporaries and captures with `STORE_NAME` /
+    `STORE_GLOBAL` (inside a function the captures became module globals)
+    and called built-ins without NULL markers (a sequence pattern in a loop
+    raised `'list_iterator' object is not callable`). Values now stay on
+    the operand stack and captures bind in the enclosing scope
+    (`match_scoping`). Names assigned in case bodies are locals too.
+  - `x <<= 70` gave 0 and `-8 >>= 70` gave 0; the binary forms truncated a
+    shift count above 2**31. Shifts work on ints of any size, with
+    CPython's `ValueError` / `OverflowError` (`int_shift_big`).
+  - `&=`, `|=`, `^=`, `<<=`, `>>=`, `%=`, `//=` and `/=` ignored an
+    in-place dunder defined in Python (`inplace_user_dunders`).
+  - `first, *others = rest` stored `others` as a global
+    (`starred_target_scope`).
+  - Asynchronous comprehensions yielded `None` forever; they now compile as
+    `async for` does (`async_comprehension`; docs/DESIGN_DECISIONS.md).
+  - A module, class body or `exec()` that raised kept its context on the
+    thread's chain: 20,000 caught `exec("raise ValueError")` took 5.05 s and
+    278 MB, now 1.16 s and 145 MB, the cost of 20,000 `exec("x = 1")`
+    (`TestContextChain.ReleasedWhenExecRaises`).
+  - `len()` and about 40 other built-in entry points returned `None` for a short argument
+    list; they raise CPython's `TypeError` (`builtin_arity`). `open()`
+    takes `file` by keyword.
+  - Local slots were numbered in `std::unordered_set` order, so the same
+    source compiled differently with libstdc++, libc++ and MSVC. They follow
+    the order of first binding in the source, and the `docs_vm_examples`
+    golden test runs on every platform.
+  - `_opcode` lacked 8 opcodes and its `stack_effect` returned 0; it now
+    names every opcode and gives the compiler's stack effects
+    (`opcode_module`).
+  - Line numbers: a NEWLINE token carries the line it ends (a lambda's code
+    object said the next line), f-string parts carry the f-string's line
+    (they said line 1), and `async def` / `async for` / `async with` take
+    the `async` keyword's line.
+  - A comment said the safepoint is polled every 256 opcodes; it is 64.
+
 - **docs/VM.md: the virtual machine, for contributors, and `protopy
   --disasm`.** A reading order through the source (parser, compiler, code
   objects, VM, built-ins); the instruction encoding, the frame layout (one
