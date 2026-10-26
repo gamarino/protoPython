@@ -592,8 +592,8 @@ Produced only by `Compiler::specialiseBytecode` (1.2), each followed by three
 
 | Op | # | Operand | Replaces | Semantics |
 |---|---|---|---|---|
-| `ACC_FAST_FAST` | 212 | `a << 8 \| b` | `LOAD_FAST a; LOAD_FAST b; INPLACE_ADD; STORE_FAST a` | SmallInteger sum in place on the slots; otherwise checks both are bound and calls `binaryAdd` (so a list `a` is not extended in place: see 6). |
-| `INC_FAST_K` | 213 | `i << 8 \| k` | `LOAD_FAST i; LOAD_CONST k; INPLACE_ADD; STORE_FAST i` | SmallInteger increment by a constant; otherwise `binaryAdd`. |
+| `ACC_FAST_FAST` | 212 | `a << 8 \| b` | `LOAD_FAST a; LOAD_FAST b; INPLACE_ADD; STORE_FAST a` | SmallInteger sum in place on the slots; otherwise checks both are bound and runs `INPLACE_ADD`'s path (`inplaceAdd`: `__iadd__`, then `binaryAdd`), so a list `a` is extended in place. |
+| `INC_FAST_K` | 213 | `i << 8 \| k` | `LOAD_FAST i; LOAD_CONST k; INPLACE_ADD; STORE_FAST i` | SmallInteger increment by a constant; otherwise `inplaceAdd`, as `ACC_FAST_FAST`. |
 | `LT_FAST_FAST_JF` | 214 | `a << 8 \| b`; the jump target in the argument of the third `NOP` | `LOAD_FAST a; LOAD_FAST b; COMPARE_OP <; POP_JUMP_IF_FALSE t` | SmallInteger compare without touching the stack; otherwise `compareOp(<)`; jumps to `t` when false. |
 
 ### 2.12 Reserved and never emitted
