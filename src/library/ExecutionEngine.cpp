@@ -3374,8 +3374,6 @@ static const proto::ProtoObject* py_generator_resume(
 
     // 5. Run (gen.throw's exception is raised at the resume point, inside
     // the generator's rebuilt tries: executeBytecodeRange's throwOnResume).
-    self->setAttribute(ctx, env->getGiRunningString(), PROTO_TRUE);
-    
     proto::proto_ulong nextPc = pc; 
     proto::proto_ulong finalTop = 0;
     proto::proto_ulong stackOffset = 0;
@@ -3402,7 +3400,16 @@ static const proto::ProtoObject* py_generator_resume(
         ContextScope scope(ctx->space, ctx, nullptr, nullptr, nullptr, nullptr,
                            static_cast<size_t>(automatic_count));
         calleeCtx = scope.context();
-        
+
+        // The generator's bookkeeping writes (gi_running, gi_pc, and the
+        // saved locals, stack and blocks below) allocate in calleeCtx, whose
+        // young generation is submitted when the resume ends; the trees stay
+        // reachable through the generator object.  Written in the caller's
+        // context they stayed live until the caller returned: a native
+        // consumer (sum, any, str.join, list) of a 100,000-step generator
+        // held about 1.6 M cells of them.
+        self->setAttribute(calleeCtx, env->getGiRunningString(), PROTO_TRUE);
+
         // Restore locals from gi_locals
         const proto::ProtoObject* localsObj = self->getAttribute(ctx, env->getGiLocalsString());
         const proto::ProtoList* savedLocals = localsObj ? ::protoPython::listStorage(ctx, localsObj) : nullptr;
@@ -3520,14 +3527,14 @@ static const proto::ProtoObject* py_generator_resume(
             newBlocks = newBlocks->appendLast(calleeCtx, bTup);
         }
         self->setAttribute(calleeCtx, env->getGiBlocksString(), newBlocks->asObject(calleeCtx));
-    }
 
-    // 8. Clear running 
-    self->setAttribute(ctx, env->getGiRunningString(), PROTO_FALSE);
-    if (!yielded) {
-        nextPc = co_code_tuple->getSize(ctx);
+        // 8. Clear running
+        self->setAttribute(calleeCtx, env->getGiRunningString(), PROTO_FALSE);
+        if (!yielded) {
+            nextPc = co_code_tuple->getSize(calleeCtx);
+        }
+        self->setAttribute(calleeCtx, env->getGiPCString(), calleeCtx->fromInteger(nextPc));
     }
-    self->setAttribute(ctx, env->getGiPCString(), ctx->fromInteger(nextPc));
 
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG: py_generator_send_impl finished. yielded=%d, result=%p\n",
