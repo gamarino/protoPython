@@ -6359,7 +6359,7 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     // Always create a sub-context for code objects to ensure stack isolation,
     // especially for eval() and exec() calls which would otherwise clobber the caller's stack slots.
     const proto::ProtoList* localNames = ctx->newList();
-    const proto::ProtoList* vlist = co_varnames ? co_varnames->asList(ctx) : nullptr;
+    const proto::ProtoList* vlist = co_varnames ? ::protoPython::listStorage(ctx, co_varnames) : nullptr;
     proto::proto_ulong vcount = vlist ? vlist->getSize(ctx) : 0;
     
     // Use the maximum of vcount and automatic_count to ensure enough slots are reserved for both locals and stack.

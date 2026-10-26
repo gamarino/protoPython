@@ -95,13 +95,13 @@ static const proto::ProtoObject* syntaxerror_init(
     // If args[1] is a tuple (filename, lineno, offset, text), unpack it (CPython convention)
     const proto::ProtoObject* argsObj = instance->getAttribute(context,
         PythonEnvironment::getInternedString(context, "args"));
-    if (argsObj && (::protoPython::PythonEnvironment::isTupleValue(context, argsObj) || argsObj->asList(context))) {
+    if (argsObj && (::protoPython::PythonEnvironment::isTupleValue(context, argsObj) || ::protoPython::listStorage(context, argsObj))) {
         proto::proto_ulong argsSize = ::protoPython::PythonEnvironment::isTupleValue(context, argsObj)
             ? ::protoPython::PythonEnvironment::tupleView(context, argsObj)->getSize(context)
-            : argsObj->asList(context)->getSize(context);
+            : ::protoPython::listStorage(context, argsObj)->getSize(context);
         auto getArg = [&](proto::proto_ulong i) -> const proto::ProtoObject* {
             if (::protoPython::PythonEnvironment::isTupleValue(context, argsObj)) return ::protoPython::PythonEnvironment::tupleView(context, argsObj)->getAt(context, static_cast<int>(i));
-            return argsObj->asList(context)->getAt(context, static_cast<int>(i));
+            return ::protoPython::listStorage(context, argsObj)->getAt(context, static_cast<int>(i));
         };
         if (argsSize >= 1) {
             const proto::ProtoObject* msgArg = getArg(0);
@@ -112,13 +112,13 @@ static const proto::ProtoObject* syntaxerror_init(
         }
         if (argsSize >= 2) {
             const proto::ProtoObject* info = getArg(1);
-            if (info && info != PROTO_NONE && (::protoPython::PythonEnvironment::isTupleValue(context, info) || info->asList(context))) {
+            if (info && info != PROTO_NONE && (::protoPython::PythonEnvironment::isTupleValue(context, info) || ::protoPython::listStorage(context, info))) {
                 proto::proto_ulong infoSize = ::protoPython::PythonEnvironment::isTupleValue(context, info)
                     ? ::protoPython::PythonEnvironment::tupleView(context, info)->getSize(context)
-                    : info->asList(context)->getSize(context);
+                    : ::protoPython::listStorage(context, info)->getSize(context);
                 auto getInfo = [&](proto::proto_ulong i) -> const proto::ProtoObject* {
                     if (::protoPython::PythonEnvironment::isTupleValue(context, info)) return ::protoPython::PythonEnvironment::tupleView(context, info)->getAt(context, static_cast<int>(i));
-                    return info->asList(context)->getAt(context, static_cast<int>(i));
+                    return ::protoPython::listStorage(context, info)->getAt(context, static_cast<int>(i));
                 };
                 if (infoSize >= 1) instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context,
                     PythonEnvironment::getInternedString(context, "filename"), getInfo(0));
@@ -551,7 +551,7 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
         if (notesObj && notesObj != PROTO_NONE) {
             // Prefer wrapped Python list __data__; fall back to raw asList.
             const proto::ProtoObject* d = notesObj->getAttribute(ctx, dataS);
-            underlying = (d && d->asList(ctx)) ? d->asList(ctx) : notesObj->asList(ctx);
+            underlying = (d && ::protoPython::listStorage(ctx, d)) ? ::protoPython::listStorage(ctx, d) : ::protoPython::listStorage(ctx, notesObj);
         }
         if (!underlying) underlying = ctx->newList();
         underlying = underlying->appendLast(ctx, note);
@@ -583,8 +583,8 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
             for (size_t i = 0; i < bt->getSize(ctx); ++i) {
                 mroList = mroList->appendLast(ctx, bt->getAt(ctx, static_cast<int>(i)));
             }
-        } else if (baseMro && baseMro->asList(ctx)) {
-            const proto::ProtoList* bl = baseMro->asList(ctx);
+        } else if (baseMro && ::protoPython::listStorage(ctx, baseMro)) {
+            const proto::ProtoList* bl = ::protoPython::listStorage(ctx, baseMro);
             for (size_t i = 0; i < bl->getSize(ctx); ++i) {
                 mroList = mroList->appendLast(ctx, bl->getAt(ctx, static_cast<int>(i)));
             }

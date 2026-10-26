@@ -82,6 +82,32 @@ struct TupleView {
     bool operator!=(std::nullptr_t) const { return list || tuple; }
 };
 
+/**
+ * The ProtoList that stores the items of `obj`: a bare ProtoList, or the
+ * `__data__` of a wrapper (a list, an instance of a list subclass, a tuple
+ * made by makeTuple, ...).  nullptr for anything else.
+ *
+ * Use this instead of `ProtoObject::asList`, which also answers a string
+ * (bare or as `__data__`) with a NEW list of its characters: that made
+ * `isinstance("abc", list)` True, let a str through every list-only path
+ * (`list.append(s, x)`, `[1] + s`, `l.extend(s)`, unpacking), and cost an
+ * O(n) copy wherever the call was only a type test.  The characters it
+ * built are protoCore unicode-char values, which are not Python objects, so
+ * no caller ever wanted them.
+ *
+ * Tag-only for a bare value; a wrapper (pointer tag 0) costs the one
+ * `__data__` read that asList itself performs.  Allocates nothing.
+ */
+inline const proto::ProtoList* listStorage(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
+    if (!obj || proto::ProtoObject::isStringTagFast(obj)) return nullptr;
+    if ((reinterpret_cast<uintptr_t>(obj) & 0x3F) == 0) {
+        const proto::ProtoObject* data = obj->getAttribute(ctx, ctx->space->literalData, false);
+        if (!data || data == obj) return nullptr;
+        return listStorage(ctx, data);
+    }
+    return obj->asList(ctx);
+}
+
 class PythonEnvironment {
 public:
     /**

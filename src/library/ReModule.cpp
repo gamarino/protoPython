@@ -1727,7 +1727,7 @@ MatchView viewOf(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
     ReState& rs = state(ctx);
     MatchView v{self, attr(ctx, self, rs.string), nullptr, nullptr, 0};
     const proto::ProtoObject* sp = attr(ctx, self, rs.spans);
-    v.spans = sp ? sp->asList(ctx) : nullptr;
+    v.spans = sp ? ::protoPython::listStorage(ctx, sp) : nullptr;
     v.cp = compiledOf(ctx, attr(ctx, self, rs.re));
     if (!v.subject || !v.spans || !v.cp) raiseTypeError(ctx, "not a re.Match object");
     v.ngroups = static_cast<unsigned>(v.spans->getSize(ctx) / 2) - 1;
@@ -2520,7 +2520,7 @@ RE_METHOD(py_scanner_new) {
     if (!module || module == PROTO_NONE) throw std::logic_error("re: module not found");
     const TupleView seq = PythonEnvironment::tupleView(ctx, lexicon);
     const proto::ProtoObject* data = seq ? nullptr : lexicon->getAttribute(ctx, env.getDataString());
-    const proto::ProtoList* lst = (!seq && data && data != PROTO_NONE) ? data->asList(ctx) : nullptr;
+    const proto::ProtoList* lst = (!seq && data && data != PROTO_NONE) ? ::protoPython::listStorage(ctx, data) : nullptr;
     if (!seq && !lst) raiseTypeError(ctx, "Scanner lexicon must be a list or tuple of (phrase, action) pairs");
     const size_t n = seq ? seq.size(ctx) : lst->getSize(ctx);
     std::string combined;
@@ -2530,7 +2530,7 @@ RE_METHOD(py_scanner_new) {
         const proto::ProtoObject* item = seq ? seq.at(ctx, k) : lst->getAt(ctx, static_cast<int>(k));
         const TupleView pair = PythonEnvironment::tupleView(ctx, item);
         const proto::ProtoObject* pd = pair ? nullptr : (item ? item->getAttribute(ctx, env.getDataString()) : nullptr);
-        const proto::ProtoList* pl = (!pair && pd && pd != PROTO_NONE) ? pd->asList(ctx) : nullptr;
+        const proto::ProtoList* pl = (!pair && pd && pd != PROTO_NONE) ? ::protoPython::listStorage(ctx, pd) : nullptr;
         const proto::ProtoObject* phrase = pair && pair.size(ctx) >= 2 ? pair.at(ctx, 0) : (pl && pl->getSize(ctx) >= 2 ? pl->getAt(ctx, 0) : nullptr);
         const proto::ProtoObject* action = pair && pair.size(ctx) >= 2 ? pair.at(ctx, 1) : (pl && pl->getSize(ctx) >= 2 ? pl->getAt(ctx, 1) : nullptr);
         if (!phrase || !phrase->isString(ctx)) raiseTypeError(ctx, "Scanner phrases must be str patterns");
@@ -2565,8 +2565,8 @@ RE_METHOD(py_scanner_scan) {
     const proto::ProtoObject* outerObj = attr(ctx, self, rs.scanOuter);
     const proto::ProtoObject* actionsObj = attr(ctx, self, rs.scanActions);
     if (!cp || !outerObj || !actionsObj) raiseTypeError(ctx, "not a re.Scanner object");
-    const proto::ProtoList* outer = outerObj->asList(ctx);
-    const proto::ProtoList* actions = actionsObj->asList(ctx);
+    const proto::ProtoList* outer = ::protoPython::listStorage(ctx, outerObj);
+    const proto::ProtoList* actions = ::protoPython::listStorage(ctx, actionsObj);
     const std::shared_ptr<const Subject> sref = subjectFor(ctx, subjectObj, cp->isBytes);
     const Subject& s = *sref;
     const proto::ProtoList* results = ctx->newList();

@@ -59,8 +59,8 @@ bool pathEntryIsStr(proto::ProtoContext* ctx, PythonEnvironment* env, const prot
 const proto::ProtoList* listElements(proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* obj) {
     if (!obj || obj == PROTO_NONE) return nullptr;
     const proto::ProtoObject* data = obj->getAttribute(ctx, env->getDataString());
-    if (data && data != PROTO_NONE && data->asList(ctx)) return data->asList(ctx);
-    if (obj->asList(ctx)) return obj->asList(ctx);
+    if (data && data != PROTO_NONE && ::protoPython::listStorage(ctx, data)) return ::protoPython::listStorage(ctx, data);
+    if (::protoPython::listStorage(ctx, obj)) return ::protoPython::listStorage(ctx, obj);
     const proto::ProtoObject* inner = obj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "_path"));
     if (inner && inner != PROTO_NONE && inner != obj) return listElements(ctx, env, inner);
     return nullptr;

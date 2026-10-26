@@ -204,3 +204,24 @@ explicitly. CPython's own test_re.py (run case by case, its unittest loader
 does not work on protopy) passes 119 of 151 runnable cases, against a crash
 before; the 403-entry re_tests table passes except for 5 entries that fail on
 protopy string-literal bugs, not on re.
+
+---
+
+## Lists are recognised by `listStorage`, never by `asList` (agent, pending review)
+
+**Decision (2026-10-26):** protoPython code asks `protoPython::listStorage(ctx, obj)`
+(include/protoPython/PythonEnvironment.h) for the ProtoList behind a value,
+instead of protoCore's `ProtoObject::asList`. The helper returns the same
+list for a bare ProtoList or a wrapper's `__data__`, and nullptr for a
+string, bare or as `__data__`. Every `obj->asList(ctx)` on a `ProtoObject`
+in the runtime was rewritten mechanically; the calls left are on
+`ProtoTuple`, `TupleView`, `ProtoArguments` and similar receivers.
+
+**Rationale:** `asList` answers a string with a new list of its characters.
+Used as a type test, that made `isinstance("abc", list)` True, let a str
+into every list-only path (`[1] + s`, `l.extend(s)`, unpacking) as protoCore
+unicode-char cells, which are not Python objects, and turned `len(s)` into an
+O(n) copy. No caller wanted that conversion, so a protoPython-side helper is
+the whole fix; protoCore's `asList` is left as it is. The helper relies on
+pointer tag 0 meaning "object cell", as `isStringTagFast` and existing
+protoPython code already do.

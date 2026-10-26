@@ -301,8 +301,8 @@ static const proto::ProtoObject* py_itemgetter_call(
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* itemsObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__items__"));
-    if (!itemsObj || !itemsObj->asList(ctx)) return PROTO_NONE;
-    const proto::ProtoList* items = itemsObj->asList(ctx);
+    if (!itemsObj || !::protoPython::listStorage(ctx, itemsObj)) return PROTO_NONE;
+    const proto::ProtoList* items = ::protoPython::listStorage(ctx, itemsObj);
     
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     auto getItem = [&](const proto::ProtoObject* key) -> const proto::ProtoObject* {
@@ -347,8 +347,8 @@ static const proto::ProtoObject* py_attrgetter_call(
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* attrsObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__attrs__"));
-    if (!attrsObj || !attrsObj->asList(ctx)) return PROTO_NONE;
-    const proto::ProtoList* attrs = attrsObj->asList(ctx);
+    if (!attrsObj || !::protoPython::listStorage(ctx, attrsObj)) return PROTO_NONE;
+    const proto::ProtoList* attrs = ::protoPython::listStorage(ctx, attrsObj);
 
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
 
@@ -407,8 +407,8 @@ static const proto::ProtoObject* py_methodcaller_call(
     if (!method || method == PROTO_NONE) return PROTO_NONE;
 
     std::vector<const proto::ProtoObject*> callArgVec;
-    if (argsObj && argsObj->asList(ctx)) {
-        const proto::ProtoList* stored = argsObj->asList(ctx);
+    if (argsObj && ::protoPython::listStorage(ctx, argsObj)) {
+        const proto::ProtoList* stored = ::protoPython::listStorage(ctx, argsObj);
         for (proto::proto_ulong i = 0; i < stored->getSize(ctx); ++i)
             callArgVec.push_back(stored->getAt(ctx, static_cast<int>(i)));
     }

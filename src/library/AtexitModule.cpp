@@ -38,7 +38,7 @@ static const proto::ProtoString* sym(proto::ProtoContext* ctx, const char* name)
 static const proto::ProtoObject* handlers_get_list(
     proto::ProtoContext* ctx, const proto::ProtoObject* mod) {
     const proto::ProtoObject* lst = mod->getAttribute(ctx, sym(ctx, "__atexit_handlers__"));
-    if (lst && lst != PROTO_NONE && lst->asList(ctx)) return lst;
+    if (lst && lst != PROTO_NONE && ::protoPython::listStorage(ctx, lst)) return lst;
     return nullptr;
 }
 
@@ -66,7 +66,7 @@ static const proto::ProtoObject* py_register(
 
     // Append to the module's handler list (creating it on first use).
     const proto::ProtoObject* listObj = handlers_get_list(ctx, self);
-    const proto::ProtoList* lst = listObj ? listObj->asList(ctx) : ctx->newList();
+    const proto::ProtoList* lst = listObj ? ::protoPython::listStorage(ctx, listObj) : ctx->newList();
     lst = lst->appendLast(ctx, entry->asObject(ctx));
     proto::ProtoObject* mself = const_cast<proto::ProtoObject*>(self);
     mself->setAttribute(ctx, sym(ctx, "__atexit_handlers__"), lst->asObject(ctx));
@@ -86,7 +86,7 @@ static const proto::ProtoObject* py_unregister(
     const proto::ProtoObject* target = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* listObj = handlers_get_list(ctx, self);
     if (!listObj) return PROTO_NONE;
-    const proto::ProtoList* lst = listObj->asList(ctx);
+    const proto::ProtoList* lst = ::protoPython::listStorage(ctx, listObj);
 
     // Filter out entries whose callable matches `target`. CPython
     // matches on identity (`is`), so we use pointer equality.
@@ -94,7 +94,7 @@ static const proto::ProtoObject* py_unregister(
     proto::proto_ulong n = lst->getSize(ctx);
     for (proto::proto_ulong i = 0; i < n; ++i) {
         const proto::ProtoObject* entry = lst->getAt(ctx, static_cast<int>(i));
-        const proto::ProtoList* el = entry->asList(ctx);
+        const proto::ProtoList* el = ::protoPython::listStorage(ctx, entry);
         if (!el) continue;
         const proto::ProtoObject* cb = el->getAt(ctx, 0);
         if (cb != target) {
@@ -113,18 +113,18 @@ static const proto::ProtoObject* py_run_exitfuncs(
     if (!self) return PROTO_NONE;
     const proto::ProtoObject* listObj = handlers_get_list(ctx, self);
     if (!listObj) return PROTO_NONE;
-    const proto::ProtoList* lst = listObj->asList(ctx);
+    const proto::ProtoList* lst = ::protoPython::listStorage(ctx, listObj);
 
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     proto::proto_ulong n = lst->getSize(ctx);
     // CPython: handlers run LIFO. Latest registration fires first.
     for (long long i = static_cast<long long>(n) - 1; i >= 0; --i) {
         const proto::ProtoObject* entry = lst->getAt(ctx, static_cast<int>(i));
-        const proto::ProtoList* el = entry->asList(ctx);
+        const proto::ProtoList* el = ::protoPython::listStorage(ctx, entry);
         if (!el || el->getSize(ctx) < 2) continue;
         const proto::ProtoObject* callable = el->getAt(ctx, 0);
         const proto::ProtoObject* argsObj = el->getAt(ctx, 1);
-        const proto::ProtoList* args = argsObj ? argsObj->asList(ctx) : nullptr;
+        const proto::ProtoList* args = argsObj ? ::protoPython::listStorage(ctx, argsObj) : nullptr;
         if (!args) args = ctx->newList();
 
         const proto::ProtoObject* kwObj = el->getSize(ctx) >= 3 ? el->getAt(ctx, 2) : nullptr;

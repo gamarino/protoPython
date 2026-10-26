@@ -65,8 +65,8 @@ static bool collectFds(proto::ProtoContext* ctx, const proto::ProtoObject* obj,
     };
     if (!obj || obj == PROTO_NONE) return true;
     const proto::ProtoObject* data = env ? obj->getAttribute(ctx, env->getDataString()) : nullptr;
-    const proto::ProtoList* list = obj->asList(ctx);
-    if (!list && data) list = data->asList(ctx);
+    const proto::ProtoList* list = ::protoPython::listStorage(ctx, obj);
+    if (!list && data) list = ::protoPython::listStorage(ctx, data);
     ::protoPython::TupleView tup = list ? nullptr : ::protoPython::PythonEnvironment::tupleView(ctx, obj);
     if (!list && !tup && data) tup = ::protoPython::PythonEnvironment::tupleView(ctx, data);
     if (list) {

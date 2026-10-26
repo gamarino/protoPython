@@ -625,8 +625,8 @@ int HPyList_Append(HPyContext* hctx, HPy list, HPy item) {
     if (!hctx || !hctx->ctx) return -1;
     const proto::ProtoObject* l = hctx->asProtoObject(list);
     const proto::ProtoObject* i = hctx->asProtoObject(item);
-    if (!l || !l->asList(hctx->ctx)) return -1;
-    const_cast<proto::ProtoList*>(l->asList(hctx->ctx))->appendLast(hctx->ctx, i);
+    if (!l || !::protoPython::listStorage(hctx->ctx, l)) return -1;
+    const_cast<proto::ProtoList*>(::protoPython::listStorage(hctx->ctx, l))->appendLast(hctx->ctx, i);
     return 0;
 }
 

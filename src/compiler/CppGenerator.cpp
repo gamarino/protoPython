@@ -139,7 +139,7 @@ void __extendArgs(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env,
     // A StopIteration that reaches here ends the iteration.
     try {
         while (const proto::ProtoObject* v = env->next(it)) {
-            *listSlot = (*listSlot)->asList(ctx)->appendLast(ctx, v)->asObject(ctx);
+            *listSlot = ::protoPython::listStorage(ctx, (*listSlot))->appendLast(ctx, v)->asObject(ctx);
         }
     } catch (const proto::ProtoException& e) {
         if (!env->isStopIteration(ctx, e.value())) throw;
@@ -251,13 +251,13 @@ void __unpack(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env, con
     size_t got = 0;
     try {
         while (const proto::ProtoObject* v = env->next(it)) {
-            out[0] = out[0]->asList(ctx)->appendLast(ctx, v)->asObject(ctx);
+            out[0] = ::protoPython::listStorage(ctx, out[0])->appendLast(ctx, v)->asObject(ctx);
             if (star < 0 && ++got > n) break;
         }
     } catch (const proto::ProtoException& e) {
         if (!env->isStopIteration(ctx, e.value())) throw;
     }
-    const proto::ProtoList* collected = out[0]->asList(ctx);
+    const proto::ProtoList* collected = ::protoPython::listStorage(ctx, out[0]);
     got = collected->getSize(ctx);
     std::vector<const proto::ProtoObject*> values(got);
     for (size_t i = 0; i < got; ++i) values[i] = collected->getAt(ctx, static_cast<int>(i));

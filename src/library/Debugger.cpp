@@ -116,7 +116,7 @@ std::vector<int> decodeLines(proto::ProtoContext* ctx, PythonEnvironment* env,
     if (lineno <= 0) return lines;
     const proto::ProtoObject* lnotabObj = codeObj->getAttribute(ctx, env->getCoLnotabString());
     TupleView lnT = (lnotabObj && lnotabObj != PROTO_NONE) ? PythonEnvironment::tupleView(ctx, lnotabObj) : nullptr;
-    const proto::ProtoList* lnL = (!lnT && lnotabObj && lnotabObj != PROTO_NONE) ? lnotabObj->asList(ctx) : nullptr;
+    const proto::ProtoList* lnL = (!lnT && lnotabObj && lnotabObj != PROTO_NONE) ? ::protoPython::listStorage(ctx, lnotabObj) : nullptr;
     const proto::proto_ulong size = lnT ? lnT->getSize(ctx) : (lnL ? lnL->getSize(ctx) : 0);
     auto at = [&](proto::proto_ulong j) -> long long {
         const proto::ProtoObject* o = lnT ? lnT->getAt(ctx, static_cast<int>(j)) : lnL->getAt(ctx, static_cast<int>(j));

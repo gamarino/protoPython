@@ -73,15 +73,15 @@ static const proto::ProtoObject* py_fork_exec(
 
     size_t argsCount = 0;
     if (argsObj && ::protoPython::PythonEnvironment::isTupleValue(ctx, argsObj)) argsCount = ::protoPython::PythonEnvironment::tupleView(ctx, argsObj)->getSize(ctx);
-    else if (argsObj && argsObj->asList(ctx)) argsCount = argsObj->asList(ctx)->getSize(ctx);
+    else if (argsObj && ::protoPython::listStorage(ctx, argsObj)) argsCount = ::protoPython::listStorage(ctx, argsObj)->getSize(ctx);
 
     size_t execCount = 0;
     if (execListObj && ::protoPython::PythonEnvironment::isTupleValue(ctx, execListObj)) execCount = ::protoPython::PythonEnvironment::tupleView(ctx, execListObj)->getSize(ctx);
 
     size_t envCount = 0;
     bool hasEnv = false;
-    if (envListObj && envListObj->asList(ctx)) {
-        envCount = envListObj->asList(ctx)->getSize(ctx);
+    if (envListObj && ::protoPython::listStorage(ctx, envListObj)) {
+        envCount = ::protoPython::listStorage(ctx, envListObj)->getSize(ctx);
         hasEnv = true;
     }
 
@@ -118,7 +118,7 @@ static const proto::ProtoObject* py_fork_exec(
         for (size_t i = 0; i < argsCount; ++i) {
             const proto::ProtoObject* elem = ::protoPython::PythonEnvironment::isTupleValue(ctx, argsObj)
                 ? ::protoPython::PythonEnvironment::tupleView(ctx, argsObj)->getAt(ctx, i)
-                : argsObj->asList(ctx)->getAt(ctx, i);
+                : ::protoPython::listStorage(ctx, argsObj)->getAt(ctx, i);
             std::string s;
             extractStringOrBytes(ctx, elem, s);
             // We need to keep the string alive.  In a child process
@@ -132,7 +132,7 @@ static const proto::ProtoObject* py_fork_exec(
         if (hasEnv) {
             c_env = new char*[envCount + 1];
             for (size_t i = 0; i < envCount; ++i) {
-                const proto::ProtoObject* elem = envListObj->asList(ctx)->getAt(ctx, i);
+                const proto::ProtoObject* elem = ::protoPython::listStorage(ctx, envListObj)->getAt(ctx, i);
                 std::string s;
                 extractStringOrBytes(ctx, elem, s);
                 c_env[i] = strdup(s.c_str());

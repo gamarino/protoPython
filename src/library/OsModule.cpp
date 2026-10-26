@@ -1169,7 +1169,7 @@ static const proto::ProtoObject* py_utime(
             *outB = tup->getAt(ctx, 1);
             return true;
         }
-        const proto::ProtoList* lst = obj->asList(ctx);
+        const proto::ProtoList* lst = ::protoPython::listStorage(ctx, obj);
         if (lst && lst->getSize(ctx) >= 2) {
             *outA = lst->getAt(ctx, 0);
             *outB = lst->getAt(ctx, 1);
@@ -1185,7 +1185,7 @@ static const proto::ProtoObject* py_utime(
                 *outB = dtup->getAt(ctx, 1);
                 return true;
             }
-            const proto::ProtoList* dlst = data->asList(ctx);
+            const proto::ProtoList* dlst = ::protoPython::listStorage(ctx, data);
             if (dlst && dlst->getSize(ctx) >= 2) {
                 *outA = dlst->getAt(ctx, 0);
                 *outB = dlst->getAt(ctx, 1);
@@ -1917,7 +1917,7 @@ static char** buildArgv(proto::ProtoContext* ctx, const proto::ProtoObject* seq,
         ::protoPython::TupleView tup = ::protoPython::PythonEnvironment::tupleView(ctx, seq);
         if (tup) lst = tup->asList(ctx);
     } else {
-        lst = seq->asList(ctx);
+        lst = ::protoPython::listStorage(ctx, seq);
     }
     if (!lst) return nullptr;
     proto::proto_long n = static_cast<proto::proto_long>(lst->getSize(ctx));

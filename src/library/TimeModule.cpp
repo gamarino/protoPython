@@ -248,7 +248,7 @@ static const proto::ProtoObject* py_struct_time(
                 ctx, PythonEnvironment::getInternedString(ctx, "__data__")) : nullptr;
             if (data) tup = ::protoPython::PythonEnvironment::tupleView(ctx, data);
         }
-        const proto::ProtoList* lst = tup ? nullptr : (seq ? seq->asList(ctx) : nullptr);
+        const proto::ProtoList* lst = tup ? nullptr : (seq ? ::protoPython::listStorage(ctx, seq) : nullptr);
         if (tup && (size_t)i < tup->getSize(ctx)) {
             const proto::ProtoObject* v = tup->getAt(ctx, i);
             if (v && v->isInteger(ctx)) return v->asLong(ctx);
@@ -326,14 +326,14 @@ static const proto::ProtoObject* py_asctime(
         const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
         const proto::ProtoList* list = nullptr;
         if (::protoPython::PythonEnvironment::isTupleValue(ctx, arg)) list = ::protoPython::PythonEnvironment::tupleView(ctx, arg)->asList(ctx);
-        else list = arg->asList(ctx);
+        else list = ::protoPython::listStorage(ctx, arg);
         if (!list) {
             // try __data__ unwrap
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
             const proto::ProtoObject* d = env ? arg->getAttribute(ctx, env->getDataString()) : nullptr;
             if (d) {
                 if (::protoPython::PythonEnvironment::isTupleValue(ctx, d)) list = ::protoPython::PythonEnvironment::tupleView(ctx, d)->asList(ctx);
-                else list = d->asList(ctx);
+                else list = ::protoPython::listStorage(ctx, d);
             }
         }
         if (list && list->getSize(ctx) >= 9) {
@@ -371,13 +371,13 @@ static const proto::ProtoObject* py_mktime(
     const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
     const proto::ProtoList* list = nullptr;
     if (::protoPython::PythonEnvironment::isTupleValue(ctx, arg)) list = ::protoPython::PythonEnvironment::tupleView(ctx, arg)->asList(ctx);
-    else list = arg->asList(ctx);
+    else list = ::protoPython::listStorage(ctx, arg);
     if (!list) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
         const proto::ProtoObject* d = env ? arg->getAttribute(ctx, env->getDataString()) : nullptr;
         if (d) {
             if (::protoPython::PythonEnvironment::isTupleValue(ctx, d)) list = ::protoPython::PythonEnvironment::tupleView(ctx, d)->asList(ctx);
-            else list = d->asList(ctx);
+            else list = ::protoPython::listStorage(ctx, d);
         }
     }
     if (!list || list->getSize(ctx) < 9) return ctx->fromDouble(0.0);
@@ -407,8 +407,8 @@ static const proto::ProtoObject* py_strftime(
     bool found = false;
     if (posArgs->getSize(ctx) > 1) {
         const proto::ProtoObject* tObj = posArgs->getAt(ctx, 1);
-        if (tObj->asList(ctx)) {
-            const proto::ProtoList* l = tObj->asList(ctx);
+        if (::protoPython::listStorage(ctx, tObj)) {
+            const proto::ProtoList* l = ::protoPython::listStorage(ctx, tObj);
             if (l->getSize(ctx) >= 9) {
                 tm_val.tm_year = static_cast<int>(l->getAt(ctx, 0)->asLong(ctx)) - 1900;
                 tm_val.tm_mon = static_cast<int>(l->getAt(ctx, 1)->asLong(ctx)) - 1;

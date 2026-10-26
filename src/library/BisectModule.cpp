@@ -23,7 +23,7 @@ static const proto::ProtoObject* py_bisect_right(
     }
     
     if (hi == -1) {
-        if (a->asList(ctx)) hi = (long long)a->asList(ctx)->getSize(ctx);
+        if (::protoPython::listStorage(ctx, a)) hi = (long long)::protoPython::listStorage(ctx, a)->getSize(ctx);
         else if (::protoPython::PythonEnvironment::isTupleValue(ctx, a)) hi = (long long)::protoPython::PythonEnvironment::tupleView(ctx, a)->getSize(ctx);
         else hi = 0; // Fallback
     }
@@ -34,7 +34,7 @@ static const proto::ProtoObject* py_bisect_right(
     while (lo < hi) {
         long long mid = (lo + hi) / 2;
         const proto::ProtoObject* item = nullptr;
-        if (a->asList(ctx)) item = a->asList(ctx)->getAt(ctx, static_cast<int>((size_t)mid));
+        if (::protoPython::listStorage(ctx, a)) item = ::protoPython::listStorage(ctx, a)->getAt(ctx, static_cast<int>((size_t)mid));
         else if (::protoPython::PythonEnvironment::isTupleValue(ctx, a)) item = ::protoPython::PythonEnvironment::tupleView(ctx, a)->getAt(ctx, static_cast<int>((size_t)mid));
         
         // x < item ?
@@ -65,7 +65,7 @@ static const proto::ProtoObject* py_bisect_left(
     }
     
     if (hi == -1) {
-        if (a->asList(ctx)) hi = (long long)a->asList(ctx)->getSize(ctx);
+        if (::protoPython::listStorage(ctx, a)) hi = (long long)::protoPython::listStorage(ctx, a)->getSize(ctx);
         else if (::protoPython::PythonEnvironment::isTupleValue(ctx, a)) hi = (long long)::protoPython::PythonEnvironment::tupleView(ctx, a)->getSize(ctx);
         else hi = 0;
     }
@@ -76,7 +76,7 @@ static const proto::ProtoObject* py_bisect_left(
     while (lo < hi) {
         long long mid = (lo + hi) / 2;
         const proto::ProtoObject* item = nullptr;
-        if (a->asList(ctx)) item = a->asList(ctx)->getAt(ctx, static_cast<int>((size_t)mid));
+        if (::protoPython::listStorage(ctx, a)) item = ::protoPython::listStorage(ctx, a)->getAt(ctx, static_cast<int>((size_t)mid));
         else if (::protoPython::PythonEnvironment::isTupleValue(ctx, a)) item = ::protoPython::PythonEnvironment::tupleView(ctx, a)->getAt(ctx, static_cast<int>((size_t)mid));
         
         // item < x ?

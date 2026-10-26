@@ -423,6 +423,11 @@ const proto::ProtoObject* invokePythonCallable(
     const proto::ProtoArguments* args,
     const proto::ProtoKeywordArguments* kwargs = nullptr);
 
+/** `a + b` with the semantics of the `+` operator (__add__, the other
+ *  operand's __radd__, TypeError naming both types). Used by sum(). */
+const proto::ProtoObject* addOperator(proto::ProtoContext* ctx,
+    const proto::ProtoObject* a, const proto::ProtoObject* b);
+
 /** `item in container` with the semantics of the `in` operator (__contains__,
  *  then iteration or the old sequence protocol; TypeError for a container
  *  that supports neither). True/False, or nullptr with an exception pending. */

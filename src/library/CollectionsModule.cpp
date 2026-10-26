@@ -139,7 +139,7 @@ static const proto::ProtoString* deque_snapshot_name(proto::ProtoContext* ctx) {
 static const proto::ProtoList* deque_items(proto::ProtoContext* ctx, const proto::ProtoObject* self,
                                            const proto::ProtoObject*& raw) {
     raw = self ? self->getOwnAttributeDirect(ctx, deque_items_name(ctx)) : nullptr;
-    const proto::ProtoList* items = raw ? raw->asList(ctx) : nullptr;
+    const proto::ProtoList* items = raw ? ::protoPython::listStorage(ctx, raw) : nullptr;
     return items ? items : ctx->newList();
 }
 

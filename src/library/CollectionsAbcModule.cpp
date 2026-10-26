@@ -36,7 +36,7 @@ static const proto::ProtoObject* py_check_methods(
         ? envABC->getAttribute(ctx, C, mroABCS, false)
         : C->getAttribute(ctx, mroABCS);
     if (!mro) return PROTO_FALSE;
-    const proto::ProtoList* mroList = mro->asList(ctx);
+    const proto::ProtoList* mroList = ::protoPython::listStorage(ctx, mro);
     if (!mroList) return PROTO_FALSE;
 
     for (size_t i = 1; i < posArgs->getSize(ctx); ++i) {
@@ -208,7 +208,7 @@ bool mroContains(proto::ProtoContext* ctx, PythonEnvironment* env,
     if (::protoPython::TupleView t = ::protoPython::PythonEnvironment::tupleView(ctx, mro)) {
         for (proto::proto_ulong i = 0; i < t->getSize(ctx); ++i)
             if (t->getAt(ctx, static_cast<int>(i)) == base) return true;
-    } else if (const proto::ProtoList* l = mro->asList(ctx)) {
+    } else if (const proto::ProtoList* l = ::protoPython::listStorage(ctx, mro)) {
         for (proto::proto_ulong i = 0; i < l->getSize(ctx); ++i)
             if (l->getAt(ctx, static_cast<int>(i)) == base) return true;
     }
@@ -228,7 +228,7 @@ bool definesAll(proto::ProtoContext* ctx, PythonEnvironment* env,
         // An unreadable __mro__ reads as no __mro__.
     }
     ::protoPython::TupleView mroT = mro && mro != PROTO_NONE ? ::protoPython::PythonEnvironment::tupleView(ctx, mro) : nullptr;
-    const proto::ProtoList* mroL = mro && mro != PROTO_NONE && !mroT ? mro->asList(ctx) : nullptr;
+    const proto::ProtoList* mroL = mro && mro != PROTO_NONE && !mroT ? ::protoPython::listStorage(ctx, mro) : nullptr;
     const proto::proto_ulong n = mroT ? mroT->getSize(ctx) : (mroL ? mroL->getSize(ctx) : 0);
     for (int i = 0; i < 6 && methods[i]; ++i) {
         const proto::ProtoString* key = PythonEnvironment::getInternedString(ctx, methods[i]);
@@ -256,7 +256,7 @@ bool virtualSubclass(proto::ProtoContext* ctx, PythonEnvironment* env,
     if (mroContains(ctx, env, cls, abc)) return true;
 
     const proto::ProtoObject* regObj = st->getAttribute(ctx, registryKey(ctx));
-    if (const proto::ProtoList* reg = regObj ? regObj->asList(ctx) : nullptr) {
+    if (const proto::ProtoList* reg = regObj ? ::protoPython::listStorage(ctx, regObj) : nullptr) {
         for (proto::proto_ulong i = 0; i < reg->getSize(ctx); ++i)
             if (mroContains(ctx, env, cls, reg->getAt(ctx, static_cast<int>(i)))) return true;
     }
@@ -286,7 +286,7 @@ bool virtualSubclass(proto::ProtoContext* ctx, PythonEnvironment* env,
 void addToRegistry(proto::ProtoContext* ctx, const proto::ProtoObject* st,
                    const proto::ProtoObject* subclass) {
     const proto::ProtoObject* regObj = st->getAttribute(ctx, registryKey(ctx));
-    const proto::ProtoList* reg = regObj ? regObj->asList(ctx) : nullptr;
+    const proto::ProtoList* reg = regObj ? ::protoPython::listStorage(ctx, regObj) : nullptr;
     if (!reg) reg = ctx->newList();
     reg = reg->appendLast(ctx, subclass);
     const_cast<proto::ProtoObject*>(st)->setAttribute(ctx, registryKey(ctx), reg->asObject(ctx));
@@ -334,9 +334,9 @@ static const proto::ProtoObject* py_abc_check_methods(
 
     const proto::ProtoString* mroName = proto::ProtoString::createSymbol(ctx, "__mro__");
     const proto::ProtoObject* mroObj = C->getAttribute(ctx, mroName);
-    if (!mroObj || !mroObj->asList(ctx)) return notImplemented;
+    if (!mroObj || !::protoPython::listStorage(ctx, mroObj)) return notImplemented;
 
-    const proto::ProtoList* mro = mroObj->asList(ctx);
+    const proto::ProtoList* mro = ::protoPython::listStorage(ctx, mroObj);
 
     // Loop through methods (args 1..N)
     for (proto::proto_ulong i = 1; i < args->getSize(ctx); ++i) {

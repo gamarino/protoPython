@@ -396,10 +396,10 @@ static const proto::ProtoObject* py_dist(
         const proto::ProtoList* lb = nullptr;
         const proto::ProtoObject* da = pa->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"));
         const proto::ProtoObject* db = pb->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"));
-        if (da && da->asList(ctx)) la = da->asList(ctx);
-        else if (pa->asList(ctx)) la = pa->asList(ctx);
-        if (db && db->asList(ctx)) lb = db->asList(ctx);
-        else if (pb->asList(ctx)) lb = pb->asList(ctx);
+        if (da && ::protoPython::listStorage(ctx, da)) la = ::protoPython::listStorage(ctx, da);
+        else if (::protoPython::listStorage(ctx, pa)) la = ::protoPython::listStorage(ctx, pa);
+        if (db && ::protoPython::listStorage(ctx, db)) lb = ::protoPython::listStorage(ctx, db);
+        else if (::protoPython::listStorage(ctx, pb)) lb = ::protoPython::listStorage(ctx, pb);
         if (!la || !lb) return PROTO_NONE;
         size_t na = static_cast<size_t>(la->getSize(ctx));
         size_t nb = static_cast<size_t>(lb->getSize(ctx));
@@ -571,8 +571,8 @@ static const proto::ProtoObject* py_prod(
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* iterable = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* da = iterable->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"));
-    if (!da || !da->asList(ctx)) return PROTO_NONE;
-    const proto::ProtoList* list = da->asList(ctx);
+    if (!da || !::protoPython::listStorage(ctx, da)) return PROTO_NONE;
+    const proto::ProtoList* list = ::protoPython::listStorage(ctx, da);
     int sz = static_cast<int>(list->getSize(ctx));
 
     // Integer fast path: as long as every element is an int (no
@@ -620,9 +620,9 @@ static const proto::ProtoObject* py_sumprod(
     const proto::ProtoObject* b = posArgs->getAt(ctx, 1);
     const proto::ProtoObject* da = a->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"));
     const proto::ProtoObject* db = b->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"));
-    if (!da || !db || !da->asList(ctx) || !db->asList(ctx)) return PROTO_NONE;
-    const proto::ProtoList* la = da->asList(ctx);
-    const proto::ProtoList* lb = db->asList(ctx);
+    if (!da || !db || !::protoPython::listStorage(ctx, da) || !::protoPython::listStorage(ctx, db)) return PROTO_NONE;
+    const proto::ProtoList* la = ::protoPython::listStorage(ctx, da);
+    const proto::ProtoList* lb = ::protoPython::listStorage(ctx, db);
     size_t na = static_cast<size_t>(la->getSize(ctx));
     size_t nb = static_cast<size_t>(lb->getSize(ctx));
     size_t n = (na < nb) ? na : nb;

@@ -1091,7 +1091,7 @@ static const proto::ProtoObject* py_io_writelines(
     const proto::ProtoObject* asList = (listType && listType != PROTO_NONE) ? env->callObject(listType, {lines}) : nullptr;
     if (!asList) return PROTO_NONE;
     const proto::ProtoObject* data = asList->getAttribute(ctx, env->getDataString());
-    const proto::ProtoList* items = data ? data->asList(ctx) : asList->asList(ctx);
+    const proto::ProtoList* items = data ? ::protoPython::listStorage(ctx, data) : ::protoPython::listStorage(ctx, asList);
     if (!items) return PROTO_NONE;
     for (proto::proto_ulong i = 0; i < items->getSize(ctx); ++i) {
         const proto::ProtoList* one = ctx->newList()->appendLast(ctx, items->getAt(ctx, static_cast<int>(i)));

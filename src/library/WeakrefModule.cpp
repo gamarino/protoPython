@@ -213,7 +213,7 @@ static const proto::ProtoObject* py_weakref_ref(
             if (!base || base->hasOwnAttribute(ctx, slotsChkS) != PROTO_TRUE) return false;
             const proto::ProtoObject* sv = base->getOwnAttributeDirect(ctx, slotsChkS);
             if (!sv) return false;
-            const proto::ProtoList* sL = sv->asList(ctx);
+            const proto::ProtoList* sL = ::protoPython::listStorage(ctx, sv);
             ::protoPython::TupleView sT = ::protoPython::PythonEnvironment::tupleView(ctx, sv);
             proto::proto_ulong n = sL ? sL->getSize(ctx)
                               : (sT ? sT->getSize(ctx) : 0);
@@ -254,7 +254,7 @@ static const proto::ProtoObject* py_weakref_ref(
                 const proto::ProtoObject* slotsAttr =
                     base->getOwnAttributeDirect(ctx, slotsS);
                 if (!slotsAttr) return false;
-                const proto::ProtoList* slotsL = slotsAttr->asList(ctx);
+                const proto::ProtoList* slotsL = ::protoPython::listStorage(ctx, slotsAttr);
                 ::protoPython::TupleView slotsTp = ::protoPython::PythonEnvironment::tupleView(ctx, slotsAttr);
                 proto::proto_ulong nn = slotsL ? slotsL->getSize(ctx)
                                   : (slotsTp ? slotsTp->getSize(ctx) : 0);

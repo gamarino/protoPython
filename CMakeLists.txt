@@ -1292,6 +1292,13 @@ set_tests_properties(protopy_module_namespace_mapping PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# A str is not a list: isinstance, list operators and methods, item assignment.
+add_test(NAME protopy_str_is_not_list
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/str_is_not_list.py)
+set_tests_properties(protopy_str_is_not_list PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # list.__init__ fills the list; subclasses receive their own arguments.
 add_test(NAME protopy_list_subclass_init
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/list_subclass_init.py)

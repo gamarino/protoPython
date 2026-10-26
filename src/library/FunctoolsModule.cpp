@@ -15,8 +15,8 @@ static const proto::ProtoObject* py_partial_call(
     if (!func) return PROTO_NONE;
 
     const proto::ProtoList* args = ctx->newList();
-    if (frozenObj && frozenObj->asList(ctx)) {
-        const proto::ProtoList* frozen = frozenObj->asList(ctx);
+    if (frozenObj && ::protoPython::listStorage(ctx, frozenObj)) {
+        const proto::ProtoList* frozen = ::protoPython::listStorage(ctx, frozenObj);
         for (proto::proto_ulong i = 0; i < frozen->getSize(ctx); ++i)
             args = args->appendLast(ctx, frozen->getAt(ctx, static_cast<int>(i)));
     }
