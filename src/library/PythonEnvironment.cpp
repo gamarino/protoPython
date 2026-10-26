@@ -6522,7 +6522,7 @@ static const proto::ProtoObject* py_float_repr(
         if (data && data->isDouble(context)) val = data->asDouble(context);
     }
     std::string s = py_float_format_short(val);
-    return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
+    return PythonEnvironment::newStr(context, s);
 }
 
 static const proto::ProtoObject* py_int_bool(
@@ -6612,7 +6612,7 @@ static const proto::ProtoObject* py_bytes_repr(
         }
     }
     res += "'";
-    return PythonEnvironment::getInternedString(context, res.c_str())->asObject(context);
+    return PythonEnvironment::newStr(context, res);
 }
 
 // Read the raw byte content of a bytes-like instance into `out`.
@@ -7838,7 +7838,7 @@ static const proto::ProtoObject* py_str_translate(
         // Unknown value shape: pass through unchanged.
         out.push_back(ch);
     }
-    return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
+    return PythonEnvironment::newStr(context, out);
 }
 
 // The elements of `iterable` for set.__init__. Returns nullptr, with the
@@ -8116,7 +8116,7 @@ static const proto::ProtoObject* py_set_repr(
     }
     body += "}";
     std::string out = isFrozen ? ("frozenset(" + body + ")") : body;
-    return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
+    return PythonEnvironment::newStr(context, out);
 }
 
 static const proto::ProtoObject* py_set_discard(
@@ -9122,7 +9122,7 @@ static const proto::ProtoObject* py_int_format(
                 out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
                 out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
             }
-            return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
+            return PythonEnvironment::newStr(context, out);
         }
         default: pushDigits(mag, 10, hexLo); break;
     }
@@ -9167,7 +9167,7 @@ static const proto::ProtoObject* py_int_format(
             body = std::string(padLen, fill) + body;
         }
     }
-    return PythonEnvironment::getInternedString(context, body.c_str())->asObject(context);
+    return PythonEnvironment::newStr(context, body);
 }
 
 static const proto::ProtoString* str_from_self(proto::ProtoContext* context, const proto::ProtoObject* self);
@@ -9229,7 +9229,7 @@ static const proto::ProtoObject* py_str_format_dunder(
             body = std::string(left, fill) + body + std::string(right, fill);
         }
     }
-    return PythonEnvironment::getInternedString(context, body.c_str())->asObject(context);
+    return PythonEnvironment::newStr(context, body);
 }
 
 static const proto::ProtoObject* py_int_bit_length(
@@ -9873,7 +9873,7 @@ static const proto::ProtoObject* py_str_mul(
     std::string out;
     out.reserve(s.size() * static_cast<size_t>(n));
     for (long long i = 0; i < n; ++i) out += s;
-    return PythonEnvironment::getInternedString(ctx, out.c_str())->asObject(ctx);
+    return PythonEnvironment::newStr(ctx, out);
 }
 
 static const proto::ProtoObject* py_int_hash(
@@ -11072,7 +11072,7 @@ static const proto::ProtoObject* py_bytes_decode(
     const proto::ProtoObject* strProto = env->getStrPrototype();
     if (!strProto) return PROTO_NONE;
     const proto::ProtoObject* st = strProto->newChild(context, true);
-    st->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"), PythonEnvironment::getInternedString(context, raw.c_str())->asObject(context));
+    st->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"), PythonEnvironment::newStr(context, raw));
     return st;
 }
 
@@ -11619,7 +11619,7 @@ static const proto::ProtoObject* py_bytes_hex(
             out += hex[c & 0x0f];
         }
     }
-    return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
+    return PythonEnvironment::newStr(context, out);
 }
 
 // bytes.maketrans(frm, to) → returns a list of 256 ints (translation table).
@@ -12955,7 +12955,7 @@ static const proto::ProtoObject* py_slice_repr(
         return PythonEnvironment::reprObject(context, v);
     };
     std::string out = "slice(" + fmt(start) + ", " + fmt(stop) + ", " + fmt(step) + ")";
-    return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
+    return PythonEnvironment::newStr(context, out);
 }
 
 static const proto::ProtoObject* py_str_upper(
@@ -12980,7 +12980,7 @@ static const proto::ProtoObject* py_str_upper(
     for (char& c : s) {
         if (c >= 'a' && c <= 'z') c -= 32;
     }
-    return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
+    return PythonEnvironment::newStr(context, s);
 }
 
 // Apply a format spec (like "02d", ".2f", ">10s") to an object's string representation.
@@ -13275,7 +13275,7 @@ static const proto::ProtoObject* py_str_format(
                         }
                     } else {
                         const proto::ProtoObject* keyObj =
-                            PythonEnvironment::getInternedString(context, keyText.c_str())->asObject(context);
+                            PythonEnvironment::newStr(context, keyText);
                         const proto::ProtoObject* getitemM = env
                             ? env->getAttribute(context, val,
                                 PythonEnvironment::getInternedString(context, "__getitem__"), false)
@@ -13302,7 +13302,7 @@ static const proto::ProtoObject* py_str_format(
                 std::string raw; val->asString(context)->toUTF8String(context, raw);
                 s = "'" + raw + "'";
             }
-            out += formatSpec.empty() ? s : applyFormatSpec(context, PythonEnvironment::getInternedString(context, s.c_str())->asObject(context), formatSpec);
+            out += formatSpec.empty() ? s : applyFormatSpec(context, PythonEnvironment::newStr(context, s), formatSpec);
         } else if (conversion == 's') {
             // !s applies str(), which for str returns the bare content
             // (no quotes).  reprObject would re-quote it.
@@ -13315,7 +13315,7 @@ static const proto::ProtoObject* py_str_format(
                 if (sv && sv->isString(context)) sv->asString(context)->toUTF8String(context, s);
                 else s = PythonEnvironment::reprObject(context, val);
             }
-            out += formatSpec.empty() ? s : applyFormatSpec(context, PythonEnvironment::getInternedString(context, s.c_str())->asObject(context), formatSpec);
+            out += formatSpec.empty() ? s : applyFormatSpec(context, PythonEnvironment::newStr(context, s), formatSpec);
         } else {
             // format(val, spec): a value other than str / int / float / bool /
             // None goes through its own __format__ (object.__format__ is
@@ -13327,7 +13327,7 @@ static const proto::ProtoObject* py_str_format(
                     ? env->getBuiltins()->getAttribute(context, PythonEnvironment::getInternedString(context, "format"))
                     : nullptr;
                 if (formatFn && formatFn != PROTO_NONE) {
-                    const proto::ProtoObject* specObj = PythonEnvironment::getInternedString(context, formatSpec.c_str())->asObject(context);
+                    const proto::ProtoObject* specObj = PythonEnvironment::newStr(context, formatSpec);
                     const proto::ProtoObject* r = env->callObject(formatFn, {val, specObj});
                     if (r && r->isString(context)) {
                         std::string rs;
@@ -13340,7 +13340,7 @@ static const proto::ProtoObject* py_str_format(
             if (!formatted) out += applyFormatSpec(context, val, formatSpec);
         }
     }
-    return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
+    return PythonEnvironment::newStr(context, out);
 }
 
 // str.__mod__(other): implements "format_string % args"
@@ -13768,7 +13768,7 @@ static const proto::ProtoObject* py_str_mod(
             "not all arguments converted during string formatting");
         return nullptr;
     }
-    return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
+    return PythonEnvironment::newStr(context, out);
 }
 
 static const proto::ProtoObject* py_str_lower(
@@ -13787,7 +13787,7 @@ static const proto::ProtoObject* py_str_lower(
     for (char& c : s) {
         if (c >= 'A' && c <= 'Z') c += 32;
     }
-    return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
+    return PythonEnvironment::newStr(context, s);
 }
 
 static const proto::ProtoObject* py_str_split(
@@ -13895,14 +13895,14 @@ static const proto::ProtoObject* py_str_split(
             if (start >= s.size()) break;
             size_t end = start;
             while (end < s.size() && !is_ascii_whitespace(s[end])) end++;
-            result = result->appendLast(context, PythonEnvironment::getInternedString(context, s.substr(start, end - start).c_str())->asObject(context));
+            result = result->appendLast(context, PythonEnvironment::newStr(context, s.substr(start, end - start)));
             start = end;
             count++;
         }
         if (maxsplit >= 0 && count >= maxsplit && start < s.size()) {
             while (start < s.size() && is_ascii_whitespace(s[start])) start++;
             if (start < s.size()) {
-                result = result->appendLast(context, PythonEnvironment::getInternedString(context, s.substr(start).c_str())->asObject(context));
+                result = result->appendLast(context, PythonEnvironment::newStr(context, s.substr(start)));
             }
         }
     } else {
@@ -13912,11 +13912,11 @@ static const proto::ProtoObject* py_str_split(
         while (maxsplit < 0 || count < maxsplit) {
             size_t pos = s.find(sep, start);
             if (pos == std::string::npos) break;
-            result = result->appendLast(context, PythonEnvironment::getInternedString(context, s.substr(start, pos - start).c_str())->asObject(context));
+            result = result->appendLast(context, PythonEnvironment::newStr(context, s.substr(start, pos - start)));
             start = pos + sep.size();
             count++;
         }
-        result = result->appendLast(context, PythonEnvironment::getInternedString(context, s.substr(start).c_str())->asObject(context));
+        result = result->appendLast(context, PythonEnvironment::newStr(context, s.substr(start)));
     }
 
     if (!env) return result->asObject(context);
@@ -13992,7 +13992,7 @@ static const proto::ProtoObject* py_str_rsplit(
         parts.insert(parts.begin(), s.substr(0, end));
     }
     for (const auto& p : parts)
-        result = result->appendLast(context, PythonEnvironment::getInternedString(context, p.c_str())->asObject(context));
+        result = result->appendLast(context, PythonEnvironment::newStr(context, p));
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (!env) return result->asObject(context);
     proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(env->getListPrototype()->newChild(context, true));
@@ -14033,13 +14033,13 @@ static const proto::ProtoObject* py_str_splitlines(
             if (s[i] == '\n') {
             std::string line = s.substr(start, i - start);
             if (keepends) line += '\n';
-            result = result->appendLast(context, PythonEnvironment::getInternedString(context, line.c_str())->asObject(context));
+            result = result->appendLast(context, PythonEnvironment::newStr(context, line));
             start = i + 1;
             i++;
         } else if (s[i] == '\r') {
             std::string line = s.substr(start, i - start);
             if (keepends) line += (i + 1 < s.size() && s[i + 1] == '\n') ? "\r\n" : "\r";
-            result = result->appendLast(context, PythonEnvironment::getInternedString(context, line.c_str())->asObject(context));
+            result = result->appendLast(context, PythonEnvironment::newStr(context, line));
             i = (i + 1 < s.size() && s[i + 1] == '\n') ? i + 2 : i + 1;
             start = i;
         } else {
@@ -14050,7 +14050,7 @@ static const proto::ProtoObject* py_str_splitlines(
     {
         std::string tail = s.substr(start);
         if (!tail.empty()) {
-            result = result->appendLast(context, PythonEnvironment::getInternedString(context, tail.c_str())->asObject(context));
+            result = result->appendLast(context, PythonEnvironment::newStr(context, tail));
         }
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
@@ -14106,7 +14106,7 @@ static const proto::ProtoObject* py_str_strip(
     while (start < s.size() && char_in_chars(static_cast<unsigned char>(s[start]), chars)) start++;
     size_t end = s.size();
     while (end > start && char_in_chars(static_cast<unsigned char>(s[end - 1]), chars)) end--;
-    return PythonEnvironment::getInternedString(context, s.substr(start, end - start).c_str())->asObject(context);
+    return PythonEnvironment::newStr(context, s.substr(start, end - start));
 }
 
 
@@ -14130,7 +14130,7 @@ static const proto::ProtoObject* py_str_lstrip(
         posArgs->getAt(context, posOff)->asString(context)->toUTF8String(context, chars);
     size_t start = 0;
     while (start < s.size() && char_in_chars(static_cast<unsigned char>(s[start]), chars)) start++;
-    return PythonEnvironment::getInternedString(context, s.substr(start).c_str())->asObject(context);
+    return PythonEnvironment::newStr(context, s.substr(start));
 }
 
 static const proto::ProtoObject* py_str_rstrip(
@@ -14152,7 +14152,7 @@ static const proto::ProtoObject* py_str_rstrip(
         posArgs->getAt(context, posOff)->asString(context)->toUTF8String(context, chars);
     size_t end = s.size();
     while (end > 0 && char_in_chars(static_cast<unsigned char>(s[end - 1]), chars)) end--;
-    return PythonEnvironment::getInternedString(context, s.substr(0, end).c_str())->asObject(context);
+    return PythonEnvironment::newStr(context, s.substr(0, end));
 }
 
 static const proto::ProtoObject* py_str_removeprefix(
@@ -14167,8 +14167,8 @@ static const proto::ProtoObject* py_str_removeprefix(
     if (posArgs->getAt(context, 0)->isString(context))
         posArgs->getAt(context, 0)->asString(context)->toUTF8String(context, prefix);
     if (prefix.size() <= s.size() && s.compare(0, prefix.size(), prefix) == 0)
-        return PythonEnvironment::getInternedString(context, s.substr(prefix.size()).c_str())->asObject(context);
-    return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
+        return PythonEnvironment::newStr(context, s.substr(prefix.size()));
+    return PythonEnvironment::newStr(context, s);
 }
 
 static const proto::ProtoObject* py_str_removesuffix(
@@ -14183,8 +14183,8 @@ static const proto::ProtoObject* py_str_removesuffix(
     if (posArgs->getAt(context, 0)->isString(context))
         posArgs->getAt(context, 0)->asString(context)->toUTF8String(context, suffix);
     if (suffix.size() <= s.size() && s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0)
-        return PythonEnvironment::getInternedString(context, s.substr(0, s.size() - suffix.size()).c_str())->asObject(context);
-    return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
+        return PythonEnvironment::newStr(context, s.substr(0, s.size() - suffix.size()));
+    return PythonEnvironment::newStr(context, s);
 }
 
 static const proto::ProtoObject* py_str_startswith(
@@ -14395,7 +14395,7 @@ static const proto::ProtoObject* py_str_replace(
             replaced++;
         }
         if (count < 0 || replaced < count) result += newStr;
-        return PythonEnvironment::getInternedString(context, result.c_str())->asObject(context);
+        return PythonEnvironment::newStr(context, result);
     }
 
     size_t pos = 0;
@@ -14414,7 +14414,7 @@ static const proto::ProtoObject* py_str_replace(
     }
     if (pos < s.size())
         result += s.substr(pos);
-    return PythonEnvironment::getInternedString(context, result.c_str())->asObject(context);
+    return PythonEnvironment::newStr(context, result);
 }
 
 static const proto::ProtoObject* py_str_capitalize(
@@ -14433,7 +14433,7 @@ static const proto::ProtoObject* py_str_capitalize(
     r += static_cast<char>(std::toupper(static_cast<unsigned char>(s[0])));
     for (size_t i = 1; i < s.size(); ++i)
         r += static_cast<char>(std::tolower(static_cast<unsigned char>(s[i])));
-    return PythonEnvironment::getInternedString(context, r.c_str())->asObject(context);
+    return PythonEnvironment::newStr(context, r);
 }
 
 static const proto::ProtoObject* py_str_title(
@@ -14458,7 +14458,7 @@ static const proto::ProtoObject* py_str_title(
             after_boundary = true;
         }
     }
-    return PythonEnvironment::getInternedString(context, r.c_str())->asObject(context);
+    return PythonEnvironment::newStr(context, r);
 }
 
 static const proto::ProtoObject* py_str_swapcase(
@@ -14478,7 +14478,7 @@ static const proto::ProtoObject* py_str_swapcase(
         else if (std::islower(c)) r += static_cast<char>(std::toupper(c));
         else r += static_cast<char>(c);
     }
-    return PythonEnvironment::getInternedString(context, r.c_str())->asObject(context);
+    return PythonEnvironment::newStr(context, r);
 }
 
 static const proto::ProtoObject* py_str_casefold(
@@ -14492,7 +14492,7 @@ static const proto::ProtoObject* py_str_casefold(
     std::string r;
     for (unsigned char c : s)
         r += static_cast<char>(std::tolower(c));
-    return PythonEnvironment::getInternedString(context, r.c_str())->asObject(context);
+    return PythonEnvironment::newStr(context, r);
 }
 
 static const proto::ProtoObject* py_str_isalpha(
@@ -14834,7 +14834,7 @@ static const proto::ProtoObject* py_str_expandtabs(
             else if ((c & 0xC0) != 0x80) col++;  // a column per code point
         }
     }
-    return PythonEnvironment::getInternedString(context, result.c_str())->asObject(context);
+    return PythonEnvironment::newStr(context, result);
 }
 
 static const proto::ProtoObject* py_str_zfill(
@@ -14899,7 +14899,7 @@ static const proto::ProtoObject* py_str_partition(
     size_t pos = s.find(sep);
     if (pos == std::string::npos) {
         const proto::ProtoList* lst = context->newList()
-            ->appendLast(context, PythonEnvironment::getInternedString(context, s.c_str())->asObject(context))
+            ->appendLast(context, PythonEnvironment::newStr(context, s))
             ->appendLast(context, PythonEnvironment::getInternedString(context, "")->asObject(context))
             ->appendLast(context, PythonEnvironment::getInternedString(context, "")->asObject(context));
         return ::protoPython::PythonEnvironment::tupleFromList(context, lst);
@@ -14907,9 +14907,9 @@ static const proto::ProtoObject* py_str_partition(
     std::string before = s.substr(0, pos);
     std::string after = s.substr(pos + sep.size());
     const proto::ProtoList* lst = context->newList()
-        ->appendLast(context, PythonEnvironment::getInternedString(context, before.c_str())->asObject(context))
-        ->appendLast(context, PythonEnvironment::getInternedString(context, sep.c_str())->asObject(context))
-        ->appendLast(context, PythonEnvironment::getInternedString(context, after.c_str())->asObject(context));
+        ->appendLast(context, PythonEnvironment::newStr(context, before))
+        ->appendLast(context, PythonEnvironment::newStr(context, sep))
+        ->appendLast(context, PythonEnvironment::newStr(context, after));
     return ::protoPython::PythonEnvironment::tupleFromList(context, lst);
 }
 
@@ -14936,15 +14936,15 @@ static const proto::ProtoObject* py_str_rpartition(
         const proto::ProtoList* lst = context->newList()
             ->appendLast(context, PythonEnvironment::getInternedString(context, "")->asObject(context))
             ->appendLast(context, PythonEnvironment::getInternedString(context, "")->asObject(context))
-            ->appendLast(context, PythonEnvironment::getInternedString(context, s.c_str())->asObject(context));
+            ->appendLast(context, PythonEnvironment::newStr(context, s));
         return ::protoPython::PythonEnvironment::tupleFromList(context, lst);
     }
     std::string before = s.substr(0, pos);
     std::string after = s.substr(pos + sep.size());
     const proto::ProtoList* lst = context->newList()
-        ->appendLast(context, PythonEnvironment::getInternedString(context, before.c_str())->asObject(context))
-        ->appendLast(context, PythonEnvironment::getInternedString(context, sep.c_str())->asObject(context))
-        ->appendLast(context, PythonEnvironment::getInternedString(context, after.c_str())->asObject(context));
+        ->appendLast(context, PythonEnvironment::newStr(context, before))
+        ->appendLast(context, PythonEnvironment::newStr(context, sep))
+        ->appendLast(context, PythonEnvironment::newStr(context, after));
     return ::protoPython::PythonEnvironment::tupleFromList(context, lst);
 }
 
@@ -29440,7 +29440,7 @@ const proto::ProtoObject* PythonEnvironment::buildString(const proto::ProtoObjec
             }
         }
     }
-    return PythonEnvironment::getInternedString(ctx, result.c_str())->asObject(ctx);
+    return PythonEnvironment::newStr(ctx, result);
 }
 
 void PythonEnvironment::storeName(const std::string& name, const proto::ProtoObject* val) {

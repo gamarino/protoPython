@@ -28,7 +28,7 @@ concurrency:
 env:
   PROTOCORE_REPO: numaes/protoCore
   # As in ci.yml: cases whose verdict is a clock never gate.
-  CLOCK_DEPENDENT_TESTS: '^(protopy_dict_key_hash|protopy_generator_resume_cost|conformance_isolate\..*|conformance\.isolate\..*)$'
+  CLOCK_DEPENDENT_TESTS: '^(protopy_dict_key_hash|protopy_file_lines_linear|protopy_generator_resume_cost|conformance_isolate\..*|conformance\.isolate\..*)$'
 
 jobs:
   test:

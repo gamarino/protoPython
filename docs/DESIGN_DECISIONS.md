@@ -100,3 +100,25 @@ built-in calls (`isinstance`, `len`, ...) get NULL markers.
 visible in every namespace and, inside a function, were globals; a hidden
 local slot would not exist at module or class level. The stack needs neither.
 Capture names are bound in the enclosing scope (`collectDefinedNames`).
+
+---
+
+## File reads and str method results are collectable, not interned (agent, pending review)
+
+**Decision (2026-10-26):** Read-mode file results (`read`, `readline`,
+`readlines`, iteration) and the str methods that compute data (`split`,
+`rsplit`, `splitlines`, `strip` family, `partition`, `replace`, case
+conversions, `format`, `%`, f-string assembly in `buildString`,
+`bytes.decode`, `bytes.hex`, number reprs) return `PythonEnvironment::newStr`
+instead of `getInternedString(...)->asObject()`.
+
+**Rationale:** Interning computed data made every distinct line permanent and
+grew protoCore's intern table with the input; each later lookup in that table
+(including the attribute-name lookups every native method does) slowed down,
+so iterating a 200,000-line file took 83.6 s instead of about 1 s. Equality,
+hashing, dict keys, `getattr` and keyword arguments do not depend on interning
+(setAttribute / getAttribute intern names themselves), which
+`test/regression/file_lines_not_interned.py` and `re_results_not_interned.py`
+check. A side effect is a fix: `c_str()` cut a string at its first NUL
+character; `newStr` keeps it. Name-like strings (module, attribute, type
+names, exception messages) still go through `getInternedString`.

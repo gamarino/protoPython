@@ -124,7 +124,13 @@ static bool io_is_binary(proto::ProtoContext* context, const proto::ProtoObject*
 static const proto::ProtoObject* io_read_result(proto::ProtoContext* context, const proto::ProtoObject* self,
                                                 const std::string& data) {
     if (io_is_binary(context, self)) return bio_make_bytes(context, data);
-    return PythonEnvironment::getInternedString(context, data.c_str())->asObject(context);
+    // File contents are data, not vocabulary: a collectable str (see
+    // PythonEnvironment::getInternedString). Interning every line read made
+    // each one permanent and grew the intern table with the file, so reading
+    // a file line by line was superlinear (each lookup slowed as the table
+    // grew) and its memory was never returned. newStr also keeps a NUL
+    // character, which c_str() cut the line at.
+    return PythonEnvironment::newStr(context, data);
 }
 
 // ----- Descriptor-backed files -----------------------------------------------

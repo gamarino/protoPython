@@ -687,6 +687,21 @@ set_tests_properties(protopy_re_results_not_interned PROPERTIES
     ENVIRONMENT "PROTOCORE_HEAP_LIMIT_CELLS=500000"
     TIMEOUT 120
     LABELS "regression_gate")
+# Lines read from a file and str method results are collectable, not interned:
+# interning them made line-by-line reading superlinear.
+add_test(NAME protopy_file_lines_not_interned
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/file_lines_not_interned.py)
+set_tests_properties(protopy_file_lines_not_interned PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
+# Reading a file by lines is linear in the line count. Clock-dependent: CI runs
+# it in the timing job (CLOCK_DEPENDENT_TESTS in the workflows).
+add_test(NAME protopy_file_lines_linear
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/file_lines_linear.py)
+set_tests_properties(protopy_file_lines_linear PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120)
 # io.StringIO counts characters: read(n), readline(n), seek(), tell(),
 # truncate() and write()'s result are character counts and indices.
 add_test(NAME protopy_stringio_char_positions
