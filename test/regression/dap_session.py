@@ -287,6 +287,10 @@ def session_output():
     s = Session()
     s.start(prog, [10])
     s.stopped("breakpoint", 10)
+    # Output events are forwarded from the program's stdout pipe and are not
+    # ordered with the stopped event: wait for the last line printed before
+    # the breakpoint instead of reading the buffer at the stop.
+    s.wait_output("lines read: 0\n")
     out = s.output["stdout"].splitlines()
     check(out[:1] == ["before"], "first line %r" % out[:1])
     check(out.count("ñandú línea") == 5000, "non-ASCII lines: %d" % out.count("ñandú línea"))
