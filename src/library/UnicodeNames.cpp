@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include <iterator>
+#include <string>
 
 namespace protoPython {
 namespace unicode_names {
