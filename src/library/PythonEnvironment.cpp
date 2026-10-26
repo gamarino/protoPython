@@ -4128,6 +4128,74 @@ static const proto::ProtoObject* py_list_delitem(
     }
 }
 
+// Code points of a UTF-8 buffer as protoCore stores a string (a surrogate
+// code point is its three-byte form).  A truncated trailing sequence keeps
+// its lead byte as a code point, as protoCore's decoder does.
+static void utf8_code_points(const std::string& in, std::vector<uint32_t>& out) {
+    out.clear();
+    out.reserve(in.size());
+    const auto* b = reinterpret_cast<const uint8_t*>(in.data());
+    const size_t n = in.size();
+    for (size_t i = 0; i < n; ) {
+        const uint8_t lead = b[i];
+        size_t len = lead < 0x80u ? 1 : lead < 0xE0u ? 2 : lead < 0xF0u ? 3 : 4;
+        if (i + len > n) len = 1;
+        uint32_t cp = len == 1 ? lead : len == 2 ? (lead & 0x1Fu) : len == 3 ? (lead & 0x0Fu) : (lead & 0x07u);
+        for (size_t k = 1; k < len; ++k) cp = (cp << 6) | (b[i + k] & 0x3Fu);
+        out.push_back(cp);
+        i += len;
+    }
+}
+
+static void utf8_append_code_point(std::string& out, uint32_t cp) {
+    if (cp < 0x80u) {
+        out.push_back(static_cast<char>(cp));
+    } else if (cp < 0x800u) {
+        out.push_back(static_cast<char>(0xC0u | (cp >> 6)));
+        out.push_back(static_cast<char>(0x80u | (cp & 0x3Fu)));
+    } else if (cp < 0x10000u) {
+        out.push_back(static_cast<char>(0xE0u | (cp >> 12)));
+        out.push_back(static_cast<char>(0x80u | ((cp >> 6) & 0x3Fu)));
+        out.push_back(static_cast<char>(0x80u | (cp & 0x3Fu)));
+    } else {
+        out.push_back(static_cast<char>(0xF0u | (cp >> 18)));
+        out.push_back(static_cast<char>(0x80u | ((cp >> 12) & 0x3Fu)));
+        out.push_back(static_cast<char>(0x80u | ((cp >> 6) & 0x3Fu)));
+        out.push_back(static_cast<char>(0x80u | (cp & 0x3Fu)));
+    }
+}
+
+// The str an iterator over `self` walks: a bare str, or the __data__ of a
+// str subclass instance; nullptr for anything else.
+static const proto::ProtoString* str_iter_source(proto::ProtoContext* context,
+                                                  const proto::ProtoObject* self) {
+    if (!self) return nullptr;
+    if (self->isString(context)) return self->asString(context);
+    if (!self->isCell(context)) return nullptr;
+    const proto::ProtoObject* data = self->getAttribute(context,
+        PythonEnvironment::getInternalString(context, "__data__"));
+    return data && data->isString(context) ? data->asString(context) : nullptr;
+}
+
+// A str_iterator: the string under __iter_list__ and the index of the next
+// code point, a SmallInteger, under __iter_it__.  py_str_iter_next reads one
+// code point with ProtoString::getAt (O(log n) in the rope, no allocation)
+// and stores the next index.  The iterator used to be built over a ProtoList
+// holding every character, which py_list_iter made with one appendLast per
+// code point inside a single native call: about 16 cells per character in
+// flight (1.6 M cells for a 100 KB string), all of it live until the call
+// returned.
+static const proto::ProtoObject* makeStrIterator(proto::ProtoContext* context,
+                                                 const proto::ProtoObject* iterProto,
+                                                 const proto::ProtoString* str) {
+    const proto::ProtoObject* iterObj = iterProto->newChild(context, true);
+    iterObj = iterObj->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "__iter_list__"), str->asObject(context));
+    iterObj = iterObj->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "__iter_it__"), context->fromInteger(0));
+    return iterObj;
+}
+
 static const proto::ProtoObject* py_list_iter(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -4139,6 +4207,11 @@ static const proto::ProtoObject* py_list_iter(
     const proto::ProtoObject* iterProto = env ? env->getAttribute(context, self, iterProtoName) : self->getAttribute(context, iterProtoName);
     if (!iterProto) return PROTO_NONE;
 
+    // A str (bare, or the __data__ of a str subclass instance) iterates by
+    // index; it is never exploded into a list of its characters.
+    if (const proto::ProtoString* str = str_iter_source(context, self))
+        return makeStrIterator(context, iterProto, str);
+
     const proto::ProtoList* list = ::protoPython::listStorage(context, self);
     const proto::ProtoObject* data = self;
     if (get_env_diag()) fprintf(stderr, "DEBUG py_list_iter: START self=%p list=%p\n", (void*)self, (void*)list);
@@ -4147,37 +4220,6 @@ static const proto::ProtoObject* py_list_iter(
         data = self->getAttribute(context, dataName);
         if (data) list = ::protoPython::listStorage(context, data);
         if (get_env_diag()) fprintf(stderr, "DEBUG py_list_iter: data fallback data=%p list=%p\n", (void*)data, (void*)list);
-    }
-    if (!list) {
-        // String fallback: strings don't expose .asList(), so explode them into
-        // a list of code-point integers here.  py_str_iter_next wraps each int
-        // back into a 1-char string.  Works uniformly for SSO and heap strings.
-        const proto::ProtoString* str = self->isString(context) ? self->asString(context) : nullptr;
-        if (!str && data && data->isString(context)) str = data->asString(context);
-        if (str) {
-            // The characters of the string are its code points, which
-            // protoCore's iterator yields; py_str_iter_next turns each one
-            // into a one-character str. Iterating the UTF-8 bytes split every
-            // non-ASCII character into several invalid ones.
-            // ProtoStringIterator::next both returns the code point and moves
-            // the iterator forward; calling advance as well skipped every
-            // other character.
-            // The iterator and the list being built live only in C++ locals
-            // while appendLast allocates; the critical section keeps the
-            // collector from scanning (and freeing them) mid-construction.
-            const proto::ProtoList* charList = context->newList();
-            {
-                proto::ProtoContext::CriticalSection cs(context);
-                proto::ProtoStringIterator* it = const_cast<proto::ProtoStringIterator*>(str->getIterator(context));
-                while (it && it->hasNext(context)) {
-                    const proto::ProtoObject* ch = it->next(context);
-                    if (!ch) break;
-                    charList = charList->appendLast(context, ch);
-                }
-            }
-            list = charList;
-            data = charList->asObject(context);
-        }
     }
     if (!list) {
         if (get_env_diag()) fprintf(stderr, "DEBUG py_list_iter: return PROTO_NONE\n");
@@ -4229,14 +4271,17 @@ static const proto::ProtoObject* py_str_iter_next(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
+    // State written by makeStrIterator: the string and the next index.
     const proto::ProtoString* iterItName = PythonEnvironment::getInternedString(context, "__iter_it__");
     const proto::ProtoObject* itObj = self->getAttribute(context, iterItName);
-    if (!itObj || !itObj->asListIterator(context)) return nullptr;
-    const proto::ProtoListIterator* it = itObj->asListIterator(context);
-    if (!it || !it->hasNext(context)) return nullptr;
-    const proto::ProtoObject* value = it->next(context);
-    const proto::ProtoListIterator* nextIt = it->advance(context);
-    self = self->setAttribute(context, iterItName, nextIt->asObject(context));
+    const proto::ProtoObject* strObj = self->getAttribute(context,
+        PythonEnvironment::getInternedString(context, "__iter_list__"));
+    if (!itObj || !itObj->isInteger(context) || !strObj || !strObj->isString(context)) return nullptr;
+    const proto::ProtoString* str = strObj->asString(context);
+    const long long index = itObj->asLong(context);
+    if (index < 0 || static_cast<unsigned long long>(index) >= str->getSize(context)) return nullptr;
+    const proto::ProtoObject* value = str->getAt(context, static_cast<int>(index));
+    self->setAttribute(context, iterItName, context->fromInteger(index + 1));
     
     // Return the value as a real ProtoString.  Earlier this site wrapped
     // the char into a fresh ProtoObject with the strPrototype as a parent
@@ -12848,14 +12893,19 @@ static const proto::ProtoObject* py_str_getitem(
             if (sb.start >= sb.stop) return proto::ProtoString::fromUTF8(context, "")->asObject(context);
             return str->getSlice(context, static_cast<int>(sb.start), static_cast<int>(sb.stop))->asObject(context);
         }
-        // The character list lives only in a local until create() consumes it.
-        proto::ProtoContext::CriticalSection cs(context);
-        const proto::ProtoList* chars = context->newList();
+        // Select the code points in a C++ buffer and build the result once
+        // from UTF-8.  Collecting them in a ProtoList first cost about 16
+        // cells per character in flight (one appendLast each).
+        std::string utf8;
+        str->toUTF8String(context, utf8);
+        std::vector<uint32_t> cps;
+        utf8_code_points(utf8, cps);
+        std::string out;
         for (long long i = sb.start; (sb.step > 0 ? i < sb.stop : i > sb.stop); i += sb.step) {
-            chars = chars->appendLast(context, str->getAt(context, static_cast<int>(i)));
+            if (i >= 0 && static_cast<size_t>(i) < cps.size())
+                utf8_append_code_point(out, cps[static_cast<size_t>(i)]);
         }
-        const proto::ProtoString* res_ = proto::ProtoString::create(context, chars);
-        return res_ ? res_->asObject(context) : PROTO_NONE;
+        return PythonEnvironment::newStr(context, out);
     }
 
     // bool subclasses int — accept True/False as 1/0.
@@ -14995,6 +15045,57 @@ static const proto::ProtoObject* py_str_join(
     const proto::ProtoObject* iterable = posArgs->getAt(context, posOff);
     
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
+
+    // An exact str, list or tuple is read in place, as CPython's
+    // PySequence_Fast reads an exact list or tuple. Driving an iterator
+    // object instead left its per-item bookkeeping (about 3 cells per item,
+    // or 16 per character when a str was exploded into a list) in this
+    // call's young generation until join returned.
+    if (env && iterable) {
+        std::string out;
+        bool handled = false;
+        if (proto::ProtoObject::isStringTagFast(iterable)) {
+            std::string src;
+            iterable->asString(context)->toUTF8String(context, src);
+            std::vector<uint32_t> cps;
+            utf8_code_points(src, cps);
+            out.reserve(src.size() + sepStr.size() * cps.size());
+            for (size_t k = 0; k < cps.size(); ++k) {
+                if (k) out += sepStr;
+                utf8_append_code_point(out, cps[k]);
+            }
+            handled = true;
+        } else {
+            const proto::ProtoObject* type = env->getType(context, iterable);
+            const proto::ProtoList* items = nullptr;
+            ::protoPython::TupleView tuple = nullptr;
+            if (type && type == env->getListPrototype()) {
+                items = ::protoPython::listStorage(context, iterable);
+            } else if (type && type == env->getTuplePrototype()) {
+                tuple = PythonEnvironment::tupleView(context, iterable);
+            }
+            if (items || tuple) {
+                const proto::proto_ulong n = items ? items->getSize(context) : tuple->getSize(context);
+                std::string part;
+                for (proto::proto_ulong k = 0; k < n; ++k) {
+                    const proto::ProtoObject* item = items ? items->getAt(context, static_cast<int>(k))
+                                                           : tuple->getAt(context, static_cast<int>(k));
+                    const proto::ProtoString* partObj = item ? str_from_self(context, item) : nullptr;
+                    if (!partObj) {
+                        env->raiseTypeError(context, "sequence item: expected str instance");
+                        return nullptr;
+                    }
+                    if (k) out += sepStr;
+                    part.clear();
+                    partObj->toUTF8String(context, part);
+                    out += part;
+                }
+                handled = true;
+            }
+        }
+        if (handled) return PythonEnvironment::newStr(context, out);
+    }
+
     const proto::ProtoObject* it = env ? env->iter(iterable) : nullptr;
     if (!it) {
         if (env) {
@@ -20841,23 +20942,21 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                 if (d) str = d->asString(ctx);
             }
             if (!str) return PROTO_NONE;
-            // Build the one-character strings in reverse code point order
-            // and iterate them. protoCore's StringIterator has no reverse
-            // walk; getSlice is O(log n) per character. Reversing the UTF-8
-            // bytes broke every non-ASCII character.
-            const proto::ProtoList* lst = ctx->newList();
-            {
-                // lst and each slice live only in locals while getSlice and
-                // appendLast allocate.
-                proto::ProtoContext::CriticalSection cs(ctx);
-                for (long long i = static_cast<long long>(str->getSize(ctx)) - 1; i >= 0; --i) {
-                    lst = lst->appendLast(ctx, str->getSlice(ctx, static_cast<int>(i), static_cast<int>(i) + 1)->asObject(ctx));
-                }
-            }
-            // env->iter allocates the iterator; keep the list alive through it.
-            PythonEnvironment::TransientPin pinLst(env, lst->asObject(ctx));
-            if (env) return env->iter(lst->asObject(ctx));
-            return lst->asObject(ctx);
+            // Iterate the reversed string: one UTF-8 pass and one bulk
+            // build.  A list of one-character slices cost about 50 cells
+            // per character in flight (5 M cells for 100 KB).
+            std::string utf8;
+            str->toUTF8String(ctx, utf8);
+            std::vector<uint32_t> cps;
+            utf8_code_points(utf8, cps);
+            std::string out;
+            out.reserve(utf8.size());
+            for (size_t k = cps.size(); k > 0; --k) utf8_append_code_point(out, cps[k - 1]);
+            const proto::ProtoObject* rev = PythonEnvironment::newStr(ctx, out);
+            // env->iter allocates the iterator; keep the string alive through it.
+            PythonEnvironment::TransientPin pinRev(env, rev);
+            if (env) return env->iter(rev);
+            return rev;
         }));
     const proto::ProtoString* py_find = PythonEnvironment::getInternedString(rootContext_, "find");
     const proto::ProtoString* py_index = PythonEnvironment::getInternedString(rootContext_, "index");

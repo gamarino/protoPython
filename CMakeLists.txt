@@ -776,11 +776,24 @@ set_tests_properties(protopy_stringio_char_positions PROPERTIES
 # re's ^, $, \A, \Z and . follow CPython's line rules on every platform.
 # re on PCRE2: the documented differences from CPython are exceptions, never
 # silently wrong results (engine limits, \N{...}, lone surrogates, ...).
+# Under a fixed 500,000-cell heap: its 100 KB subject needed about 3.8 M cells
+# while len() converted a str into a list of its characters.
 add_test(NAME protopy_re_pcre2_limits
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/re_pcre2_limits.py)
 set_tests_properties(protopy_re_pcre2_limits PROPERTIES
+    ENVIRONMENT "PROTOCORE_ADAPTIVE_HEAP=0;PROTOCORE_HEAP_LIMIT_CELLS=500000"
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
+    LABELS "regression_gate")
+# A 100 KB str, built and used the common ways, fits a fixed 2,000,000-cell
+# heap (about 1.25 M needed; 12.6 M before strings stopped being exploded into
+# lists and generator bookkeeping stopped piling up in native consumers).
+add_test(NAME protopy_str_cells_bounded
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/str_cells_bounded.py)
+set_tests_properties(protopy_str_cells_bounded PROPERTIES
+    ENVIRONMENT "PROTOCORE_ADAPTIVE_HEAP=0;PROTOCORE_HEAP_LIMIT_CELLS=2000000"
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 300
     LABELS "regression_gate")
 add_test(NAME protopy_re_anchors
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/re_anchors.py)
