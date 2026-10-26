@@ -207,6 +207,69 @@ set(PROTOPYTHON_GENERATED_INCLUDE_DIR "${PROJECT_BINARY_DIR}/generated")
 string(TIMESTAMP PROTOPYTHON_BUILD_DATE "%b %d %Y" UTC)
 configure_file(src/Version.h.in "${PROTOPYTHON_GENERATED_INCLUDE_DIR}/protoPython/Version.h" @ONLY)
 
+# --- PCRE2: the engine of the `re` module (src/library/ReModule.cpp) --------
+# The 8-bit library, 10.34 or later (PCRE2_MATCH_INVALID_UTF), with its JIT
+# where the platform has one. Resolution order: the system's library through
+# pkg-config (libpcre2-dev on Debian / Ubuntu, pcre2-devel on Fedora / RHEL,
+# pcre2 from Homebrew), then an installed PCRE2 CMake package (vcpkg, a
+# prefix given with -DCMAKE_PREFIX_PATH), else PCRE2's pinned release built
+# here as a static library (the Windows build, and any system without the
+# package; -DPROTOPY_BUNDLED_PCRE2=ON forces it). The bundled copy is linked
+# into libprotoPython, so it adds no file to any package; its install rules
+# are kept out of protoPython's component. Same arrangement as protoClojure.
+option(PROTOPY_BUNDLED_PCRE2 "Build PCRE2's pinned release instead of using the system's" OFF)
+set(PROTOPY_PCRE2_TARGET "")
+if(NOT PROTOPY_BUNDLED_PCRE2)
+    find_package(PkgConfig QUIET)
+    if(PKG_CONFIG_FOUND)
+        pkg_check_modules(PROTOPY_PCRE2 QUIET IMPORTED_TARGET libpcre2-8>=10.34)
+        if(PROTOPY_PCRE2_FOUND)
+            set(PROTOPY_PCRE2_TARGET PkgConfig::PROTOPY_PCRE2)
+            message(STATUS "protoPython: PCRE2 ${PROTOPY_PCRE2_VERSION} from pkg-config")
+        endif()
+    endif()
+    if(NOT PROTOPY_PCRE2_TARGET)
+        find_package(PCRE2 10.34 CONFIG QUIET COMPONENTS 8BIT)
+        if(TARGET PCRE2::8BIT)
+            set(PROTOPY_PCRE2_TARGET PCRE2::8BIT)
+            message(STATUS "protoPython: PCRE2 ${PCRE2_VERSION} CMake package from ${PCRE2_DIR}")
+        endif()
+    endif()
+endif()
+if(NOT PROTOPY_PCRE2_TARGET)
+    include(FetchContent)
+    if(POLICY CMP0135)
+        cmake_policy(SET CMP0135 NEW)
+    endif()
+    set(PCRE2_BUILD_PCRE2_8 ON CACHE BOOL "" FORCE)
+    set(PCRE2_BUILD_PCRE2_16 OFF CACHE BOOL "" FORCE)
+    set(PCRE2_BUILD_PCRE2_32 OFF CACHE BOOL "" FORCE)
+    set(PCRE2_SUPPORT_JIT ON CACHE BOOL "" FORCE)
+    set(PCRE2_BUILD_PCRE2GREP OFF CACHE BOOL "" FORCE)
+    set(PCRE2_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(PCRE2_SUPPORT_LIBBZ2 OFF CACHE BOOL "" FORCE)
+    set(PCRE2_SUPPORT_LIBZ OFF CACHE BOOL "" FORCE)
+    set(PCRE2_SUPPORT_LIBEDIT OFF CACHE BOOL "" FORCE)
+    set(PCRE2_SUPPORT_LIBREADLINE OFF CACHE BOOL "" FORCE)
+    set(PCRE2_STATIC_PIC ON CACHE BOOL "" FORCE)
+    set(_protopy_default_component "${CMAKE_INSTALL_DEFAULT_COMPONENT_NAME}")
+    set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME pcre2-bundled)
+    set(_protopy_pcre2_exclude "")
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.28)
+        set(_protopy_pcre2_exclude EXCLUDE_FROM_ALL)
+    endif()
+    FetchContent_Declare(pcre2
+        URL https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.46/pcre2-10.46.tar.bz2
+        URL_HASH SHA256=15fbc5aba6beee0b17aecb04602ae39432393aba1ebd8e39b7cabf7db883299f
+        ${_protopy_pcre2_exclude})
+    unset(_protopy_pcre2_exclude)
+    FetchContent_MakeAvailable(pcre2)
+    set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME "${_protopy_default_component}")
+    unset(_protopy_default_component)
+    set(PROTOPY_PCRE2_TARGET pcre2-8-static)
+    message(STATUS "protoPython: PCRE2 10.46 built from its release (static, JIT)")
+endif()
+
 # Subdirectories
 add_subdirectory(src/library)
 
@@ -711,6 +774,14 @@ set_tests_properties(protopy_stringio_char_positions PROPERTIES
     TIMEOUT 120
     LABELS "regression_gate")
 # re's ^, $, \A, \Z and . follow CPython's line rules on every platform.
+# re on PCRE2: the documented differences from CPython are exceptions, never
+# silently wrong results (engine limits, \N{...}, lone surrogates, ...).
+add_test(NAME protopy_re_pcre2_limits
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/re_pcre2_limits.py)
+set_tests_properties(protopy_re_pcre2_limits PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 add_test(NAME protopy_re_anchors
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/re_anchors.py)
 set_tests_properties(protopy_re_anchors PROPERTIES
@@ -1526,6 +1597,9 @@ set_tests_properties(protopy_closure_semantics protopy_closure_semantics_gc PROP
 #     (registered built-in types, the ABC hierarchy, subclass hooks).
 #   counter_methods: collections.Counter (most_common segfaulted) and the
 #     deque iterators.
+#   re_pcre2_semantics: the re module on PCRE2: pattern translation, the
+#     Unicode and ASCII character sets, flags, str and bytes, positions, every
+#     function and Match method, templates, errors and their positions.
 #   regex_empty_matches: re with patterns that can match empty, classes with
 #     a literal '-', group spans, named groups, Match / Pattern types.
 #   argparse_nargs: argparse nargs variants (they rely on such patterns).
@@ -1570,6 +1644,7 @@ set(PROTOPY_STDLIB_ORACLE_TESTS
     collections_abc_first_use_threads
     counter_methods
     regex_empty_matches
+    re_pcre2_semantics
     argparse_nargs
     argparse_help
     bytes_construct_methods
@@ -1996,7 +2071,7 @@ elseif(UNIX)
     # version and its soname move together, so the dependency is bounded on
     # both sides: a 3.x protoCore would be ABI-incompatible with this build.
     set(CPACK_DEBIAN_PACKAGE_DEPENDS
-        "protocore (>= ${PROTOCORE_MIN_VERSION_FULL}), protocore (<< ${PROTOCORE_NEXT_MAJOR})")
+        "protocore (>= ${PROTOCORE_MIN_VERSION_FULL}), protocore (<< ${PROTOCORE_NEXT_MAJOR}), libpcre2-8-0 (>= 10.34)")
     # SHLIBDEPS is meant to add a SONAME dependency (libprotoCore.so.N)
     # derived from the binary's own NEEDED entry, because the version range
     # above is not an ABI check on its own: a protoCore in range but built

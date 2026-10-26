@@ -83,8 +83,12 @@ b = PAT.findall(LONG + " tail")[0]
 assert a == b == LONG
 assert a is not b, "equal findall results are the same interned object"
 
-m1 = PAT.search(LONG + " tail")
-m2 = PAT.search(LONG + " tail")
+# A group is a slice of its subject and may share the subject's rope nodes
+# (structural sharing, not interning): `LONG + " tail"` keeps LONG itself as
+# a node, so its slice could be LONG. Subjects built by join() have no node
+# in common, which is what this identity check needs.
+m1 = PAT.search(" ".join(["head", LONG, "tail"]))
+m2 = PAT.search(" ".join(["head", LONG, "tail"]))
 assert m1.group(0) == m2.group(0) == LONG
 assert m1.group(0) is not m2.group(0), "equal match results share one object"
 
@@ -113,7 +117,10 @@ assert e1 is not e2, "equal escape results share one object"
 # The pattern source a compiled pattern remembers is not interned either:
 # re.compile stored it as a symbol, so every distinct pattern text was
 # permanent.
+# re.compile caches compiled patterns as CPython does; purge() empties the
+# cache so that P2 is compiled anew.
 P1 = re.compile(r"[a-z]+_[a-z]+_[0-9]+")
+re.purge()
 P2 = re.compile(r"[a-z]+_[a-z]+_[0-9]+")
 assert P1.pattern == P2.pattern == r"[a-z]+_[a-z]+_[0-9]+"
 assert P1.pattern is not P2.pattern, "the pattern source is interned"

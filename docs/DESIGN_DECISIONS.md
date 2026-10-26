@@ -122,3 +122,85 @@ hashing, dict keys, `getattr` and keyword arguments do not depend on interning
 check. A side effect is a fix: `c_str()` cut a string at its first NUL
 character; `newStr` keeps it. Name-like strings (module, attribute, type
 names, exception messages) still go through `getInternedString`.
+
+---
+
+## The re module runs on PCRE2 (agent, pending review)
+
+**Decision (2026-10-26):** `src/library/ReModule.cpp` implements `re` over
+PCRE2's 8-bit library with its JIT, replacing `std::wregex`. A Python pattern
+is translated to PCRE2 syntax by the module's own parser, which raises
+`re.error` with CPython's message and position for everything CPython
+rejects. The choices that are not obvious:
+
+- **One library, UTF-8 for str.** str patterns compile in UTF mode
+  (`PCRE2_UTF | PCRE2_MATCH_INVALID_UTF`, plus `PCRE2_UCP` unless re.ASCII);
+  bytes patterns compile in byte mode. The subject is protoCore's UTF-8, so no
+  re-encoding is needed; positions are mapped back to code points through an
+  offset table built only for non-ASCII subjects. The 32-bit library would
+  need a conversion per call and a second library to link.
+- **The translation output is ASCII.** Every character that is not a letter,
+  digit or `_` is written as `\x{...}`, so no pattern character can take a
+  PCRE2 meaning Python does not give it. PCRE2-only syntax (`(?R)`, `(?1)`,
+  `(?&n)`, `(?|`, `(*VERB)`, `\K`, `\Q..\E`, `\p{..}`) is rejected the way
+  CPython rejects it.
+- **Python's character sets, spelled out.** `\w` is `[\p{L}\p{N}_]`
+  (`str.isalnum()` or `_`), `\s` is the 29 code points `str.isspace()`
+  accepts, `\d` is `\p{Nd}`; re.ASCII sets are written as ASCII ranges, so a
+  scoped `(?a:...)` or `(?u:...)` works whatever PCRE2_UCP says. `\b` is
+  PCRE2's own where its word notion is Python's for the scope, else spelled
+  out with lookarounds. PCRE2's `\W` remains only inside a character class
+  in Unicode mode (no class body is the complement of `[\p{L}\p{N}_]`); from
+  PCRE2 10.43 it also counts combining marks and connector punctuation as
+  word characters.
+- **re.ASCII | re.IGNORECASE on str is emulated.** PCRE2 folds non-ASCII
+  letters in UTF mode even without UCP; the translator writes `[aA]` and the
+  other-case ranges of a class, and PCRE2 matches case-sensitively in that
+  scope. A case-insensitive back reference cannot be emulated that way and is
+  `re.error`.
+- **Errors, never silent differences.** Backtracking beyond PCRE2's match,
+  depth, heap or JIT-stack limits is `RecursionError` (CPython takes
+  exponential time instead). Repeat counts above 65535 (PCRE2's limit;
+  CPython allows 4294967294), `\N{...}` (no Unicode name database) and the
+  look-behind width limit are `re.error`. A str subject containing a lone
+  surrogate is `ValueError`, because PCRE2 would skip it as invalid UTF-8; a
+  surrogate in a pattern compiles to a class that matches nothing, which is
+  then exact. The compiled-pattern size is PCRE2's (64 KiB with the usual
+  link size 2): CPython's `test_big_codesize` pattern is `re.error` here.
+- **Compiled code per pattern, three variants.** Search, match (compiled
+  `PCRE2_ANCHORED`) and fullmatch (`PCRE2_ANCHORED | PCRE2_ENDANCHORED`),
+  the last two compiled on first use under `std::once_flag`; match-time
+  anchoring would bypass the JIT. The code is owned by the Pattern object
+  through an external pointer whose finalizer frees it. Module-level calls
+  go through a cache of 512 patterns (a ProtoSparseList on the module, keyed
+  by protoCore's content hash and checked against the text), as CPython's.
+- **Per-thread state with `thread_local`.** Match data, match context and
+  JIT stack (32 KiB growing to 8 MiB) are per thread, created on first use;
+  no native thread API is called. Each thread also keeps its last long str
+  subject (4 KiB or more) converted to UTF-8, pinned by a module slot only
+  that thread writes, so `pattern.match(text, pos)` loops stay linear.
+  Subjects of 64 KiB or more are matched inside an `UnmanagedScope`.
+- **Python's empty-match rule** (an empty match may not follow another at the
+  same position) is `PCRE2_NOTEMPTY_ATSTART` after an empty match.
+- **Results.** Group strings are slices of the subject (`getSlice`: they may
+  share its rope nodes), computed when asked for; a Match holds code point
+  spans. Match and Pattern objects are immutable. `lastindex` is the group
+  that closed last (CPython's definition), computed from the group tree.
+
+**Known gaps:** flags are plain ints (no `re.RegexFlag`), `Match.regs`,
+pickling of patterns, `BufferError` for a resized buffer, the DeprecationWarning
+for positional `count` / `maxsplit` / `flags` and the FutureWarning for
+possible set operations are absent; memoryview and array subjects are copied
+through `tobytes()` and their groups are bytes. `re.LOCALE` is accepted for
+bytes and behaves as ASCII.
+
+**Rationale:** The wregex implementation recompiled the pattern on every
+call (47.5 us per search where CPython takes 0.5 us), had no `re.error`, no
+bytes support, a wrong `lastindex` and a broken Scanner. PCRE2 is the engine
+protoClojure already uses (same CMake resolution: pkg-config, CMake package,
+else the pinned 10.46 release built static), JIT-compiled, and its semantics
+are close enough to SRE that the differences can be translated or rejected
+explicitly. CPython's own test_re.py (run case by case, its unittest loader
+does not work on protopy) passes 119 of 151 runnable cases, against a crash
+before; the 403-entry re_tests table passes except for 5 entries that fail on
+protopy string-literal bugs, not on re.

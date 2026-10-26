@@ -1,0 +1,276 @@
+search -> ((4, 7), '123')
+match none -> None
+fullmatch alt -> ((0, 2), 'ab')
+fullmatch lazy -> ((0, 3), 'abc')
+match prefix -> ((0, 1), 'a')
+findall plain -> ['one', 'two', 'three']
+findall 1 group -> ['o', 't', 't']
+findall n groups -> [('a', '1'), ('b', ''), ('c', '3')]
+finditer -> [(1, 3), (5, 7), (9, 13)]
+split -> ['a', 'b', 'c', 'd']
+split groups -> ['a', ',', 'b', ';', 'c']
+split optional group -> ['a', ',', None, 'b', None, ';', 'c']
+split maxsplit -> ['a', 'b', 'c,d']
+split empty -> ['', 'a', '', 'b', 'c', '']
+split boundary -> ['', 'a', ' ', 'b', '']
+sub -> 'a b c'
+sub count -> 'bbaa'
+subn -> ('a#b##c', 3)
+sub empty -> '-a-b--d-'
+sub callable -> 'a2 b40 c600'
+sub template -> 'host at user'
+sub named -> '1=a 2=b'
+sub \g<0> -> 'a[1]b[2]'
+sub escapes -> 'a\n\t\\b'
+sub unmatched group -> '[a][]'
+sub octal -> 'A\x00'
+escape -> 'a\\.b\\*c\\?d\\[e\\]f\\{g\\}h\\(i\\)j\\|k\\^l\\$m\\\\n\\ o\\#p\\-q\\&r\\~s\\\tt'
+escape bytes -> b'a\\.b\\ c'
+escape unicode -> 'é\\ ñ_1'
+group() -> '2026-10'
+group(1,2) -> ('2026', '10')
+group name -> '10'
+groups -> ('2026', '10', None, None)
+groups default -> ('2026', '10', '-', '-')
+groupdict -> {'year': '2026', 'month': '10', 'day': None}
+groupdict default -> {'year': '2026', 'month': '10', 'day': 0}
+span/start/end -> ((3, 10), 8, 7, (-1, -1))
+lastindex/lastgroup -> (2, 'month')
+getitem -> ('2026-10', '2026', '10')
+expand -> '10/2026 []'
+pos/endpos/string -> (0, 14, 'on 2026-10 and')
+re.pattern -> '(?P<year>\\d{4})-(?P<month>\\d\\d)(-(?P<day>\\d\\d))?'
+repr -> "<re.Match object; span=(3, 10), match='2026-10'>"
+group out of range -> IndexError: no such group
+group bad name -> IndexError: no such group
+lastindex (a)(b) -> (2, None, ('a', 'b'))
+lastindex (a(b)) -> (1, None, ('ab', 'b'))
+lastindex ((a)b) -> (1, None, ('ab', 'a'))
+lastindex (a)|(b) -> (2, None, (None, 'b'))
+lastindex (a)(b)? -> (1, None, ('a', None))
+lastindex a -> (None, None, ())
+lastindex ((a)|(b))+ -> (1, None, ('b', 'a', 'b'))
+lastindex (?:(a)|b)* -> (1, None, ('a',))
+lastindex (a)(?:x|(b)) -> (2, None, ('a', 'b'))
+lastgroup nested -> (1, 'outer')
+non-ascii search -> ((3, 5), '€c')
+non-ascii finditer -> [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7)]
+non-ascii pos -> ((4, 5), 'c')
+non-ascii endpos -> None
+non-ascii split -> ['añb', 'c', 'd']
+non-ascii sub -> 'a_b_c_d'
+emoji class -> ['😀', '😁']
+pos anchors -> None
+endpos anchors -> ((0, 2), 'ab')
+pos > len -> None
+negative pos -> ((0, 3), 'abc')
+endpos < pos -> None
+match pos -> ((2, 3), 'c')
+fullmatch window -> ((1, 4), 'bbb')
+findall window -> ['b', 'c', 'd']
+\A with pos -> None
+^ with pos -> None
+class \w U 000001100111110011000000011111101111
+class \w A 000001100000000000000000000000000000
+class \W U 111110011000001100111111100000010000
+class \W A 111110011111111111111111111111111111
+class \d U 000000000000000011000000000101000000
+class \d A 000000000000000000000000000000000000
+class \D U 111111111111111100111111111010111111
+class \D A 111111111111111111111111111111111111
+class \s U 111110011000000000111011100000000000
+class \s A 110010000000000000000000000000000000
+class \S U 000001100111111111000100011111111111
+class \S A 001101111111111111111111111111111111
+class [\w] U 000001100111110011000000011111101111
+class [\w] A 000001100000000000000000000000000000
+class [\s] U 111110011000000000111011100000000000
+class [\s] A 110010000000000000000000000000000000
+class [\d] U 000000000000000011000000000101000000
+class [\d] A 000000000000000000000000000000000000
+class [^\w] U 111110011000001100111111100000010000
+class [^\w] A 111110011111111111111111111111111111
+class [\S] U 000001100111111111000100011111111111
+class [\S] A 001101111111111111111111111111111111
+class [\D] U 111111111111111100111111111010111111
+class [\D] A 111111111111111111111111111111111111
+class [\s\d] U 111110011000000011111011100101000000
+class [\s\d] A 110010000000000000000000000000000000
+class [^\s] U 000001100111111111000100011111111111
+class [^\s] A 001101111111111111111111111111111111
+\b U -> [(0, 0), (1, 1), (2, 2), (5, 5), (6, 6), (7, 7)]
+\B U -> [(1, 1)]
+\b A -> [(2, 2), (5, 5)]
+\B A -> [(0, 0)]
+i ascii -> ((0, 5), 'HeLLo')
+i unicode -> ((0, 8), 'STRAßE É')
+i class -> ['ABCabc']
+i A literal -> None
+i A ascii -> ((0, 1), 'K')
+i A class -> ['A', 'B', 'C', 'é']
+i A range -> ['x', 'y', 'z', 'X', 'Y', 'Z', '[', ']', '^', '_', '`', 'a', 'b', 'c', 'A', 'B', 'C']
+i A negated -> ['b']
+i kelvin -> ((0, 1), 'K')
+i bytes -> [b'ABCabc']
+scoped i -> (((0, 2), 'Ab'), None)
+scoped -i -> ((0, 2), 'aB')
+nested i -> (((0, 2), 'aB'), None)
+(?m) -> ['a', 'c']
+(?s) -> ((0, 3), 'a\nb')
+no s -> None
+(?x) -> ((0, 3), 'a b')
+(?x) class -> ((0, 2), ' a')
+(?x:) -> ((0, 4), 'ab c')
+(?a) -> ['h', 'llo', 'w', 'rld']
+(?i)(?m) -> ['A', 'a']
+flags attr -> (32, 34, 256, 0, 10)
+scoped a -> ((0, 3), 'ààà')
+scoped u -> ((0, 3), 'ààà')
+scoped u in A -> ((0, 3), 'ààà')
+scoped a \b -> [(2, 2), (3, 3)]
+scoped m -> ['b', 'a']
+MULTILINE $ -> ['a', 'b']
+$ before final newline -> ((0, 1), 'a')
+\Z -> None
+^ empty lines -> ['', '', '']
+$ positions -> [(1, 1), (3, 3), (4, 4)]
+{m,n} -> ['aaa', 'aaa']
+{,n} -> ['aa', 'a', '']
+{m,} -> ((0, 4), 'aaaa')
+{} literal -> ((0, 2), 'a{')
+{x} literal -> ((0, 4), 'a{x}')
+{1,x} literal -> ((0, 6), 'a{1,x}')
+lazy -> ['<a>', '<b>']
+possessive -> ((0, 4), None)
+atomic -> ((0, 3), None)
+lookahead -> ['a', 'b']
+neg lookahead -> ['b']
+lookbehind -> ['10', '30']
+neg lookbehind -> ['20']
+backref -> ((2, 4), 'cc')
+named backref -> ((2, 4), 'cc')
+backref 10+ -> ((0, 11), 'abcdefghijj')
+conditional -> [True, True, False, False]
+conditional name -> [True, True, False]
+conditional forward -> True
+comment group -> ((0, 2), 'ab')
+alternation empty -> ['a', '', '']
+nested quantified group -> ('b', 'a')
+octal escapes -> (((0, 1), 'A'), ((0, 1), '\x00'), ((0, 1), 'A'))
+hex/unicode escapes -> (((0, 3), 'Aé😀'), ((0, 3), 'ABC'))
+control escapes -> ((0, 6), '\x07\x0c\n\r\t\x0b')
+class edge chars -> [']', 'a', '-']
+class caret -> ['^', 'a']
+class bracket -> ['[']
+class backspace -> ((1, 2), '\x08')
+class escapes -> [']', '-', '\\']
+dot newline -> ['a', 'b']
+surrogate pattern -> None
+surrogate class -> []
+surrogate range -> ['b', '😀']
+empty finditer -> [(0, 0), (2, 2), (3, 3), (3, 4), (4, 4)]
+empty findall -> ['', 'aa', '', '']
+empty sub -> '-b--c-'
+empty split -> ['', 'b', '', 'c', '']
+empty after nonempty -> [(0, 1), (1, 1)]
+bytes search -> ((2, 4), b'12')
+bytes findall -> [b'ab', b't', b'cd']
+bytes sub -> b'<a><b>'
+bytes split -> [b'a', b'b']
+bytes groupdict -> {'x': b'a'}
+bytes high -> [b'\x80\xff']
+bytearray -> ((1, 3), b'bb')
+bytes \s -> [b' ', b'\t', b'\n', b'\x0b', b'\x0c', b'\r']
+bytes dot -> [b'a', b'b']
+bytes on str -> TypeError: cannot use a bytes pattern on a string-like object
+str on bytes -> TypeError: cannot use a string pattern on a bytes-like object
+str repl for bytes -> TypeError: sequence item 0: expected a bytes-like object, str found
+not a string -> TypeError: expected string or bytes-like object, got 'int'
+callable returns int -> TypeError: sequence item 0: expected str instance, int found
+pattern attrs -> ('ab+', 34, 0, {'a': 1, 'b': 3})
+pattern repr -> ("re.compile('ab+', re.IGNORECASE)", "re.compile(b'x', re.MULTILINE)", "re.compile('x', re.DOTALL|re.ASCII)")
+compile of compiled -> True
+flags with compiled -> ValueError: cannot process flags argument with a compiled pattern
+pattern equality -> (True, False, False, True)
+module search with compiled -> ((1, 5), 'ABBB')
+after purge -> ((1, 4), 'abb')
+scanner search -> ['1', '2', '2', None]
+scanner match -> [((0, 1), '1'), ((1, 2), '2'), None]
+error '(' -> re.error: missing ), unterminated subpattern | pos 0
+error '((a)' -> re.error: missing ), unterminated subpattern | pos 0
+error 'a)' -> re.error: unbalanced parenthesis | pos 1
+error '*a' -> re.error: nothing to repeat | pos 0
+error 'a**' -> re.error: multiple repeat | pos 2
+error 'a{2}{3}' -> re.error: multiple repeat | pos 4
+error '[a' -> re.error: unterminated character set | pos 0
+error '[z-a]' -> re.error: bad character range z-a | pos 1
+error '\\q' -> re.error: bad escape \q | pos 0
+error '(?P<1a>x)' -> re.error: bad character in group name '1a' | pos 4
+error '(?P<a>x)(?P<a>y)' -> re.error: redefinition of group name 'a' as group 2; was group 1 | pos 12
+error '(?P=nope)' -> re.error: unknown group name 'nope' | pos 4
+error '\\2(a)' -> re.error: invalid group reference 2 | pos 1
+error '(a\\1)' -> re.error: cannot refer to an open group | pos 2
+error '(?z)' -> re.error: unknown extension ?z | pos 1
+error '(?iz)' -> re.error: unknown flag | pos 3
+error '(?i' -> re.error: missing -, : or ) | pos 3
+error '(?-i)' -> re.error: missing : | pos 4
+error 'a(?i)b' -> re.error: global flags not at the start of the expression | pos 1
+error '(?<' -> re.error: unexpected end of pattern | pos 3
+error '(?<>x)' -> re.error: unknown extension ?<> | pos 1
+error '(?P' -> re.error: unexpected end of pattern | pos 3
+error '(?Px)' -> re.error: unknown extension ?Px | pos 1
+error '(?#abc' -> re.error: missing ), unterminated comment | pos 0
+error 'x{3,2}' -> re.error: min repeat greater than max repeat | pos 2
+error '(?(1)a|b|c)' -> re.error: conditional backref with more than two branches | pos 8
+error '(?(x)a)' -> re.error: unknown group name 'x' | pos 3
+error '(?(0)a)' -> re.error: bad group number | pos 3
+error '\\x4' -> re.error: incomplete escape \x4 | pos 0
+error '\\u12' -> re.error: incomplete escape \u12 | pos 0
+error '\\U00110000' -> re.error: bad escape \U00110000 | pos 0
+error '[\\w-z]' -> re.error: bad character range \w-z | pos 1
+error '\\8' -> re.error: invalid group reference 8 | pos 1
+error '\\777' -> re.error: octal escape value \777 outside of range 0-0o377 | pos 0
+error '(?au:x)' -> re.error: bad inline flags: flags 'a', 'u' and 'L' are incompatible | pos 4
+error '(?a)(?-a:\\w)' -> re.error: bad inline flags: cannot turn off flags 'a', 'u' and 'L' | pos 8
+error '(?i-i:a)' -> re.error: bad inline flags: flag turned on and off | pos 5
+error '(?-' -> re.error: missing flag | pos 3
+error 'a\n(' -> re.error: missing ), unterminated subpattern | pos 2
+error '(?P<a>a)(?P=a' -> re.error: missing ), unterminated name | pos 12
+error '\\\\' -> no error
+error '(a)b(?<=(.)\\2)(c)' -> re.error: cannot refer to group defined in the same lookbehind subpattern | pos 13
+error '(a)b(?<=(?(2)b|x))(c)' -> re.error: cannot refer to an open group | pos 13
+error '(?R)' -> re.error: unknown extension ?R | pos 1
+error '(?1)(a)' -> re.error: unknown extension ?1 | pos 1
+error '(?&n)' -> re.error: unknown extension ?& | pos 1
+error '(?|a)' -> re.error: unknown extension ?| | pos 1
+error '(*FAIL)' -> re.error: nothing to repeat | pos 1
+error '\\K' -> re.error: bad escape \K | pos 0
+error '\\Qa\\E' -> re.error: bad escape \Q | pos 0
+error '\\p{L}' -> re.error: bad escape \p | pos 0
+bytes \u -> re.error: bad escape \u | pos 0
+bytes (?u) -> re.error: bad inline flags: cannot use 'u' flag with a bytes pattern | pos 3
+str (?L) -> re.error: bad inline flags: cannot use 'L' flag with a str pattern | pos 3
+LOCALE str -> ValueError: cannot use LOCALE flag with a str pattern
+ASCII|UNICODE -> ValueError: ASCII and UNICODE flags are incompatible
+inline a with U -> ValueError: ASCII and UNICODE flags are incompatible
+UNICODE bytes -> ValueError: cannot use UNICODE flag with a bytes pattern
+repeat overflow -> OverflowError: the repetition number is too large
+template '\\g<' -> re.error: missing group name | pos 3
+template '\\g<>' -> re.error: missing group name | pos 3
+template '\\g<x' -> re.error: missing >, unterminated name | pos 3
+template '\\g<1a>' -> re.error: bad character in group name '1a' | pos 3
+template '\\g<9>' -> re.error: invalid group reference 9 | pos 3
+template '\\3' -> re.error: invalid group reference 3 | pos 1
+template '\\q' -> re.error: bad escape \q | pos 0
+template '\\' -> re.error: bad escape (end of pattern) | pos 0
+template '\\g<nope>' -> IndexError: unknown group name 'nope'
+error lineno/colno -> (2, 1, 'ab\n(')
+error alias -> True
+Scanner -> ([('NAME', 'x'), 'ASSIGN', ('NUM', '3.5', '.5'), ('OP', '+'), ('NAME', 'y_1'), ('OP', '*'), ('NUM', '42', '42')], '?rest')
+str repl, bytes pattern, no match -> b'x'
+str repl, bytes pattern, match -> TypeError: sequence item 1: expected a bytes-like object, str found
+bytes repl, str pattern -> TypeError: sequence item 1: expected str instance, bytes found
+int repl -> TypeError: decoding to str: need a bytes-like object, int found
+callable returns None -> 'xy'
+callable returns int later -> TypeError: sequence item 1: expected str instance, int found
+sub no match is subject -> True

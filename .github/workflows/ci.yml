@@ -120,6 +120,13 @@ jobs:
           find "$HOME/.local/lib" -name '*.pth' 2>/dev/null | head -20 || true
           echo "(no output above means no user-site .pth files, which is the state protopy_import_site was measured green in)"
 
+      - name: Dependencies
+        # PCRE2, the engine of the re module (system library, through
+        # pkg-config; see PROTOPY_BUNDLED_PCRE2 in CMakeLists.txt).
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpcre2-dev pkg-config
+
       - name: Configure
         # Developer/add_subdirectory mode: no PROTO_CORE_PREFIX, no
         # PROTOCORE_REQUIRE_PACKAGE.  Either one would foreclose it -- see the
@@ -215,6 +222,13 @@ jobs:
           repository: ${{ env.PROTOCORE_REPO }}
           ref: ${{ env.PROTOCORE_REF }}
           path: protoCore
+
+      - name: Dependencies
+        # PCRE2, the engine of the re module (system library, through
+        # pkg-config; see PROTOPY_BUNDLED_PCRE2 in CMakeLists.txt).
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpcre2-dev pkg-config
 
       - name: Build
         working-directory: protoPython

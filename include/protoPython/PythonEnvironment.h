@@ -208,6 +208,15 @@ public:
     const proto::ProtoObject* getBytesPrototype() const { return bytesPrototype; }
 
     /**
+     * @brief Native state of the `re` module (src/library/ReModule.cpp) for
+     * this environment: the attribute-name symbols it reads on every match.
+     * Symbols belong to one ProtoSpace, so they are kept with the environment
+     * rather than in a process-wide static. Owned here; opaque to everyone
+     * but ReModule.cpp.
+     */
+    std::shared_ptr<void>& reModuleState() { return reModuleState_; }
+
+    /**
      * @brief Gets the Python 'slice' type.
      */
     const proto::ProtoObject* getSliceType() const { return sliceType; }
@@ -1596,6 +1605,7 @@ private:
     const proto::ProtoObject* tuplePrototype;
     const proto::ProtoObject* setPrototype;
     const proto::ProtoObject* bytesPrototype;
+    std::shared_ptr<void> reModuleState_;  // see reModuleState()
     const proto::ProtoObject* nonePrototype;
     const proto::ProtoObject* ellipsisPrototype;
     const proto::ProtoObject* notImplementedPrototype;

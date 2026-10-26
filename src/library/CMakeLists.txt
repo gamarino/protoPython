@@ -69,6 +69,8 @@ target_include_directories(protoPython PRIVATE ${PROTOPYTHON_GENERATED_INCLUDE_D
 target_link_libraries(protoPython PUBLIC
     protoCore
 )
+# The `re` module's engine (see PROTOPY_PCRE2_TARGET in the top-level file).
+target_link_libraries(protoPython PRIVATE ${PROTOPY_PCRE2_TARGET})
 
 set_target_properties(protoPython PROPERTIES
     VERSION ${PROJECT_VERSION}

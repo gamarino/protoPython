@@ -1,2176 +1,2635 @@
-// src/library/ReModule.cpp
+// src/library/ReModule.cpp -- the `re` module on PCRE2.
+//
+// Python's `re` is implemented over PCRE2's 8-bit library (UTF mode for str
+// patterns, byte mode for bytes patterns) with its JIT. Earlier versions
+// translated patterns to ECMAScript and matched with std::wregex, recompiling
+// the pattern on every call: about 47 us per search where CPython takes 0.5.
+//
+// The pieces:
+//   Translator       Python pattern syntax -> PCRE2 syntax, with Python's
+//                    errors (re.error, with the position) for everything
+//                    Python rejects, so PCRE2 never sees a construct whose
+//                    meaning differs between the two (see "Translation").
+//   CompiledPattern  the translation and its compiled code: one variant for
+//                    search, one anchored (match) and one anchored at both
+//                    ends (fullmatch), each compiled on first use and
+//                    JIT-compiled where the platform supports it. Owned by
+//                    the Pattern object (released by its finalizer).
+//   Subject          the UTF-8 bytes of a str subject (the bytes of a bytes
+//                    one) and the code point <-> byte offset map, built only
+//                    for non-ASCII text.
+//   MatchState       per-thread PCRE2 match data, match context and JIT
+//                    stack (thread_local: no native thread API is used).
+//
+// Positions reported to Python are code point indexes; PCRE2 works in bytes.
+
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/ReModule.h>
-#include <cctype>
-#include <climits>
+
+#define PCRE2_CODE_UNIT_WIDTH 8
+#include <pcre2.h>
+
+#include <algorithm>
+#include <atomic>
+#include <cstdint>
 #include <cstdio>
-#include <cwchar>
-#include <cwctype>
-#include <regex>
+#include <cstring>
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <new>
 #include <string>
 #include <vector>
 
 namespace protoPython {
-
-// Forward declaration for Scanner.scan to call actions
-extern const proto::ProtoObject* invokePythonCallable(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* callable,
-    const proto::ProtoArguments* args,
-    const proto::ProtoKeywordArguments* kwargs);
-
 namespace re {
 
-// ---------------------------------------------------------------------------
-// Code points.
-// A Python str is a sequence of code points. Matching std::regex over the
-// UTF-8 bytes of a str made a character class see each byte of a multibyte
-// character on its own, reported match positions in bytes and split
-// characters in group strings. Subjects and patterns are therefore matched as
-// UTF-32 strings with std::wregex (wchar_t is 32 bits on Linux), or with a
-// char32_t std::basic_regex where wchar_t is 16 bits (Windows).
-// ---------------------------------------------------------------------------
-#if WCHAR_MAX >= 0x10FFFF
-// wchar_t holds every code point (Linux, macOS): std::wregex as always.
-using ReChar = wchar_t;
-using ReString = std::wstring;
-using ReRegex = std::wregex;
-using ReMatch = std::wsmatch;
-using ReIterator = std::wsregex_iterator;
-using ReTokenIterator = std::wsregex_token_iterator;
-#define RE_LIT(x) L##x
-#else
-// wchar_t is UTF-16 (Windows): match UTF-32 char32_t strings instead, so
-// positions stay code point indexes. The standard library has regex traits
-// for char and wchar_t only; these give std::basic_regex what it needs for
-// char32_t, with the classification std::wregex's default "C" locale gives
-// (towlower/isw* within the BMP, nothing above it).
-class ReTraits : public std::_Regex_traits_base {
-public:
-    using _Uelem = unsigned int;
-    using char_type = char32_t;
-    using size_type = size_t;
-    using string_type = std::u32string;
-    using locale_type = std::locale;
+namespace {
 
-    static size_type length(const char32_t* str) { return std::char_traits<char32_t>::length(str); }
-    char32_t translate(char32_t c) const { return c; }
-    char32_t translate_nocase(char32_t c) const {
-        return c < 0x10000 ? static_cast<char32_t>(std::towlower(static_cast<wint_t>(c))) : c;
+// Python re flag bits.
+constexpr long long F_TEMPLATE = 1;
+constexpr long long F_I = 2;
+constexpr long long F_L = 4;
+constexpr long long F_M = 8;
+constexpr long long F_S = 16;
+constexpr long long F_U = 32;
+constexpr long long F_X = 64;
+constexpr long long F_DEBUG = 128;
+constexpr long long F_A = 256;
+
+// The engine's resource limits. A pattern that needs more raises
+// RecursionError, never a silent "no match".
+constexpr std::uint32_t kMatchLimit = 100000000u;       // backtracking steps
+constexpr std::uint32_t kDepthLimit = 10000000u;
+constexpr std::uint32_t kHeapLimitKiB = 1u << 20;       // 1 GiB of backtracking memory
+constexpr std::size_t kJitStackStart = 32u << 10;
+constexpr std::size_t kJitStackMax = 8u << 20;
+// Subjects at least this long are matched outside the managed region, so a
+// long match never holds up a collection.
+constexpr std::size_t kUnmanagedSubjectBytes = 64u << 10;
+// Module-level calls with a str or bytes pattern reuse compiled patterns
+// from a cache of at most this many entries (CPython keeps 512).
+constexpr std::size_t kCacheSize = 512;
+
+// ---------------------------------------------------------------------------
+// Code points
+// ---------------------------------------------------------------------------
+
+// The length of the UTF-8 sequence that starts at s[i], as protoCore reads
+// it: a malformed sequence is one code point per byte. Surrogates (encoded
+// as three-byte sequences, as a str may hold them) count as one code point.
+size_t utf8SeqLen(const std::string& s, size_t i) {
+    const unsigned char c = static_cast<unsigned char>(s[i]);
+    size_t n = c < 0x80 ? 1 : (c >> 5) == 0x6 ? 2 : (c >> 4) == 0xe ? 3 : (c >> 3) == 0x1e ? 4 : 1;
+    if (i + n > s.size()) return 1;
+    for (size_t k = 1; k < n; ++k) {
+        if ((static_cast<unsigned char>(s[i + k]) & 0xC0) != 0x80) return 1;
     }
-    template <class It> string_type transform(It first, It last) const { return string_type(first, last); }
-    template <class It> string_type transform_primary(It first, It last) const {
-        string_type out(first, last);
-        for (auto& c : out) c = translate_nocase(c);
-        return out;
+    return n;
+}
+
+std::uint32_t utf8Decode(const std::string& s, size_t i, size_t n) {
+    const unsigned char c = static_cast<unsigned char>(s[i]);
+    if (n == 1) return c;
+    std::uint32_t cp = n == 2 ? (c & 0x1f) : n == 3 ? (c & 0x0f) : (c & 0x07);
+    for (size_t k = 1; k < n; ++k) cp = (cp << 6) | (static_cast<unsigned char>(s[i + k]) & 0x3f);
+    return cp;
+}
+
+void decodeCodePoints(const std::string& s, std::vector<std::uint32_t>& out) {
+    out.clear();
+    out.reserve(s.size());
+    for (size_t i = 0; i < s.size();) {
+        const size_t n = utf8SeqLen(s, i);
+        out.push_back(utf8Decode(s, i, n));
+        i += n;
     }
-    template <class It> string_type lookup_collatename(It first, It last) const {
-        return string_type(first, last);
+}
+
+void appendUtf8(std::string& out, std::uint32_t cp) {
+    if (cp < 0x80) {
+        out += static_cast<char>(cp);
+    } else if (cp < 0x800) {
+        out += static_cast<char>(0xc0 | (cp >> 6));
+        out += static_cast<char>(0x80 | (cp & 0x3f));
+    } else if (cp < 0x10000) {
+        out += static_cast<char>(0xe0 | (cp >> 12));
+        out += static_cast<char>(0x80 | ((cp >> 6) & 0x3f));
+        out += static_cast<char>(0x80 | (cp & 0x3f));
+    } else {
+        out += static_cast<char>(0xf0 | (cp >> 18));
+        out += static_cast<char>(0x80 | ((cp >> 12) & 0x3f));
+        out += static_cast<char>(0x80 | ((cp >> 6) & 0x3f));
+        out += static_cast<char>(0x80 | (cp & 0x3f));
     }
-    bool isctype(char32_t c, char_class_type mask) const {
-        if (mask == static_cast<char_class_type>(-1)) return c == U'_' || isctype(c, _Ch_alnum);
-        if (c >= 0x10000) return false;
-        // The character's classification bits, laid out as ctype<wchar_t>'s
-        // table: the alpha mask includes the upper and lower bits, so a
-        // letter carries only alpha's own bit plus its case bit.
-        const wint_t w = static_cast<wint_t>(c);
-        unsigned int bits = 0;
-        if (std::iswalpha(w)) bits |= static_cast<unsigned int>(_Ch_alpha & ~(_Ch_upper | _Ch_lower));
-        if (std::iswupper(w)) bits |= _Ch_upper;
-        if (std::iswlower(w)) bits |= _Ch_lower;
-        if (std::iswdigit(w)) bits |= _Ch_digit;
-        if (std::iswspace(w)) bits |= _Ch_space;
-        if (std::iswpunct(w)) bits |= _Ch_punct;
-        if (std::iswcntrl(w)) bits |= _Ch_cntrl;
-        if (std::iswxdigit(w)) bits |= _Ch_xdigit;
-        if (std::iswblank(w)) bits |= _Ch_blank;
-        return (bits & static_cast<unsigned short>(mask)) != 0;
-    }
-    template <class It> char_class_type lookup_classname(It first, It last, bool icase = false) const {
-        static const struct { const char* name; char_class_type mask; } names[] = {
-            {"alnum", _Ch_alnum}, {"alpha", _Ch_alpha}, {"blank", _Ch_blank}, {"cntrl", _Ch_cntrl},
-            {"d", _Ch_digit}, {"digit", _Ch_digit}, {"graph", _Ch_graph}, {"lower", _Ch_lower},
-            {"print", _Ch_print}, {"punct", _Ch_punct}, {"space", _Ch_space}, {"s", _Ch_space},
-            {"upper", _Ch_upper}, {"w", static_cast<char_class_type>(-1)}, {"xdigit", _Ch_xdigit},
-        };
-        std::string key;
-        for (It it = first; it != last; ++it) {
-            const char32_t c = *it;
-            key += static_cast<char>(c < 0x80 ? std::tolower(static_cast<int>(c)) : '?');
-        }
-        for (const auto& n : names) {
-            if (key == n.name) {
-                char_class_type m = n.mask;
-                if (icase && (m & (_Ch_lower | _Ch_upper))) m |= _Ch_lower | _Ch_upper;
-                return m;
+}
+
+bool isAsciiLetter(std::uint32_t c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); }
+bool isAsciiDigit(std::uint32_t c) { return c >= '0' && c <= '9'; }
+bool isOctDigit(std::uint32_t c) { return c >= '0' && c <= '7'; }
+bool isHexDigit(std::uint32_t c) {
+    return isAsciiDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+std::uint32_t hexValue(std::uint32_t c) {
+    return isAsciiDigit(c) ? c - '0' : (c | 0x20) - 'a' + 10;
+}
+
+// ---------------------------------------------------------------------------
+// Translation: Python pattern syntax -> PCRE2 pattern syntax
+//
+// The output is pure ASCII: every character that is not an ASCII letter,
+// digit or '_' is written as \x{...}, so no character of the pattern can take
+// a PCRE2 meaning Python does not give it. Python constructs are rewritten:
+//   (?P<name>...)       a plain capturing group; names are kept here
+//   (?P=name), \N       \g{N}
+//   (?(name)...)        (?(N)...)
+//   \Z, \z              \z (PCRE2's \Z also matches before a final "\n")
+//   \v                  \x{0b} (PCRE2's \v is a class)
+//   \u, \U, \x, octal   \x{...}
+//   {,n} {m,} {m,n}     normalized; a '{' that is not a quantifier is literal
+//   [ inside a class    \x{5b} (PCRE2 would read [:alpha:])
+//   (?x) / re.VERBOSE   whitespace and comments are removed here
+//   \w, \W, \s, \S      for str patterns without re.ASCII, Python's own sets:
+//                       \w is [\p{L}\p{N}_] (str.isalnum() or '_'), \s is the
+//                       29 code points str.isspace() accepts
+// Everything Python rejects raises re.error here, with Python's message and
+// position. Constructs PCRE2 has and Python does not -- (?R), (?1), (?&name),
+// (?|...), (*VERB), \K, \Q...\E, \p{..} and the like -- are rejected the way
+// Python rejects them (unknown extension, bad escape, nothing to repeat).
+// ---------------------------------------------------------------------------
+
+struct PatternError {
+    std::string msg;
+    size_t pos;             // code point index in the pattern
+    bool overflow = false;  // OverflowError, as CPython raises for huge repeat counts
+};
+
+// The code points str.isspace() accepts (CPython 3.14, Unicode 16), and
+// their complement, for use inside a character class.
+const char* const kPySpaceClass =
+    "\\x{09}-\\x{0d}\\x{1c}-\\x{20}\\x{85}\\x{a0}\\x{1680}\\x{2000}-\\x{200a}"
+    "\\x{2028}\\x{2029}\\x{202f}\\x{205f}\\x{3000}";
+const char* const kPyNonSpaceClass =
+    "\\x{0}-\\x{8}\\x{e}-\\x{1b}\\x{21}-\\x{84}\\x{86}-\\x{9f}\\x{a1}-\\x{167f}\\x{1681}-\\x{1fff}"
+    "\\x{200b}-\\x{2027}\\x{202a}-\\x{202e}\\x{2030}-\\x{205e}\\x{2060}-\\x{2fff}\\x{3001}-\\x{10ffff}";
+// re.ASCII's sets, spelled out so they hold whatever PCRE2_UCP says.
+const char* const kAsciiWordClass = "A-Za-z0-9_";
+const char* const kAsciiNonWordClass = "\\x{0}-\\x{2f}\\x{3a}-\\x{40}\\x{5b}-\\x{5e}\\x{60}\\x{7b}-\\x{10ffff}";
+const char* const kAsciiNonDigitClass = "\\x{0}-\\x{2f}\\x{3a}-\\x{10ffff}";
+const char* const kAsciiSpaceClass = "\\x{9}-\\x{d}\\x{20}";
+const char* const kAsciiNonSpaceClass = "\\x{0}-\\x{8}\\x{e}-\\x{1f}\\x{21}-\\x{10ffff}";
+// A class no character belongs to: what a surrogate code point becomes (a
+// subject holding one is rejected before matching, so none can match).
+const char* const kNoChar = "[^\\x{0}-\\x{10ffff}]";
+
+// A valid group name: a Python identifier. str.isidentifier is
+// approximated by its definition over general categories (XID_Start:
+// letters, letter numbers, '_'; XID_Continue adds marks, decimal digits and
+// connector punctuation), checked by PCRE2's Unicode tables. Bytes names
+// must be ASCII identifiers.
+bool isIdentifier(const std::string& name, bool isBytes) {
+    if (name.empty()) return false;
+    const unsigned char first = static_cast<unsigned char>(name[0]);
+    if (isBytes || first < 0x80) {
+        bool ascii = true;
+        for (unsigned char c : name) ascii = ascii && c < 0x80;
+        if (ascii || isBytes) {
+            if (!ascii) return false;
+            if (!(std::isalpha(first) || first == '_')) return false;
+            for (unsigned char c : name) {
+                if (!(std::isalnum(c) || c == '_')) return false;
             }
+            return true;
+        }
+    }
+    static pcre2_code* code = nullptr;
+    static std::once_flag once;
+    std::call_once(once, [] {
+        int err = 0;
+        PCRE2_SIZE off = 0;
+        static const char kIdent[] =
+            "^[\\p{L}\\p{Nl}_][\\p{L}\\p{Nl}\\p{Mn}\\p{Mc}\\p{Nd}\\p{Pc}]*\\z";
+        code = pcre2_compile(reinterpret_cast<PCRE2_SPTR>(kIdent), PCRE2_ZERO_TERMINATED, PCRE2_UTF, &err, &off,
+                             nullptr);
+    });
+    if (!code) return false;
+    pcre2_match_data* md = pcre2_match_data_create(1, nullptr);
+    if (!md) throw std::bad_alloc();
+    const int rc = pcre2_match(code, reinterpret_cast<PCRE2_SPTR>(name.data()), name.size(), 0, 0, md, nullptr);
+    pcre2_match_data_free(md);
+    return rc >= 0;
+}
+
+struct Translation {
+    std::string out;
+    long long flags = 0;  // effective flags (argument, inline, implied UNICODE)
+    unsigned groups = 0;
+    std::vector<std::pair<std::string, unsigned>> names;  // in definition order
+    std::vector<unsigned> parent;                         // parent[g]: enclosing group, 0 at top
+};
+
+class Translator {
+public:
+    Translator(const std::vector<std::uint32_t>& p, bool isBytes, long long flags)
+        : p_(p), n_(p.size()), isBytes_(isBytes) {
+        t_.flags = flags;
+        t_.parent.push_back(0);
+        closed_.push_back(true);
+    }
+
+    Translation run() {
+        verbose_ = (t_.flags & F_X) != 0;
+        caseless_ = (t_.flags & F_I) != 0;
+        leadingFlags();
+        globalAscii_ = !isBytes_ && (t_.flags & F_A);
+        ascii_ = globalAscii_;
+        pcreI_ = wantPcreI();
+        while (true) {
+            if (verbose_) i_ = skipVerbose(i_);
+            if (i_ >= n_) break;
+            const std::uint32_t c = p_[i_];
+            switch (c) {
+                case '\\': escape(); break;
+                case '[': klass(); last_ = Last::Atom; break;
+                case '(': open(); break;
+                case ')': close(); break;
+                case '|':
+                    if (!st_.empty() && st_.back().cond && ++st_.back().bars > 1)
+                        fail("conditional backref with more than two branches", i_);
+                    t_.out += '|';
+                    last_ = Last::None;
+                    ++i_;
+                    break;
+                case '*': case '+': case '?':
+                    quantifier(std::string(1, static_cast<char>(c)), i_, i_ + 1);
+                    break;
+                case '{': brace(); break;
+                case '^': t_.out += '^'; last_ = Last::Anchor; ++i_; break;
+                case '$': t_.out += '$'; last_ = Last::Anchor; ++i_; break;
+                case '.': t_.out += '.'; last_ = Last::Atom; ++i_; break;
+                default:
+                    literal(c);
+                    last_ = Last::Atom;
+                    ++i_;
+            }
+        }
+        if (!st_.empty()) fail("missing ), unterminated subpattern", st_.back().open);
+        for (const auto& r : condRefs_) {
+            if (r.first > t_.groups) fail("invalid group reference " + std::to_string(r.first), r.second);
+        }
+        return std::move(t_);
+    }
+
+private:
+    enum class Last { None, Atom, Anchor, Quant };
+    struct Frame {
+        unsigned cap;
+        bool verbose;
+        bool caseless;
+        bool ascii;
+        bool pcreI;
+        size_t open;
+        bool cond;
+        int bars;
+        bool lookbehind;
+        unsigned firstGroup;  // groups defined before this frame opened
+    };
+
+    const std::vector<std::uint32_t>& p_;
+    size_t n_;
+    bool isBytes_;
+    size_t i_ = 0;
+    Translation t_;
+    bool verbose_ = false;
+    bool caseless_ = false;
+    bool globalAscii_ = false;  // a str pattern under re.ASCII (no PCRE2_UCP)
+    bool ascii_ = false;        // re.ASCII in the current scope (str only)
+    bool pcreI_ = false;        // PCRE2's caseless option in the current scope
+    Last last_ = Last::None;
+    std::vector<Frame> st_;
+    std::vector<bool> closed_;
+    std::vector<std::pair<unsigned, size_t>> condRefs_;
+
+    [[noreturn]] void fail(const std::string& msg, size_t pos) { throw PatternError{msg, pos}; }
+
+    // re.ASCII | re.IGNORECASE on a str pattern: PCRE2 folds every letter in
+    // UTF mode, Python only ASCII ones, so case-insensitivity is spelled out
+    // here ([aA]) and PCRE2 matches case-sensitively in that scope.
+    bool emulateCaseless() const { return caseless_ && !isBytes_ && ascii_; }
+    bool wantPcreI() const { return caseless_ && (isBytes_ || !ascii_); }
+
+    // The first group number a back reference made here may not use: the
+    // groups of an enclosing lookbehind (CPython rejects them).
+    int lookbehindFirst() const {
+        for (const Frame& f : st_) {
+            if (f.lookbehind) return static_cast<int>(f.firstGroup) + 1;
+        }
+        return -1;
+    }
+
+    // \w \W \d \D \s \S as PCRE2 syntax, outside (inClass false: a complete
+    // atom) or inside a character class (a class body fragment).
+    std::string classEscape(std::uint32_t e, bool inClass) {
+        auto wrap = [&](const std::string& body, bool neg) {
+            return inClass ? body : (neg ? "[^" : "[") + body + "]";
+        };
+        if (isBytes_) return std::string("\\") + static_cast<char>(e);
+        if (ascii_) {
+            switch (e) {
+                case 'w': return wrap(kAsciiWordClass, false);
+                case 'W': return inClass ? std::string(kAsciiNonWordClass) : wrap(kAsciiWordClass, true);
+                case 'd': return wrap("0-9", false);
+                case 'D': return inClass ? std::string(kAsciiNonDigitClass) : wrap("0-9", true);
+                case 's': return wrap(kAsciiSpaceClass, false);
+                default: return inClass ? std::string(kAsciiNonSpaceClass) : wrap(kAsciiSpaceClass, true);
+            }
+        }
+        switch (e) {
+            case 'w': return wrap("\\p{L}\\p{N}_", false);
+            case 'W':
+                if (!inClass) return wrap("\\p{L}\\p{N}_", true);
+                // No class body is the complement of [\p{L}\p{N}_]. PCRE2's
+                // own \W under PCRE2_UCP is that complement (minus marks and
+                // connector punctuation from PCRE2 10.43 on); without UCP
+                // (a (?u:...) scope in a re.ASCII pattern) it is ASCII-only.
+                if (globalAscii_)
+                    fail("\\W inside a character class in a (?u:...) scope of a re.ASCII pattern is not "
+                         "supported by this re module", i_ - 2);
+                return "\\W";
+            case 'd': return inClass ? std::string("\\p{Nd}") : std::string("\\p{Nd}");
+            case 'D': return "\\P{Nd}";
+            case 's': return wrap(kPySpaceClass, false);
+            default: return inClass ? std::string(kPyNonSpaceClass) : wrap(kPySpaceClass, true);
+        }
+    }
+
+    // \b / \B: PCRE2's own where its notion of a word character is
+    // Python's for the scope, else spelled out with lookarounds.
+    std::string boundary(bool word) const {
+        if (isBytes_ || ascii_ == globalAscii_) return word ? "\\b" : "\\B";
+        const std::string w = ascii_ ? "[A-Za-z0-9_]" : "[\\p{L}\\p{N}_]";
+        if (word) return "(?:(?<=" + w + ")(?!" + w + ")|(?<!" + w + ")(?=" + w + "))";
+        return "(?:(?<=" + w + ")(?=" + w + ")|(?<!" + w + ")(?!" + w + "))";
+    }
+
+    std::string text(size_t a, size_t b) const {
+        std::string s;
+        for (size_t k = a; k < b && k < n_; ++k) appendUtf8(s, p_[k]);
+        return s;
+    }
+
+    static bool isFlagChar(std::uint32_t c) {
+        return c == 'a' || c == 'i' || c == 'L' || c == 'm' || c == 's' || c == 'u' || c == 'x';
+    }
+    static long long flagOf(std::uint32_t c) {
+        switch (c) {
+            case 'a': return F_A;
+            case 'i': return F_I;
+            case 'L': return F_L;
+            case 'm': return F_M;
+            case 's': return F_S;
+            case 'u': return F_U;
+            case 'x': return F_X;
+            default: return 0;
+        }
+    }
+
+    size_t skipVerbose(size_t j) const {
+        while (j < n_) {
+            const std::uint32_t c = p_[j];
+            if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f') {
+                ++j;
+            } else if (c == '#') {
+                while (j < n_ && p_[j] != '\n') ++j;
+            } else {
+                break;
+            }
+        }
+        return j;
+    }
+
+    void checkFlagCombination(long long f, size_t pos) {
+        if (isBytes_) {
+            if (f & F_U) fail("bad inline flags: cannot use 'u' flag with a bytes pattern", pos);
+        } else if (f & F_L) {
+            fail("bad inline flags: cannot use 'L' flag with a str pattern", pos);
+        }
+        const int count = ((f & F_A) ? 1 : 0) + ((f & F_U) ? 1 : 0) + ((f & F_L) ? 1 : 0);
+        if (count > 1) fail("bad inline flags: flags 'a', 'u' and 'L' are incompatible", pos);
+    }
+
+    // (?aiLmsux) groups at the very start set global flags.
+    void leadingFlags() {
+        for (;;) {
+            size_t j = verbose_ ? skipVerbose(i_) : i_;
+            if (!(j + 2 < n_ && p_[j] == '(' && p_[j + 1] == '?' && isFlagChar(p_[j + 2]))) return;
+            size_t k = j + 2;
+            long long add = 0;
+            while (k < n_ && isFlagChar(p_[k])) add |= flagOf(p_[k++]);
+            if (k >= n_ || p_[k] != ')') return;  // a scoped group: the main loop
+            // Conflicts with the flags argument are a ValueError, checked
+            // by the caller once the whole pattern is read (CPython's
+            // fix_flags); here only the inline flags among themselves.
+            checkFlagCombination(add, k);
+            t_.flags |= add;
+            verbose_ = (t_.flags & F_X) != 0;
+            caseless_ = (t_.flags & F_I) != 0;
+            i_ = k + 1;
+        }
+    }
+
+    static void emitCp(std::string& out, std::uint32_t c) {
+        if (c < 0x80 && (isAsciiLetter(c) || isAsciiDigit(c) || c == '_')) {
+            out += static_cast<char>(c);
+            return;
+        }
+        char buf[16];
+        std::snprintf(buf, sizeof buf, "\\x{%x}", static_cast<unsigned>(c));
+        out += buf;
+    }
+
+    bool isSurrogate(std::uint32_t c) const { return !isBytes_ && c >= 0xD800 && c <= 0xDFFF; }
+
+    void literal(std::uint32_t c) {
+        if (isSurrogate(c)) {
+            t_.out += kNoChar;
+        } else if (emulateCaseless() && isAsciiLetter(c)) {
+            t_.out += '[';
+            t_.out += static_cast<char>(c | 0x20);
+            t_.out += static_cast<char>(c & ~0x20u);
+            t_.out += ']';
+        } else {
+            emitCp(t_.out, c);
+        }
+    }
+
+    void quantifier(const std::string& spec, size_t start, size_t next) {
+        if (last_ == Last::None || last_ == Last::Anchor) fail("nothing to repeat", start);
+        if (last_ == Last::Quant) fail("multiple repeat", start);
+        t_.out += spec;
+        i_ = next;
+        if (i_ < n_ && (p_[i_] == '?' || p_[i_] == '+')) {
+            t_.out += static_cast<char>(p_[i_]);
+            ++i_;
+        }
+        last_ = Last::Quant;
+    }
+
+    void brace() {
+        const size_t s = i_;
+        size_t k = i_ + 1;
+        auto asLiteral = [&]() {
+            literal('{');
+            last_ = Last::Atom;
+            ++i_;
+        };
+        if (k < n_ && p_[k] == '}') return asLiteral();
+        std::string lo, hi;
+        while (k < n_ && isAsciiDigit(p_[k])) lo += static_cast<char>(p_[k++]);
+        if (k < n_ && p_[k] == ',') {
+            ++k;
+            while (k < n_ && isAsciiDigit(p_[k])) hi += static_cast<char>(p_[k++]);
+        } else {
+            hi = lo;
+        }
+        if (!(k < n_ && p_[k] == '}')) return asLiteral();
+        ++k;
+        const unsigned long long kMaxRepeat = 4294967295ull;  // CPython's MAXREPEAT
+        auto value = [&](const std::string& d) -> unsigned long long {
+            const unsigned long long v = d.size() > 10 ? kMaxRepeat : std::stoull(d);
+            if (v >= kMaxRepeat) throw PatternError{"the repetition number is too large", s + 1, true};
+            return v;
+        };
+        const unsigned long long mn = lo.empty() ? 0 : value(lo);
+        const bool unbounded = hi.empty();
+        const unsigned long long mx = unbounded ? 0 : value(hi);
+        if (!unbounded && mx < mn) fail("min repeat greater than max repeat", s + 1);
+        if (mn > 65535 || (!unbounded && mx > 65535))
+            fail("repetition counts above 65535 are not supported by the regular-expression engine", s + 1);
+        std::string spec = "{" + std::to_string(mn) + "," + (unbounded ? std::string() : std::to_string(mx)) + "}";
+        quantifier(spec, s, k);
+    }
+
+    // Exactly `count` hex digits at i_ (after the escape letter).
+    std::uint32_t hexDigits(size_t count, size_t escStart) {
+        if (i_ + count > n_) fail("incomplete escape " + text(escStart, n_), escStart);
+        std::uint32_t v = 0;
+        for (size_t k = 0; k < count; ++k) {
+            const std::uint32_t h = p_[i_ + k];
+            if (!isHexDigit(h)) fail("incomplete escape " + text(escStart, i_ + k), escStart);
+            v = v * 16 + hexValue(h);
+        }
+        i_ += count;
+        return v;
+    }
+
+    // The escape letters both contexts share that stand for one code point:
+    // \a \f \n \r \t \v \x \u \U \N. Returns true and sets `cp` for one.
+    bool charEscape(std::uint32_t e, size_t s, std::uint32_t& cp) {
+        switch (e) {
+            case 'a': cp = 0x07; return true;
+            case 'f': cp = 0x0c; return true;
+            case 'n': cp = 0x0a; return true;
+            case 'r': cp = 0x0d; return true;
+            case 't': cp = 0x09; return true;
+            case 'v': cp = 0x0b; return true;
+            case 'x': cp = hexDigits(2, s); return true;
+            case 'u':
+                if (isBytes_) fail("bad escape \\u", s);
+                cp = hexDigits(4, s);
+                return true;
+            case 'U':
+                if (isBytes_) fail("bad escape \\U", s);
+                cp = hexDigits(8, s);
+                if (cp > 0x10FFFF) fail("bad escape " + text(s, i_), s);
+                return true;
+            case 'N':
+                if (isBytes_) fail("bad escape \\N", s);
+                fail("named Unicode escapes (\\N{...}) are not supported by this re module", s);
+            default:
+                return false;
+        }
+    }
+
+    void escape() {
+        const size_t s = i_;
+        if (i_ + 1 >= n_) fail("bad escape (end of pattern)", s);
+        const std::uint32_t e = p_[i_ + 1];
+        i_ += 2;
+        std::uint32_t cp = 0;
+        switch (e) {
+            case 'A': t_.out += "\\A"; last_ = Last::Anchor; return;
+            case 'Z': case 'z': t_.out += "\\z"; last_ = Last::Anchor; return;
+            case 'b': t_.out += boundary(true); last_ = Last::Anchor; return;
+            case 'B': t_.out += boundary(false); last_ = Last::Anchor; return;
+            case 'd': case 'D': case 'w': case 'W': case 's': case 'S':
+                t_.out += classEscape(e, false);
+                last_ = Last::Atom;
+                return;
+            case '0': {
+                std::uint32_t v = 0;
+                for (int k = 0; k < 2 && i_ < n_ && isOctDigit(p_[i_]); ++k) v = v * 8 + (p_[i_++] - '0');
+                emitLiteralAt(v, s);
+                return;
+            }
+            default:
+                break;
+        }
+        if (e >= '1' && e <= '9') {
+            unsigned g = e - '0';
+            if (i_ < n_ && isAsciiDigit(p_[i_])) {
+                if (isOctDigit(e) && isOctDigit(p_[i_]) && i_ + 1 < n_ && isOctDigit(p_[i_ + 1])) {
+                    const std::uint32_t v = (e - '0') * 64 + (p_[i_] - '0') * 8 + (p_[i_ + 1] - '0');
+                    i_ += 2;
+                    if (v > 0377) fail("octal escape value " + text(s, i_) + " outside of range 0-0o377", s);
+                    emitLiteralAt(v, s);
+                    return;
+                }
+                g = g * 10 + (p_[i_] - '0');
+                ++i_;
+            }
+            backref(g, s);
+            return;
+        }
+        if (charEscape(e, s, cp)) {
+            emitLiteralAt(cp, s);
+            return;
+        }
+        if (e < 0x80 && isAsciiLetter(e)) fail("bad escape \\" + std::string(1, static_cast<char>(e)), s);
+        emitLiteralAt(e, s);
+    }
+
+    void emitLiteralAt(std::uint32_t cp, size_t s) {
+        const size_t save = i_;
+        i_ = s;
+        literal(cp);
+        i_ = save;
+        last_ = Last::Atom;
+    }
+
+    void backref(unsigned g, size_t s) {
+        if (g > t_.groups) fail("invalid group reference " + std::to_string(g), s + 1);
+        if (!closed_[g]) fail("cannot refer to an open group", s);
+        checkLookbehindRef(g, i_);
+        if (emulateCaseless())
+            fail("case-insensitive back references are not supported together with re.ASCII by this re module", s);
+        t_.out += "\\g{" + std::to_string(g) + "}";
+        last_ = Last::Atom;
+    }
+
+    void checkLookbehindRef(unsigned g, size_t pos) {
+        const int first = lookbehindFirst();
+        if (first > 0 && static_cast<int>(g) >= first)
+            fail("cannot refer to group defined in the same lookbehind subpattern", pos);
+    }
+
+    // ---- character classes ----
+
+    struct ClassItem {
+        bool isSet = false;
+        std::string set;
+        std::uint32_t cp = 0;
+    };
+
+    ClassItem classItem() {
+        ClassItem it;
+        const std::uint32_t c = p_[i_];
+        if (c != '\\') {
+            it.cp = c;
+            ++i_;
+            return it;
+        }
+        const size_t s = i_;
+        if (i_ + 1 >= n_) fail("bad escape (end of pattern)", s);
+        const std::uint32_t e = p_[i_ + 1];
+        i_ += 2;
+        switch (e) {
+            case 'd': case 'D': case 'w': case 'W': case 's': case 'S':
+                it.isSet = true;
+                it.set = classEscape(e, true);
+                return it;
+            case 'b': it.cp = 0x08; return it;
+            default: break;
+        }
+        if (isOctDigit(e)) {
+            std::uint32_t v = e - '0';
+            for (int k = 0; k < 2 && i_ < n_ && isOctDigit(p_[i_]); ++k) v = v * 8 + (p_[i_++] - '0');
+            if (v > 0377) fail("octal escape value " + text(s, i_) + " outside of range 0-0o377", s);
+            it.cp = v;
+            return it;
+        }
+        if (e == '8' || e == '9') fail("bad escape \\" + std::string(1, static_cast<char>(e)), s);
+        std::uint32_t cp = 0;
+        if (charEscape(e, s, cp)) {
+            it.cp = cp;
+            return it;
+        }
+        if (e < 0x80 && isAsciiLetter(e)) fail("bad escape \\" + std::string(1, static_cast<char>(e)), s);
+        it.cp = e;
+        return it;
+    }
+
+    void emitRange(std::string& body, std::uint32_t lo, std::uint32_t hi) {
+        if (!isBytes_ && hi >= 0xD800 && lo <= 0xDFFF) {
+            // Surrogates cannot occur in a subject (see kNoChar): keep the
+            // rest of the range.
+            if (lo < 0xD800) emitRange(body, lo, 0xD7FF);
+            if (hi > 0xDFFF) emitRange(body, 0xE000, hi);
+            return;
+        }
+        emitCp(body, lo);
+        if (hi > lo) {
+            body += '-';
+            emitCp(body, hi);
+        }
+        if (!emulateCaseless()) return;
+        // The other case of the ASCII letters in [lo, hi].
+        auto addShifted = [&](std::uint32_t a, std::uint32_t b, std::uint32_t from, std::uint32_t to, int shift) {
+            const std::uint32_t x = std::max(a, from), y = std::min(b, to);
+            if (x > y) return;
+            emitCp(body, static_cast<std::uint32_t>(static_cast<int>(x) + shift));
+            if (y > x) {
+                body += '-';
+                emitCp(body, static_cast<std::uint32_t>(static_cast<int>(y) + shift));
+            }
+        };
+        addShifted(lo, hi, 'a', 'z', -32);
+        addShifted(lo, hi, 'A', 'Z', 32);
+    }
+
+    void klass() {
+        const size_t s = i_;
+        ++i_;
+        bool neg = false;
+        if (i_ < n_ && p_[i_] == '^') {
+            neg = true;
+            ++i_;
+        }
+        std::string body;
+        bool first = true;
+        for (;;) {
+            if (i_ >= n_) fail("unterminated character set", s);
+            if (p_[i_] == ']' && !first) {
+                ++i_;
+                break;
+            }
+            first = false;
+            const size_t itemStart = i_;
+            ClassItem a = classItem();
+            if (i_ + 1 < n_ && p_[i_] == '-' && p_[i_ + 1] != ']') {
+                ++i_;
+                ClassItem b = classItem();
+                if (a.isSet || b.isSet || b.cp < a.cp)
+                    fail("bad character range " + text(itemStart, i_), itemStart);
+                emitRange(body, a.cp, b.cp);
+            } else if (a.isSet) {
+                body += a.set;
+            } else {
+                emitRange(body, a.cp, a.cp);
+            }
+        }
+        if (body.empty()) {
+            // Only surrogates: no character, or (negated) every character.
+            t_.out += neg ? "[\\x{0}-\\x{10ffff}]" : kNoChar;
+            return;
+        }
+        t_.out += neg ? "[^" : "[";
+        t_.out += body;
+        t_.out += ']';
+    }
+
+    // ---- groups ----
+
+    void push(unsigned cap, size_t open, bool cond = false, bool lookbehind = false) {
+        st_.push_back(Frame{cap, verbose_, caseless_, ascii_, pcreI_, open, cond, 0, lookbehind, t_.groups});
+        last_ = Last::None;
+    }
+
+    unsigned currentCapture() const {
+        for (auto it = st_.rbegin(); it != st_.rend(); ++it) {
+            if (it->cap) return it->cap;
         }
         return 0;
     }
-    int value(char32_t c, int base) const {
-        if ((base != 8 && U'0' <= c && c <= U'9') || (base == 8 && U'0' <= c && c <= U'7'))
-            return static_cast<int>(c - U'0');
-        if (base != 16) return -1;
-        if (U'a' <= c && c <= U'f') return static_cast<int>(c - U'a' + 10);
-        if (U'A' <= c && c <= U'F') return static_cast<int>(c - U'A' + 10);
+
+    // A group name ending at `term`, validated as CPython does. i_ is left
+    // after the terminator.
+    std::string groupName(size_t start, std::uint32_t term) {
+        size_t j = start;
+        while (j < n_ && p_[j] != term) ++j;
+        if (j == start) fail("missing group name", start);
+        if (j >= n_) fail(term == '>' ? "missing >, unterminated name" : "missing ), unterminated name", start);
+        std::string name;
+        if (isBytes_) {
+            for (size_t k = start; k < j; ++k) name += static_cast<char>(p_[k]);
+        } else {
+            name = text(start, j);
+        }
+        if (!isIdentifier(name, isBytes_)) {
+            std::string shown = name;
+            if (isBytes_) {
+                shown.clear();
+                for (size_t k = start; k < j; ++k) {
+                if (p_[k] < 0x80) {
+                    shown += static_cast<char>(p_[k]);
+                } else {
+                    char b[8];
+                    std::snprintf(b, sizeof b, "\\x%02x", static_cast<unsigned>(p_[k]));
+                    shown += b;
+                }
+            }
+            }
+            fail("bad character in group name '" + shown + "'", start);
+        }
+        i_ = j + 1;
+        return name;
+    }
+
+    int lookupName(const std::string& name) const {
+        for (const auto& kv : t_.names) {
+            if (kv.first == name) return static_cast<int>(kv.second);
+        }
         return -1;
     }
-    locale_type imbue(locale_type loc) { locale_type old = loc_; loc_ = loc; return old; }
-    locale_type getloc() const { return loc_; }
-private:
-    locale_type loc_;
+
+    void capture(const std::string& name, size_t s, size_t nameStart) {
+        const unsigned g = ++t_.groups;
+        if (g > 65535) fail("too many groups", s);
+        t_.parent.push_back(currentCapture());
+        closed_.push_back(false);
+        if (!name.empty()) {
+            const int old = lookupName(name);
+            if (old >= 0) {
+                fail("redefinition of group name '" + name + "' as group " + std::to_string(g) +
+                     "; was group " + std::to_string(old), nameStart);
+            }
+            t_.names.emplace_back(name, g);
+        }
+        t_.out += '(';
+        push(g, s);
+    }
+
+    void open() {
+        const size_t s = i_;
+        if (!(i_ + 1 < n_ && p_[i_ + 1] == '?')) {
+            ++i_;
+            capture(std::string(), s, s);
+            return;
+        }
+        const size_t k = i_ + 2;
+        if (k >= n_) fail("unexpected end of pattern", k);
+        const std::uint32_t c = p_[k];
+        if (c == 'P') {
+            if (k + 1 >= n_) fail("unexpected end of pattern", k + 1);
+            const std::uint32_t d = p_[k + 1];
+            if (d == '<') {
+                const std::string name = groupName(k + 2, '>');
+                capture(name, s, k + 2);
+                return;
+            }
+            if (d == '=') {
+                const std::string name = groupName(k + 2, ')');
+                const int g = lookupName(name);
+                if (g < 0) fail("unknown group name '" + name + "'", k + 2);
+                if (!closed_[static_cast<size_t>(g)]) fail("cannot refer to an open group", k + 2);
+                checkLookbehindRef(static_cast<unsigned>(g), i_);
+                if (emulateCaseless())
+                    fail("case-insensitive back references are not supported together with re.ASCII by this re module", s);
+                t_.out += "\\g{" + std::to_string(g) + "}";
+                last_ = Last::Atom;
+                return;
+            }
+            fail("unknown extension ?P" + text(k + 1, k + 2), s + 1);
+        }
+        if (c == ':') {
+            t_.out += "(?:";
+            i_ = k + 1;
+            push(0, s);
+            return;
+        }
+        if (c == '=' || c == '!') {
+            t_.out += "(?";
+            t_.out += static_cast<char>(c);
+            i_ = k + 1;
+            push(0, s);
+            return;
+        }
+        if (c == '<') {
+            if (k + 1 >= n_) fail("unexpected end of pattern", k + 1);
+            if (p_[k + 1] == '=' || p_[k + 1] == '!') {
+                t_.out += "(?<";
+                t_.out += static_cast<char>(p_[k + 1]);
+                i_ = k + 2;
+                push(0, s, false, true);
+                return;
+            }
+            fail("unknown extension ?" + text(k, k + 2), s + 1);
+        }
+        if (c == '>') {
+            t_.out += "(?>";
+            i_ = k + 1;
+            push(0, s);
+            return;
+        }
+        if (c == '#') {
+            size_t j = k + 1;
+            while (j < n_ && p_[j] != ')') ++j;
+            if (j >= n_) fail("missing ), unterminated comment", s);
+            i_ = j + 1;
+            return;  // a comment changes nothing, not even what a quantifier repeats
+        }
+        if (c == '(') {
+            size_t j = k + 1;
+            while (j < n_ && p_[j] != ')') ++j;
+            if (j == k + 1) fail("missing group name", k + 1);
+            if (j >= n_) fail("missing ), unterminated name", k + 1);
+            bool digits = true;
+            for (size_t q = k + 1; q < j; ++q) digits = digits && isAsciiDigit(p_[q]);
+            unsigned g = 0;
+            if (digits) {
+                const std::string d = text(k + 1, j);
+                if (d.size() > 5) fail("invalid group reference " + d, k + 1);
+                g = static_cast<unsigned>(std::stoul(d));
+                if (g == 0) fail("bad group number", k + 1);
+                i_ = j + 1;
+                if (lookbehindFirst() > 0 && g > t_.groups) fail("cannot refer to an open group", i_);
+                condRefs_.emplace_back(g, k + 1);
+            } else {
+                const std::string name = groupName(k + 1, ')');
+                const int idx = lookupName(name);
+                if (idx < 0) fail("unknown group name '" + name + "'", k + 1);
+                g = static_cast<unsigned>(idx);
+            }
+            checkLookbehindRef(g, i_);
+            t_.out += "(?(" + std::to_string(g) + ")";
+            push(0, s, true);
+            return;
+        }
+        if (isFlagChar(c) || c == '-') {
+            scopedFlags(s, k);
+            return;
+        }
+        fail("unknown extension ?" + text(k, k + 1), s + 1);
+    }
+
+    void scopedFlags(size_t s, size_t k) {
+        long long add = 0, del = 0;
+        size_t j = k;
+        while (j < n_ && isFlagChar(p_[j])) add |= flagOf(p_[j++]);
+        auto letter = [&](size_t q) { return q < n_ && p_[q] < 0x80 && isAsciiLetter(p_[q]); };
+        bool minus = false;
+        if (j < n_ && p_[j] == '-') {
+            minus = true;
+            ++j;
+            if (j >= n_ || !isFlagChar(p_[j])) fail(letter(j) ? "unknown flag" : "missing flag", j);
+            while (j < n_ && isFlagChar(p_[j])) {
+                const long long f = flagOf(p_[j]);
+                if (f & (F_A | F_U | F_L)) fail("bad inline flags: cannot turn off flags 'a', 'u' and 'L'", j + 1);
+                del |= f;
+                ++j;
+            }
+        }
+        if (j < n_ && p_[j] == ')' && !minus) fail("global flags not at the start of the expression", s);
+        if (j >= n_ || p_[j] != ':') {
+            if (letter(j)) fail("unknown flag", j);
+            fail(minus ? "missing :" : "missing -, : or )", j);
+        }
+        if (add & del) fail("bad inline flags: flag turned on and off", j);
+        checkFlagCombination(add, j);
+        push(0, s);
+        if (add & F_X) verbose_ = true;
+        if (del & F_X) verbose_ = false;
+        if (add & F_I) caseless_ = true;
+        if (del & F_I) caseless_ = false;
+        if (!isBytes_ && (add & F_A)) ascii_ = true;
+        if (!isBytes_ && (add & F_U)) ascii_ = false;
+        // PCRE2's caseless option for the scope: on where Python folds case
+        // and PCRE2 can do it (not for re.ASCII str scopes, spelled out).
+        const bool wantI = wantPcreI();
+        std::string on, off;
+        if (wantI && !pcreI_) on += 'i';
+        if (!wantI && pcreI_) off += 'i';
+        pcreI_ = wantI;
+        if (add & F_M) on += 'm';
+        if (add & F_S) on += 's';
+        if (del & F_M) off += 'm';
+        if (del & F_S) off += 's';
+        t_.out += "(?" + on + (off.empty() ? std::string() : "-" + off) + ":";
+        i_ = j + 1;
+        last_ = Last::None;
+    }
+
+    void close() {
+        if (st_.empty()) fail("unbalanced parenthesis", i_);
+        const Frame f = st_.back();
+        st_.pop_back();
+        if (f.cap) closed_[f.cap] = true;
+        verbose_ = f.verbose;
+        caseless_ = f.caseless;
+        ascii_ = f.ascii;
+        pcreI_ = f.pcreI;
+        t_.out += ')';
+        ++i_;
+        last_ = Last::Atom;
+    }
 };
-using ReChar = char32_t;
-using ReString = std::u32string;
-using ReRegex = std::basic_regex<char32_t, ReTraits>;
-using ReMatch = std::match_results<ReString::const_iterator>;
-using ReIterator = std::regex_iterator<ReString::const_iterator, char32_t, ReTraits>;
-using ReTokenIterator = std::regex_token_iterator<ReString::const_iterator, char32_t, ReTraits>;
-#define RE_LIT(x) U##x
-#endif
 
-static ReString toWide(const std::string& s) {
-    ReString out;
-    out.reserve(s.size());
-    for (size_t i = 0; i < s.size();) {
-        const unsigned char c = static_cast<unsigned char>(s[i]);
-        unsigned cp = 0;
-        size_t n = 0;
-        if (c < 0x80) { cp = c; n = 1; }
-        else if ((c >> 5) == 0x6) { cp = c & 0x1f; n = 2; }
-        else if ((c >> 4) == 0xe) { cp = c & 0x0f; n = 3; }
-        else if ((c >> 3) == 0x1e) { cp = c & 0x07; n = 4; }
-        bool ok = n > 0 && i + n <= s.size();
-        for (size_t k = 1; ok && k < n; ++k) {
-            const unsigned char cc = static_cast<unsigned char>(s[i + k]);
-            if ((cc >> 6) != 0x2) ok = false;
-            else cp = (cp << 6) | (cc & 0x3f);
-        }
-        if (!ok) {
-            // Not valid UTF-8: keep the byte value rather than dropping it.
-            out += static_cast<ReChar>(c);
-            ++i;
-            continue;
-        }
-        out += static_cast<ReChar>(cp);
-        i += n;
-    }
-    return out;
-}
+// ---------------------------------------------------------------------------
+// Compiled patterns
+// ---------------------------------------------------------------------------
 
-static std::string toUtf8(const ReString& w) {
-    std::string out;
-    out.reserve(w.size());
-    for (ReChar wc : w) {
-        const proto::proto_ulong cp = static_cast<proto::proto_ulong>(wc);
-        if (cp < 0x80) {
-            out += static_cast<char>(cp);
-        } else if (cp < 0x800) {
-            out += static_cast<char>(0xc0 | (cp >> 6));
-            out += static_cast<char>(0x80 | (cp & 0x3f));
-        } else if (cp < 0x10000) {
-            out += static_cast<char>(0xe0 | (cp >> 12));
-            out += static_cast<char>(0x80 | ((cp >> 6) & 0x3f));
-            out += static_cast<char>(0x80 | (cp & 0x3f));
-        } else {
-            out += static_cast<char>(0xf0 | (cp >> 18));
-            out += static_cast<char>(0x80 | ((cp >> 12) & 0x3f));
-            out += static_cast<char>(0x80 | ((cp >> 6) & 0x3f));
-            out += static_cast<char>(0x80 | (cp & 0x3f));
+struct CompiledPattern {
+    std::string source;  // the pattern's UTF-8 (str) or bytes
+    bool isBytes = false;
+    long long argFlags = 0;  // the flags argument (cache key)
+    Translation tr;
+    std::uint32_t options = 0;
+    pcre2_code* code[3] = {nullptr, nullptr, nullptr};  // search, match, fullmatch
+    std::once_flag once[2];
+
+    CompiledPattern() = default;
+    CompiledPattern(const CompiledPattern&) = delete;
+    CompiledPattern& operator=(const CompiledPattern&) = delete;
+    ~CompiledPattern() {
+        for (pcre2_code* c : code) {
+            if (c) pcre2_code_free(c);
         }
     }
-    return out;
+};
+
+enum Variant { kSearch = 0, kMatch = 1, kFull = 2 };
+
+std::string pcreMessage(int err) {
+    PCRE2_UCHAR buf[256];
+    const int n = pcre2_get_error_message(err, buf, sizeof buf);
+    return n < 0 ? "PCRE2 error " + std::to_string(err) : std::string(reinterpret_cast<char*>(buf));
 }
 
-// The code points of a str argument; false when obj is not a str.
-static bool wideArg(proto::ProtoContext* ctx, const proto::ProtoObject* obj, ReString& out) {
-    if (!obj || !obj->isString(ctx)) return false;
-    std::string utf8;
-    obj->asString(ctx)->toUTF8String(ctx, utf8);
-    out = toWide(utf8);
+pcre2_code* compileVariant(const CompiledPattern& cp, std::uint32_t extra, int& err) {
+    pcre2_compile_context* cc = pcre2_compile_context_create(nullptr);
+    if (!cc) throw std::bad_alloc();
+    pcre2_set_newline(cc, PCRE2_NEWLINE_LF);
+    PCRE2_SIZE off = 0;
+    pcre2_code* code = pcre2_compile(reinterpret_cast<PCRE2_SPTR>(cp.tr.out.data()), cp.tr.out.size(),
+                                     cp.options | extra, &err, &off, cc);
+    pcre2_compile_context_free(cc);
+    // Without a JIT (an unsupported platform, or one that forbids executable
+    // memory) the interpreter runs the same code.
+    if (code) pcre2_jit_compile(code, PCRE2_JIT_COMPLETE);
+    return code;
+}
+
+// The code of a variant; nullptr only when PCRE2 rejects an anchored form of
+// a pattern it accepted unanchored (not expected; reported as re.error).
+const pcre2_code* variantCode(CompiledPattern& cp, Variant v, int& err) {
+    err = 0;
+    if (v == kSearch) return cp.code[0];
+    std::call_once(cp.once[v - 1], [&] {
+        int e = 0;
+        cp.code[v] = compileVariant(cp, v == kMatch ? PCRE2_ANCHORED : (PCRE2_ANCHORED | PCRE2_ENDANCHORED), e);
+    });
+    return cp.code[v];
+}
+
+void compiledPatternFinalizer(void* p) { delete static_cast<CompiledPattern*>(p); }
+
+// ---------------------------------------------------------------------------
+// Per-environment state: attribute-name symbols
+// ---------------------------------------------------------------------------
+
+struct ReState {
+    const proto::ProtoString* compiled;   // __re_compiled__
+    const proto::ProtoString* string;     // string
+    const proto::ProtoString* re;         // re
+    const proto::ProtoString* pos;        // pos
+    const proto::ProtoString* endpos;     // endpos
+    const proto::ProtoString* lastindex;  // lastindex
+    const proto::ProtoString* lastgroup;  // lastgroup
+    const proto::ProtoString* spans;      // __re_spans__
+    const proto::ProtoString* matchProto; // __match_proto__
+    const proto::ProtoString* patternProto; // __pattern_proto__
+    const proto::ProtoString* error;      // __re_error__
+    const proto::ProtoString* cache;      // __re_cache__
+    const proto::ProtoString* pattern;    // pattern
+    const proto::ProtoString* flags;      // flags
+    const proto::ProtoString* groups;     // groups
+    const proto::ProtoString* groupindex; // groupindex
+    const proto::ProtoString* scanPattern;  // __scan_pattern__
+    const proto::ProtoString* scanString;   // __scan_string__
+    const proto::ProtoString* scanPos;      // __scan_pos__
+    const proto::ProtoString* scanEnd;      // __scan_end__
+    const proto::ProtoString* scanAdvance;  // __scan_advance__
+    const proto::ProtoString* scanDone;     // __scan_done__
+    const proto::ProtoString* scanIterProto;  // __scan_iter_proto__
+    const proto::ProtoString* match;      // match
+    const proto::ProtoString* lexicon;    // lexicon
+    const proto::ProtoString* scanner;    // scanner
+    const proto::ProtoString* scanOuter;  // __scan_outer__
+    const proto::ProtoString* scanActions;  // __scan_actions__
+    const proto::ProtoObject* module = nullptr;  // the re module (mutable, rooted by the module table)
+};
+
+ReState& state(proto::ProtoContext* ctx) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) throw std::logic_error("re: no Python environment for this context");
+    std::shared_ptr<void>& slot = env->reModuleState();
+    if (!slot) {
+        auto s = std::make_shared<ReState>();
+        auto sym = [&](const char* n) { return proto::ProtoString::createSymbol(ctx, n); };
+        s->compiled = sym("__re_compiled__");
+        s->string = sym("string");
+        s->re = sym("re");
+        s->pos = sym("pos");
+        s->endpos = sym("endpos");
+        s->lastindex = sym("lastindex");
+        s->lastgroup = sym("lastgroup");
+        s->spans = sym("__re_spans__");
+        s->matchProto = sym("__match_proto__");
+        s->patternProto = sym("__pattern_proto__");
+        s->error = sym("__re_error__");
+        s->cache = sym("__re_cache__");
+        s->pattern = sym("pattern");
+        s->flags = sym("flags");
+        s->groups = sym("groups");
+        s->groupindex = sym("groupindex");
+        s->scanPattern = sym("__scan_pattern__");
+        s->scanString = sym("__scan_string__");
+        s->scanPos = sym("__scan_pos__");
+        s->scanEnd = sym("__scan_end__");
+        s->scanAdvance = sym("__scan_advance__");
+        s->scanDone = sym("__scan_done__");
+        s->scanIterProto = sym("__scan_iter_proto__");
+        s->match = sym("match");
+        s->lexicon = sym("lexicon");
+        s->scanner = sym("scanner");
+        s->scanOuter = sym("__scan_outer__");
+        s->scanActions = sym("__scan_actions__");
+        slot = s;
+    }
+    return *static_cast<ReState*>(slot.get());
+}
+
+const proto::ProtoObject* attr(proto::ProtoContext* ctx, const proto::ProtoObject* o, const proto::ProtoString* name) {
+    const proto::ProtoObject* v = o ? o->getAttribute(ctx, name) : nullptr;
+    return v == PROTO_NONE ? nullptr : v;
+}
+
+PythonEnvironment& envOf(proto::ProtoContext* ctx) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) throw std::logic_error("re: no Python environment for this context");
+    return *env;
+}
+
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
+// re.error(msg) with CPython's attributes: msg, pattern, pos, lineno, colno.
+[[noreturn]] void raiseReError(proto::ProtoContext* ctx, const proto::ProtoObject* holder, const std::string& msg,
+                               const proto::ProtoObject* patternObj = nullptr,
+                               const std::vector<std::uint32_t>* cps = nullptr, long long pos = -1) {
+    PythonEnvironment& env = envOf(ctx);
+    ReState& rs = state(ctx);
+    std::string full = msg;
+    long long lineno = 1, colno = pos + 1;
+    if (pos >= 0 && cps) {
+        for (long long k = 0; k < pos && k < static_cast<long long>(cps->size()); ++k) {
+            if ((*cps)[static_cast<size_t>(k)] == '\n') {
+                ++lineno;
+                colno = pos - k;
+            }
+        }
+        full += " at position " + std::to_string(pos);
+        if (std::find(cps->begin(), cps->end(), static_cast<std::uint32_t>('\n')) != cps->end())
+            full += " (line " + std::to_string(lineno) + ", column " + std::to_string(colno) + ")";
+    }
+    const proto::ProtoObject* cls = attr(ctx, holder, rs.error);
+    if (!cls) {
+        env.raiseRuntimeError(ctx, "re.error: " + full);
+        throw std::logic_error("re: raise returned");
+    }
+    const proto::ProtoObject* exc = env.callObject(cls, {PythonEnvironment::newStr(ctx, full)});
+    if (!exc || exc == PROTO_NONE) throw std::logic_error("re: could not construct re.error");
+    PythonEnvironment::TransientPin pin(&env, exc);
+    proto::ProtoObject* e = const_cast<proto::ProtoObject*>(exc);
+    e->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "msg"), PythonEnvironment::newStr(ctx, msg));
+    e->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "pattern"), patternObj ? patternObj : PROTO_NONE);
+    e->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "pos"), pos >= 0 ? ctx->fromInteger(pos) : PROTO_NONE);
+    e->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "lineno"), pos >= 0 ? ctx->fromInteger(lineno) : PROTO_NONE);
+    e->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "colno"), pos >= 0 ? ctx->fromInteger(colno) : PROTO_NONE);
+    env.raiseException(exc);
+}
+
+// An instance of the builtin exception `name` with `msg`, raised.
+[[noreturn]] void raiseBuiltin(proto::ProtoContext* ctx, const char* name, const std::string& msg) {
+    PythonEnvironment& env = envOf(ctx);
+    const proto::ProtoObject* cls = env.resolve(name, ctx);
+    const proto::ProtoObject* exc = (cls && cls != PROTO_NONE)
+        ? env.callObject(cls, {PythonEnvironment::newStr(ctx, msg)}) : nullptr;
+    if (exc && exc != PROTO_NONE) env.raiseException(exc);
+    env.raiseRuntimeError(ctx, msg);
+    throw std::logic_error("re: raise returned");
+}
+
+[[noreturn]] void raiseTypeError(proto::ProtoContext* ctx, const std::string& msg) {
+    envOf(ctx).raiseTypeError(ctx, msg);
+    throw std::logic_error("re: raise returned");
+}
+
+[[noreturn]] void raiseValueError(proto::ProtoContext* ctx, const std::string& msg) {
+    envOf(ctx).raiseValueError(ctx, PythonEnvironment::newStr(ctx, msg));
+    throw std::logic_error("re: raise returned");
+}
+
+[[noreturn]] void raiseIndexError(proto::ProtoContext* ctx, const std::string& msg) {
+    envOf(ctx).raiseIndexError(ctx, msg);
+    throw std::logic_error("re: raise returned");
+}
+
+// ---------------------------------------------------------------------------
+// bytes
+// ---------------------------------------------------------------------------
+
+// The octets of a bytes or bytearray object; false for anything else.
+bool bytesOf(proto::ProtoContext* ctx, const proto::ProtoObject* obj, std::string& out) {
+    if (!obj || obj == PROTO_NONE || obj->isString(ctx) || obj->isInteger(ctx)) return false;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return false;
+    const proto::ProtoObject* d = obj->getAttribute(ctx, env->getDataString());
+    if (d && d != PROTO_NONE && d->isByteBuffer(ctx)) {
+        const proto::ProtoByteBuffer* bb = d->asByteBuffer(ctx);
+        if (!bb) return false;
+        out.assign(bb->getBuffer(ctx), bb->getSize(ctx));
+        return true;
+    }
+    // Other buffer objects (memoryview, array.array): their bytes, through
+    // tobytes(). A copy, as protoPython has no buffer protocol.
+    const proto::ProtoObject* tobytes = obj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tobytes"));
+    if (!tobytes || tobytes == PROTO_NONE) return false;
+    const proto::ProtoObject* b = env->callMethod(obj, "tobytes", {});
+    if (!b || b == PROTO_NONE || b->isString(ctx) || b->isInteger(ctx)) return false;
+    const proto::ProtoObject* bd = b->getAttribute(ctx, env->getDataString());
+    if (!bd || bd == PROTO_NONE || !bd->isByteBuffer(ctx)) return false;
+    const proto::ProtoByteBuffer* bb = bd->asByteBuffer(ctx);
+    if (!bb) return false;
+    out.assign(bb->getBuffer(ctx), bb->getSize(ctx));
     return true;
 }
 
-// Every string `re` hands back — matches, groups, sub / split / findall
-// results, escape output — is computed from the subject, so it is data, not
-// vocabulary: an ordinary collectable str, never an interned symbol. Interning
-// these made each distinct result permanent, so `re` over varying input grew
-// the heap without bound. See PythonEnvironment::getInternedString in the
-// header for the rule.
-static const proto::ProtoObject* newStr(proto::ProtoContext* ctx, const ReString& w) {
-    return PythonEnvironment::newStr(ctx, toUtf8(w));
+const proto::ProtoObject* makeBytes(proto::ProtoContext* ctx, const char* data, size_t n) {
+    PythonEnvironment& env = envOf(ctx);
+    const proto::ProtoObject* obj = ctx->newObject(false);
+    if (env.getBytesPrototype()) {
+        obj = obj->addParent(ctx, env.getBytesPrototype());
+        obj = obj->setAttribute(ctx, env.getClassString(), env.getBytesPrototype());
+    }
+    const proto::ProtoByteBuffer* bb = ctx->newByteBuffer(data, static_cast<proto::proto_ulong>(n));
+    return obj->setAttribute(ctx, env.getDataString(), bb->asObject(ctx));
 }
 
 // ---------------------------------------------------------------------------
-// Match object methods
+// Subjects
 // ---------------------------------------------------------------------------
 
-// Resolve a group reference (int or str) on a match object to a 1-based
-// numeric index.  Returns -1 if the name is not registered or the integer
-// is out of range; -2 to mean "the user wants group 0 (whole match)".
-static long long resolveGroupRef(proto::ProtoContext* ctx,
-                                  const proto::ProtoObject* matchSelf,
-                                  const proto::ProtoObject* ref) {
-    if (!ref) return -2;
+struct Subject {
+    const proto::ProtoObject* obj = nullptr;
+    bool isBytes = false;
+    std::string data;
+    bool ascii = true;
+    std::vector<std::uint32_t> cpOff;  // byte offset of each code point, then the end (non-ASCII only)
+    size_t ncp = 0;
+
+    size_t byteAt(size_t cp) const { return ascii ? cp : cpOff[cp]; }
+    size_t cpAt(size_t byte) const {
+        if (ascii) return byte;
+        return static_cast<size_t>(std::lower_bound(cpOff.begin(), cpOff.end(), static_cast<std::uint32_t>(byte)) -
+                                   cpOff.begin());
+    }
+    // A piece of the subject as a Python value (str or bytes), from byte
+    // offsets. The whole of a str subject is the subject itself (immutable).
+    const proto::ProtoObject* piece(proto::ProtoContext* ctx, size_t a, size_t b) const {
+        if (isBytes) return makeBytes(ctx, data.data() + a, b - a);
+        if (a == 0 && b == data.size() && obj) return obj;
+        return PythonEnvironment::newStr(ctx, data.substr(a, b - a));
+    }
+};
+
+std::string typeName(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
+
+// Reads `obj` as a subject for a pattern of the given kind; raises TypeError
+// for a wrong type.
+void loadSubject(proto::ProtoContext* ctx, const proto::ProtoObject* obj, bool patternIsBytes, Subject& s) {
+    s.obj = obj;
+    if (obj && obj->isString(ctx)) {
+        if (patternIsBytes) raiseTypeError(ctx, "cannot use a bytes pattern on a string-like object");
+        s.isBytes = false;
+        obj->asString(ctx)->toUTF8String(ctx, s.data);
+    } else if (bytesOf(ctx, obj, s.data)) {
+        if (!patternIsBytes) raiseTypeError(ctx, "cannot use a string pattern on a bytes-like object");
+        s.isBytes = true;
+    } else {
+        raiseTypeError(ctx, "expected string or bytes-like object, got '" + typeName(ctx, obj) + "'");
+    }
+    s.ascii = true;
+    if (!s.isBytes) {
+        for (unsigned char c : s.data) {
+            if (c >= 0x80) {
+                s.ascii = false;
+                break;
+            }
+        }
+    }
+    if (s.ascii) {
+        s.ncp = s.data.size();
+        return;
+    }
+    s.cpOff.clear();
+    s.cpOff.reserve(s.data.size() + 1);
+    for (size_t i = 0; i < s.data.size();) {
+        const size_t n = utf8SeqLen(s.data, i);
+        if (n == 3 && static_cast<unsigned char>(s.data[i]) == 0xED &&
+            static_cast<unsigned char>(s.data[i + 1]) >= 0xA0) {
+            // PCRE2 cannot match a lone surrogate: it would be skipped as
+            // invalid UTF-8, a silent difference from CPython.
+            raiseValueError(ctx, "this re module cannot match strings that contain lone surrogates");
+        }
+        s.cpOff.push_back(static_cast<std::uint32_t>(i));
+        i += n;
+    }
+    s.cpOff.push_back(static_cast<std::uint32_t>(s.data.size()));
+    s.ncp = s.cpOff.size() - 1;
+}
+
+// Converting a str subject to UTF-8 is linear in its length, so a loop of
+// pattern.match(text, pos) over one long text would be quadratic. Each
+// thread therefore keeps its last long str subject converted. The cached
+// object is kept alive by a slot of the re module that only this thread
+// writes, so the pointer cannot be reused by another string while it is
+// cached. Shorter subjects, and bytes subjects (a bytearray may change),
+// are converted on every call.
+constexpr size_t kCachedSubjectMinBytes = 4096;
+
+struct SubjectCache {
+    const proto::ProtoObject* obj = nullptr;
+    std::shared_ptr<const Subject> subject;
+    const proto::ProtoString* slot = nullptr;  // this thread's module slot
+    PythonEnvironment* env = nullptr;
+};
+
+std::shared_ptr<const Subject> subjectFor(proto::ProtoContext* ctx, const proto::ProtoObject* obj, bool patternIsBytes) {
+    thread_local SubjectCache cache;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (obj && obj == cache.obj && env == cache.env && cache.subject && !patternIsBytes) return cache.subject;
+    auto fresh = std::make_shared<Subject>();
+    loadSubject(ctx, obj, patternIsBytes, *fresh);
+    ReState& rs = state(ctx);
+    if (!fresh->isBytes && fresh->data.size() >= kCachedSubjectMinBytes && rs.module) {
+        if (!cache.slot || cache.env != env) {
+            static std::atomic<unsigned long long> nextSlot{0};
+            const std::string name = "__re_subject_" + std::to_string(nextSlot.fetch_add(1)) + "__";
+            cache.slot = proto::ProtoString::createSymbol(ctx, name.c_str());
+        }
+        const_cast<proto::ProtoObject*>(rs.module)->setAttribute(ctx, cache.slot, obj);
+        cache.obj = obj;
+        cache.env = env;
+        cache.subject = fresh;
+    }
+    return fresh;
+}
+
+// ---------------------------------------------------------------------------
+// Matching
+// ---------------------------------------------------------------------------
+
+struct MatchState {
+    pcre2_match_context* context = nullptr;
+    pcre2_jit_stack* jitStack = nullptr;
+    pcre2_match_data* data = nullptr;
+    std::uint32_t pairs = 0;
+
+    MatchState() {
+        context = pcre2_match_context_create(nullptr);
+        jitStack = pcre2_jit_stack_create(kJitStackStart, kJitStackMax, nullptr);
+        if (!context || !jitStack) {
+            release();
+            throw std::bad_alloc();
+        }
+        pcre2_jit_stack_assign(context, nullptr, jitStack);
+        pcre2_set_match_limit(context, kMatchLimit);
+        pcre2_set_depth_limit(context, kDepthLimit);
+        pcre2_set_heap_limit(context, kHeapLimitKiB);
+    }
+    ~MatchState() { release(); }
+    MatchState(const MatchState&) = delete;
+    MatchState& operator=(const MatchState&) = delete;
+
+    void release() {
+        if (data) pcre2_match_data_free(data);
+        if (jitStack) pcre2_jit_stack_free(jitStack);
+        if (context) pcre2_match_context_free(context);
+        data = nullptr;
+        jitStack = nullptr;
+        context = nullptr;
+    }
+
+    pcre2_match_data* dataFor(unsigned groups) {
+        if (!data || pairs < groups + 1) {
+            const std::uint32_t want = std::max<std::uint32_t>(groups + 1, 16);
+            pcre2_match_data* fresh = pcre2_match_data_create(want, nullptr);
+            if (!fresh) throw std::bad_alloc();
+            if (data) pcre2_match_data_free(data);
+            data = fresh;
+            pairs = want;
+        }
+        return data;
+    }
+};
+
+MatchState& matchState() {
+    thread_local MatchState st;
+    return st;
+}
+
+// The spans of one match, as byte offsets (UNSET for a group that did not
+// take part). A copy, so that a callback that matches again cannot change it.
+struct Hit {
+    std::vector<PCRE2_SIZE> ov;  // 2 * (groups + 1)
+    size_t start() const { return ov[0]; }
+    size_t end() const { return ov[1]; }
+    bool has(unsigned g) const { return ov[2 * g] != PCRE2_UNSET; }
+};
+
+// One pcre2_match. Returns false for no match; raises for an engine limit or
+// failure.
+bool runMatch(proto::ProtoContext* ctx, const proto::ProtoObject* holder, CompiledPattern& cp, Variant v,
+              const Subject& s, size_t startByte, size_t endByte, std::uint32_t opts, Hit& hit) {
+    int err = 0;
+    const pcre2_code* code = variantCode(cp, v, err);
+    if (!code) raiseReError(ctx, holder, "the regular-expression engine rejected the anchored pattern");
+    MatchState& ms = matchState();
+    pcre2_match_data* md = ms.dataFor(cp.tr.groups);
+    int rc;
+    const PCRE2_SPTR subject = reinterpret_cast<PCRE2_SPTR>(s.data.data());
+    if (endByte >= kUnmanagedSubjectBytes) {
+        proto::ProtoContext::UnmanagedScope u(ctx);
+        rc = pcre2_match(code, subject, endByte, startByte, opts, md, ms.context);
+    } else {
+        rc = pcre2_match(code, subject, endByte, startByte, opts, md, ms.context);
+    }
+    if (rc == PCRE2_ERROR_NOMATCH) return false;
+    if (rc < 0) {
+        if (rc == PCRE2_ERROR_JIT_STACKLIMIT || rc == PCRE2_ERROR_MATCHLIMIT || rc == PCRE2_ERROR_DEPTHLIMIT ||
+            rc == PCRE2_ERROR_HEAPLIMIT) {
+            raiseBuiltin(ctx, "RecursionError",
+                         "maximum regular-expression backtracking exceeded (" + pcreMessage(rc) + ")");
+        }
+        if (rc == PCRE2_ERROR_NOMEMORY) raiseBuiltin(ctx, "MemoryError", "regular-expression engine: " + pcreMessage(rc));
+        raiseBuiltin(ctx, "RuntimeError", "regular-expression engine failure: " + pcreMessage(rc));
+    }
+    const PCRE2_SIZE* ov = pcre2_get_ovector_pointer(md);
+    const size_t n = 2 * (static_cast<size_t>(cp.tr.groups) + 1);
+    hit.ov.assign(ov, ov + n);
+    // Groups past the highest one set are not reset by pcre2_match.
+    for (size_t k = 2 * static_cast<size_t>(rc); k < n; ++k) hit.ov[k] = PCRE2_UNSET;
+    return true;
+}
+
+// Calls f(hit) for each successive match in [startByte, endByte) with
+// Python's rule for empty matches: after an empty match, the next one may not
+// be empty at the same position (PCRE2_NOTEMPTY_ATSTART). Stops when f
+// returns false.
+void forEachMatch(proto::ProtoContext* ctx, const proto::ProtoObject* holder, CompiledPattern& cp,
+                  const Subject& s, size_t startByte, size_t endByte, const std::function<bool(const Hit&)>& f) {
+    size_t cur = startByte;
+    bool afterEmpty = false;
+    Hit hit;
+    while (cur <= endByte) {
+        if (!runMatch(ctx, holder, cp, kSearch, s, cur, endByte, afterEmpty ? PCRE2_NOTEMPTY_ATSTART : 0, hit)) break;
+        if (!f(hit)) break;
+        afterEmpty = hit.start() == hit.end();
+        cur = hit.end();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Argument helpers
+// ---------------------------------------------------------------------------
+
+const proto::ProtoObject* argAt(proto::ProtoContext* ctx, const proto::ProtoArguments* pos,
+                                const proto::ProtoKeywordArguments* kw, proto::proto_ulong idx, const char* name) {
+    if (pos && pos->getSize(ctx) > idx) return pos->getAt(ctx, static_cast<int>(idx));
+    if (kw && name && kw->getSize(ctx) > 0) {
+        const proto::proto_ulong h = PythonEnvironment::getInternedString(ctx, name)->getHash(ctx);
+        if (kw->has(ctx, h)) return kw->getAt(ctx, h);
+    }
+    return nullptr;
+}
+
+long long intArg(proto::ProtoContext* ctx, const proto::ProtoArguments* pos, const proto::ProtoKeywordArguments* kw,
+                 proto::proto_ulong idx, const char* name, long long dflt) {
+    const proto::ProtoObject* v = argAt(ctx, pos, kw, idx, name);
+    if (!v || v == PROTO_NONE) return dflt;
+    if (v == PROTO_TRUE) return 1;
+    if (v == PROTO_FALSE) return 0;
+    if (!v->isInteger(ctx)) raiseTypeError(ctx, std::string("'") + name + "' must be an integer");
+    return v->asLong(ctx);
+}
+
+const proto::ProtoObject* requiredArg(proto::ProtoContext* ctx, const proto::ProtoArguments* pos,
+                                      const proto::ProtoKeywordArguments* kw, proto::proto_ulong idx,
+                                      const char* name, const char* func) {
+    const proto::ProtoObject* v = argAt(ctx, pos, kw, idx, name);
+    if (!v) raiseTypeError(ctx, std::string(func) + "() missing required argument '" + name + "'");
+    return v;
+}
+
+// A Python list holding `items`.
+const proto::ProtoObject* pyList(proto::ProtoContext* ctx, const std::vector<const proto::ProtoObject*>& items) {
+    const proto::ProtoList* l = items.empty()
+        ? ctx->newList() : ctx->newList(static_cast<unsigned>(items.size()), items.data());
+    return PythonEnvironment::wrapList(ctx, l);
+}
+
+const proto::ProtoObject* pyTuple(proto::ProtoContext* ctx, const std::vector<const proto::ProtoObject*>& items) {
+    const proto::ProtoList* l = items.empty()
+        ? ctx->newList() : ctx->newList(static_cast<unsigned>(items.size()), items.data());
+    return PythonEnvironment::tupleFromList(ctx, l);
+}
+
+// ---------------------------------------------------------------------------
+// Pattern objects and the compile cache
+// ---------------------------------------------------------------------------
+
+CompiledPattern* compiledOf(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
+    if (!obj || obj == PROTO_NONE || obj->isString(ctx) || obj->isInteger(ctx)) return nullptr;
+    const proto::ProtoObject* ext = obj->getAttribute(ctx, state(ctx).compiled);
+    if (!ext || ext == PROTO_NONE) return nullptr;
+    const proto::ProtoExternalPointer* p = ext->asExternalPointer(ctx);
+    return p ? static_cast<CompiledPattern*>(p->getPointer(ctx)) : nullptr;
+}
+
+const proto::ProtoObject* makeDict(proto::ProtoContext* ctx) {
+    PythonEnvironment& env = envOf(ctx);
+    const proto::ProtoObject* d = env.getDictPrototype() ? env.getDictPrototype()->newChild(ctx, true)
+                                                          : ctx->newObject(true);
+    return env.initDictStorage(ctx, d);
+}
+
+// Compiles `source` (a str or bytes object) into a new Pattern object.
+// `holder` reaches the module's prototypes and error class.
+const proto::ProtoObject* compileNew(proto::ProtoContext* ctx, const proto::ProtoObject* holder,
+                                     const proto::ProtoObject* sourceObj, bool isBytes, std::string&& src,
+                                     long long flags) {
+    PythonEnvironment& env = envOf(ctx);
+    ReState& rs = state(ctx);
+    auto cp = std::make_unique<CompiledPattern>();
+    cp->source = std::move(src);
+    cp->isBytes = isBytes;
+    cp->argFlags = flags;
+    std::vector<std::uint32_t> cps;
+    if (isBytes) {
+        cps.assign(cp->source.begin(), cp->source.end());
+        for (auto& c : cps) c &= 0xFF;
+    } else {
+        decodeCodePoints(cp->source, cps);
+    }
+    try {
+        Translator t(cps, isBytes, flags & ~(F_DEBUG | F_TEMPLATE));
+        cp->tr = t.run();
+    } catch (const PatternError& e) {
+        if (e.overflow) raiseBuiltin(ctx, "OverflowError", e.msg);
+        raiseReError(ctx, holder, e.msg, sourceObj, &cps, static_cast<long long>(e.pos));
+    }
+    // The flags argument together with the leading inline flags, checked as
+    // CPython's fix_flags checks them (ValueError); a str pattern is
+    // re.UNICODE unless it is re.ASCII.
+    long long& eff = cp->tr.flags;
+    if (isBytes) {
+        if (eff & F_U) raiseValueError(ctx, "cannot use UNICODE flag with a bytes pattern");
+        if ((eff & F_A) && (eff & F_L)) raiseValueError(ctx, "ASCII and LOCALE flags are incompatible");
+    } else {
+        if (eff & F_L) raiseValueError(ctx, "cannot use LOCALE flag with a str pattern");
+        if ((eff & F_A) && (eff & F_U)) raiseValueError(ctx, "ASCII and UNICODE flags are incompatible");
+        if (!(eff & F_A)) eff |= F_U;
+    }
+    std::uint32_t opt = PCRE2_ALT_CIRCUMFLEX | PCRE2_NEVER_BACKSLASH_C;
+    if (!isBytes) {
+        opt |= PCRE2_UTF | PCRE2_MATCH_INVALID_UTF;
+        if (!(cp->tr.flags & F_A)) opt |= PCRE2_UCP;
+    }
+    if ((cp->tr.flags & F_I) && (isBytes || !(cp->tr.flags & F_A))) opt |= PCRE2_CASELESS;
+    if (cp->tr.flags & F_M) opt |= PCRE2_MULTILINE;
+    if (cp->tr.flags & F_S) opt |= PCRE2_DOTALL;
+    cp->options = opt;
+    int err = 0;
+    cp->code[0] = compileVariant(*cp, 0, err);
+    if (!cp->code[0]) raiseReError(ctx, holder, "the regular-expression engine rejected the pattern: " + pcreMessage(err), sourceObj);
+
+    const proto::ProtoObject* proto = attr(ctx, holder, rs.patternProto);
+    if (!proto) throw std::logic_error("re: no Pattern prototype");
+    // groupindex: {name: number}
+    const proto::ProtoObject* gi = makeDict(ctx);
+    PythonEnvironment::TransientPin pinGi(&env, gi);
+    for (const auto& kv : cp->tr.names) {
+        env.callMethod(gi, "__setitem__", {PythonEnvironment::newStr(ctx, kv.first),
+                                           ctx->fromInteger(static_cast<long long>(kv.second))});
+    }
+    // The pattern text is user data, not vocabulary: a collectable copy.
+    const proto::ProtoObject* patText = isBytes ? makeBytes(ctx, cp->source.data(), cp->source.size())
+                                                : PythonEnvironment::newStr(ctx, cp->source);
+    const long long effFlags = cp->tr.flags;
+    const unsigned groups = cp->tr.groups;
+    const proto::ProtoObject* ext = ctx->fromExternalPointer(cp.release(), compiledPatternFinalizer);
+    const proto::ProtoString* names[6] = {rs.compiled, rs.pattern, rs.flags, rs.groups, rs.groupindex,
+                                          env.getClassString()};
+    const proto::ProtoObject* values[6] = {ext, patText, ctx->fromInteger(effFlags),
+                                           ctx->fromInteger(static_cast<long long>(groups)), gi, proto};
+    // Immutable: nothing assigns to a pattern. (Measured against a mutable
+    // pattern: instructions per search within 1 %, immutable slightly fewer.)
+    return proto->newChild(ctx, false)->setAttributes(ctx, 6, names, values);
+}
+
+std::uint64_t cacheKey(bool isBytes, long long flags, const std::string& src) {
+    std::uint64_t h = std::hash<std::string>{}(src);
+    h ^= static_cast<std::uint64_t>(flags) * 0x9E3779B97F4A7C15ull + (isBytes ? 0x51ull : 0x17ull);
+    return h;
+}
+
+// The Pattern object for a module-level call's pattern argument: a compiled
+// pattern as given (flags must then be 0), otherwise compiled through the
+// module's cache. `module` is the re module object.
+const proto::ProtoObject* obtainPattern(proto::ProtoContext* ctx, const proto::ProtoObject* module,
+                                        const proto::ProtoObject* patArg, long long flags) {
+    if (compiledOf(ctx, patArg)) {
+        if (flags & ~F_TEMPLATE) raiseValueError(ctx, "cannot process flags argument with a compiled pattern");
+        return patArg;
+    }
+    ReState& rs = state(ctx);
+    const proto::ProtoObject* cacheObj = attr(ctx, module, rs.cache);
+    const proto::ProtoSparseList* cache = cacheObj ? cacheObj->asSparseList(ctx) : nullptr;
+    std::string src;
+    bool isBytes = false;
+    std::uint64_t key = 0;
+    if (patArg && patArg->isString(ctx)) {
+        // A str pattern is looked up by protoCore's content hash and
+        // compared with the cached pattern's text, without converting it.
+        const proto::ProtoString* text = patArg->asString(ctx);
+        key = (static_cast<std::uint64_t>(patArg->getHash(ctx)) * 0x9E3779B97F4A7C15ull) ^
+              (static_cast<std::uint64_t>(flags) << 1);
+        if (cache && cache->has(ctx, key)) {
+            const proto::ProtoObject* hit = cache->getAt(ctx, key);
+            CompiledPattern* cp = compiledOf(ctx, hit);
+            const proto::ProtoObject* hitText = attr(ctx, hit, rs.pattern);
+            if (cp && !cp->isBytes && cp->argFlags == flags && hitText && hitText->isString(ctx) &&
+                text->cmp_to_string(ctx, hitText->asString(ctx)) == 0)
+                return hit;
+        }
+        text->toUTF8String(ctx, src);
+    } else if (bytesOf(ctx, patArg, src)) {
+        isBytes = true;
+        key = cacheKey(true, flags, src);
+        if (cache && cache->has(ctx, key)) {
+            const proto::ProtoObject* hit = cache->getAt(ctx, key);
+            CompiledPattern* cp = compiledOf(ctx, hit);
+            if (cp && cp->isBytes && cp->argFlags == flags && cp->source == src) return hit;
+        }
+    } else {
+        raiseTypeError(ctx, "first argument must be string or compiled pattern");
+    }
+    const proto::ProtoObject* pat = compileNew(ctx, module, patArg, isBytes, std::move(src), flags);
+    if (!cache || cache->getSize(ctx) >= kCacheSize) cache = ctx->newSparseList();
+    cache = cache->setAt(ctx, key, pat);
+    const_cast<proto::ProtoObject*>(module)->setAttribute(ctx, rs.cache, cache->asObject(ctx));
+    return pat;
+}
+
+// ---------------------------------------------------------------------------
+// Match objects
+//
+// A Match carries `string`, `re`, `pos`, `endpos`, `lastindex`, `lastgroup`
+// and `__re_spans__` (a flat list of code point offsets, -1 for a group that
+// did not take part); group strings are sliced from the subject on demand.
+// ---------------------------------------------------------------------------
+
+// lastindex: the group that closed last. Among the participating groups that
+// end furthest, an enclosing group closes after the groups inside it, and of
+// two groups side by side the later one closes last.
+unsigned lastIndexOf(const CompiledPattern& cp, const Hit& hit) {
+    unsigned best = 0;
+    for (unsigned g = 1; g <= cp.tr.groups; ++g) {
+        if (!hit.has(g)) continue;
+        if (best == 0 || hit.ov[2 * g + 1] > hit.ov[2 * best + 1]) {
+            best = g;
+            continue;
+        }
+        if (hit.ov[2 * g + 1] < hit.ov[2 * best + 1]) continue;
+        // Same end. Is `best` inside g (g encloses it)? Then g closed later.
+        bool gEnclosesBest = false;
+        for (unsigned a = cp.tr.parent[best]; a; a = cp.tr.parent[a]) {
+            if (a == g) gEnclosesBest = true;
+        }
+        bool bestEnclosesG = false;
+        for (unsigned a = cp.tr.parent[g]; a; a = cp.tr.parent[a]) {
+            if (a == best) bestEnclosesG = true;
+        }
+        if (gEnclosesBest || !bestEnclosesG) best = g;
+    }
+    return best;
+}
+
+const proto::ProtoObject* makeMatch(proto::ProtoContext* ctx, const proto::ProtoObject* patObj, CompiledPattern& cp,
+                                    const Subject& s, size_t pos, size_t endpos, const Hit& hit,
+                                    int lastIndexOverride = -1, unsigned groupsOverride = 0) {
+    ReState& rs = state(ctx);
+    const proto::ProtoObject* matchProto = attr(ctx, patObj, rs.matchProto);
+    if (!matchProto) throw std::logic_error("re: no Match prototype");
+    // The match's group count is the length of its span list.
+    const unsigned ngroups = groupsOverride ? std::min(groupsOverride, cp.tr.groups) : cp.tr.groups;
+    std::vector<const proto::ProtoObject*> spans;
+    spans.reserve(2 * (ngroups + 1));
+    for (unsigned g = 0; g <= ngroups; ++g) {
+        if (hit.has(g)) {
+            spans.push_back(ctx->fromInteger(static_cast<long long>(s.cpAt(hit.ov[2 * g]))));
+            spans.push_back(ctx->fromInteger(static_cast<long long>(s.cpAt(hit.ov[2 * g + 1]))));
+        } else {
+            spans.push_back(ctx->fromInteger(-1));
+            spans.push_back(ctx->fromInteger(-1));
+        }
+    }
+    const unsigned li = lastIndexOverride >= 0 ? static_cast<unsigned>(lastIndexOverride) : lastIndexOf(cp, hit);
+    const proto::ProtoObject* lastgroup = PROTO_NONE;
+    if (li) {
+        for (const auto& kv : cp.tr.names) {
+            if (kv.second == li) lastgroup = PythonEnvironment::newStr(ctx, kv.first);
+        }
+    }
+    const proto::ProtoList* spanList = ctx->newList(static_cast<unsigned>(spans.size()), spans.data());
+    const proto::ProtoString* names[7] = {rs.string, rs.re, rs.pos, rs.endpos, rs.lastindex, rs.lastgroup, rs.spans};
+    const proto::ProtoObject* values[7] = {s.obj, patObj,
+                                           ctx->fromInteger(static_cast<long long>(pos)),
+                                           ctx->fromInteger(static_cast<long long>(endpos)),
+                                           li ? ctx->fromInteger(static_cast<long long>(li)) : PROTO_NONE,
+                                           lastgroup, spanList->asObject(ctx)};
+    // Immutable: a Match takes no attribute assignment, and an immutable
+    // object costs no entry in the mutable-object table.
+    return matchProto->newChild(ctx, false)->setAttributes(ctx, 7, names, values);
+}
+
+struct MatchView {
+    const proto::ProtoObject* self;
+    const proto::ProtoObject* subject;
+    const proto::ProtoList* spans;
+    CompiledPattern* cp;
+    unsigned ngroups;  // from the span list (a Scanner's match has fewer than its pattern)
+};
+
+MatchView viewOf(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
+    ReState& rs = state(ctx);
+    MatchView v{self, attr(ctx, self, rs.string), nullptr, nullptr, 0};
+    const proto::ProtoObject* sp = attr(ctx, self, rs.spans);
+    v.spans = sp ? sp->asList(ctx) : nullptr;
+    v.cp = compiledOf(ctx, attr(ctx, self, rs.re));
+    if (!v.subject || !v.spans || !v.cp) raiseTypeError(ctx, "not a re.Match object");
+    v.ngroups = static_cast<unsigned>(v.spans->getSize(ctx) / 2) - 1;
+    return v;
+}
+
+// The group number of a reference (an int or a group name); IndexError for
+// no such group.
+unsigned groupIndex(proto::ProtoContext* ctx, const MatchView& m, const proto::ProtoObject* ref) {
+    if (!ref) return 0;
     if (ref->isInteger(ctx)) {
-        long long v = ref->asLong(ctx);
-        return v == 0 ? -2 : v;
+        // A LargeInteger (a cell, not an embedded value) names no group.
+        if (ref->isCell(ctx)) raiseIndexError(ctx, "no such group");
+        const long long g = ref->asLong(ctx);
+        if (g < 0 || g > static_cast<long long>(m.ngroups)) raiseIndexError(ctx, "no such group");
+        return static_cast<unsigned>(g);
     }
     if (ref->isString(ctx)) {
         std::string name;
         ref->asString(ctx)->toUTF8String(ctx, name);
-        const proto::ProtoObject* gi = matchSelf->getAttribute(ctx,
-            proto::ProtoString::createSymbol(ctx, "__re_groupindex__"));
-        if (gi && gi->asList(ctx)) {
-            const proto::ProtoList* lst = gi->asList(ctx);
-            for (proto::proto_ulong k = 0; k < lst->getSize(ctx); ++k) {
-                const proto::ProtoObject* pair = lst->getAt(ctx, static_cast<int>(k));
-                if (!pair || !pair->asList(ctx)) continue;
-                const proto::ProtoList* p = pair->asList(ctx);
-                if (p->getSize(ctx) < 2) continue;
-                const proto::ProtoObject* nameObj = p->getAt(ctx, 0);
-                const proto::ProtoObject* idxObj  = p->getAt(ctx, 1);
-                if (!nameObj || !idxObj || !nameObj->isString(ctx) || !idxObj->isInteger(ctx)) continue;
-                std::string n;
-                nameObj->asString(ctx)->toUTF8String(ctx, n);
-                if (n == name) return idxObj->asLong(ctx);
-            }
+        for (const auto& kv : m.cp->tr.names) {
+            if (kv.first == name && kv.second <= m.ngroups) return kv.second;
         }
-        return -1;
+        raiseIndexError(ctx, "no such group");
     }
-    return -1;
+    // An object with __index__ stands for its integer.
+    const proto::ProtoObject* index = ref->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__index__"));
+    if (index && index != PROTO_NONE) {
+        const proto::ProtoObject* v = envOf(ctx).callMethod(ref, "__index__", {});
+        if (v && v != PROTO_NONE && v->isInteger(ctx)) return groupIndex(ctx, m, v);
+    }
+    raiseIndexError(ctx, "no such group");
 }
 
-// One group of a match: its string, None for a group that did not take part;
-// IndexError ("no such group") for a reference to no group, as in CPython.
-static const proto::ProtoObject* matchGroup(proto::ProtoContext* ctx, const proto::ProtoObject* self,
-                                            const proto::ProtoObject* ref) {
-    long long idx = resolveGroupRef(ctx, self, ref);
-    if (idx == -2) {
-        const proto::ProtoObject* s = self->getAttribute(ctx,
-            proto::ProtoString::createSymbol(ctx, "__re_match_str__"));
-        return s ? s : PROTO_NONE;
-    }
-    const proto::ProtoObject* groupsObj = self->getAttribute(ctx,
-        proto::ProtoString::createSymbol(ctx, "__re_groups__"));
-    const proto::ProtoList* groups = groupsObj ? groupsObj->asList(ctx) : nullptr;
-    const long long ngroups = groups ? static_cast<long long>(groups->getSize(ctx)) : 0;
-    if (idx < 1 || idx > ngroups) {
-        if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx)) {
-            env->raiseIndexError(ctx, "no such group");
-        }
-        return nullptr;
-    }
-    return groups->getAt(ctx, static_cast<int>(idx - 1));
+void spanOf(proto::ProtoContext* ctx, const MatchView& m, unsigned g, long long& a, long long& b) {
+    a = m.spans->getAt(ctx, static_cast<int>(2 * g))->asLong(ctx);
+    b = m.spans->getAt(ctx, static_cast<int>(2 * g + 1))->asLong(ctx);
 }
 
-// match.group([group1, ...]): group 0 (the whole match) without arguments,
-// the group's string for one, a tuple of them for several.
-static const proto::ProtoObject* py_match_group(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
-{
-    const proto::proto_ulong n = posArgs ? posArgs->getSize(ctx) : 0;
-    if (n == 0) return matchGroup(ctx, self, nullptr);
-    if (n == 1) return matchGroup(ctx, self, posArgs->getAt(ctx, 0));
-    const proto::ProtoList* items = ctx->newList();
-    for (proto::proto_ulong i = 0; i < n; ++i) {
-        items = items->appendLast(ctx, matchGroup(ctx, self, posArgs->getAt(ctx, static_cast<int>(i))));
-    }
-    return PythonEnvironment::tupleFromList(ctx, items);
-}
-
-// match.groupdict([default]) — return {name: matched_string} for all named groups.
-static const proto::ProtoObject* py_match_groupdict(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
-{
-    const proto::ProtoObject* defaultVal = PROTO_NONE;
-    if (posArgs && posArgs->getSize(ctx) >= 1) defaultVal = posArgs->getAt(ctx, 0);
-
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    const proto::ProtoObject* dictObj = ctx->newObject(true);
-    const proto::ProtoList*       keys = ctx->newList();
-    const proto::ProtoSparseList* data = ctx->newSparseList();
-
-    const proto::ProtoObject* gi = self->getAttribute(ctx,
-        proto::ProtoString::createSymbol(ctx, "__re_groupindex__"));
-    const proto::ProtoObject* groupsObj = self->getAttribute(ctx,
-        proto::ProtoString::createSymbol(ctx, "__re_groups__"));
-    const proto::ProtoList* groups = (groupsObj && groupsObj->asList(ctx)) ? groupsObj->asList(ctx) : nullptr;
-
-    if (gi && gi->asList(ctx) && groups) {
-        const proto::ProtoList* lst = gi->asList(ctx);
-        for (proto::proto_ulong k = 0; k < lst->getSize(ctx); ++k) {
-            const proto::ProtoObject* pair = lst->getAt(ctx, static_cast<int>(k));
-            if (!pair || !pair->asList(ctx) || pair->asList(ctx)->getSize(ctx) < 2) continue;
-            const proto::ProtoObject* nameObj = pair->asList(ctx)->getAt(ctx, 0);
-            const proto::ProtoObject* idxObj  = pair->asList(ctx)->getAt(ctx, 1);
-            if (!nameObj || !idxObj || !nameObj->isString(ctx) || !idxObj->isInteger(ctx)) continue;
-            long long idx = idxObj->asLong(ctx);
-            const proto::ProtoObject* val = (idx >= 1 && idx <= (long long)groups->getSize(ctx))
-                ? groups->getAt(ctx, static_cast<int>(idx - 1)) : PROTO_NONE;
-            if (val == PROTO_NONE) val = defaultVal;
-            keys = keys->appendLast(ctx, nameObj);
-            data = data->setAt(ctx, nameObj->getHash(ctx), val);
-        }
-    }
-    if (env) {
-        dictObj = dictObj->setAttribute(ctx, env->getKeysString(),  keys->asObject(ctx));
-        dictObj = dictObj->setAttribute(ctx, env->getDataString(),  data->asObject(ctx));
-        dictObj = dictObj->setAttribute(ctx, env->getClassString(), env->getDictPrototype());
-    }
-    return dictObj;
-}
-
-// match.groups([default]) — return tuple of all captured groups
-static const proto::ProtoObject* py_match_groups(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
-{
-    const proto::ProtoObject* defaultVal = PROTO_NONE;
-    if (posArgs && posArgs->getSize(ctx) >= 1) {
-        defaultVal = posArgs->getAt(ctx, 0);
-    }
-    const proto::ProtoObject* groupsObj = self->getAttribute(ctx,
-        proto::ProtoString::createSymbol(ctx, "__re_groups__"));
-    if (!groupsObj || !groupsObj->asList(ctx)) {
-        // Return empty tuple
-        return ::protoPython::PythonEnvironment::tupleFromList(ctx, ctx->newList());
-    }
-    const proto::ProtoList* groups = groupsObj->asList(ctx);
-    // Replace unmatched (PROTO_NONE) with default value
-    const proto::ProtoList* result = ctx->newList();
-    for (proto::proto_ulong i = 0; i < groups->getSize(ctx); ++i) {
-        const proto::ProtoObject* g = groups->getAt(ctx, static_cast<int>(i));
-        result = result->appendLast(ctx, (g == PROTO_NONE) ? defaultVal : g);
-    }
-    return PythonEnvironment::tupleFromList(ctx, result);
-}
-
-// The span of group `ref` (a number or a name; group 0 when absent) as code
-// point positions, (-1, -1) when the group did not participate.  False, with
-// IndexError raised, for a group the pattern does not have.
-static bool matchGroupBounds(proto::ProtoContext* ctx, const proto::ProtoObject* self,
-                             const proto::ProtoArguments* posArgs, long long& a, long long& b) {
-    const proto::ProtoObject* ref = (posArgs && posArgs->getSize(ctx) >= 1) ? posArgs->getAt(ctx, 0) : nullptr;
-    const long long idx = resolveGroupRef(ctx, self, ref);
-    const proto::ProtoObject* spansObj = self->getAttribute(ctx,
-        proto::ProtoString::createSymbol(ctx, "__re_spans__"));
-    const proto::ProtoList* spans = spansObj ? spansObj->asList(ctx) : nullptr;
-    const long long g = idx == -2 ? 0 : idx;
-    if (!spans || g < 0 || 2 * g + 1 >= static_cast<long long>(spans->getSize(ctx))) {
-        if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx)) env->raiseIndexError(ctx, "no such group");
-        return false;
-    }
-    a = spans->getAt(ctx, static_cast<int>(2 * g))->asLong(ctx);
-    b = spans->getAt(ctx, static_cast<int>(2 * g + 1))->asLong(ctx);
-    return true;
-}
-
-// match.start([group]) — return start position
-static const proto::ProtoObject* py_match_start(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
-{
+// The text of group g, or `dflt` when it did not take part.
+const proto::ProtoObject* groupValue(proto::ProtoContext* ctx, const MatchView& m, unsigned g,
+                                     const proto::ProtoObject* dflt) {
     long long a, b;
-    if (!matchGroupBounds(ctx, self, posArgs, a, b)) return nullptr;
+    spanOf(ctx, m, g, a, b);
+    if (a < 0) return dflt;
+    if (m.subject->isString(ctx)) {
+        return m.subject->asString(ctx)->getSlice(ctx, static_cast<int>(a), static_cast<int>(b))->asObject(ctx);
+    }
+    std::string data;
+    bytesOf(ctx, m.subject, data);
+    // A bytearray may have shrunk since the match: CPython slices what is
+    // there now.
+    const size_t lo = std::min(static_cast<size_t>(a), data.size());
+    const size_t hi = std::min(static_cast<size_t>(b), data.size());
+    return makeBytes(ctx, data.data() + lo, hi - lo);
+}
+
+// ---------------------------------------------------------------------------
+// Replacement templates
+// ---------------------------------------------------------------------------
+
+struct TemplatePiece {
+    bool isGroup = false;
+    unsigned group = 0;
+    std::string text;  // UTF-8 (str) or bytes
+};
+
+std::vector<TemplatePiece> parseTemplate(proto::ProtoContext* ctx, const proto::ProtoObject* holder,
+                                         const std::string& raw, bool isBytes, const CompiledPattern& cp,
+                                         const proto::ProtoObject* tmplObj) {
+    std::vector<std::uint32_t> t;
+    if (isBytes) {
+        t.assign(raw.begin(), raw.end());
+        for (auto& c : t) c &= 0xFF;
+    } else {
+        decodeCodePoints(raw, t);
+    }
+    std::vector<TemplatePiece> out;
+    std::string lit;
+    auto put = [&](std::uint32_t c) {
+        if (isBytes) lit += static_cast<char>(c);
+        else appendUtf8(lit, c);
+    };
+    auto flush = [&] {
+        if (!lit.empty()) {
+            TemplatePiece p;
+            p.text = std::move(lit);
+            out.push_back(std::move(p));
+            lit.clear();
+        }
+    };
+    auto group = [&](unsigned g, size_t pos) {
+        if (g > cp.tr.groups) raiseReError(ctx, holder, "invalid group reference " + std::to_string(g), tmplObj, &t, static_cast<long long>(pos));
+        flush();
+        TemplatePiece p;
+        p.isGroup = true;
+        p.group = g;
+        out.push_back(std::move(p));
+    };
+    const size_t n = t.size();
+    for (size_t i = 0; i < n; ++i) {
+        const std::uint32_t c = t[i];
+        if (c != '\\') {
+            put(c);
+            continue;
+        }
+        const size_t s = i;
+        if (i + 1 >= n) raiseReError(ctx, holder, "bad escape (end of pattern)", tmplObj, &t, static_cast<long long>(s));
+        const std::uint32_t e = t[++i];
+        if (e == 'g') {
+            if (i + 1 >= n || t[i + 1] != '<') raiseReError(ctx, holder, "missing <", tmplObj, &t, static_cast<long long>(i + 1));
+            size_t j = i + 2;
+            while (j < n && t[j] != '>') ++j;
+            if (j == i + 2) raiseReError(ctx, holder, "missing group name", tmplObj, &t, static_cast<long long>(i + 2));
+            if (j >= n) raiseReError(ctx, holder, "missing >, unterminated name", tmplObj, &t, static_cast<long long>(i + 2));
+            std::string name, shown;
+            bool digits = true;
+            for (size_t k = i + 2; k < j; ++k) {
+                if (isBytes) {
+                    name += static_cast<char>(t[k]);
+                    if (t[k] < 0x80) {
+                        shown += static_cast<char>(t[k]);
+                    } else {
+                        char b[8];
+                        std::snprintf(b, sizeof b, "\\x%02x", static_cast<unsigned>(t[k]));
+                        shown += b;
+                    }
+                } else {
+                    appendUtf8(name, t[k]);
+                }
+                digits = digits && isAsciiDigit(t[k]);
+            }
+            if (!isBytes) shown = name;
+            const size_t namePos = i + 2;
+            i = j;
+            if (digits) {
+                if (name.size() > 9) raiseReError(ctx, holder, "invalid group reference " + name, tmplObj, &t, static_cast<long long>(namePos));
+                group(static_cast<unsigned>(std::stoul(name)), namePos);
+                continue;
+            }
+            int idx = -1;
+            for (const auto& kv : cp.tr.names) {
+                if (kv.first == name) idx = static_cast<int>(kv.second);
+            }
+            if (!isIdentifier(name, isBytes)) raiseReError(ctx, holder, "bad character in group name '" + shown + "'", tmplObj, &t, static_cast<long long>(namePos));
+            if (idx < 0) raiseBuiltin(ctx, "IndexError", "unknown group name '" + name + "'");
+            group(static_cast<unsigned>(idx), namePos);
+            continue;
+        }
+        if (e == '0') {
+            std::uint32_t v = 0;
+            for (int k = 0; k < 2 && i + 1 < n && isOctDigit(t[i + 1]); ++k) v = v * 8 + (t[++i] - '0');
+            put(v);
+            continue;
+        }
+        if (isAsciiDigit(e)) {
+            if (i + 2 < n && isOctDigit(e) && isOctDigit(t[i + 1]) && isOctDigit(t[i + 2])) {
+                const std::uint32_t v = (e - '0') * 64 + (t[i + 1] - '0') * 8 + (t[i + 2] - '0');
+                if (v > 0377) raiseReError(ctx, holder, "octal escape value \\" + std::to_string(e - '0') + std::to_string(t[i + 1] - '0') + std::to_string(t[i + 2] - '0') + " outside of range 0-0o377", tmplObj, &t, static_cast<long long>(s));
+                i += 2;
+                put(v);
+                continue;
+            }
+            unsigned g = e - '0';
+            if (i + 1 < n && isAsciiDigit(t[i + 1])) g = g * 10 + (t[++i] - '0');
+            group(g, s + 1);
+            continue;
+        }
+        switch (e) {
+            case 'a': put(0x07); continue;
+            case 'b': put(0x08); continue;
+            case 'f': put(0x0c); continue;
+            case 'n': put(0x0a); continue;
+            case 'r': put(0x0d); continue;
+            case 't': put(0x09); continue;
+            case 'v': put(0x0b); continue;
+            case '\\': put('\\'); continue;
+            default: break;
+        }
+        if (e < 0x80 && isAsciiLetter(e)) raiseReError(ctx, holder, std::string("bad escape \\") + static_cast<char>(e), tmplObj, &t, static_cast<long long>(s));
+        put('\\');
+        put(e);
+    }
+    flush();
+    return out;
+}
+
+void expandInto(std::string& out, const std::vector<TemplatePiece>& tmpl, const Subject& s, const Hit& hit) {
+    for (const auto& p : tmpl) {
+        if (!p.isGroup) {
+            out += p.text;
+        } else if (hit.has(p.group)) {
+            out.append(s.data, hit.ov[2 * p.group], hit.ov[2 * p.group + 1] - hit.ov[2 * p.group]);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The operations
+// ---------------------------------------------------------------------------
+
+// The [pos, endpos) window as code points, clamped as CPython clamps it.
+void window(proto::ProtoContext* ctx, const proto::ProtoArguments* pos, const proto::ProtoKeywordArguments* kw,
+            proto::proto_ulong first, size_t size, size_t& p, size_t& e) {
+    long long a = intArg(ctx, pos, kw, first, "pos", 0);
+    long long b = intArg(ctx, pos, kw, first + 1, "endpos", static_cast<long long>(size));
+    if (a < 0) a = 0;
+    if (a > static_cast<long long>(size)) a = static_cast<long long>(size);
+    if (b < 0) b = 0;
+    if (b > static_cast<long long>(size)) b = static_cast<long long>(size);
+    p = static_cast<size_t>(a);
+    e = static_cast<size_t>(b);
+}
+
+const proto::ProtoObject* doMatch(proto::ProtoContext* ctx, const proto::ProtoObject* patObj,
+                                  const proto::ProtoObject* subjectObj, Variant v, const proto::ProtoArguments* pos,
+                                  const proto::ProtoKeywordArguments* kw, proto::proto_ulong windowFirst, bool hasWindow) {
+    CompiledPattern* cp = compiledOf(ctx, patObj);
+    if (!cp) raiseTypeError(ctx, "descriptor requires a 're.Pattern' object");
+    const std::shared_ptr<const Subject> sref = subjectFor(ctx, subjectObj, cp->isBytes);
+    const Subject& s = *sref;
+    size_t p = 0, e = s.ncp;
+    if (hasWindow) window(ctx, pos, kw, windowFirst, s.ncp, p, e);
+    if (p > e) return PROTO_NONE;
+    Hit hit;
+    if (!runMatch(ctx, patObj, *cp, v, s, s.byteAt(p), s.byteAt(e), 0, hit)) return PROTO_NONE;
+    return makeMatch(ctx, patObj, *cp, s, p, e, hit);
+}
+
+const proto::ProtoObject* doFindAll(proto::ProtoContext* ctx, const proto::ProtoObject* patObj,
+                                    const proto::ProtoObject* subjectObj, const proto::ProtoArguments* pos,
+                                    const proto::ProtoKeywordArguments* kw, proto::proto_ulong windowFirst, bool hasWindow) {
+    CompiledPattern* cp = compiledOf(ctx, patObj);
+    if (!cp) raiseTypeError(ctx, "descriptor requires a 're.Pattern' object");
+    const std::shared_ptr<const Subject> sref = subjectFor(ctx, subjectObj, cp->isBytes);
+    const Subject& s = *sref;
+    size_t p = 0, e = s.ncp;
+    if (hasWindow) window(ctx, pos, kw, windowFirst, s.ncp, p, e);
+    std::vector<const proto::ProtoObject*> items;
+    if (p <= e) {
+        const unsigned groups = cp->tr.groups;
+        forEachMatch(ctx, patObj, *cp, s, s.byteAt(p), s.byteAt(e), [&](const Hit& h) {
+            auto text = [&](unsigned g) {
+                return h.has(g) ? s.piece(ctx, h.ov[2 * g], h.ov[2 * g + 1]) : s.piece(ctx, 0, 0);
+            };
+            if (groups == 0) {
+                items.push_back(text(0));
+            } else if (groups == 1) {
+                items.push_back(text(1));
+            } else {
+                std::vector<const proto::ProtoObject*> t;
+                for (unsigned g = 1; g <= groups; ++g) t.push_back(text(g));
+                items.push_back(pyTuple(ctx, t));
+            }
+            return true;
+        });
+    }
+    return pyList(ctx, items);
+}
+
+const proto::ProtoObject* doFindIter(proto::ProtoContext* ctx, const proto::ProtoObject* patObj,
+                                     const proto::ProtoObject* subjectObj, const proto::ProtoArguments* pos,
+                                     const proto::ProtoKeywordArguments* kw, proto::proto_ulong windowFirst, bool hasWindow) {
+    CompiledPattern* cp = compiledOf(ctx, patObj);
+    if (!cp) raiseTypeError(ctx, "descriptor requires a 're.Pattern' object");
+    const std::shared_ptr<const Subject> sref = subjectFor(ctx, subjectObj, cp->isBytes);
+    const Subject& s = *sref;
+    size_t p = 0, e = s.ncp;
+    if (hasWindow) window(ctx, pos, kw, windowFirst, s.ncp, p, e);
+    std::vector<const proto::ProtoObject*> items;
+    if (p <= e) {
+        forEachMatch(ctx, patObj, *cp, s, s.byteAt(p), s.byteAt(e), [&](const Hit& h) {
+            items.push_back(makeMatch(ctx, patObj, *cp, s, p, e, h));
+            return true;
+        });
+    }
+    // An iterator, as CPython's finditer returns (the matches are found
+    // eagerly).
+    PythonEnvironment& env = envOf(ctx);
+    const proto::ProtoObject* list = pyList(ctx, items);
+    PythonEnvironment::TransientPin pin(&env, list);
+    const proto::ProtoObject* iterFn = env.resolve("iter", ctx);
+    if (!iterFn || iterFn == PROTO_NONE) return list;
+    return env.callObject(iterFn, {list});
+}
+
+const proto::ProtoObject* doSplit(proto::ProtoContext* ctx, const proto::ProtoObject* patObj,
+                                  const proto::ProtoObject* subjectObj, long long maxsplit) {
+    CompiledPattern* cp = compiledOf(ctx, patObj);
+    if (!cp) raiseTypeError(ctx, "descriptor requires a 're.Pattern' object");
+    const std::shared_ptr<const Subject> sref = subjectFor(ctx, subjectObj, cp->isBytes);
+    const Subject& s = *sref;
+    std::vector<const proto::ProtoObject*> items;
+    size_t last = 0;
+    long long splits = 0;
+    if (maxsplit >= 0) {
+        forEachMatch(ctx, patObj, *cp, s, 0, s.data.size(), [&](const Hit& h) {
+            if (maxsplit > 0 && splits >= maxsplit) return false;
+            items.push_back(s.piece(ctx, last, h.start()));
+            for (unsigned g = 1; g <= cp->tr.groups; ++g) {
+                items.push_back(h.has(g) ? s.piece(ctx, h.ov[2 * g], h.ov[2 * g + 1]) : PROTO_NONE);
+            }
+            last = h.end();
+            ++splits;
+            return true;
+        });
+    }
+    items.push_back(s.piece(ctx, last, s.data.size()));
+    return pyList(ctx, items);
+}
+
+bool isCallable(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
+    PythonEnvironment& env = envOf(ctx);
+    const proto::ProtoObject* fn = env.resolve("callable", ctx);
+    if (!fn || fn == PROTO_NONE) return false;
+    return env.callObject(fn, {obj}) == PROTO_TRUE;
+}
+
+std::string typeName(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
+    PythonEnvironment& env = envOf(ctx);
+    std::string name = "object";
+    const proto::ProtoObject* cls = env.getType(ctx, obj);
+    const proto::ProtoObject* nm = cls ? cls->getAttribute(ctx, env.getNameString()) : nullptr;
+    if (nm && nm != PROTO_NONE && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, name);
+    return name;
+}
+
+// sub / subn: the new string and the number of replacements.
+std::pair<const proto::ProtoObject*, long long> doSub(proto::ProtoContext* ctx, const proto::ProtoObject* patObj,
+                                                      const proto::ProtoObject* repl, const proto::ProtoObject* subjectObj,
+                                                      long long count) {
+    PythonEnvironment& env = envOf(ctx);
+    CompiledPattern* cp = compiledOf(ctx, patObj);
+    if (!cp) raiseTypeError(ctx, "descriptor requires a 're.Pattern' object");
+    const std::shared_ptr<const Subject> sref = subjectFor(ctx, subjectObj, cp->isBytes);
+    const Subject& s = *sref;
+    std::string raw;
+    bool isTemplate = false;
+    // A replacement of the other type is an error only once a match needs
+    // it, reported as CPython's join reports it ("sequence item N: ...").
+    std::string mismatch;
+    if (repl && repl->isString(ctx)) {
+        if (cp->isBytes) mismatch = "expected a bytes-like object, str found";
+        repl->asString(ctx)->toUTF8String(ctx, raw);
+        isTemplate = true;
+    } else if (bytesOf(ctx, repl, raw)) {
+        if (!cp->isBytes) mismatch = "expected str instance, bytes found";
+        isTemplate = true;
+    } else if (!isCallable(ctx, repl)) {
+        raiseTypeError(ctx, cp->isBytes ? "expected a bytes-like object, " + typeName(ctx, repl) + " found"
+                                        : "decoding to str: need a bytes-like object, " + typeName(ctx, repl) + " found");
+    }
+    std::vector<TemplatePiece> tmpl;
+    if (isTemplate && mismatch.empty()) {
+        if (raw.find('\\') == std::string::npos) {
+            TemplatePiece piece;
+            piece.text = raw;
+            tmpl.push_back(std::move(piece));
+        } else {
+            tmpl = parseTemplate(ctx, patObj, raw, cp->isBytes, *cp, repl);
+        }
+    }
+    std::string out;
+    out.reserve(s.data.size());
+    long long n = 0;
+    size_t last = 0;
+    long long items = 0;  // the pieces CPython would have joined so far
+    if (count >= 0) {
+        forEachMatch(ctx, patObj, *cp, s, 0, s.data.size(), [&](const Hit& h) {
+            if (count > 0 && n >= count) return false;
+            if (h.start() > last) ++items;
+            out.append(s.data, last, h.start() - last);
+            if (!mismatch.empty()) raiseTypeError(ctx, "sequence item " + std::to_string(items) + ": " + mismatch);
+            if (isTemplate) {
+                expandInto(out, tmpl, s, h);
+            } else {
+                const proto::ProtoObject* mo = makeMatch(ctx, patObj, *cp, s, 0, s.ncp, h);
+                PythonEnvironment::TransientPin pinMatch(&env, mo);
+                const proto::ProtoObject* r = env.callObject(repl, {mo});
+                std::string piece;
+                if (!r || r == PROTO_NONE || r == env.getNonePrototype()) {
+                    --items;  // None: nothing is added, as CPython
+                } else if (!cp->isBytes && r->isString(ctx)) {
+                    r->asString(ctx)->toUTF8String(ctx, piece);
+                } else if (cp->isBytes && bytesOf(ctx, r, piece)) {
+                    // bytes result
+                } else {
+                    const char* want = cp->isBytes ? "a bytes-like object" : "str instance";
+                    raiseTypeError(ctx, "sequence item " + std::to_string(items) + ": expected " + want + ", " +
+                                            typeName(ctx, r) + " found");
+                }
+                out += piece;
+            }
+            last = h.end();
+            ++n;
+            ++items;
+            return true;
+        });
+    }
+    if (n == 0 && !s.isBytes) return {s.obj, 0};  // no replacement: the subject itself, as CPython
+    out.append(s.data, last, std::string::npos);
+    return {s.isBytes ? makeBytes(ctx, out.data(), out.size()) : PythonEnvironment::newStr(ctx, out), n};
+}
+
+// ---------------------------------------------------------------------------
+// Match methods
+// ---------------------------------------------------------------------------
+
+#define RE_METHOD(name)                                                                          \
+    const proto::ProtoObject* name(proto::ProtoContext* ctx, const proto::ProtoObject* self,     \
+                                   const proto::ParentLink*, const proto::ProtoArguments* posArgs, \
+                                   const proto::ProtoKeywordArguments* kwArgs)
+
+RE_METHOD(py_match_group) {
+    (void)kwArgs;
+    const MatchView m = viewOf(ctx, self);
+    const proto::proto_ulong n = posArgs ? posArgs->getSize(ctx) : 0;
+    if (n == 0) return groupValue(ctx, m, 0, PROTO_NONE);
+    if (n == 1) return groupValue(ctx, m, groupIndex(ctx, m, posArgs->getAt(ctx, 0)), PROTO_NONE);
+    std::vector<const proto::ProtoObject*> items;
+    for (proto::proto_ulong i = 0; i < n; ++i) {
+        items.push_back(groupValue(ctx, m, groupIndex(ctx, m, posArgs->getAt(ctx, static_cast<int>(i))), PROTO_NONE));
+    }
+    return pyTuple(ctx, items);
+}
+
+RE_METHOD(py_match_getitem) {
+    (void)kwArgs;
+    const MatchView m = viewOf(ctx, self);
+    if (!posArgs || posArgs->getSize(ctx) < 1) raiseTypeError(ctx, "__getitem__ expected 1 argument");
+    return groupValue(ctx, m, groupIndex(ctx, m, posArgs->getAt(ctx, 0)), PROTO_NONE);
+}
+
+RE_METHOD(py_match_groups) {
+    const MatchView m = viewOf(ctx, self);
+    const proto::ProtoObject* dflt = argAt(ctx, posArgs, kwArgs, 0, "default");
+    if (!dflt) dflt = PROTO_NONE;
+    std::vector<const proto::ProtoObject*> items;
+    for (unsigned g = 1; g <= m.ngroups; ++g) items.push_back(groupValue(ctx, m, g, dflt));
+    return pyTuple(ctx, items);
+}
+
+RE_METHOD(py_match_groupdict) {
+    PythonEnvironment& env = envOf(ctx);
+    const MatchView m = viewOf(ctx, self);
+    const proto::ProtoObject* dflt = argAt(ctx, posArgs, kwArgs, 0, "default");
+    if (!dflt) dflt = PROTO_NONE;
+    const proto::ProtoObject* d = makeDict(ctx);
+    PythonEnvironment::TransientPin pin(&env, d);
+    for (const auto& kv : m.cp->tr.names) {
+        if (kv.second > m.ngroups) continue;
+        const proto::ProtoObject* key = PythonEnvironment::newStr(ctx, kv.first);
+        PythonEnvironment::TransientPin pinKey(&env, key);
+        const proto::ProtoObject* val = groupValue(ctx, m, kv.second, dflt);
+        PythonEnvironment::TransientPin pinVal(&env, val);
+        env.callMethod(d, "__setitem__", {key, val});
+    }
+    return d;
+}
+
+void boundsArgs(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ProtoArguments* posArgs,
+                long long& a, long long& b) {
+    const MatchView m = viewOf(ctx, self);
+    const proto::ProtoObject* ref = (posArgs && posArgs->getSize(ctx) >= 1) ? posArgs->getAt(ctx, 0) : nullptr;
+    spanOf(ctx, m, groupIndex(ctx, m, ref), a, b);
+}
+
+RE_METHOD(py_match_start) {
+    (void)kwArgs;
+    long long a, b;
+    boundsArgs(ctx, self, posArgs, a, b);
     return ctx->fromInteger(a);
 }
 
-// match.end([group]) — return end position
-static const proto::ProtoObject* py_match_end(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
-{
+RE_METHOD(py_match_end) {
+    (void)kwArgs;
     long long a, b;
-    if (!matchGroupBounds(ctx, self, posArgs, a, b)) return nullptr;
+    boundsArgs(ctx, self, posArgs, a, b);
     return ctx->fromInteger(b);
 }
 
-// match.span([group]) — return (start, end) tuple
-static const proto::ProtoObject* py_match_span(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
-{
+RE_METHOD(py_match_span) {
+    (void)kwArgs;
     long long a, b;
-    if (!matchGroupBounds(ctx, self, posArgs, a, b)) return nullptr;
-    const proto::ProtoList* lst = ctx->newList()
-        ->appendLast(ctx, ctx->fromInteger(a))
-        ->appendLast(ctx, ctx->fromInteger(b));
-    return PythonEnvironment::tupleFromList(ctx, lst);
+    boundsArgs(ctx, self, posArgs, a, b);
+    return pyTuple(ctx, {ctx->fromInteger(a), ctx->fromInteger(b)});
 }
 
-// repr(match): <re.Match object; span=(0, 1), match='A'>, as CPython.
-static const proto::ProtoObject* py_match_repr(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*)
-{
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+RE_METHOD(py_match_expand) {
+    const MatchView m = viewOf(ctx, self);
+    const proto::ProtoObject* tmplObj = requiredArg(ctx, posArgs, kwArgs, 0, "template", "expand");
+    std::string raw;
+    const bool isBytes = !m.subject->isString(ctx);
+    if (isBytes ? !bytesOf(ctx, tmplObj, raw) : !tmplObj->isString(ctx))
+        raiseTypeError(ctx, isBytes ? "expected a bytes-like object" : "expected str instance");
+    if (!isBytes) tmplObj->asString(ctx)->toUTF8String(ctx, raw);
+    const std::vector<TemplatePiece> tmpl = parseTemplate(ctx, self, raw, isBytes, *m.cp, tmplObj);
+    // Rebuild the byte spans from the code point spans.
+    const std::shared_ptr<const Subject> sref = subjectFor(ctx, m.subject, isBytes);
+    const Subject& s = *sref;
+    Hit hit;
+    hit.ov.assign(2 * (static_cast<size_t>(m.cp->tr.groups) + 1), PCRE2_UNSET);
+    for (unsigned g = 0; g <= m.ngroups; ++g) {
+        long long a, b;
+        spanOf(ctx, m, g, a, b);
+        hit.ov[2 * g] = a < 0 ? PCRE2_UNSET : s.byteAt(static_cast<size_t>(a));
+        hit.ov[2 * g + 1] = a < 0 ? PCRE2_UNSET : s.byteAt(static_cast<size_t>(b));
+    }
+    std::string out;
+    expandInto(out, tmpl, s, hit);
+    return isBytes ? makeBytes(ctx, out.data(), out.size()) : PythonEnvironment::newStr(ctx, out);
+}
+
+RE_METHOD(py_match_repr) {
+    (void)posArgs;
+    (void)kwArgs;
+    const MatchView m = viewOf(ctx, self);
     long long a, b;
-    if (!matchGroupBounds(ctx, self, nullptr, a, b)) return nullptr;
-    const proto::ProtoObject* s = self->getAttribute(ctx,
-        proto::ProtoString::createSymbol(ctx, "__re_match_str__"));
-    const std::string text = "<re.Match object; span=(" + std::to_string(a) + ", " + std::to_string(b)
-        + "), match=" + (env && s ? env->reprObject(ctx, s) : std::string("''")) + ">";
-    return ctx->fromUTF8String(text.c_str());
+    spanOf(ctx, m, 0, a, b);
+    const std::string text = "<re.Match object; span=(" + std::to_string(a) + ", " + std::to_string(b) +
+                             "), match=" + PythonEnvironment::reprObject(ctx, groupValue(ctx, m, 0, PROTO_NONE)) + ">";
+    return PythonEnvironment::newStr(ctx, text);
 }
 
-// match.lastindex — index of last matched group (None if no groups)
-static const proto::ProtoObject* py_match_lastindex(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*)
-{
-    const proto::ProtoObject* groupsObj = self->getAttribute(ctx,
-        proto::ProtoString::createSymbol(ctx, "__re_groups__"));
-    if (!groupsObj || !groupsObj->asList(ctx)) return PROTO_NONE;
-    long long n = groupsObj->asList(ctx)->getSize(ctx);
-    return n > 0 ? ctx->fromInteger(n) : PROTO_NONE;
+// __copy__ / __deepcopy__: patterns and matches are immutable, a copy is
+// the object itself. copy.copy calls it on the class with the object as its
+// argument; copy.deepcopy on the object with the memo.
+RE_METHOD(py_identity) {
+    (void)kwArgs;
+    ReState& rs = state(ctx);
+    const bool instance = attr(ctx, self, rs.compiled) || attr(ctx, self, rs.spans);
+    if (!instance && posArgs && posArgs->getSize(ctx) >= 1) return posArgs->getAt(ctx, 0);
+    return self;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers: extract pattern string and compile regex
-// ---------------------------------------------------------------------------
-static bool getPattern(proto::ProtoContext* ctx, const proto::ProtoObject* patObj, std::string& out) {
-    const proto::ProtoObject* patAttr = patObj->getAttribute(ctx,
-        proto::ProtoString::createSymbol(ctx, "__re_pattern__"));
-    if (patAttr && patAttr->isString(ctx)) {
-        patAttr->asString(ctx)->toUTF8String(ctx, out);
-        return true;
-    }
-    if (patObj->isString(ctx)) {
-        patObj->asString(ctx)->toUTF8String(ctx, out);
-        return true;
-    }
-    return false;
+// Patterns are equal when compiled from the same source with the same flags.
+bool samePattern(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ProtoArguments* posArgs) {
+    const CompiledPattern* a = compiledOf(ctx, self);
+    const CompiledPattern* b = (posArgs && posArgs->getSize(ctx) >= 1) ? compiledOf(ctx, posArgs->getAt(ctx, 0)) : nullptr;
+    if (!a || !b) return false;
+    return a == b || (a->isBytes == b->isBytes && a->tr.flags == b->tr.flags && a->source == b->source);
 }
 
-// ---------------------------------------------------------------------------
-// Line boundaries.
-//
-// Python and ECMAScript disagree on lines, and ECMAScript engines disagree
-// with each other: in Python only "\n" ends a line, `^` and `$` without
-// re.MULTILINE match only at the start and at the end (or before a final
-// "\n"), and `.` excludes only "\n". ECMAScript treats "\r", U+2028 and U+2029
-// as line terminators too, and its `multiline` option is missing from MSVC's
-// std::regex, whose `^` and `$` matched at every line regardless.
-//
-// So the engine never sees a line terminator and never runs in multiline
-// mode. Before matching, every "\n", "\r", U+2028 and U+2029 of the subject is
-// replaced by a private code point above U+10FFFF (no str can contain one),
-// and the pattern is rewritten to Python's rules in terms of those:
-//   ^, \A      the start-of-subject marker (below)
-//   ^ (M)      the start-of-subject or a line-start marker (below)
-//   $          (?=\n?$): the end, or before a final "\n"
-//   $ (M)      (?=\n|$)
-//   \Z         $
-//   .          any character but "\n" (all of them under re.DOTALL)
-//   \s, [...]  their Python membership for the four terminators
-// with "\n" standing for its private code point. ECMAScript has no
-// lookbehind, so `^` cannot test the character before it, and the engines
-// disagree on their own `^` once a search starts inside the subject (libc++
-// lets it match there under match_prev_avail). So the engine's `^` is never
-// used: every subject starts with a start-of-subject marker that `^` and
-// `\A` consume, and when a MULTILINE pattern uses `^`, each "\n" of the
-// subject is followed by a line-start marker that `^` consumes too;
-// everything that can match "\n" may consume the marker after it, and
-// nothing else matches a marker. Match positions are mapped back to the
-// subject's code points (markers have no width there).
-// ---------------------------------------------------------------------------
-constexpr ReChar kNL  = static_cast<ReChar>(0x110000);  // "\n"
-constexpr ReChar kCR  = static_cast<ReChar>(0x110001);  // "\r"
-constexpr ReChar kLS  = static_cast<ReChar>(0x110002);  // U+2028 LINE SEPARATOR
-constexpr ReChar kPS  = static_cast<ReChar>(0x110003);  // U+2029 PARAGRAPH SEPARATOR
-constexpr ReChar kLSM = static_cast<ReChar>(0x110004);  // line start after "\n" (MULTILINE ^ only)
-constexpr ReChar kBOS = static_cast<ReChar>(0x110005);  // start of the subject
-static const unsigned long kTerminator[4] = {0x0A, 0x0D, 0x2028, 0x2029};
-static const ReChar kTerminatorSentinel[4] = {kNL, kCR, kLS, kPS};
-
-static int terminatorIndex(unsigned long cp) {
-    for (int k = 0; k < 4; ++k) {
-        if (kTerminator[k] == cp) return k;
-    }
-    return -1;
+RE_METHOD(py_pattern_eq) {
+    (void)kwArgs;
+    return samePattern(ctx, self, posArgs) ? PROTO_TRUE : PROTO_FALSE;
 }
 
-// Python re flags.
-constexpr long long kReIgnoreCase = 2;
-constexpr long long kReMultiline = 8;
-constexpr long long kReDotAll = 16;
-constexpr long long kReVerbose = 64;
-constexpr long long kReAscii = 256;
-
-// std::regex options for Python flags: never `multiline` (see above).
-static std::regex_constants::syntax_option_type pyFlagsToStdFlags(long long pyFlags) {
-    auto flags = std::regex_constants::ECMAScript;
-    if (pyFlags & kReIgnoreCase) flags |= std::regex_constants::icase;
-    return flags;
+RE_METHOD(py_pattern_ne) {
+    (void)kwArgs;
+    return samePattern(ctx, self, posArgs) ? PROTO_FALSE : PROTO_TRUE;
 }
 
-// Translate a Python re module source pattern into an ECMAScript-compatible
-// pattern that std::regex accepts, with Python's line rules (above). Other
-// differences rewritten:
-//   - Python-style named groups `(?P<name>...)` and back-references `(?P=name)`
-//     are converted to plain numbered groups + `\<digit>` back-references.
-//     Named lookup is preserved by returning a name -> 1-based group index
-//     mapping that the runtime stamps on the compiled pattern as
-//     `__re_groupindex__`, so `m.group('name')` and `m.groupdict()` still
-//     work at the protoPython level.  We do NOT emit `(?<name>...)` because
-//     libstdc++'s std::regex rejects it as an "Invalid '(?...)' zero-width
-//     assertion" (named groups are an ECMA-262 ES2018 addition not yet in
-//     libstdc++'s implementation).
-//   - Global inline flags at the start of the pattern, `(?aiLmsux)`, are
-//     applied as flags; `(?#...)` comments are dropped.
-//   - re.VERBOSE / re.X — comments (`#...EOL`) and unescaped whitespace are
-//     stripped (outside character classes / escapes).
-//   - A literal `]` first in a class is escaped (ECMAScript's `[]` is empty).
-//
-// Without this translation, _pydecimal's _parser regex (the canonical
-// example) fails to compile and decimal becomes uninstantiable, which in
-// turn breaks the import chain for tests that depend on decimal directly
-// (test_decimal) or transitively (anything that imports json -> decimal).
-//
-// Limitations: this is a syntactic rewrite, not a full Python re reimpl.
-// Constructs we don't support stay unsupported (e.g. `(?(id)yes|no)`
-// conditional groups, `(?>...)` atomic groups, recursive `(?R)` /
-// `(?P>name)`, scoped inline flags `(?i:...)`, lookbehind, named
-// back-references where the index doesn't fit a single decimal digit).
-struct TranslatedRegex {
-    ReString pattern;                                          // ECMAScript-compatible source
-    std::vector<std::pair<std::string, int>> groupIndex;       // name -> 1-based group index
-    long long flags = 0;                                       // with the leading inline flags
-    bool lineStartMarks = false;                               // subject needs line-start markers
-};
-
-// A character class (or a class escape such as \s), as the translator sees
-// it: the engine's bracket contents, and whether the class matches each of
-// the four line terminators under Python's rules.
-struct ClassInfo {
-    ReString body;              // between the brackets, in ECMAScript syntax
-    bool negated = false;
-    bool negatedEscape = false; // contains \S, \W or \D
-    bool member[4] = {false, false, false, false};
-};
-
-static bool isHexDigit(ReChar c) {
-    return (c >= L'0' && c <= L'9') || (c >= L'a' && c <= L'f') || (c >= L'A' && c <= L'F');
-}
-
-// Decodes the escape at src[i] == '\\' that denotes one character (\n, \x0a,
-//  , \012, \\, \] ...). Returns the code point and the escape's length,
-// or -1 for a class escape or one this translator does not decode.
-static long decodeCharEscape(const ReString& src, size_t i, bool inClass, size_t& len) {
-    len = 2;
-    if (i + 1 >= src.size()) return -1;
-    const ReChar n = src[i + 1];
-    switch (n) {
-        case L'n': return 0x0A;
-        case L'r': return 0x0D;
-        case L't': return 0x09;
-        case L'f': return 0x0C;
-        case L'v': return 0x0B;
-        case L'a': return 0x07;
-        case L'b': return inClass ? 0x08 : -1;
-        default: break;
-    }
-    auto hexRun = [&](size_t start, size_t count) -> long {
-        if (start + count > src.size()) return -1;
-        long v = 0;
-        for (size_t k = 0; k < count; ++k) {
-            const ReChar h = src[start + k];
-            if (!isHexDigit(h)) return -1;
-            v = v * 16 + (h <= L'9' ? h - L'0' : (h | 0x20) - L'a' + 10);
-        }
-        return v;
-    };
-    if (n == L'x') { len = 4; return hexRun(i + 2, 2); }
-    if (n == L'u') { len = 6; return hexRun(i + 2, 4); }
-    if (n == L'U') { len = 10; return hexRun(i + 2, 8); }
-    if (n >= L'0' && n <= L'7') {
-        // Octal: \0, \0o, \0oo anywhere; \o, \oo, \ooo in a class; three
-        // digits outside one (shorter forms there are back-references).
-        size_t k = i + 1;
-        long v = 0;
-        size_t digits = 0;
-        while (k < src.size() && digits < 3 && src[k] >= L'0' && src[k] <= L'7') {
-            v = v * 8 + (src[k] - L'0');
-            ++k;
-            ++digits;
-        }
-        if (n != L'0' && !inClass && digits < 3) return -1;
-        len = k - i;
-        return v;
-    }
-    if ((n >= L'a' && n <= L'z') || (n >= L'A' && n <= L'Z') || (n >= L'1' && n <= L'9')) return -1;
-    return static_cast<long>(n);  // an escaped punctuation character stands for itself
-}
-
-// Python's membership of the four terminators in a class escape.
-static void classEscapeMembers(ReChar e, bool ascii, bool member[4]) {
-    for (int k = 0; k < 4; ++k) {
-        bool space = ascii ? (k < 2) : true;  // \s: \n, \r always; U+2028/9 unless ASCII
-        switch (e) {
-            case L's': member[k] = space; break;
-            case L'S': member[k] = !space; break;
-            case L'W': case L'D': member[k] = true; break;
-            default: member[k] = false; break;  // \w, \d
-        }
-    }
-}
-
-// Parses the class at src[i] == '[' up to its closing ']'. Returns the index
-// after it.
-static size_t parseClass(const ReString& src, size_t i, bool ascii, ClassInfo& info) {
-    size_t k = i + 1;
-    if (k < src.size() && src[k] == L'^') { info.negated = true; ++k; }
-    bool first = true;
-    bool member[4] = {false, false, false, false};
-    // The previous item when it was a single character (a range start).
-    long pending = -1;
-    while (k < src.size() && (src[k] != L']' || first)) {
-        first = false;
-        long cp = -1;
-        size_t len = 1;
-        ReString text;
-        if (src[k] == L'\\' && k + 1 < src.size()) {
-            const ReChar e = src[k + 1];
-            if (e == L's' || e == L'S' || e == L'w' || e == L'W' || e == L'd' || e == L'D') {
-                bool m[4];
-                classEscapeMembers(e, ascii, m);
-                for (int t = 0; t < 4; ++t) member[t] = member[t] || m[t];
-                if (e == L'S' || e == L'W' || e == L'D') info.negatedEscape = true;
-                info.body += src.substr(k, 2);
-                k += 2;
-                pending = -1;
-                continue;
-            }
-            cp = decodeCharEscape(src, k, true, len);
-            if (e == L'b') {
-                text = RE_LIT("\\x08");  // a backspace; MSVC's std::regex read [\b] as "b"
-            } else {
-                text = src.substr(k, len);
-            }
-        } else {
-            cp = static_cast<long>(src[k]);
-            text = (src[k] == L']') ? ReString(RE_LIT("\\]")) : ReString(1, src[k]);
-        }
-        // A range: previous char, '-', this char.
-        if (src[k] == L'-' && pending >= 0 && k + 1 < src.size() && src[k + 1] != L']') {
-            size_t hiLen = 1;
-            const long hi = (src[k + 1] == L'\\') ? decodeCharEscape(src, k + 1, true, hiLen)
-                                                    : static_cast<long>(src[k + 1]);
-            if (hi >= 0) {
-                for (int t = 0; t < 4; ++t) {
-                    const long term = static_cast<long>(kTerminator[t]);
-                    if (term >= pending && term <= hi) member[t] = true;
-                }
-            }
-            info.body += L'-';
-            info.body += src.substr(k + 1, hiLen);
-            k += 1 + hiLen;
-            pending = -1;
-            continue;
-        }
-        if (cp >= 0) {
-            const int t = terminatorIndex(static_cast<unsigned long>(cp));
-            if (t >= 0) member[t] = true;
-        }
-        info.body += text;
-        pending = cp;
-        k += len;
-    }
-    for (int t = 0; t < 4; ++t) info.member[t] = info.negated ? !member[t] : member[t];
-    return k < src.size() ? k + 1 : k;
-}
-
-// Emits a class with Python's terminator membership. Without \S, \W or \D
-// inside, the engine's class never matches a private code point, so the
-// members are added to it (or the non-members to a negated one) and it stays
-// a single bracket. With them, the engine's verdict on private code points is
-// replaced by an explicit one.
-static void emitClass(ReString& out, const ClassInfo& info, bool lineStartMarks) {
-    ReString cls;
-    if (!info.negatedEscape) {
-        cls += info.negated ? RE_LIT("[^") : RE_LIT("[");
-        cls += info.body;
-        for (int t = 0; t < 4; ++t) {
-            if (info.member[t] != info.negated) cls += kTerminatorSentinel[t];
-        }
-        if (info.negated) { cls += kLSM; cls += kBOS; }
-        cls += L']';
-    } else {
-        cls += RE_LIT("(?:");
-        ReString in;
-        for (int t = 0; t < 4; ++t) {
-            if (info.member[t]) in += kTerminatorSentinel[t];
-        }
-        if (!in.empty()) {
-            cls += L'[';
-            cls += in;
-            cls += RE_LIT("]|");
-        }
-        cls += RE_LIT("(?![");
-        for (int t = 0; t < 4; ++t) cls += kTerminatorSentinel[t];
-        cls += kLSM;
-        cls += kBOS;
-        cls += RE_LIT("])");
-        cls += info.negated ? RE_LIT("[^") : RE_LIT("[");
-        cls += info.body;
-        cls += RE_LIT("])");
-    }
-    if (lineStartMarks && info.member[0]) {
-        // After a "\n" may come its line-start marker.
-        out += RE_LIT("(?:");
-        out += cls;
-        out += kLSM;
-        out += RE_LIT("?)");
-    } else {
-        out += cls;
-    }
-}
-
-// The pattern uses `^` outside a class (it needs line-start markers under
-// MULTILINE).
-static bool usesCaret(const ReString& src, size_t i, bool verbose) {
-    bool inClass = false;
-    bool classStart = false;
-    for (; i < src.size(); ++i) {
-        const ReChar c = src[i];
-        if (c == L'\\') { ++i; classStart = false; continue; }
-        if (inClass) {
-            if (c == L']' && !classStart) inClass = false;
-            classStart = classStart && c == L'^';
-            continue;
-        }
-        if (verbose && c == L'#') {
-            while (i < src.size() && src[i] != L'\n') ++i;
-            continue;
-        }
-        if (c == L'[') { inClass = true; classStart = true; continue; }
-        if (c == L'^') return true;
-    }
-    return false;
-}
-
-static TranslatedRegex translatePyRegexEx(const std::string& srcUtf8, long long pyFlags) {
-    const ReString src = toWide(srcUtf8);
-    TranslatedRegex result;
-    size_t i = 0;
-    // Global inline flags at the start: (?aiLmsux), possibly several groups.
-    while (i + 2 < src.size() && src[i] == L'(' && src[i + 1] == L'?') {
-        size_t j = i + 2;
-        long long f = 0;
-        bool ok = true;
-        for (; j < src.size() && src[j] != L')'; ++j) {
-            switch (src[j]) {
-                case L'a': f |= kReAscii; break;
-                case L'i': f |= kReIgnoreCase; break;
-                case L'L': f |= 4; break;
-                case L'm': f |= kReMultiline; break;
-                case L's': f |= kReDotAll; break;
-                case L'u': f |= 32; break;
-                case L'x': f |= kReVerbose; break;
-                default: ok = false; break;
-            }
-            if (!ok) break;
-        }
-        if (!ok || j >= src.size() || j == i + 2) break;
-        pyFlags |= f;
-        i = j + 1;
-    }
-    result.flags = pyFlags;
-    const bool verbose = (pyFlags & kReVerbose) != 0;
-    const bool multiline = (pyFlags & kReMultiline) != 0;
-    const bool dotall = (pyFlags & kReDotAll) != 0;
-    const bool ascii = (pyFlags & kReAscii) != 0;
-    const bool marks = multiline && usesCaret(src, i, verbose);
-    result.lineStartMarks = marks;
-
-    ReString& out = result.pattern;
-    out.reserve(src.size() * 2);
-    int groupCounter = 0;
-    auto emitNewline = [&]() {
-        if (marks) {
-            out += RE_LIT("(?:");
-            out += kNL;
-            out += kLSM;
-            out += RE_LIT("?)");
-        } else {
-            out += kNL;
-        }
-    };
-    auto emitLiteral = [&](unsigned long cp, const ReString& asWritten) {
-        const int t = terminatorIndex(cp);
-        if (t == 0) emitNewline();
-        else if (t > 0) out += kTerminatorSentinel[t];
-        else out += asWritten;
-    };
-    while (i < src.size()) {
-        const ReChar c = src[i];
-        if (c == L'\\' && i + 1 < src.size()) {
-            const ReChar n = src[i + 1];
-            if (n == L'A') { out += kBOS; i += 2; continue; }
-            if (n == L'z' || n == L'Z') { out += L'$'; i += 2; continue; }
-            if (n == L'B') {
-                // Never between a marker and what follows it.
-                out += RE_LIT("(?![");
-                out += kLSM;
-                out += kBOS;
-                out += RE_LIT("])\\B");
-                i += 2;
-                continue;
-            }
-            if (n == L's' || n == L'S' || n == L'w' || n == L'W' || n == L'd' || n == L'D') {
-                ClassInfo info;
-                info.body = src.substr(i, 2);
-                bool m[4];
-                classEscapeMembers(n, ascii, m);
-                for (int t = 0; t < 4; ++t) info.member[t] = m[t];
-                if (n == L'S' || n == L'W' || n == L'D') {
-                    // [^\s...] / [^\w] / [^\d]: a negated bracket keeps it one class.
-                    info.negated = true;
-                    info.body = ReString(RE_LIT("\\")) + static_cast<ReChar>(n | 0x20);
-                    for (int t = 0; t < 4; ++t) info.member[t] = m[t];
-                }
-                emitClass(out, info, marks);
-                i += 2;
-                continue;
-            }
-            size_t len = 2;
-            const long cp = decodeCharEscape(src, i, false, len);
-            if (cp >= 0 && terminatorIndex(static_cast<unsigned long>(cp)) >= 0) {
-                emitLiteral(static_cast<unsigned long>(cp), ReString());
-                i += len;
-                continue;
-            }
-            out += c;
-            out += n;
-            i += 2;
-            continue;
-        }
-        if (verbose) {
-            if (c == L'#') {
-                while (i < src.size() && src[i] != L'\n') ++i;
-                continue;
-            }
-            if (c == L' ' || c == L'\t' || c == L'\n' || c == L'\r' || c == L'\f' || c == L'\v') {
-                ++i;
-                continue;
-            }
-        }
-        if (c == L'[') {
-            ClassInfo info;
-            i = parseClass(src, i, ascii, info);
-            emitClass(out, info, marks);
-            continue;
-        }
-        if (c == L'.') {
-            ClassInfo info;
-            info.negated = true;  // [^\n] or, under DOTALL, everything
-            info.member[0] = dotall;
-            info.member[1] = info.member[2] = info.member[3] = true;
-            emitClass(out, info, marks);
-            ++i;
-            continue;
-        }
-        if (c == L'^') {
-            if (marks) {
-                out += RE_LIT("(?:");
-                out += kBOS;
-                out += L'|';
-                out += kLSM;
-                out += L')';
-            } else {
-                out += kBOS;
-            }
-            ++i;
-            continue;
-        }
-        if (c == L'$') {
-            out += RE_LIT("(?=");
-            out += kNL;
-            out += multiline ? RE_LIT("|$)") : RE_LIT("?$)");
-            ++i;
-            continue;
-        }
-        if (c == L'(' && i + 2 < src.size() && src[i + 1] == L'?' && src[i + 2] == L'#') {
-            while (i < src.size() && src[i] != L')') ++i;
-            if (i < src.size()) ++i;
-            continue;
-        }
-        if (c == L'(' && i + 3 < src.size() && src[i + 1] == L'?' && src[i + 2] == L'P') {
-            // (?P<name>X) -> (X), capturing, recorded in groupIndex.
-            if (src[i + 3] == L'<') {
-                size_t j = i + 4;
-                const size_t nameStart = j;
-                while (j < src.size() && src[j] != L'>') ++j;
-                std::string name = toUtf8(src.substr(nameStart, j - nameStart));
-                ++groupCounter;
-                result.groupIndex.emplace_back(std::move(name), groupCounter);
-                out += L'(';
-                if (j < src.size()) ++j;  // consume '>'
-                i = j;
-                continue;
-            }
-            // (?P=name) -> \<idx> (single-digit only — multi-digit back-refs
-            // are ambiguous in ECMAScript; punt and emit nothing rather than
-            // fabricate something invalid).
-            if (src[i + 3] == L'=') {
-                size_t j = i + 4;
-                const size_t nameStart = j;
-                while (j < src.size() && src[j] != L')') ++j;
-                const std::string name = toUtf8(src.substr(nameStart, j - nameStart));
-                int idx = -1;
-                for (const auto& p : result.groupIndex) {
-                    if (p.first == name) { idx = p.second; break; }
-                }
-                if (idx >= 1 && idx <= 9) {
-                    out += L'\\';
-                    out += static_cast<ReChar>(L'0' + idx);
-                }
-                if (j < src.size()) ++j;  // consume ')'
-                i = j;
-                continue;
-            }
-        }
-        // Other (?...) prefixes are non-capturing — pass through, no counter bump.
-        if (c == L'(' && i + 1 < src.size() && src[i + 1] == L'?') {
-            out += c;
-            ++i;
-            continue;
-        }
-        // Plain '(' starts a capturing group.
-        if (c == L'(') {
-            ++groupCounter;
-            out += c;
-            ++i;
-            continue;
-        }
-        emitLiteral(static_cast<unsigned long>(c), ReString(1, c));
-        ++i;
-    }
-    return result;
-}
-
-// The subject as the engine sees it: a start-of-subject marker, then the
-// code points with line terminators replaced by private code points and,
-// when the pattern needs them, a line-start marker after each "\n".
-// Positions map back to the subject's code points.
-struct Subject {
-    ReString orig;                // the str's code points
-    ReString mapped;              // what the engine matches
-    std::vector<size_t> origAt;   // mapped index -> orig index
-    std::vector<size_t> mappedAt; // orig index -> mapped index after any marker
-
-    size_t toOrig(size_t k) const { return origAt[k]; }
-    // Where a search starting at orig position p begins: before the marker
-    // in front of p (the start-of-subject marker, or the line-start marker
-    // after a "\n"), so that ^ can take it.
-    size_t searchStart(size_t p) const {
-        const size_t k = mappedAt[p];
-        return (k > 0 && (mapped[k - 1] == kBOS || mapped[k - 1] == kLSM)) ? k - 1 : k;
-    }
-    // Where a range ending at orig position p ends: after that marker.
-    size_t searchEnd(size_t p) const { return mappedAt[p]; }
-};
-
-static Subject makeSubject(ReString s, bool lineStartMarks) {
-    Subject sj;
-    sj.orig = std::move(s);
-    sj.mapped.reserve(sj.orig.size() + 1 + (lineStartMarks ? 16 : 0));
-    sj.mappedAt.reserve(sj.orig.size() + 1);
-    sj.origAt.reserve(sj.orig.size() + 2);
-    sj.mapped += kBOS;
-    sj.origAt.push_back(0);
-    for (size_t p = 0; p < sj.orig.size(); ++p) {
-        const ReChar c = sj.orig[p];
-        sj.mappedAt.push_back(sj.mapped.size());
-        sj.origAt.push_back(p);
-        const int t = terminatorIndex(static_cast<unsigned long>(c));
-        sj.mapped += t >= 0 ? kTerminatorSentinel[t] : c;
-        if (lineStartMarks && t == 0) {
-            sj.origAt.push_back(p + 1);
-            sj.mapped += kLSM;
-        }
-    }
-    sj.mappedAt.push_back(sj.mapped.size());
-    sj.origAt.push_back(sj.orig.size());
-    return sj;
-}
-
-// A compiled pattern and how its subjects must be prepared.
-struct CompiledRe {
-    TranslatedRegex tr;
-    ReRegex re;
-};
-
-// Read flags from posArgs[flagsArgIdx] or from object's __re_flags__ attribute
-static long long extractFlags(proto::ProtoContext* ctx,
-                               const proto::ProtoObject* patObj,
-                               const proto::ProtoList* posArgs,
-                               int flagsArgIdx) {
-    long long flags = 0;
-    // Check if compiled pattern has stored flags
-    if (patObj) {
-        const proto::ProtoObject* f = patObj->getAttribute(ctx,
-            proto::ProtoString::createSymbol(ctx, "__re_flags__"));
-        if (f && f->isInteger(ctx)) flags = f->asLong(ctx);
-    }
-    // Override/merge with explicit flags argument
-    if (flagsArgIdx >= 0 && posArgs && posArgs->getSize(ctx) > (proto::proto_ulong)flagsArgIdx) {
-        const proto::ProtoObject* fa = posArgs->getAt(ctx, flagsArgIdx);
-        if (fa && fa->isInteger(ctx)) flags |= fa->asLong(ctx);
-    }
-    return flags;
-}
-
-// An optional integer argument given at position `idx` or as keyword `name`.
-static long long intArg(proto::ProtoContext* ctx, const proto::ProtoArguments* posArgs, proto::proto_ulong idx,
-                        const proto::ProtoKeywordArguments* kwArgs, const char* name, long long dflt) {
-    const proto::ProtoObject* v = nullptr;
-    if (posArgs && posArgs->getSize(ctx) > idx) {
-        v = posArgs->getAt(ctx, static_cast<int>(idx));
-    } else if (kwArgs) {
-        const proto::proto_ulong h = PythonEnvironment::getInternedString(ctx, name)->getHash(ctx);
-        if (kwArgs->has(ctx, h)) v = kwArgs->getAt(ctx, h);
-    }
-    return (v && v->isInteger(ctx)) ? v->asLong(ctx) : dflt;
-}
-
-// The flags of a module-level call: the compiled pattern's, the `flags`
-// argument at position `idx` and the `flags` keyword.
-static long long callFlags(proto::ProtoContext* ctx, const proto::ProtoObject* patObj,
-                           const proto::ProtoArguments* posArgs, proto::proto_ulong idx,
-                           const proto::ProtoKeywordArguments* kwArgs) {
-    return extractFlags(ctx, patObj, nullptr, -1) | intArg(ctx, posArgs, idx, kwArgs, "flags", 0);
-}
-
-// A regex that never matches anything.  Used by compileRe() as a safe
-// sentinel when the user-provided pattern fails to compile so the caller
-// can continue (its regex_search will return false) while the Python-level
-// re.error we set propagates back up.  Built once and cached so that the
-// fallback path itself never throws.  CPython behaviour: re.error / PatternError.
-static const ReRegex& neverMatchesRegex() {
-    static const ReRegex kNever(RE_LIT(R"(\b\B)"));  // word-boundary AND non-boundary -> never true
-    return kNever;
-}
-
-// Translates and compiles a pattern. Returns false, with an exception
-// pending, when std::regex rejects it.
-static bool compileRe(proto::ProtoContext* ctx, const std::string& pat, long long pyFlags, CompiledRe& out) {
-    out.tr = translatePyRegexEx(pat, pyFlags);
-    try {
-        out.re = ReRegex(out.tr.pattern, pyFlagsToStdFlags(out.tr.flags));
-        return true;
-    } catch (const std::regex_error& e) {
-        // std::regex (the C++ stdlib) rejects several constructs the
-        // Python `re` module accepts — conditional groups `(?(...)...)`,
-        // recursive patterns, lookbehind, atomic groups `(?>...)`.  Without
-        // this they escape as C++ exceptions and abort the process via
-        // std::terminate.  Push them across the boundary as a Python
-        // exception so that user code (and unittest) can handle them.
-        out.re = neverMatchesRegex();
-        if (PythonEnvironment* env = ctx ? PythonEnvironment::fromContext(ctx) : nullptr) {
-            env->raiseRuntimeError(ctx, std::string("regex compile error: ") + e.what());
-        }
-        return false;
-    } catch (...) {
-        out.re = neverMatchesRegex();
-        if (PythonEnvironment* env = ctx ? PythonEnvironment::fromContext(ctx) : nullptr) {
-            env->raiseRuntimeError(ctx, std::string("regex compile error"));
-        }
-        return false;
-    }
-}
-
-// The mapped index of a sub-match boundary.
-static size_t mappedIndex(const Subject& sj, ReString::const_iterator it) {
-    return static_cast<size_t>(it - sj.mapped.cbegin());
-}
-
-// libc++'s regex_search over a non-empty range does not try the empty match
-// at its very end ($ or a lookahead there); libstdc++ and MSVC do. Try it
-// separately when the search from `from` found nothing.
-static bool matchAtEnd(const CompiledRe& cr, const Subject& sj, size_t from, size_t last, ReMatch& m) {
-    if (from >= last) return false;
-    const auto end = sj.mapped.cbegin() + static_cast<std::ptrdiff_t>(last);
-    return std::regex_search(end, end, m, cr.re,
-                             std::regex_constants::match_prev_avail | std::regex_constants::match_continuous);
-}
-
-// An empty match sitting on a marker (the start-of-subject marker or a
-// line-start marker) did not take the marker: it stands for an empty match
-// at the code point after it, where a longer match may start.  A search
-// begins before the marker so that ^ can take it; a pattern that can match
-// empty (A?, [A-]*) then matched nothing there and never saw the text:
-// re.match("A?", "AA") matched '' and argparse's nargs="*" / "?" patterns
-// consumed no argument.
-static bool emptyOnMarker(const ReMatch& m, ReString::const_iterator last) {
-    return m[0].first == m[0].second && m[0].first != last
-        && (*m[0].first == kBOS || *m[0].first == kLSM);
-}
-
-// Searches [pos, endpos) of the subject (code point positions). `anchored`:
-// the match must start at pos (pattern.match). `whole`: it must span the
-// whole range (fullmatch). `^` and `\A` match only at the true start, as in
-// CPython, so a search from pos > 0 runs with match_not_bol and the previous
-// character available.
-static bool findMatch(const CompiledRe& cr, const Subject& sj, size_t pos, size_t endpos,
-                      bool anchored, bool whole, ReMatch& m) {
-    if (pos > endpos || endpos > sj.orig.size()) return false;
-    const auto base = sj.mapped.cbegin();
-    const auto last = base + static_cast<std::ptrdiff_t>(sj.searchEnd(endpos));
-    auto flags = std::regex_constants::match_default;
-    const size_t start = sj.searchStart(pos);
-    // The previous character is there for \b (^ is the marker, not the engine's).
-    if (start > 0) flags |= std::regex_constants::match_prev_avail;
-    if (anchored) flags |= std::regex_constants::match_continuous;
-    auto attempt = [&](size_t from, std::regex_constants::match_flag_type f) {
-        const auto first = base + static_cast<std::ptrdiff_t>(from);
-        return whole ? std::regex_match(first, last, m, cr.re, f) : std::regex_search(first, last, m, cr.re, f);
-    };
-    if (attempt(start, flags)) {
-        if (!emptyOnMarker(m, last)) return true;
-        // Look again just after the marker; that match starts at the same
-        // code point and is at least as long.
-        const size_t afterMarker = static_cast<size_t>(m[0].first - base) + 1;
-        ReMatch again;
-        const auto first = base + static_cast<std::ptrdiff_t>(afterMarker);
-        const auto f2 = flags | std::regex_constants::match_prev_avail;
-        if (whole ? std::regex_match(first, last, again, cr.re, f2)
-                  : std::regex_search(first, last, again, cr.re, f2)) {
-            m = again;
-        }
-        return true;
-    }
-    if (!anchored && !whole && matchAtEnd(cr, sj, start, sj.searchEnd(endpos), m)) return true;
-    // A MULTILINE pattern whose match at pos does not take the line-start
-    // marker before pos: try once more after it.
-    const size_t after = sj.searchEnd(pos);
-    if ((anchored || whole) && after != start) {
-        return attempt(after, flags | std::regex_constants::match_prev_avail);
-    }
-    return false;
-}
-
-// Calls f(match) for each successive match in [pos, endpos), until f returns
-// false, with ECMAScript's (and Python's) rule for empty matches: after an
-// empty match the next one must be non-empty or start further on. The
-// iteration is done here rather than by std::regex_iterator, whose handling
-// of an empty match at the end of the subject differs between libc++ and
-// libstdc++. Two empty matches at one position of the subject (one on each
-// side of a marker) count once.
-template <class F>
-static void forEachMatch(const CompiledRe& cr, const Subject& sj, size_t pos, size_t endpos, F&& f) {
-    if (pos > endpos || endpos > sj.orig.size()) return;
-    const auto base = sj.mapped.cbegin();
-    const size_t last = sj.searchEnd(endpos);
-    size_t cur = sj.searchStart(pos);
-    bool notNull = false;
-    size_t lastEmpty = static_cast<size_t>(-1);
-    ReMatch m;
-    while (cur <= last) {
-        auto flags = std::regex_constants::match_default;
-        if (cur > 0) flags |= std::regex_constants::match_prev_avail;
-        if (notNull) flags |= std::regex_constants::match_not_null | std::regex_constants::match_continuous;
-        if (!std::regex_search(base + static_cast<std::ptrdiff_t>(cur), base + static_cast<std::ptrdiff_t>(last),
-                               m, cr.re, flags)
-            && (notNull || !matchAtEnd(cr, sj, cur, last, m))) {
-            if (!notNull || cur == last) break;
-            notNull = false;
-            ++cur;
-            continue;
-        }
-        const size_t ms = mappedIndex(sj, m[0].first);
-        const size_t me = mappedIndex(sj, m[0].second);
-        if (emptyOnMarker(m, base + static_cast<std::ptrdiff_t>(last))) {
-            // Search again from just after the marker (see emptyOnMarker).
-            notNull = false;
-            cur = ms + 1;
-            continue;
-        }
-        const size_t a = sj.toOrig(ms);
-        const size_t b = sj.toOrig(me);
-        bool report = true;
-        if (a == b) {
-            report = a != lastEmpty;
-            lastEmpty = a;
-        }
-        if (report && !f(m)) break;
-        notNull = ms == me;
-        cur = me;
-    }
-}
-
-// Sub-match `i` as code point positions of the subject; false if it did not
-// participate.
-static bool groupSpan(const Subject& sj, const ReMatch& m, size_t i, size_t& a, size_t& b) {
-    if (i >= m.size() || !m[i].matched) return false;
-    a = sj.toOrig(mappedIndex(sj, m[i].first));
-    b = sj.toOrig(mappedIndex(sj, m[i].second));
-    return true;
-}
-
-static ReString groupText(const Subject& sj, const ReMatch& m, size_t i) {
-    size_t a, b;
-    return groupSpan(sj, m, i, a, b) ? sj.orig.substr(a, b - a) : ReString();
+RE_METHOD(py_pattern_hash) {
+    (void)posArgs;
+    (void)kwArgs;
+    const CompiledPattern* cp = compiledOf(ctx, self);
+    if (!cp) raiseTypeError(ctx, "descriptor requires a 're.Pattern' object");
+    const std::uint64_t h = cacheKey(cp->isBytes, cp->tr.flags, cp->source);
+    return ctx->fromInteger(static_cast<long long>(h >> 9));  // within the 56-bit SmallInteger range
 }
 
 // ---------------------------------------------------------------------------
-// Helper: build a match object from a match over a Subject.
-// Stores:
-//   __re_match_str__  — full match string (group 0)
-//   __re_pos__        — start position in the subject string (code points)
-//   __re_end__        — end position in the subject string (code points)
-//   __re_groups__     — ProtoList of captured-group strings (groups 1..n), or PROTO_NONE for unmatched
-//   __re_string__     — subject string
-// ---------------------------------------------------------------------------
-static const proto::ProtoObject* makeMatchObject(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* matchProto,
-    const ReMatch& m,
-    const Subject& sj,
-    const proto::ProtoObject* subjectStr,
-    const proto::ProtoObject* patObj = nullptr,
-    const TranslatedRegex* tr = nullptr)
-{
-    if (!matchProto) return PROTO_NONE;
-    const proto::ProtoObject* mo = matchProto->newChild(ctx, true);
-
-    size_t a = 0, b = 0;
-    groupSpan(sj, m, 0, a, b);
-    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_match_str__"),
-        newStr(ctx, sj.orig.substr(a, b - a)));
-    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_string__"),
-        (subjectStr && subjectStr->isString(ctx)) ? subjectStr : newStr(ctx, sj.orig));
-    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_pos__"),
-        ctx->fromInteger(static_cast<long long>(a)));
-    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_end__"),
-        ctx->fromInteger(static_cast<long long>(b)));
-
-    // Spans of groups 0..n as a flat (start, end, start, end, ...) list,
-    // -1 for a group that did not participate.
-    const proto::ProtoList* spans = ctx->newList();
-    for (size_t i = 0; i < m.size(); ++i) {
-        size_t ga = 0, gb = 0;
-        const bool took = groupSpan(sj, m, i, ga, gb);
-        spans = spans->appendLast(ctx, ctx->fromInteger(took ? static_cast<long long>(ga) : -1))
-                     ->appendLast(ctx, ctx->fromInteger(took ? static_cast<long long>(gb) : -1));
-    }
-    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_spans__"), spans->asObject(ctx));
-
-    // Store captured groups (indices 1..n) as a list.
-    const proto::ProtoList* groups = ctx->newList();
-    for (size_t i = 1; i < m.size(); ++i) {
-        size_t ga, gb;
-        if (groupSpan(sj, m, i, ga, gb)) {
-            groups = groups->appendLast(ctx, newStr(ctx, sj.orig.substr(ga, gb - ga)));
-        } else {
-            groups = groups->appendLast(ctx, PROTO_NONE);
-        }
-    }
-    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_groups__"),
-        groups->asObject(ctx));
-
-    // Forward the pattern's name -> index mapping so .group('name') /
-    // .groupdict() can resolve named groups.  A str pattern (re.match(p, s))
-    // has none: build it from the translation, which recorded the names.
-    const proto::ProtoObject* gi = patObj ? patObj->getAttribute(ctx,
-        proto::ProtoString::createSymbol(ctx, "__re_groupindex__")) : nullptr;
-    if ((!gi || gi == PROTO_NONE) && tr && !tr->groupIndex.empty()) {
-        const proto::ProtoList* gindex = ctx->newList();
-        for (const auto& kv : tr->groupIndex) {
-            const proto::ProtoList* pair = ctx->newList()
-                ->appendLast(ctx, PythonEnvironment::getInternedString(ctx, kv.first.c_str())->asObject(ctx))
-                ->appendLast(ctx, ctx->fromInteger(kv.second));
-            gindex = gindex->appendLast(ctx, pair->asObject(ctx));
-        }
-        gi = gindex->asObject(ctx);
-    }
-    if (gi && gi != PROTO_NONE) {
-        mo = mo->setAttribute(ctx,
-            proto::ProtoString::createSymbol(ctx, "__re_groupindex__"), gi);
-    }
-
-    return mo;
-}
-
-static const proto::ProtoObject* getMatchProto(proto::ProtoContext* ctx,
-    const proto::ProtoObject* self)
-{
-    const proto::ProtoObject* mp = self->getAttribute(ctx,
-        proto::ProtoString::createSymbol(ctx, "__match_proto__"));
-    return mp;
-}
-
-// A Python list holding `items`.
-static const proto::ProtoObject* pyList(proto::ProtoContext* ctx, const proto::ProtoList* items) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    const proto::ProtoObject* listProto = env ? env->getListPrototype() : nullptr;
-    if (listProto) {
-        proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(listProto->newChild(ctx, true));
-        listObj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__data__"), items->asObject(ctx));
-        return listObj;
-    }
-    return PythonEnvironment::wrapList(ctx, items);
-}
-
-// ---------------------------------------------------------------------------
-// Substitution
+// Pattern methods
 // ---------------------------------------------------------------------------
 
-// Appends the expansion of a Python replacement template for match `m`, as
-// re._parser.parse_template defines it: group references \1 to \99,
-// \g<number> and \g<name>, octal escapes (\0, \0oo and \ooo), the escapes
-// \a \b \f \n \r \t \v \\, and any other escaped non-letter kept as written.
-// Returns false with an exception pending for a bad reference or escape.
-static bool expandTemplate(proto::ProtoContext* ctx, const ReString& tmpl, const ReMatch& m,
-                           const Subject& sj, const TranslatedRegex& tr, ReString& out) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    auto fail = [&](const std::string& msg) {
-        if (env) env->raiseRuntimeError(ctx, msg);
-        return false;
-    };
-    auto appendGroup = [&](size_t g) {
-        if (g >= m.size()) return fail("invalid group reference " + std::to_string(g));
-        if (m[g].matched) out += groupText(sj, m, g);  // an unmatched group expands to ''
-        return true;
-    };
-    auto isDigit = [](ReChar d) { return d >= L'0' && d <= L'9'; };
-    auto isOctal = [](ReChar d) { return d >= L'0' && d <= L'7'; };
-    for (size_t i = 0; i < tmpl.size(); ++i) {
-        const ReChar c = tmpl[i];
-        if (c != L'\\' || i + 1 == tmpl.size()) {
-            out += c;
-            continue;
+RE_METHOD(py_pattern_match) {
+    return doMatch(ctx, self, requiredArg(ctx, posArgs, kwArgs, 0, "string", "match"), kMatch, posArgs, kwArgs, 1, true);
+}
+RE_METHOD(py_pattern_fullmatch) {
+    return doMatch(ctx, self, requiredArg(ctx, posArgs, kwArgs, 0, "string", "fullmatch"), kFull, posArgs, kwArgs, 1, true);
+}
+RE_METHOD(py_pattern_search) {
+    return doMatch(ctx, self, requiredArg(ctx, posArgs, kwArgs, 0, "string", "search"), kSearch, posArgs, kwArgs, 1, true);
+}
+RE_METHOD(py_pattern_findall) {
+    return doFindAll(ctx, self, requiredArg(ctx, posArgs, kwArgs, 0, "string", "findall"), posArgs, kwArgs, 1, true);
+}
+RE_METHOD(py_pattern_finditer) {
+    return doFindIter(ctx, self, requiredArg(ctx, posArgs, kwArgs, 0, "string", "finditer"), posArgs, kwArgs, 1, true);
+}
+RE_METHOD(py_pattern_split) {
+    return doSplit(ctx, self, requiredArg(ctx, posArgs, kwArgs, 0, "string", "split"),
+                   intArg(ctx, posArgs, kwArgs, 1, "maxsplit", 0));
+}
+RE_METHOD(py_pattern_sub) {
+    return doSub(ctx, self, requiredArg(ctx, posArgs, kwArgs, 0, "repl", "sub"),
+                 requiredArg(ctx, posArgs, kwArgs, 1, "string", "sub"), intArg(ctx, posArgs, kwArgs, 2, "count", 0)).first;
+}
+RE_METHOD(py_pattern_subn) {
+    auto r = doSub(ctx, self, requiredArg(ctx, posArgs, kwArgs, 0, "repl", "subn"),
+                   requiredArg(ctx, posArgs, kwArgs, 1, "string", "subn"), intArg(ctx, posArgs, kwArgs, 2, "count", 0));
+    PythonEnvironment::TransientPin pin(&envOf(ctx), r.first);
+    return pyTuple(ctx, {r.first, ctx->fromInteger(r.second)});
+}
+
+RE_METHOD(py_pattern_repr) {
+    (void)posArgs;
+    (void)kwArgs;
+    ReState& rs = state(ctx);
+    const proto::ProtoObject* pat = attr(ctx, self, rs.pattern);
+    CompiledPattern* cp = compiledOf(ctx, self);
+    std::string out = "re.compile(" + (pat ? PythonEnvironment::reprObject(ctx, pat) : std::string("''"));
+    long long flags = cp ? cp->tr.flags : 0;
+    if (cp && !cp->isBytes) flags &= ~F_U;  // re.UNICODE is implied for a str pattern
+    if (flags) {
+        static const struct { long long bit; const char* name; } names[] = {
+            {F_TEMPLATE, "re.TEMPLATE"}, {F_I, "re.IGNORECASE"}, {F_L, "re.LOCALE"}, {F_M, "re.MULTILINE"},
+            {F_S, "re.DOTALL"}, {F_U, "re.UNICODE"}, {F_X, "re.VERBOSE"}, {F_DEBUG, "re.DEBUG"}, {F_A, "re.ASCII"}};
+        std::string parts;
+        for (const auto& n : names) {
+            if (!(flags & n.bit)) continue;
+            if (!parts.empty()) parts += "|";
+            parts += n.name;
+            flags &= ~n.bit;
         }
-        const ReChar n = tmpl[++i];
-        if (n == L'g') {
-            if (i + 1 >= tmpl.size() || tmpl[i + 1] != L'<') return fail("missing <");
-            const size_t close = tmpl.find(L'>', i + 2);
-            if (close == ReString::npos) return fail("missing >, unterminated name");
-            const ReString name = tmpl.substr(i + 2, close - (i + 2));
-            i = close;
-            if (name.empty()) return fail("missing group name");
-            bool numeric = true;
-            for (ReChar d : name) numeric = numeric && isDigit(d);
-            if (numeric) {
-                if (name.size() > 9) return fail("invalid group reference " + toUtf8(name));
-                if (!appendGroup(std::stoul(toUtf8(name)))) return false;
-                continue;
-            }
-            const std::string key = toUtf8(name);
-            int idx = -1;
-            for (const auto& p : tr.groupIndex) {
-                if (p.first == key) { idx = p.second; break; }
-            }
-            if (idx < 0) return fail("unknown group name '" + key + "'");
-            if (!appendGroup(static_cast<size_t>(idx))) return false;
-            continue;
+        if (flags) {
+            char b[32];
+            std::snprintf(b, sizeof b, "0x%llx", flags);
+            if (!parts.empty()) parts += "|";
+            parts += b;
         }
-        if (n == L'0') {
-            unsigned v = 0;
-            size_t j = i + 1;
-            for (int k = 0; k < 2 && j < tmpl.size() && isOctal(tmpl[j]); ++k, ++j) v = v * 8 + (tmpl[j] - L'0');
-            out += static_cast<ReChar>(v);
-            i = j - 1;
-            continue;
-        }
-        if (isDigit(n)) {
-            if (i + 2 < tmpl.size() && isOctal(n) && isOctal(tmpl[i + 1]) && isOctal(tmpl[i + 2])) {
-                const unsigned v = (n - L'0') * 64 + (tmpl[i + 1] - L'0') * 8 + (tmpl[i + 2] - L'0');
-                if (v > 0377) return fail("octal escape value outside of range 0-0o377");
-                out += static_cast<ReChar>(v);
-                i += 2;
-                continue;
-            }
-            size_t g = static_cast<size_t>(n - L'0');
-            if (i + 1 < tmpl.size() && isDigit(tmpl[i + 1])) g = g * 10 + static_cast<size_t>(tmpl[++i] - L'0');
-            if (!appendGroup(g)) return false;
-            continue;
-        }
-        switch (n) {
-            case L'a': out += L'\a'; break;
-            case L'b': out += L'\b'; break;
-            case L'f': out += L'\f'; break;
-            case L'n': out += L'\n'; break;
-            case L'r': out += L'\r'; break;
-            case L't': out += L'\t'; break;
-            case L'v': out += L'\v'; break;
-            case L'\\': out += L'\\'; break;
-            default:
-                if ((n >= L'a' && n <= L'z') || (n >= L'A' && n <= L'Z')) {
-                    return fail(std::string("bad escape \\") + static_cast<char>(n));
-                }
-                out += L'\\';
-                out += n;
-        }
+        out += ", " + parts;
     }
-    return true;
+    out += ")";
+    return PythonEnvironment::newStr(ctx, out);
 }
 
+// pattern.scanner(string, pos=0, endpos=maxsize): an object whose match()
+// and search() return the successive matches, as CPython's SRE scanner.
+RE_METHOD(py_pattern_scanner) {
+    ReState& rs = state(ctx);
+    CompiledPattern* cp = compiledOf(ctx, self);
+    if (!cp) raiseTypeError(ctx, "descriptor requires a 're.Pattern' object");
+    const proto::ProtoObject* subjectObj = requiredArg(ctx, posArgs, kwArgs, 0, "string", "scanner");
+    const std::shared_ptr<const Subject> sref = subjectFor(ctx, subjectObj, cp->isBytes);
+    const Subject& s = *sref;
+    size_t p = 0, e = s.ncp;
+    window(ctx, posArgs, kwArgs, 1, s.ncp, p, e);
+    const proto::ProtoObject* proto = attr(ctx, self, rs.scanIterProto);
+    if (!proto) throw std::logic_error("re: no scanner prototype");
+    const proto::ProtoString* names[6] = {rs.scanPattern, rs.scanString, rs.scanPos, rs.scanEnd, rs.scanAdvance,
+                                          rs.pattern};
+    const proto::ProtoObject* values[6] = {self, subjectObj, ctx->fromInteger(static_cast<long long>(p)),
+                                           ctx->fromInteger(static_cast<long long>(e)), PROTO_FALSE, self};
+    return proto->newChild(ctx, true)->setAttributes(ctx, 6, names, values);
+}
 
-// pattern.sub / subn and re.sub / subn: replaces the first `count` matches
-// (all when count is 0) of the pattern in `strObj`. `replObj` is a replacement
-// template or a callable that receives each match object and returns the
-// replacement (None inserts nothing). Returns false with an exception pending
-// on error; otherwise stores the new string and the number of replacements.
-static bool substitute(proto::ProtoContext* ctx, const proto::ProtoObject* patObj,
-                       const proto::ProtoObject* matchProto, const proto::ProtoObject* replObj,
-                       const proto::ProtoObject* strObj, long long count, long long flags,
-                       const proto::ProtoObject*& resultOut, long long& replacedOut) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (!env) return false;
-    std::string pat;
-    if (!patObj || !getPattern(ctx, patObj, pat)) {
-        env->raiseTypeError(ctx, "first argument must be string or compiled pattern");
-        return false;
+const proto::ProtoObject* scannerStep(proto::ProtoContext* ctx, const proto::ProtoObject* self, Variant v) {
+    ReState& rs = state(ctx);
+    if (attr(ctx, self, rs.scanDone) == PROTO_TRUE) return PROTO_NONE;
+    const proto::ProtoObject* patObj = attr(ctx, self, rs.scanPattern);
+    CompiledPattern* cp = compiledOf(ctx, patObj);
+    const proto::ProtoObject* subjectObj = attr(ctx, self, rs.scanString);
+    const proto::ProtoObject* posObj = attr(ctx, self, rs.scanPos);
+    const proto::ProtoObject* endObj = attr(ctx, self, rs.scanEnd);
+    if (!cp || !subjectObj || !posObj || !endObj) raiseTypeError(ctx, "not a scanner object");
+    const std::shared_ptr<const Subject> sref = subjectFor(ctx, subjectObj, cp->isBytes);
+    const Subject& s = *sref;
+    const size_t p = static_cast<size_t>(posObj->asLong(ctx));
+    const size_t e = static_cast<size_t>(endObj->asLong(ctx));
+    proto::ProtoObject* me = const_cast<proto::ProtoObject*>(self);
+    Hit hit;
+    const bool advance = attr(ctx, self, rs.scanAdvance) == PROTO_TRUE;
+    if (p > e || !runMatch(ctx, patObj, *cp, v, s, s.byteAt(p), s.byteAt(e), advance ? PCRE2_NOTEMPTY_ATSTART : 0, hit)) {
+        me->setAttribute(ctx, rs.scanDone, PROTO_TRUE);
+        return PROTO_NONE;
     }
-    ReString s;
-    if (!wideArg(ctx, strObj, s)) {
-        env->raiseTypeError(ctx, "expected string or bytes-like object");
-        return false;
-    }
-    ReString tmpl;
-    const bool replIsTemplate = wideArg(ctx, replObj, tmpl);
-    CompiledRe cr;
-    if (!compileRe(ctx, pat, flags, cr)) return false;
-    const Subject sj = makeSubject(std::move(s), cr.tr.lineStartMarks);
-
-    ReString out;
-    long long replaced = 0;
-    size_t last = 0;
-    bool ok = true;
-    forEachMatch(cr, sj, 0, sj.orig.size(), [&](const ReMatch& m) {
-        if (count > 0 && replaced >= count) return false;
-        size_t start, end;
-        groupSpan(sj, m, 0, start, end);
-        out.append(sj.orig, last, start - last);
-        if (replIsTemplate) {
-            if (!expandTemplate(ctx, tmpl, m, sj, cr.tr, out)) { ok = false; return false; }
-        } else {
-            const proto::ProtoObject* mo = makeMatchObject(ctx, matchProto, m, sj, strObj, patObj, &cr.tr);
-            PythonEnvironment::TransientPin pinMatch(env, mo);
-            const proto::ProtoObject* r = env->callObject(replObj, { mo });
-            if (!r) {
-                // No result and no exception: nothing to insert.
-            } else if (r->isString(ctx)) {
-                ReString piece;
-                wideArg(ctx, r, piece);
-                out += piece;
-            } else if (r != PROTO_NONE && r != env->getNonePrototype()) {
-                std::string typeName = "object";
-                const proto::ProtoObject* cls = env->getType(ctx, r);
-                const proto::ProtoObject* nm = cls ? cls->getAttribute(ctx, env->getNameString()) : nullptr;
-                if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, typeName);
-                env->raiseTypeError(ctx, "expected str instance, " + typeName + " found");
-                ok = false;
-                return false;
-            }
-        }
-        last = end;
-        ++replaced;
-        return true;
-    });
-    if (!ok) return false;
-    out.append(sj.orig, last, ReString::npos);
-    resultOut = newStr(ctx, out);
-    replacedOut = replaced;
-    return true;
+    const proto::ProtoObject* m = makeMatch(ctx, patObj, *cp, s, p, e, hit);
+    PythonEnvironment::TransientPin pin(&envOf(ctx), m);
+    me->setAttribute(ctx, rs.scanPos, ctx->fromInteger(static_cast<long long>(s.cpAt(hit.end()))));
+    me->setAttribute(ctx, rs.scanAdvance, hit.start() == hit.end() ? PROTO_TRUE : PROTO_FALSE);
+    return m;
 }
 
-static const proto::ProtoObject* newPair(proto::ProtoContext* ctx,
-                                         const proto::ProtoObject* a, const proto::ProtoObject* b) {
-    return ::protoPython::PythonEnvironment::tupleFromList(ctx, ctx->newList()->appendLast(ctx, a)->appendLast(ctx, b));
+RE_METHOD(py_scanner_match) {
+    (void)posArgs;
+    (void)kwArgs;
+    return scannerStep(ctx, self, kMatch);
 }
-
-// The [pos, endpos) window of the pattern methods, in code points: the
-// arguments at positions `first` and `first + 1`, clamped as CPython does.
-static void matchWindow(proto::ProtoContext* ctx, const proto::ProtoArguments* posArgs, proto::proto_ulong first,
-                        size_t size, size_t& pos, size_t& endpos) {
-    pos = 0;
-    endpos = size;
-    if (posArgs->getSize(ctx) > first) {
-        const auto* posArg = posArgs->getAt(ctx, static_cast<int>(first));
-        if (posArg && posArg->isInteger(ctx)) {
-            long long p = posArg->asLong(ctx);
-            if (p < 0) p = 0;
-            if ((size_t)p > size) p = (long long)size;
-            pos = (size_t)p;
-        }
-    }
-    if (posArgs->getSize(ctx) > first + 1) {
-        const auto* epArg = posArgs->getAt(ctx, static_cast<int>(first + 1));
-        if (epArg && epArg->isInteger(ctx)) {
-            long long ep = epArg->asLong(ctx);
-            if (ep < 0) ep = 0;
-            if ((size_t)ep > size) ep = (long long)size;
-            endpos = (size_t)ep;
-        }
-    }
-}
-
-enum class MatchKind { Match, Search, FullMatch };
-
-// The match object of pattern `patObj` against `strObj`, or None.
-static const proto::ProtoObject* matchOnce(proto::ProtoContext* ctx, const proto::ProtoObject* matchProto,
-                                           const proto::ProtoObject* patObj, const proto::ProtoObject* strObj,
-                                           long long flags, MatchKind kind,
-                                           const proto::ProtoArguments* windowArgs, proto::proto_ulong windowFirst) {
-    std::string pat;
-    ReString s;
-    if (!getPattern(ctx, patObj, pat)) return PROTO_NONE;
-    if (!wideArg(ctx, strObj, s)) return PROTO_NONE;
-    CompiledRe cr;
-    if (!compileRe(ctx, pat, flags, cr)) return nullptr;
-    const Subject sj = makeSubject(std::move(s), cr.tr.lineStartMarks);
-    size_t pos = 0, endpos = sj.orig.size();
-    if (windowArgs) matchWindow(ctx, windowArgs, windowFirst, sj.orig.size(), pos, endpos);
-    ReMatch m;
-    if (!findMatch(cr, sj, pos, endpos, kind == MatchKind::Match, kind == MatchKind::FullMatch, m)) return PROTO_NONE;
-    return makeMatchObject(ctx, matchProto, m, sj, strObj, patObj, &cr.tr);
-}
-
-// The list re.findall returns: each match's group 0, its one group, or the
-// tuple of its groups.
-static const proto::ProtoObject* findAll(proto::ProtoContext* ctx, const proto::ProtoObject* patObj,
-                                         const proto::ProtoObject* strObj, long long flags,
-                                         const proto::ProtoArguments* windowArgs, proto::proto_ulong windowFirst) {
-    std::string pat;
-    ReString s;
-    if (!getPattern(ctx, patObj, pat) || !wideArg(ctx, strObj, s)) return pyList(ctx, ctx->newList());
-    CompiledRe cr;
-    if (!compileRe(ctx, pat, flags, cr)) return nullptr;
-    const Subject sj = makeSubject(std::move(s), cr.tr.lineStartMarks);
-    size_t pos = 0, endpos = sj.orig.size();
-    if (windowArgs) matchWindow(ctx, windowArgs, windowFirst, sj.orig.size(), pos, endpos);
-    const proto::ProtoList* results = ctx->newList();
-    forEachMatch(cr, sj, pos, endpos, [&](const ReMatch& sm) {
-        if (sm.size() > 2) {
-            // 2+ capturing groups: return list of tuples (CPython behavior)
-            const proto::ProtoList* grps = ctx->newList();
-            for (size_t i = 1; i < sm.size(); ++i) grps = grps->appendLast(ctx, newStr(ctx, groupText(sj, sm, i)));
-            results = results->appendLast(ctx, PythonEnvironment::tupleFromList(ctx, grps));
-        } else if (sm.size() == 2) {
-            // Exactly 1 capturing group: return the group string (CPython behavior)
-            results = results->appendLast(ctx, newStr(ctx, groupText(sj, sm, 1)));
-        } else {
-            // No capturing groups: return full match string
-            results = results->appendLast(ctx, newStr(ctx, groupText(sj, sm, 0)));
-        }
-        return true;
-    });
-    return pyList(ctx, results);
-}
-
-// The match objects of re.finditer, as a list.
-static const proto::ProtoObject* findIter(proto::ProtoContext* ctx, const proto::ProtoObject* matchProto,
-                                          const proto::ProtoObject* patObj, const proto::ProtoObject* strObj,
-                                          long long flags, const proto::ProtoArguments* windowArgs,
-                                          proto::proto_ulong windowFirst) {
-    std::string pat;
-    ReString s;
-    if (!getPattern(ctx, patObj, pat) || !wideArg(ctx, strObj, s)) return pyList(ctx, ctx->newList());
-    CompiledRe cr;
-    if (!compileRe(ctx, pat, flags, cr)) return nullptr;
-    const Subject sj = makeSubject(std::move(s), cr.tr.lineStartMarks);
-    size_t pos = 0, endpos = sj.orig.size();
-    if (windowArgs) matchWindow(ctx, windowArgs, windowFirst, sj.orig.size(), pos, endpos);
-    const proto::ProtoList* results = ctx->newList();
-    forEachMatch(cr, sj, pos, endpos, [&](const ReMatch& m) {
-        results = results->appendLast(ctx, makeMatchObject(ctx, matchProto, m, sj, strObj, patObj, &cr.tr));
-        return true;
-    });
-    return pyList(ctx, results);
-}
-
-// re.split: the pieces between matches, each match's groups after the piece
-// before it, at most `maxsplit` splits (0: all). Empty matches split too, as
-// in CPython 3.7 and later.
-static const proto::ProtoObject* splitString(proto::ProtoContext* ctx, const proto::ProtoObject* patObj,
-                                             const proto::ProtoObject* strObj, long long maxsplit, long long flags) {
-    std::string pat;
-    ReString s;
-    if (!getPattern(ctx, patObj, pat) || !wideArg(ctx, strObj, s)) return pyList(ctx, ctx->newList());
-    CompiledRe cr;
-    if (!compileRe(ctx, pat, flags, cr)) return nullptr;
-    const Subject sj = makeSubject(std::move(s), cr.tr.lineStartMarks);
-    const proto::ProtoList* results = ctx->newList();
-    size_t last = 0;
-    long long splits = 0;
-    forEachMatch(cr, sj, 0, sj.orig.size(), [&](const ReMatch& m) {
-        if (maxsplit > 0 && splits >= maxsplit) return false;
-        size_t a, b;
-        groupSpan(sj, m, 0, a, b);
-        results = results->appendLast(ctx, newStr(ctx, sj.orig.substr(last, a - last)));
-        for (size_t g = 1; g < m.size(); ++g) {
-            size_t ga, gb;
-            results = results->appendLast(ctx, groupSpan(sj, m, g, ga, gb)
-                ? newStr(ctx, sj.orig.substr(ga, gb - ga)) : PROTO_NONE);
-        }
-        last = b;
-        ++splits;
-        return true;
-    });
-    results = results->appendLast(ctx, newStr(ctx, sj.orig.substr(last)));
-    return pyList(ctx, results);
+RE_METHOD(py_scanner_search) {
+    (void)posArgs;
+    (void)kwArgs;
+    return scannerStep(ctx, self, kSearch);
 }
 
 // ---------------------------------------------------------------------------
 // Module-level functions
 // ---------------------------------------------------------------------------
 
-static const proto::ProtoObject* py_compile(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwArgs)
-{
-    if (posArgs->getSize(ctx) < 1 || !posArgs->getAt(ctx, 0)->isString(ctx)) return PROTO_NONE;
-    std::string pat;
-    posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, pat);
-    const long long flags = intArg(ctx, posArgs, 1, kwArgs, "flags", 0);
-    const proto::ProtoObject* proto = self->getAttribute(ctx,
-        proto::ProtoString::createSymbol(ctx, "__pattern_proto__"));
-    if (!proto) return PROTO_NONE;
-    const proto::ProtoObject* p = proto->newChild(ctx, true);
-    // The pattern source is user text, not vocabulary.
-    const proto::ProtoObject* patObj = PythonEnvironment::newStr(ctx, pat);
-    p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_pattern__"), patObj);
-    p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_flags__"),
-        ctx->fromInteger(flags));
-    // Public attributes expected by CPython: re.Pattern exposes
-    // `.pattern` (the source string), `.flags` (int), `.groups` (int).
-    p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "pattern"), patObj);
-    p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "flags"),
-        ctx->fromInteger(flags));
-    // Translate now (cheap) to extract the named-group map and the number of
-    // groups.
-    TranslatedRegex tr = translatePyRegexEx(pat, flags);
-    int groupCount = 0;
-    {
-        // Count capture groups in the translated source: every unescaped '(' that
-        // is not '(?'-prefixed (non-capturing / lookaround / etc.) is one group.
-        bool inClass = false;
-        for (size_t i = 0; i < tr.pattern.size(); ++i) {
-            const ReChar c = tr.pattern[i];
-            if (c == L'\\' && i + 1 < tr.pattern.size()) { ++i; continue; }
-            if (inClass) { if (c == L']') inClass = false; continue; }
-            if (c == L'[') { inClass = true; continue; }
-            if (c != L'(') continue;
-            if (i + 1 < tr.pattern.size() && tr.pattern[i + 1] == L'?') continue;
-            ++groupCount;
-        }
-    }
-    p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "groups"),
-        ctx->fromInteger(groupCount));
-    // Build name -> 1-based-index mapping as a ProtoList of [name, index]
-    // pairs.  We deliberately do not use a ProtoSparseList / dict shape:
-    // a flat list keeps the wire format simple and the lookup is O(n) on a
-    // value of n that is bounded by the number of named groups in a single
-    // regex (typically < 10).
-    if (!tr.groupIndex.empty()) {
-        const proto::ProtoList* gindex = ctx->newList();
-        for (const auto& kv : tr.groupIndex) {
-            const proto::ProtoList* pair = ctx->newList()
-                ->appendLast(ctx, PythonEnvironment::getInternedString(ctx, kv.first.c_str())->asObject(ctx))
-                ->appendLast(ctx, ctx->fromInteger(kv.second));
-            gindex = gindex->appendLast(ctx, pair->asObject(ctx));
-        }
-        p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_groupindex__"),
-            gindex->asObject(ctx));
-    }
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (env) {
-        // Give the instance an explicit class name for repr/type() checks.
-        p = p->setAttribute(ctx, env->getClassString(), proto);
-    }
-    return p;
+// The pattern of a module-level call. A cached pattern was allocated by an
+// earlier call, so nothing in this call's context keeps it alive: another
+// thread's purge() or cache reset could let it be collected (and its compiled
+// code freed) mid-match. The callers pin it for the duration of the call.
+const proto::ProtoObject* modulePattern(proto::ProtoContext* ctx, const proto::ProtoObject* module,
+                                        const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwArgs,
+                                        proto::proto_ulong flagsIdx, const char* func) {
+    const proto::ProtoObject* pat = requiredArg(ctx, posArgs, kwArgs, 0, "pattern", func);
+    return obtainPattern(ctx, module, pat, intArg(ctx, posArgs, kwArgs, flagsIdx, "flags", 0));
 }
 
-// re.match(pattern, string, flags=0)
-static const proto::ProtoObject* py_match(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwArgs)
-{
-    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
-    const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
-    return matchOnce(ctx, getMatchProto(ctx, self), patObj, posArgs->getAt(ctx, 1),
-                     callFlags(ctx, patObj, posArgs, 2, kwArgs), MatchKind::Match, nullptr, 0);
+RE_METHOD(py_compile) {
+    return modulePattern(ctx, self, posArgs, kwArgs, 1, "compile");
 }
 
-// re.search(pattern, string, flags=0)
-static const proto::ProtoObject* py_search(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwArgs)
-{
-    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
-    const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
-    return matchOnce(ctx, getMatchProto(ctx, self), patObj, posArgs->getAt(ctx, 1),
-                     callFlags(ctx, patObj, posArgs, 2, kwArgs), MatchKind::Search, nullptr, 0);
+RE_METHOD(py_search) {
+    const proto::ProtoObject* pat = modulePattern(ctx, self, posArgs, kwArgs, 2, "search");
+    PythonEnvironment::TransientPin pinPat(&envOf(ctx), pat);  // see modulePattern
+    return doMatch(ctx, pat, requiredArg(ctx, posArgs, kwArgs, 1, "string", "search"), kSearch, nullptr, nullptr, 0, false);
+}
+RE_METHOD(py_match) {
+    const proto::ProtoObject* pat = modulePattern(ctx, self, posArgs, kwArgs, 2, "match");
+    PythonEnvironment::TransientPin pinPat(&envOf(ctx), pat);  // see modulePattern
+    return doMatch(ctx, pat, requiredArg(ctx, posArgs, kwArgs, 1, "string", "match"), kMatch, nullptr, nullptr, 0, false);
+}
+RE_METHOD(py_fullmatch) {
+    const proto::ProtoObject* pat = modulePattern(ctx, self, posArgs, kwArgs, 2, "fullmatch");
+    PythonEnvironment::TransientPin pinPat(&envOf(ctx), pat);  // see modulePattern
+    return doMatch(ctx, pat, requiredArg(ctx, posArgs, kwArgs, 1, "string", "fullmatch"), kFull, nullptr, nullptr, 0, false);
+}
+RE_METHOD(py_findall) {
+    const proto::ProtoObject* pat = modulePattern(ctx, self, posArgs, kwArgs, 2, "findall");
+    PythonEnvironment::TransientPin pinPat(&envOf(ctx), pat);  // see modulePattern
+    return doFindAll(ctx, pat, requiredArg(ctx, posArgs, kwArgs, 1, "string", "findall"), nullptr, nullptr, 0, false);
+}
+RE_METHOD(py_finditer) {
+    const proto::ProtoObject* pat = modulePattern(ctx, self, posArgs, kwArgs, 2, "finditer");
+    PythonEnvironment::TransientPin pinPat(&envOf(ctx), pat);  // see modulePattern
+    return doFindIter(ctx, pat, requiredArg(ctx, posArgs, kwArgs, 1, "string", "finditer"), nullptr, nullptr, 0, false);
+}
+RE_METHOD(py_split) {
+    const proto::ProtoObject* pat = modulePattern(ctx, self, posArgs, kwArgs, 3, "split");
+    PythonEnvironment::TransientPin pinPat(&envOf(ctx), pat);  // see modulePattern
+    return doSplit(ctx, pat, requiredArg(ctx, posArgs, kwArgs, 1, "string", "split"),
+                   intArg(ctx, posArgs, kwArgs, 2, "maxsplit", 0));
+}
+RE_METHOD(py_sub) {
+    const proto::ProtoObject* pat = modulePattern(ctx, self, posArgs, kwArgs, 4, "sub");
+    PythonEnvironment::TransientPin pinPat(&envOf(ctx), pat);  // see modulePattern
+    return doSub(ctx, pat, requiredArg(ctx, posArgs, kwArgs, 1, "repl", "sub"),
+                 requiredArg(ctx, posArgs, kwArgs, 2, "string", "sub"), intArg(ctx, posArgs, kwArgs, 3, "count", 0)).first;
+}
+RE_METHOD(py_subn) {
+    const proto::ProtoObject* pat = modulePattern(ctx, self, posArgs, kwArgs, 4, "subn");
+    PythonEnvironment::TransientPin pinPat(&envOf(ctx), pat);  // see modulePattern
+    auto r = doSub(ctx, pat, requiredArg(ctx, posArgs, kwArgs, 1, "repl", "subn"),
+                   requiredArg(ctx, posArgs, kwArgs, 2, "string", "subn"), intArg(ctx, posArgs, kwArgs, 3, "count", 0));
+    PythonEnvironment::TransientPin pin(&envOf(ctx), r.first);
+    return pyTuple(ctx, {r.first, ctx->fromInteger(r.second)});
 }
 
-static const proto::ProtoObject* py_escape(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
-{
-    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
-    const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
-    ReString s;
-    if (!wideArg(ctx, patObj, s)) return patObj;
-    ReString escaped;
-    for (ReChar c : s) {
-        // Escaping the bytes of a multibyte character broke it; like CPython,
-        // non-ASCII characters are never escaped.
-        if (c < 0x80 && !isalnum(static_cast<unsigned char>(c)) && c != L'_') escaped += L'\\';
-        escaped += c;
+RE_METHOD(py_purge) {
+    (void)posArgs;
+    (void)kwArgs;
+    const_cast<proto::ProtoObject*>(self)->setAttribute(ctx, state(ctx).cache, ctx->newSparseList()->asObject(ctx));
+    return PROTO_NONE;
+}
+
+// re.escape(pattern): CPython 3.7+'s set of special characters only.
+RE_METHOD(py_escape) {
+    const proto::ProtoObject* arg = requiredArg(ctx, posArgs, kwArgs, 0, "pattern", "escape");
+    std::string in;
+    bool isBytes = false;
+    if (arg->isString(ctx)) arg->asString(ctx)->toUTF8String(ctx, in);
+    else if (bytesOf(ctx, arg, in)) isBytes = true;
+    else raiseTypeError(ctx, "expected string or bytes-like object");
+    static const char kSpecial[] = "()[]{}?*+-|^$\\.&~# \t\n\r\v\f";
+    std::string out;
+    out.reserve(in.size() * 2);
+    for (char c : in) {
+        if (c != '\0' && std::strchr(kSpecial, c)) out += '\\';
+        out += c;
     }
-    return newStr(ctx, escaped);
+    return isBytes ? makeBytes(ctx, out.data(), out.size()) : PythonEnvironment::newStr(ctx, out);
 }
 
 // ---------------------------------------------------------------------------
-// Pattern-object methods
+// re.Scanner(lexicon, flags=0): scan(string) -> (results, remainder)
 // ---------------------------------------------------------------------------
 
-// pattern.match(string[, pos[, endpos]])
-static const proto::ProtoObject* py_pattern_match(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
-{
-    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
-    return matchOnce(ctx, getMatchProto(ctx, self), self, posArgs->getAt(ctx, 0),
-                     extractFlags(ctx, self, nullptr, -1), MatchKind::Match, posArgs, 1);
-}
-
-// pattern.fullmatch(string[, pos[, endpos]])
-static const proto::ProtoObject* py_pattern_fullmatch(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
-{
-    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
-    return matchOnce(ctx, getMatchProto(ctx, self), self, posArgs->getAt(ctx, 0),
-                     extractFlags(ctx, self, nullptr, -1), MatchKind::FullMatch, posArgs, 1);
-}
-
-// pattern.search(string[, pos[, endpos]])
-static const proto::ProtoObject* py_pattern_search(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
-{
-    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
-    return matchOnce(ctx, getMatchProto(ctx, self), self, posArgs->getAt(ctx, 0),
-                     extractFlags(ctx, self, nullptr, -1), MatchKind::Search, posArgs, 1);
-}
-
-// pattern.sub(repl, string, count=0)
-static const proto::ProtoObject* py_pattern_sub(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwArgs)
-{
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (!posArgs || posArgs->getSize(ctx) < 2) {
-        if (env) env->raiseTypeError(ctx, "sub() missing required argument 'repl' or 'string'");
-        return nullptr;
-    }
-    const proto::ProtoObject* result = nullptr;
-    long long replaced = 0;
-    if (!substitute(ctx, self, getMatchProto(ctx, self), posArgs->getAt(ctx, 0), posArgs->getAt(ctx, 1),
-                    intArg(ctx, posArgs, 2, kwArgs, "count", 0), extractFlags(ctx, self, nullptr, -1),
-                    result, replaced)) {
-        return nullptr;
-    }
-    return result;
-}
-
-// pattern.subn(repl, string, count=0) -> (new_string, number_of_subs)
-static const proto::ProtoObject* py_pattern_subn(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwArgs)
-{
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (!posArgs || posArgs->getSize(ctx) < 2) {
-        if (env) env->raiseTypeError(ctx, "subn() missing required argument 'repl' or 'string'");
-        return nullptr;
-    }
-    const proto::ProtoObject* result = nullptr;
-    long long replaced = 0;
-    if (!substitute(ctx, self, getMatchProto(ctx, self), posArgs->getAt(ctx, 0), posArgs->getAt(ctx, 1),
-                    intArg(ctx, posArgs, 2, kwArgs, "count", 0), extractFlags(ctx, self, nullptr, -1),
-                    result, replaced)) {
-        return nullptr;
-    }
-    return newPair(ctx, result, ctx->fromInteger(replaced));
-}
-
-// pattern.findall(string[, pos[, endpos]])
-static const proto::ProtoObject* py_pattern_findall(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
-{
-    if (posArgs->getSize(ctx) < 1) return pyList(ctx, ctx->newList());
-    return findAll(ctx, self, posArgs->getAt(ctx, 0), extractFlags(ctx, self, nullptr, -1), posArgs, 1);
-}
-
-// pattern.finditer(string[, pos[, endpos]]) → list of match objects.
-// Mirrors py_pattern_findall but yields match objects instead of group strings,
-// matching CPython's `re.Pattern.finditer` contract.  doctest's `_EXAMPLE_RE`
-// drives the use case (its `parse` calls `self._EXAMPLE_RE.finditer(string)`).
-static const proto::ProtoObject* py_pattern_finditer(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
-{
-    if (posArgs->getSize(ctx) < 1) return pyList(ctx, ctx->newList());
-    return findIter(ctx, getMatchProto(ctx, self), self, posArgs->getAt(ctx, 0),
-                    extractFlags(ctx, self, nullptr, -1), posArgs, 1);
-}
-
-// pattern.split(string, maxsplit=0)
-static const proto::ProtoObject* py_pattern_split(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwArgs)
-{
-    if (posArgs->getSize(ctx) < 1) return pyList(ctx, ctx->newList());
-    return splitString(ctx, self, posArgs->getAt(ctx, 0), intArg(ctx, posArgs, 1, kwArgs, "maxsplit", 0),
-                       extractFlags(ctx, self, nullptr, -1));
-}
-
-// Module-level findall / fullmatch / split / sub
-// re.fullmatch(pattern, string, flags=0)
-static const proto::ProtoObject* py_fullmatch(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwArgs)
-{
-    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
-    const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
-    return matchOnce(ctx, getMatchProto(ctx, self), patObj, posArgs->getAt(ctx, 1),
-                     callFlags(ctx, patObj, posArgs, 2, kwArgs), MatchKind::FullMatch, nullptr, 0);
-}
-
-// re.findall(pattern, string, flags=0)
-static const proto::ProtoObject* py_findall(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwargs)
-{
-    if (posArgs->getSize(ctx) < 2) return pyList(ctx, ctx->newList());
-    const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
-    return findAll(ctx, patObj, posArgs->getAt(ctx, 1), callFlags(ctx, patObj, posArgs, 2, kwargs), nullptr, 0);
-}
-
-// re.sub(pattern, repl, string, count=0, flags=0)
-static const proto::ProtoObject* py_sub(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwargs)
-{
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (!posArgs || posArgs->getSize(ctx) < 3) {
-        if (env) env->raiseTypeError(ctx, "sub() missing required argument 'pattern', 'repl' or 'string'");
-        return nullptr;
-    }
-    const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
-    const proto::ProtoObject* result = nullptr;
-    long long replaced = 0;
-    if (!substitute(ctx, patObj, getMatchProto(ctx, self), posArgs->getAt(ctx, 1), posArgs->getAt(ctx, 2),
-                    intArg(ctx, posArgs, 3, kwargs, "count", 0), callFlags(ctx, patObj, posArgs, 4, kwargs),
-                    result, replaced)) {
-        return nullptr;
-    }
-    return result;
-}
-
-// re.subn(pattern, repl, string, count=0, flags=0) -> (new_string, number_of_subs)
-static const proto::ProtoObject* py_subn(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwargs)
-{
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (!posArgs || posArgs->getSize(ctx) < 3) {
-        if (env) env->raiseTypeError(ctx, "subn() missing required argument 'pattern', 'repl' or 'string'");
-        return nullptr;
-    }
-    const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
-    const proto::ProtoObject* result = nullptr;
-    long long replaced = 0;
-    if (!substitute(ctx, patObj, getMatchProto(ctx, self), posArgs->getAt(ctx, 1), posArgs->getAt(ctx, 2),
-                    intArg(ctx, posArgs, 3, kwargs, "count", 0), callFlags(ctx, patObj, posArgs, 4, kwargs),
-                    result, replaced)) {
-        return nullptr;
-    }
-    return newPair(ctx, result, ctx->fromInteger(replaced));
-}
-
-// re.finditer(pattern, string, flags=0) → match objects (returned as a list)
-static const proto::ProtoObject* py_finditer(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwargs)
-{
-    if (posArgs->getSize(ctx) < 2) return pyList(ctx, ctx->newList());
-    const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
-    return findIter(ctx, getMatchProto(ctx, self), patObj, posArgs->getAt(ctx, 1),
-                    callFlags(ctx, patObj, posArgs, 2, kwargs), nullptr, 0);
-}
-
-// re.split(pattern, string, maxsplit=0, flags=0)
-static const proto::ProtoObject* py_split_module(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwargs)
-{
-    if (posArgs->getSize(ctx) < 2) return pyList(ctx, ctx->newList());
-    const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
-    return splitString(ctx, patObj, posArgs->getAt(ctx, 1), intArg(ctx, posArgs, 2, kwargs, "maxsplit", 0),
-                       callFlags(ctx, patObj, posArgs, 3, kwargs));
-}
-
-// ---------------------------------------------------------------------------
-// Scanner support: pattern.scanner(string) iterator and Scanner class
-// ---------------------------------------------------------------------------
-
-// ScannerIterator: returned by compiled_pattern.scanner(string).
-// Stores current position and matches incrementally.
-static const proto::ProtoObject* py_scanner_iter_match(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*)
-{
-    const proto::ProtoObject* strObj  = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__scan_str__"));
-    const proto::ProtoObject* posObj  = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__scan_pos__"));
-    const proto::ProtoObject* patAttr = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__scan_pat__"));
-    const proto::ProtoObject* mpAttr  = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__match_proto__"));
-
-    if (!strObj || !strObj->isString(ctx)) return PROTO_NONE;
-    if (!patAttr || !patAttr->isString(ctx)) return PROTO_NONE;
-
-    ReString s;
-    std::string pat;
-    wideArg(ctx, strObj, s);
-    patAttr->asString(ctx)->toUTF8String(ctx, pat);
-
-    long long pos = 0;
-    if (posObj && posObj->isInteger(ctx)) pos = posObj->asLong(ctx);
-    if (pos >= (long long)s.size()) return PROTO_NONE;
-
-    long long flags = extractFlags(ctx, self, nullptr, -1);
-    CompiledRe cr;
-    if (!compileRe(ctx, pat, flags, cr)) return nullptr;
-    const Subject sj = makeSubject(std::move(s), cr.tr.lineStartMarks);
-    ReMatch m;
-    if (!findMatch(cr, sj, static_cast<size_t>(pos), sj.orig.size(), true, false, m)) return PROTO_NONE;
-    size_t a, b;
-    groupSpan(sj, m, 0, a, b);
-
-    // Advance position.
-    const proto::ProtoObject* newSelf = self->setAttribute(ctx,
-        proto::ProtoString::createSymbol(ctx, "__scan_pos__"),
-        ctx->fromInteger(static_cast<long long>(b)));
-    // Store updated self back (immutable model workaround: caller won't see it, but
-    // the test only calls match() once per position iteration, so this is acceptable).
-    (void)newSelf;
-
-    return makeMatchObject(ctx, mpAttr, m, sj, strObj, nullptr, &cr.tr);
-}
-
-// pattern.scanner(string) → ScannerIterator
-static const proto::ProtoObject* py_pattern_scanner_method(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
-{
-    std::string strVal;
-    if (posArgs && posArgs->getSize(ctx) >= 1 && posArgs->getAt(ctx, 0)->isString(ctx)) {
-        posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, strVal);
-    }
-
-    std::string pat;
-    getPattern(ctx, self, pat);
-
-    const proto::ProtoObject* mp = getMatchProto(ctx, self);
-
-    const proto::ProtoObject* iterObj = ctx->newObject(false);
-    // The scanned subject and the pattern are data: interning them kept whole
-    // input texts alive for the life of the process.
-    iterObj = iterObj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__scan_str__"),
-        PythonEnvironment::newStr(ctx, strVal));
-    iterObj = iterObj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__scan_pat__"),
-        PythonEnvironment::newStr(ctx, pat));
-    iterObj = iterObj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__scan_pos__"),
-        ctx->fromInteger(0));
-    iterObj = iterObj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "pattern"),
-        PythonEnvironment::newStr(ctx, pat));
-    if (mp) iterObj = iterObj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__match_proto__"), mp);
-    iterObj = iterObj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "match"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(iterObj), py_scanner_iter_match));
-    return iterObj;
-}
-
-// Scanner.__new__(cls, lexicon, flags=0)
-// lexicon is a list of (pattern, action) pairs.
-static const proto::ProtoObject* py_scanner_new(
-    proto::ProtoContext* ctx, const proto::ProtoObject*,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
-{
-    // posArgs: [cls, lexicon, flags?]
-    if (!posArgs || posArgs->getSize(ctx) < 2) return PROTO_NONE;
-    const proto::ProtoObject* cls     = posArgs->getAt(ctx, 0);
-    const proto::ProtoObject* lexObj  = posArgs->getAt(ctx, 1);
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-
-    // Collect pattern strings and action objects from lexicon.
-    std::vector<std::string> pats;
-    std::vector<const proto::ProtoObject*> actions;
-
-    auto getItem = [&](const proto::ProtoObject* seq, size_t i) -> const proto::ProtoObject* {
-        if (!seq) return nullptr;
-        if (::protoPython::PythonEnvironment::tupleView(ctx, seq)) return ::protoPython::PythonEnvironment::tupleView(ctx, seq)->getAt(ctx, (int)i);
-        if (seq->asList(ctx))  return seq->asList(ctx)->getAt(ctx, (int)i);
-        return nullptr;
-    };
-    auto seqSize = [&](const proto::ProtoObject* seq) -> size_t {
-        if (!seq) return 0;
-        if (::protoPython::PythonEnvironment::tupleView(ctx, seq)) return (size_t)::protoPython::PythonEnvironment::tupleView(ctx, seq)->getSize(ctx);
-        if (seq->asList(ctx))  return (size_t)seq->asList(ctx)->getSize(ctx);
-        return 0;
-    };
-
-    size_t n = seqSize(lexObj);
-    for (size_t i = 0; i < n; ++i) {
-        const proto::ProtoObject* item = getItem(lexObj, i);
-        if (!item) continue;
-        const proto::ProtoObject* patItem = getItem(item, 0);
-        const proto::ProtoObject* actItem = getItem(item, 1);
-        std::string patStr;
-        if (patItem && patItem->isString(ctx)) patItem->asString(ctx)->toUTF8String(ctx, patStr);
-        pats.push_back(patStr);
-        actions.push_back(actItem ? actItem : PROTO_NONE);
-    }
-
-    // Build combined pattern "(pat1)|(pat2)|..."
+RE_METHOD(py_scanner_new) {
+    PythonEnvironment& env = envOf(ctx);
+    ReState& rs = state(ctx);
+    (void)self;
+    // posArgs: cls, lexicon, flags
+    const proto::ProtoObject* cls = requiredArg(ctx, posArgs, nullptr, 0, "cls", "Scanner");
+    const proto::ProtoObject* lexicon = requiredArg(ctx, posArgs, kwArgs, 1, "lexicon", "Scanner");
+    const long long flags = intArg(ctx, posArgs, kwArgs, 2, "flags", 0);
+    const proto::ProtoObject* module = env.resolveModule("re", ctx);
+    if (!module || module == PROTO_NONE) throw std::logic_error("re: module not found");
+    const TupleView seq = PythonEnvironment::tupleView(ctx, lexicon);
+    const proto::ProtoObject* data = seq ? nullptr : lexicon->getAttribute(ctx, env.getDataString());
+    const proto::ProtoList* lst = (!seq && data && data != PROTO_NONE) ? data->asList(ctx) : nullptr;
+    if (!seq && !lst) raiseTypeError(ctx, "Scanner lexicon must be a list or tuple of (phrase, action) pairs");
+    const size_t n = seq ? seq.size(ctx) : lst->getSize(ctx);
     std::string combined;
-    for (size_t i = 0; i < pats.size(); ++i) {
-        if (i > 0) combined += "|";
-        combined += "(" + pats[i] + ")";
+    std::vector<const proto::ProtoObject*> outer, actions;
+    unsigned groupsSoFar = 0;
+    for (size_t k = 0; k < n; ++k) {
+        const proto::ProtoObject* item = seq ? seq.at(ctx, k) : lst->getAt(ctx, static_cast<int>(k));
+        const TupleView pair = PythonEnvironment::tupleView(ctx, item);
+        const proto::ProtoObject* pd = pair ? nullptr : (item ? item->getAttribute(ctx, env.getDataString()) : nullptr);
+        const proto::ProtoList* pl = (!pair && pd && pd != PROTO_NONE) ? pd->asList(ctx) : nullptr;
+        const proto::ProtoObject* phrase = pair && pair.size(ctx) >= 2 ? pair.at(ctx, 0) : (pl && pl->getSize(ctx) >= 2 ? pl->getAt(ctx, 0) : nullptr);
+        const proto::ProtoObject* action = pair && pair.size(ctx) >= 2 ? pair.at(ctx, 1) : (pl && pl->getSize(ctx) >= 2 ? pl->getAt(ctx, 1) : nullptr);
+        if (!phrase || !phrase->isString(ctx)) raiseTypeError(ctx, "Scanner phrases must be str patterns");
+        std::string src;
+        phrase->asString(ctx)->toUTF8String(ctx, src);
+        // The phrase's own groups shift the number of the next phrase's group.
+        const proto::ProtoObject* ph = compileNew(ctx, module, phrase, false, std::string(src), flags);
+        const unsigned phraseGroups = compiledOf(ctx, ph)->tr.groups;
+        if (k) combined += "|";
+        combined += "(" + src + ")";
+        outer.push_back(ctx->fromInteger(static_cast<long long>(groupsSoFar + 1)));
+        actions.push_back(action ? action : PROTO_NONE);
+        groupsSoFar += 1 + phraseGroups;
     }
-
-    // Build lexicon list for runtime
-    const proto::ProtoList* actionList = ctx->newList();
-    for (auto a : actions) actionList = actionList->appendLast(ctx, a);
-
-    // Create scanner instance
-    const proto::ProtoObject* scanObj = ctx->newObject(false);
-    if (cls && cls != PROTO_NONE) scanObj = scanObj->addParent(ctx, cls);
-    if (env) scanObj = scanObj->setAttribute(ctx, env->getClassString(), cls ? cls : PROTO_NONE);
-
-    // Store combined pattern as a compiled-pattern-like object
-    const proto::ProtoObject* modRef = env ? env->lookupName("re") : nullptr;
-    const proto::ProtoObject* mpAttr = modRef ? modRef->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__match_proto__")) : nullptr;
-    const proto::ProtoObject* ppAttr = modRef ? modRef->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__pattern_proto__")) : nullptr;
-
-    const proto::ProtoObject* compiledPat = ppAttr ? ppAttr->newChild(ctx, true) : ctx->newObject(false);
-    compiledPat = compiledPat->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_pattern__"),
-        PythonEnvironment::newStr(ctx, combined));
-    compiledPat = compiledPat->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "pattern"),
-        PythonEnvironment::newStr(ctx, combined));
-    if (mpAttr) compiledPat = compiledPat->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__match_proto__"), mpAttr);
-    compiledPat = compiledPat->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "scanner"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(compiledPat), py_pattern_scanner_method));
-
-    scanObj = scanObj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "scanner"), compiledPat);
-    scanObj = scanObj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__scan_lexicon__"), actionList->asObject(ctx));
-    scanObj = scanObj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__scan_pattern__"),
-        PythonEnvironment::newStr(ctx, combined));
-    if (mpAttr) scanObj = scanObj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__match_proto__"), mpAttr);
-
-    return scanObj;
+    const proto::ProtoObject* combinedObj = PythonEnvironment::newStr(ctx, combined);
+    const proto::ProtoObject* pat = compileNew(ctx, module, combinedObj, false, std::string(combined), flags);
+    PythonEnvironment::TransientPin pinPat(&env, pat);
+    const proto::ProtoObject* obj = ctx->newObject(true)->addParent(ctx, cls);
+    const proto::ProtoString* names[5] = {env.getClassString(), rs.lexicon, rs.scanner, rs.scanOuter, rs.scanActions};
+    const proto::ProtoObject* values[5] = {cls, lexicon, pat,
+                                           ctx->newList(static_cast<unsigned>(outer.size()), outer.data())->asObject(ctx),
+                                           ctx->newList(static_cast<unsigned>(actions.size()), actions.data())->asObject(ctx)};
+    return obj->setAttributes(ctx, 5, names, values);
 }
 
-// Scanner.scan(self, string) → ([tokens...], remaining)
-static const proto::ProtoObject* py_scanner_scan(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*)
-{
-    if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
-    if (!posArgs->getAt(ctx, 0)->isString(ctx)) return PROTO_NONE;
-
-    ReString s;
-    wideArg(ctx, posArgs->getAt(ctx, 0), s);
-
-    const proto::ProtoObject* patObj = self->getAttribute(ctx,
-        proto::ProtoString::createSymbol(ctx, "__scan_pattern__"));
-    const proto::ProtoObject* lexObj = self->getAttribute(ctx,
-        proto::ProtoString::createSymbol(ctx, "__scan_lexicon__"));
-    const proto::ProtoObject* mpAttr = self->getAttribute(ctx,
-        proto::ProtoString::createSymbol(ctx, "__match_proto__"));
-    (void)mpAttr;
-
-    std::string pat;
-    if (patObj && patObj->isString(ctx)) patObj->asString(ctx)->toUTF8String(ctx, pat);
-    else return PROTO_NONE;
-
-    long long flags = extractFlags(ctx, self, nullptr, -1);
-    CompiledRe cr;
-    if (!compileRe(ctx, pat, flags, cr)) return nullptr;
-    const Subject sj = makeSubject(std::move(s), cr.tr.lineStartMarks);
-
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+RE_METHOD(py_scanner_scan) {
+    PythonEnvironment& env = envOf(ctx);
+    ReState& rs = state(ctx);
+    const proto::ProtoObject* subjectObj = requiredArg(ctx, posArgs, kwArgs, 0, "string", "scan");
+    const proto::ProtoObject* patObj = attr(ctx, self, rs.scanner);
+    CompiledPattern* cp = compiledOf(ctx, patObj);
+    const proto::ProtoObject* outerObj = attr(ctx, self, rs.scanOuter);
+    const proto::ProtoObject* actionsObj = attr(ctx, self, rs.scanActions);
+    if (!cp || !outerObj || !actionsObj) raiseTypeError(ctx, "not a re.Scanner object");
+    const proto::ProtoList* outer = outerObj->asList(ctx);
+    const proto::ProtoList* actions = actionsObj->asList(ctx);
+    const std::shared_ptr<const Subject> sref = subjectFor(ctx, subjectObj, cp->isBytes);
+    const Subject& s = *sref;
     const proto::ProtoList* results = ctx->newList();
+    PythonEnvironment::TransientPin pinResults(&env, results->asObject(ctx));
     size_t i = 0;
-
-    while (i < sj.orig.size()) {
-        ReMatch m;
-        if (!findMatch(cr, sj, i, sj.orig.size(), true, false, m)) break;
-        size_t a, j;
-        groupSpan(sj, m, 0, a, j);
-        if (j == i) break;  // zero-length match guard
-
-        // Find which group matched (lastindex = 1-based first matched group)
-        int lastindex = -1;
-        for (size_t g = 1; g < m.size(); ++g) {
-            if (m[g].matched) { lastindex = (int)g; break; }
-        }
-
-        if (lastindex >= 1 && lexObj && lexObj->asList(ctx)) {
-            const proto::ProtoList* lx = lexObj->asList(ctx);
-            int actionIdx = lastindex - 1;
-            if (actionIdx < (int)lx->getSize(ctx)) {
-                const proto::ProtoObject* action = lx->getAt(ctx, actionIdx);
-                if (action && action != PROTO_NONE) {
-                    // action(scanner, token) → result
-                    const proto::ProtoObject* tokenStr = newStr(ctx, sj.orig.substr(a, j - a));
-                    const proto::ProtoList* callArgs = ctx->newList()
-                        ->appendLast(ctx, self)
-                        ->appendLast(ctx, tokenStr);
-                    const proto::ProtoObject* res = env ?
-                        invokePythonCallable(ctx, action, argsView(proto::ProtoListArguments(ctx, callArgs)), nullptr) : nullptr;
-                    if (res && res != PROTO_NONE) {
-                        results = results->appendLast(ctx, res);
-                    }
-                }
-                // action == PROTO_NONE → skip token (whitespace etc.)
+    Hit hit;
+    while (runMatch(ctx, patObj, *cp, kMatch, s, i, s.data.size(), 0, hit)) {
+        const size_t j = hit.end();
+        if (j == i) break;
+        int phrase = -1;
+        for (proto::proto_ulong k = 0; k < outer->getSize(ctx); ++k) {
+            if (hit.has(static_cast<unsigned>(outer->getAt(ctx, static_cast<int>(k))->asLong(ctx)))) {
+                phrase = static_cast<int>(k);
+                break;
             }
+        }
+        const proto::ProtoObject* action = phrase >= 0 ? actions->getAt(ctx, phrase) : PROTO_NONE;
+        if (action && action != PROTO_NONE && isCallable(ctx, action)) {
+            // The match as CPython's Scanner exposes it: phrase k is group
+            // k + 1, and the phrase's own groups keep their numbers within
+            // the phrase (1, 2, ...), sharing those of the phrases' groups.
+            // Where they share one, SRE records the phrase's start, then the
+            // inner group's span, then the phrase's end.
+            const unsigned og = static_cast<unsigned>(outer->getAt(ctx, phrase)->asLong(ctx));
+            const unsigned nextOg = static_cast<proto::proto_ulong>(phrase) + 1 < outer->getSize(ctx)
+                ? static_cast<unsigned>(outer->getAt(ctx, phrase + 1)->asLong(ctx)) : cp->tr.groups + 1;
+            Hit view;
+            view.ov.assign(hit.ov.size(), PCRE2_UNSET);
+            view.ov[0] = hit.ov[0];
+            view.ov[1] = hit.ov[1];
+            for (unsigned g = 1; og + g < nextOg && 2 * g + 1 < view.ov.size(); ++g) {
+                view.ov[2 * g] = hit.ov[2 * (og + g)];
+                view.ov[2 * g + 1] = hit.ov[2 * (og + g) + 1];
+            }
+            const unsigned pg = static_cast<unsigned>(phrase) + 1;
+            if (view.ov[2 * pg] == PCRE2_UNSET) view.ov[2 * pg] = hit.ov[2 * og];
+            view.ov[2 * pg + 1] = hit.ov[2 * og + 1];
+            const proto::ProtoObject* m = makeMatch(ctx, patObj, *cp, s, 0, s.ncp, view, static_cast<int>(pg),
+                                                    static_cast<unsigned>(outer->getSize(ctx)));
+            PythonEnvironment::TransientPin pinM(&env, m);
+            const_cast<proto::ProtoObject*>(self)->setAttribute(ctx, rs.match, m);
+            const proto::ProtoObject* token = s.piece(ctx, hit.start(), j);
+            PythonEnvironment::TransientPin pinT(&env, token);
+            action = env.callObject(action, {self, token});
+        }
+        if (action && action != PROTO_NONE && action != env.getNonePrototype()) {
+            PythonEnvironment::TransientPin pinA(&env, action);
+            results = results->appendLast(ctx, action);
+            PythonEnvironment::TransientPin pinR(&env, results->asObject(ctx));
+            // Keep the newest list pinned for the next callback.
+            const_cast<proto::ProtoObject*>(self)->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__scan_results__"),
+                                                                 results->asObject(ctx));
         }
         i = j;
     }
-
-    // Return (tokens_list, remaining_string)
-    // Wrap the internal ProtoList in a proper Python list object (listPrototype + __data__).
-    const proto::ProtoObject* listProto = env ? env->getListPrototype() : nullptr;
-    const proto::ProtoObject* resultsObj;
-    if (listProto) {
-        proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(listProto->newChild(ctx, true));
-        listObj = const_cast<proto::ProtoObject*>(listObj->setAttribute(ctx,
-            PythonEnvironment::getInternedString(ctx, "__data__"), results->asObject(ctx)));
-        resultsObj = listObj;
-    } else {
-        resultsObj = results->asObject(ctx);
-    }
-    const proto::ProtoObject* remaining = newStr(ctx, sj.orig.substr(i));
-    const proto::ProtoList* pair = ctx->newList()
-        ->appendLast(ctx, resultsObj)
-        ->appendLast(ctx, remaining);
-    return ::protoPython::PythonEnvironment::tupleFromList(ctx, pair);
+    const proto::ProtoObject* list = PythonEnvironment::wrapList(ctx, results);
+    PythonEnvironment::TransientPin pinList(&env, list);
+    return pyTuple(ctx, {list, s.piece(ctx, i, s.data.size())});
 }
 
-// ---------------------------------------------------------------------------
-// initialize()
 // re.Pattern / re.Match as classes: type(m) is re.Match and repr() finds
-// their __repr__.  They were bare objects, so type() reported `object` and
-// repr() gave <object object at ...>.
-static const proto::ProtoObject* makeReClass(proto::ProtoContext* ctx,
-                                             const proto::ProtoObject* cls, const char* name) {
+// their __repr__.
+const proto::ProtoObject* makeReClass(proto::ProtoContext* ctx, const proto::ProtoObject* cls, const char* name) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env || !env->getObjectPrototype() || !env->getTypePrototype()) return cls;
     const proto::ProtoObject* objectProto = env->getObjectPrototype();
@@ -2180,173 +2639,129 @@ static const proto::ProtoObject* makeReClass(proto::ProtoContext* ctx,
     cls = cls->setAttribute(ctx, env->getNameString(), nameObj);
     cls = cls->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__qualname__"), nameObj);
     cls = cls->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__module__"),
-        PythonEnvironment::getInternedString(ctx, "re")->asObject(ctx));
+                            PythonEnvironment::getInternedString(ctx, "re")->asObject(ctx));
     cls = cls->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__is_python_class__"), PROTO_TRUE);
     cls = cls->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__bases__"),
-        ::protoPython::PythonEnvironment::tupleFromList(ctx, ctx->newList()->appendLast(ctx, objectProto)));
+                            PythonEnvironment::tupleFromList(ctx, ctx->newList()->appendLast(ctx, objectProto)));
     cls = cls->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__mro__"),
-        ::protoPython::PythonEnvironment::tupleFromList(ctx, ctx->newList()->appendLast(ctx, cls)->appendLast(ctx, objectProto)));
+                            PythonEnvironment::tupleFromList(ctx, ctx->newList()->appendLast(ctx, cls)->appendLast(ctx, objectProto)));
     return cls;
 }
 
-// repr(pattern): re.compile('a+', re.IGNORECASE), as CPython.
-static const proto::ProtoObject* py_pattern_repr(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*)
-{
-    const proto::ProtoObject* pat = self->getAttribute(ctx,
-        proto::ProtoString::createSymbol(ctx, "__re_pattern__"));
-    const proto::ProtoObject* fl = self->getAttribute(ctx,
-        proto::ProtoString::createSymbol(ctx, "__re_flags__"));
-    std::string out = "re.compile(" + (pat ? PythonEnvironment::reprObject(ctx, pat) : std::string("''"));
-    long long flags = (fl && fl->isInteger(ctx)) ? fl->asLong(ctx) : 0;
-    flags &= ~32LL;  // re.UNICODE is implied for a str pattern
-    if (flags) {
-        static const struct { long long bit; const char* name; } names[] = {
-            {2, "re.IGNORECASE"}, {4, "re.LOCALE"}, {8, "re.MULTILINE"}, {16, "re.DOTALL"},
-            {64, "re.VERBOSE"}, {128, "re.DEBUG"}, {256, "re.ASCII"}};
-        std::string parts;
-        for (const auto& n : names) {
-            if (!(flags & n.bit)) continue;
-            if (!parts.empty()) parts += "|";
-            parts += n.name;
-            flags &= ~n.bit;
-        }
-        if (flags) {
-            if (!parts.empty()) parts += "|";
-            parts += "0x" + [&] { char b[32]; std::snprintf(b, sizeof b, "%llx", flags); return std::string(b); }();
-        }
-        out += ", " + parts;
-    }
-    out += ")";
-    return ctx->fromUTF8String(out.c_str());
+// re.error: class error(Exception), __module__ 're'.
+const proto::ProtoObject* makeErrorClass(proto::ProtoContext* ctx) {
+    PythonEnvironment& env = envOf(ctx);
+    const proto::ProtoObject* typeFn = env.resolve("type", ctx);
+    const proto::ProtoObject* exception = env.resolve("Exception", ctx);
+    if (!typeFn || typeFn == PROTO_NONE || !exception || exception == PROTO_NONE) return PROTO_NONE;
+    const proto::ProtoObject* ns = makeDict(ctx);
+    PythonEnvironment::TransientPin pinNs(&env, ns);
+    env.callMethod(ns, "__setitem__", {PythonEnvironment::getInternedString(ctx, "__module__")->asObject(ctx),
+                                       PythonEnvironment::getInternedString(ctx, "re")->asObject(ctx)});
+    const proto::ProtoObject* bases = pyTuple(ctx, {exception});
+    PythonEnvironment::TransientPin pinBases(&env, bases);
+    const proto::ProtoObject* cls = env.callObject(typeFn, {PythonEnvironment::getInternedString(ctx, "error")->asObject(ctx), bases, ns});
+    return cls ? cls : PROTO_NONE;
 }
 
-// ---------------------------------------------------------------------------
+}  // namespace
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
-    const proto::ProtoObject* mod = ctx->newObject(false);
+    ReState& rs = state(ctx);
+    // Mutable, so the functions bound to it below see every attribute set
+    // later (the compile cache in particular).
+    proto::ProtoObject* mod = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+    rs.module = mod;
+    auto sym = [&](const char* n) { return proto::ProtoString::createSymbol(ctx, n); };
+    auto bind = [&](proto::ProtoObject* target, const char* name, proto::ProtoMethod fn) {
+        target->setAttribute(ctx, sym(name), ctx->fromMethod(target, fn));
+    };
 
-    // --- Match prototype ---
-    // Match and Pattern are classes (see makeReClass): mutable, so the
-    // methods bound below and their __mro__ keep naming the same object.
-    const proto::ProtoObject* matchProto = ctx->newObject(true);
-    matchProto = matchProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "group"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(matchProto), py_match_group));
-    matchProto = matchProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "groups"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(matchProto), py_match_groups));
-    matchProto = matchProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "groupdict"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(matchProto), py_match_groupdict));
-    matchProto = matchProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "start"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(matchProto), py_match_start));
-    matchProto = matchProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "end"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(matchProto), py_match_end));
-    matchProto = matchProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "span"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(matchProto), py_match_span));
-    matchProto = matchProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "lastindex"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(matchProto), py_match_lastindex));
-    matchProto = matchProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__repr__"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(matchProto), py_match_repr));
+    const proto::ProtoObject* errorCls = makeErrorClass(ctx);
 
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__match_proto__"), matchProto);
+    proto::ProtoObject* matchProto = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+    bind(matchProto, "group", py_match_group);
+    bind(matchProto, "groups", py_match_groups);
+    bind(matchProto, "groupdict", py_match_groupdict);
+    bind(matchProto, "start", py_match_start);
+    bind(matchProto, "end", py_match_end);
+    bind(matchProto, "span", py_match_span);
+    bind(matchProto, "expand", py_match_expand);
+    bind(matchProto, "__getitem__", py_match_getitem);
+    bind(matchProto, "__repr__", py_match_repr);
+    bind(matchProto, "__copy__", py_identity);
+    bind(matchProto, "__deepcopy__", py_identity);
+    matchProto->setAttribute(ctx, rs.error, errorCls);
 
-    // --- Pattern prototype ---
-    const proto::ProtoObject* patternProto = ctx->newObject(true);
-    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__match_proto__"), matchProto);
-    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "match"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_match));
-    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "fullmatch"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_fullmatch));
-    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "search"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_search));
-    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "sub"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_sub));
-    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "subn"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_subn));
-    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "findall"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_findall));
-    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "finditer"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_finditer));
-    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "split"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_split));
-    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "scanner"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_scanner_method));
-    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__repr__"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_repr));
+    proto::ProtoObject* scanIterProto = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+    bind(scanIterProto, "match", py_scanner_match);
+    bind(scanIterProto, "search", py_scanner_search);
 
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__pattern_proto__"), patternProto);
+    proto::ProtoObject* patternProto = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+    patternProto->setAttribute(ctx, rs.matchProto, matchProto);
+    patternProto->setAttribute(ctx, rs.scanIterProto, scanIterProto);
+    patternProto->setAttribute(ctx, rs.error, errorCls);
+    bind(patternProto, "match", py_pattern_match);
+    bind(patternProto, "fullmatch", py_pattern_fullmatch);
+    bind(patternProto, "search", py_pattern_search);
+    bind(patternProto, "sub", py_pattern_sub);
+    bind(patternProto, "subn", py_pattern_subn);
+    bind(patternProto, "findall", py_pattern_findall);
+    bind(patternProto, "finditer", py_pattern_finditer);
+    bind(patternProto, "split", py_pattern_split);
+    bind(patternProto, "scanner", py_pattern_scanner);
+    bind(patternProto, "__repr__", py_pattern_repr);
+    bind(patternProto, "__copy__", py_identity);
+    bind(patternProto, "__eq__", py_pattern_eq);
+    bind(patternProto, "__ne__", py_pattern_ne);
+    bind(patternProto, "__hash__", py_pattern_hash);
+    bind(patternProto, "__deepcopy__", py_identity);
 
-    // --- Module-level functions ---
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "compile"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_compile));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "escape"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_escape));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "match"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_match));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "search"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_search));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "fullmatch"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_fullmatch));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "findall"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_findall));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "sub"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_sub));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "subn"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_subn));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "finditer"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_finditer));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "split"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_split_module));
+    mod->setAttribute(ctx, rs.matchProto, matchProto);
+    mod->setAttribute(ctx, rs.patternProto, patternProto);
+    mod->setAttribute(ctx, rs.error, errorCls);
+    mod->setAttribute(ctx, rs.cache, ctx->newSparseList()->asObject(ctx));
+    mod->setAttribute(ctx, sym("error"), errorCls);
+    mod->setAttribute(ctx, sym("PatternError"), errorCls);
 
-    // --- Regex flags ---
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "IGNORECASE"), ctx->fromInteger(2));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "I"),          ctx->fromInteger(2));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "LOCALE"),     ctx->fromInteger(4));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "L"),          ctx->fromInteger(4));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "MULTILINE"),  ctx->fromInteger(8));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "M"),          ctx->fromInteger(8));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "DOTALL"),     ctx->fromInteger(16));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "S"),          ctx->fromInteger(16));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "UNICODE"),    ctx->fromInteger(32));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "U"),          ctx->fromInteger(32));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "VERBOSE"),    ctx->fromInteger(64));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "X"),          ctx->fromInteger(64));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "DEBUG"),      ctx->fromInteger(128));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ASCII"),      ctx->fromInteger(256));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "A"),          ctx->fromInteger(256));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "NOFLAG"),     ctx->fromInteger(0));
+    bind(mod, "compile", py_compile);
+    bind(mod, "escape", py_escape);
+    bind(mod, "match", py_match);
+    bind(mod, "search", py_search);
+    bind(mod, "fullmatch", py_fullmatch);
+    bind(mod, "findall", py_findall);
+    bind(mod, "finditer", py_finditer);
+    bind(mod, "sub", py_sub);
+    bind(mod, "subn", py_subn);
+    bind(mod, "split", py_split);
+    bind(mod, "purge", py_purge);
 
-    // --- Scanner type ---
+    static const struct { const char* name; long long value; } kFlags[] = {
+        {"NOFLAG", 0}, {"TEMPLATE", F_TEMPLATE}, {"T", F_TEMPLATE}, {"IGNORECASE", F_I}, {"I", F_I},
+        {"LOCALE", F_L}, {"L", F_L}, {"MULTILINE", F_M}, {"M", F_M}, {"DOTALL", F_S}, {"S", F_S},
+        {"UNICODE", F_U}, {"U", F_U}, {"VERBOSE", F_X}, {"X", F_X}, {"DEBUG", F_DEBUG},
+        {"ASCII", F_A}, {"A", F_A}};
+    for (const auto& f : kFlags) mod->setAttribute(ctx, sym(f.name), ctx->fromInteger(f.value));
+
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoObject* objectProto = env ? env->getObjectPrototype() : nullptr;
-    proto::ProtoObject* scannerType = const_cast<proto::ProtoObject*>(ctx->newObject(false));
-    if (objectProto && objectProto != PROTO_NONE) scannerType = const_cast<proto::ProtoObject*>(scannerType->addParent(ctx, objectProto));
-    scannerType = const_cast<proto::ProtoObject*>(scannerType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"),
-        PythonEnvironment::getInternedString(ctx, "Scanner")->asObject(ctx)));
-    scannerType = const_cast<proto::ProtoObject*>(scannerType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__new__"),
-        ctx->fromMethod(nullptr, py_scanner_new)));
-    scannerType = const_cast<proto::ProtoObject*>(scannerType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "scan"),
-        ctx->fromMethod(nullptr, py_scanner_scan)));
-    // __bases__ and __mro__ so subclasses can compute correct MRO
+    proto::ProtoObject* scannerType = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+    if (objectProto && objectProto != PROTO_NONE) scannerType->addParent(ctx, objectProto);
+    scannerType->setAttribute(ctx, sym("__name__"), PythonEnvironment::getInternedString(ctx, "Scanner")->asObject(ctx));
+    scannerType->setAttribute(ctx, sym("__new__"), ctx->fromMethod(nullptr, py_scanner_new));
+    scannerType->setAttribute(ctx, sym("scan"), ctx->fromMethod(nullptr, py_scanner_scan));
     if (objectProto) {
-        const proto::ProtoList* bList = ctx->newList()->appendLast(ctx, objectProto);
-        scannerType = const_cast<proto::ProtoObject*>(scannerType->setAttribute(ctx,
-            proto::ProtoString::createSymbol(ctx, "__bases__"),
-            ::protoPython::PythonEnvironment::tupleFromList(ctx, bList)));
-        const proto::ProtoList* mList = ctx->newList()->appendLast(ctx, scannerType)->appendLast(ctx, objectProto);
-        scannerType = const_cast<proto::ProtoObject*>(scannerType->setAttribute(ctx,
-            proto::ProtoString::createSymbol(ctx, "__mro__"),
-            ::protoPython::PythonEnvironment::tupleFromList(ctx, mList)));
+        scannerType->setAttribute(ctx, sym("__bases__"),
+                                  PythonEnvironment::tupleFromList(ctx, ctx->newList()->appendLast(ctx, objectProto)));
+        scannerType->setAttribute(ctx, sym("__mro__"),
+                                  PythonEnvironment::tupleFromList(ctx, ctx->newList()->appendLast(ctx, scannerType)->appendLast(ctx, objectProto)));
     }
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "Scanner"), scannerType);
+    mod->setAttribute(ctx, sym("Scanner"), scannerType);
 
-    // Expose Pattern and Match type objects (CPython compatibility)
-    patternProto = makeReClass(ctx, patternProto, "Pattern");
-    matchProto = makeReClass(ctx, matchProto, "Match");
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "Pattern"), patternProto);
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "Match"), matchProto);
-
+    mod->setAttribute(ctx, sym("Pattern"), makeReClass(ctx, patternProto, "Pattern"));
+    mod->setAttribute(ctx, sym("Match"), makeReClass(ctx, matchProto, "Match"));
     return mod;
 }
 
-} // namespace re
-} // namespace protoPython
+}  // namespace re
+}  // namespace protoPython
