@@ -12,6 +12,7 @@ add_library(protoPython SHARED
     BasicBlockAnalysis.cpp
     Parser.cpp
     Tokenizer.cpp
+    UnicodeNames.cpp
     FunctoolsModule.cpp
     LoggingModule.cpp
     MathModule.cpp

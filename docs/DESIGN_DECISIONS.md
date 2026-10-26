@@ -225,3 +225,27 @@ O(n) copy. No caller wanted that conversion, so a protoPython-side helper is
 the whole fix; protoCore's `asList` is left as it is. The helper relies on
 pointer tag 0 meaning "object cell", as `isStringTagFast` and existing
 protoPython code already do.
+
+---
+
+## Unicode character names come from a generated, compiled-in table (agent, pending review)
+
+**Decision (2026-10-26):** `\N{NAME}` escapes resolve through
+`protoPython::unicode_names::lookup` (src/library/UnicodeNames.cpp) over
+`src/library/UnicodeNameTable.inc`, which `tools/gen_unicode_names.py`
+generates from CPython's `unicodedata` and the Unicode `NameAliases.txt` of
+the same version (16.0.0 for CPython 3.14). The generated file is checked
+in. Names are stored as word numbers into a frequency-ordered lexicon
+(about 490 KB in the library, 1.4 MB of source); Hangul syllables and
+`CJK UNIFIED IDEOGRAPH-XXXX` are computed, other `PREFIX-XXXX` families kept
+as code-point ranges. Lookup is a linear scan of the encoded entries (tens of
+microseconds), paid only when a literal is compiled.
+
+**Rationale:** It matches CPython exactly (every name and alias was checked
+against CPython, including its case rules) on Linux, macOS and Windows with
+no runtime dependency: ICU is not a protoPython dependency, and a data file
+would need an install location. Generating at build time would make the
+table depend on the build machine's Python. The same table can back
+`unicodedata.lookup` / `name` later; `unicodedata.py` is still a stub, and
+`unicode_escape` decoding is not implemented by the codecs module, so
+neither uses it yet.

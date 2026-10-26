@@ -1,5 +1,6 @@
 #include <protoPython/Tokenizer.h>
 #include <protoPython/DiagUtils.h>
+#include <protoPython/UnicodeNames.h>
 #include <cctype>
 #include <cstdio>
 #include <stdexcept>
@@ -448,6 +449,34 @@ Token Tokenizer::scanString(char quote, const std::string& prefix) {
         pos_++;
     }
     std::string s;
+    // `\N{...}` errors are reported as CPython's unicode-escape decoder
+    // reports them: by position in the literal (in an f-string, in the
+    // literal segment), counting a non-ASCII character as the 10 bytes of the
+    // \UXXXXXXXX escape CPython substitutes for it before decoding.
+    size_t segStart = pos_;
+    std::string escapeError;
+    auto escapeUnits = [&](size_t from, size_t to) {
+        size_t units = 0;
+        for (size_t k = from; k < to;) {
+            const unsigned char b = static_cast<unsigned char>(source_[k]);
+            if (b == '\r') {
+                ++units; ++k;
+                if (k < to && source_[k] == '\n') ++k;
+            } else if (b < 0x80) {
+                ++units; ++k;
+            } else {
+                units += 10;
+                k += (b >= 0xF0) ? 4 : (b >= 0xE0) ? 3 : (b >= 0xC0) ? 2 : 1;
+            }
+        }
+        return units;
+    };
+    auto setEscapeError = [&](size_t from, size_t lastChar, const char* reason) {
+        if (!escapeError.empty()) return;  // CPython reports the first one
+        escapeError = "(unicode error) 'unicodeescape' codec can't decode bytes in position "
+            + std::to_string(escapeUnits(segStart, from)) + "-"
+            + std::to_string(escapeUnits(segStart, lastChar)) + ": " + reason;
+    };
     while (pos_ < source_.size()) {
         if (triple && pos_ + 2 < source_.size() && source_[pos_] == quote && source_[pos_ + 1] == quote && source_[pos_ + 2] == quote) {
             pos_ += 3;
@@ -483,6 +512,7 @@ Token Tokenizer::scanString(char quote, const std::string& prefix) {
             if (pos_ < source_.size() && source_[pos_] == '{') {
                 // {{ escape — add the second { and continue
                 s += source_[pos_++];
+                segStart = pos_;
                 continue;
             }
             // Real expression: depth-track and skip embedded string literals
@@ -528,6 +558,13 @@ Token Tokenizer::scanString(char quote, const std::string& prefix) {
                     s += source_[pos_++];
                 }
             }
+            segStart = pos_;
+            continue;
+        }
+        if (isF && c == '}' && pos_ < source_.size() && source_[pos_] == '}') {
+            s += '}';
+            s += source_[pos_++];
+            segStart = pos_;
             continue;
         }
 
@@ -537,6 +574,9 @@ Token Tokenizer::scanString(char quote, const std::string& prefix) {
                 // appended to `s` (used for str literals, where each
                 // numeric escape names a codepoint, not a raw byte).
                 auto append_utf8 = [&](unsigned int cp) {
+                    // An escaped brace in an f-string is a literal brace:
+                    // write it as parseFString's `{{` / `}}`.
+                    if (isF && (cp == '{' || cp == '}')) s += static_cast<char>(cp);
                     if (cp < 0x80) {
                         s += static_cast<char>(cp);
                     } else if (cp < 0x800) {
@@ -623,7 +663,7 @@ Token Tokenizer::scanString(char quote, const std::string& prefix) {
                         s += '\\'; s += e;
                     }
                 }
-                else if (e == quote) s += quote;
+                else if (e == '\'' || e == '"') s += e;   // either quote, whatever the delimiter
                 else if (e == '\\') s += '\\';
                 else if (e == '\n') {
                     line_++;
@@ -641,10 +681,35 @@ Token Tokenizer::scanString(char quote, const std::string& prefix) {
                     line_++;
                     lineStartPos_ = pos_;
                 }
-                // \N{NAME} requires a Unicode name database; preserve
-                // the backslash so the literal isn't silently mangled.
-                else if (e == 'N') { s += '\\'; s += e; }
-                else s += e;
+                // \N{NAME}: a Unicode character name or alias (str only;
+                // in bytes `\N` is not an escape and stays as written).
+                else if (e == 'N' && !isB) {
+                    const size_t escStart = pos_ - 2;   // the backslash
+                    if (pos_ >= source_.size() || source_[pos_] != '{') {
+                        setEscapeError(escStart, escStart + 1, "malformed \\N character escape");
+                        continue;
+                    }
+                    size_t k = pos_ + 1;
+                    while (k < source_.size() && source_[k] != '}' && source_[k] != quote
+                           && source_[k] != '\n' && source_[k] != '\r' && source_[k] != '\\')
+                        ++k;
+                    if (k >= source_.size() || source_[k] != '}' || k == pos_ + 1) {
+                        // Unterminated (the error spans the rest of the
+                        // literal) or empty (it spans `\N{`).
+                        const size_t last = (k < source_.size() && source_[k] == '}') ? pos_ : k - 1;
+                        setEscapeError(escStart, last, "malformed \\N character escape");
+                        pos_ = (k < source_.size() && source_[k] == '}') ? k + 1 : k;
+                        continue;
+                    }
+                    const int32_t cp = unicode_names::lookup(
+                        std::string_view(source_).substr(pos_ + 1, k - pos_ - 1));
+                    if (cp < 0) setEscapeError(escStart, k, "unknown Unicode character name");
+                    else append_utf8(static_cast<unsigned int>(cp));
+                    pos_ = k + 1;
+                }
+                // Not an escape (`\q`, `\d`, `\N` in bytes): CPython keeps
+                // the backslash (and warns); dropping it turned "\d+" into "d+".
+                else { s += '\\'; s += e; }
             } else {
                 // In raw strings, a backslash followed by a quote does NOT end the string.
                 if (source_[pos_] == quote || source_[pos_] == '\\') {
@@ -663,6 +728,10 @@ Token Tokenizer::scanString(char quote, const std::string& prefix) {
         }
     }
     t.value = s;
+    if (!escapeError.empty()) {
+        t.type = TokenType::Error;
+        t.value = escapeError;
+    }
     return t;
 }
 
