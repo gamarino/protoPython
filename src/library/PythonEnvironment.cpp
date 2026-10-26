@@ -12517,6 +12517,24 @@ static const proto::ProtoObject* py_str_ge(
     return py_str_cmp_dispatch(ctx, self, args, StrCmpOp::Ge);
 }
 
+/** str.__len__: the number of code points. A string keeps its length in
+ *  the rope root, so this is O(1) whatever the string's shape. */
+static const proto::ProtoObject* py_str_len(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
+    (void)parentLink; (void)keywordParameters;
+    const proto::ProtoString* str = str_from_self_or_arg(context, self, positionalParameters);
+    if (!str) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env) env->raiseTypeError(context, "descriptor '__len__' requires a 'str' object");
+        return nullptr;
+    }
+    return context->fromInteger(static_cast<long long>(str->getSize(context)));
+}
+
 static const proto::ProtoObject* py_str_contains(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -20770,6 +20788,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_str_iter));
     strPrototype = strPrototype->setAttribute(rootContext_, py_getitem, rootContext_->fromMethod(nullptr, py_str_getitem));
     strPrototype = strPrototype->setAttribute(rootContext_, py_contains, rootContext_->fromMethod(nullptr, py_str_contains));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(nullptr, py_str_len));
     strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__lt__"), rootContext_->fromMethod(nullptr, py_str_lt));
     strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__le__"), rootContext_->fromMethod(nullptr, py_str_le));
     strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__eq__"), rootContext_->fromMethod(nullptr, py_str_eq_dunder));

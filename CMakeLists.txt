@@ -1299,6 +1299,13 @@ set_tests_properties(protopy_str_is_not_list PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# len() of a str is O(1); str.__len__ exists.
+add_test(NAME protopy_str_len_constant_time
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/str_len_constant_time.py)
+set_tests_properties(protopy_str_len_constant_time PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # list.__init__ fills the list; subclasses receive their own arguments.
 add_test(NAME protopy_list_subclass_init
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/list_subclass_init.py)

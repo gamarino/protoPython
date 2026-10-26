@@ -404,7 +404,12 @@ static const proto::ProtoObject* py_len(
     const proto::ProtoKeywordArguments* keywordParameters) {
     requireArgs(context, positionalParameters, 1, 0, "len() takes exactly one argument (%d given)");
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
-    
+
+    // A bare str (not an instance of a str subclass, which is a wrapper and
+    // may define its own __len__): the rope root keeps the code-point count.
+    if (proto::ProtoObject::isStringTagFast(obj))
+        return context->fromInteger(static_cast<long long>(obj->asString(context)->getSize(context)));
+
     // Try calling __len__ first if it exists
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoString* lenStr = env ? env->getLenString() : PythonEnvironment::getInternedString(context, "__len__");
