@@ -660,20 +660,27 @@ void updateAbstractMethods(proto::ProtoContext* ctx, PythonEnvironment* env, con
     if (const AbcSpec* spec = specOf(ctx, cls)) {
         for (const char* a : spec->abstract)
             if (a) add(a);
-    } else if (const proto::ProtoSparseList* own = cls->getOwnAttributes(ctx)) {
-        auto* it = const_cast<proto::ProtoSparseListIterator*>(own->getIterator(ctx));
-        while (it && it->hasNext(ctx)) {
-            const proto::ProtoObject* k = reinterpret_cast<const proto::ProtoObject*>(it->nextKey(ctx));
-            if (k && k->isString(ctx)) {
-                const proto::ProtoObject* value = cls->getOwnAttributeDirect(ctx, k->asString(ctx));
-                if (isAbstractValue(ctx, env, value)) {
+    } else {
+        // isAbstractValue may run Python code (a property's getter) and
+        // raise; protoCore restores its walk anchor on unwind.  The sink
+        // holds no Cell, only the names gathered so far.
+        struct AbstractSink {
+            PythonEnvironment* env;
+            const proto::ProtoObject* cls;
+            decltype(add)* addName;
+        } sink{env, cls, &add};
+        cls->processOwnAttributes(ctx, &sink,
+            [](proto::ProtoContext* c, void* userData, const proto::ProtoString* name,
+               const proto::ProtoObject*) {
+                AbstractSink* s = static_cast<AbstractSink*>(userData);
+                if (!name) return;
+                const proto::ProtoObject* value = s->cls->getOwnAttributeDirect(c, name);
+                if (isAbstractValue(c, s->env, value)) {
                     std::string n;
-                    k->asString(ctx)->toUTF8String(ctx, n);
-                    add(n);
+                    name->toUTF8String(c, n);
+                    (*s->addName)(n);
                 }
-            }
-            it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
-        }
+            });
     }
     TupleView mro = mroOf(ctx, env, cls);
     const proto::ProtoObject* basesObj = env->getAttribute(ctx, cls, env->getBasesString(), false);
