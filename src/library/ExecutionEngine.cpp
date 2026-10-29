@@ -741,10 +741,14 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
             frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFCodeString(), codeObj));
             frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFGlobalsString(), globalsObj));
 
+            // f_back is always present: None when no enclosing frame is
+            // known (a caller that runs without a frame object, or the
+            // outermost one).  A missing attribute made every walk of the
+            // frame chain (traceback.extract_stack, asyncio in debug mode)
+            // raise AttributeError.
             const proto::ProtoObject* parentFrame = PythonEnvironment::getCurrentFrame();
-            if (parentFrame) {
-                frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFBackString(), parentFrame));
-            }
+            frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFBackString(),
+                parentFrame ? parentFrame : PROTO_NONE));
         }
     }
 
@@ -1194,10 +1198,14 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
             frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, env->getFramePrototype()));
             frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFCodeString(), codeObj));
             frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFGlobalsString(), globalsObj));
+            // f_back is always present: None when no enclosing frame is
+            // known (a caller that runs without a frame object, or the
+            // outermost one).  A missing attribute made every walk of the
+            // frame chain (traceback.extract_stack, asyncio in debug mode)
+            // raise AttributeError.
             const proto::ProtoObject* parentFrame = PythonEnvironment::getCurrentFrame();
-            if (parentFrame) {
-                frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFBackString(), parentFrame));
-            }
+            frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFBackString(),
+                parentFrame ? parentFrame : PROTO_NONE));
             PythonEnvironment::setCurrentFrame(frame);
         }
     }
