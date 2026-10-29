@@ -463,3 +463,50 @@ TEST(MutableCycles, SuperCallsLeaveNoCycle)
     EXPECT_EQ(inCycles(), base)
         << "150 super() calls left mutable handles in a cycle";
 }
+
+// An instance's __dict__ view (py_object_get_dict) is a mutable dict that
+// carries its own __setitem__ / __delitem__.  Those cells were bound to the
+// view itself, so every read of `obj.__dict__` left a one-handle self-cycle
+// in the mutables table that is never collected (rule 13), with the view and
+// the instance it names kept for the life of the process.  Reading the view
+// must not add handles to cycles, and writes through it must still reach the
+// instance.
+TEST(MutableCycles, InstanceDictReadsLeaveNoCycle)
+{
+    protoPython::PythonEnvironment env(STDLIB_PATH);
+    proto::ProtoContext* ctx = env.getContext();
+    ASSERT_NE(ctx, nullptr);
+    proto::ProtoSpace* space = env.getSpace();
+    ASSERT_NE(space, nullptr);
+
+    auto inCycles = [&]() {
+        const proto::MutableGraphReport r = space->findMutableCycles(ctx);
+        EXPECT_FALSE(r.truncated) << "the scan ran out of cell budget";
+        return handlesInCycles(r);
+    };
+
+    ASSERT_EQ(env.executeString(
+                  "class _DvC:\n"
+                  "    def __init__(self):\n"
+                  "        self.a = 1\n"
+                  "def _dv_run(n):\n"
+                  "    t = 0\n"
+                  "    for _ in range(n):\n"
+                  "        o = _DvC()\n"
+                  "        d = o.__dict__\n"
+                  "        d['b'] = 2\n"
+                  "        del d['a']\n"
+                  "        d.__setitem__('c', 0)\n"
+                  "        d.__delitem__('c')\n"
+                  "        t += o.b + len(vars(o)) + ('a' in o.__dict__) + hasattr(o, 'c')\n"
+                  "    return t\n"
+                  "assert _dv_run(2) == 6\n",
+                  "<mutable-cycles:dict-define>"),
+              0);
+    const proto::proto_ulong base = inCycles();
+    ASSERT_EQ(env.executeString("assert _dv_run(50) == 150\n",
+                                "<mutable-cycles:dict-run>"),
+              0);
+    EXPECT_EQ(inCycles(), base)
+        << "reading 150 instance __dict__ views left mutable handles in a cycle";
+}
