@@ -506,8 +506,12 @@ inherited the label.
 proxy instead of dereferencing one. `test/regression/super_proxy_idioms.py` exercises
 the idioms above directly, including a proxy held in a variable and the slow
 `__getattr__` path, and passes on CPython 3.14 too. `TestMutableCycles.cpp` now
-expects 0 for all three labels (`.__getattr__`, `.__setattr__`,
-`.__py_getattr_handler__`) and gains `SuperCallsLeaveNoCycle`: 150 `super()` calls
+counts a proxy cycle as a one-handle cycle, new since the baseline scan, closed by
+any of the three cells (`.__getattr__`, `.__setattr__`, `.__py_getattr_handler__`):
+the label alone is not enough, because objectPrototype is mutable and binds its own
+`__setattr__` and `__getattribute__` cells to itself, and on the Windows floor job a
+cycle through it was reported as `.__setattr__` after the probe. It also gains
+`SuperCallsLeaveNoCycle`: 150 `super()` calls
 must not add a single handle inside a cycle (on the previous binding they added 150,
 one proxy each). On the bare runtime the probe now ends with 16 cycles, not 17.
 
@@ -518,7 +522,7 @@ self-edges the detector reports as the component's hop depends on the order of t
 attribute sparse list, which is keyed by symbol addresses. That explanation is
 **inferred, not demonstrated**: it fits the logs (the cycle was still there, under
 another label) but the label was never captured on Windows. Either way the
-assertion is now on all three labels, and there is no cycle left to mislabel.
+assertion now identifies the proxy by its handle, and the proxy has no cycle left.
 
 ### 4. What IS structural: `__closure_frames__`, and only it
 
