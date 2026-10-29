@@ -661,6 +661,14 @@ set_tests_properties(protopy_isinstance_int_bool PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "isinstance_int_bool: ok"
     LABELS "regression_gate")
+# __name__/__qualname__/__mro__/__bases__/__base__ are class attributes only: instances, None and ints raise AttributeError.
+add_test(NAME protopy_type_only_attributes
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/type_only_attributes.py)
+set_tests_properties(protopy_type_only_attributes PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "type_only_attributes: ok"
+    LABELS "regression_gate")
 # Containers find an element by identity before equality (nan in [nan]).
 add_test(NAME protopy_nan_containment
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/nan_containment.py)

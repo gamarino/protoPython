@@ -18707,6 +18707,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     newString = getInternedString(rootContext_, "__new__");
     prepareString = getInternedString(rootContext_, "__prepare__");
     mroString = getInternedString(rootContext_, "__mro__");
+    typeOnlyQualnameString_ = getInternedString(rootContext_, "__qualname__");
+    typeOnlyBasesString_ = getInternedString(rootContext_, "__bases__");
+    typeOnlyBaseString_ = getInternedString(rootContext_, "__base__");
     basesString = getInternedString(rootContext_, "__bases__");
     isPythonClassString = getInternedString(rootContext_, "__is_python_class__");
     pyFlagsString_ = getInternedString(rootContext_, "__pyflags__");
@@ -25681,6 +25684,57 @@ static inline bool fastGetattrDisabled() {
     return disabled;
 }
 
+// isinstance(obj, type): obj's type is type or a metaclass derived from it.
+// isActuallyAClass misses some native classes (collections.deque), whose
+// type is nonetheless type.
+bool PythonEnvironment::isInstanceOfType(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
+    if (!obj || obj == PROTO_NONE) return false;
+    const proto::ProtoObject* t = getType(ctx, obj);
+    if (!t || t == PROTO_NONE || t == obj) return false;
+    if (t == typePrototype) return true;
+    if (!isActuallyAClass(ctx, t)) return false;
+    ::protoPython::TupleView mroT = classMroForLookup(this, ctx, t);
+    const proto::proto_ulong n = mroT ? mroT->getSize(ctx) : 0;
+    for (proto::proto_ulong i = 0; i < n; ++i)
+        if (mroT->getAt(ctx, static_cast<int>(i)) == typePrototype) return true;
+    return false;
+}
+
+// The objects the class-only rule applies to: None, numbers, strings, and
+// instances of a Python class or of a built-in container type (not object
+// itself) that are not themselves classes.  Native objects with an ad hoc prototype (file
+// objects, foreign values) are left as they were: their type is not always
+// a class here, and internal reads of __mro__ / __name__ through them still
+// rely on the chain.
+bool PythonEnvironment::isPlainInstanceForTypeOnlyNames(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
+    if (!obj) return false;
+    if (obj == PROTO_NONE || obj == PROTO_TRUE || obj == PROTO_FALSE) return true;
+    if (obj->isInteger(ctx) || obj->isFloat(ctx) || obj->isString(ctx)) return true;
+    if (isActuallyAClass(ctx, obj) || isInstanceOfType(ctx, obj)) return false;
+    const proto::ProtoObject* t = getType(ctx, obj);
+    if (!t || t == PROTO_NONE || t == obj || t == objectPrototype) return false;
+    // A bare object() is left out: internal prototypes (a file object's,
+    // a synthesised module spec) are plain objects of type object, and
+    // internal lookups read __mro__ through them.
+    if (t == listPrototype || t == dictPrototype || t == tuplePrototype
+        || t == setPrototype || t == frozensetPrototype || t == bytesPrototype || t == complexPrototype)
+        return true;
+    return t->hasOwnAttribute(ctx, getIsPythonClassString()) == PROTO_TRUE;
+}
+
+bool PythonEnvironment::isTypeOnlyAttributeName(const proto::ProtoString* name) const {
+    if (!name) return false;
+    if (name == nameString || name == typeOnlyQualnameString_ || name == mroString
+        || name == typeOnlyBasesString_ || name == typeOnlyBaseString_) return true;
+    // A name built at run time (getattr(o, "__" + "name__")) is not the
+    // interned symbol: compare its text.
+    if (name->isSymbol()) return false;
+    std::string s;
+    name->toUTF8String(rootContext_, s);
+    return s == "__name__" || s == "__qualname__" || s == "__mro__"
+        || s == "__bases__" || s == "__base__";
+}
+
 const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, bool raiseError, bool* outIsUnboundFunc) {
     if (outIsUnboundFunc) *outIsUnboundFunc = false;
     if (!obj || !name) return nullptr;
@@ -25744,6 +25798,34 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                     ql += methodName;
                     return PythonEnvironment::getInternedString(ctx, ql.c_str())->asObject(ctx);
                 }
+            }
+        }
+    }
+
+    // __name__, __qualname__, __mro__, __bases__ and __base__ belong to
+    // classes: in CPython they are type's data descriptors, which only a
+    // class (an instance of type) reaches.  protoPython stores them on each
+    // class as own attributes, and the prototype chain hands a class's own
+    // attributes to its instances, so `C().__name__`, `(1).__name__` and
+    // `None.__mro__` answered the class's.  For an object that is not a
+    // class and does not own the name, the class's stored value is not an
+    // attribute of the object: the name is missing (and a class
+    // __getattr__, consulted by the caller on a miss, still runs).  A value
+    // on the chain that is not such class data -- a descriptor a class
+    // defines under that name -- is resolved as usual.
+    if (isTypeOnlyAttributeName(name)) {
+        const bool own = obj != PROTO_NONE && obj->hasOwnAttribute(ctx, name) == PROTO_TRUE;
+        if (!own && isPlainInstanceForTypeOnlyNames(ctx, obj)) {
+            const proto::ProtoObject* chained = (obj == PROTO_NONE) ? nullptr : obj->getAttribute(ctx, name);
+            const bool classData = !chained || chained == PROTO_NONE || chained->isString(ctx)
+                || ::protoPython::PythonEnvironment::isTupleValue(ctx, chained)
+                || isActuallyAClass(ctx, chained);
+            if (classData) {
+                if (!raiseError) return nullptr;
+                std::string nameStr;
+                name->toUTF8String(ctx, nameStr);
+                this->raiseAttributeError(ctx, obj, nameStr);
+                return nullptr;
             }
         }
     }
