@@ -767,6 +767,14 @@ set_tests_properties(protopy_pth_importlib_empty_home PROPERTIES
     TIMEOUT 120
     FAIL_REGULAR_EXPRESSION "Exception ignored;atexit"
     LABELS "regression_gate")
+# The builtins aiter() and anext().
+add_test(NAME protopy_builtin_aiter_anext
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/builtin_aiter_anext.py)
+set_tests_properties(protopy_builtin_aiter_anext PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "builtin_aiter_anext: ok"
+    LABELS "regression_gate")
 # A weakref.finalize alive at exit runs from its atexit handler (gc.isenabled).
 add_test(NAME protopy_weakref_finalize_at_exit
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/weakref_finalize_at_exit.py)
