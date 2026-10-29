@@ -2504,12 +2504,17 @@ static const proto::ProtoObject* py_object_get_dict(
         }
         return PROTO_NONE;
     };
+    // The cells are unbound, as dict's own __setitem__ is: a cell bound to
+    // the view, stored on the (mutable) view, is a self-cycle that protoCore
+    // never collects (docs/CONFORMANCE.md rule 13), so every read of
+    // `obj.__dict__` kept the view and its instance for the life of the
+    // process.  Subscript stores and bound-method reads pass the view.
     d = const_cast<proto::ProtoObject*>(d->setAttribute(context,
         PythonEnvironment::getInternedString(context, "__setitem__"),
-        context->fromMethod(d, +setitem)));
+        context->fromMethod(nullptr, +setitem)));
     d = const_cast<proto::ProtoObject*>(d->setAttribute(context,
         PythonEnvironment::getInternedString(context, "__delitem__"),
-        context->fromMethod(d, +delitem)));
+        context->fromMethod(nullptr, +delitem)));
     return d;
 }
 
