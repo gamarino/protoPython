@@ -388,6 +388,7 @@ const proto::ProtoObject* py_generator_close(proto::ProtoContext* ctx, const pro
  *  The previous PC1 design aliased asend → send, returning the value directly,
  *  which broke `await agen.asend(v)` and `run(agen.asend(v))` patterns. */
 const proto::ProtoObject* py_async_generator_asend(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs);
+const proto::ProtoObject* py_async_generator_aclose(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs);
 const proto::ProtoObject* py_async_generator_athrow(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs);
 
 /**

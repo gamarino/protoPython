@@ -772,6 +772,14 @@ set_tests_properties(protopy_import_path_hooks PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# await agen.aclose() closes an async generator and finishes.
+add_test(NAME protopy_async_gen_aclose
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/async_gen_aclose.py)
+set_tests_properties(protopy_async_gen_aclose PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "async_gen_aclose: ok"
+    LABELS "regression_gate")
 # An atexit handler that raises is reported as CPython reports it, and the
 # other handlers still run with their keyword arguments.
 add_test(NAME protopy_atexit_callback_error
@@ -791,6 +799,22 @@ set_tests_properties(protopy_pth_importlib_empty_home PROPERTIES
     TIMEOUT 120
     FAIL_REGULAR_EXPRESSION "Exception ignored;atexit"
     LABELS "regression_gate")
+# A generator suspended while building a call keeps the call's callable.
+add_test(NAME protopy_yield_inside_call_args
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/yield_inside_call_args.py)
+set_tests_properties(protopy_yield_inside_call_args PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "yield_inside_call_args: ok"
+    LABELS "regression_gate")
+# The builtins aiter() and anext().
+add_test(NAME protopy_builtin_aiter_anext
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/builtin_aiter_anext.py)
+set_tests_properties(protopy_builtin_aiter_anext PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "builtin_aiter_anext: ok"
+    LABELS "regression_gate")
 # A weakref.finalize alive at exit runs from its atexit handler (gc.isenabled).
 add_test(NAME protopy_weakref_finalize_at_exit
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/weakref_finalize_at_exit.py)
@@ -799,6 +823,14 @@ set_tests_properties(protopy_weakref_finalize_at_exit PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "weakref_finalize_at_exit: finalizer ran"
     FAIL_REGULAR_EXPRESSION "Exception ignored;atexit:"
+    LABELS "regression_gate")
+# from module import name falls back to the module's __getattr__ (PEP 562).
+add_test(NAME protopy_import_from_module_getattr
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/import_from_module_getattr.py)
+set_tests_properties(protopy_import_from_module_getattr PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "import_from_module_getattr: ok"
     LABELS "regression_gate")
 # platform.python_version() parses sys.version.
 add_test(NAME protopy_platform_version
