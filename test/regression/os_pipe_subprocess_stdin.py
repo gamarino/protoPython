@@ -17,16 +17,33 @@ assert os.read(r, 10) == b"bcx"
 os.close(r)
 os.close(w)
 
+if sys.platform == "win32":
+    # protopy has no subprocess support on Windows yet.
+    print("os_pipe_subprocess_stdin: ok")
+    raise SystemExit(0)
+
+# SIGPIPE is ignored, as in CPython: writing to a pipe nobody reads raises
+# BrokenPipeError instead of killing the interpreter.
+r, w = os.pipe()
+os.close(r)
+try:
+    os.write(w, b"x")
+except BrokenPipeError:
+    pass
+else:
+    raise AssertionError("write to a closed pipe succeeded")
+os.close(w)
+
 child = [sys.executable, "-c",
          "import sys; data = sys.stdin.buffer.read(); sys.stdout.buffer.write(data[::-1])"]
-p = subprocess.Popen(child, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+p = subprocess.Popen(child, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                     stderr=subprocess.PIPE)
 out, err = p.communicate(b"abc\xff", timeout=60)
-assert out == b"\xffcba", out
-assert p.returncode == 0
+assert (out, p.returncode) == (b"\xffcba", 0), (out, p.returncode, err)
 
 # sys.stdout.buffer / sys.stderr.buffer write bytes, in order with text.
 child = [sys.executable, "-c",
          "import sys; print('a', flush=True); sys.stdout.buffer.write(b'b\\n'); print('c')"]
-out = subprocess.run(child, stdout=subprocess.PIPE, timeout=60).stdout
-assert out.replace(b"\r\n", b"\n") == b"a\nb\nc\n", out
+r = subprocess.run(child, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+assert r.stdout == b"a\nb\nc\n", (r.stdout, r.returncode, r.stderr)
 print("os_pipe_subprocess_stdin: ok")

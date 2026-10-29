@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <csignal>
 #include <vector>
 #include <string>
 #include <string.h>
@@ -68,6 +69,9 @@ static const proto::ProtoObject* py_fork_exec(
     int c2pwrite = posArgs->getAt(ctx, 9) ? posArgs->getAt(ctx, 9)->asLong(ctx) : -1;
     int errread = posArgs->getAt(ctx, 10) ? posArgs->getAt(ctx, 10)->asLong(ctx) : -1;
     int errwrite = posArgs->getAt(ctx, 11) ? posArgs->getAt(ctx, 11)->asLong(ctx) : -1;
+    const proto::ProtoObject* restoreObj = posArgs->getAt(ctx, 14);
+    const bool restoreSignals = restoreObj == PROTO_TRUE
+        || (restoreObj && restoreObj->isInteger(ctx) && restoreObj->asLong(ctx) != 0);
     int errpipe_read = posArgs->getAt(ctx, 12) ? posArgs->getAt(ctx, 12)->asLong(ctx) : -1;
     int errpipe_write = posArgs->getAt(ctx, 13) ? posArgs->getAt(ctx, 13)->asLong(ctx) : -1;
 
@@ -101,10 +105,21 @@ static const proto::ProtoObject* py_fork_exec(
     }
 
     if (pid == 0) {
-        // Child process
-        if (p2cread != -1 && p2cread != 0) { dup2(p2cread, 0); }
-        if (c2pwrite != -1 && c2pwrite != 1) { dup2(c2pwrite, 1); }
-        if (errwrite != -1 && errwrite != 2) { dup2(errwrite, 2); }
+        // Child process.  os.pipe() descriptors are non-inheritable: dup2
+        // clears FD_CLOEXEC on the copy, and one already in place has it
+        // cleared here, as _posixsubprocess does.
+        auto toStd = [](int fd, int target) {
+            if (fd == -1) return;
+            if (fd != target) { dup2(fd, target); return; }
+            const int fl = fcntl(fd, F_GETFD);
+            if (fl != -1) fcntl(fd, F_SETFD, fl & ~FD_CLOEXEC);
+        };
+        toStd(p2cread, 0);
+        toStd(c2pwrite, 1);
+        toStd(errwrite, 2);
+        // restore_signals: the interpreter ignores SIGPIPE (as CPython does);
+        // the child gets the default action back.
+        if (restoreSignals) signal(SIGPIPE, SIG_DFL);
 
         if (hasCwd) {
             if (chdir(cwdStr.c_str()) != 0) {

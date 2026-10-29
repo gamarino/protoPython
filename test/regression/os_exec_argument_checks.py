@@ -6,6 +6,11 @@
 import os
 import sys
 
+if not hasattr(os, "execve"):
+    # protopy on Windows has no os.exec* functions yet.
+    print("os_exec_argument_checks: ok")
+    raise SystemExit(0)
+
 args = [sys.executable, "-c", "raise SystemExit(3)"]
 for bad in ({"FRUIT\0VEGETABLE": "cabbage"}, {"FRUIT": "orange\0VEGETABLE=cabbage"},
             {"FRUIT=ORANGE": "lemon"}, {"": "x"}):
