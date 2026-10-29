@@ -399,19 +399,17 @@ static void collectFrameLocals(proto::ProtoContext* context, PythonEnvironment* 
         env->forEachFastLocal(context, code, live->getAutomaticLocals(), live->getAutomaticLocalsCount(),
             [&](const proto::ProtoString* name, const proto::ProtoObject* value) { snap.add(name, value); });
     }
-    const proto::ProtoSparseList* own = frame->getOwnAttributes(context);
-    if (!own) return;
-    auto* it = const_cast<proto::ProtoSparseListIterator*>(own->getIterator(context));
-    while (it && it->hasNext(context)) {
-        const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(it->nextKey(context));
-        const proto::ProtoObject* val = it->nextValue(context);
-        if (keyObj && keyObj->isString(context)) {
+    // The callback only runs native protoCore operations (no Python code, no
+    // safepoint), so the snapshot lists it extends stay in this context's
+    // young generation, which the collector treats as a root.
+    frame->processOwnAttributes(context, &snap,
+        [](proto::ProtoContext* ctx, void* self, const proto::ProtoString* name,
+           const proto::ProtoObject* val) {
+            if (!name) return;
             std::string nm;
-            keyObj->asString(context)->toUTF8String(context, nm);
-            if (!isFrameBookkeepingName(nm)) snap.add(keyObj->asString(context), val);
-        }
-        it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
-    }
+            name->toUTF8String(ctx, nm);
+            if (!isFrameBookkeepingName(nm)) static_cast<FrameLocalsSnapshot*>(self)->add(name, val);
+        });
 }
 
 /** frame.f_locals: a dict snapshot of the frame's local variables.
@@ -2287,26 +2285,24 @@ static const proto::ProtoObject* py_object_get_dict(
     const proto::ProtoObject* data = nullptr;
     const proto::ProtoObject* keys = nullptr;
     if (isBuiltinSubclass || isStaticOrClassMethod) {
-        // Snapshot: walk the own-attribute SparseList, skip the
+        // Snapshot: walk the own attributes, skip the
         // built-in's internal slots and our own __pydict_* book-keeping,
         // and build fresh __data__/__keys__ for the proxy.
-        const proto::ProtoSparseList* attrs = mutableSelf->getOwnAttributes(context);
         const proto::ProtoSparseList* dl = context->newSparseList();
         const proto::ProtoList* kl = context->newList();
-        if (attrs) {
+        {
             struct Snapshot {
                 proto::ProtoContext* ctx;
                 const proto::ProtoSparseList* dl;
                 const proto::ProtoList* kl;
                 bool stripWrapperInternals;
             } sn{context, dl, kl, isStaticOrClassMethod};
-            attrs->processElements(context, &sn,
+            // Own attribute names are unique, so each name is appended once.
+            mutableSelf->processOwnAttributes(context, &sn,
                 +[](proto::ProtoContext* ctx, void* userData,
-                    proto::proto_ulong key, const proto::ProtoObject* val) {
+                    const proto::ProtoString* ks, const proto::ProtoObject* val) {
                     Snapshot* s = static_cast<Snapshot*>(userData);
-                    const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
-                    if (!keyObj || !keyObj->isString(ctx)) return;
-                    const proto::ProtoString* ks = keyObj->asString(ctx);
+                    if (!ks) return;
                     std::string nm; ks->toUTF8String(ctx, nm);
                     // Always skip the runtime's own internal storage —
                     // these never belong in any user-visible __dict__.
@@ -2336,9 +2332,7 @@ static const proto::ProtoObject* py_object_get_dict(
                             || nm == "__bases__" || nm == "__mro__") return;
                     }
                     s->dl = s->dl->setAt(ctx, ks->getHash(ctx), val);
-                    if (!s->kl->has(ctx, keyObj)) {
-                        s->kl = s->kl->appendLast(ctx, keyObj);
-                    }
+                    s->kl = s->kl->appendLast(ctx, ks->asObject(ctx));
                 });
             dl = sn.dl;
             kl = sn.kl;
@@ -15575,12 +15569,12 @@ static bool isProtopyClassInternalName(const std::string& nm) {
         || nm == "__class__";
 }
 
-static void collectKey(proto::ProtoContext* ctx, void* self, proto::proto_ulong key, const proto::ProtoObject*) {
+static void collectKey(proto::ProtoContext* ctx, void* self, const proto::ProtoString* name, const proto::ProtoObject*) {
     KeyCollector* s = (KeyCollector*)self;
-    const proto::ProtoObject* kObj = reinterpret_cast<const proto::ProtoObject*>(key);
-    if (kObj && kObj->isString(ctx)) {
+    if (name) {
+        const proto::ProtoObject* kObj = name->asObject(ctx);
         std::string nm;
-        kObj->asString(ctx)->toUTF8String(ctx, nm);
+        name->toUTF8String(ctx, nm);
         if (isProtopyClassInternalName(nm)) return;
         if (s->env && s->env->getStrPrototype()) kObj = kObj->addParent(ctx, s->env->getStrPrototype());
         s->keysList = s->keysList->appendLast(ctx, kObj);
@@ -15600,10 +15594,7 @@ static const proto::ProtoObject* py_mappingproxy_keys(
 
     if (mp_isClassObject(data, context, env)) {
         KeyCollector s = { context, env, context->newList() };
-        const proto::ProtoSparseList* attrs = data->getOwnAttributes(context);
-        if (attrs) {
-            attrs->processElements(context, &s, collectKey);
-        }
+        data->processOwnAttributes(context, &s, collectKey);
 
         const proto::ProtoList* keysList = s.keysList;
         // Also check __keys__ if it exists (for moved attributes).
@@ -15663,18 +15654,19 @@ struct ValueCollector {
     PythonEnvironment* env;
     const proto::ProtoObject* dataObj;  // class object to read values from
     const proto::ProtoList* valuesList;
+    std::unordered_set<std::string>* seen;  // names of the values collected
 };
 
-static void collectValue(proto::ProtoContext* ctx, void* self, proto::proto_ulong key, const proto::ProtoObject* val) {
+static void collectValue(proto::ProtoContext* ctx, void* self, const proto::ProtoString* name, const proto::ProtoObject* val) {
     ValueCollector* s = (ValueCollector*)self;
-    const proto::ProtoObject* kObj = reinterpret_cast<const proto::ProtoObject*>(key);
-    if (!kObj || !kObj->isString(ctx)) return;
+    if (!name) return;
     std::string nm;
-    kObj->asString(ctx)->toUTF8String(ctx, nm);
+    name->toUTF8String(ctx, nm);
     if (isProtopyClassInternalName(nm)) return;
+    s->seen->insert(nm);
     // Read current value via own-only direct fetch — getAttribute would walk
     // the parent chain.
-    const proto::ProtoObject* v = s->dataObj->getOwnAttributeDirect(ctx, kObj->asString(ctx));
+    const proto::ProtoObject* v = s->dataObj->getOwnAttributeDirect(ctx, name);
     if (!v) v = (val ? val : PROTO_NONE);
     s->valuesList = s->valuesList->appendLast(ctx, v);
 }
@@ -15693,9 +15685,9 @@ static const proto::ProtoObject* py_mappingproxy_values(
     // matching CPython's cls.__dict__.values().  Detect a class via the
     // shared mp_isClassObject helper (SP-C/C3 fixup I1).
     if (mp_isClassObject(data, context, env)) {
-        ValueCollector s = { context, env, data, context->newList() };
-        const proto::ProtoSparseList* attrs = data->getOwnAttributes(context);
-        if (attrs) attrs->processElements(context, &s, collectValue);
+        std::unordered_set<std::string> seen;
+        ValueCollector s = { context, env, data, context->newList(), &seen };
+        data->processOwnAttributes(context, &s, collectValue);
 
         // Also include values for keys tracked in __keys__ (Python-level dict storage),
         // mirroring py_mappingproxy_keys / _items which also append from __keys__.
@@ -15703,28 +15695,7 @@ static const proto::ProtoObject* py_mappingproxy_values(
         // count matches CPython's curated cls.__dict__ exposure.
         const proto::ProtoObject* kObj = data->getAttribute(context, env ? env->getKeysString() : PythonEnvironment::getInternedString(context, "__keys__"));
         if (kObj && ::protoPython::listStorage(context, kObj)) {
-            std::unordered_set<std::string> seen;
-            // Pre-populate with the names already gathered by collectValue
-            // (keyed by the SparseList walk).  We re-walk attrs to reconstruct
-            // the names since collectValue only stored values.
-            const proto::ProtoSparseList* preAttrs = data->getOwnAttributes(context);
-            if (preAttrs) {
-                struct NameSink {
-                    proto::ProtoContext* ctx;
-                    std::unordered_set<std::string>* seen;
-                } ns{context, &seen};
-                preAttrs->processElements(context, &ns,
-                    +[](proto::ProtoContext* c, void* userData,
-                        proto::proto_ulong key, const proto::ProtoObject*) {
-                        NameSink* nsx = static_cast<NameSink*>(userData);
-                        const proto::ProtoObject* kObj2 = reinterpret_cast<const proto::ProtoObject*>(key);
-                        if (!kObj2 || !kObj2->isString(c)) return;
-                        std::string nm;
-                        kObj2->asString(c)->toUTF8String(c, nm);
-                        if (isProtopyClassInternalName(nm)) return;
-                        nsx->seen->insert(nm);
-                    });
-            }
+            // `seen` already holds the names collectValue gathered.
             const proto::ProtoList* innerKeys = ::protoPython::listStorage(context, kObj);
             proto::proto_ulong iSize = innerKeys->getSize(context);
             for (proto::proto_ulong i = 0; i < iSize; ++i) {
@@ -15772,13 +15743,13 @@ struct ItemCollector {
     const proto::ProtoList* itemsList;
 };
 
-static void collectItem(proto::ProtoContext* ctx, void* self, proto::proto_ulong key, const proto::ProtoObject* val) {
+static void collectItem(proto::ProtoContext* ctx, void* self, const proto::ProtoString* name, const proto::ProtoObject* val) {
     ItemCollector* s = (ItemCollector*)self;
-    const proto::ProtoObject* kObj = reinterpret_cast<const proto::ProtoObject*>(key);
-    if (!kObj || !kObj->isString(ctx)) return;
+    if (!name) return;
+    const proto::ProtoObject* kObj = name->asObject(ctx);
     {
         std::string nm;
-        kObj->asString(ctx)->toUTF8String(ctx, nm);
+        name->toUTF8String(ctx, nm);
         if (isProtopyClassInternalName(nm)) return;
     }
     if (s->env && s->env->getStrPrototype()) kObj = kObj->addParent(ctx, s->env->getStrPrototype());
@@ -15808,8 +15779,7 @@ static const proto::ProtoObject* py_mappingproxy_items(
     // (SP-C/C3 fixup I1).
     if (mp_isClassObject(data, context, env)) {
         ItemCollector s = { context, env, data, context->newList() };
-        const proto::ProtoSparseList* attrs = data->getOwnAttributes(context);
-        if (attrs) attrs->processElements(context, &s, collectItem);
+        data->processOwnAttributes(context, &s, collectItem);
 
         // Also include attributes tracked in __keys__ (Python-level dict storage).
         // SP-C/C3: use own-only direct fetch for the value lookup so we never
@@ -15946,7 +15916,7 @@ static const proto::ProtoObject* py_mappingproxy_class_getitem(
 // backed proxies, returns the wrapped dict's __data__ sparse-list size.
 //
 // SP-C/C3 fixup (I2): O(1) — does NOT materialise a full keys() list.  For
-// class proxies it reads getOwnAttributes()->getSize() directly; for dict-
+// class proxies it counts the own attributes with processOwnAttributes; for dict-
 // backed proxies it reads the dict's __data__ sparse-list size, mirroring
 // py_dict_len.
 static const proto::ProtoObject* py_mappingproxy_len(
@@ -15966,25 +15936,16 @@ static const proto::ProtoObject* py_mappingproxy_len(
         // items() expose — own attributes minus protoPython internals,
         // plus the synthesised CPython meta-slot names for non-built-in
         // classes.
-        const proto::ProtoSparseList* attrs = data->getOwnAttributes(context);
         std::unordered_set<std::string> seen;
-        if (attrs) {
-            struct CountSink {
-                proto::ProtoContext* ctx;
-                std::unordered_set<std::string>* seen;
-            } cs{context, &seen};
-            attrs->processElements(context, &cs,
-                +[](proto::ProtoContext* c, void* userData,
-                    proto::proto_ulong key, const proto::ProtoObject*) {
-                    CountSink* csx = static_cast<CountSink*>(userData);
-                    const proto::ProtoObject* k = reinterpret_cast<const proto::ProtoObject*>(key);
-                    if (!k || !k->isString(c)) return;
-                    std::string nm;
-                    k->asString(c)->toUTF8String(c, nm);
-                    if (isProtopyClassInternalName(nm)) return;
-                    csx->seen->insert(nm);
-                });
-        }
+        data->processOwnAttributes(context, &seen,
+            +[](proto::ProtoContext* c, void* userData,
+                const proto::ProtoString* name, const proto::ProtoObject*) {
+                if (!name) return;
+                std::string nm;
+                name->toUTF8String(c, nm);
+                if (isProtopyClassInternalName(nm)) return;
+                static_cast<std::unordered_set<std::string>*>(userData)->insert(nm);
+            });
         const proto::ProtoString* keysName = env ? env->getKeysString()
                                                   : PythonEnvironment::getInternedString(context, "__keys__");
         const proto::ProtoObject* kObj = data->getAttribute(context, keysName);
@@ -17723,32 +17684,30 @@ static const proto::ProtoObject* py_module_items(
     } else {
         // Fallback: iterate protoCore own attributes (for native C++ modules that
         // use setAttribute directly, not the __keys__ list structure).
-        const proto::ProtoSparseList* attrs = self->getOwnAttributes(context);
-        if (attrs) {
-            auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
-            while (it && it->hasNext(context)) {
-                proto::proto_ulong key = it->nextKey(context);
-                const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
-                if (keyObj && keyObj->isString(context)) {
-                    std::string name;
-                    keyObj->asString(context)->toUTF8String(context, name);
-                    if (!isModuleInternalAttr(name)) {
-                        const proto::ProtoObject* val = self->getAttribute(context, keyObj->asString(context));
-                        if (val) {
-                            proto::ProtoList* pair = const_cast<proto::ProtoList*>(context->newList());
-                            pair = const_cast<proto::ProtoList*>(pair->appendLast(context, keyObj));
-                            pair = const_cast<proto::ProtoList*>(pair->appendLast(context, val));
-                            const proto::ProtoObject* tupleObj = ::protoPython::PythonEnvironment::tupleFromList(context, pair);
-                            if (env && env->getTuplePrototype()) {
-                                tupleObj = tupleObj->addParent(context, env->getTuplePrototype());
-                            }
-                            result = result->appendLast(context, tupleObj);
-                        }
-                    }
+        struct ItemsSink {
+            PythonEnvironment* env;
+            const proto::ProtoObject* module;
+            const proto::ProtoList* result;
+        } sink{env, self, result};
+        self->processOwnAttributes(context, &sink,
+            [](proto::ProtoContext* ctx, void* userData, const proto::ProtoString* name,
+               const proto::ProtoObject*) {
+                ItemsSink* s = static_cast<ItemsSink*>(userData);
+                if (!name) return;
+                std::string nm;
+                name->toUTF8String(ctx, nm);
+                if (isModuleInternalAttr(nm)) return;
+                const proto::ProtoObject* val = s->module->getAttribute(ctx, name);
+                if (!val) return;
+                const proto::ProtoList* pair = ctx->newList()
+                    ->appendLast(ctx, name->asObject(ctx))->appendLast(ctx, val);
+                const proto::ProtoObject* tupleObj = ::protoPython::PythonEnvironment::tupleFromList(ctx, pair);
+                if (s->env && s->env->getTuplePrototype()) {
+                    tupleObj = tupleObj->addParent(ctx, s->env->getTuplePrototype());
                 }
-                it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
-            }
-        }
+                s->result = s->result->appendLast(ctx, tupleObj);
+            });
+        result = sink.result;
     }
     const proto::ProtoObject* listObj = result->asObject(context);
     if (env && env->getListPrototype()) {
@@ -17788,22 +17747,16 @@ static const proto::ProtoObject* py_module_keys(
         }
     } else {
         // Fallback: protoCore own attributes
-        const proto::ProtoSparseList* attrs = self->getOwnAttributes(context);
-        if (attrs) {
-            auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
-            while (it && it->hasNext(context)) {
-                proto::proto_ulong key = it->nextKey(context);
-                const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
-                if (keyObj && keyObj->isString(context)) {
-                    std::string name;
-                    keyObj->asString(context)->toUTF8String(context, name);
-                    if (!isModuleInternalAttr(name)) {
-                        result = result->appendLast(context, keyObj);
-                    }
-                }
-                it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
-            }
-        }
+        self->processOwnAttributes(context, &result,
+            [](proto::ProtoContext* ctx, void* userData, const proto::ProtoString* name,
+               const proto::ProtoObject*) {
+                if (!name) return;
+                std::string nm;
+                name->toUTF8String(ctx, nm);
+                if (isModuleInternalAttr(nm)) return;
+                auto* out = static_cast<const proto::ProtoList**>(userData);
+                *out = (*out)->appendLast(ctx, name->asObject(ctx));
+            });
     }
     const proto::ProtoObject* listObj = result->asObject(context);
     if (env && env->getListPrototype()) {
@@ -17841,23 +17794,16 @@ static const proto::ProtoObject* py_module_values(
             if (val) result = result->appendLast(context, val);
         }
     } else {
-        const proto::ProtoSparseList* attrs = self->getOwnAttributes(context);
-        if (attrs) {
-            auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
-            while (it && it->hasNext(context)) {
-                proto::proto_ulong key = it->nextKey(context);
-                const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
-                const proto::ProtoObject* val = it->nextValue(context);
-                if (keyObj && keyObj->isString(context) && val) {
-                    std::string name;
-                    keyObj->asString(context)->toUTF8String(context, name);
-                    if (!isModuleInternalAttr(name)) {
-                        result = result->appendLast(context, val);
-                    }
-                }
-                it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
-            }
-        }
+        self->processOwnAttributes(context, &result,
+            [](proto::ProtoContext* ctx, void* userData, const proto::ProtoString* name,
+               const proto::ProtoObject* val) {
+                if (!name || !val) return;
+                std::string nm;
+                name->toUTF8String(ctx, nm);
+                if (isModuleInternalAttr(nm)) return;
+                auto* out = static_cast<const proto::ProtoList**>(userData);
+                *out = (*out)->appendLast(ctx, val);
+            });
     }
     if (env && env->getListPrototype()) {
         const proto::ProtoObject* listObj = env->getListPrototype()->newChild(context, true);
@@ -17917,19 +17863,17 @@ static const proto::ProtoObject* py_module_copy(
         }
     } else {
         // Native-module fallback: iterate protoCore own attributes.
-        const proto::ProtoSparseList* attrs = self->getOwnAttributes(context);
-        if (attrs) {
-            auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
-            while (it && it->hasNext(context)) {
-                proto::proto_ulong key = it->nextKey(context);
-                const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
-                if (keyObj && keyObj->isString(context)) {
-                    const proto::ProtoObject* val = self->getAttribute(context, keyObj->asString(context));
-                    append_pair(keyObj, val);
-                }
-                it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
-            }
-        }
+        struct CopySink {
+            const proto::ProtoObject* module;
+            decltype(append_pair)* append;
+        } sink{self, &append_pair};
+        self->processOwnAttributes(context, &sink,
+            [](proto::ProtoContext* ctx, void* userData, const proto::ProtoString* name,
+               const proto::ProtoObject*) {
+                CopySink* s = static_cast<CopySink*>(userData);
+                if (!name) return;
+                (*s->append)(name->asObject(ctx), s->module->getAttribute(ctx, name));
+            });
     }
 
     const proto::ProtoObject* dictObj = context->newObject(true);
@@ -17990,27 +17934,28 @@ static const proto::ProtoObject* py_module_update(
     } else {
         // other is a module or generic mapping — iterate own attributes
         // Only copy non-dunder, non-internal attributes to avoid corrupting the target module.
-        const proto::ProtoSparseList* attrs = other->getOwnAttributes(context);
-        if (attrs) {
-            auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
-            while (it && it->hasNext(context)) {
-                const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(it->nextKey(context));
-                if (keyObj && keyObj->isString(context)) {
-                    std::string name;
-                    keyObj->asString(context)->toUTF8String(context, name);
-                    // Skip dunder attrs and internal storage — they belong to the source, not target
-                    bool isDunder = name.size() >= 4 && name[0] == '_' && name[1] == '_'
-                                    && name[name.size()-1] == '_' && name[name.size()-2] == '_';
-                    if (!isDunder && !isModuleInternalAttr(name)) {
-                        const proto::ProtoObject* val = other->getAttribute(context, keyObj->asString(context));
-                        if (val) {
-                            env->setAttribute(context, self, keyObj->asString(context), val);
-                        }
-                    }
-                }
-                it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
-            }
-        }
+        // env->setAttribute may run Python code (__setattr__, descriptors) and
+        // raise; protoCore restores its walk anchor on unwind.  The sink holds
+        // only objects the caller already keeps reachable.
+        struct UpdateSink {
+            PythonEnvironment* env;
+            const proto::ProtoObject* target;
+            const proto::ProtoObject* source;
+        } sink{env, self, other};
+        other->processOwnAttributes(context, &sink,
+            [](proto::ProtoContext* ctx, void* userData, const proto::ProtoString* key,
+               const proto::ProtoObject*) {
+                UpdateSink* s = static_cast<UpdateSink*>(userData);
+                if (!key) return;
+                std::string name;
+                key->toUTF8String(ctx, name);
+                // Skip dunder attrs and internal storage — they belong to the source, not target
+                bool isDunder = name.size() >= 4 && name[0] == '_' && name[1] == '_'
+                                && name[name.size()-1] == '_' && name[name.size()-2] == '_';
+                if (isDunder || isModuleInternalAttr(name)) return;
+                const proto::ProtoObject* val = s->source->getAttribute(ctx, key);
+                if (val) s->env->setAttribute(ctx, s->target, key, val);
+            });
     }
 
     return PROTO_NONE;
@@ -18872,18 +18817,13 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                         ->setAttribute(ctx, env->getDataString(), result->asObject(ctx))
                     : result->asObject(ctx);
             }
-            const proto::ProtoSparseList* attrs = obj->getOwnAttributes(ctx);
-            if (attrs) {
-                auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(ctx));
-                while (it && it->hasNext(ctx)) {
-                    proto::proto_ulong key = it->nextKey(ctx);
-                    const proto::ProtoObject* k = reinterpret_cast<const proto::ProtoObject*>(key);
-                    if (k && k->isString(ctx)) {
-                        result = result->appendLast(ctx, k);
-                    }
-                    it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
-                }
-            }
+            obj->processOwnAttributes(ctx, &result,
+                [](proto::ProtoContext* c, void* userData, const proto::ProtoString* name,
+                   const proto::ProtoObject*) {
+                    if (!name) return;
+                    auto* out = static_cast<const proto::ProtoList**>(userData);
+                    *out = (*out)->appendLast(c, name->asObject(c));
+                });
             const proto::ProtoObject* listObj = env->getListPrototype()
                 ? env->getListPrototype()->newChild(ctx, true)
                 : ctx->newObject(true);
@@ -18950,27 +18890,21 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                     if (isContainerSubclass) {
                         const proto::ProtoString* slotsS = env->getSlotsString();
                         bool anyInstanceAttr = false;
-                        const proto::ProtoSparseList* ownAttrs = obj->getOwnAttributes(ctx);
-                        if (ownAttrs) {
-                            auto* it = const_cast<proto::ProtoSparseListIterator*>(ownAttrs->getIterator(ctx));
-                            while (it && it->hasNext(ctx)) {
-                                proto::proto_ulong key = it->nextKey(ctx);
-                                const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
-                                if (keyObj && keyObj->isString(ctx)) {
-                                    std::string nm;
-                                    keyObj->asString(ctx)->toUTF8String(ctx, nm);
-                                    if (nm != "__data__" && nm != "__keys__"
-                                        && nm != "__pydict_data__"
-                                        && nm != "__pydict_keys__"
-                                        && nm != "__class__"
-                                        && nm != "__is_python_class__") {
-                                        anyInstanceAttr = true;
-                                        break;
-                                    }
+                        obj->processOwnAttributes(ctx, &anyInstanceAttr,
+                            [](proto::ProtoContext* c, void* userData, const proto::ProtoString* name,
+                               const proto::ProtoObject*) {
+                                bool* found = static_cast<bool*>(userData);
+                                if (*found || !name) return;
+                                std::string nm;
+                                name->toUTF8String(c, nm);
+                                if (nm != "__data__" && nm != "__keys__"
+                                    && nm != "__pydict_data__"
+                                    && nm != "__pydict_keys__"
+                                    && nm != "__class__"
+                                    && nm != "__is_python_class__") {
+                                    *found = true;
                                 }
-                                it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
-                            }
-                        }
+                            });
                         // Also exempt from suppression when class declared __slots__.
                         bool hasSlotsDeclared = slotsS && objCls->hasOwnAttribute(ctx, slotsS) == PROTO_TRUE;
                         if (!anyInstanceAttr && !hasSlotsDeclared) {
@@ -22110,29 +22044,25 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                                   const proto::ProtoArguments*,
                                   const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
             if (!self || self == PROTO_NONE) return PROTO_FALSE;
-            const proto::ProtoSparseList* attrs = self->getOwnAttributes(ctx);
-            if (!attrs) return PROTO_FALSE;
-            static const char* const internalNames[] = {
-                "__data__", "__keys__", "__is_python_class__",
-                "__subclasses_list__", "__pyflags__", "__py_getattr_handler__",
-                "__fn_meta_cache__", "__executed__",
-                "__class__", "__dict__", nullptr,
-            };
-            auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(ctx));
-            while (it && it->hasNext(ctx)) {
-                proto::proto_ulong key = it->nextKey(ctx);
-                const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
-                if (keyObj && keyObj->isString(ctx)) {
-                    std::string nm; keyObj->asString(ctx)->toUTF8String(ctx, nm);
-                    bool internal = false;
+            bool anyUserAttr = false;
+            self->processOwnAttributes(ctx, &anyUserAttr,
+                [](proto::ProtoContext* c, void* userData, const proto::ProtoString* name,
+                   const proto::ProtoObject*) {
+                    static const char* const internalNames[] = {
+                        "__data__", "__keys__", "__is_python_class__",
+                        "__subclasses_list__", "__pyflags__", "__py_getattr_handler__",
+                        "__fn_meta_cache__", "__executed__",
+                        "__class__", "__dict__", nullptr,
+                    };
+                    bool* found = static_cast<bool*>(userData);
+                    if (*found || !name) return;
+                    std::string nm; name->toUTF8String(c, nm);
                     for (int i = 0; internalNames[i]; ++i) {
-                        if (nm == internalNames[i]) { internal = true; break; }
+                        if (nm == internalNames[i]) return;
                     }
-                    if (!internal) return PROTO_TRUE;
-                }
-                it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
-            }
-            return PROTO_FALSE;
+                    *found = true;
+                });
+            return anyUserAttr ? PROTO_TRUE : PROTO_FALSE;
         };
         modulePrototype = modulePrototype->setAttribute(rootContext_,
             PythonEnvironment::getInternedString(rootContext_, "__bool__"),
@@ -22164,42 +22094,41 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             }
             // Build a set of (key, value) pairs from self's user attrs
             // (skip internals), then compare with other's dict.
-            static const char* const internalNames[] = {
-                "__data__", "__keys__", "__is_python_class__",
-                "__subclasses_list__", "__pyflags__", "__py_getattr_handler__",
-                "__fn_meta_cache__", "__executed__",
-                "__class__", "__dict__", nullptr,
-            };
-            auto isInternal = [&](const std::string& nm) -> bool {
-                for (int i = 0; internalNames[i]; ++i) if (nm == internalNames[i]) return true;
-                return false;
-            };
             // Count user attrs and check each against the dict.
-            const proto::ProtoSparseList* selfAttrs = self->getOwnAttributes(ctx);
+            // compareObjects may run a user __eq__ and raise; protoCore
+            // restores its walk anchor on unwind.  The sink holds only
+            // objects the caller already keeps reachable.
             const proto::ProtoObject* otherData = other->getAttribute(ctx, env_e->getDataString());
-            const proto::ProtoSparseList* otherDict = otherData ? otherData->asSparseList(ctx) : nullptr;
-            proto::proto_ulong selfUserCount = 0;
-            if (selfAttrs) {
-                auto* it = const_cast<proto::ProtoSparseListIterator*>(selfAttrs->getIterator(ctx));
-                while (it && it->hasNext(ctx)) {
-                    proto::proto_ulong key = it->nextKey(ctx);
-                    const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
-                    const proto::ProtoObject* val = it->nextValue(ctx);
-                    if (keyObj && keyObj->isString(ctx)) {
-                        std::string nm; keyObj->asString(ctx)->toUTF8String(ctx, nm);
-                        if (!isInternal(nm)) {
-                            ++selfUserCount;
-                            proto::proto_ulong hashKey = keyObj->asString(ctx)->getHash(ctx);
-                            if (!otherDict || !otherDict->has(ctx, hashKey)) return PROTO_FALSE;
-                            const proto::ProtoObject* otherVal = otherDict->getAt(ctx, hashKey);
-                            if (env_e->compareObjects(ctx, val, otherVal, 0) != PROTO_TRUE) return PROTO_FALSE;
-                        }
+            struct EqSink {
+                PythonEnvironment* env;
+                const proto::ProtoSparseList* otherDict;
+                proto::proto_ulong selfUserCount;
+                bool mismatch;
+            } sink{env_e, otherData ? otherData->asSparseList(ctx) : nullptr, 0, false};
+            self->processOwnAttributes(ctx, &sink,
+                [](proto::ProtoContext* c, void* userData, const proto::ProtoString* name,
+                   const proto::ProtoObject* val) {
+                    static const char* const internalNames[] = {
+                        "__data__", "__keys__", "__is_python_class__",
+                        "__subclasses_list__", "__pyflags__", "__py_getattr_handler__",
+                        "__fn_meta_cache__", "__executed__",
+                        "__class__", "__dict__", nullptr,
+                    };
+                    EqSink* s = static_cast<EqSink*>(userData);
+                    if (s->mismatch || !name) return;
+                    std::string nm; name->toUTF8String(c, nm);
+                    for (int i = 0; internalNames[i]; ++i) {
+                        if (nm == internalNames[i]) return;
                     }
-                    it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
-                }
-            }
-            proto::proto_ulong otherCount = otherDict ? otherDict->getSize(ctx) : 0;
-            return (selfUserCount == otherCount) ? PROTO_TRUE : PROTO_FALSE;
+                    ++s->selfUserCount;
+                    proto::proto_ulong hashKey = name->getHash(c);
+                    if (!s->otherDict || !s->otherDict->has(c, hashKey)) { s->mismatch = true; return; }
+                    const proto::ProtoObject* otherVal = s->otherDict->getAt(c, hashKey);
+                    if (s->env->compareObjects(c, val, otherVal, 0) != PROTO_TRUE) s->mismatch = true;
+                });
+            if (sink.mismatch) return PROTO_FALSE;
+            proto::proto_ulong otherCount = sink.otherDict ? sink.otherDict->getSize(ctx) : 0;
+            return (sink.selfUserCount == otherCount) ? PROTO_TRUE : PROTO_FALSE;
         };
         modulePrototype = modulePrototype->setAttribute(rootContext_,
             PythonEnvironment::getInternedString(rootContext_, "__eq__"),
@@ -24155,20 +24084,15 @@ std::vector<std::string> PythonEnvironment::collectCandidates(const proto::Proto
             for (const auto* current : worklist) {
                 if (!current || !seen.insert(current).second) continue;
                 
-                const proto::ProtoSparseList* attrs = current->getOwnAttributes(context);
-                if (attrs) {
-                    auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
-                    while (it && it->hasNext(context)) {
-                        proto::proto_ulong key = it->nextKey(context);
-                        const proto::ProtoString* s = reinterpret_cast<const proto::ProtoObject*>(key)->asString(context);
-                        if (s) {
-                            std::string name;
-                            s->toUTF8String(context, name);
-                            if (!name.empty() && name[0] != '_') uniqueCandidates.insert(name);
-                        }
-                        it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
-                    }
-                }
+                current->processOwnAttributes(context, &uniqueCandidates,
+                    [](proto::ProtoContext* c, void* userData, const proto::ProtoString* s,
+                       const proto::ProtoObject*) {
+                        if (!s) return;
+                        std::string name;
+                        s->toUTF8String(c, name);
+                        if (!name.empty() && name[0] != '_')
+                            static_cast<std::unordered_set<std::string>*>(userData)->insert(name);
+                    });
                 
                 const proto::ProtoList* parents = current->getParents(context);
                 if (parents) {
@@ -31306,12 +31230,11 @@ struct SyncContext {
     int count;
 };
 
-static void syncAttr(proto::ProtoContext* ctx, void* self, proto::proto_ulong key, const proto::ProtoObject* val) {
+static void syncAttr(proto::ProtoContext* ctx, void* self, const proto::ProtoString* ks, const proto::ProtoObject* val) {
     SyncContext* sCtx = static_cast<SyncContext*>(self);
-    const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
-    if (keyObj && keyObj->isString(ctx)) {
-        const proto::ProtoString* ks = keyObj->asString(ctx);
-        if (ks && ks != sCtx->dataName && ks != sCtx->keysName) {
+    if (ks) {
+        const proto::ProtoObject* keyObj = ks->asObject(ctx);
+        if (ks != sCtx->dataName && ks != sCtx->keysName) {
             std::string kstr;
             ks->toUTF8String(ctx, kstr);
             // Universal exclusion list — these keys describe the class
@@ -31388,15 +31311,14 @@ const proto::ProtoObject* PythonEnvironment::initDictStorage(proto::ProtoContext
         k = currentObj->proto::ProtoObject::getAttribute(ctx, keysName, false);
     }
     if (d && d != PROTO_NONE && k && k != PROTO_NONE) {
-        const proto::ProtoSparseList* attrs = currentObj->getOwnAttributes(ctx);
         const proto::ProtoSparseList* dl = d->asSparseList(ctx);
         const proto::ProtoList* kl = ::protoPython::listStorage(ctx, k);
-        if (attrs && dl && kl) {
+        if (dl && kl) {
             SyncContext sCtx = { ctx,
                                  const_cast<proto::ProtoSparseList*>(dl),
                                  const_cast<proto::ProtoList*>(kl),
                                  dataName, keysName, 0 };
-            attrs->processElements(ctx, &sCtx, syncAttr);
+            currentObj->processOwnAttributes(ctx, &sCtx, syncAttr);
             currentObj = const_cast<proto::ProtoObject*>(currentObj)->proto::ProtoObject::setAttribute(ctx, dataName, sCtx.dataList->asObject(ctx));
             currentObj = const_cast<proto::ProtoObject*>(currentObj)->proto::ProtoObject::setAttribute(ctx, keysName, sCtx.keysList->asObject(ctx));
         }
@@ -31485,26 +31407,24 @@ void PythonEnvironment::registerNativeMethodNames(proto::ProtoContext* ctx) {
     };
     for (const proto::ProtoObject* proto : prototypes) {
         if (!proto || proto == PROTO_NONE) continue;
-        const proto::ProtoSparseList* attrs = proto->getOwnAttributes(ctx);
-        if (!attrs) continue;
-        auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(ctx));
-        while (it && it->hasNext(ctx)) {
-            proto::proto_ulong key = it->nextKey(ctx);
-            const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
-            const proto::ProtoObject* val = it->nextValue(ctx);
-            if (keyObj && keyObj->isString(ctx) && val && val->isMethod(ctx)) {
-                proto::ProtoMethod fn = val->asMethod(ctx);
-                if (fn) {
-                    std::string nm;
-                    keyObj->asString(ctx)->toUTF8String(ctx, nm);
-                    recordNativeMethodName(reinterpret_cast<const void*>(fn), nm, proto,
-                                           isSlotDunderName(nm)
-                                               ? NativeMethodInfo::Kind::WRAPPER
-                                               : NativeMethodInfo::Kind::METHOD);
-                }
-            }
-            it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
-        }
+        struct RegisterSink {
+            PythonEnvironment* env;
+            const proto::ProtoObject* owner;
+        } sink{this, proto};
+        proto->processOwnAttributes(ctx, &sink,
+            [](proto::ProtoContext* c, void* userData, const proto::ProtoString* name,
+               const proto::ProtoObject* val) {
+                RegisterSink* s = static_cast<RegisterSink*>(userData);
+                if (!name || !val || !val->isMethod(c)) return;
+                proto::ProtoMethod fn = val->asMethod(c);
+                if (!fn) return;
+                std::string nm;
+                name->toUTF8String(c, nm);
+                s->env->recordNativeMethodName(reinterpret_cast<const void*>(fn), nm, s->owner,
+                                               isSlotDunderName(nm)
+                                                   ? NativeMethodInfo::Kind::WRAPPER
+                                                   : NativeMethodInfo::Kind::METHOD);
+            });
     }
 }
 

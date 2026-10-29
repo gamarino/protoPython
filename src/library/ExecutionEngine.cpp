@@ -10030,24 +10030,17 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                             "__py_getattr_handler__", "__fn_meta_cache__",
                             "__executed__", "__class__",
                         };
-                        std::vector<const proto::ProtoString*> toRemove;
-                        const proto::ProtoSparseList* ownAttrs = mobj->getOwnAttributes(ctx);
-                        if (ownAttrs) {
-                            auto* it = const_cast<proto::ProtoSparseListIterator*>(ownAttrs->getIterator(ctx));
-                            while (it && it->hasNext(ctx)) {
-                                proto::proto_ulong key = it->nextKey(ctx);
-                                const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
-                                it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
-                                if (!keyObj || !keyObj->isString(ctx)) continue;
-                                std::string nm; keyObj->asString(ctx)->toUTF8String(ctx, nm);
-                                bool skip = false;
-                                for (auto& bad : internalSkip) if (nm == bad) { skip = true; break; }
-                                if (!skip) toRemove.push_back(keyObj->asString(ctx));
-                            }
-                        }
-                        for (const proto::ProtoString* knm : toRemove) {
-                            mobj->removeAttribute(ctx, knm);
-                        }
+                        // The walk reports the attributes as they stood when
+                        // it started, so removing them from the callback is
+                        // safe and leaves the rest of the walk unchanged.
+                        mobj->processOwnAttributes(ctx, mobj,
+                            [](proto::ProtoContext* c, void* userData, const proto::ProtoString* name,
+                               const proto::ProtoObject*) {
+                                if (!name) return;
+                                std::string nm; name->toUTF8String(c, nm);
+                                for (auto& bad : internalSkip) if (nm == bad) return;
+                                static_cast<const proto::ProtoObject*>(userData)->removeAttribute(c, name);
+                            });
                         // Reset the dict-storage slots.
                         if (isBuiltinContainerSubclass) {
                             mobj->setAttribute(ctx,

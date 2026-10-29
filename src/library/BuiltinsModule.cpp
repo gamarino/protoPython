@@ -344,22 +344,26 @@ static const proto::ProtoObject* py_complete(
             }
         }
 
-        const proto::ProtoSparseList* attrs = obj->getOwnAttributes(context);
-        if (attrs) {
-            auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
-            while (it && it->hasNext(context)) {
-                proto::proto_ulong key = it->nextKey(context);
-                const proto::ProtoString* s = reinterpret_cast<const proto::ProtoObject*>(key)->asString(context);
+        // The reported name is the canonical interned symbol, so it is
+        // appended as is.
+        struct CompleteSink {
+            const std::string* prefix;
+            std::unordered_set<std::string>* unique;
+            const proto::ProtoList* results;
+        } sink{&prefix, &uniqueResults, results};
+        obj->processOwnAttributes(context, &sink,
+            [](proto::ProtoContext* c, void* userData, const proto::ProtoString* s,
+               const proto::ProtoObject*) {
+                CompleteSink* k = static_cast<CompleteSink*>(userData);
+                if (!s) return;
                 std::string name;
-                if (s) s->toUTF8String(context, name);
-                if (name.compare(0, prefix.size(), prefix) == 0) {
-                    if (uniqueResults.insert(name).second) {
-                        results = results->appendLast(context, PythonEnvironment::getInternedString(context, name.c_str())->asObject(context));
-                    }
+                s->toUTF8String(c, name);
+                if (name.compare(0, k->prefix->size(), *k->prefix) == 0
+                    && k->unique->insert(name).second) {
+                    k->results = k->results->appendLast(c, s->asObject(c));
                 }
-                it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
-            }
-        }
+            });
+        results = sink.results;
     };
 
     // For now, simple global/builtin completion.
@@ -2879,8 +2883,7 @@ static const proto::ProtoObject* py_dir(
         // bookkeeping, and return that as the result list.
         const proto::ProtoObject* fr = PythonEnvironment::getCurrentFrame();
         if (fr && fr != PROTO_NONE && context) {
-            const proto::ProtoSparseList* attrs = fr->getOwnAttributes(context);
-            if (attrs) {
+            {
                 static const std::vector<std::string> internalSkip = {
                     "__data__", "__keys__", "__is_python_class__",
                     "__subclasses_list__", "__pyflags__",
@@ -2902,21 +2905,14 @@ static const proto::ProtoObject* py_dir(
                     "__frame_namespace__", "__exec_caller_frame__",
                 };
                 std::vector<std::string> names;
-                auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
-                while (it && it->hasNext(context)) {
-                    proto::proto_ulong key = it->nextKey(context);
-                    const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
-                    const proto::ProtoObject* val = it->nextValue(context);
-                    if (val == PROTO_NONE || !keyObj || !keyObj->isString(context)) {
-                        it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
-                        continue;
-                    }
-                    std::string nm; keyObj->asString(context)->toUTF8String(context, nm);
-                    bool skip = false;
-                    for (auto& bad : internalSkip) if (nm == bad) { skip = true; break; }
-                    if (!skip && !nm.empty()) names.push_back(nm);
-                    it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
-                }
+                fr->processOwnAttributes(context, &names,
+                    [](proto::ProtoContext* c, void* userData, const proto::ProtoString* name,
+                       const proto::ProtoObject* val) {
+                        if (val == PROTO_NONE || !name) return;
+                        std::string nm; name->toUTF8String(c, nm);
+                        for (auto& bad : internalSkip) if (nm == bad) return;
+                        if (!nm.empty()) static_cast<std::vector<std::string>*>(userData)->push_back(nm);
+                    });
                 std::sort(names.begin(), names.end());
                 names.erase(std::unique(names.begin(), names.end()), names.end());
                 const proto::ProtoList* result = context->newList();
@@ -3003,25 +2999,19 @@ static const proto::ProtoObject* py_dir(
     std::vector<std::string> names;
     std::function<void(const proto::ProtoObject*)> collectOwn = [&](const proto::ProtoObject* obj) {
         if (!obj) return;
-        // STRUCT-251: use getOwnAttributes (NOT getAttributes which
+        // STRUCT-251: walk OWN attributes only (NOT getAttributes which
         // walks the parent chain) so the MRO walk below controls what
         // ancestors contribute.  Without this, collectOwn(target)
         // pulled in every inherited attr immediately, defeating the
         // MRO filter and the module-instance short-circuit.
-        const proto::ProtoSparseList* attrs = obj->getOwnAttributes(context);
-        if (attrs) {
-            auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
-            while (it && it->hasNext(context)) {
-                proto::proto_ulong key = it->nextKey(context);
-                const proto::ProtoString* s = reinterpret_cast<const proto::ProtoObject*>(key)->asString(context);
-                if (s) {
-                    std::string name;
-                    s->toUTF8String(context, name);
-                    if (!name.empty()) names.push_back(name);
-                }
-                it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
-            }
-        }
+        obj->processOwnAttributes(context, &names,
+            [](proto::ProtoContext* c, void* userData, const proto::ProtoString* s,
+               const proto::ProtoObject*) {
+                if (!s) return;
+                std::string name;
+                s->toUTF8String(c, name);
+                if (!name.empty()) static_cast<std::vector<std::string>*>(userData)->push_back(name);
+            });
     };
     std::function<void(const proto::ProtoObject*)> collect = [&](const proto::ProtoObject* obj) {
         if (!obj) return;
@@ -5000,20 +4990,15 @@ static const proto::ProtoObject* py_exec(
     // Mirror any new bindings the executed code created back into the
     // user-supplied locals dict.
     if (wrappedLocals && env) {
-        const proto::ProtoSparseList* mirrorOwn = frame->proto::ProtoObject::getOwnAttributes(context);
-        if (mirrorOwn) {
+        {
             const proto::ProtoString* keysS = PythonEnvironment::getInternedString(context, "__keys__");
             const proto::ProtoObject* dataObj = locals->getAttribute(context, env->getDataString());
             const proto::ProtoSparseList* localsData = dataObj ? dataObj->asSparseList(context) : context->newSparseList();
             const proto::ProtoObject* keysObj = locals->getAttribute(context, keysS);
             const proto::ProtoList* keysList = (keysObj && ::protoPython::listStorage(context, keysObj))
                 ? ::protoPython::listStorage(context, keysObj) : context->newList();
-            // We can't iterate the SparseList by key directly; instead,
-            // walk the frame's getOwnAttributes via the same name set the
-            // bytecode uses. Compiler stored varnames in co_varnames; the
-            // simpler-and-correct path here: enumerate names known to the
-            // code object's co_names tuple and merge any found own
-            // attribute back into the user dict.
+            // Enumerate the names known to the code object's co_names tuple
+            // and merge any found own attribute back into the user dict.
             const proto::ProtoObject* coNames = codeObj->getAttribute(context, PythonEnvironment::getInternedString(context, "co_names"));
             ::protoPython::TupleView coNamesT = coNames ? ::protoPython::PythonEnvironment::tupleView(context, coNames) : nullptr;
             if (coNamesT) {
