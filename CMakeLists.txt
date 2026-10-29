@@ -591,6 +591,13 @@ set_tests_properties(protopy_check_methods PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# vars() of a dict-subclass instance is the instance namespace.
+add_test(NAME protopy_vars_dict_subclass
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/vars_dict_subclass.py)
+set_tests_properties(protopy_vars_dict_subclass PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # Containers find an element by identity before equality (nan in [nan]).
 add_test(NAME protopy_nan_containment
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/nan_containment.py)
