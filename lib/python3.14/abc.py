@@ -77,13 +77,12 @@ class ABCMeta(type):
         if subclass is cls:
             return True
         # As CPython's ABCMeta: the class's __subclasshook__ decides first;
-        # NotImplemented falls through to the MRO, registry and subclass
-        # checks.  object defines no __subclasshook__ here, hence getattr.
-        hook = getattr(cls, '__subclasshook__', None)
-        if hook is not None:
-            ok = hook(subclass)
-            if ok is not NotImplemented:
-                return bool(ok)
+        # NotImplemented (object's answer) falls through to the MRO,
+        # registry and subclass checks.  CPython asserts a bool here.
+        ok = cls.__subclasshook__(subclass)
+        if ok is not NotImplemented:
+            assert ok is True or ok is False
+            return ok
         # Direct MRO check.
         try:
             if cls in subclass.__mro__:

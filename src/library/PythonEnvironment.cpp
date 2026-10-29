@@ -19256,6 +19256,31 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         objectPrototype = objectPrototype->setAttribute(rootContext_,
             getInternedString(rootContext_, "__init_subclass__"), iscMethod);
     }
+    // object.__subclasshook__(subclass): NotImplemented, so issubclass falls
+    // through to the normal checks (CPython: a classmethod taking exactly
+    // one argument).  ABCMeta.__subclasscheck__ calls cls.__subclasshook__
+    // first, and an ABC overrides it to decide by structure.  The class is
+    // not needed, so the binding (self) is ignored and only the subclass is
+    // counted.
+    objectPrototype = objectPrototype->setAttribute(rootContext_,
+        getInternedString(rootContext_, "__subclasshook__"),
+        rootContext_->fromMethod(nullptr,
+            [](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+               const proto::ParentLink*,
+               const proto::ProtoArguments* args,
+               const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
+                PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                if (!env) return PROTO_NONE;
+                const proto::proto_ulong n = args ? args->getSize(ctx) : 0;
+                const proto::proto_ulong nk = kwargs ? kwargs->getSize(ctx) : 0;
+                (void)self;
+                if (nk != 0 || n != 1) {
+                    env->raiseTypeError(ctx, "object.__subclasshook__() takes exactly one argument ("
+                        + std::to_string(n + nk) + " given)");
+                    return nullptr;
+                }
+                return env->getNotImplementedPrototype();
+            }));
     // PH: object.__class_getitem__ is a no-op for object; subclasses may override.
     objectPrototype = objectPrototype->setAttribute(rootContext_,
         getInternedString(rootContext_, "__set_name__"),

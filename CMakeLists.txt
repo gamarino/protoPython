@@ -587,6 +587,14 @@ set_tests_properties(protopy_abc_subclasscheck PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# object.__subclasshook__ is a classmethod answering NotImplemented; ABCMeta calls it first.
+add_test(NAME protopy_object_subclasshook
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/object_subclasshook.py)
+set_tests_properties(protopy_object_subclasshook PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "object_subclasshook: ok"
+    LABELS "regression_gate")
 # _collections_abc._check_methods follows CPython (NotImplemented for a missing or None method).
 add_test(NAME protopy_check_methods
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/check_methods.py)
