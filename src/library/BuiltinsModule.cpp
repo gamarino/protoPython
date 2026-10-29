@@ -12124,8 +12124,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     zipProto = zipProto->setAttribute(ctx, py_name_local, PythonEnvironment::getInternedString(ctx, "zip")->asObject(ctx));
     zipProto = zipProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_zip));
     zipProto = zipProto->setAttribute(ctx, pEnv ? pEnv->getInitString() : PythonEnvironment::getInternedString(ctx, "__init__"), ctx->fromMethod(nullptr, py_python_ignore_init));
-    zipProto = zipProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(zipProto), py_self_iter));
-    zipProto = zipProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(zipProto), py_zip_next));
+    // Unbound: the iterator is passed as self.  (Bound to zipProto, an
+    // immutable object, they named an earlier version of it.)
+    zipProto = zipProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(nullptr, py_self_iter));
+    zipProto = zipProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(nullptr, py_zip_next));
     // Q-79: __mro__ for zip prototype.
     {
         const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
@@ -12141,8 +12143,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     filterProto = filterProto->setAttribute(ctx, py_name_local, PythonEnvironment::getInternedString(ctx, "filter")->asObject(ctx));
     filterProto = filterProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_filter));
     filterProto = filterProto->setAttribute(ctx, pEnv ? pEnv->getInitString() : PythonEnvironment::getInternedString(ctx, "__init__"), ctx->fromMethod(nullptr, py_python_ignore_init));
-    filterProto = filterProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(filterProto), py_self_iter));
-    filterProto = filterProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(filterProto), py_filter_next));
+    filterProto = filterProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(nullptr, py_self_iter));
+    filterProto = filterProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(nullptr, py_filter_next));
     {
         const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
         const proto::ProtoList* mroList = ctx->newList()->appendLast(ctx, filterProto);
@@ -12157,8 +12159,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     mapProto = mapProto->setAttribute(ctx, py_name_local, PythonEnvironment::getInternedString(ctx, "map")->asObject(ctx));
     mapProto = mapProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_map));
     mapProto = mapProto->setAttribute(ctx, pEnv ? pEnv->getInitString() : PythonEnvironment::getInternedString(ctx, "__init__"), ctx->fromMethod(nullptr, py_python_ignore_init));
-    mapProto = mapProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(mapProto), py_self_iter));
-    mapProto = mapProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(mapProto), py_map_next));
+    mapProto = mapProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(nullptr, py_self_iter));
+    mapProto = mapProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(nullptr, py_map_next));
     {
         const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
         const proto::ProtoList* mroList = ctx->newList()->appendLast(ctx, mapProto);
@@ -12177,8 +12179,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     enumProto = enumProto->setAttribute(ctx, py_name_local, PythonEnvironment::getInternedString(ctx, "enumerate")->asObject(ctx));
     enumProto = enumProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_enumerate));
     enumProto = enumProto->setAttribute(ctx, pEnv ? pEnv->getInitString() : PythonEnvironment::getInternedString(ctx, "__init__"), ctx->fromMethod(nullptr, py_python_ignore_init));
-    enumProto = enumProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(enumProto), py_self_iter));
-    enumProto = enumProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(enumProto), py_enumerate_next));
+    enumProto = enumProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(nullptr, py_self_iter));
+    enumProto = enumProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(nullptr, py_enumerate_next));
     {
         const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
         const proto::ProtoList* mroList = ctx->newList()->appendLast(ctx, enumProto);
@@ -12196,8 +12198,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
 
     // rangeProto initialization was removed as rangeClass handles instantiation now
     
-    revProto = revProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(revProto), py_self_iter));
-    revProto = revProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(revProto), py_reversed_next));
+    revProto = revProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(nullptr, py_self_iter));
+    revProto = revProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(nullptr, py_reversed_next));
     revProto = revProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(revProto), py_reversed));
     {
         const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");

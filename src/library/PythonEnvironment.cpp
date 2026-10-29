@@ -30528,12 +30528,17 @@ bool keepsOwnReceiver(proto::ProtoContext* ctx, const proto::ProtoObject* cell, 
     // class and read through an instance, it keeps its receiver.  Rebinding
     // it ran it on the instance (doctest's `_IS_BLANK_OR_COMMENT =
     // re.compile(...).match` failed with "descriptor requires a 're.Pattern'
-    // object").  A cell bound to a prototype the instance inherits from is a
-    // type's method and is bound to the instance as before.
+    // object").  A cell bound to a class or to a prototype the instance
+    // inherits from is a type's method and is bound to the instance as
+    // before.  (Several native types bind their methods to the prototype,
+    // sometimes to an earlier version of it -- zip.__next__, type.mro -- so
+    // being a class is checked as well as the chain.)
     if (!cell || !instance || instance == PROTO_NONE || !cell->isMethod(ctx)) return false;
     const proto::ProtoObject* receiver = cell->asMethodSelf(ctx);
     if (!receiver || receiver == instance) return false;
-    return instance->isInstanceOf(ctx, receiver) != PROTO_TRUE;
+    if (instance->isInstanceOf(ctx, receiver) == PROTO_TRUE) return false;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    return !(env && env->isActuallyAClass(ctx, receiver));
 }
 
 const proto::ProtoObject* PythonEnvironment::bindNativeMethod(proto::ProtoContext* ctx, const proto::ProtoObject* method,
@@ -30755,15 +30760,17 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
                 PythonEnvironment::getInternedString(ctx, "__iter_target__"), obj);
             iterProto = iterProto->setAttribute(ctx,
                 PythonEnvironment::getInternedString(ctx, "__iter_index__"), ctx->fromInteger(0));
+            // Unbound cells: bound to the (mutable) iterator itself they
+            // were a self-cycle per iterator (CONFORMANCE rule 13).
             iterProto = iterProto->setAttribute(ctx, getIterString(),
-                ctx->fromMethod(const_cast<proto::ProtoObject*>(iterProto),
+                ctx->fromMethod(nullptr,
                     [](proto::ProtoContext* c, const proto::ProtoObject* self,
                        const proto::ParentLink*, const proto::ProtoArguments*,
                        const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
                         return self;
                     }));
             iterProto = iterProto->setAttribute(ctx, getNextString(),
-                ctx->fromMethod(const_cast<proto::ProtoObject*>(iterProto),
+                ctx->fromMethod(nullptr,
                     [](proto::ProtoContext* c, const proto::ProtoObject* self,
                        const proto::ParentLink*, const proto::ProtoArguments*,
                        const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
