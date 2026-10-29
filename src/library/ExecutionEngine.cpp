@@ -2950,8 +2950,11 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
 
     // Fast path for user-defined Python functions: they always have __code__ as an own attribute
     // (set in createUserFunction). Avoid the expensive getType + getAttribute(__call__) path.
+    // A class whose namespace binds `__code__` (annotationlib.ForwardRef
+    // declares it in __slots__) is not a function: it takes the class path.
     if (env && env->getCodeString() &&
-        callable->hasOwnAttribute(ctx, env->getCodeString()) == PROTO_TRUE) {
+        callable->hasOwnAttribute(ctx, env->getCodeString()) == PROTO_TRUE &&
+        callable->hasOwnAttribute(ctx, env->getIsPythonClassString()) != PROTO_TRUE) {
         return runUserFunctionCall(ctx, callable, nullptr, argsView(proto::ProtoListArguments(ctx, args)), kwargsView(proto::ProtoSparseListKeywordArguments(ctx, kwargs)));
     }
 
@@ -4744,6 +4747,9 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
                 if (!b || b == PROTO_NONE) continue;
                 const proto::ProtoObject* bm = env->getAttribute(ctx, b,
                     env->getClassString(), false);
+                // A base's `__class__` that is not a class (a property the
+                // class body defined for its instances) is not its metaclass.
+                if (bm && bm != PROTO_NONE && !env->isActuallyAClass(ctx, bm)) bm = nullptr;
                 if (!bm || bm == PROTO_NONE) bm = env->getType(ctx, b);
                 // STRUCT-234: skip bases whose metaclass
                 // resolves to bare `object` (e.g. plain
@@ -4820,6 +4826,7 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
                 const proto::ProtoObject* basei = tbInit ? tbInit->getAt(ctx, static_cast<int>(i)) : lbInit->getAt(ctx, static_cast<int>(i));
                 if (!basei || basei == PROTO_NONE || !env) continue;
                 const proto::ProtoObject* m0 = env->getAttribute(ctx, basei, env->getClassString(), false);
+                if (m0 && m0 != PROTO_NONE && !env->isActuallyAClass(ctx, m0)) m0 = nullptr;
                 if (!m0 || m0 == PROTO_NONE) m0 = env->getType(ctx, basei);
                 if (m0 && m0 != PROTO_NONE
                     && !areSameClassesVM(ctx, m0, objectProto)) {
@@ -4848,6 +4855,9 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
                 const proto::ProtoObject* baseMeta = nullptr;
                 if (env) {
                     baseMeta = env->getAttribute(ctx, base, env->getClassString(), false);
+                    if (baseMeta && baseMeta != PROTO_NONE && !env->isActuallyAClass(ctx, baseMeta)) {
+                        baseMeta = nullptr;
+                    }
                     if (!baseMeta || baseMeta == PROTO_NONE) {
                         baseMeta = env->getType(ctx, base);
                     }

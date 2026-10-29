@@ -8236,6 +8236,21 @@ static const proto::ProtoObject* py_isinstance(
                 if (dynamicClass && dynamicClass != PROTO_NONE && dynamicClass != objClass) {
                     if (py_issubclass_check_single(context, dynamicClass, cls)) return PROTO_TRUE;
                 }
+            } else if (!env->isActuallyAClass(context, obj)) {
+                // No __getattribute__ override: obj.__class__ still differs
+                // from type(obj) when a class on the MRO defines its own
+                // `__class__` (a property: unittest.mock's spec'd Mock
+                // answers the spec class, so isinstance(Mock(spec=C), C)).
+                const proto::ProtoObject* dynamicClass = nullptr;
+                try {
+                    dynamicClass = env->getAttribute(context, obj, classStr);
+                } catch (const proto::ProtoException&) {
+                    dynamicClass = nullptr;  // an unreadable __class__ is ignored
+                }
+                if (dynamicClass && dynamicClass != PROTO_NONE && dynamicClass != objClass
+                    && env->isActuallyAClass(context, dynamicClass)) {
+                    if (py_issubclass_check_single(context, dynamicClass, cls)) return PROTO_TRUE;
+                }
             }
         }
     }

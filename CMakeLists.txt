@@ -587,6 +587,14 @@ set_tests_properties(protopy_abc_subclasscheck PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# object.__subclasshook__ is a classmethod answering NotImplemented; ABCMeta calls it first.
+add_test(NAME protopy_object_subclasshook
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/object_subclasshook.py)
+set_tests_properties(protopy_object_subclasshook PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "object_subclasshook: ok"
+    LABELS "regression_gate")
 # _collections_abc._check_methods follows CPython (NotImplemented for a missing or None method).
 add_test(NAME protopy_check_methods
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/check_methods.py)
@@ -628,6 +636,22 @@ add_test(NAME protopy_super_proxy_idioms
 set_tests_properties(protopy_super_proxy_idioms PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
+    LABELS "regression_gate")
+# unittest.mock imports and works (Mock, MagicMock, patch, spec'd isinstance).
+add_test(NAME protopy_unittest_mock_basics
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/unittest_mock_basics.py)
+set_tests_properties(protopy_unittest_mock_basics PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "unittest_mock_basics ok"
+    LABELS "regression_gate")
+# A class namespace may bind `__code__` or a `__class__` property without being taken for a function or a metaclass.
+add_test(NAME protopy_class_namespace_code_and_class
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/class_namespace_code_and_class.py)
+set_tests_properties(protopy_class_namespace_code_and_class PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "class_namespace_code_and_class ok"
     LABELS "regression_gate")
 # Containers find an element by identity before equality (nan in [nan]).
 add_test(NAME protopy_nan_containment
