@@ -160,8 +160,20 @@ public:
      */
     proto::ProtoSpace* getSpace() { return space_; }
 
-    /** @brief Returns the process singleton ProtoSpace (static accessor). */
+    /** @brief Returns the process singleton ProtoSpace (static accessor);
+     *  nullptr after shutdownProcessSpace(). */
     static proto::ProtoSpace* getProcessSpace();
+
+    /**
+     * @brief Destroys the process ProtoSpace (joins its collector) now.
+     *
+     * A program calls it once, after its last PythonEnvironment is destroyed
+     * and before it returns from main, while every thread still runs.
+     * Without it the space is destroyed with the statics, which on Windows
+     * happens after ExitProcess has terminated the collector (and anything it
+     * held locked).  Idempotent.
+     */
+    static void shutdownProcessSpace();
 
     /**
      * @brief Returns the root context.
