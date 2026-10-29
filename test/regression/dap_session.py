@@ -224,6 +224,10 @@ def session_breakpoints_and_stepping():
     s.ok("continue", {"threadId": 1})
 
     frames = s.stopped("breakpoint", 17, "<module>")
+    # Output events come from the threads that drain the program's stdout
+    # pipe and are not ordered with the stopped event (see session_output):
+    # wait for the line, then check nothing else was printed.
+    s.wait_output("before\n")
     check(s.output["stdout"] == "before\n", "output before the stop: %r" % s.output["stdout"])
     fid = frames[0]["id"]
     loc = s.scope(fid, "Locals")
