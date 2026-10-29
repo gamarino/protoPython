@@ -2179,6 +2179,17 @@ const proto::ProtoObject* makeStandardInput(proto::ProtoContext* ctx, const prot
     return text;
 }
 
+const proto::ProtoObject* makeStandardOutputBuffer(proto::ProtoContext* ctx, const proto::ProtoObject* ioModule, int fd) {
+    // Never closes the descriptor; writes go straight to it, and
+    // sys.stdout / sys.stderr flush after every write, so text and bytes
+    // written through either stay in order.
+    const proto::ProtoObject* name = PythonEnvironment::getInternedString(ctx,
+        fd == 1 ? "<stdout>" : "<stderr>")->asObject(ctx);
+    const proto::ProtoObject* binary = io_make_fd_file(ctx, ioModule, fd, "wb", name, false, nullptr);
+    binary->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "raw"), binary);
+    return binary;
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* ioMod = ctx->newObject(false);
     

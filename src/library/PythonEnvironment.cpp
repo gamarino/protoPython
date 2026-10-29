@@ -81,6 +81,7 @@ static bool get_thread_diag() {
 #include <shared_mutex>
 
 namespace protoPython {
+bool keepsOwnReceiver(proto::ProtoContext* ctx, const proto::ProtoObject* cell, const proto::ProtoObject* instance);
 
 #if defined(_WIN32)
 // _winapi (WinapiModule.cpp, Windows only).
@@ -10318,12 +10319,12 @@ static const proto::ProtoObject* py_int_to_bytes(
         }
     }
     PythonEnvironment* envR = PythonEnvironment::fromContext(context);
-    bool isNeg = self->isInteger(context) && self->asLong(context) < 0;
+    // The sign by comparison: asLong() overflows for a value wider than 64
+    // bits (uuid.UUID(...).bytes is int.to_bytes(16)).
+    const proto::ProtoObject* zero = context->fromInteger(0);
+    bool isNeg = self->isInteger(context) && self->compare(context, zero) < 0;
     if (isNeg && !isSigned) {
-        // Closest match: ValueError until we expose an OverflowError raise.
-        if (envR) envR->raiseValueError(context,
-            PythonEnvironment::getInternedString(context,
-                "can't convert negative int to unsigned")->asObject(context));
+        if (envR) envR->raiseOverflowError(context, "can't convert negative int to unsigned");
         return nullptr;
     }
     // Encode magnitude.  For negative signed values, encode
@@ -10349,11 +10350,8 @@ static const proto::ProtoObject* py_int_to_bytes(
     // Overflow check: any non-zero remainder after `length` bytes
     // means the value doesn't fit (e.g. 256.to_bytes(1, 'big')
     // silently returned b'\x00' before).
-    long long remainder = cur->isInteger(context) ? cur->asLong(context) : 0;
-    if (remainder != 0) {
-        if (envR) envR->raiseValueError(context,
-            PythonEnvironment::getInternedString(context,
-                "int too big to convert")->asObject(context));
+    if (cur->isInteger(context) && cur->compare(context, zero) != 0) {
+        if (envR) envR->raiseOverflowError(context, "int too big to convert");
         return nullptr;
     }
     if (!little) std::reverse(out.begin(), out.end());
@@ -19427,6 +19425,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             if (!self->isMethod(ctx)) return self;
             PythonEnvironment* getEnv = PythonEnvironment::fromContext(ctx);
             if (getEnv && getEnv->isCompiledFunction(ctx, self)) return getEnv->bindNativeMethod(ctx, self, instance);
+            if (keepsOwnReceiver(ctx, self, instance)) return self;
             const proto::ProtoObject* bound = ctx->fromMethod(const_cast<proto::ProtoObject*>(instance), self->asMethod(ctx));
             if (get_env_diag()) fprintf(stderr, "DEBUG_GET: created bound method %p\n", (void*)bound);
             
@@ -22965,6 +22964,16 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         const proto::ProtoObject* stdinObj = io::makeStandardInput(rootContext_, ioModule);
         sysModule = sysModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "stdin"), stdinObj);
         sysModule = sysModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__stdin__"), stdinObj);
+        // sys.stdout.buffer / sys.stderr.buffer were None, so code writing
+        // bytes to standard output (`python -m base64`, ...) failed.
+        for (int fd = 1; fd <= 2; ++fd) {
+            const proto::ProtoObject* stream = sysModule->getAttribute(rootContext_,
+                PythonEnvironment::getInternedString(rootContext_, fd == 1 ? "stdout" : "stderr"));
+            // The streams are mutable objects (SysModule), updated in place.
+            if (stream && stream != PROTO_NONE)
+                stream->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "buffer"),
+                                     io::makeStandardOutputBuffer(rootContext_, ioModule, fd));
+        }
     }
 
     // Expose common exceptions in builtins using cached strings
@@ -25190,6 +25199,22 @@ constexpr size_t kGetTypePicSize = 1024;
 thread_local GetTypePicEntry s_getTypePic[kGetTypePicSize];
 }  // namespace
 
+const proto::ProtoObject* PythonEnvironment::getattrHookFor(proto::ProtoContext* ctx,
+                                                       const proto::ProtoObject* obj,
+                                                       bool* passObj) {
+    if (passObj) *passObj = true;
+    if (!obj || obj == PROTO_NONE) return nullptr;
+    const proto::ProtoString* key = getattrDunderString;
+    if (!isActuallyAClass(ctx, obj) && obj->hasOwnAttribute(ctx, key) == PROTO_TRUE) {
+        if (passObj) *passObj = false;
+        return obj->getAttribute(ctx, key);
+    }
+    const proto::ProtoObject* cls = getType(ctx, obj);
+    if (!cls || cls == PROTO_NONE || cls == obj) return nullptr;
+    const proto::ProtoObject* fn = getAttribute(ctx, cls, key, false);
+    return (fn && fn != PROTO_NONE) ? fn : nullptr;
+}
+
 const proto::ProtoObject* PythonEnvironment::lookupBoundSpecialMethod(proto::ProtoContext* ctx,
                                                                 const proto::ProtoObject* obj,
                                                                 const proto::ProtoString* name) {
@@ -26812,6 +26837,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                 }
                 return bindNativeMethod(ctx, val, obj);
             }
+            if (keepsOwnReceiver(ctx, val, obj)) return val;
             const proto::ProtoObject* bound = ctx->fromMethod(const_cast<proto::ProtoObject*>(obj), val->asMethod(ctx));
             const proto::ProtoString* py_name_s = this->getNameString();
             if (!py_name_s) py_name_s = PythonEnvironment::getInternedString(ctx, "__name__");
@@ -26971,7 +26997,19 @@ bool PythonEnvironment::deleteAttribute(proto::ProtoContext* ctx, const proto::P
     return true;
 }
 
+// Set by genericSetAttribute for the one setAttribute call it makes, and
+// consumed on entry to setAttribute before anything can run Python code.
+static thread_local bool t_skipSetattrOverride = false;
+
+const proto::ProtoObject* PythonEnvironment::genericSetAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj,
+                                                                 const proto::ProtoString* name, const proto::ProtoObject* value) {
+    t_skipSetattrOverride = true;
+    return setAttribute(ctx, obj, name, value);
+}
+
 const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, const proto::ProtoObject* value) {
+    const bool skipSetattrOverride = t_skipSetattrOverride;
+    t_skipSetattrOverride = false;
     if (!obj || !name || !value) return obj;
 
     // CPython: setting `__bases__` / `__base__` on a built-in C-level
@@ -28263,7 +28301,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
         // defence; STRUCT-282 installs `type.__setattr__` directly
         // so the super() resolves correctly without that detour.
         bool classTarget = isActuallyAClass(ctx, obj);
-        if (setAttrDispatchDepth == 0) {
+        if (setAttrDispatchDepth == 0 && !skipSetattrOverride) {
             DispatchGuard g(setAttrDispatchDepth);
             const proto::ProtoObject* objType = getType(ctx, obj);
             if (objType && objType != PROTO_NONE) {
@@ -30254,21 +30292,13 @@ const proto::ProtoObject* PythonEnvironment::loadAttr(proto::ProtoContext* ctx, 
     bool attrFound = val && (val != PROTO_NONE || obj == PROTO_NONE || obj->hasAttribute(ctx, key) == PROTO_TRUE);
     if (!attrFound) {
         if (obj != PROTO_NONE) {
-            const proto::ProtoString* getattrKey = PythonEnvironment::getInternedString(ctx, "__getattr__");
-            const proto::ProtoObject* getattrFn = nullptr;
-            bool getattrIsOwn = false;
-            if (obj->hasOwnAttribute(ctx, getattrKey) == PROTO_TRUE) {
-                getattrFn = obj->getAttribute(ctx, getattrKey);
-                getattrIsOwn = true;
-            } else {
-                const proto::ProtoObject* cls = getType(ctx, obj);
-                if (cls && cls != PROTO_NONE) getattrFn = getAttribute(ctx, cls, getattrKey, false);
-            }
+            bool passObj = true;
+            const proto::ProtoObject* getattrFn = getattrHookFor(ctx, obj, &passObj);
             if (getattrFn && getattrFn != PROTO_NONE) {
                 // Module-level __getattr__(name) takes only the name;
                 // class-level __getattr__(self, name) takes both.
                 const proto::ProtoObject* nameObj = key->asObject(ctx);
-                val = getattrIsOwn ? callObject(getattrFn, {nameObj}) : callObject(getattrFn, {obj, nameObj});
+                val = passObj ? callObject(getattrFn, {obj, nameObj}) : callObject(getattrFn, {nameObj});
                 attrFound = val != nullptr;
             }
         }
@@ -30491,6 +30521,26 @@ bool PythonEnvironment::isCompiledFunction(proto::ProtoContext* ctx, const proto
     return storage->hasOwnAttribute(ctx, moduleNsKey) == PROTO_TRUE;
 }
 
+bool keepsOwnReceiver(proto::ProtoContext* ctx, const proto::ProtoObject* cell, const proto::ProtoObject* instance) {
+    // A native method cell bound to an object outside the instance's
+    // prototype chain is a bound builtin method (`re.compile(p).match`,
+    // `"s".upper`, `len`), which in CPython is not a descriptor: stored on a
+    // class and read through an instance, it keeps its receiver.  Rebinding
+    // it ran it on the instance (doctest's `_IS_BLANK_OR_COMMENT =
+    // re.compile(...).match` failed with "descriptor requires a 're.Pattern'
+    // object").  A cell bound to a class or to a prototype the instance
+    // inherits from is a type's method and is bound to the instance as
+    // before.  (Several native types bind their methods to the prototype,
+    // sometimes to an earlier version of it -- zip.__next__, type.mro -- so
+    // being a class is checked as well as the chain.)
+    if (!cell || !instance || instance == PROTO_NONE || !cell->isMethod(ctx)) return false;
+    const proto::ProtoObject* receiver = cell->asMethodSelf(ctx);
+    if (!receiver || receiver == instance) return false;
+    if (instance->isInstanceOf(ctx, receiver) == PROTO_TRUE) return false;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    return !(env && env->isActuallyAClass(ctx, receiver));
+}
+
 const proto::ProtoObject* PythonEnvironment::bindNativeMethod(proto::ProtoContext* ctx, const proto::ProtoObject* method,
                                                              const proto::ProtoObject* instance) {
     if (isCompiledFunction(ctx, method)) {
@@ -30710,15 +30760,17 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
                 PythonEnvironment::getInternedString(ctx, "__iter_target__"), obj);
             iterProto = iterProto->setAttribute(ctx,
                 PythonEnvironment::getInternedString(ctx, "__iter_index__"), ctx->fromInteger(0));
+            // Unbound cells: bound to the (mutable) iterator itself they
+            // were a self-cycle per iterator (CONFORMANCE rule 13).
             iterProto = iterProto->setAttribute(ctx, getIterString(),
-                ctx->fromMethod(const_cast<proto::ProtoObject*>(iterProto),
+                ctx->fromMethod(nullptr,
                     [](proto::ProtoContext* c, const proto::ProtoObject* self,
                        const proto::ParentLink*, const proto::ProtoArguments*,
                        const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
                         return self;
                     }));
             iterProto = iterProto->setAttribute(ctx, getNextString(),
-                ctx->fromMethod(const_cast<proto::ProtoObject*>(iterProto),
+                ctx->fromMethod(nullptr,
                     [](proto::ProtoContext* c, const proto::ProtoObject* self,
                        const proto::ParentLink*, const proto::ProtoArguments*,
                        const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {

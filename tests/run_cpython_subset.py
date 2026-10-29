@@ -28,7 +28,8 @@ its limit is reported as TIMEOUT with the counts it printed so far; it is
 never retried.  --timeout-scale multiplies every limit (for a slower machine
 or a sanitizer build) and is printed in the report.
 
---log-dir keeps each file's full output as DIR/<name>.out.
+--log-dir keeps each file's full output as DIR/<path>.out, the path with
+"/" replaced by "_" (test/cpython/test_os.py and tests/test_os.py differ).
 
 --compare reads a JSON report written by --json and prints, per file, the
 base and current counts side by side.
@@ -116,7 +117,7 @@ def run_file(protopy, root, rel, limit, log_dir=None):
     elapsed = time.monotonic() - start
     text = raw.decode("utf-8", "replace")
     if log_dir:
-        with open(os.path.join(log_dir, os.path.basename(rel)[:-3] + ".out"), "w") as fh:
+        with open(os.path.join(log_dir, rel[:-3].replace("/", "_") + ".out"), "w") as fh:
             fh.write(text)
     counts = parse_counts(text)
     if timed_out:

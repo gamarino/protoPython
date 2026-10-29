@@ -8135,26 +8135,11 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                     bool attrNotFound = !val;
                     if (attrNotFound) {
                         // Try __getattr__ before raising AttributeError
-                        const proto::ProtoString* getattrS = PythonEnvironment::getInternedString(ctx, "__getattr__");
-                        const proto::ProtoObject* getattr = nullptr;
-
-                        // Check instance first (e.g. module-level __getattr__ or super() proxies)
-                        bool getattrIsOwn = false;
-                        if (obj->hasOwnAttribute(ctx, getattrS) == PROTO_TRUE) {
-                            getattr = obj->getAttribute(ctx, getattrS);
-                            getattrIsOwn = true;
-                        } else {
-                            // Search on class MRO.  env->getType synthesises
-                            // the class identity from the protoCore parent
-                            // chain, so this works without the redundant
-                            // __class__ attribute previously stored on every
-                            // instance (Phase 3 of the delegation design).
-                            const proto::ProtoObject* cls = env ? env->getType(ctx, obj)
-                                                                : obj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__"));
-                            if (cls && cls != PROTO_NONE) {
-                                getattr = env ? env->getAttribute(ctx, cls, getattrS, false) : cls->getAttribute(ctx, getattrS);
-                            }
-                        }
+                        // An own __getattr__(name) of a module or super()
+                        // proxy, else the type's (a class's metaclass's).
+                        bool passObj = true;
+                        const proto::ProtoObject* getattr = env ? env->getattrHookFor(ctx, obj, &passObj) : nullptr;
+                        const bool getattrIsOwn = !passObj;
 
                         if (getattr && getattr != PROTO_NONE) {
                             // Module-level __getattr__(name) takes only the name string.

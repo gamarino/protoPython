@@ -2767,8 +2767,10 @@ static const proto::ProtoObject* py_object_setattr(
             return nullptr;
         }
     }
+    // object's own store: a __setattr__ the target's class defines is what
+    // called here (or what the caller bypasses), not what runs.
     if (env) {
-        env->setAttribute(context, const_cast<proto::ProtoObject*>(target), key, value);
+        env->genericSetAttribute(context, const_cast<proto::ProtoObject*>(target), key, value);
     } else {
         const_cast<proto::ProtoObject*>(target)->setAttribute(context, key, value);
     }
@@ -3860,6 +3862,28 @@ static const proto::ProtoObject* py_memoryview_tobytes(
         return PythonEnvironment::getInternedString(context, "")->asObject(context);
     }
     return data;
+}
+
+/** memoryview[i] / memoryview[a:b]: an item of the viewed bytes, or a
+ *  memoryview of the selected bytes.  memoryview had no __getitem__, so
+ *  `mv[1:3]` was None (subprocess's communicate() writes slices of
+ *  memoryview(input)).  The slice views a copy of the bytes rather than
+ *  sharing the buffer. */
+static const proto::ProtoObject* py_memoryview_getitem(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !args || args->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* data = self->getAttribute(context, PythonEnvironment::getInternedString(context, "__mv_data__"));
+    if (!data || data == PROTO_NONE) return PROTO_NONE;
+    const proto::ProtoObject* key = args->getAt(context, 0);
+    const proto::ProtoObject* item = env->getItem(data, key, context);
+    if (!item || key->isInteger(context)) return item;
+    const proto::ProtoObject* mvClass = env->getType(context, self);
+    return (mvClass && mvClass != PROTO_NONE) ? env->callObject(mvClass, {item}) : item;
 }
 
 /** memoryview.cast(format[, shape]) — returns a new view with a different format/shape */
@@ -5696,22 +5720,12 @@ static const proto::ProtoObject* py_hasattr(
         //    already materialised; objects that synthesise attributes on
         //    demand via __getattr__ (e.g. unittest's _FailedTest, super()
         //    proxies, lazy modules) would wrongly report False.
-        const proto::ProtoString* getattrKey = PythonEnvironment::getInternedString(context, "__getattr__");
-        const proto::ProtoObject* getattrFn = nullptr;
-        bool getattrIsOwn = false;
-        if (obj->hasOwnAttribute(context, getattrKey) == PROTO_TRUE) {
-            getattrFn = obj->getAttribute(context, getattrKey);
-            getattrIsOwn = true;
-        } else {
-            const proto::ProtoObject* cls = env->getType(context, obj);
-            if (cls && cls != PROTO_NONE) {
-                getattrFn = env->getAttribute(context, cls, getattrKey, false);
-            }
-        }
+        bool passObj = true;
+        const proto::ProtoObject* getattrFn = env->getattrHookFor(context, obj, &passObj);
         if (getattrFn && getattrFn != PROTO_NONE) {
-            std::vector<const proto::ProtoObject*> args = getattrIsOwn
-                ? std::vector<const proto::ProtoObject*>{nameObj}
-                : std::vector<const proto::ProtoObject*>{obj, nameObj};
+            std::vector<const proto::ProtoObject*> args = passObj
+                ? std::vector<const proto::ProtoObject*>{obj, nameObj}
+                : std::vector<const proto::ProtoObject*>{nameObj};
             const proto::ProtoObject* probe = nullptr;
             try {
                 probe = env->callObject(getattrFn, args);
@@ -12248,8 +12262,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     zipProto = zipProto->setAttribute(ctx, py_name_local, PythonEnvironment::getInternedString(ctx, "zip")->asObject(ctx));
     zipProto = zipProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_zip));
     zipProto = zipProto->setAttribute(ctx, pEnv ? pEnv->getInitString() : PythonEnvironment::getInternedString(ctx, "__init__"), ctx->fromMethod(nullptr, py_python_ignore_init));
-    zipProto = zipProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(zipProto), py_self_iter));
-    zipProto = zipProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(zipProto), py_zip_next));
+    // Unbound: the iterator is passed as self.  (Bound to zipProto, an
+    // immutable object, they named an earlier version of it.)
+    zipProto = zipProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(nullptr, py_self_iter));
+    zipProto = zipProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(nullptr, py_zip_next));
     // Q-79: __mro__ for zip prototype.
     {
         const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
@@ -12265,8 +12281,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     filterProto = filterProto->setAttribute(ctx, py_name_local, PythonEnvironment::getInternedString(ctx, "filter")->asObject(ctx));
     filterProto = filterProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_filter));
     filterProto = filterProto->setAttribute(ctx, pEnv ? pEnv->getInitString() : PythonEnvironment::getInternedString(ctx, "__init__"), ctx->fromMethod(nullptr, py_python_ignore_init));
-    filterProto = filterProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(filterProto), py_self_iter));
-    filterProto = filterProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(filterProto), py_filter_next));
+    filterProto = filterProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(nullptr, py_self_iter));
+    filterProto = filterProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(nullptr, py_filter_next));
     {
         const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
         const proto::ProtoList* mroList = ctx->newList()->appendLast(ctx, filterProto);
@@ -12281,8 +12297,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     mapProto = mapProto->setAttribute(ctx, py_name_local, PythonEnvironment::getInternedString(ctx, "map")->asObject(ctx));
     mapProto = mapProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_map));
     mapProto = mapProto->setAttribute(ctx, pEnv ? pEnv->getInitString() : PythonEnvironment::getInternedString(ctx, "__init__"), ctx->fromMethod(nullptr, py_python_ignore_init));
-    mapProto = mapProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(mapProto), py_self_iter));
-    mapProto = mapProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(mapProto), py_map_next));
+    mapProto = mapProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(nullptr, py_self_iter));
+    mapProto = mapProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(nullptr, py_map_next));
     {
         const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
         const proto::ProtoList* mroList = ctx->newList()->appendLast(ctx, mapProto);
@@ -12301,8 +12317,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     enumProto = enumProto->setAttribute(ctx, py_name_local, PythonEnvironment::getInternedString(ctx, "enumerate")->asObject(ctx));
     enumProto = enumProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_enumerate));
     enumProto = enumProto->setAttribute(ctx, pEnv ? pEnv->getInitString() : PythonEnvironment::getInternedString(ctx, "__init__"), ctx->fromMethod(nullptr, py_python_ignore_init));
-    enumProto = enumProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(enumProto), py_self_iter));
-    enumProto = enumProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(enumProto), py_enumerate_next));
+    enumProto = enumProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(nullptr, py_self_iter));
+    enumProto = enumProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(nullptr, py_enumerate_next));
     {
         const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
         const proto::ProtoList* mroList = ctx->newList()->appendLast(ctx, enumProto);
@@ -12320,8 +12336,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
 
     // rangeProto initialization was removed as rangeClass handles instantiation now
     
-    revProto = revProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(revProto), py_self_iter));
-    revProto = revProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(revProto), py_reversed_next));
+    revProto = revProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(nullptr, py_self_iter));
+    revProto = revProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(nullptr, py_reversed_next));
     revProto = revProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(revProto), py_reversed));
     {
         const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
@@ -12425,6 +12441,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     memoryviewClass = memoryviewClass->setAttribute(ctx,
         PythonEnvironment::getInternedString(ctx, "__bytes__"),
         ctx->fromMethod(nullptr, py_memoryview_tobytes));
+    memoryviewClass = memoryviewClass->setAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__getitem__"),
+        ctx->fromMethod(nullptr, py_memoryview_getitem));
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "memoryview"), memoryviewClass);
     // `super` is a real, subclassable type (CPython parity): a class
     // object with __new__ / __init__ on the type.  `super(...)` dispatches
