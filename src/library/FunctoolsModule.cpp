@@ -48,17 +48,6 @@ static const proto::ProtoObject* py_partial(
     return p;
 }
 
-static const proto::ProtoObject* py_cmp_to_key(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* /*self*/,
-    const proto::ParentLink*,
-    const proto::ProtoArguments* posArgs,
-    const proto::ProtoKeywordArguments*) {
-    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
-    // Just return a wrapper (minimal implementation for now)
-    return posArgs->getAt(ctx, 0); 
-}
-
 static const proto::ProtoObject* py_reduce(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
@@ -122,8 +111,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     // user class so `type(p)` is the class itself.
     (void)placeholder;
     (void)placeholderType;
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "cmp_to_key"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_cmp_to_key));
+    // No native cmp_to_key: functools.py's pure-Python one is used (the
+    // `from _functools import cmp_to_key` there fails and is swallowed).
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "reduce"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_reduce));
     
