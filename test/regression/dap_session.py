@@ -395,7 +395,9 @@ def session_exception_raised():
     check("native code" in body["description"], "origin in %r" % body["description"])
     s.ok("continue", {"threadId": body["threadId"]})
     body, frames, info = exception_stop(s, 7, "risky", "ValueError", "always")
-    check("internal 23" in s.output["stdout"], "internal flow ran first: %r" % s.output["stdout"])
+    # Output events come from the threads draining the program's stdout pipe
+    # and are not ordered with the stopped event: wait for the line.
+    s.wait_output("internal 23")
     check(body["description"] == "ValueError: too big: 5", "description %r" % body["description"])
     check(info["description"] == "too big: 5", "message %r" % info["description"])
     check([f["name"] for f in frames] == ["risky", "handled", "<module>"], "stack %r" % [f["name"] for f in frames])
@@ -406,7 +408,7 @@ def session_exception_raised():
     s.ok("continue", {"threadId": body["threadId"]})
     body, frames, info = exception_stop(s, 20, "native", "ZeroDivisionError", "always")
     check("native code" in body["description"], "origin in %r" % body["description"])
-    check("caught too big: 5" in s.output["stdout"], "the handler ran: %r" % s.output["stdout"])
+    s.wait_output("caught too big: 5")
     s.ok("continue", {"threadId": body["threadId"]})
     check(s.finish() == 0, "exit code")
     check(s.output["stdout"].endswith("finished\n"), "stdout %r" % s.output["stdout"])
@@ -431,7 +433,7 @@ def session_exception_user_unhandled():
     body, frames, info = exception_stop(s, 7, "risky", "ValueError", "userUnhandled")
     check([f["name"] for f in frames] == ["risky", "wrong_handler", "<module>"],
           "stack %r" % [f["name"] for f in frames])
-    check("caught too big: 5" in s.output["stdout"], "the handled one did not stop: %r" % s.output["stdout"])
+    s.wait_output("caught too big: 5")
     check(s.scope(frames[0]["id"], "Locals").get("n", {}).get("value") == "7", "locals")
     s.ok("continue", {"threadId": body["threadId"]})
     code = s.finish()
