@@ -25,9 +25,19 @@ run that allocated less garbage than its heap could hold proves nothing about
 a bound.  The program must print --sentinel on standard output, so a program
 that failed before doing its work cannot pass.
 
+--deadline bounds the child's wall time.  The bounded-memory case passed in
+5.1-16.5 s (median 8.0 s) on 119 Windows CI jobs from 2026-10-11 to
+2026-10-29 and in 6.5-8.2 s in 60 consecutive Linux runs, and timed out once
+at ctest's 300 s (run 40813645171): a hang, not a slow run.  ctest's own timeout kills this
+script and its output with it, so the hang left no evidence.  At the deadline
+the child is killed here instead, and the report says whether it had printed
+the sentinel (its work was done and it hung on the way out) and which heap
+cycle its trace reached last, with the tail of both streams.
+
 Usage:
   adaptive_heap_check.py --expect on|off --sentinel TEXT [--set VAR=VALUE]...
-      [--unset VAR]... [--min-cycles N] [--max-rss-mb M] -- COMMAND...
+      [--unset VAR]... [--min-cycles N] [--max-rss-mb M] [--deadline SECONDS]
+      -- COMMAND...
 """
 
 import argparse
@@ -36,29 +46,49 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 
 CONTROLLER_LINE = re.compile(r"^protoCore heap: space=\S+ cycle=(\d+) ", re.M)
 FIXED_LINE = re.compile(r"^protoCore heap: space=\S+ fixed cycle=(\d+) ", re.M)
 
 
-def run_measured(cmd, env):
-    """Runs cmd; returns (exit code, stdout, stderr, peak RSS in bytes)."""
+def run_measured(cmd, env, deadline=None):
+    """Runs cmd; returns (exit code, stdout, stderr, peak RSS in bytes,
+    seconds, timed out).  A child still running at `deadline` seconds is
+    killed; its exit code is then None."""
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
-        proc = subprocess.Popen(cmd, stdout=out, stderr=err, env=env)
+        start = time.monotonic()
+        proc = subprocess.Popen(cmd, stdout=out, stderr=err, env=env, stdin=subprocess.DEVNULL)
+        timed_out = False
         if os.name == "nt":
-            proc.wait()
+            try:
+                proc.wait(timeout=deadline)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                proc.kill()
+                proc.wait()
             peak = windows_peak_working_set(proc)
-            code = proc.returncode
+            code = None if timed_out else proc.returncode
         else:
-            _, status, usage = os.wait4(proc.pid, 0)
+            while True:
+                pid, status, usage = os.wait4(proc.pid, os.WNOHANG if deadline else 0)
+                if pid:
+                    break
+                if time.monotonic() - start > deadline:
+                    timed_out = True
+                    proc.kill()
+                    _, status, usage = os.wait4(proc.pid, 0)
+                    break
+                time.sleep(0.05)
             proc.returncode = os.waitstatus_to_exitcode(status)
-            code = proc.returncode
+            code = None if timed_out else proc.returncode
             # ru_maxrss: kilobytes on Linux, bytes on macOS.
             peak = usage.ru_maxrss if sys.platform == "darwin" else usage.ru_maxrss * 1024
+        seconds = time.monotonic() - start
         out.seek(0)
         err.seek(0)
         return (code, out.read().decode("utf-8", "replace"),
-                err.read().decode("utf-8", "replace"), peak)
+                err.read().decode("utf-8", "replace"), peak, seconds, timed_out)
 
 
 def windows_peak_working_set(proc):
@@ -98,6 +128,7 @@ def main():
     parser.add_argument("--unset", action="append", default=[], metavar="VAR")
     parser.add_argument("--min-cycles", type=int, default=1)
     parser.add_argument("--max-rss-mb", type=float, default=None)
+    parser.add_argument("--deadline", type=float, default=None)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     cmd = args.command[1:] if args.command[:1] == ["--"] else args.command
@@ -112,16 +143,22 @@ def main():
         env[name] = value
     env["PROTOCORE_HEAP_TRACE"] = "1"
 
-    code, out, err, peak = run_measured(cmd, env)
+    code, out, err, peak, seconds, timed_out = run_measured(cmd, env, args.deadline)
     controller = CONTROLLER_LINE.findall(err)
     fixed = FIXED_LINE.findall(err)
     cycles = len(controller) + len(fixed)
     peak_mb = peak / (1024.0 * 1024.0)
     print(f"exit={code} controller_cycles={len(controller)} fixed_cycles={len(fixed)} "
-          f"peak_rss_mb={peak_mb:.1f}")
+          f"peak_rss_mb={peak_mb:.1f} seconds={seconds:.1f}")
 
     failures = []
-    if code != 0:
+    if timed_out:
+        last = (controller or fixed or ["none"])[-1]
+        where = ("after printing the sentinel: the work was done and the process did not exit"
+                 if args.sentinel in out else "before printing the sentinel: the work did not finish")
+        failures.append(f"killed at the {args.deadline:.0f} s deadline, {where}; "
+                        f"last heap cycle in the trace: {last}")
+    elif code != 0:
         failures.append(f"the program exited with {code}")
     if args.sentinel not in out:
         failures.append(f"the program did not print {args.sentinel!r}: it did not finish its work")
