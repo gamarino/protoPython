@@ -7106,9 +7106,13 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                     // An error from the lookup (AttributeError) becomes the
                     // ImportError below.
                     const proto::ProtoObject* val = nullptr;
+                    // loadAttr is the attribute protocol `mod.name` uses,
+                    // including a module's __getattr__ (PEP 562): unittest
+                    // provides IsolatedAsyncioTestCase only through it, and
+                    // `from unittest import IsolatedAsyncioTestCase` failed.
                     try {
                         val = (env)
-                            ? env->getAttribute(ctx, mod, nameS)
+                            ? env->loadAttr(ctx, mod, nameS, nullptr, false)
                             : mod->getAttribute(ctx, nameS);
                     } catch (const proto::ProtoException&) {
                         val = nullptr;

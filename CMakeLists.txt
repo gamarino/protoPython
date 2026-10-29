@@ -776,6 +776,14 @@ set_tests_properties(protopy_weakref_finalize_at_exit PROPERTIES
     PASS_REGULAR_EXPRESSION "weakref_finalize_at_exit: finalizer ran"
     FAIL_REGULAR_EXPRESSION "Exception ignored;atexit:"
     LABELS "regression_gate")
+# from module import name falls back to the module's __getattr__ (PEP 562).
+add_test(NAME protopy_import_from_module_getattr
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/import_from_module_getattr.py)
+set_tests_properties(protopy_import_from_module_getattr PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "import_from_module_getattr: ok"
+    LABELS "regression_gate")
 # platform.python_version() parses sys.version.
 add_test(NAME protopy_platform_version
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/platform_version.py)
