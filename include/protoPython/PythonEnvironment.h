@@ -388,8 +388,9 @@ public:
     const proto::ProtoString* getPrepareString() const { return prepareString; }
     const proto::ProtoString* getMroString() const { return mroString; }
     /** True for __name__, __qualname__, __mro__, __bases__, __base__: attributes
-     *  of classes only (type's descriptors in CPython). */
-    bool isTypeOnlyAttributeName(const proto::ProtoString* name) const;
+     *  of classes only (type's descriptors in CPython).  ctx is the calling
+     *  thread's context: a non-interned name's text is read through it. */
+    bool isTypeOnlyAttributeName(proto::ProtoContext* ctx, const proto::ProtoString* name) const;
     /** isinstance(obj, type), by obj's type and that type's MRO. */
     bool isInstanceOfType(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
     /** Objects whose class-only names (__name__, __mro__, ...) are missing

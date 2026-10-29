@@ -25722,15 +25722,20 @@ bool PythonEnvironment::isPlainInstanceForTypeOnlyNames(proto::ProtoContext* ctx
     return t->hasOwnAttribute(ctx, getIsPythonClassString()) == PROTO_TRUE;
 }
 
-bool PythonEnvironment::isTypeOnlyAttributeName(const proto::ProtoString* name) const {
-    if (!name) return false;
+bool PythonEnvironment::isTypeOnlyAttributeName(proto::ProtoContext* ctx, const proto::ProtoString* name) const {
+    if (!name || !ctx) return false;
     if (name == nameString || name == typeOnlyQualnameString_ || name == mroString
         || name == typeOnlyBasesString_ || name == typeOnlyBaseString_) return true;
     // A name built at run time (getattr(o, "__" + "name__")) is not the
-    // interned symbol: compare its text.
+    // interned symbol: compare its text.  The text is read through the
+    // caller's context: rootContext_ belongs to the main thread, and reading
+    // through it from a worker thread races the main thread's allocations
+    // (worker threads crashed on protoCore 3.0.0).
     if (name->isSymbol()) return false;
+    const proto::proto_ulong n = name->getSize(ctx);
+    if (n != 7 && n != 8 && n != 9 && n != 12) return false;
     std::string s;
-    name->toUTF8String(rootContext_, s);
+    name->toUTF8String(ctx, s);
     return s == "__name__" || s == "__qualname__" || s == "__mro__"
         || s == "__bases__" || s == "__base__";
 }
@@ -25813,7 +25818,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     // __getattr__, consulted by the caller on a miss, still runs).  A value
     // on the chain that is not such class data -- a descriptor a class
     // defines under that name -- is resolved as usual.
-    if (isTypeOnlyAttributeName(name)) {
+    if (isTypeOnlyAttributeName(ctx, name)) {
         const bool own = obj != PROTO_NONE && obj->hasOwnAttribute(ctx, name) == PROTO_TRUE;
         if (!own && isPlainInstanceForTypeOnlyNames(ctx, obj)) {
             const proto::ProtoObject* chained = (obj == PROTO_NONE) ? nullptr : obj->getAttribute(ctx, name);

@@ -5526,7 +5526,7 @@ static const proto::ProtoObject* py_hasattr(
     // own copy and contradict getattr.  Only the __getattr__ fallback (3.)
     // still applies.
     protoPython::PythonEnvironment* envTypeOnly = protoPython::PythonEnvironment::fromContext(context);
-    const bool typeOnlyMiss = envTypeOnly && envTypeOnly->isTypeOnlyAttributeName(nameStr);
+    const bool typeOnlyMiss = envTypeOnly && envTypeOnly->isTypeOnlyAttributeName(context, nameStr);
 
     // 1. Direct chain probe via protoCore.
     if (!typeOnlyMiss && obj->hasAttribute(context, nameStr) == PROTO_TRUE) return PROTO_TRUE;
