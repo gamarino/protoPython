@@ -8278,6 +8278,54 @@ static bool py_issubclass_check_single(proto::ProtoContext* context, const proto
     return false;
 }
 
+// issubclass(cls, base) for one class `base`: as CPython, a metaclass's own
+// __subclasscheck__ (ABCMeta's, which consults __subclasshook__ and the
+// registry) decides; type's default is the MRO walk of
+// py_issubclass_check_single.  Only an OWN __subclasscheck__ found on the
+// metaclass's MRO before type / object is dispatched, as isinstance does
+// for __instancecheck__.
+static bool py_issubclass_dispatch(proto::ProtoContext* context, PythonEnvironment* env,
+                                   const proto::ProtoObject* cls, const proto::ProtoObject* base) {
+    if (cls == base) return true;
+    if (env && base && base != PROTO_NONE && env->isActuallyAClass(context, base)) {
+        const proto::ProtoObject* metaCls = env->getType(context, base);
+        if (metaCls && metaCls != PROTO_NONE
+            && metaCls != env->getTypePrototype()
+            && metaCls != env->getObjectPrototype()) {
+            const proto::ProtoString* scheckS =
+                PythonEnvironment::getInternedString(context, "__subclasscheck__");
+            const proto::ProtoObject* mroAttr = env->getAttribute(context, metaCls, env->getMroString(), false);
+            ::protoPython::TupleView mroT = mroAttr && mroAttr != PROTO_NONE
+                ? ::protoPython::PythonEnvironment::tupleView(context, mroAttr) : nullptr;
+            const proto::ProtoObject* scheckM = nullptr;
+            const proto::proto_ulong n = mroT ? mroT->getSize(context) : 0;
+            for (proto::proto_ulong i = 0; i < n; ++i) {
+                const proto::ProtoObject* b = mroT->getAt(context, static_cast<int>(i));
+                if (!b || b == PROTO_NONE) continue;
+                if (b == env->getTypePrototype() || b == env->getObjectPrototype()) break;
+                if (b->hasOwnAttribute(context, scheckS) == PROTO_TRUE) {
+                    scheckM = b->getOwnAttributeDirect(context, scheckS);
+                    break;
+                }
+            }
+            if (scheckM && scheckM != PROTO_NONE) {
+                const proto::ProtoObject* r = nullptr;
+                if (scheckM->asMethod(context)) {
+                    const proto::ProtoList* args = context->newList()->appendLast(context, cls);
+                    r = scheckM->asMethod(context)(context,
+                        const_cast<proto::ProtoObject*>(base), nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
+                } else {
+                    const proto::ProtoList* fullArgs =
+                        context->newList()->appendLast(context, base)->appendLast(context, cls);
+                    r = ::protoPython::invokePythonCallable(context, scheckM, fullArgs, nullptr);
+                }
+                if (r) return env->isTrue(r);
+            }
+        }
+    }
+    return py_issubclass_check_single(context, cls, base);
+}
+
 static const proto::ProtoObject* py_issubclass(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -8368,7 +8416,7 @@ static const proto::ProtoObject* py_issubclass(
         std::vector<const proto::ProtoObject*> unionArgs;
         if (unionFlattenInto(context, base, unionArgs)) {
             for (auto* arg : unionArgs) {
-                if (py_issubclass_check_single(context, cls, arg)) return PROTO_TRUE;
+                if (py_issubclass_dispatch(context, env, cls, arg)) return PROTO_TRUE;
             }
             return PROTO_FALSE;
         }
@@ -8380,7 +8428,7 @@ static const proto::ProtoObject* py_issubclass(
          if (!baseList && ::protoPython::PythonEnvironment::tupleView(context, base)) baseList = ::protoPython::PythonEnvironment::tupleView(context, base)->asList(context);
          if (baseList) {
              for (proto::proto_ulong i = 0; i < baseList->getSize(context); ++i) {
-                  if (py_issubclass_check_single(context, cls, baseList->getAt(context, static_cast<int>(i)))) {
+                  if (py_issubclass_dispatch(context, env, cls, baseList->getAt(context, static_cast<int>(i)))) {
                        return PROTO_TRUE;
                   }
              }
@@ -8388,7 +8436,7 @@ static const proto::ProtoObject* py_issubclass(
          }
     }
 
-    return py_issubclass_check_single(context, cls, base) ? PROTO_TRUE : PROTO_FALSE;
+    return py_issubclass_dispatch(context, env, cls, base) ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_abs(

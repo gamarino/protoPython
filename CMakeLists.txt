@@ -577,6 +577,13 @@ set_tests_properties(protopy_name_none_binding PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# issubclass dispatches to the metaclass __subclasscheck__ (ABCMeta's __subclasshook__ and registry).
+add_test(NAME protopy_abc_subclasscheck
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/abc_subclasscheck.py)
+set_tests_properties(protopy_abc_subclasscheck PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # Containers find an element by identity before equality (nan in [nan]).
 add_test(NAME protopy_nan_containment
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/nan_containment.py)
