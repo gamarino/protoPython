@@ -37,6 +37,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdio>
+#include <set>
 #include <string>
 
 #include "ConformanceHost.h"
@@ -66,13 +67,29 @@ proto::proto_ulong countShape(const proto::MutableGraphReport& r, const char* ho
 // strings.  Counting a single name made this test flaky on Windows (CI on
 // 2026-10-29: `.__getattr__` read 0 in two runs out of three, with the
 // cycle count unchanged); the shape is counted under all three names.
-proto::proto_ulong countSuperProxyShape(const proto::MutableGraphReport& r)
+//
+// The names alone are not the proxy's, either: objectPrototype (mutable)
+// binds its own `__setattr__` and `__getattribute__` cells to itself, a loop
+// present from the bootstrap.  On the Windows floor job, with the proxy cells
+// unbound, a cycle was still reported under `.__setattr__` after the probe
+// (`.__setattr__ 0 -> 1`, 2026-10-29) while SuperCallsLeaveNoCycle passed:
+// most likely that loop, once the probe had merged object's component with
+// the new classes.  A proxy's cycle is ONE
+// handle, created after `before`, closed by one of the three cells: only
+// such cycles are counted.
+proto::proto_ulong countSuperProxyShape(const proto::MutableGraphReport& r,
+                                        const proto::MutableGraphReport& before)
 {
+    std::set<proto::proto_ulong> old;
+    for (const proto::MutableCycle& c : before.cycles)
+        old.insert(c.refs.begin(), c.refs.end());
     proto::proto_ulong n = 0;
-    for (const proto::MutableCycle& c : r.cycles)
-        if (c.path.find(".__getattr__") != std::string::npos
-            || c.path.find(".__setattr__") != std::string::npos
-            || c.path.find(".__py_getattr_handler__") != std::string::npos) ++n;
+    for (const proto::MutableCycle& c : r.cycles) {
+        if (c.refs.size() != 1 || old.count(c.refs[0])) continue;
+        if (c.path.find(".__getattr__ > MethodCell") != std::string::npos
+            || c.path.find(".__setattr__ > MethodCell") != std::string::npos
+            || c.path.find(".__py_getattr_handler__ > MethodCell") != std::string::npos) ++n;
+    }
     return n;
 }
 
@@ -98,12 +115,11 @@ TEST(MutableCycles, TheProbesShapesArePresentAndAttributable)
         << "the baseline scan ran out of cell budget, so nothing below is a "
            "measurement of a complete graph";
 
-    // Three of the four shapes must be ABSENT here, or the counts after the probe
+    // Two of the shapes must be ABSENT here, or the counts after the probe
     // are not attributable to the probe.  This is the half of the measurement that
     // a bare "> 0" would skip.
-    EXPECT_EQ(countSuperProxyShape(before), 0u)
-        << "a super() proxy cell cycle exists before the probe runs, so the "
-           "count after it cannot be credited to the probe's super() call";
+    // The super() proxy shape needs no such check: it is counted only on
+    // handles that were in no cycle here (countSuperProxyShape).
     EXPECT_EQ(countShape(before, ".__closure_frames__"), 0u)
         << "a __closure_frames__ cycle exists before the probe runs, so the count "
            "after it cannot be credited to the probe's closure";
@@ -156,7 +172,7 @@ TEST(MutableCycles, TheProbesShapesArePresentAndAttributable)
     // argument of the OBJ-level handler dispatch.  Counted under all three
     // cell names, since the label the detector picks is address-dependent
     // (countSuperProxyShape).
-    EXPECT_EQ(countSuperProxyShape(after), 0u)
+    EXPECT_EQ(countSuperProxyShape(after, before), 0u)
         << "a super() proxy is in a cycle through its own cells again: every "
            "super() call keeps its proxy, and the instance it holds, for ever";
 
