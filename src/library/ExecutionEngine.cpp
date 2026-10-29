@@ -26,6 +26,11 @@
 #include <functional>
 #include <iostream>
 
+#if defined(_WIN32)
+// PosixCompat.cpp: the current thread's stack bounds.
+void protopy_thread_stack_limits(std::uintptr_t* low, std::uintptr_t* high);
+#endif
+
 namespace protoPython {
 
 // Forward-declared in PythonEnvironment.cpp so the dict-key opcodes
@@ -419,34 +424,52 @@ static void raiseRecursionLimit(PythonEnvironment* env, proto::ProtoContext* ctx
 // dispatcher frame per call, several KiB with GCC), so a recursion limit
 // raised with sys.setrecursionlimit -- 2,000 is enough on Linux --
 // overflowed the stack and the process died of SIGSEGV instead of raising
-// RecursionError.  The first RecursionScope of a thread records where its
-// Python calls start; a call that would leave less than a quarter of the
-// stack free raises RecursionError, as CPython 3.14 does for C stack
-// exhaustion.  The stack size is the main thread's (RLIMIT_STACK; on Windows
-// the reserve the executables link with, which also applies to threads).
+// RecursionError.  A call that would leave too little of the native stack
+// free raises RecursionError, as CPython 3.14 does for C stack exhaustion.
+//
+// Windows: the thread's real bounds (GetCurrentThreadStackLimits), and half
+// of the stack is kept free.  MSVC runs a catch block on top of the stack
+// before the frames below it are unwound, so an exception travelling up a
+// deep recursion through frames that catch and rethrow needs stack in
+// proportion to the depth; with a quarter kept free the process still died
+// of stack overflow.
+//
+// Elsewhere: the first RecursionScope of a thread records where its Python
+// calls start, and a quarter of the main thread's stack (RLIMIT_STACK) is
+// kept free.
 namespace {
+#if defined(_WIN32)
+thread_local const char* t_pythonStackLimit = nullptr;
+
+#if defined(_MSC_VER)
+__declspec(noinline)
+#endif
+bool nativeStackExhausted() {
+    char probe = 0;
+    const char* here = &probe;
+    if (!t_pythonStackLimit) {
+        std::uintptr_t low = 0, high = 0;
+        protopy_thread_stack_limits(&low, &high);
+        if (high <= low) return false;
+        t_pythonStackLimit = reinterpret_cast<const char*>(low + (high - low) / 2);
+    }
+    return here < t_pythonStackLimit;
+}
+#else
 thread_local const char* t_pythonStackBase = nullptr;
 
 size_t pythonStackBudget() {
     static const size_t budget = [] {
         size_t size = 8u << 20;
-#if defined(_WIN32)
-        size = 32u << 20;  // PROTOPYTHON_WINDOWS_STACK_RESERVE
-#else
         struct rlimit rl;
         if (getrlimit(RLIMIT_STACK, &rl) == 0 && rl.rlim_cur != RLIM_INFINITY && rl.rlim_cur > 0)
             size = static_cast<size_t>(rl.rlim_cur);
-#endif
         return size / 4 * 3;
     }();
     return budget;
 }
 
-#if defined(_MSC_VER)
-__declspec(noinline)
-#else
 __attribute__((noinline))
-#endif
 bool nativeStackExhausted() {
     char probe = 0;
     const char* here = &probe;
@@ -457,6 +480,7 @@ bool nativeStackExhausted() {
     return t_pythonStackBase > here
         && static_cast<size_t>(t_pythonStackBase - here) > pythonStackBudget();
 }
+#endif
 }  // namespace
 
 RecursionScope::RecursionScope(PythonEnvironment* env, proto::ProtoContext* ctx) : env_(env), ctx_(ctx) {

@@ -662,4 +662,14 @@ int protopy_rename(const char* from, const char* to, bool replace) {
     return 0;
 }
 
+// The current thread's stack bounds (the whole reserve, not only the committed
+// part), for the native-stack guard of ExecutionEngine.cpp, which cannot
+// include <windows.h> itself.
+void protopy_thread_stack_limits(std::uintptr_t* low, std::uintptr_t* high) {
+    ULONG_PTR lo = 0, hi = 0;
+    GetCurrentThreadStackLimits(&lo, &hi);
+    *low = static_cast<std::uintptr_t>(lo);
+    *high = static_cast<std::uintptr_t>(hi);
+}
+
 #endif // _WIN32
