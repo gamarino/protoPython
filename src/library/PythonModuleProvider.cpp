@@ -193,9 +193,15 @@ const proto::ProtoObject* PythonModuleProvider::tryLoad(const std::string& logic
             module = module->setAttribute(ctx, nameKey, PythonEnvironment::getInternedString(ctx, logicalPath.c_str() )->asObject(ctx));
             module = module->setAttribute(ctx, fileKey, PythonEnvironment::getInternedString(ctx, initPath.c_str() )->asObject(ctx));
 
+            // __path__: a Python list holding the package directory, which
+            // `pkg.__path__.append(dir)` and pkgutil read and change.  A bare
+            // internal list answered len() 0 and repr [].  It is spelled as
+            // __file__ is (joinPath), so os.path.dirname(pkg.__file__) is
+            // pkg.__path__[0] on every platform.
+            std::string pkgDir = joinPath(basePath, rel);
             const proto::ProtoList* pkgPath = ctx->newList();
-            pkgPath = pkgPath->appendLast(ctx, PythonEnvironment::getInternedString(ctx, joinPath(basePath, rel).c_str())->asObject(ctx));
-            module = module->setAttribute(ctx, pathKey, pkgPath->asObject(ctx));
+            pkgPath = pkgPath->appendLast(ctx, PythonEnvironment::getInternedString(ctx, pkgDir.c_str())->asObject(ctx));
+            module = module->setAttribute(ctx, pathKey, PythonEnvironment::wrapList(ctx, pkgPath));
             return module;
         }
 
