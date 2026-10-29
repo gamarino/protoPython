@@ -630,6 +630,13 @@ set_tests_properties(protopy_vars_without_dict PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# super() proxies serve every idiom with cells that are not bound to the proxy.
+add_test(NAME protopy_super_proxy_idioms
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/super_proxy_idioms.py)
+set_tests_properties(protopy_super_proxy_idioms PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # unittest.mock imports and works (Mock, MagicMock, patch, spec'd isinstance).
 add_test(NAME protopy_unittest_mock_basics
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/unittest_mock_basics.py)

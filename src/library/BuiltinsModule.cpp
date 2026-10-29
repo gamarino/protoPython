@@ -3969,6 +3969,13 @@ static const proto::ProtoObject* py_super_getattr(
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
     requireArgs(context, positionalParameters, 1, 0, "expected 1 argument, got %d");
+    if (!self) {
+        // The proxy's cells are unbound (make_super_proxy): a caller that
+        // reached one without passing the proxy has no receiver to read.
+        if (PythonEnvironment* e = PythonEnvironment::fromContext(context))
+            e->raiseTypeError(context, "super attribute lookup called without a super object");
+        return nullptr;
+    }
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 0);
     if (!nameObj->isString(context)) return PROTO_NONE;
 
@@ -4245,6 +4252,11 @@ static const proto::ProtoObject* py_super_setattr(
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
     requireArgs(context, positionalParameters, 2, 0, "expected 2 arguments, got %d");
+    if (!self) {
+        if (PythonEnvironment* e = PythonEnvironment::fromContext(context))
+            e->raiseTypeError(context, "super attribute assignment called without a super object");
+        return nullptr;
+    }
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* valueObj = positionalParameters->getAt(context, 1);
 
@@ -4340,11 +4352,22 @@ static proto::ProtoObject* make_super_proxy(proto::ProtoContext* context,
     }
     proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "type"), type);
     proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "obj"), obj ? obj : PROTO_NONE);
-    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__getattr__"), context->fromMethod(proxy, py_super_getattr));
-    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__setattr__"), context->fromMethod(proxy, py_super_setattr));
+    // The cells are NOT bound to the proxy.  A cell bound to the mutable
+    // proxy it is stored on closes a cycle through the proxy's own handle,
+    // and protoCore never collects a cycle among mutables
+    // (docs/CONFORMANCE.md, rule 13): every super() call kept its proxy, and
+    // the proxy's obj, for the life of the space.  The receiver arrives as
+    // an argument instead: the OBJ-level `__py_getattr_handler__` dispatch
+    // (PythonEnvironment::getAttribute) passes the proxy explicitly, and it
+    // intercepts every attribute read, `__getattr__` and `__setattr__`
+    // included, before anything could reach these cells through
+    // asMethodSelf.  py_super_getattr / py_super_setattr reject a call
+    // without a receiver rather than reading through a null one.
+    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__getattr__"), context->fromMethod(nullptr, py_super_getattr));
+    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__setattr__"), context->fromMethod(nullptr, py_super_setattr));
     // Fast-path OBJ-level dispatch: hasOwnAttribute(__py_getattr_handler__)
     // makes every getAttribute on the proxy route through py_super_getattr.
-    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__py_getattr_handler__"), context->fromMethod(proxy, py_super_getattr));
+    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__py_getattr_handler__"), context->fromMethod(nullptr, py_super_getattr));
     return proxy;
 }
 
