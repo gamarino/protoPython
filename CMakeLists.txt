@@ -740,6 +740,14 @@ set_tests_properties(protopy_import_path_hooks PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# await agen.aclose() closes an async generator and finishes.
+add_test(NAME protopy_async_gen_aclose
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/async_gen_aclose.py)
+set_tests_properties(protopy_async_gen_aclose PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "async_gen_aclose: ok"
+    LABELS "regression_gate")
 # An atexit handler that raises is reported as CPython reports it, and the
 # other handlers still run with their keyword arguments.
 add_test(NAME protopy_atexit_callback_error

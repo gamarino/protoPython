@@ -3714,6 +3714,10 @@ const proto::ProtoObject* py_class_aiter_next(
 // is exhausted.  Subsequent sends raise StopIteration(None).  This is
 // sufficient for the canonical `await agen.asend(v)` pattern and the
 // `run(agen.asend(v))` driver used in the synthetic tests.
+static const proto::ProtoObject* py_aclose_wrapper_await(
+    proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*);
+
 static const proto::ProtoObject* py_asend_wrapper_send(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
@@ -3790,15 +3794,92 @@ const proto::ProtoObject* py_async_generator_asend(
     wrapper = wrapper->setAttribute(ctx, targetS, self);
     wrapper = wrapper->setAttribute(ctx, sendValS, sendVal);
     wrapper = wrapper->setAttribute(ctx, doneS, PROTO_FALSE);
-    // send / __next__ both drive one step; the wrapper StopIterates.
-    const proto::ProtoObject* sendBound = ctx->fromMethod(
-        const_cast<proto::ProtoObject*>(wrapper), py_asend_wrapper_send);
-    wrapper = wrapper->setAttribute(ctx, env->getSendString(), sendBound);
-    wrapper = wrapper->setAttribute(ctx, env->getNextString(), sendBound);
+    // send / __next__ both drive one step; the wrapper StopIterates.  The
+    // cells are unbound (the wrapper is passed as self): bound to the
+    // wrapper and stored on it they made each asend() a self-cycle that
+    // protoCore never collects (docs/CONFORMANCE.md rule 13).
+    const proto::ProtoObject* sendCell = ctx->fromMethod(nullptr, py_asend_wrapper_send);
+    wrapper = wrapper->setAttribute(ctx, env->getSendString(), sendCell);
+    wrapper = wrapper->setAttribute(ctx, env->getNextString(), sendCell);
     // __await__ returns self so it's a valid awaitable.
     wrapper = wrapper->setAttribute(ctx,
         PythonEnvironment::getInternedString(ctx, "__await__"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(wrapper), py_self_iter));
+        ctx->fromMethod(nullptr, py_aclose_wrapper_await));
+    return wrapper;
+}
+
+// aclose(): an awaitable that closes the async generator when it is driven,
+// as CPython's aclose() does (athrow(GeneratorExit) where GeneratorExit and
+// StopAsyncIteration mean "closed").  aclose used to be generator.close()
+// itself: it closed the generator at once and returned None, so
+// `await agen.aclose()` awaited None and never finished.
+//
+// The wrapper's cells are unbound: a cell bound to the wrapper and stored on
+// it would be a self-cycle in the mutables table that protoCore never
+// collects (docs/CONFORMANCE.md rule 13).  Attribute reads and the await
+// machinery pass the wrapper as self.
+static const proto::ProtoObject* py_aclose_wrapper_send(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoArguments*,
+    const proto::ProtoKeywordArguments*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return PROTO_NONE;
+    if (!self || self == PROTO_NONE) {
+        env->raiseTypeError(ctx, "aclose() awaitable: called without the awaitable");
+        return nullptr;
+    }
+    const proto::ProtoString* targetS = PythonEnvironment::getInternedString(ctx, "_aclose_target");
+    const proto::ProtoString* doneS   = PythonEnvironment::getInternedString(ctx, "_aclose_done");
+    if (self->hasOwnAttribute(ctx, doneS) == PROTO_TRUE
+            && self->getOwnAttributeDirect(ctx, doneS) == PROTO_TRUE) {
+        env->raiseStopIteration(ctx, PROTO_NONE);
+        return nullptr;
+    }
+    const_cast<proto::ProtoObject*>(self)->setAttribute(ctx, doneS, PROTO_TRUE);
+    const proto::ProtoObject* target = self->hasOwnAttribute(ctx, targetS) == PROTO_TRUE
+        ? self->getOwnAttributeDirect(ctx, targetS) : nullptr;
+    if (target && target != PROTO_NONE) {
+        try {
+            py_generator_close(ctx, target, nullptr, nullptr, nullptr);
+        } catch (const proto::ProtoException& e) {
+            const proto::ProtoObject* exc = e.value();
+            const proto::ProtoObject* sas = env->getStopAsyncIterationType();
+            const proto::ProtoObject* gex = env->getGeneratorExitType();
+            const bool closed = exc
+                && ((sas && exc->isInstanceOf(ctx, sas) == PROTO_TRUE)
+                    || (gex && exc->isInstanceOf(ctx, gex) == PROTO_TRUE)
+                    || env->isStopIteration(ctx, exc));
+            if (!closed) throw;
+        }
+    }
+    env->raiseStopIteration(ctx, PROTO_NONE);
+    return nullptr;
+}
+
+static const proto::ProtoObject* py_aclose_wrapper_await(
+    proto::ProtoContext*, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
+    return self;
+}
+
+const proto::ProtoObject* py_async_generator_aclose(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoArguments*,
+    const proto::ProtoKeywordArguments*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env || !self) return PROTO_NONE;
+    proto::ProtoObject* wrapper = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+    wrapper->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "_aclose_target"), self);
+    const proto::ProtoObject* sendCell = ctx->fromMethod(nullptr, py_aclose_wrapper_send);
+    wrapper->setAttribute(ctx, env->getSendString(), sendCell);
+    wrapper->setAttribute(ctx, env->getNextString(), sendCell);
+    const proto::ProtoObject* selfCell = ctx->fromMethod(nullptr, py_aclose_wrapper_await);
+    wrapper->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__await__"), selfCell);
+    wrapper->setAttribute(ctx, env->getIterString(), selfCell);
     return wrapper;
 }
 
