@@ -451,7 +451,7 @@ the probe:
 |---|---|---|---|
 | `.__mro__` self | 97 | 10 | `py_type` writes the C3 tuple, whose index 0 is the class, back onto the class (`BuiltinsModule.cpp:7163-7166`); every bootstrap prototype does the same |
 | `.f_locals` self | 0 | 1 | the class-body namespace object IS the locals mapping (`ExecutionEngine.cpp:8740`) |
-| `.__getattr__` → `MethodCell` | 0 | 1 | `make_super_proxy` binds `py_super_getattr` to the proxy it installs it on (`BuiltinsModule.cpp:4283`) |
+| `.__getattr__` → `MethodCell` | 0 | 1 | `make_super_proxy` bound `py_super_getattr` to the proxy it installed it on. **Gone since 2026-10-29** (section 3): 0 after the probe |
 | `.__closure_frames__` | 0 | 1 | `createUserFunction` installs the defining frame on the function (`ExecutionEngine.cpp:1311-1324`); `OP_STORE_NAME` binds the function back into that frame |
 
 **Read the cycle column again: it went DOWN, 105 to 17, while the table grew by 44
@@ -501,12 +501,24 @@ lowest-numbered one, so all three cells on a proxy collapse into a single cycle
 *labelled* `.__getattr__`. The label named the wrong cell, and the analysis
 inherited the label.
 
-**Filed, measured, and NOT applied here.** Un-self-binding three cells is a change
-to `super()` dispatch, and it belongs in a change whose subject is that, with a test
-that exercises the slow `__getattr__` path directly rather than inferring its absence
-from a green suite. `TestMutableCycles.cpp` asserts `.__getattr__ == 1` today, and its
-comment says that this line becomes `0` when the retention fix lands — so the
-removal will be recorded rather than silent.
+**Applied on 2026-10-29.** The three cells are now `fromMethod(nullptr, ...)`;
+`py_super_getattr` and `py_super_setattr` raise TypeError when called without a
+proxy instead of dereferencing one. `test/regression/super_proxy_idioms.py` exercises
+the idioms above directly, including a proxy held in a variable and the slow
+`__getattr__` path, and passes on CPython 3.14 too. `TestMutableCycles.cpp` now
+expects 0 for all three labels (`.__getattr__`, `.__setattr__`,
+`.__py_getattr_handler__`) and gains `SuperCallsLeaveNoCycle`: 150 `super()` calls
+must not add a single handle inside a cycle (on the previous binding they added 150,
+one proxy each). On the bare runtime the probe now ends with 16 cycles, not 17.
+
+That fix also removes a Windows-only flake of `test_mutable_cycles`
+(`.__getattr__ 0 -> 0` with the cycle count unchanged, seen on PRs #5 and #7). The
+assertion counted only the `.__getattr__` label, and which of the proxy's three
+self-edges the detector reports as the component's hop depends on the order of the
+attribute sparse list, which is keyed by symbol addresses. That explanation is
+**inferred, not demonstrated**: it fits the logs (the cycle was still there, under
+another label) but the label was never captured on Windows. Either way the
+assertion is now on all three labels, and there is no cycle left to mislabel.
 
 ### 4. What IS structural: `__closure_frames__`, and only it
 
@@ -596,8 +608,9 @@ A positive declaration is a claim that every cycle the scan finds is what the pr
 MEANS, "so that a snapshot would be the wrong answer"
 (`protoCoreConformance.h:201-219`). Of protoPython's four dominant shapes, **one was
 believed structural and has since been removed (section 4), and three are not**: `__mro__` (6,671), `f_locals` (3,909) and the
-`super()` proxy's MethodCell (6,223) are avoidable, the last of them now
-demonstrably so. Together that is **16,803 of the 22,433**. A number large enough to
+`super()` proxy's MethodCell (6,223, removed on 2026-10-29, section 3) are avoidable.
+Together that was **16,803 of the 22,433** (the 2026-10 measurement; not re-measured
+since). A number large enough to
 make the case Pass would assert that all of them are necessary — and would go on
 passing on the day the blockers are cleared and the cycles are gone.
 

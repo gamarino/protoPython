@@ -57,6 +57,25 @@ proto::proto_ulong countShape(const proto::MutableGraphReport& r, const char* ho
 // The quantity that actually measures retention: how many mutable handles sit
 // inside SOME cycle, and are therefore marked for the life of the space.  Unlike
 // the cycle count this cannot fall when two components merge.
+// Cycles closed by a super() proxy's own cells.  The proxy carries three
+// (`__getattr__`, `__setattr__`, `__py_getattr_handler__`), and the detector
+// reports ONE hop per cycle: the first hop of a shortest closed walk, found by
+// a breadth-first search that visits the attribute tree in key order.  An
+// attribute's key is its symbol's address, so WHICH of the three names labels
+// the cycle depends on where the bootstrap happened to allocate three interned
+// strings.  Counting a single name made this test flaky on Windows (CI on
+// 2026-10-29: `.__getattr__` read 0 in two runs out of three, with the
+// cycle count unchanged); the shape is counted under all three names.
+proto::proto_ulong countSuperProxyShape(const proto::MutableGraphReport& r)
+{
+    proto::proto_ulong n = 0;
+    for (const proto::MutableCycle& c : r.cycles)
+        if (c.path.find(".__getattr__") != std::string::npos
+            || c.path.find(".__setattr__") != std::string::npos
+            || c.path.find(".__py_getattr_handler__") != std::string::npos) ++n;
+    return n;
+}
+
 proto::proto_ulong handlesInCycles(const proto::MutableGraphReport& r)
 {
     proto::proto_ulong n = 0;
@@ -82,9 +101,9 @@ TEST(MutableCycles, TheProbesShapesArePresentAndAttributable)
     // Three of the four shapes must be ABSENT here, or the counts after the probe
     // are not attributable to the probe.  This is the half of the measurement that
     // a bare "> 0" would skip.
-    EXPECT_EQ(countShape(before, ".__getattr__"), 0u)
-        << "a self-bound __getattr__ MethodCell exists before the probe runs, so "
-           "the count after it cannot be credited to the probe's super() call";
+    EXPECT_EQ(countSuperProxyShape(before), 0u)
+        << "a super() proxy cell cycle exists before the probe runs, so the "
+           "count after it cannot be credited to the probe's super() call";
     EXPECT_EQ(countShape(before, ".__closure_frames__"), 0u)
         << "a __closure_frames__ cycle exists before the probe runs, so the count "
            "after it cannot be credited to the probe's closure";
@@ -123,31 +142,23 @@ TEST(MutableCycles, TheProbesShapesArePresentAndAttributable)
                 static_cast<unsigned long long>((proto::proto_ulong) after.cycles.size()),
                 static_cast<unsigned long long>(handlesInCycles(before)), static_cast<unsigned long long>(handlesInCycles(after)), static_cast<unsigned long long>(after.cellsVisited));
     for (const char* hop : {".__mro__", ".f_locals", ".__getattr__",
+                            ".__setattr__", ".__py_getattr_handler__",
                             ".__closure_cells__"})
         std::printf("[ CYCLES   ]   %-22s %llu -> %llu\n", hop,
                     static_cast<unsigned long long>(countShape(before, hop)), static_cast<unsigned long long>(countShape(after, hop)));
     std::fflush(stdout);
 
-    // One zero-arg `super()` call site in the probe, so exactly one self-bound
-    // MethodCell cycle on the proxy make_super_proxy builds.  It installs three
-    // self-bound cells (BuiltinsModule.cpp:4283, :4284, :4287) and the detector
-    // reports one hop per component, the lowest-numbered one, so all three collapse
-    // into a single cycle LABELLED `.__getattr__`.
-    //
-    // THIS CYCLE IS AVOIDABLE, and the expected value here is 1 only because the
-    // removal has not landed.  Binding all three cells to nullptr leaves the whole
-    // 651-case suite passing except this test -- the receiver reaches
-    // py_super_getattr through the OBJ-level `__py_getattr_handler__` fast path
-    // (PythonEnvironment.cpp:24785-24789), which passes it explicitly, so
-    // asMethodSelf is never the channel.  docs/CONFORMANCE.md rule 13 records the
-    // experiment.  When that fix lands, this expectation becomes 0 -- which is the
-    // point of pinning it: the removal will be recorded here rather than being
-    // silent.
-    EXPECT_EQ(countShape(after, ".__getattr__"), 1u)
-        << "the super() proxy's self-bound MethodCell cycle is no longer present "
-           "exactly once.  If it is 0 because the cells were un-self-bound, that is "
-           "the retention fix docs/CONFORMANCE.md rule 13 filed: change this "
-           "expectation to 0 and close that entry";
+    // One zero-arg `super()` call site in the probe, and no cycle from it.
+    // make_super_proxy used to bind its three cells to the proxy they are
+    // stored on, one permanent cycle per super() call (28 % of the cycles a
+    // census of the ctest run found, docs/CONFORMANCE.md rule 13).  The
+    // cells are unbound now: the proxy reaches py_super_getattr as an
+    // argument of the OBJ-level handler dispatch.  Counted under all three
+    // cell names, since the label the detector picks is address-dependent
+    // (countSuperProxyShape).
+    EXPECT_EQ(countSuperProxyShape(after), 0u)
+        << "a super() proxy is in a cycle through its own cells again: every "
+           "super() call keeps its proxy, and the instance it holds, for ever";
 
     // One closure in the probe, and no cycle from it.  Until 2026-10-11 a
     // function held its defining frame (`__closure_frames__`) and that frame,
@@ -390,4 +401,49 @@ TEST(MutableCycles, CreatingAFunctionAddsNoPermanentRoot)
     EXPECT_LE(roots->size(), before + 2)
         << "creating 200 functions added " << (roots->size() - before)
         << " permanent roots";
+}
+
+// Zero-argument and explicit super() calls, run many times, leave nothing in a
+// cycle: each call builds a proxy, and a proxy whose own cells were bound to
+// it was kept by the mutables table for the life of the space.  Measured on
+// handles inside cycles, which cannot fall when components merge.
+TEST(MutableCycles, SuperCallsLeaveNoCycle)
+{
+    protoPython::PythonEnvironment env(STDLIB_PATH);
+    proto::ProtoContext* ctx = env.getContext();
+    ASSERT_NE(ctx, nullptr);
+    proto::ProtoSpace* space = env.getSpace();
+    ASSERT_NE(space, nullptr);
+
+    auto inCycles = [&]() {
+        const proto::MutableGraphReport r = space->findMutableCycles(ctx);
+        EXPECT_FALSE(r.truncated) << "the scan ran out of cell budget";
+        return handlesInCycles(r);
+    };
+
+    ASSERT_EQ(env.executeString(
+                  "class _SpBase:\n"
+                  "    def __init__(self):\n"
+                  "        self.v = 1\n"
+                  "    def m(self):\n"
+                  "        return self.v\n"
+                  "class _SpDerived(_SpBase):\n"
+                  "    def __init__(self):\n"
+                  "        super().__init__()\n"
+                  "    def m(self):\n"
+                  "        return super().m() + super(_SpDerived, self).m()\n"
+                  "def _sp_run(n):\n"
+                  "    t = 0\n"
+                  "    for _ in range(n):\n"
+                  "        t += _SpDerived().m()\n"
+                  "    return t\n"
+                  "assert _sp_run(2) == 4\n",
+                  "<mutable-cycles:super-define>"),
+              0);
+    const proto::proto_ulong base = inCycles();
+    ASSERT_EQ(env.executeString("assert _sp_run(50) == 100\n",
+                                "<mutable-cycles:super-run>"),
+              0);
+    EXPECT_EQ(inCycles(), base)
+        << "150 super() calls left mutable handles in a cycle";
 }
