@@ -570,6 +570,34 @@ set_tests_properties(protopy_dict_key_hash PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# LOAD_NAME/STORE_NAME find own bindings bound to None in module and class scopes.
+add_test(NAME protopy_name_none_binding
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/name_none_binding.py)
+set_tests_properties(protopy_name_none_binding PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
+# issubclass dispatches to the metaclass __subclasscheck__ (ABCMeta's __subclasshook__ and registry).
+add_test(NAME protopy_abc_subclasscheck
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/abc_subclasscheck.py)
+set_tests_properties(protopy_abc_subclasscheck PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
+# _collections_abc._check_methods follows CPython (NotImplemented for a missing or None method).
+add_test(NAME protopy_check_methods
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/check_methods.py)
+set_tests_properties(protopy_check_methods PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
+# vars() of a dict-subclass instance is the instance namespace.
+add_test(NAME protopy_vars_dict_subclass
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/vars_dict_subclass.py)
+set_tests_properties(protopy_vars_dict_subclass PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # functools.cmp_to_key compares through the cmp function (unittest's loader sorts with it).
 add_test(NAME protopy_functools_cmp_to_key
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/functools_cmp_to_key.py)

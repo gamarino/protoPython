@@ -19,47 +19,53 @@ extern const proto::ProtoObject* invokePythonCallable(
 // The class whose __init_subclass__ chain runs on this thread.
 extern thread_local const proto::ProtoObject* g_initSubclassClass;
 
+// _check_methods(C, *methods), as CPython's _collections_abc: True when every
+// method is bound in the namespace of a class of C.__mro__ (the nearest one
+// wins), NotImplemented when one is missing or bound to None.  A class's
+// namespace is its own attributes, so each class is probed with
+// hasOwnAttribute; the value is then read with getOwnAttributeDirect, which
+// needs the interned name.
 static const proto::ProtoObject* py_check_methods(
     proto::ProtoContext* ctx,
-    const proto::ProtoObject* self,
+    const proto::ProtoObject*,
     const proto::ParentLink*,
     const proto::ProtoArguments* posArgs,
-    const proto::ProtoKeywordArguments* sparseArgs) {
-
-
-    if (!posArgs || posArgs->getSize(ctx) < 2) return PROTO_FALSE;
+    const proto::ProtoKeywordArguments*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env || !posArgs || posArgs->getSize(ctx) < 1) {
+        if (env) env->raiseTypeError(ctx, "_check_methods() missing required argument 'C'");
+        return nullptr;
+    }
+    const proto::ProtoObject* notImplemented = env->getNotImplementedPrototype();
     const proto::ProtoObject* C = posArgs->getAt(ctx, 0);
-    // STRUCT-132: descriptor-aware __mro__ read.
-    PythonEnvironment* envABC = PythonEnvironment::fromContext(ctx);
-    const proto::ProtoString* mroABCS = proto::ProtoString::createSymbol(ctx, "__mro__");
-    const proto::ProtoObject* mro = envABC
-        ? envABC->getAttribute(ctx, C, mroABCS, false)
-        : C->getAttribute(ctx, mroABCS);
-    if (!mro) return PROTO_FALSE;
-    const proto::ProtoList* mroList = ::protoPython::listStorage(ctx, mro);
-    if (!mroList) return PROTO_FALSE;
+    const proto::ProtoObject* mro = env->getAttribute(ctx, C, env->getMroString(), false);
+    ::protoPython::TupleView mroT = mro && mro != PROTO_NONE ? PythonEnvironment::tupleView(ctx, mro) : nullptr;
+    const proto::ProtoList* mroL = mro && mro != PROTO_NONE && !mroT ? ::protoPython::listStorage(ctx, mro) : nullptr;
+    const proto::proto_ulong n = mroT ? mroT->getSize(ctx) : (mroL ? mroL->getSize(ctx) : 0);
 
-    for (size_t i = 1; i < posArgs->getSize(ctx); ++i) {
+    for (proto::proto_ulong i = 1; i < posArgs->getSize(ctx); ++i) {
         const proto::ProtoObject* methodObj = posArgs->getAt(ctx, static_cast<int>(i));
-        const proto::ProtoString* methodName = methodObj ? methodObj->asString(ctx) : nullptr;
-        if (!methodName) continue;
-
+        if (!methodObj || !methodObj->isString(ctx)) return notImplemented;
+        std::string name;
+        methodObj->asString(ctx)->toUTF8String(ctx, name);
+        const proto::ProtoString* key = PythonEnvironment::getInternedString(ctx, name);
         bool found = false;
-        for (size_t j = 0; j < mroList->getSize(ctx); ++j) {
-            const proto::ProtoObject* base = mroList->getAt(ctx, static_cast<int>(j));
-            const proto::ProtoObject* dict = base->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__dict__"));
-            if (dict && dict->hasAttribute(ctx, methodName)) {
-                found = true;
-                break;
-            }
+        // C itself first, as definesAll: some native types leave themselves
+        // out of their own __mro__.
+        for (proto::proto_ulong j = 0; j <= n && !found; ++j) {
+            const proto::ProtoObject* base = j == 0 ? C
+                : (mroT ? mroT->getAt(ctx, static_cast<int>(j - 1)) : mroL->getAt(ctx, static_cast<int>(j - 1)));
+            if (!base || base == PROTO_NONE || base->hasOwnAttribute(ctx, key) != PROTO_TRUE) continue;
+            // Present (hasOwnAttribute above): None is a value here, the
+            // method explicitly unset.
+            const proto::ProtoObject* m = base->getOwnAttributeDirect(ctx, key);
+            if (!m || m == PROTO_NONE) return notImplemented;
+            found = true;
         }
-        if (!found) return PROTO_FALSE;
+        if (!found) return notImplemented;
     }
     return PROTO_TRUE;
 }
-
-
-
 
 namespace collections_abc {
 
@@ -312,56 +318,6 @@ static const proto::ProtoObject* py_abc_register(
     }
     if (const proto::ProtoObject* st = ownState(ctx, abc)) addToRegistry(ctx, st, subclass);
     return subclass;
-}
-
-/** _check_methods(C, *methods) implementation for internal use by os.py/io.py etc. */
-static const proto::ProtoObject* py_abc_check_methods(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject*,
-    const proto::ParentLink*,
-    const proto::ProtoArguments* args,
-    const proto::ProtoKeywordArguments*) {
-    
-    if (args->getSize(ctx) < 1) return PROTO_NONE;
-    const proto::ProtoObject* C = args->getAt(ctx, 0);
-
-    // Get NotImplemented singleton
-    const proto::ProtoObject* notImplemented = PROTO_NONE;
-    if (auto* env = PythonEnvironment::fromContext(ctx)) {
-        notImplemented = env->resolve("NotImplemented");
-    }
-    if (!notImplemented) notImplemented = PROTO_NONE;
-
-    const proto::ProtoString* mroName = proto::ProtoString::createSymbol(ctx, "__mro__");
-    const proto::ProtoObject* mroObj = C->getAttribute(ctx, mroName);
-    if (!mroObj || !::protoPython::listStorage(ctx, mroObj)) return notImplemented;
-
-    const proto::ProtoList* mro = ::protoPython::listStorage(ctx, mroObj);
-
-    // Loop through methods (args 1..N)
-    for (proto::proto_ulong i = 1; i < args->getSize(ctx); ++i) {
-        const proto::ProtoObject* methodObj = args->getAt(ctx, static_cast<int>(i));
-        if (!methodObj->isString(ctx)) continue;
-        
-        proto::proto_ulong methodHash = methodObj->getHash(ctx);
-        bool found = false;
-
-        for (proto::proto_ulong j = 0; j < mro->getSize(ctx); ++j) {
-            const proto::ProtoObject* B = mro->getAt(ctx, static_cast<int>(j));
-            const proto::ProtoSparseList* attrs = B->getOwnAttributes(ctx);
-            // fprintf(stderr, "  Checking class %lu in MRO\n", j);
-            
-            if (attrs && attrs->has(ctx, methodHash)) {
-                // fprintf(stderr, "  Found in class %lu\n", j);
-                const proto::ProtoObject* val = attrs->getAt(ctx, methodHash);
-                if (val == PROTO_NONE) return notImplemented; 
-                found = true;
-                break;
-            }
-        }
-        if (!found) return notImplemented;
-    }
-    return PROTO_TRUE;
 }
 
 bool isVirtualSubclass(proto::ProtoContext* ctx, const proto::ProtoObject* cls,

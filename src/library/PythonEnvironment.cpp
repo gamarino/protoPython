@@ -2073,6 +2073,18 @@ static const proto::ProtoObject* py_object_repr(
     return PythonEnvironment::getInternedString(context, buffer)->asObject(context);
 }
 
+// An instance of a dict subclass keeps its items in __data__/__keys__, the
+// very slots an ordinary instance's __dict__ mirrors.  Its __dict__ is its
+// own attributes instead (CPython: vars(D()) is the instance namespace, not
+// the mapping), so it is read as a snapshot of the own attributes, as a
+// built-in subclass's is, and never synchronised into the item storage.
+static bool isDictSubclassInstance(proto::ProtoContext* context, PythonEnvironment* env,
+                                   const proto::ProtoObject* obj) {
+    const proto::ProtoObject* dictProto = env->getDictPrototype();
+    if (!dictProto || !obj || obj == dictProto || env->isActuallyAClass(context, obj)) return false;
+    return env->getType(context, obj) != dictProto && obj->isInstanceOf(context, dictProto) == PROTO_TRUE;
+}
+
 static const proto::ProtoObject* py_object_get_dict(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -2234,8 +2246,10 @@ static const proto::ProtoObject* py_object_get_dict(
     if (!dictProto) return PROTO_NONE;
 
     // Ensure self has dict storage (initializes __data__/__keys__ or, for
-    // built-in subclasses, __pydict_data__/__pydict_keys__).
-    const proto::ProtoObject* mutableSelf = env->initDictStorage(context, self);
+    // built-in subclasses, __pydict_data__/__pydict_keys__).  A dict
+    // subclass's __data__ holds its items: leave it untouched.
+    const bool dictSubclass = isDictSubclassInstance(context, env, self);
+    const proto::ProtoObject* mutableSelf = dictSubclass ? self : env->initDictStorage(context, self);
 
     // Create a new dict object
     proto::ProtoObject* d = const_cast<proto::ProtoObject*>(dictProto->newChild(context, true));
@@ -2248,8 +2262,8 @@ static const proto::ProtoObject* py_object_get_dict(
     const proto::ProtoString* canonicalKeysS = env->getKeysString();
     const proto::ProtoString* dataS = canonicalDataS;
     const proto::ProtoString* keysS = canonicalKeysS;
-    bool isBuiltinSubclass = false;
-    {
+    bool isBuiltinSubclass = dictSubclass;
+    if (!isBuiltinSubclass) {
         const proto::ProtoObject* probeData = mutableSelf->hasOwnAttribute(context, canonicalDataS) == PROTO_TRUE
             ? mutableSelf->getAttribute(context, canonicalDataS) : nullptr;
         if (probeData && probeData != PROTO_NONE && !probeData->asSparseList(context)) {
@@ -2383,7 +2397,8 @@ static const proto::ProtoObject* py_object_get_dict(
             {
                 const proto::ProtoObject* probe = tgt->hasOwnAttribute(ctx, dS) == PROTO_TRUE
                     ? tgt->getAttribute(ctx, dS) : nullptr;
-                if (probe && probe != PROTO_NONE && !probe->asSparseList(ctx)) {
+                if ((probe && probe != PROTO_NONE && !probe->asSparseList(ctx))
+                    || isDictSubclassInstance(ctx, env_, tgt)) {
                     dS = PythonEnvironment::getInternedString(ctx, "__pydict_data__");
                     kS = PythonEnvironment::getInternedString(ctx, "__pydict_keys__");
                 }
@@ -2428,7 +2443,8 @@ static const proto::ProtoObject* py_object_get_dict(
             {
                 const proto::ProtoObject* probe = tgt->hasOwnAttribute(ctx, dS) == PROTO_TRUE
                     ? tgt->getAttribute(ctx, dS) : nullptr;
-                if (probe && probe != PROTO_NONE && !probe->asSparseList(ctx)) {
+                if ((probe && probe != PROTO_NONE && !probe->asSparseList(ctx))
+                    || isDictSubclassInstance(ctx, env_, tgt)) {
                     dS = PythonEnvironment::getInternedString(ctx, "__pydict_data__");
                     kS = PythonEnvironment::getInternedString(ctx, "__pydict_keys__");
                 }
@@ -22973,11 +22989,12 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // Invalidate resolution cache to ensure everyone sees the final prototypes
     invalidateResolveCache();
 
-    // V87: Augment prototypes with descriptors and internal storage AFTER final sync
-    // but BEFORE exporting to builtins/space.
-    if (dictPrototype) {
-        dictPrototype = dictPrototype->setAttribute(rootContext_, dictString, py_type_get_dict(rootContext_, dictPrototype, nullptr, nullptr, nullptr));
-    }
+    // dict carries no own `__dict__`: `dict.__dict__` resolves through the
+    // type-level descriptor, and an instance of a dict subclass reaches
+    // object's `__dict__` getter, which returns the instance's own namespace
+    // (CPython: `vars(D())` is the instance dict).  A mapping proxy stored
+    // here once shadowed that getter for every dict-subclass instance and,
+    // listing itself under `__dict__`, made its repr recurse without end.
 
     // builtins module (V87: Move to end to ensure final prototypes)
     if (get_env_diag()) {
@@ -29529,8 +29546,7 @@ void PythonEnvironment::storeName(const std::string& name, const proto::ProtoObj
                 callObject(setitem, {frame, key->asObject(ctx), val});
             }
         }
-        const proto::ProtoSparseList* own = frame->getOwnAttributes(ctx);
-        const bool isNewKey = !own || !own->has(ctx, reinterpret_cast<uintptr_t>(key));
+        const bool isNewKey = frame->hasOwnAttribute(ctx, key) != PROTO_TRUE;
         if (!handledBySetitem) {
             const proto::ProtoObject* updated = frame->setAttribute(ctx, key, val);
             if (updated && updated != frame) {
