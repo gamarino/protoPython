@@ -5906,15 +5906,13 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                     const proto::ProtoObject* val = nullptr;
                     bool found = false;
 
-                    // Fast path: direct own-attribute lookup using the public SparseList API.
-                    // getAt() returns PROTO_NONE when the key is absent, so we check for that.
-                    {
-                        const proto::ProtoSparseList* frameOwn = frame->proto::ProtoObject::getOwnAttributes(ctx);
-                        if (frameOwn) {
-                            const proto::ProtoObject* tmp = frameOwn->getAt(
-                                ctx, reinterpret_cast<uintptr_t>(nameS));
-                            if (tmp && tmp != PROTO_NONE) { val = tmp; found = true; }
-                        }
+                    // Fast path: the frame's own binding.  co_names entries are
+                    // interned, as getOwnAttributeDirect requires; it returns nullptr
+                    // for an absent name and the stored value, PROTO_NONE included
+                    // (`x = None`), for a present one.
+                    if (const proto::ProtoObject* own = frame->getOwnAttributeDirect(ctx, nameS)) {
+                        val = own;
+                        found = true;
                     }
 
                     // Closure parent chain: free variables live in parent frames. All name strings
@@ -6077,14 +6075,8 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                         }
                     }
 
-                    // O(1) pre-check: is this key already present in the frame's own attributes?
-                    bool isNewKey = true;
-                    {
-                        const proto::ProtoSparseList* frameOwn = frame->proto::ProtoObject::getOwnAttributes(ctx);
-                        if (frameOwn) {
-                            isNewKey = !frameOwn->has(ctx, reinterpret_cast<uintptr_t>(nS));
-                        }
-                    }
+                    // Is this key already present in the frame's own attributes?
+                    const bool isNewKey = frame->hasOwnAttribute(ctx, nS) != PROTO_TRUE;
 
                     if (!handledBySetitem) {
                         const proto::ProtoObject* oldFrame = frame;

@@ -29529,8 +29529,7 @@ void PythonEnvironment::storeName(const std::string& name, const proto::ProtoObj
                 callObject(setitem, {frame, key->asObject(ctx), val});
             }
         }
-        const proto::ProtoSparseList* own = frame->getOwnAttributes(ctx);
-        const bool isNewKey = !own || !own->has(ctx, reinterpret_cast<uintptr_t>(key));
+        const bool isNewKey = frame->hasOwnAttribute(ctx, key) != PROTO_TRUE;
         if (!handledBySetitem) {
             const proto::ProtoObject* updated = frame->setAttribute(ctx, key, val);
             if (updated && updated != frame) {

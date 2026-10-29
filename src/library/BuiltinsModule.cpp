@@ -6909,10 +6909,9 @@ const proto::ProtoObject* py_type(
             const proto::ProtoObject* keysObj = nullptr;
             bool keysFromImpl = false;
             const proto::ProtoSparseList* dictOwn = dict->proto::ProtoObject::getOwnAttributes(context);
-            if (dictOwn) {
-                // Pointer-based lookup for native objects that stored __keys__ via initDictStorage
-                const proto::ProtoObject* tmp = dictOwn->getAt(context, reinterpret_cast<uintptr_t>(keysName));
-                if (tmp && tmp != PROTO_NONE) { keysObj = tmp; keysFromImpl = true; }
+            // Own __keys__ first: native objects store it via initDictStorage.
+            if (const proto::ProtoObject* tmp = dict->getOwnAttributeDirect(context, keysName)) {
+                if (tmp != PROTO_NONE) { keysObj = tmp; keysFromImpl = true; }
             }
             // Fall back to hash-based lookup for Python dicts whose __keys__ was stored via setAttribute
             if (!keysObj) {
@@ -7165,12 +7164,8 @@ const proto::ProtoObject* py_type(
                         // inheriting typePrototype.__keys__ (which contains type built-in
                         // method names like 'mro', '__init__', etc.) as the initial list.
                         if (keysName) {
-                            const proto::ProtoObject* tKeysObj = nullptr;
-                            const proto::ProtoSparseList* tcOwnAttrs = targetClass->proto::ProtoObject::getOwnAttributes(context);
-                            if (tcOwnAttrs) {
-                                const proto::ProtoObject* tmp = tcOwnAttrs->getAt(context, reinterpret_cast<uintptr_t>(keysName));
-                                if (tmp && tmp != PROTO_NONE) tKeysObj = tmp;
-                            }
+                            const proto::ProtoObject* tKeysObj = targetClass->getOwnAttributeDirect(context, keysName);
+                            if (tKeysObj == PROTO_NONE) tKeysObj = nullptr;
                             const proto::ProtoList* tKeysList = tKeysObj ? ::protoPython::listStorage(context, tKeysObj) : nullptr;
                             if (tKeysList) {
                                 if (!tKeysList->has(context, keyObj)) {

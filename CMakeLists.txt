@@ -570,6 +570,13 @@ set_tests_properties(protopy_dict_key_hash PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# LOAD_NAME/STORE_NAME find own bindings bound to None in module and class scopes.
+add_test(NAME protopy_name_none_binding
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/name_none_binding.py)
+set_tests_properties(protopy_name_none_binding PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # Containers find an element by identity before equality (nan in [nan]).
 add_test(NAME protopy_nan_containment
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/nan_containment.py)
