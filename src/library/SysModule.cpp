@@ -1,4 +1,10 @@
 #include <protoPython/SysModule.h>
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#include <climits>
+#include <cstdlib>
+#include <cstring>
+#endif
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/ExecutionEngine.h>
 #include <protoPython/StructSequence.h>
@@ -1151,6 +1157,20 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     if (self_len > 0) {
         self_buf[self_len] = '\0';
         exe_path = self_buf;
+    }
+#elif defined(__APPLE__)
+    // The running executable; the fallback below reads sys.argv[0], which is
+    // the script, so subprocess re-ran the script instead of the
+    // interpreter (PermissionError on macOS).
+    {
+        uint32_t size = 0;
+        _NSGetExecutablePath(nullptr, &size);
+        std::string raw(size, '\0');
+        if (size > 0 && _NSGetExecutablePath(raw.data(), &size) == 0) {
+            raw.resize(std::strlen(raw.c_str()));
+            char resolved[PATH_MAX];
+            exe_path = ::realpath(raw.c_str(), resolved) ? std::string(resolved) : raw;
+        }
     }
 #elif defined(_WIN32)
     exe_path = protopy_executable_path();

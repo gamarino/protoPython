@@ -16,6 +16,7 @@
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
 #include <signal.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <dirent.h>
 #include <sys/stat.h>
 #include <sys/times.h>
@@ -920,8 +921,31 @@ static const proto::ProtoObject* py_pipe(
     const proto::ProtoArguments* /*posArgs*/,
     const proto::ProtoKeywordArguments* /*kwargs*/) {
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
+    // PEP 446: both ends are non-inheritable.  Inheritable ends leaked
+    // subprocess's error pipe into the child, so Popen() waited for the
+    // child to exit (a child reading its stdin pipe never did:
+    // `Popen(["cat"], stdin=PIPE, stdout=PIPE)` hung).
     int pipefds[2];
-    if (pipe(pipefds) == 0) {
+#if defined(__linux__)
+    const int rc = pipe2(pipefds, O_CLOEXEC);
+#else
+    const int rc = pipe(pipefds);
+#if defined(FD_CLOEXEC)
+    if (rc == 0) {
+        for (int fd : pipefds) {
+            const int fl = fcntl(fd, F_GETFD);
+            if (fl != -1) fcntl(fd, F_SETFD, fl | FD_CLOEXEC);
+        }
+    }
+#endif
+#endif
+    if (rc != 0) {
+        const int e = errno;
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseOSError(ctx, e, std::strerror(e), "");
+        return nullptr;
+    }
+    {
         const proto::ProtoList* tuple = ctx->newList();
         tuple = tuple->appendLast(ctx, ctx->fromInteger(pipefds[0]));
         tuple = tuple->appendLast(ctx, ctx->fromInteger(pipefds[1]));
@@ -1658,13 +1682,22 @@ static bool extractRawBytes(
     const proto::ProtoString* dataKey = env ? env->getDataString()
                                             : PythonEnvironment::getInternedString(ctx, "__data__");
     const proto::ProtoObject* d = obj->getAttribute(ctx, dataKey);
-    if (!d) return false;
-    if (d->isByteBuffer(ctx)) {
+    if (d && d->isByteBuffer(ctx)) {
         const proto::ProtoByteBuffer* bb = d->asByteBuffer(ctx);
         if (bb) { out.assign(bb->getBuffer(ctx), bb->getSize(ctx)); return true; }
-    } else if (d->isString(ctx)) {
+    } else if (d && d->isString(ctx)) {
         d->asString(ctx)->toUTF8String(ctx, out);
         return true;
+    }
+    // A memoryview (or a slice of one) or an array gives its bytes through
+    // tobytes(): subprocess's communicate() writes slices of
+    // memoryview(input), and os.write rejected them ("a bytes-like object is
+    // required").
+    if (env) {
+        const proto::ProtoObject* tobytes = env->getAttribute(ctx, obj,
+            PythonEnvironment::getInternedString(ctx, "tobytes"), /*raiseError=*/false);
+        const proto::ProtoObject* b = (tobytes && tobytes != PROTO_NONE) ? env->callObject(tobytes, {}) : nullptr;
+        if (b && b != obj) return extractRawBytes(ctx, b, out);
     }
     return false;
 }
@@ -1919,8 +1952,9 @@ static char** buildArgv(proto::ProtoContext* ctx, const proto::ProtoObject* seq,
     } else {
         lst = ::protoPython::listStorage(ctx, seq);
     }
-    if (!lst) return nullptr;
-    proto::proto_long n = static_cast<proto::proto_long>(lst->getSize(ctx));
+    // An empty tuple may have no backing list: it is an empty argument list.
+    if (!lst && !::protoPython::PythonEnvironment::isTupleValue(ctx, seq)) return nullptr;
+    proto::proto_long n = lst ? static_cast<proto::proto_long>(lst->getSize(ctx)) : 0;
     char** argv = static_cast<char**>(std::calloc(static_cast<size_t>(n) + 1, sizeof(char*)));
     if (!argv) return nullptr;
     for (proto::proto_long i = 0; i < n; ++i) {
@@ -1975,22 +2009,36 @@ static char** buildEnvp(proto::ProtoContext* ctx, const proto::ProtoObject* envO
         const proto::ProtoObject* item = env->next(iter);
         if (!item) break;
         std::string k, v;
+        bool haveKey = false;
         if (::protoPython::PythonEnvironment::isTupleValue(ctx, item)) {
             const proto::ProtoList* tup = ::protoPython::PythonEnvironment::tupleView(ctx, item)->asList(ctx);
             if (tup && tup->getSize(ctx) >= 2) {
                 const proto::ProtoObject* kObj = tup->getAt(ctx, 0);
                 const proto::ProtoObject* vObj = tup->getAt(ctx, 1);
-                if (kObj && kObj->isString(ctx)) kObj->asString(ctx)->toUTF8String(ctx, k);
+                if (kObj && kObj->isString(ctx)) { kObj->asString(ctx)->toUTF8String(ctx, k); haveKey = true; }
                 if (vObj && vObj->isString(ctx)) vObj->asString(ctx)->toUTF8String(ctx, v);
             }
         } else if (items == nullptr) {
             // iterating directly gave us a key; look up the value
             if (item->isString(ctx)) {
                 item->asString(ctx)->toUTF8String(ctx, k);
+                haveKey = true;
                 const proto::ProtoObject* val = env->getAttribute(ctx, envObj,
                     PythonEnvironment::getInternedString(ctx, k.c_str()), /*raiseError=*/false);
                 if (val && val->isString(ctx)) val->asString(ctx)->toUTF8String(ctx, v);
             }
+        }
+        // CPython rejects what execve would silently truncate or misparse:
+        // a NUL anywhere, an empty name, or '=' in the name.  Without this
+        // check the exec went ahead (test_os's test_execve_invalid_env
+        // replaced the test process, which then exited 0).
+        if (k.find('\0') != std::string::npos || v.find('\0') != std::string::npos) {
+            env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, "embedded null byte")->asObject(ctx));
+            return nullptr;
+        }
+        if (haveKey && (k.empty() || k.find('=') != std::string::npos)) {
+            env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, "illegal environment variable name")->asObject(ctx));
+            return nullptr;
         }
         if (!k.empty()) entries.push_back(k + "=" + v);
     }
@@ -1999,6 +2047,20 @@ static char** buildEnvp(proto::ProtoContext* ctx, const proto::ProtoObject* envO
     envp[entries.size()] = nullptr;
     outLen = entries.size();
     return envp;
+}
+
+// CPython's checks of an exec argument list: execv("x", []) would run the
+// program with no argv[0] at all.
+static bool checkExecArgs(proto::ProtoContext* ctx, const char* fn, char** argv, size_t argc) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const char* problem = nullptr;
+    if (argc == 0) problem = "arg 2 must not be empty";
+    else if (!argv[0] || argv[0][0] == '\0') problem = "arg 2 first element cannot be empty";
+    if (!problem) return true;
+    freeArgv(argv, argc);
+    if (env) env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx,
+        std::string(fn) + "() " + problem)->asObject(ctx));
+    return false;
 }
 
 // os.execv(path, args)
@@ -2014,6 +2076,7 @@ static const proto::ProtoObject* py_os_execv(
     size_t argc = 0;
     char** argv = buildArgv(ctx, posArgs->getAt(ctx, 1), argc);
     if (!argv) return PROTO_NONE;
+    if (!checkExecArgs(ctx, "execv", argv, argc)) return nullptr;
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     ::execv(path.c_str(), argv);
     // only returns on error
@@ -2039,13 +2102,15 @@ static const proto::ProtoObject* py_os_execve(
     std::string path;
     posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, path);
     size_t argc = 0, envc = 0;
-    char** argv = buildArgv(ctx, posArgs->getAt(ctx, 1), argc);
+    // The environment first: building it may raise ValueError.
     char** envp = buildEnvp(ctx, posArgs->getAt(ctx, 2), envc);
+    char** argv = envp ? buildArgv(ctx, posArgs->getAt(ctx, 1), argc) : nullptr;
     if (!argv || !envp) {
         freeArgv(argv, argc);
         freeArgv(envp, envc);
         return PROTO_NONE;
     }
+    if (!checkExecArgs(ctx, "execve", argv, argc)) { freeArgv(envp, envc); return nullptr; }
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     ::execve(path.c_str(), argv, envp);
     int e = errno;
@@ -2100,8 +2165,9 @@ static const proto::ProtoObject* py_os_execvpe(
     std::string file;
     posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, file);
     size_t argc = 0, envc = 0;
-    char** argv = buildArgv(ctx, posArgs->getAt(ctx, 1), argc);
+    // The environment first: building it may raise ValueError.
     char** envp = buildEnvp(ctx, posArgs->getAt(ctx, 2), envc);
+    char** argv = envp ? buildArgv(ctx, posArgs->getAt(ctx, 1), argc) : nullptr;
     if (!argv || !envp) {
         freeArgv(argv, argc);
         freeArgv(envp, envc);

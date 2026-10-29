@@ -11,6 +11,7 @@
 #include <protoPython/Version.h>
 #include <protoCore.h>
 #include <algorithm>
+#include <csignal>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -430,6 +431,12 @@ int main(int argc, char* argv[]) {
         ~ProcessSpaceShutdown() { protoPython::PythonEnvironment::shutdownProcessSpace(); }
     } processSpaceShutdown;
     prepareStandardStreams();
+#if !defined(_WIN32)
+    // As CPython: a write to a closed pipe raises BrokenPipeError instead of
+    // killing the process (subprocess's communicate() relies on it).
+    // Children started by subprocess get SIGPIPE's default back.
+    std::signal(SIGPIPE, SIG_IGN);
+#endif
     CliOptions options;
     std::string parseError;
     if (!parseArgs(argc, argv, options, parseError)) {
