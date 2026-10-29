@@ -646,6 +646,14 @@ set_tests_properties(protopy_class_namespace_code_and_class PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "class_namespace_code_and_class ok"
     LABELS "regression_gate")
+# An int is not a bool: isinstance(1, bool) is False.
+add_test(NAME protopy_isinstance_int_bool
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/isinstance_int_bool.py)
+set_tests_properties(protopy_isinstance_int_bool PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "isinstance_int_bool: ok"
+    LABELS "regression_gate")
 # Containers find an element by identity before equality (nan in [nan]).
 add_test(NAME protopy_nan_containment
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/nan_containment.py)
