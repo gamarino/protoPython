@@ -376,12 +376,15 @@ if(Python3_FOUND)
     # garbage, about 85 M cells (before the controller this run's peak RSS was
     # 5.6 GB, 2026-10-10, Linux); at least 10 cycles, and the peak RSS bounded
     # by the budget plus the interpreter's own footprint (measured: 73 MB).
+    # --deadline 120: about seven times the slowest of 119 Windows CI passes
+    # (16.5 s); a run past it is a hang, reported with its trace
+    # (adaptive_heap_check.py) instead of being killed silently by TIMEOUT.
     add_test(NAME adaptive_heap_bounded_memory
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/test/regression/adaptive_heap_check.py
             --expect on --sentinel "adaptive heap garbage done"
             --set PROTOCORE_HEAP_LIMIT_CELLS=1000000
             --unset PROTOCORE_ADAPTIVE_HEAP --unset PROTOCORE_ADAPTIVE_HEAP_START
-            --min-cycles 10 --max-rss-mb 160
+            --min-cycles 10 --max-rss-mb 160 --deadline 120
             -- $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/adaptive_heap_garbage.py 20000)
     set_tests_properties(adaptive_heap_on_by_default adaptive_heap_off_by_env
         adaptive_heap_bounded_memory PROPERTIES
