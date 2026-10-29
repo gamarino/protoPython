@@ -458,6 +458,14 @@ public:
 
     bool isActuallyAClass(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
 
+    /** The __getattr__ hook a failed attribute lookup on `obj` falls back
+     *  to, or nullptr.  *passObj tells whether the hook takes obj before the
+     *  name: false only for an own __getattr__(name) of a module or a super()
+     *  proxy.  A class's own __getattr__ serves its instances, never the
+     *  class itself: for a class the hook is its metaclass's, as in CPython. */
+    const proto::ProtoObject* getattrHookFor(proto::ProtoContext* ctx, const proto::ProtoObject* obj,
+                                             bool* passObj);
+
     /** A special method (`__enter__`, `__exit__`, ...) of `obj`, looked up
      *  on its type only, as CPython's special-method lookup does: the MRO of
      *  type(obj), with a descriptor's __get__(obj, type) applied, then the
@@ -598,6 +606,12 @@ public:
                                const proto::ProtoString* name, const proto::ProtoObject* value);
 
     const proto::ProtoObject* setAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, const proto::ProtoObject* value);
+    /** object.__setattr__(obj, name, value): setAttribute without the dispatch
+     *  to a __setattr__ that obj's type defines (data descriptors and
+     *  __slots__ still apply).  A __setattr__ override that raises, as a
+     *  frozen dataclass's does, must not stop its own class's __init__. */
+    const proto::ProtoObject* genericSetAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj,
+                                                  const proto::ProtoString* name, const proto::ProtoObject* value);
 
     /** The generic `del obj.name` below any __delattr__ override: a data
      *  descriptor's __delete__, else the object's own attribute (and its

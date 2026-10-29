@@ -14,8 +14,8 @@ class StubClass:
         if self.__repr is not None:
             return self.__repr
 
-        argstr = ", ".join(repr(a) if not isinstance(a, str) else a for a in self.__stub_args)
-        kwargstr = ", ".join(f"{kw}={val!r}" for kw, val in self.__stub_kwargs.items())
+        argstr = ", ".join(self.__stub_args)
+        kwargstr = ", ".join(f"{kw}={val}" for kw, val in self.__stub_kwargs.items())
 
         in_parens = argstr
         if kwargstr:
@@ -29,11 +29,9 @@ def stub_factory(klass, name, *, with_repr=None, _seen={}):
 
         class Stub(klass):
             def __init__(self, *args, **kwargs):
-                # Initialize StubClass fields directly to avoid closure/super issues.
-                # Use same attribute names as StubClass (no mangling in protoPython).
+                super().__init__()
                 self.__stub_args = args
                 self.__stub_kwargs = kwargs
-                self.__repr = None
 
         Stub.__name__ = name
         Stub.__qualname__ = name

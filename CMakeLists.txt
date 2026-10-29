@@ -690,6 +690,14 @@ set_tests_properties(protopy_nan_dict_keys PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# A class's own __getattr__ serves its instances; the class falls back to its metaclass's.
+add_test(NAME protopy_class_getattr_hook
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/class_getattr_hook.py)
+set_tests_properties(protopy_class_getattr_hook PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "class_getattr_hook: ok"
+    LABELS "regression_gate")
 # math.isclose: NaN is never close; keyword-only, non-negative tolerances.
 add_test(NAME protopy_math_isclose
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/math_isclose.py)
@@ -717,6 +725,14 @@ add_test(NAME protopy_import_site
 set_tests_properties(protopy_import_site PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
+    LABELS "regression_gate")
+# object.__setattr__ is object's own store, not the class's __setattr__ override.
+add_test(NAME protopy_object_setattr_generic
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/object_setattr_generic.py)
+set_tests_properties(protopy_object_setattr_generic PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "object_setattr_generic: ok"
     LABELS "regression_gate")
 # Frame f_locals / f_lineno / f_back, exec() frames and the setuptools nspkg .pth line.
 add_test(NAME protopy_frame_f_locals
@@ -774,6 +790,14 @@ add_test(NAME protopy_platform_version
 set_tests_properties(protopy_platform_version PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
+    LABELS "regression_gate")
+# os.execv/execve reject bad argument lists and environments with ValueError.
+add_test(NAME protopy_os_exec_argument_checks
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/os_exec_argument_checks.py)
+set_tests_properties(protopy_os_exec_argument_checks PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "os_exec_argument_checks: ok"
     LABELS "regression_gate")
 # import pathlib loads the standard library package (Path is callable).
 add_test(NAME protopy_pathlib_package

@@ -2631,8 +2631,10 @@ static const proto::ProtoObject* py_object_setattr(
             return nullptr;
         }
     }
+    // object's own store: a __setattr__ the target's class defines is what
+    // called here (or what the caller bypasses), not what runs.
     if (env) {
-        env->setAttribute(context, const_cast<proto::ProtoObject*>(target), key, value);
+        env->genericSetAttribute(context, const_cast<proto::ProtoObject*>(target), key, value);
     } else {
         const_cast<proto::ProtoObject*>(target)->setAttribute(context, key, value);
     }
@@ -5560,22 +5562,12 @@ static const proto::ProtoObject* py_hasattr(
         //    already materialised; objects that synthesise attributes on
         //    demand via __getattr__ (e.g. unittest's _FailedTest, super()
         //    proxies, lazy modules) would wrongly report False.
-        const proto::ProtoString* getattrKey = PythonEnvironment::getInternedString(context, "__getattr__");
-        const proto::ProtoObject* getattrFn = nullptr;
-        bool getattrIsOwn = false;
-        if (obj->hasOwnAttribute(context, getattrKey) == PROTO_TRUE) {
-            getattrFn = obj->getAttribute(context, getattrKey);
-            getattrIsOwn = true;
-        } else {
-            const proto::ProtoObject* cls = env->getType(context, obj);
-            if (cls && cls != PROTO_NONE) {
-                getattrFn = env->getAttribute(context, cls, getattrKey, false);
-            }
-        }
+        bool passObj = true;
+        const proto::ProtoObject* getattrFn = env->getattrHookFor(context, obj, &passObj);
         if (getattrFn && getattrFn != PROTO_NONE) {
-            std::vector<const proto::ProtoObject*> args = getattrIsOwn
-                ? std::vector<const proto::ProtoObject*>{nameObj}
-                : std::vector<const proto::ProtoObject*>{obj, nameObj};
+            std::vector<const proto::ProtoObject*> args = passObj
+                ? std::vector<const proto::ProtoObject*>{obj, nameObj}
+                : std::vector<const proto::ProtoObject*>{nameObj};
             const proto::ProtoObject* probe = nullptr;
             try {
                 probe = env->callObject(getattrFn, args);
