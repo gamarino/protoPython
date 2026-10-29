@@ -1709,6 +1709,12 @@ public:
         (`x: int` with no initial value).  LOAD_FAST detects it and raises
         UnboundLocalError, matching CPython's PEP 526 semantics. */
     const proto::ProtoObject* getUnboundSentinel() const { return unboundSentinel_; }
+    /** Process-singleton that stands for an empty (NULL) operand-stack slot
+        while a suspended generator's stack is stored in a ProtoList, which
+        cannot hold nullptr.  A call such as `f(1, (yield))` or
+        `print(await x)` has the NULL that PUSH_NULL / LOAD_GLOBAL put
+        below the callable on the stack when it suspends. */
+    const proto::ProtoObject* getStackNullSentinel() const { return stackNullSentinel_; }
 private:
     const proto::ProtoObject* sysModule;
     const proto::ProtoObject* builtinsModule;
@@ -1748,6 +1754,7 @@ private:
     const proto::ProtoObject* systemErrorType{nullptr};
     const proto::ProtoObject* stopAsyncIterationType{nullptr};
     const proto::ProtoObject* unboundSentinel_{nullptr};
+    const proto::ProtoObject* stackNullSentinel_{nullptr};
     const proto::ProtoObject* osErrorType{nullptr};
     const proto::ProtoObject* blockingIOErrorType{nullptr};
     const proto::ProtoObject* warningType{nullptr};

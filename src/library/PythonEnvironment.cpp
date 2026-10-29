@@ -19933,29 +19933,21 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     asyncGeneratorPrototype = asyncGeneratorPrototype->setAttribute(rootContext_,
         PythonEnvironment::getInternedString(rootContext_, "__aiter__"),
         rootContext_->fromMethod(nullptr, py_self_iter));
-    // PD2: __anext__ delegates to the inherited __next__, but converts
-    // StopIteration → StopAsyncIteration so the async-for handler can
-    // catch the standard sentinel.  Returns the yielded value directly
-    // (no coroutine wrapper); compileAsyncFor's simplified bytecode
-    // (PD3) calls this synchronously.
+    // __anext__ returns an awaitable, as in CPython: asend(None), whose
+    // send(None) steps the generator once and raises StopIteration with
+    // the yielded value, or StopAsyncIteration at the end.  It used to
+    // return the yielded value itself, so `await agen.__anext__()` and
+    // `await anext(agen)` awaited a plain value and never finished.  An
+    // `async for` is unaffected: compileAsyncFor lowers it to FOR_ITER,
+    // which steps an async generator through its inherited __next__.
     asyncGeneratorPrototype = asyncGeneratorPrototype->setAttribute(rootContext_,
         PythonEnvironment::getInternedString(rootContext_, "__anext__"),
         rootContext_->fromMethod(nullptr,
             [](proto::ProtoContext* ctx, const proto::ProtoObject* self,
                const proto::ParentLink* pl,
-               const proto::ProtoArguments* posArgs,
-               const proto::ProtoKeywordArguments* kw) -> const proto::ProtoObject* {
-                PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-                if (!env) return PROTO_NONE;
-                const proto::ProtoObject* result = nullptr;
-                try {
-                    result = py_generator_next(ctx, self, pl, posArgs, kw);
-                } catch (const proto::ProtoException& e) {
-                    if (!env->isStopIteration(ctx, e.value())) throw;
-                    env->raiseStopAsyncIteration(ctx);
-                    return nullptr;
-                }
-                return result;
+               const proto::ProtoArguments*,
+               const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
+                return py_async_generator_asend(ctx, self, pl, nullptr, nullptr);
             }));
     // PF: asend / athrow / aclose with proper awaitable-wrapper
     // semantics.  asend(v) returns a single-shot awaitable whose
@@ -19972,7 +19964,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         rootContext_->fromMethod(nullptr, py_async_generator_athrow));
     asyncGeneratorPrototype = asyncGeneratorPrototype->setAttribute(rootContext_,
         PythonEnvironment::getInternedString(rootContext_, "aclose"),
-        rootContext_->fromMethod(nullptr, py_generator_close));
+        rootContext_->fromMethod(nullptr, py_async_generator_aclose));
 
     // V72: Create 'function' prototype
     functionPrototype = objectPrototype->newChild(rootContext_, true);
@@ -22919,6 +22911,14 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             PythonEnvironment::getInternedString(rootContext_, "<unbound>")->asObject(rootContext_));
         unboundSentinel_ = sent;
         if (gcRoots_) gcRoots_->add(sent);   // P3 D12
+    }
+    {
+        const proto::ProtoObject* sent = objectPrototype->newChild(rootContext_, true);
+        sent = sent->setAttribute(rootContext_,
+            PythonEnvironment::getInternedString(rootContext_, "__name__"),
+            PythonEnvironment::getInternedString(rootContext_, "<stack NULL>")->asObject(rootContext_));
+        stackNullSentinel_ = sent;
+        if (gcRoots_) gcRoots_->add(sent);
     }
     eofErrorType = exceptionsModule->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "EOFError"));
     assertionErrorType = exceptionsModule->getAttribute(rootContext_, assertionErrorS);

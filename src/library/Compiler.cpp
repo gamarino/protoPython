@@ -1846,47 +1846,64 @@ bool Compiler::compileYield(YieldNode* n) {
 // message for each of these).  We deliberately stop at nested function
 // definitions since a `yield` there belongs to the inner function, not
 // the comprehension.
-static bool astContainsYield(ASTNode* node) {
+static bool astContainsSuspension(ASTNode* node, bool await) {
     if (!node) return false;
-    if (dynamic_cast<YieldNode*>(node)) return true;
+    if (await ? dynamic_cast<AwaitNode*>(node) != nullptr : dynamic_cast<YieldNode*>(node) != nullptr) return true;
     if (dynamic_cast<FunctionDefNode*>(node)) return false;
     if (dynamic_cast<LambdaNode*>(node)) return false;
     if (auto* s = dynamic_cast<SuiteNode*>(node)) {
-        for (auto& st : s->statements) if (astContainsYield(st.get())) return true;
+        for (auto& st : s->statements) if (astContainsSuspension(st.get(), await)) return true;
         return false;
     }
     if (auto* c = dynamic_cast<CallNode*>(node)) {
-        if (astContainsYield(c->func.get())) return true;
-        for (auto& a : c->args) if (astContainsYield(a.get())) return true;
-        for (auto& kw : c->keywords) if (astContainsYield(kw.second.get())) return true;
+        if (astContainsSuspension(c->func.get(), await)) return true;
+        for (auto& a : c->args) if (astContainsSuspension(a.get(), await)) return true;
+        for (auto& kw : c->keywords) if (astContainsSuspension(kw.second.get(), await)) return true;
         return false;
     }
     if (auto* b = dynamic_cast<BinOpNode*>(node))
-        return astContainsYield(b->left.get()) || astContainsYield(b->right.get());
+        return astContainsSuspension(b->left.get(), await) || astContainsSuspension(b->right.get(), await);
     if (auto* u = dynamic_cast<UnaryOpNode*>(node))
-        return astContainsYield(u->operand.get());
+        return astContainsSuspension(u->operand.get(), await);
     if (auto* sub = dynamic_cast<SubscriptNode*>(node))
-        return astContainsYield(sub->value.get()) || astContainsYield(sub->index.get());
+        return astContainsSuspension(sub->value.get(), await) || astContainsSuspension(sub->index.get(), await);
     if (auto* att = dynamic_cast<AttributeNode*>(node))
-        return astContainsYield(att->value.get());
+        return astContainsSuspension(att->value.get(), await);
     if (auto* sl = dynamic_cast<SliceNode*>(node))
-        return astContainsYield(sl->start.get()) || astContainsYield(sl->stop.get()) || astContainsYield(sl->step.get());
+        return astContainsSuspension(sl->start.get(), await) || astContainsSuspension(sl->stop.get(), await) || astContainsSuspension(sl->step.get(), await);
     if (auto* iff = dynamic_cast<ConditionalExprNode*>(node))
-        return astContainsYield(iff->test.get()) || astContainsYield(iff->body.get()) || astContainsYield(iff->orelse.get());
+        return astContainsSuspension(iff->test.get(), await) || astContainsSuspension(iff->body.get(), await) || astContainsSuspension(iff->orelse.get(), await);
     if (auto* tup = dynamic_cast<TupleLiteralNode*>(node)) {
-        for (auto& e : tup->elements) if (astContainsYield(e.get())) return true;
+        for (auto& e : tup->elements) if (astContainsSuspension(e.get(), await)) return true;
         return false;
     }
     if (auto* lst = dynamic_cast<ListLiteralNode*>(node)) {
-        for (auto& e : lst->elements) if (astContainsYield(e.get())) return true;
+        for (auto& e : lst->elements) if (astContainsSuspension(e.get(), await)) return true;
         return false;
     }
     if (auto* st = dynamic_cast<StarredNode*>(node))
-        return astContainsYield(st->value.get());
+        return astContainsSuspension(st->value.get(), await);
     if (auto* ne = dynamic_cast<NamedExprNode*>(node))
-        return astContainsYield(ne->value.get());
+        return astContainsSuspension(ne->value.get(), await);
     if (auto* ret = dynamic_cast<ReturnNode*>(node))
-        return astContainsYield(ret->value.get());
+        return astContainsSuspension(ret->value.get(), await);
+    return false;
+}
+
+static bool astContainsYield(ASTNode* node) { return astContainsSuspension(node, false); }
+
+// True when a comprehension's own scope awaits: in its element, a filter or
+// an iterator after the first (which the enclosing scope evaluates).  Such a
+// list, set or dict comprehension is a coroutine that the enclosing async
+// function awaits, as in CPython; compiled as a plain function, its first
+// await returned None.
+static bool compHasInternalAwait(const std::vector<Comprehension>& gens, ASTNode* elt, ASTNode* value = nullptr) {
+    if (elt && astContainsSuspension(elt, true)) return true;
+    if (value && astContainsSuspension(value, true)) return true;
+    for (size_t i = 0; i < gens.size(); ++i) {
+        if (i > 0 && astContainsSuspension(gens[i].iter.get(), true)) return true;
+        for (const auto& ifn : gens[i].ifs) if (astContainsSuspension(ifn.get(), true)) return true;
+    }
     return false;
 }
 
@@ -1932,6 +1949,13 @@ bool Compiler::compileComprehensionScope(const char* scopeName, std::vector<Comp
     for (ASTNode* e : exprs) collectUsedNames(e, compUsed);
     bool isAsync = false;
     for (const auto& gen : generators) if (gen.is_async) { isAsync = true; break; }
+    // A list, set or dict comprehension that awaits is a coroutine too.  (A
+    // generator expression that awaits would be an asynchronous generator
+    // expression, which is not supported here.)
+    if (!isAsync && !isGenExpr) {
+        isAsync = compHasInternalAwait(generators, nullptr);
+        for (ASTNode* e : exprs) if (!isAsync && astContainsSuspension(e, true)) isAsync = true;
+    }
 
     // Free variables: names used and not bound here that the directly
     // enclosing scope can close over (a local, a cell or free variable of

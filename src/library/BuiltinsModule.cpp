@@ -906,6 +906,142 @@ static const proto::ProtoObject* py_iter(
     return PROTO_NONE;
 }
 
+// type(obj).__name__, for aiter's and anext's TypeError messages.
+static std::string asyncTypeName(proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* obj) {
+    std::string out = "object";
+    const proto::ProtoObject* t = env->getType(ctx, obj);
+    const proto::ProtoObject* nm = (t && t != PROTO_NONE) ? t->getAttribute(ctx, env->getNameString()) : nullptr;
+    if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, out);
+    return out;
+}
+
+// aiter(obj): type(obj).__aiter__(obj), which must give an async iterator.
+static const proto::ProtoObject* py_aiter(
+    proto::ProtoContext* context,
+    const proto::ProtoObject*,
+    const proto::ParentLink*,
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    if (!positionalParameters || positionalParameters->getSize(context) != 1) {
+        env->raiseTypeError(context, "aiter expected 1 argument");
+        return nullptr;
+    }
+    const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* m = env->lookupBoundSpecialMethod(context, obj, env->getAIterString());
+    if (!m) {
+        env->raiseTypeError(context, "'" + asyncTypeName(context, env, obj) + "' object is not an async iterable");
+        return nullptr;
+    }
+    const proto::ProtoObject* it = env->callObject(m, {});
+    if (!it) return nullptr;
+    if (!env->lookupBoundSpecialMethod(context, it, env->getANextString())) {
+        env->raiseTypeError(context, "aiter() returned not an async iterator of type '"
+            + asyncTypeName(context, env, it) + "'");
+        return nullptr;
+    }
+    return it;
+}
+
+// The awaitable anext(it, default) returns: it drives the awaitable of
+// it.__anext__() and turns its StopAsyncIteration into the default, as
+// CPython's anext_awaitable does.  Its cells are unbound (it is passed as
+// self) so that it is not a self-cycle (docs/CONFORMANCE.md rule 13).
+static const proto::ProtoObject* anext_default_step(proto::ProtoContext* ctx, const proto::ProtoObject* self,
+                                                    const char* method, const proto::ProtoArguments* args) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return PROTO_NONE;
+    if (!self || self == PROTO_NONE) {
+        env->raiseTypeError(ctx, "anext() awaitable: called without the awaitable");
+        return nullptr;
+    }
+    const proto::ProtoString* innerS = PythonEnvironment::getInternedString(ctx, "_anext_iter");
+    const proto::ProtoString* dfltS = PythonEnvironment::getInternedString(ctx, "_anext_default");
+    const proto::ProtoObject* inner = self->hasOwnAttribute(ctx, innerS) == PROTO_TRUE
+        ? self->getOwnAttributeDirect(ctx, innerS) : nullptr;
+    const proto::ProtoObject* dflt = self->hasOwnAttribute(ctx, dfltS) == PROTO_TRUE
+        ? self->getOwnAttributeDirect(ctx, dfltS) : PROTO_NONE;
+    const proto::ProtoObject* fn = inner
+        ? env->getAttribute(ctx, inner, PythonEnvironment::getInternedString(ctx, method), false) : nullptr;
+    if (!fn || fn == PROTO_NONE) {
+        env->raiseTypeError(ctx, std::string("anext(): the awaitable has no ") + method + "()");
+        return nullptr;
+    }
+    std::vector<const proto::ProtoObject*> callArgs;
+    const proto::proto_ulong n = args ? args->getSize(ctx) : 0;
+    for (proto::proto_ulong i = 0; i < n; ++i) callArgs.push_back(args->getAt(ctx, static_cast<int>(i)));
+    if (std::string(method) == "send" && callArgs.empty()) callArgs.push_back(PROTO_NONE);
+    try {
+        return env->callObject(fn, callArgs);
+    } catch (const proto::ProtoException& e) {
+        const proto::ProtoObject* sas = env->getStopAsyncIterationType();
+        if (!(e.value() && sas && e.value()->isInstanceOf(ctx, sas) == PROTO_TRUE)) throw;
+        env->raiseStopIteration(ctx, dflt);
+        return nullptr;
+    }
+}
+
+static const proto::ProtoObject* py_anext_default_send(proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
+    return anext_default_step(ctx, self, "send", args);
+}
+
+static const proto::ProtoObject* py_anext_default_next(proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
+    return anext_default_step(ctx, self, "send", nullptr);
+}
+
+static const proto::ProtoObject* py_anext_default_throw(proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
+    return anext_default_step(ctx, self, "throw", args);
+}
+
+static const proto::ProtoObject* py_anext_default_await(proto::ProtoContext*, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
+    return self;
+}
+
+// anext(it[, default]): the awaitable of type(it).__anext__(it); with a
+// default, an awaitable that answers it at the end of the iteration.
+static const proto::ProtoObject* py_anext(
+    proto::ProtoContext* context,
+    const proto::ProtoObject*,
+    const proto::ParentLink*,
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    const proto::proto_ulong n = positionalParameters ? positionalParameters->getSize(context) : 0;
+    if (n < 1 || n > 2) {
+        env->raiseTypeError(context, "anext expected 1 or 2 arguments, got " + std::to_string(n));
+        return nullptr;
+    }
+    const proto::ProtoObject* it = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* m = env->lookupBoundSpecialMethod(context, it, env->getANextString());
+    if (!m) {
+        env->raiseTypeError(context, "'" + asyncTypeName(context, env, it) + "' object is not an async iterator");
+        return nullptr;
+    }
+    const proto::ProtoObject* awaitable = env->callObject(m, {});
+    if (!awaitable || n == 1) return awaitable;
+    const proto::ProtoObject* awaitM = env->lookupBoundSpecialMethod(context, awaitable, env->getAwaitString());
+    const proto::ProtoObject* inner = awaitM ? env->callObject(awaitM, {}) : awaitable;
+    if (!inner) return nullptr;
+    proto::ProtoObject* w = const_cast<proto::ProtoObject*>(context->newObject(true));
+    w->setAttribute(context, PythonEnvironment::getInternedString(context, "_anext_iter"), inner);
+    w->setAttribute(context, PythonEnvironment::getInternedString(context, "_anext_default"),
+                    positionalParameters->getAt(context, 1));
+    w->setAttribute(context, env->getSendString(), context->fromMethod(nullptr, py_anext_default_send));
+    w->setAttribute(context, env->getNextString(), context->fromMethod(nullptr, py_anext_default_next));
+    w->setAttribute(context, PythonEnvironment::getInternedString(context, "throw"),
+                    context->fromMethod(nullptr, py_anext_default_throw));
+    const proto::ProtoObject* selfCell = context->fromMethod(nullptr, py_anext_default_await);
+    w->setAttribute(context, env->getAwaitString(), selfCell);
+    w->setAttribute(context, env->getIterString(), selfCell);
+    return w;
+}
+
 static const proto::ProtoObject* py_next(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -12018,6 +12154,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "hasattr"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_hasattr));
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "iter"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_iter));
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "next"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_next));
+    builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "aiter"), ctx->fromMethod(nullptr, py_aiter));
+    builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "anext"), ctx->fromMethod(nullptr, py_anext));
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "contains"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_contains));
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "in"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_contains));
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "isinstance"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_isinstance));
