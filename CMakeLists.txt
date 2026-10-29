@@ -832,6 +832,14 @@ set_tests_properties(protopy_import_from_module_getattr PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "import_from_module_getattr: ok"
     LABELS "regression_gate")
+# Recursion past the native stack raises RecursionError.
+add_test(NAME protopy_deep_recursion_raises
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/deep_recursion_raises.py)
+set_tests_properties(protopy_deep_recursion_raises PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "deep_recursion_raises: ok"
+    LABELS "regression_gate")
 # Walking f_back ends in None at the main module.
 add_test(NAME protopy_frame_chain_ends_in_none
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/frame_chain_ends_in_none.py)

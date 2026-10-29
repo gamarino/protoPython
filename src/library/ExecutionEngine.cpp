@@ -18,6 +18,9 @@
 #include <string>
 #include <thread>
 #include <vector>
+#if !defined(_WIN32)
+#include <sys/resource.h>
+#endif
 
 #include <cstring>
 #include <functional>
@@ -412,10 +415,56 @@ static void raiseRecursionLimit(PythonEnvironment* env, proto::ProtoContext* ctx
     env->raiseRecursionError(ctx);
 }
 
+// Native stack guard.  Every Python call recurses on the native stack (one
+// dispatcher frame per call, several KiB with GCC), so a recursion limit
+// raised with sys.setrecursionlimit -- 2,000 is enough on Linux --
+// overflowed the stack and the process died of SIGSEGV instead of raising
+// RecursionError.  The first RecursionScope of a thread records where its
+// Python calls start; a call that would leave less than a quarter of the
+// stack free raises RecursionError, as CPython 3.14 does for C stack
+// exhaustion.  The stack size is the main thread's (RLIMIT_STACK; on Windows
+// the reserve the executables link with, which also applies to threads).
+namespace {
+thread_local const char* t_pythonStackBase = nullptr;
+
+size_t pythonStackBudget() {
+    static const size_t budget = [] {
+        size_t size = 8u << 20;
+#if defined(_WIN32)
+        size = 32u << 20;  // PROTOPYTHON_WINDOWS_STACK_RESERVE
+#else
+        struct rlimit rl;
+        if (getrlimit(RLIMIT_STACK, &rl) == 0 && rl.rlim_cur != RLIM_INFINITY && rl.rlim_cur > 0)
+            size = static_cast<size_t>(rl.rlim_cur);
+#endif
+        return size / 4 * 3;
+    }();
+    return budget;
+}
+
+#if defined(_MSC_VER)
+__declspec(noinline)
+#else
+__attribute__((noinline))
+#endif
+bool nativeStackExhausted() {
+    char probe = 0;
+    const char* here = &probe;
+    if (!t_pythonStackBase) {
+        t_pythonStackBase = here;
+        return false;
+    }
+    return t_pythonStackBase > here
+        && static_cast<size_t>(t_pythonStackBase - here) > pythonStackBudget();
+}
+}  // namespace
+
 RecursionScope::RecursionScope(PythonEnvironment* env, proto::ProtoContext* ctx) : env_(env), ctx_(ctx) {
     if (!env_) return;
     
     int limit = env_->getRecursionLimit();
+    // The native stack nearly full is the recursion limit too.
+    if (nativeStackExhausted()) limit = PythonEnvironment::s_recursionDepth;
 
     // If we are already raising a recursion error, allow more depth (up to a hard limit)
     if (PythonEnvironment::s_inRecursionError) {
