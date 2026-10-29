@@ -5521,8 +5521,15 @@ static const proto::ProtoObject* py_hasattr(
             }
         }
     }
+    // A class-only name (__name__, __mro__, ...) that env->getAttribute did
+    // not resolve is missing: the chain probes below would find the class's
+    // own copy and contradict getattr.  Only the __getattr__ fallback (3.)
+    // still applies.
+    protoPython::PythonEnvironment* envTypeOnly = protoPython::PythonEnvironment::fromContext(context);
+    const bool typeOnlyMiss = envTypeOnly && envTypeOnly->isTypeOnlyAttributeName(context, nameStr);
+
     // 1. Direct chain probe via protoCore.
-    if (obj->hasAttribute(context, nameStr) == PROTO_TRUE) return PROTO_TRUE;
+    if (!typeOnlyMiss && obj->hasAttribute(context, nameStr) == PROTO_TRUE) return PROTO_TRUE;
 
     // 2. CPython semantics: an instance also "has" attributes defined on its
     //    class's MRO. protoCore's chain walk follows the linearised parent
@@ -5538,7 +5545,7 @@ static const proto::ProtoObject* py_hasattr(
         // even after the cached own-attr write is dropped in STRUCT-105.
         const proto::ProtoObject* mroObj = (cls && mroS) ? env->getAttribute(context, cls, mroS, false) : nullptr;
         ::protoPython::TupleView mroT = (mroObj && mroObj != PROTO_NONE) ? ::protoPython::PythonEnvironment::tupleView(context, mroObj) : nullptr;
-        if (mroT) {
+        if (mroT && !typeOnlyMiss) {
             for (proto::proto_ulong i = 0; i < mroT->getSize(context); ++i) {
                 const proto::ProtoObject* base = mroT->getAt(context, static_cast<int>(i));
                 if (base && base != PROTO_NONE && base != obj) {

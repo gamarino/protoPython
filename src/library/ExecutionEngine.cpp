@@ -7800,9 +7800,8 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                     // settle takes the paths below, unchanged.
                     if (!disableLoadattrFastpath && env && obj && obj != PROTO_NONE
                             && attrName != env->getClassString()
-                            && attrName != env->getMroString()
+                            && !env->isTypeOnlyAttributeName(ctx, attrName)
                             && attrName != env->getDictDunderString()
-                            && attrName != env->getBasesString()
                             && attrName != env->getGetattributeDunderString()) {
                         const proto::ProtoObject* cls = env->getType(ctx, obj);
                         if (cls && cls != PROTO_NONE && cls != obj

@@ -387,6 +387,16 @@ public:
     const proto::ProtoString* getNewString() const { return newString; }
     const proto::ProtoString* getPrepareString() const { return prepareString; }
     const proto::ProtoString* getMroString() const { return mroString; }
+    /** True for __name__, __qualname__, __mro__, __bases__, __base__: attributes
+     *  of classes only (type's descriptors in CPython).  ctx is the calling
+     *  thread's context: a non-interned name's text is read through it. */
+    bool isTypeOnlyAttributeName(proto::ProtoContext* ctx, const proto::ProtoString* name) const;
+    /** isinstance(obj, type), by obj's type and that type's MRO. */
+    bool isInstanceOfType(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
+    /** Objects whose class-only names (__name__, __mro__, ...) are missing
+     *  unless owned: None, numbers, strings, instances of Python classes and
+     *  of built-in containers. */
+    bool isPlainInstanceForTypeOnlyNames(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
     const proto::ProtoString* getBasesString() const { return basesString; }
     const proto::ProtoString* getExecutedString() const { return executedString; }
     const proto::ProtoString* getGetItemString() const { return getItemString; }
@@ -1814,6 +1824,10 @@ private:
     const proto::ProtoString* __kwdefaults__{nullptr};
     
     const proto::ProtoString* mroString{nullptr};
+    // Class-only names (isTypeOnlyAttributeName), with nameString and mroString.
+    const proto::ProtoString* typeOnlyQualnameString_{nullptr};
+    const proto::ProtoString* typeOnlyBasesString_{nullptr};
+    const proto::ProtoString* typeOnlyBaseString_{nullptr};
     const proto::ProtoString* basesString{nullptr};
     // Cached symbol for the per-class marker that lets isActuallyAClass
     // collapse to a single hasOwnAttribute call on the hot path
