@@ -5,6 +5,8 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <csignal>
+#include <cstdio>
+#include <cerrno>
 #include <vector>
 #include <string>
 #include <string.h>
@@ -98,6 +100,31 @@ static const proto::ProtoObject* py_fork_exec(
         }
     }
 
+    // Everything the child needs is built here, before fork(): after fork()
+    // only async-signal-safe calls are allowed, and the child must not
+    // touch the runtime (its collector thread does not exist there).
+    auto toStrings = [&](const proto::ProtoObject* seq, size_t n) {
+        std::vector<std::string> out;
+        out.reserve(n);
+        for (size_t i = 0; i < n; ++i) {
+            const proto::ProtoObject* elem = ::protoPython::PythonEnvironment::isTupleValue(ctx, seq)
+                ? ::protoPython::PythonEnvironment::tupleView(ctx, seq)->getAt(ctx, i)
+                : ::protoPython::listStorage(ctx, seq)->getAt(ctx, i);
+            std::string str;
+            extractStringOrBytes(ctx, elem, str);
+            out.push_back(std::move(str));
+        }
+        return out;
+    };
+    std::vector<std::string> argStrs = toStrings(argsObj, argsCount);
+    std::vector<std::string> envStrs = hasEnv ? toStrings(envListObj, envCount) : std::vector<std::string>();
+    std::vector<std::string> execPaths = toStrings(execListObj, execCount);
+    std::vector<char*> c_args, c_env;
+    for (auto& a : argStrs) c_args.push_back(a.data());
+    c_args.push_back(nullptr);
+    for (auto& e : envStrs) c_env.push_back(e.data());
+    c_env.push_back(nullptr);
+
     pid_t pid = fork();
     if (pid == -1) {
         PythonEnvironment::fromContext(ctx)->raiseOSError(ctx, errno, strerror(errno), "");
@@ -121,67 +148,34 @@ static const proto::ProtoObject* py_fork_exec(
         // the child gets the default action back.
         if (restoreSignals) signal(SIGPIPE, SIG_DFL);
 
-        if (hasCwd) {
-            if (chdir(cwdStr.c_str()) != 0) {
-                _exit(1);
+        // A failure is reported on the error pipe in the form subprocess.py
+        // parses ("OSError:<hex errno>:<message>"), so the parent raises the
+        // right OSError (FileNotFoundError, PermissionError, ...).
+        auto fail = [&](int err, const char* what) {
+            if (errpipe_write != -1) {
+                char buf[64];
+                int n = snprintf(buf, sizeof(buf), "OSError:%x:%s", err, what);
+                if (n > 0) { ssize_t w = write(errpipe_write, buf, static_cast<size_t>(n)); (void)w; }
             }
-        }
+            _exit(255);
+        };
 
-        // Build args array.  After fsencode each entry is bytes; we
-        // accept both str and bytes via extractStringOrBytes.
-        char** c_args = new char*[argsCount + 1];
-        for (size_t i = 0; i < argsCount; ++i) {
-            const proto::ProtoObject* elem = ::protoPython::PythonEnvironment::isTupleValue(ctx, argsObj)
-                ? ::protoPython::PythonEnvironment::tupleView(ctx, argsObj)->getAt(ctx, i)
-                : ::protoPython::listStorage(ctx, argsObj)->getAt(ctx, i);
-            std::string s;
-            extractStringOrBytes(ctx, elem, s);
-            // We need to keep the string alive.  In a child process
-            // after fork, we don't care about memory leaks before exec.
-            c_args[i] = strdup(s.c_str());
-        }
-        c_args[argsCount] = nullptr;
+        if (hasCwd && chdir(cwdStr.c_str()) != 0) fail(errno, "noexec:chdir");
 
-        // Build env array — same bytes-or-str fallback.
-        char** c_env = nullptr;
-        if (hasEnv) {
-            c_env = new char*[envCount + 1];
-            for (size_t i = 0; i < envCount; ++i) {
-                const proto::ProtoObject* elem = ::protoPython::listStorage(ctx, envListObj)->getAt(ctx, i);
-                std::string s;
-                extractStringOrBytes(ctx, elem, s);
-                c_env[i] = strdup(s.c_str());
-            }
-            c_env[envCount] = nullptr;
+        // Try each entry of executable_list (os.fsencode + os.path.join
+        // results), keeping the most informative error, as CPython does.
+        int saved = ENOENT;
+        for (const auto& path : execPaths) {
+            if (path.empty()) continue;
+            if (hasEnv) execve(path.c_str(), c_args.data(), c_env.data());
+            else execv(path.c_str(), c_args.data());
+            if (errno != ENOENT && errno != ENOTDIR && saved == ENOENT) saved = errno;
         }
-
-        // Walk executable_list (tuple of bytes paths produced by
-        // os.fsencode + os.path.join) and try each one.
-        for (size_t i = 0; i < execCount; ++i) {
-            const proto::ProtoObject* execPathObj = ::protoPython::PythonEnvironment::tupleView(ctx, execListObj)->getAt(ctx, i);
-            std::string exec_path;
-            extractStringOrBytes(ctx, execPathObj, exec_path);
-            if (exec_path.empty()) continue;
-            if (hasEnv) {
-                execve(exec_path.c_str(), c_args, c_env);
-            } else {
-                execv(exec_path.c_str(), c_args);
-            }
+        if (execPaths.empty() && !argStrs.empty()) {
+            execvp(c_args[0], c_args.data());
+            saved = errno;
         }
-
-        // Last-resort attempt: if executable_list was empty (rare path),
-        // execvp on argv[0] mirrors what subprocess does for shell=False
-        // with simple commands.
-        if (execCount == 0 && argsCount > 0 && c_args[0]) {
-            if (hasEnv) {
-                // No execvpe portably; fall back to execvp + ignore env.
-                execvp(c_args[0], c_args);
-            } else {
-                execvp(c_args[0], c_args);
-            }
-        }
-
-        _exit(255);
+        fail(saved, "");
     }
 
     // Parent process

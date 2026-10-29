@@ -46,4 +46,12 @@ child = [sys.executable, "-c",
          "import sys; print('a', flush=True); sys.stdout.buffer.write(b'b\\n'); print('c')"]
 r = subprocess.run(child, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
 assert r.stdout == b"a\nb\nc\n", (r.stdout, r.returncode, r.stderr)
+# A program that cannot be executed raises in the parent (the child reports
+# errno on subprocess's error pipe) instead of exiting with status 255.
+try:
+    subprocess.Popen(["/nonexistent/protopy-test-program"])
+except FileNotFoundError:
+    pass
+else:
+    raise AssertionError("Popen of a missing program did not raise")
 print("os_pipe_subprocess_stdin: ok")
