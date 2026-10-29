@@ -2085,6 +2085,104 @@ static bool isDictSubclassInstance(proto::ProtoContext* context, PythonEnvironme
     return env->getType(context, obj) != dictProto && obj->isInstanceOf(context, dictProto) == PROTO_TRUE;
 }
 
+// --- An instance's __dict__ view and its owner -----------------------------
+//
+// py_object_get_dict answers a dict whose items mirror the instance's own
+// attributes and which names the instance under
+// `__protopy_dict_proxy_target__`.  A mutation of that dict updates the dict
+// itself, as for any dict, and is then applied to the owner: the owner's
+// `__data__`/`__keys__` mirror (or `__pydict_data__`/`__pydict_keys__` for an
+// instance whose `__data__` holds a built-in's storage) and the attribute
+// itself.  No descriptor runs, as in CPython, where `obj.__dict__` is the
+// namespace and not the attribute protocol.
+
+static const proto::ProtoObject* py_dict_setitem(proto::ProtoContext*, const proto::ProtoObject*,
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*);
+static const proto::ProtoObject* py_dict_delitem(proto::ProtoContext*, const proto::ProtoObject*,
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*);
+
+/** The instance an instance-__dict__ view writes to, or nullptr for any other dict. */
+static const proto::ProtoObject* instanceDictOwner(proto::ProtoContext* ctx, const proto::ProtoObject* d) {
+    if (!d) return nullptr;
+    const proto::ProtoString* targetS =
+        PythonEnvironment::getInternedString(ctx, "__protopy_dict_proxy_target__");
+    if (d->hasOwnAttribute(ctx, targetS) != PROTO_TRUE) return nullptr;
+    const proto::ProtoObject* owner = d->getOwnAttributeDirect(ctx, targetS);
+    return (owner && owner != PROTO_NONE && owner != d) ? owner : nullptr;
+}
+
+/** The owner's mirror slots: `__data__`/`__keys__`, or the `__pydict_*` pair. */
+static void instanceDictMirrorSlots(proto::ProtoContext* ctx, PythonEnvironment* env,
+                                    const proto::ProtoObject* owner,
+                                    const proto::ProtoString*& dS, const proto::ProtoString*& kS) {
+    dS = env->getDataString();
+    kS = env->getKeysString();
+    const proto::ProtoObject* probe = owner->hasOwnAttribute(ctx, dS) == PROTO_TRUE
+        ? owner->getOwnAttributeDirect(ctx, dS) : nullptr;
+    if ((probe && probe != PROTO_NONE && !probe->asSparseList(ctx))
+        || isDictSubclassInstance(ctx, env, owner)) {
+        dS = PythonEnvironment::getInternedString(ctx, "__pydict_data__");
+        kS = PythonEnvironment::getInternedString(ctx, "__pydict_keys__");
+    }
+}
+
+/** `owner.<name> = value` as a namespace write: mirror and attribute. */
+static void instanceDictOwnerSet(proto::ProtoContext* ctx, PythonEnvironment* env,
+                                 const proto::ProtoObject* owner, const proto::ProtoObject* key,
+                                 const proto::ProtoObject* value) {
+    if (!key || !key->isString(ctx)) return;
+    const proto::ProtoString* nm = key->asString(ctx);
+    const proto::ProtoString* dS = nullptr;
+    const proto::ProtoString* kS = nullptr;
+    instanceDictMirrorSlots(ctx, env, owner, dS, kS);
+    proto::ProtoObject* o = const_cast<proto::ProtoObject*>(owner);
+    const proto::ProtoObject* dataObj = owner->hasOwnAttribute(ctx, dS) == PROTO_TRUE
+        ? owner->getOwnAttributeDirect(ctx, dS) : nullptr;
+    if (dataObj && dataObj->asSparseList(ctx)) {
+        o->setAttribute(ctx, dS, dataObj->asSparseList(ctx)->setAt(ctx, nm->getHash(ctx), value)->asObject(ctx));
+    }
+    const proto::ProtoObject* keysObj = owner->hasOwnAttribute(ctx, kS) == PROTO_TRUE
+        ? owner->getOwnAttributeDirect(ctx, kS) : nullptr;
+    const proto::ProtoList* kl = keysObj ? ::protoPython::listStorage(ctx, keysObj) : nullptr;
+    if (kl && !kl->has(ctx, nm->asObject(ctx))) {
+        o->setAttribute(ctx, kS, kl->appendLast(ctx, nm->asObject(ctx))->asObject(ctx));
+    }
+    o->setAttribute(ctx, nm, value);
+}
+
+/** `del owner.<name>` as a namespace removal: mirror entry and attribute. */
+static void instanceDictOwnerRemove(proto::ProtoContext* ctx, PythonEnvironment* env,
+                                    const proto::ProtoObject* owner, const proto::ProtoObject* key) {
+    if (!key || !key->isString(ctx)) return;
+    const proto::ProtoString* nm = key->asString(ctx);
+    const proto::proto_ulong h = nm->getHash(ctx);
+    const proto::ProtoString* dS = nullptr;
+    const proto::ProtoString* kS = nullptr;
+    instanceDictMirrorSlots(ctx, env, owner, dS, kS);
+    proto::ProtoObject* o = const_cast<proto::ProtoObject*>(owner);
+    const proto::ProtoObject* dataObj = owner->hasOwnAttribute(ctx, dS) == PROTO_TRUE
+        ? owner->getOwnAttributeDirect(ctx, dS) : nullptr;
+    const proto::ProtoSparseList* dl = dataObj ? dataObj->asSparseList(ctx) : nullptr;
+    // removeAt returns a new list: it is published, or the entry stays.
+    if (dl && dl->has(ctx, h)) o->setAttribute(ctx, dS, dl->removeAt(ctx, h)->asObject(ctx));
+    const proto::ProtoObject* keysObj = owner->hasOwnAttribute(ctx, kS) == PROTO_TRUE
+        ? owner->getOwnAttributeDirect(ctx, kS) : nullptr;
+    const proto::ProtoList* kl = keysObj ? ::protoPython::listStorage(ctx, keysObj) : nullptr;
+    if (kl) {
+        const proto::ProtoList* nl = ctx->newList();
+        bool dropped = false;
+        for (proto::proto_ulong i = 0; i < kl->getSize(ctx); ++i) {
+            const proto::ProtoObject* k = kl->getAt(ctx, static_cast<int>(i));
+            if (k && k->isString(ctx) && k->getHash(ctx) == h) { dropped = true; continue; }
+            nl = nl->appendLast(ctx, k);
+        }
+        if (dropped) o->setAttribute(ctx, kS, nl->asObject(ctx));
+    }
+    // The attribute is removed, not overwritten with None: `"a" in vars(o)`
+    // and `o.a` must both see it gone.
+    if (owner->hasOwnAttribute(ctx, nm) == PROTO_TRUE) o->removeAttribute(ctx, nm);
+}
+
 static const proto::ProtoObject* py_object_get_dict(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -2095,9 +2193,18 @@ static const proto::ProtoObject* py_object_get_dict(
     // CPython: bare `object()` instances have no __dict__ at all —
     // attribute access raises AttributeError.  Reject when self's
     // exact type is objectPrototype.
+    // The same holds for an instance of a built-in type that has no instance
+    // dict (`[].__dict__`, `(5).__dict__`, `None.__dict__`); a SUBCLASS of one
+    // adds a dict, and its instances' type is the subclass, not the built-in.
     if (!env->isActuallyAClass(context, self)) {
         const proto::ProtoObject* selfType = env->getType(context, self);
-        if (selfType == env->getObjectPrototype()) {
+        if (selfType == env->getObjectPrototype()
+            || selfType == env->getIntPrototype() || selfType == env->getBoolPrototype()
+            || selfType == env->getFloatPrototype() || selfType == env->getComplexPrototype()
+            || selfType == env->getStrPrototype() || selfType == env->getBytesPrototype()
+            || selfType == env->getTuplePrototype() || selfType == env->getListPrototype()
+            || selfType == env->getDictPrototype() || selfType == env->getSetPrototype()
+            || selfType == env->getFrozensetPrototype() || selfType == env->getNoneTypePrototype()) {
             env->raiseAttributeError(context, self, std::string("__dict__"));
             return nullptr;
         }
@@ -2370,105 +2477,30 @@ static const proto::ProtoObject* py_object_get_dict(
         PythonEnvironment::getInternedString(context, "__protopy_dict_proxy_target__");
     d = const_cast<proto::ProtoObject*>(d->setAttribute(context, proxyTargetS, mutableSelf));
 
-    // Override __setitem__ to write through to the instance.
+    // __setitem__ / __delitem__ update the dict as dict's own do (so the
+    // view a caller holds stays current, and deleting a missing key raises
+    // KeyError), then apply the change to the instance.
     auto setitem = [](proto::ProtoContext* ctx, const proto::ProtoObject* self_,
-                      const proto::ParentLink*,
+                      const proto::ParentLink* pl,
                       const proto::ProtoArguments* args,
-                      const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
+                      const proto::ProtoKeywordArguments* kw) -> const proto::ProtoObject* {
         PythonEnvironment* env_ = PythonEnvironment::fromContext(ctx);
-        if (!env_ || !args || args->getSize(ctx) < 2) return PROTO_NONE;
-        const proto::ProtoString* targetS_ =
-            PythonEnvironment::getInternedString(ctx, "__protopy_dict_proxy_target__");
-        const proto::ProtoObject* tgt = self_->getAttribute(ctx, targetS_);
-        const proto::ProtoObject* key = args->getAt(ctx, 0);
-        const proto::ProtoObject* val = args->getAt(ctx, 1);
-        if (tgt && tgt != PROTO_NONE && key && key->isString(ctx)) {
-            // PI: write directly to the target's own attrs and to its
-            // __data__ / __keys__ storage, bypassing env->setAttribute's
-            // descriptor short-circuit (which would dispatch __set__ →
-            // back into obj.__dict__[key] and recurse).  Mirrors CPython
-            // `obj.__dict__[key] = value`: instance dict storage is
-            // updated, descriptors are not invoked.  For built-in
-            // subclasses where __data__ holds the built-in's storage,
-            // we route to __pydict_data__/__pydict_keys__ instead.
-            const proto::ProtoString* nm = key->asString(ctx);
-            const proto::ProtoString* dS = env_->getDataString();
-            const proto::ProtoString* kS = env_->getKeysString();
-            {
-                const proto::ProtoObject* probe = tgt->hasOwnAttribute(ctx, dS) == PROTO_TRUE
-                    ? tgt->getAttribute(ctx, dS) : nullptr;
-                if ((probe && probe != PROTO_NONE && !probe->asSparseList(ctx))
-                    || isDictSubclassInstance(ctx, env_, tgt)) {
-                    dS = PythonEnvironment::getInternedString(ctx, "__pydict_data__");
-                    kS = PythonEnvironment::getInternedString(ctx, "__pydict_keys__");
-                }
-            }
-
-            // 1. Update __data__ sparse list (rebuild and store new pointer).
-            const proto::ProtoObject* dataObj = tgt->hasOwnAttribute(ctx, dS) == PROTO_TRUE
-                ? tgt->getAttribute(ctx, dS) : nullptr;
-            const proto::ProtoSparseList* dl = dataObj ? dataObj->asSparseList(ctx) : nullptr;
-            if (dl) {
-                dl = dl->setAt(ctx, nm->getHash(ctx), val);
-                const_cast<proto::ProtoObject*>(tgt)->setAttribute(ctx, dS, dl->asObject(ctx));
-            }
-            // 2. Update __keys__ list (append name if not already present).
-            const proto::ProtoObject* keysObj = tgt->hasOwnAttribute(ctx, kS) == PROTO_TRUE
-                ? tgt->getAttribute(ctx, kS) : nullptr;
-            if (keysObj && ::protoPython::listStorage(ctx, keysObj) && !::protoPython::listStorage(ctx, keysObj)->has(ctx, nm->asObject(ctx))) {
-                const proto::ProtoList* nl = ::protoPython::listStorage(ctx, keysObj)->appendLast(ctx, nm->asObject(ctx));
-                const_cast<proto::ProtoObject*>(tgt)->setAttribute(ctx, kS, nl->asObject(ctx));
-            }
-            // 3. Update the native attribute mirror.
-            const_cast<proto::ProtoObject*>(tgt)->setAttribute(ctx, nm, val);
+        if (!env_ || !self_ || !args || args->getSize(ctx) < 2) return PROTO_NONE;
+        py_dict_setitem(ctx, self_, pl, args, kw);
+        if (const proto::ProtoObject* owner = instanceDictOwner(ctx, self_)) {
+            instanceDictOwnerSet(ctx, env_, owner, args->getAt(ctx, 0), args->getAt(ctx, 1));
         }
         return PROTO_NONE;
     };
     auto delitem = [](proto::ProtoContext* ctx, const proto::ProtoObject* self_,
-                      const proto::ParentLink*,
+                      const proto::ParentLink* pl,
                       const proto::ProtoArguments* args,
-                      const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
+                      const proto::ProtoKeywordArguments* kw) -> const proto::ProtoObject* {
         PythonEnvironment* env_ = PythonEnvironment::fromContext(ctx);
-        if (!env_ || !args || args->getSize(ctx) < 1) return PROTO_NONE;
-        const proto::ProtoString* targetS_ =
-            PythonEnvironment::getInternedString(ctx, "__protopy_dict_proxy_target__");
-        const proto::ProtoObject* tgt = self_->getAttribute(ctx, targetS_);
-        const proto::ProtoObject* key = args->getAt(ctx, 0);
-        if (tgt && tgt != PROTO_NONE && key && key->isString(ctx)) {
-            const proto::ProtoString* nm = key->asString(ctx);
-            // Drop from __data__ / __keys__ on the target (or the
-            // __pydict_* slots for built-in subclasses).
-            const proto::ProtoString* dS = env_->getDataString();
-            const proto::ProtoString* kS = env_->getKeysString();
-            {
-                const proto::ProtoObject* probe = tgt->hasOwnAttribute(ctx, dS) == PROTO_TRUE
-                    ? tgt->getAttribute(ctx, dS) : nullptr;
-                if ((probe && probe != PROTO_NONE && !probe->asSparseList(ctx))
-                    || isDictSubclassInstance(ctx, env_, tgt)) {
-                    dS = PythonEnvironment::getInternedString(ctx, "__pydict_data__");
-                    kS = PythonEnvironment::getInternedString(ctx, "__pydict_keys__");
-                }
-            }
-            const proto::ProtoObject* dataObj = tgt->hasOwnAttribute(ctx, dS) == PROTO_TRUE
-                ? tgt->getAttribute(ctx, dS) : nullptr;
-            if (dataObj && dataObj->asSparseList(ctx)) {
-                dataObj->asSparseList(ctx)->removeAt(ctx, nm->getHash(ctx));
-            }
-            const proto::ProtoObject* keysObj = tgt->hasOwnAttribute(ctx, kS) == PROTO_TRUE
-                ? tgt->getAttribute(ctx, kS) : nullptr;
-            if (keysObj && ::protoPython::listStorage(ctx, keysObj)) {
-                const proto::ProtoList* nl = ctx->newList();
-                const proto::ProtoList* kl = ::protoPython::listStorage(ctx, keysObj);
-                proto::proto_ulong h = nm->getHash(ctx);
-                for (proto::proto_ulong i = 0; i < kl->getSize(ctx); ++i) {
-                    const proto::ProtoObject* k = kl->getAt(ctx, static_cast<int>(i));
-                    if (k && k->isString(ctx) && k->getHash(ctx) == h) continue;
-                    nl = nl->appendLast(ctx, k);
-                }
-                const_cast<proto::ProtoObject*>(tgt)->setAttribute(ctx, kS, nl->asObject(ctx));
-            }
-            // Also clear the native attribute
-            const_cast<proto::ProtoObject*>(tgt)->setAttribute(ctx, nm, env_->getNonePrototype());
+        if (!env_ || !self_ || !args || args->getSize(ctx) < 1) return PROTO_NONE;
+        py_dict_delitem(ctx, self_, pl, args, kw);  // KeyError when absent
+        if (const proto::ProtoObject* owner = instanceDictOwner(ctx, self_)) {
+            instanceDictOwnerRemove(ctx, env_, owner, args->getAt(ctx, 0));
         }
         return PROTO_NONE;
     };
@@ -16373,6 +16405,14 @@ static const proto::ProtoObject* py_dict_clear(
         if (publishDictState(context, receiver, dataName, keysName, dataObj, keysObj,
                              context->newSparseList()->asObject(context),
                              context->newList()->asObject(context))) {
+            // An instance's __dict__: every name it held leaves the instance.
+            if (const proto::ProtoObject* owner = instanceDictOwner(context, receiver)) {
+                const proto::ProtoList* cleared = keysObj ? ::protoPython::listStorage(context, keysObj) : nullptr;
+                PythonEnvironment* env = PythonEnvironment::fromContext(context);
+                for (proto::proto_ulong i = 0; cleared && i < cleared->getSize(context); ++i) {
+                    instanceDictOwnerRemove(context, env, owner, cleared->getAt(context, static_cast<int>(i)));
+                }
+            }
             return PROTO_NONE;
         }
     }
@@ -16676,6 +16716,9 @@ static const proto::ProtoObject* py_dict_setdefault(
         keysList = keysList->appendLast(context, key);
         if (publishDictState(context, receiver, dataName, keysName, data, keysObj,
                              newDict->asObject(context), keysList->asObject(context))) {
+            if (const proto::ProtoObject* owner = instanceDictOwner(context, receiver)) {
+                instanceDictOwnerSet(context, PythonEnvironment::fromContext(context), owner, key, defaultVal);
+            }
             return defaultVal;
         }
     }
@@ -16735,6 +16778,9 @@ static const proto::ProtoObject* py_dict_pop(
         }
         if (publishDictState(context, receiver, dataName, keysName, dataObj, keysObj,
                              newDict->asObject(context), newKeys->asObject(context))) {
+            if (const proto::ProtoObject* owner = instanceDictOwner(context, receiver)) {
+                instanceDictOwnerRemove(context, PythonEnvironment::fromContext(context), owner, key);
+            }
             return value;
         }
     }
@@ -16777,6 +16823,9 @@ static const proto::ProtoObject* py_dict_popitem(
         if (!publishDictState(context, receiver, dataName, keysName, dataObj, keysObj,
                               newDict->asObject(context), newKeys->asObject(context))) {
             continue;
+        }
+        if (const proto::ProtoObject* owner = instanceDictOwner(context, receiver)) {
+            instanceDictOwnerRemove(context, PythonEnvironment::fromContext(context), owner, key);
         }
         const proto::ProtoList* pair = context->newList()->appendLast(context, key)->appendLast(context, value);
         return ::protoPython::PythonEnvironment::tupleFromList(context, pair);
@@ -25835,9 +25884,16 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                 return ownDesc;
             }
         }
-        const proto::ProtoObject* dictDescr = objectPrototype->proto::ProtoObject::getAttribute(ctx, dictString);
-        if (dictDescr && dictDescr != PROTO_NONE && dictDescr->isMethod(ctx)) {
-            return dictDescr->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(obj), nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
+        // No class on the MRO defines its own, and the object stores none
+        // itself (a function keeps its namespace under an own `__dict__`,
+        // which the resolution below returns): the default getter.  It is
+        // called directly.  It used to be read back from objectPrototype,
+        // but that read resolves to type's `__dict__` getset descriptor
+        // (object's chain reaches type), which is not a method, so a type
+        // without its own `__dict__` entry -- the module type, for one --
+        // answered getattr(m, '__dict__') with the raw descriptor.
+        if (obj->hasOwnAttribute(ctx, dictString) != PROTO_TRUE) {
+            return py_object_get_dict(ctx, obj, nullptr, nullptr, nullptr);
         }
     }
 

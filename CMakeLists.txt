@@ -605,6 +605,20 @@ set_tests_properties(protopy_functools_cmp_to_key PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# vars(o) is o's namespace: deleting, popping and clearing through it remove attributes.
+add_test(NAME protopy_vars_namespace_writes
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/vars_namespace_writes.py)
+set_tests_properties(protopy_vars_namespace_writes PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
+# vars(x) raises TypeError for an object without __dict__.
+add_test(NAME protopy_vars_without_dict
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/vars_without_dict.py)
+set_tests_properties(protopy_vars_without_dict PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # Containers find an element by identity before equality (nan in [nan]).
 add_test(NAME protopy_nan_containment
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/nan_containment.py)

@@ -5079,22 +5079,44 @@ static const proto::ProtoObject* py_vars(proto::ProtoContext* ctx, const proto::
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
     const proto::ProtoString* dictS = env ? env->getDictDunderString() : PythonEnvironment::getInternedString(ctx, "__dict__");
 
-    // PI: use env->getAttribute so the type chain (and the
-    // objectPrototype.__dict__ method) is found.  The bare
-    // obj->getAttribute only walks own attrs.
-    const proto::ProtoObject* dict = env ? env->getAttribute(ctx, obj, dictS) : obj->getAttribute(ctx, dictS);
+    if (!env) return obj->getAttribute(ctx, dictS);
+    // CPython: vars(obj) is obj.__dict__, read as obj.__dict__ is read
+    // (descriptors and all), and an object without one raises TypeError.
+    // Only AttributeError means "no __dict__"; whatever else the lookup
+    // raises propagates.
+    //
+    // None never has one (NoneType cannot be subclassed).  It is decided
+    // here because a lookup on None reads NoneType's own chain, where
+    // getattr(None, '__dict__') finds type's unbound __dict__ descriptor.
+    if (obj == PROTO_NONE || obj == env->getNonePrototype()) {
+        env->raiseTypeError(ctx, "vars() argument must have __dict__ attribute");
+        return nullptr;
+    }
+    const proto::ProtoObject* dict = nullptr;
+    try {
+        dict = env->loadAttr(ctx, obj, dictS, nullptr, /*raiseIfMissing=*/false);
+    } catch (const proto::ProtoException& e) {
+        const proto::ProtoObject* exc = e.value();
+        const proto::ProtoObject* aeType = env->getAttributeErrorType();
+        if (!(exc && aeType && (env->getType(ctx, exc) == aeType
+                                || exc->isInstanceOf(ctx, aeType) == PROTO_TRUE))) {
+            throw;
+        }
+        dict = nullptr;
+    }
     // __dict__ on objectPrototype is installed as a method
     // (py_object_get_dict) — invoke it to materialise the dict, just
     // like LOAD_ATTR's auto-invoke special-case.
     if (dict && dict != PROTO_NONE && dict->asMethod(ctx) && dict->asMethodSelf(ctx) != nullptr) {
-        const proto::ProtoObject* materialised = dict->asMethod(ctx)(ctx,
+        dict = dict->asMethod(ctx)(ctx,
             const_cast<proto::ProtoObject*>(dict->asMethodSelf(ctx)),
             nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
-        if (materialised) dict = materialised;
     }
-    if (dict && dict != PROTO_NONE) return dict;
-
-    return obj;
+    if (!dict) {
+        env->raiseTypeError(ctx, "vars() argument must have __dict__ attribute");
+        return nullptr;
+    }
+    return dict;
 }
 
 /** Compare two objects for sorting: int, string, else compare(). */
