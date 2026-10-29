@@ -791,6 +791,22 @@ set_tests_properties(protopy_platform_version PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# os.pipe is non-inheritable; Popen with a stdin pipe does not wait for the child.
+add_test(NAME protopy_os_pipe_subprocess_stdin
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/os_pipe_subprocess_stdin.py)
+set_tests_properties(protopy_os_pipe_subprocess_stdin PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "os_pipe_subprocess_stdin: ok"
+    LABELS "regression_gate")
+# A bound builtin method stored on a class keeps its receiver.
+add_test(NAME protopy_bound_builtin_class_attr
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/bound_builtin_class_attr.py)
+set_tests_properties(protopy_bound_builtin_class_attr PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "bound_builtin_class_attr: ok"
+    LABELS "regression_gate")
 # os.execv/execve reject bad argument lists and environments with ValueError.
 add_test(NAME protopy_os_exec_argument_checks
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/os_exec_argument_checks.py)

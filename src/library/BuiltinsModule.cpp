@@ -3728,6 +3728,28 @@ static const proto::ProtoObject* py_memoryview_tobytes(
     return data;
 }
 
+/** memoryview[i] / memoryview[a:b]: an item of the viewed bytes, or a
+ *  memoryview of the selected bytes.  memoryview had no __getitem__, so
+ *  `mv[1:3]` was None (subprocess's communicate() writes slices of
+ *  memoryview(input)).  The slice views a copy of the bytes rather than
+ *  sharing the buffer. */
+static const proto::ProtoObject* py_memoryview_getitem(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !args || args->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* data = self->getAttribute(context, PythonEnvironment::getInternedString(context, "__mv_data__"));
+    if (!data || data == PROTO_NONE) return PROTO_NONE;
+    const proto::ProtoObject* key = args->getAt(context, 0);
+    const proto::ProtoObject* item = env->getItem(data, key, context);
+    if (!item || key->isInteger(context)) return item;
+    const proto::ProtoObject* mvClass = env->getType(context, self);
+    return (mvClass && mvClass != PROTO_NONE) ? env->callObject(mvClass, {item}) : item;
+}
+
 /** memoryview.cast(format[, shape]) — returns a new view with a different format/shape */
 static const proto::ProtoObject* py_memoryview_cast_method(
     proto::ProtoContext* context,
@@ -12279,6 +12301,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     memoryviewClass = memoryviewClass->setAttribute(ctx,
         PythonEnvironment::getInternedString(ctx, "__bytes__"),
         ctx->fromMethod(nullptr, py_memoryview_tobytes));
+    memoryviewClass = memoryviewClass->setAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__getitem__"),
+        ctx->fromMethod(nullptr, py_memoryview_getitem));
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "memoryview"), memoryviewClass);
     // `super` is a real, subclassable type (CPython parity): a class
     // object with __new__ / __init__ on the type.  `super(...)` dispatches

@@ -81,6 +81,7 @@ static bool get_thread_diag() {
 #include <shared_mutex>
 
 namespace protoPython {
+bool keepsOwnReceiver(proto::ProtoContext* ctx, const proto::ProtoObject* cell, const proto::ProtoObject* instance);
 
 #if defined(_WIN32)
 // _winapi (WinapiModule.cpp, Windows only).
@@ -19420,6 +19421,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             if (!self->isMethod(ctx)) return self;
             PythonEnvironment* getEnv = PythonEnvironment::fromContext(ctx);
             if (getEnv && getEnv->isCompiledFunction(ctx, self)) return getEnv->bindNativeMethod(ctx, self, instance);
+            if (keepsOwnReceiver(ctx, self, instance)) return self;
             const proto::ProtoObject* bound = ctx->fromMethod(const_cast<proto::ProtoObject*>(instance), self->asMethod(ctx));
             if (get_env_diag()) fprintf(stderr, "DEBUG_GET: created bound method %p\n", (void*)bound);
             
@@ -22925,6 +22927,16 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         const proto::ProtoObject* stdinObj = io::makeStandardInput(rootContext_, ioModule);
         sysModule = sysModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "stdin"), stdinObj);
         sysModule = sysModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__stdin__"), stdinObj);
+        // sys.stdout.buffer / sys.stderr.buffer were None, so code writing
+        // bytes to standard output (`python -m base64`, ...) failed.
+        for (int fd = 1; fd <= 2; ++fd) {
+            const proto::ProtoObject* stream = sysModule->getAttribute(rootContext_,
+                PythonEnvironment::getInternedString(rootContext_, fd == 1 ? "stdout" : "stderr"));
+            // The streams are mutable objects (SysModule), updated in place.
+            if (stream && stream != PROTO_NONE)
+                stream->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "buffer"),
+                                     io::makeStandardOutputBuffer(rootContext_, ioModule, fd));
+        }
     }
 
     // Expose common exceptions in builtins using cached strings
@@ -26787,6 +26799,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                 }
                 return bindNativeMethod(ctx, val, obj);
             }
+            if (keepsOwnReceiver(ctx, val, obj)) return val;
             const proto::ProtoObject* bound = ctx->fromMethod(const_cast<proto::ProtoObject*>(obj), val->asMethod(ctx));
             const proto::ProtoString* py_name_s = this->getNameString();
             if (!py_name_s) py_name_s = PythonEnvironment::getInternedString(ctx, "__name__");
@@ -30454,6 +30467,21 @@ bool PythonEnvironment::isCompiledFunction(proto::ProtoContext* ctx, const proto
     static const proto::ProtoString* moduleNsKey = nullptr;
     if (!moduleNsKey) moduleNsKey = PythonEnvironment::getInternedString(ctx, "__module_ns__");
     return storage->hasOwnAttribute(ctx, moduleNsKey) == PROTO_TRUE;
+}
+
+bool keepsOwnReceiver(proto::ProtoContext* ctx, const proto::ProtoObject* cell, const proto::ProtoObject* instance) {
+    // A native method cell bound to an object outside the instance's
+    // prototype chain is a bound builtin method (`re.compile(p).match`,
+    // `"s".upper`, `len`), which in CPython is not a descriptor: stored on a
+    // class and read through an instance, it keeps its receiver.  Rebinding
+    // it ran it on the instance (doctest's `_IS_BLANK_OR_COMMENT =
+    // re.compile(...).match` failed with "descriptor requires a 're.Pattern'
+    // object").  A cell bound to a prototype the instance inherits from is a
+    // type's method and is bound to the instance as before.
+    if (!cell || !instance || instance == PROTO_NONE || !cell->isMethod(ctx)) return false;
+    const proto::ProtoObject* receiver = cell->asMethodSelf(ctx);
+    if (!receiver || receiver == instance) return false;
+    return instance->isInstanceOf(ctx, receiver) != PROTO_TRUE;
 }
 
 const proto::ProtoObject* PythonEnvironment::bindNativeMethod(proto::ProtoContext* ctx, const proto::ProtoObject* method,

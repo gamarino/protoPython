@@ -16,6 +16,7 @@
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
 #include <signal.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <dirent.h>
 #include <sys/stat.h>
 #include <sys/times.h>
@@ -920,8 +921,31 @@ static const proto::ProtoObject* py_pipe(
     const proto::ProtoArguments* /*posArgs*/,
     const proto::ProtoKeywordArguments* /*kwargs*/) {
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
+    // PEP 446: both ends are non-inheritable.  Inheritable ends leaked
+    // subprocess's error pipe into the child, so Popen() waited for the
+    // child to exit (a child reading its stdin pipe never did:
+    // `Popen(["cat"], stdin=PIPE, stdout=PIPE)` hung).
     int pipefds[2];
-    if (pipe(pipefds) == 0) {
+#if defined(__linux__)
+    const int rc = pipe2(pipefds, O_CLOEXEC);
+#else
+    const int rc = pipe(pipefds);
+#if defined(FD_CLOEXEC)
+    if (rc == 0) {
+        for (int fd : pipefds) {
+            const int fl = fcntl(fd, F_GETFD);
+            if (fl != -1) fcntl(fd, F_SETFD, fl | FD_CLOEXEC);
+        }
+    }
+#endif
+#endif
+    if (rc != 0) {
+        const int e = errno;
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseOSError(ctx, e, std::strerror(e), "");
+        return nullptr;
+    }
+    {
         const proto::ProtoList* tuple = ctx->newList();
         tuple = tuple->appendLast(ctx, ctx->fromInteger(pipefds[0]));
         tuple = tuple->appendLast(ctx, ctx->fromInteger(pipefds[1]));
@@ -1658,13 +1682,22 @@ static bool extractRawBytes(
     const proto::ProtoString* dataKey = env ? env->getDataString()
                                             : PythonEnvironment::getInternedString(ctx, "__data__");
     const proto::ProtoObject* d = obj->getAttribute(ctx, dataKey);
-    if (!d) return false;
-    if (d->isByteBuffer(ctx)) {
+    if (d && d->isByteBuffer(ctx)) {
         const proto::ProtoByteBuffer* bb = d->asByteBuffer(ctx);
         if (bb) { out.assign(bb->getBuffer(ctx), bb->getSize(ctx)); return true; }
-    } else if (d->isString(ctx)) {
+    } else if (d && d->isString(ctx)) {
         d->asString(ctx)->toUTF8String(ctx, out);
         return true;
+    }
+    // A memoryview (or a slice of one) or an array gives its bytes through
+    // tobytes(): subprocess's communicate() writes slices of
+    // memoryview(input), and os.write rejected them ("a bytes-like object is
+    // required").
+    if (env) {
+        const proto::ProtoObject* tobytes = env->getAttribute(ctx, obj,
+            PythonEnvironment::getInternedString(ctx, "tobytes"), /*raiseError=*/false);
+        const proto::ProtoObject* b = (tobytes && tobytes != PROTO_NONE) ? env->callObject(tobytes, {}) : nullptr;
+        if (b && b != obj) return extractRawBytes(ctx, b, out);
     }
     return false;
 }
