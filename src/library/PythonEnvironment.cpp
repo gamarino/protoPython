@@ -25290,7 +25290,15 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
         const proto::ProtoString* classS = getClassString() ? getClassString() : PythonEnvironment::getInternedString(ctx, "__class__");
         if (obj->hasOwnAttribute(ctx, classS) == PROTO_TRUE) {
             const proto::ProtoObject* cls = obj->proto::ProtoObject::getAttribute(ctx, classS);
-            if (cls && cls != PROTO_NONE && cls != obj && !cls->isString(ctx)) {
+            // A class's own `__class__` is its metaclass only when it is a
+            // class.  A class body may define `__class__` itself, for its
+            // instances (unittest.mock's NonCallableMock defines it as a
+            // property): that value lives in the class namespace and says
+            // nothing about the class's own type, which CPython keeps apart
+            // (Py_TYPE).  It is skipped here, so the class's type is read
+            // below as for any class without an explicit metaclass.
+            if (cls && cls != PROTO_NONE && cls != obj && !cls->isString(ctx)
+                && (!isActuallyAClass(ctx, obj) || isActuallyAClass(ctx, cls))) {
                 res = cls;
             }
         }
@@ -25783,6 +25791,24 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         }
     }
 
+    // `type` is its own metatype, so a data descriptor that type defines for
+    // its instances (the classes) also governs a read on type itself, ahead
+    // of type's own namespace: CPython answers `type.__mro__` with
+    // (type, object), not with the descriptor stored in type.__dict__.  For
+    // every other class the own value (its MRO tuple, say) is what the
+    // descriptor would compute, so only type needs this.
+    if (obj == typePrototype && getSetDescriptorPrototype) {
+        const proto::ProtoObject* own = obj->getOwnAttributeDirect(ctx, name);
+        if (own && own != PROTO_NONE && own->getFirstParent(ctx) == getSetDescriptorPrototype) {
+            const proto::ProtoObject* fget = own->getOwnAttributeDirect(ctx,
+                PythonEnvironment::getInternedString(ctx, "fget"));
+            if (fget && fget != PROTO_NONE && fget->asMethod(ctx)) {
+                return fget->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(obj), nullptr,
+                    argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
+            }
+        }
+    }
+
     bool isClass = this->isActuallyAClass(ctx, obj);
 
     if (protoPython::diagClassTraceEnabled() && dictString && name == dictString) {
@@ -25922,8 +25948,36 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         }
     }
 
-    // Special handling for __class__
+    // Special handling for __class__.  object's `__class__` is a data
+    // descriptor that answers the type, but a class body may define its own
+    // for its instances (unittest.mock's NonCallableMock: a property that
+    // answers the spec class, which is how isinstance(Mock(spec=C), C)
+    // holds).  Such an entry precedes object's on the MRO and wins.  A
+    // class's own `__class__` that is itself a class is its metaclass slot,
+    // not an entry of its namespace, and is skipped.
     if (classString && name == classString && !isClass) {
+        if (objClass && objClass != PROTO_NONE && objClass != objectPrototype) {
+            ::protoPython::TupleView mroT = classMroForLookup(this, ctx, objClass);
+            const proto::proto_ulong n = mroT ? mroT->getSize(ctx) : 0;
+            for (proto::proto_ulong i = 0; i < n; ++i) {
+                const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(i));
+                if (!base || base == PROTO_NONE || base == objectPrototype) break;
+                if (base->hasOwnAttribute(ctx, classString) != PROTO_TRUE) continue;
+                const proto::ProtoObject* descr = base->getOwnAttributeDirect(ctx, classString);
+                if (!descr || descr == PROTO_NONE || isActuallyAClass(ctx, descr)) continue;
+                const proto::ProtoObject* descrType = getType(ctx, descr);
+                const proto::ProtoObject* getM = (descrType && descrType != PROTO_NONE)
+                    ? getAttribute(ctx, descrType, getGetDunderString(), false) : nullptr;
+                if (!getM || getM == PROTO_NONE) break;  // not a descriptor: object's answer
+                if (getM->asMethod(ctx)) {
+                    const proto::ProtoList* gaArgs = ctx->newList()->appendLast(ctx, obj)->appendLast(ctx, objClass);
+                    return getM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(descr), nullptr,
+                        argsView(proto::ProtoListArguments(ctx, gaArgs)), nullptr);
+                }
+                return invokePythonCallable(ctx, getM,
+                    ctx->newList()->appendLast(ctx, descr)->appendLast(ctx, obj)->appendLast(ctx, objClass), nullptr);
+            }
+        }
         return this->getType(ctx, obj);
     }
 

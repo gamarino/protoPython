@@ -630,6 +630,22 @@ set_tests_properties(protopy_vars_without_dict PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# unittest.mock imports and works (Mock, MagicMock, patch, spec'd isinstance).
+add_test(NAME protopy_unittest_mock_basics
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/unittest_mock_basics.py)
+set_tests_properties(protopy_unittest_mock_basics PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "unittest_mock_basics ok"
+    LABELS "regression_gate")
+# A class namespace may bind `__code__` or a `__class__` property without being taken for a function or a metaclass.
+add_test(NAME protopy_class_namespace_code_and_class
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/class_namespace_code_and_class.py)
+set_tests_properties(protopy_class_namespace_code_and_class PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "class_namespace_code_and_class ok"
+    LABELS "regression_gate")
 # Containers find an element by identity before equality (nan in [nan]).
 add_test(NAME protopy_nan_containment
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/nan_containment.py)
