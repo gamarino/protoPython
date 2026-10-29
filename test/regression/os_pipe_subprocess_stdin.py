@@ -34,6 +34,9 @@ else:
     raise AssertionError("write to a closed pipe succeeded")
 os.close(w)
 
+# sys.executable is the interpreter (on macOS it was the script).
+assert os.path.realpath(sys.executable) != os.path.realpath(__file__)
+
 child = [sys.executable, "-c",
          "import sys; data = sys.stdin.buffer.read(); sys.stdout.buffer.write(data[::-1])"]
 p = subprocess.Popen(child, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
