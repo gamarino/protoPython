@@ -16993,7 +16993,11 @@ const proto::ProtoObject* PythonEnvironment::wrapList(proto::ProtoContext* ctx,
     if (!env || !env->listPrototype) {
         return underlying->asObject(ctx);
     }
-    const proto::ProtoObject* listObj = ctx->newObject(false);
+    // Mutable, as every list object is (a list display builds one the same
+    // way): an immutable object here made append() and every other
+    // in-place change of the returned list a silent no-op (os.listdir(),
+    // a package's __path__, ...).
+    const proto::ProtoObject* listObj = ctx->newObject(true);
     listObj = listObj->addParent(ctx, env->listPrototype);
     const proto::ProtoString* dataName = env->dataString
         ? env->dataString
@@ -19969,6 +19973,11 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     functionPrototype = functionPrototype->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "function")->asObject(rootContext_));
     functionPrototype = functionPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "function")->asObject(rootContext_));
     functionPrototype = functionPrototype->setAttribute(rootContext_, py_module, builtinsVal);
+    // A function without defaults answers None for __defaults__ and
+    // __kwdefaults__ (CPython's getset descriptors); createUserFunction
+    // stores the tuple / dict on the function when there are some.
+    functionPrototype = functionPrototype->setAttribute(rootContext_, getDefaultsString(), PROTO_NONE);
+    functionPrototype = functionPrototype->setAttribute(rootContext_, getKwdefaultsString(), PROTO_NONE);
     functionPrototype = functionPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__call__"), rootContext_->fromMethod(nullptr, protoPython::exported_runUserFunctionCall));
     functionPrototype = functionPrototype->setAttribute(rootContext_, getDunderString, rootContext_->fromMethod(nullptr, PythonEnvironment::py_function_get));
     // PEP 695: a function without type parameters has `__type_params__ == ()`;
@@ -20002,6 +20011,34 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             return PROTO_NONE;
         }));
     methodPrototype = methodPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__doc__"), PROTO_NONE);
+    // CPython's method_getattro: a name the method type does not define is
+    // read from the function (`C().m.__defaults__`, `__name__`, attributes set
+    // on the function).  Missing there too, the error names the function.
+    methodPrototype = methodPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__getattr__"),
+        rootContext_->fromMethod(nullptr,
+        [](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoArguments* args,
+           const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            const proto::proto_ulong n = args ? args->getSize(ctx) : 0;
+            if (!env || n < 1) return nullptr;
+            const proto::ProtoObject* method = n >= 2 ? args->getAt(ctx, 0) : self;
+            const proto::ProtoObject* nameObj = args->getAt(ctx, n >= 2 ? 1 : 0);
+            if (!method || method == PROTO_NONE || !nameObj || !nameObj->isString(ctx)) return nullptr;
+            std::string name;
+            nameObj->asString(ctx)->toUTF8String(ctx, name);
+            const proto::ProtoString* funcS = PythonEnvironment::getInternedString(ctx, "__func__");
+            const proto::ProtoObject* func = method->hasOwnAttribute(ctx, funcS) == PROTO_TRUE
+                ? method->getOwnAttributeDirect(ctx, funcS) : nullptr;
+            const proto::ProtoObject* v = (func && func != PROTO_NONE && func != method)
+                ? env->getAttribute(ctx, func, PythonEnvironment::getInternedString(ctx, name.c_str()), false)
+                : nullptr;
+            if (v) return v;
+            // CPython's message names the function, where the lookup ended.
+            env->raiseAttributeError(ctx, (func && func != PROTO_NONE) ? func : method, name);
+            return nullptr;
+        }));
     // Bound-method __eq__/__ne__/__hash__: this is the env-owned
     // methodPrototype (env->getMethodPrototype()) — distinct from
     // space->methodPrototype set up earlier — and is the parent of every
@@ -25722,7 +25759,8 @@ bool PythonEnvironment::isPlainInstanceForTypeOnlyNames(proto::ProtoContext* ctx
     // a synthesised module spec) are plain objects of type object, and
     // internal lookups read __mro__ through them.
     if (t == listPrototype || t == dictPrototype || t == tuplePrototype
-        || t == setPrototype || t == frozensetPrototype || t == bytesPrototype || t == complexPrototype)
+        || t == setPrototype || t == frozensetPrototype || t == bytesPrototype || t == complexPrototype
+        || t == methodPrototype)
         return true;
     return t->hasOwnAttribute(ctx, getIsPythonClassString()) == PROTO_TRUE;
 }
@@ -28903,17 +28941,31 @@ void PythonEnvironment::ensureModuleInSysModules(proto::ProtoContext* ctx, const
     if (!mod || mod == PROTO_NONE) return;
     const proto::ProtoString* specName = PythonEnvironment::getInternedString(ctx, "__spec__");
     if (mod->hasOwnAttribute(ctx, specName) != PROTO_TRUE) {
+        // A module loaded from a file records it as its origin; a package
+        // shares its __path__ list as submodule_search_locations and is its
+        // own parent (importlib.machinery.ModuleSpec).
+        const proto::ProtoString* fileS = PythonEnvironment::getInternedString(ctx, "__file__");
+        const proto::ProtoString* pathS = PythonEnvironment::getInternedString(ctx, "__path__");
+        const proto::ProtoObject* fileV = mod->hasOwnAttribute(ctx, fileS) == PROTO_TRUE
+            ? mod->getOwnAttributeDirect(ctx, fileS) : nullptr;
+        const proto::ProtoObject* pathV = mod->hasOwnAttribute(ctx, pathS) == PROTO_TRUE
+            ? mod->getOwnAttributeDirect(ctx, pathS) : nullptr;
+        const bool hasFile = fileV && fileV != PROTO_NONE && fileV->isString(ctx);
+        const bool isPackage = pathV && pathV != PROTO_NONE;
         const proto::ProtoObject* spec = ctx->newObject(false);
         spec = spec->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "name"),
                                   PythonEnvironment::getInternedString(ctx, name.c_str())->asObject(ctx));
         spec = spec->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "loader"), PROTO_NONE);
         spec = spec->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "origin"),
-                                  PythonEnvironment::getInternedString(ctx, "built-in")->asObject(ctx));
-        spec = spec->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "submodule_search_locations"), PROTO_NONE);
-        spec = spec->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "has_location"), PROTO_FALSE);
+                                  hasFile ? fileV : PythonEnvironment::getInternedString(ctx, "built-in")->asObject(ctx));
+        spec = spec->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "submodule_search_locations"),
+                                  isPackage ? pathV : PROTO_NONE);
+        spec = spec->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "has_location"),
+                                  hasFile ? PROTO_TRUE : PROTO_FALSE);
         spec = spec->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "_initializing"), PROTO_FALSE);
         size_t dot = name.rfind('.');
-        std::string parent = (dot == std::string::npos) ? std::string() : name.substr(0, dot);
+        std::string parent = isPackage ? name
+            : ((dot == std::string::npos) ? std::string() : name.substr(0, dot));
         spec = spec->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "parent"),
                                   PythonEnvironment::getInternedString(ctx, parent.c_str())->asObject(ctx));
         const_cast<proto::ProtoObject*>(mod)->setAttribute(ctx, specName, spec);
@@ -30531,8 +30583,21 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
     // SomeClass.__iter__ (which is for instances of SomeClass).
     const proto::ProtoObject* typeObj = getType(ctx, obj);
     const proto::ProtoObject* method = nullptr;
+    // A function on the type is called with obj as its first argument.  Any
+    // other object stored there (a descriptor such as unittest.mock's
+    // MagicProxy, or a plain callable such as a Mock) is bound the way
+    // CPython's slot lookup binds it -- __get__(obj, type), or not at all --
+    // and called with no arguments.
+    bool calledUnbound = false;
     if (typeObj && typeObj != obj) {
-        method = getAttribute(ctx, typeObj, getIterString(), false);
+        const proto::ProtoObject* raw = typeObj->getAttribute(ctx, getIterString());
+        if (raw && raw != PROTO_NONE && !raw->asMethod(ctx)
+                && raw->hasOwnAttribute(ctx, getCodeString()) != PROTO_TRUE
+                && !isCompiledFunction(ctx, raw)) {
+            method = lookupBoundSpecialMethod(ctx, obj, getIterString());
+            calledUnbound = method != nullptr;
+        }
+        if (!method) method = getAttribute(ctx, typeObj, getIterString(), false);
     }
     if (!method) {
         method = getAttribute(ctx, obj, getIterString(), false);
@@ -30544,7 +30609,9 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
     }
     if (method) {
         const proto::ProtoObject* result = nullptr;
-        if (method->asMethod(ctx)) {
+        if (calledUnbound) {
+            result = callObject(method, {});
+        } else if (method->asMethod(ctx)) {
             result = method->asMethod(ctx)(ctx, obj, nullptr, argsView(proto::ProtoListArguments(ctx, getEmptyList())), nullptr);
         } else {
             const proto::ProtoList* callArgs = ctx->newList()->appendLast(ctx, obj);

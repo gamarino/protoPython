@@ -697,6 +697,14 @@ set_tests_properties(protopy_math_isclose PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# function.__defaults__ / __kwdefaults__ are None without defaults, assignable otherwise.
+add_test(NAME protopy_function_defaults_none
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/function_defaults_none.py)
+set_tests_properties(protopy_function_defaults_none PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "function_defaults_none: ok"
+    LABELS "regression_gate")
 # json.dumps escapes strings; re matches code points and supports replacement functions.
 add_test(NAME protopy_json_dumps_escapes
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/json_dumps_escapes.py)
@@ -704,12 +712,28 @@ set_tests_properties(protopy_json_dumps_escapes PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# A type-level __iter__ that is not a function (MagicMock's) is bound as CPython's slot lookup binds it.
+add_test(NAME protopy_magicmock_iteration
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/magicmock_iteration.py)
+set_tests_properties(protopy_magicmock_iteration PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "magicmock_iteration: ok"
+    LABELS "regression_gate")
 # Exhausted built-in iterators raise StopIteration from __next__; heapq.merge works.
 add_test(NAME protopy_native_iterator_next
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/native_iterator_next.py)
 set_tests_properties(protopy_native_iterator_next PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
+    LABELS "regression_gate")
+# A package's __path__ is a list holding its directory, shared with its spec.
+add_test(NAME protopy_package_path_list
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/package_path_list.py)
+set_tests_properties(protopy_package_path_list PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "package_path_list: ok"
     LABELS "regression_gate")
 # import site is silent: next(it, default), sys.copyright and ImportError.name.
 add_test(NAME protopy_import_site
@@ -724,6 +748,14 @@ add_test(NAME protopy_frame_f_locals
 set_tests_properties(protopy_frame_f_locals PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
+    LABELS "regression_gate")
+# Lists the runtime builds natively (os.listdir, re.split, ...) are mutable.
+add_test(NAME protopy_native_lists_mutable
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/native_lists_mutable.py)
+set_tests_properties(protopy_native_lists_mutable PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "native_lists_mutable: ok"
     LABELS "regression_gate")
 # io.open_code opens in binary, as site.addpackage expects of a .pth file.
 add_test(NAME protopy_io_open_code
