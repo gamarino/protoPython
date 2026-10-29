@@ -7857,7 +7857,10 @@ static bool checkInterfaceInstanceOf(proto::ProtoContext* context, const proto::
             const proto::ProtoObject* objClass = obj->getAttribute(context, PythonEnvironment::getInternedString(context, "__class__"));
             if (objClass == env->getBytesPrototype()) return true;
         }
-        if (obj->isInteger(context) && (cls == env->getIntPrototype() || cls == env->getBoolPrototype())) return true;
+        // An int is not a bool (bool subclasses int, not the reverse):
+        // isinstance(1, bool) is False.  True/False are tagged booleans,
+        // matched on the next lines.
+        if (obj->isInteger(context) && cls == env->getIntPrototype()) return true;
         if (obj->isFloat(context) && cls == env->getFloatPrototype()) return true;
         if (obj->isBoolean(context) && (cls == env->getBoolPrototype() || cls == env->getIntPrototype())) return true;
         // The native asList()/asSparseList() asks "does the storage
