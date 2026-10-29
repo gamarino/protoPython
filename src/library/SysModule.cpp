@@ -884,6 +884,39 @@ static const proto::ProtoObject* sys_stream_seek(
     return sys_stream_seek_to(context, self, offset, whence);
 }
 
+// sys.set_coroutine_origin_tracking_depth / get_...: the depth is kept per
+// thread, as in CPython.  Coroutines do not record cr_origin (it stays
+// None), but asyncio in debug mode sets and reads the depth on every run.
+static thread_local long long t_coroOriginDepth = 0;
+
+static const proto::ProtoObject* sys_get_coroutine_origin_tracking_depth(
+    proto::ProtoContext* context, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
+    return context->fromInteger(t_coroOriginDepth);
+}
+
+static const proto::ProtoObject* sys_set_coroutine_origin_tracking_depth(
+    proto::ProtoContext* context, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kw) {
+    const proto::ProtoObject* depth = (args && args->getSize(context) >= 1) ? args->getAt(context, 0) : nullptr;
+    if (!depth && kw) {
+        const proto::ProtoString* depthS = PythonEnvironment::getInternedString(context, "depth");
+        if (kw->has(context, depthS->getHash(context))) depth = kw->getAt(context, depthS->getHash(context));
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!depth || !depth->isInteger(context)) {
+        if (env) env->raiseTypeError(context, "set_coroutine_origin_tracking_depth() expects an integer depth");
+        return nullptr;
+    }
+    const long long d = depth->asLong(context);
+    if (d < 0) {
+        if (env) env->raiseValueError(context, PythonEnvironment::getInternedString(context, "depth must be >= 0")->asObject(context));
+        return nullptr;
+    }
+    t_coroOriginDepth = d;
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* sys_getrecursionlimit(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -921,6 +954,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_getframemodulename"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getframemodulename));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "setrecursionlimit"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_setrecursionlimit));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getrecursionlimit"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getrecursionlimit));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "get_coroutine_origin_tracking_depth"), ctx->fromMethod(nullptr, sys_get_coroutine_origin_tracking_depth));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "set_coroutine_origin_tracking_depth"), ctx->fromMethod(nullptr, sys_set_coroutine_origin_tracking_depth));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "setswitchinterval"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_setswitchinterval));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getswitchinterval"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getswitchinterval));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "is_finalizing"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_is_finalizing));

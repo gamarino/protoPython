@@ -18,10 +18,18 @@
 #include <string>
 #include <thread>
 #include <vector>
+#if !defined(_WIN32)
+#include <sys/resource.h>
+#endif
 
 #include <cstring>
 #include <functional>
 #include <iostream>
+
+#if defined(_WIN32)
+// PosixCompat.cpp: the current thread's stack bounds.
+void protopy_thread_stack_limits(std::uintptr_t* low, std::uintptr_t* high);
+#endif
 
 namespace protoPython {
 
@@ -412,10 +420,75 @@ static void raiseRecursionLimit(PythonEnvironment* env, proto::ProtoContext* ctx
     env->raiseRecursionError(ctx);
 }
 
+// Native stack guard.  Every Python call recurses on the native stack (one
+// dispatcher frame per call, several KiB with GCC), so a recursion limit
+// raised with sys.setrecursionlimit -- 2,000 is enough on Linux --
+// overflowed the stack and the process died of SIGSEGV instead of raising
+// RecursionError.  A call that would leave too little of the native stack
+// free raises RecursionError, as CPython 3.14 does for C stack exhaustion.
+//
+// Windows: the thread's real bounds (GetCurrentThreadStackLimits), and half
+// of the stack is kept free.  MSVC runs a catch block on top of the stack
+// before the frames below it are unwound, so an exception travelling up a
+// deep recursion through frames that catch and rethrow needs stack in
+// proportion to the depth; with a quarter kept free the process still died
+// of stack overflow.
+//
+// Elsewhere: the first RecursionScope of a thread records where its Python
+// calls start, and a quarter of the main thread's stack (RLIMIT_STACK) is
+// kept free.
+namespace {
+#if defined(_WIN32)
+thread_local const char* t_pythonStackLimit = nullptr;
+
+#if defined(_MSC_VER)
+__declspec(noinline)
+#endif
+bool nativeStackExhausted() {
+    char probe = 0;
+    const char* here = &probe;
+    if (!t_pythonStackLimit) {
+        std::uintptr_t low = 0, high = 0;
+        protopy_thread_stack_limits(&low, &high);
+        if (high <= low) return false;
+        t_pythonStackLimit = reinterpret_cast<const char*>(low + (high - low) / 2);
+    }
+    return here < t_pythonStackLimit;
+}
+#else
+thread_local const char* t_pythonStackBase = nullptr;
+
+size_t pythonStackBudget() {
+    static const size_t budget = [] {
+        size_t size = 8u << 20;
+        struct rlimit rl;
+        if (getrlimit(RLIMIT_STACK, &rl) == 0 && rl.rlim_cur != RLIM_INFINITY && rl.rlim_cur > 0)
+            size = static_cast<size_t>(rl.rlim_cur);
+        return size / 4 * 3;
+    }();
+    return budget;
+}
+
+__attribute__((noinline))
+bool nativeStackExhausted() {
+    char probe = 0;
+    const char* here = &probe;
+    if (!t_pythonStackBase) {
+        t_pythonStackBase = here;
+        return false;
+    }
+    return t_pythonStackBase > here
+        && static_cast<size_t>(t_pythonStackBase - here) > pythonStackBudget();
+}
+#endif
+}  // namespace
+
 RecursionScope::RecursionScope(PythonEnvironment* env, proto::ProtoContext* ctx) : env_(env), ctx_(ctx) {
     if (!env_) return;
     
     int limit = env_->getRecursionLimit();
+    // The native stack nearly full is the recursion limit too.
+    if (nativeStackExhausted()) limit = PythonEnvironment::s_recursionDepth;
 
     // If we are already raising a recursion error, allow more depth (up to a hard limit)
     if (PythonEnvironment::s_inRecursionError) {
@@ -741,10 +814,14 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
             frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFCodeString(), codeObj));
             frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFGlobalsString(), globalsObj));
 
+            // f_back is always present: None when no enclosing frame is
+            // known (a caller that runs without a frame object, or the
+            // outermost one).  A missing attribute made every walk of the
+            // frame chain (traceback.extract_stack, asyncio in debug mode)
+            // raise AttributeError.
             const proto::ProtoObject* parentFrame = PythonEnvironment::getCurrentFrame();
-            if (parentFrame) {
-                frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFBackString(), parentFrame));
-            }
+            frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFBackString(),
+                parentFrame ? parentFrame : PROTO_NONE));
         }
     }
 
@@ -1194,10 +1271,14 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
             frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, env->getFramePrototype()));
             frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFCodeString(), codeObj));
             frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFGlobalsString(), globalsObj));
+            // f_back is always present: None when no enclosing frame is
+            // known (a caller that runs without a frame object, or the
+            // outermost one).  A missing attribute made every walk of the
+            // frame chain (traceback.extract_stack, asyncio in debug mode)
+            // raise AttributeError.
             const proto::ProtoObject* parentFrame = PythonEnvironment::getCurrentFrame();
-            if (parentFrame) {
-                frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFBackString(), parentFrame));
-            }
+            frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFBackString(),
+                parentFrame ? parentFrame : PROTO_NONE));
             PythonEnvironment::setCurrentFrame(frame);
         }
     }

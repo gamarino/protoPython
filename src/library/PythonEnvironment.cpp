@@ -23862,7 +23862,16 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                             // __dict__ = self: the module object IS its own namespace (CPython behavior)
                             mutableMod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__dict__"), mutableMod);
                             if (get_env_diag()) { fprintf(stderr, "DEBUG: executeModule setting frame attributes\n"); }
-                            mutableMod->setAttribute(ctx, getFBackString(), PythonEnvironment::getCurrentFrame());
+                            // A module run from no frame (the main module) has
+                            // f_back None.  Storing nullptr left the attribute
+                            // missing, so walking f_back from any frame failed at
+                            // the module ("has no attribute 'f_back'"): asyncio in
+                            // debug mode (IsolatedAsyncioTestCase) creates every
+                            // task through traceback.extract_stack.
+                            {
+                                const proto::ProtoObject* back = PythonEnvironment::getCurrentFrame();
+                                mutableMod->setAttribute(ctx, getFBackString(), back ? back : PROTO_NONE);
+                            }
                             if (get_env_diag()) { fprintf(stderr, "DEBUG: executeModule setting f_code\n"); }
                             mutableMod->setAttribute(ctx, getFCodeString(), codeObj);
                             mutableMod->setAttribute(ctx, getFGlobalsString(), mutableMod);
