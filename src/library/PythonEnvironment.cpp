@@ -22876,6 +22876,14 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         unboundSentinel_ = sent;
         if (gcRoots_) gcRoots_->add(sent);   // P3 D12
     }
+    {
+        const proto::ProtoObject* sent = objectPrototype->newChild(rootContext_, true);
+        sent = sent->setAttribute(rootContext_,
+            PythonEnvironment::getInternedString(rootContext_, "__name__"),
+            PythonEnvironment::getInternedString(rootContext_, "<stack NULL>")->asObject(rootContext_));
+        stackNullSentinel_ = sent;
+        if (gcRoots_) gcRoots_->add(sent);
+    }
     eofErrorType = exceptionsModule->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "EOFError"));
     assertionErrorType = exceptionsModule->getAttribute(rootContext_, assertionErrorS);
     generatorExitType = exceptionsModule->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "GeneratorExit"));

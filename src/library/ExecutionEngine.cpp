@@ -3442,8 +3442,10 @@ static const proto::ProtoObject* py_generator_resume(
 
         if (slist && stackBase) {
             proto::proto_ulong sSize = slist->getSize(calleeCtx);
+            const proto::ProtoObject* nullSlot = env->getStackNullSentinel();
             for (proto::proto_ulong i = 0; i < sSize && i < maxStack; ++i) {
-                stackBase[initialTop++] = const_cast<proto::ProtoObject*>(slist->getAt(calleeCtx, static_cast<int>(i)));
+                const proto::ProtoObject* v = slist->getAt(calleeCtx, static_cast<int>(i));
+                stackBase[initialTop++] = (v == nullSlot) ? nullptr : const_cast<proto::ProtoObject*>(v);
             }
         }
 
@@ -3510,8 +3512,10 @@ static const proto::ProtoObject* py_generator_resume(
             proto::proto_ulong stackBound = (updatedSlotsN > stackOffset)
                 ? static_cast<proto::proto_ulong>(updatedSlotsN - stackOffset) : PROTO_UL(0);
             proto::proto_ulong count = (finalTop < stackBound) ? finalTop : stackBound;
+            const proto::ProtoObject* nullSlot = env->getStackNullSentinel();
             for (proto::proto_ulong j = 0; j < count; ++j) {
-                newStack = newStack->appendLast(calleeCtx, slots[stackOffset + j]);
+                const proto::ProtoObject* v = slots[stackOffset + j];
+                newStack = newStack->appendLast(calleeCtx, v ? v : nullSlot);
             }
         }
         self->setAttribute(calleeCtx, env->getGiStackString(), newStack->asObject(calleeCtx));

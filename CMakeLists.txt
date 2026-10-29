@@ -767,6 +767,14 @@ set_tests_properties(protopy_pth_importlib_empty_home PROPERTIES
     TIMEOUT 120
     FAIL_REGULAR_EXPRESSION "Exception ignored;atexit"
     LABELS "regression_gate")
+# A generator suspended while building a call keeps the call's callable.
+add_test(NAME protopy_yield_inside_call_args
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/yield_inside_call_args.py)
+set_tests_properties(protopy_yield_inside_call_args PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "yield_inside_call_args: ok"
+    LABELS "regression_gate")
 # The builtins aiter() and anext().
 add_test(NAME protopy_builtin_aiter_anext
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/builtin_aiter_anext.py)
