@@ -423,6 +423,12 @@ int executeModule(protoPython::PythonEnvironment& env, const std::string& module
 } // namespace
 
 int main(int argc, char* argv[]) {
+    // Destroyed last on every return from main, after each environment: the
+    // process space ends here, while its collector still runs, and not with
+    // the statics (PythonEnvironment::shutdownProcessSpace).
+    struct ProcessSpaceShutdown {
+        ~ProcessSpaceShutdown() { protoPython::PythonEnvironment::shutdownProcessSpace(); }
+    } processSpaceShutdown;
     prepareStandardStreams();
     CliOptions options;
     std::string parseError;

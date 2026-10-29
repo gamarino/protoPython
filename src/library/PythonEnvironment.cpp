@@ -17098,11 +17098,40 @@ static void applyProcessHeapPolicy(proto::ProtoSpace* space) {
 #endif
 }
 
+// The process space lives on the heap so that a program can end it while
+// every thread is still running (shutdownProcessSpace).  Left to static
+// destruction, its destructor runs on Windows inside protoPython.dll's
+// DLL_PROCESS_DETACH, after ExitProcess has already terminated every other
+// thread: a collector killed while it held ProtoSpace::globalMutex leaves it
+// locked for ever, and the destructor's first lock_guard on it never returns.
+// That was the rare hang after the last line of heap-limited tests on Windows
+// (issue #14).  The guard keeps the old behaviour for an embedder that never
+// calls shutdownProcessSpace: the space is destroyed with the statics.
+namespace {
+proto::ProtoSpace* s_processSpacePtr = nullptr;
+bool s_processSpaceShutDown = false;
+
+struct ProcessSpaceGuard {
+    ~ProcessSpaceGuard() { PythonEnvironment::shutdownProcessSpace(); }
+};
+}  // namespace
+
 proto::ProtoSpace* PythonEnvironment::getProcessSpace() {
-    static proto::ProtoSpace s_processSpace;
-    static const bool s_heapPolicyApplied = (applyProcessHeapPolicy(&s_processSpace), true);
-    (void)s_heapPolicyApplied;
-    return &s_processSpace;
+    static ProcessSpaceGuard s_guard;
+    static proto::ProtoSpace* const s_space = [] {
+        s_processSpacePtr = new proto::ProtoSpace();
+        applyProcessHeapPolicy(s_processSpacePtr);
+        return s_processSpacePtr;
+    }();
+    (void)s_guard;
+    return s_processSpaceShutDown ? nullptr : s_space;
+}
+
+void PythonEnvironment::shutdownProcessSpace() {
+    if (s_processSpaceShutDown) return;
+    s_processSpaceShutDown = true;
+    delete s_processSpacePtr;
+    s_processSpacePtr = nullptr;
 }
 
 /** Singleton enforcement: L-Shape mandates one ProtoSpace per process. Log if multiple PythonEnvironment instances exist. */
