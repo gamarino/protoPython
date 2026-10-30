@@ -25696,7 +25696,24 @@ struct GetTypePicEntry {
     bool isPrimitiveValid = false;     // false until populated
 };
 constexpr size_t kGetTypePicSize = 1024;
-thread_local GetTypePicEntry s_getTypePic[kGetTypePicSize];
+// Each thread's table is on the heap, allocated on first use: as a
+// thread_local array (40 KiB) it was static thread-local storage, which
+// glibc carves out of the top of every thread's stack (see
+// loadAttrPic in ExecutionEngine.cpp).
+thread_local GetTypePicEntry* t_getTypePic = nullptr;
+struct GetTypePicReclaimer {
+    ~GetTypePicReclaimer() { delete[] t_getTypePic; t_getTypePic = nullptr; }
+};
+GetTypePicEntry* allocGetTypePic() {
+    static thread_local GetTypePicReclaimer reclaimer;
+    (void)reclaimer;
+    t_getTypePic = new GetTypePicEntry[kGetTypePicSize];
+    return t_getTypePic;
+}
+inline GetTypePicEntry* getTypePic() {
+    GetTypePicEntry* pic = t_getTypePic;
+    return pic ? pic : allocGetTypePic();
+}
 }  // namespace
 
 const proto::ProtoObject* PythonEnvironment::getattrHookFor(proto::ProtoContext* ctx,
@@ -25795,7 +25812,7 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
     // resolve leaves the new entry already stale.
     const uint64_t gcEpoch = space_ ? space_->getGCCycleCount() : 0;
     const size_t idx = (reinterpret_cast<uintptr_t>(obj) >> 4) & (kGetTypePicSize - 1);
-    GetTypePicEntry* slot = &s_getTypePic[idx];
+    GetTypePicEntry* slot = &getTypePic()[idx];
     if (slot->obj == obj && slot->generation == gen && slot->gcEpoch == gcEpoch) {
         return slot->type;
     }
@@ -25990,7 +26007,8 @@ int PythonEnvironment::primitiveCacheHit(const proto::ProtoObject* obj) const {
     const uint64_t gen = resolveCacheGeneration_.load(std::memory_order_acquire);
     const uint64_t gcEpoch = space_ ? space_->getGCCycleCount() : 0;
     const size_t idx = (reinterpret_cast<uintptr_t>(obj) >> 4) & (kGetTypePicSize - 1);
-    const GetTypePicEntry* slot = &s_getTypePic[idx];
+    if (!t_getTypePic) return 0;
+    const GetTypePicEntry* slot = &t_getTypePic[idx];
     if (slot->obj != obj || slot->generation != gen || slot->gcEpoch != gcEpoch
             || !slot->isPrimitiveValid) {
         return 0;

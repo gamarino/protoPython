@@ -18,18 +18,10 @@
 #include <string>
 #include <thread>
 #include <vector>
-#if !defined(_WIN32)
-#include <sys/resource.h>
-#endif
 
 #include <cstring>
 #include <functional>
 #include <iostream>
-
-#if defined(_WIN32)
-// PosixCompat.cpp: the current thread's stack bounds.
-void protopy_thread_stack_limits(std::uintptr_t* low, std::uintptr_t* high);
-#endif
 
 namespace protoPython {
 
@@ -424,63 +416,50 @@ static void raiseRecursionLimit(PythonEnvironment* env, proto::ProtoContext* ctx
 // dispatcher frame per call, several KiB with GCC), so a recursion limit
 // raised with sys.setrecursionlimit -- 2,000 is enough on Linux --
 // overflowed the stack and the process died of SIGSEGV instead of raising
-// RecursionError.  A call that would leave too little of the native stack
+// RecursionError.  A call that would leave too little of the thread's stack
 // free raises RecursionError, as CPython 3.14 does for C stack exhaustion.
 //
-// Windows: the thread's real bounds (GetCurrentThreadStackLimits), and half
-// of the stack is kept free.  MSVC runs a catch block on top of the stack
-// before the frames below it are unwound, so an exception travelling up a
-// deep recursion through frames that catch and rethrow needs stack in
-// proportion to the depth; with a quarter kept free the process still died
-// of stack overflow.
-//
-// Elsewhere: the first RecursionScope of a thread records where its Python
-// calls start, and a quarter of the main thread's stack (RLIMIT_STACK) is
-// kept free.
+// The first RecursionScope of a thread records where its Python calls
+// start, and the thread's stack size is protoCore's
+// ProtoSpace::currentThreadStackBytes() -- each thread's own: a Python
+// thread on macOS has 512 KiB where the main thread has 8 MiB, and the main
+// thread's size used to be assumed for every thread.  A quarter of the
+// stack is kept free; on Windows half, because MSVC runs a catch block on
+// top of the stack before the frames below it are unwound, so an exception
+// travelling up a deep recursion through frames that catch and rethrow
+// needs stack in proportion to the depth.
 namespace {
-#if defined(_WIN32)
-thread_local const char* t_pythonStackLimit = nullptr;
+thread_local const char* t_pythonStackBase = nullptr;
+thread_local size_t t_pythonStackBudget = 0;  // 0: unknown size, no guard
+thread_local size_t t_pythonStackHardBudget = 0;
+
+enum class NativeStack { Ok, Exhausted, Critical };
 
 #if defined(_MSC_VER)
 __declspec(noinline)
-#endif
-bool nativeStackExhausted() {
-    char probe = 0;
-    const char* here = &probe;
-    if (!t_pythonStackLimit) {
-        std::uintptr_t low = 0, high = 0;
-        protopy_thread_stack_limits(&low, &high);
-        if (high <= low) return false;
-        t_pythonStackLimit = reinterpret_cast<const char*>(low + (high - low) / 2);
-    }
-    return here < t_pythonStackLimit;
-}
 #else
-thread_local const char* t_pythonStackBase = nullptr;
-
-size_t pythonStackBudget() {
-    static const size_t budget = [] {
-        size_t size = 8u << 20;
-        struct rlimit rl;
-        if (getrlimit(RLIMIT_STACK, &rl) == 0 && rl.rlim_cur != RLIM_INFINITY && rl.rlim_cur > 0)
-            size = static_cast<size_t>(rl.rlim_cur);
-        return size / 4 * 3;
-    }();
-    return budget;
-}
-
 __attribute__((noinline))
-bool nativeStackExhausted() {
+#endif
+NativeStack nativeStackState() {
     char probe = 0;
     const char* here = &probe;
     if (!t_pythonStackBase) {
         t_pythonStackBase = here;
-        return false;
-    }
-    return t_pythonStackBase > here
-        && static_cast<size_t>(t_pythonStackBase - here) > pythonStackBudget();
-}
+        const size_t size = proto::ProtoSpace::currentThreadStackBytes();
+#if defined(_WIN32)
+        t_pythonStackBudget = size / 2;
+        t_pythonStackHardBudget = size / 8 * 5;
+#else
+        t_pythonStackBudget = size / 4 * 3;
+        t_pythonStackHardBudget = size / 8 * 7;
 #endif
+        return NativeStack::Ok;
+    }
+    if (t_pythonStackBudget == 0 || t_pythonStackBase <= here) return NativeStack::Ok;
+    const size_t used = static_cast<size_t>(t_pythonStackBase - here);
+    if (used > t_pythonStackHardBudget) return NativeStack::Critical;
+    return used > t_pythonStackBudget ? NativeStack::Exhausted : NativeStack::Ok;
+}
 }  // namespace
 
 RecursionScope::RecursionScope(PythonEnvironment* env, proto::ProtoContext* ctx) : env_(env), ctx_(ctx) {
@@ -488,11 +467,14 @@ RecursionScope::RecursionScope(PythonEnvironment* env, proto::ProtoContext* ctx)
     
     int limit = env_->getRecursionLimit();
     // The native stack nearly full is the recursion limit too.
-    if (nativeStackExhausted()) limit = PythonEnvironment::s_recursionDepth;
+    const NativeStack stack = nativeStackState();
+    if (stack != NativeStack::Ok) limit = PythonEnvironment::s_recursionDepth;
 
-    // If we are already raising a recursion error, allow more depth (up to a hard limit)
+    // If we are already raising a recursion error, allow more depth (up to a
+    // hard limit), but not past the stack's hard budget: the 100 extra
+    // frames do not fit in what is left of a small thread stack.
     if (PythonEnvironment::s_inRecursionError) {
-        if (PythonEnvironment::s_recursionDepth >= limit + 100) {
+        if (stack == NativeStack::Critical || PythonEnvironment::s_recursionDepth >= limit + 100) {
             overflowed_ = true;
             return;
         }
@@ -1383,7 +1365,28 @@ struct LoadAttrPicEntry {
     bool                      isUnbound    = false;
 };
 constexpr size_t kLoadAttrPicSize = 1024;
-thread_local LoadAttrPicEntry g_loadAttrPic[kLoadAttrPicSize];
+// Each thread's table is on the heap, allocated on first use.  As a
+// thread_local array (56 KiB, with getType's 40 KiB table about 100 KiB of
+// this library's static thread-local storage) it lived where glibc puts
+// static TLS: at the top of every thread's stack, inside the size the
+// thread was created with.  A thread started after
+// threading.stack_size(128 * 1024) had about 28 KiB left, the native stack
+// guard (sized by the whole stack) let it overflow, and with the guard
+// told the truth not even threading's bootstrap fitted.
+thread_local LoadAttrPicEntry* t_loadAttrPic = nullptr;
+struct LoadAttrPicReclaimer {
+    ~LoadAttrPicReclaimer() { delete[] t_loadAttrPic; t_loadAttrPic = nullptr; }
+};
+LoadAttrPicEntry* allocLoadAttrPic() {
+    static thread_local LoadAttrPicReclaimer reclaimer;
+    (void)reclaimer;
+    t_loadAttrPic = new LoadAttrPicEntry[kLoadAttrPicSize];
+    return t_loadAttrPic;
+}
+inline LoadAttrPicEntry* loadAttrPic() {
+    LoadAttrPicEntry* pic = t_loadAttrPic;
+    return pic ? pic : allocLoadAttrPic();
+}
 
 static inline size_t loadAttrPicIndex(const proto::ProtoObject* type,
                                        const proto::ProtoString* name) {
@@ -4718,25 +4721,32 @@ PROTOPY_EXC_NOINLINE static void chainCaughtException(proto::ProtoContext* ctx, 
     if (env) env->chainException(ctx, exc, active);
 }
 
+// The C++ exception of the innermost handler level running on this thread
+// (Activation::runHandler).  A handler runs after the catch that caught its
+// exception, so std::current_exception() no longer reaches it.
+static thread_local const std::exception_ptr* t_handlerException = nullptr;
+
 // A bare `raise` and OP_RERAISE: `exc` is thrown again. The activation that
 // caught it notes nothing more for it (executeBytecodeRange's noteFrame).
-// protoCore's rule E3: a re-raised exception leaves unchanged. A handler
-// level runs inside the catch of the exception it handles, so the C++
-// exception being handled is that one: when it carries `exc` it is thrown
-// again as it is, and a runtime's ProtoException subclass keeps its extras.
+// protoCore's rule E3: a re-raised exception leaves unchanged. The C++
+// exception being handled -- the one of the innermost catch, or else the
+// one of the handler level running -- is thrown again as it is when it
+// carries `exc`, so a runtime's ProtoException subclass keeps its extras.
 // Only a handler resumed after a yield (a generator's saved levels hold the
 // value, not the C++ object) throws a new exception with the same value.
 [[noreturn]] PROTOPY_EXC_NOINLINE static void reraiseException(PythonEnvironment* env, const proto::ProtoObject* exc) {
-    if (std::exception_ptr current = std::current_exception()) {
-        bool same = false;
+    auto carries = [exc](const std::exception_ptr& p) {
+        if (!p) return false;
         try {
-            std::rethrow_exception(current);
+            std::rethrow_exception(p);
         } catch (const proto::ProtoException& e) {
-            same = e.value() == exc;
+            return e.value() == exc;
         } catch (...) {
         }
-        if (same) std::rethrow_exception(current);
-    }
+        return false;
+    };
+    if (std::exception_ptr current = std::current_exception(); carries(current)) std::rethrow_exception(current);
+    if (t_handlerException && carries(*t_handlerException)) std::rethrow_exception(*t_handlerException);
     throw PyException(env, exc);
 }
 
@@ -5900,19 +5910,22 @@ struct Activation {
         notedExc = exc;
         notedTb = exc->getAttribute(ctx, tbS);
     }
-    // A handler level runs inside the catch of the exception it handles,
-    // which is the active one (bare raise, sys.exc_info) while it runs; a
-    // RERAISE rethrows that catch's exception.
+    // A handler level: the exception it handles is the active one (bare
+    // raise, sys.exc_info) while it runs, and a RERAISE throws `caught`, the
+    // C++ exception that carried it, again.
     template <typename HandlerBody>
-    const proto::ProtoObject* runHandler(const proto::ProtoObject* handled, HandlerBody&& handlerBody) {
+    const proto::ProtoObject* runHandler(const proto::ProtoObject* handled, HandlerBody&& handlerBody,
+                                         const std::exception_ptr* caught = nullptr) {
         Block handlerLevel{0, stack.size()};
         handlerLevel.isHandler = true;
         handlerLevel.exc = handled;
         blockStack.push_back(handlerLevel);
         struct HandlerGuard {
             std::vector<Block>& levels;
-            ~HandlerGuard() { levels.pop_back(); }
-        } handlerGuard{blockStack};
+            const std::exception_ptr* outer;
+            ~HandlerGuard() { levels.pop_back(); t_handlerException = outer; }
+        } handlerGuard{blockStack, t_handlerException};
+        t_handlerException = caught;
         PythonEnvironment::HandledExceptionScope handling(handledSlot, handled);
         levelExit = LevelExit::Return;
         return handlerBody();
@@ -5920,9 +5933,18 @@ struct Activation {
     // A protected range: a nested dispatch inside a C++ try. On a Python
     // exception the operand stack is cut to the depth the range started at,
     // the exception pushed ([tb, exc, exc], or exc alone for a with block)
-    // and the handler run inside the catch.
+    // and the handler run after the catch.
+    //
+    // After the catch, not inside it: MSVC runs a catch block on top of the
+    // stack, before the native frames of the raising calls are released, so
+    // an except clause run inside the catch of a RecursionError ran with the
+    // stack as full as at the deepest call, and every call it made failed
+    // again.  `caught` keeps the C++ exception (and so its value's pin)
+    // alive for the handler, which may throw it again.
     template <typename RangeBody, typename HandlerBody>
     const proto::ProtoObject* runRange(const Block& tryRange, RangeBody&& rangeBody, HandlerBody&& handlerBody) {
+        std::exception_ptr caught;
+        const proto::ProtoObject* handled = nullptr;
         try {
             blockStack.push_back(tryRange);
             struct RangeGuard {
@@ -5932,19 +5954,20 @@ struct Activation {
             levelExit = LevelExit::Return;
             return rangeBody();
         } catch (const proto::ProtoException& raised) {
-            const proto::ProtoObject* handled = raised.value();
-            noteFrame(handled);
-            if (dbgOn) [[unlikely]] debugException(handled, &tryRange);
-            while (stack.size() > tryRange.stackDepth) stack.pop_back();
-            if (tryRange.isWithBlock) {
-                stack.push_back(handled);
-            } else {
-                stack.push_back(env ? env->getNonePrototype() : PROTO_NONE);
-                stack.push_back(handled);
-                stack.push_back(handled);
-            }
-            return runHandler(handled, handlerBody);
+            handled = raised.value();
+            caught = std::current_exception();
         }
+        noteFrame(handled);
+        if (dbgOn) [[unlikely]] debugException(handled, &tryRange);
+        while (stack.size() > tryRange.stackDepth) stack.pop_back();
+        if (tryRange.isWithBlock) {
+            stack.push_back(handled);
+        } else {
+            stack.push_back(env ? env->getNonePrototype() : PROTO_NONE);
+            stack.push_back(handled);
+            stack.push_back(handled);
+        }
+        return runHandler(handled, handlerBody, &caught);
     }
     // Source-level debugging (include/protoPython/Debugger.h). dbgOn is set
     // when the activation starts on a thread that reports line events; the
@@ -6691,7 +6714,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             // Re-raise the exception being handled. No traceback entry is
             // added: the exception already has this frame's. In a handler
             // level that is the exception of the catch it runs in: rethrow it.
-            if (!blockStack.empty() && blockStack.back().isHandler && std::current_exception()) throw;
+            if (!blockStack.empty() && blockStack.back().isHandler && env) reraiseException(env, blockStack.back().exc);
             if (env) reraiseActiveException(ctx, env);
             i = next_i;
             continue;
@@ -8270,7 +8293,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                             const uint64_t gen = env->resolveCacheGeneration();
                             const uint64_t gcEpoch = ctx->space->getGCCycleCount();
                             LoadAttrPicEntry* slot =
-                                &g_loadAttrPic[loadAttrPicIndex(type, attrName)];
+                                &loadAttrPic()[loadAttrPicIndex(type, attrName)];
                             if (slot->type == type
                                 && slot->name == attrName
                                 && slot->generation == gen
