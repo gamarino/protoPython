@@ -935,6 +935,14 @@ set_tests_properties(protopy_platform_version PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# bytes % args formats as PEP 461 says.
+add_test(NAME protopy_bytes_percent_format
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/bytes_percent_format.py)
+set_tests_properties(protopy_bytes_percent_format PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "bytes_percent_format: ok"
+    LABELS "regression_gate")
 # os.pipe is non-inheritable; Popen with a stdin pipe does not wait for the child.
 add_test(NAME protopy_os_pipe_subprocess_stdin
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/os_pipe_subprocess_stdin.py)
