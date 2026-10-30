@@ -856,13 +856,13 @@ set_tests_properties(protopy_deep_recursion_raises PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "deep_recursion_raises: ok"
     LABELS "regression_gate")
-# gi_suspended and cr_suspended track a generator stopped at a yield.
-add_test(NAME protopy_generator_suspended_state
-    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/generator_suspended_state.py)
-set_tests_properties(protopy_generator_suspended_state PROPERTIES
+# A bound method answers __module__ and __doc__ from its function.
+add_test(NAME protopy_bound_method_module_doc
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/bound_method_module_doc.py)
+set_tests_properties(protopy_bound_method_module_doc PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
-    PASS_REGULAR_EXPRESSION "generator_suspended_state: ok"
+    PASS_REGULAR_EXPRESSION "bound_method_module_doc: ok"
     LABELS "regression_gate")
 # Walking f_back ends in None at the main module.
 add_test(NAME protopy_frame_chain_ends_in_none
@@ -1451,6 +1451,14 @@ add_test(NAME protopy_system_exit_code
 set_tests_properties(protopy_system_exit_code PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
+    LABELS "regression_gate")
+# gi_suspended and cr_suspended track a generator stopped at a yield.
+add_test(NAME protopy_generator_suspended_state
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/generator_suspended_state.py)
+set_tests_properties(protopy_generator_suspended_state PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "generator_suspended_state: ok"
     LABELS "regression_gate")
 # An uncaught SystemExit sets the process exit status: an int is the status,
 # None is 0, anything else is printed to stderr and exits with 1.
