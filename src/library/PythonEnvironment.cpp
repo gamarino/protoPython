@@ -30543,6 +30543,16 @@ bool keepsOwnReceiver(proto::ProtoContext* ctx, const proto::ProtoObject* cell, 
     return !(env && env->isActuallyAClass(ctx, receiver));
 }
 
+const proto::ProtoObject* PythonEnvironment::stampBoundMethodMetadata(proto::ProtoContext* ctx,
+        const proto::ProtoObject* bound, const proto::ProtoObject* func) const {
+    if (!ctx || !bound || !func || func == PROTO_NONE || func->isMethod(ctx)) return bound;
+    const proto::ProtoObject* mod = func->getAttribute(ctx, moduleString);
+    if (mod && mod != PROTO_NONE) bound = bound->setAttribute(ctx, moduleString, mod);
+    const proto::ProtoObject* doc = func->getAttribute(ctx, docString);
+    if (doc && doc != PROTO_NONE) bound = bound->setAttribute(ctx, docString, doc);
+    return bound;
+}
+
 const proto::ProtoObject* PythonEnvironment::bindNativeMethod(proto::ProtoContext* ctx, const proto::ProtoObject* method,
                                                              const proto::ProtoObject* instance) {
     if (isCompiledFunction(ctx, method)) {
@@ -30555,7 +30565,7 @@ const proto::ProtoObject* PythonEnvironment::bindNativeMethod(proto::ProtoContex
         }
         bound = bound->setAttribute(ctx, getSelfDunderString(), instance);
         bound = bound->setAttribute(ctx, getFuncDunderString(), method);
-        return bound;
+        return stampBoundMethodMetadata(ctx, bound, method);
     }
     return ctx->fromMethod(const_cast<proto::ProtoObject*>(instance), method->asMethod(ctx));
 }
@@ -31946,6 +31956,7 @@ const proto::ProtoObject* PythonEnvironment::py_function_get(proto::ProtoContext
     
     bound = bound->setAttribute(ctx, env->getSelfDunderString(), instance);
     bound = bound->setAttribute(ctx, env->getFuncDunderString(), self);
+    bound = env->stampBoundMethodMetadata(ctx, bound, self);
     
     return bound;
 }
@@ -31976,6 +31987,7 @@ const proto::ProtoObject* PythonEnvironment::py_method_new(proto::ProtoContext* 
     }
     bound = bound->setAttribute(ctx, env->getSelfDunderString(), instance);
     bound = bound->setAttribute(ctx, env->getFuncDunderString(), func);
+    bound = env->stampBoundMethodMetadata(ctx, bound, func);
     return bound;
 }
 

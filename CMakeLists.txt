@@ -856,13 +856,13 @@ set_tests_properties(protopy_deep_recursion_raises PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "deep_recursion_raises: ok"
     LABELS "regression_gate")
-# The array module stores typed values.
-add_test(NAME protopy_array_module
-    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/array_module.py)
-set_tests_properties(protopy_array_module PROPERTIES
+# A bound method answers __module__ and __doc__ from its function.
+add_test(NAME protopy_bound_method_module_doc
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/bound_method_module_doc.py)
+set_tests_properties(protopy_bound_method_module_doc PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
-    PASS_REGULAR_EXPRESSION "array_module: ok"
+    PASS_REGULAR_EXPRESSION "bound_method_module_doc: ok"
     LABELS "regression_gate")
 # Walking f_back ends in None at the main module.
 add_test(NAME protopy_frame_chain_ends_in_none
@@ -1219,6 +1219,14 @@ add_test(NAME protopy_platform_implementation
 set_tests_properties(protopy_platform_implementation PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
+    LABELS "regression_gate")
+# The array module stores typed values.
+add_test(NAME protopy_array_module
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/array_module.py)
+set_tests_properties(protopy_array_module PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "array_module: ok"
     LABELS "regression_gate")
 # sys.version carries the build date generated at configure time.
 add_test(NAME protopy_sys_version_build_date
