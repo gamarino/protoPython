@@ -476,6 +476,14 @@ set_tests_properties(protopy_interned_attribute_names PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "interned_attribute_names: ok"
     LABELS "regression_gate")
+# Exit joins the non-daemon threads (issue #54).
+add_test(NAME protopy_exit_joins_non_daemon_threads
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/exit_joins_non_daemon_threads.py)
+set_tests_properties(protopy_exit_joins_non_daemon_threads PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    PASS_REGULAR_EXPRESSION "exit_joins_non_daemon_threads: ok"
+    LABELS "regression_gate")
 # threading.Thread.join() must wait for the thread to finish.
 add_test(NAME protopy_thread_join_waits
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/thread_join_waits.py)
@@ -919,6 +927,14 @@ set_tests_properties(protopy_walrus_function_scope PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "walrus_function_scope: ok"
+    LABELS "regression_gate")
+# Recursion past a thread's own stack raises RecursionError.
+add_test(NAME protopy_thread_deep_recursion
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/thread_deep_recursion.py)
+set_tests_properties(protopy_thread_deep_recursion PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "thread_deep_recursion: ok"
     LABELS "regression_gate")
 # Walking f_back ends in None at the main module.
 add_test(NAME protopy_frame_chain_ends_in_none

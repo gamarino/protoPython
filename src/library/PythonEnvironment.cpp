@@ -24616,6 +24616,31 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
     return exitRequested_ != 0 ? -3 : 0;
 }
 
+void PythonEnvironment::waitForThreadShutdown() {
+    if (!sysModule) return;
+    proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
+    // Only a program that imported threading has threads to wait for; the
+    // module is looked up in sys.modules, never imported here.
+    const proto::ProtoObject* mods = sysModule->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "modules"));
+    if (!mods || mods == PROTO_NONE) return;
+    const proto::ProtoObject* data = mods->getAttribute(ctx, getDataString());
+    const proto::ProtoSparseList* entries = (data && data != PROTO_NONE) ? data->asSparseList(ctx) : nullptr;
+    if (!entries) return;
+    const proto::ProtoString* name = PythonEnvironment::getInternedString(ctx, "threading");
+    const proto::ProtoObject* threading = entries->getAt(ctx, name->getHash(ctx));
+    if (!threading || threading == PROTO_NONE) return;
+    const proto::ProtoObject* shutdownFn = threading->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "_shutdown"));
+    if (!shutdownFn || shutdownFn == PROTO_NONE) return;
+    try {
+        protoPython::invokePythonCallable(ctx, shutdownFn, ctx->newList(), nullptr);
+    } catch (const proto::ProtoException& e) {
+        // CPython reports the exception and goes on finalizing.
+        std::ostringstream out;
+        handleException(e.value(), nullptr, out);
+        std::cerr << "Exception ignored on threading shutdown:\n" << out.str();
+    }
+}
+
 void PythonEnvironment::runExitHandlers() {
     proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     const proto::ProtoObject* atexitMod = resolve("atexit", ctx);
@@ -25690,7 +25715,24 @@ struct GetTypePicEntry {
     bool isPrimitiveValid = false;     // false until populated
 };
 constexpr size_t kGetTypePicSize = 1024;
-thread_local GetTypePicEntry s_getTypePic[kGetTypePicSize];
+// Each thread's table is on the heap, allocated on first use: as a
+// thread_local array (40 KiB) it was static thread-local storage, which
+// glibc carves out of the top of every thread's stack (see
+// loadAttrPic in ExecutionEngine.cpp).
+thread_local GetTypePicEntry* t_getTypePic = nullptr;
+struct GetTypePicReclaimer {
+    ~GetTypePicReclaimer() { delete[] t_getTypePic; t_getTypePic = nullptr; }
+};
+GetTypePicEntry* allocGetTypePic() {
+    static thread_local GetTypePicReclaimer reclaimer;
+    (void)reclaimer;
+    t_getTypePic = new GetTypePicEntry[kGetTypePicSize];
+    return t_getTypePic;
+}
+inline GetTypePicEntry* getTypePic() {
+    GetTypePicEntry* pic = t_getTypePic;
+    return pic ? pic : allocGetTypePic();
+}
 }  // namespace
 
 const proto::ProtoObject* PythonEnvironment::getattrHookFor(proto::ProtoContext* ctx,
@@ -25789,7 +25831,7 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
     // resolve leaves the new entry already stale.
     const uint64_t gcEpoch = space_ ? space_->getGCCycleCount() : 0;
     const size_t idx = (reinterpret_cast<uintptr_t>(obj) >> 4) & (kGetTypePicSize - 1);
-    GetTypePicEntry* slot = &s_getTypePic[idx];
+    GetTypePicEntry* slot = &getTypePic()[idx];
     if (slot->obj == obj && slot->generation == gen && slot->gcEpoch == gcEpoch) {
         return slot->type;
     }
@@ -25984,7 +26026,8 @@ int PythonEnvironment::primitiveCacheHit(const proto::ProtoObject* obj) const {
     const uint64_t gen = resolveCacheGeneration_.load(std::memory_order_acquire);
     const uint64_t gcEpoch = space_ ? space_->getGCCycleCount() : 0;
     const size_t idx = (reinterpret_cast<uintptr_t>(obj) >> 4) & (kGetTypePicSize - 1);
-    const GetTypePicEntry* slot = &s_getTypePic[idx];
+    if (!t_getTypePic) return 0;
+    const GetTypePicEntry* slot = &t_getTypePic[idx];
     if (slot->obj != obj || slot->generation != gen || slot->gcEpoch != gcEpoch
             || !slot->isPrimitiveValid) {
         return 0;

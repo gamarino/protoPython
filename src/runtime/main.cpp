@@ -360,11 +360,19 @@ static bool parseArgs(int argc, char* argv[], CliOptions& opts, std::string& err
     return true;
 }
 
-// Waits for the program's worker threads (at most 5 s), so the environment
-// stays alive while they run, and then runs the atexit handlers: CPython runs
-// them once, at interpreter shutdown, whether the program ended normally,
-// through SystemExit or with an unhandled exception (which is reported first).
+// Joins the non-daemon threads (threading._shutdown, as CPython does), waits
+// for the remaining workers (at most 5 s), so the environment stays alive
+// while they run, and then runs the atexit handlers: CPython runs them once,
+// at interpreter shutdown, whether the program ended normally, through
+// SystemExit or with an unhandled exception (which is reported first).
+//
+// The join matters beyond waiting: a worker leaves `runningThreads` before
+// its last accesses to the space (protoCore's thread_main releases its
+// context and notifies the collector afterwards), so the poll alone let the
+// space be deleted under a thread still finishing (issue #54).  A joined OS
+// thread has finished all of it.
 void finishInterpreter(protoPython::PythonEnvironment& env) {
+    env.waitForThreadShutdown();
     auto* space = env.getSpace();
     if (space) {
         int count = 0;

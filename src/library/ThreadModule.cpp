@@ -7,6 +7,7 @@
 #include <thread>
 #include <mutex>
 #include <atomic>
+#include <vector>
 #include <cstdlib>
 #include <cstdint>
 
@@ -696,7 +697,12 @@ static const proto::ProtoObject* py_get_main_thread_ident(
 //   _proto_thread  — ExternalPointer wrapping a proto::ProtoThread*
 //   ident          — integer (the OS-level identity of the underlying thread)
 // A handle is "done" when the underlying ProtoThread is no longer registered
-// in space->threads (which is how protoCore tracks running threads).
+// in space->threads (which is how protoCore tracks running threads), or when
+// _set_done() marked it.  A handle with no ProtoThread -- not started yet,
+// or made by _make_thread_handle for the main or a dummy thread -- is not
+// done until _set_done(), as in CPython: reporting it done made
+// main_thread().is_alive() false and threading._shutdown() return at once,
+// without joining any thread.
 
 static const proto::ProtoObject* py_handle_is_done(
     proto::ProtoContext* ctx,
@@ -711,12 +717,12 @@ static const proto::ProtoObject* py_handle_is_done(
     const proto::ProtoString* ptrAttr =
         proto::ProtoString::createSymbol(ctx, "_proto_thread");
     const proto::ProtoObject* handlePtr = self->getAttribute(ctx, ptrAttr);
-    if (!handlePtr || handlePtr == PROTO_NONE) return PROTO_TRUE;
+    if (!handlePtr || handlePtr == PROTO_NONE) return PROTO_FALSE;
     const proto::ProtoExternalPointer* ext = handlePtr->asExternalPointer(ctx);
-    if (!ext) return PROTO_TRUE;
+    if (!ext) return PROTO_FALSE;
     proto::ProtoThread* thread =
         static_cast<proto::ProtoThread*>(ext->getPointer(ctx));
-    if (!thread) return PROTO_TRUE;
+    if (!thread) return PROTO_FALSE;
     proto::proto_ulong threadId = reinterpret_cast<uintptr_t>(thread);
     const proto::ProtoSparseList* threads = ctx->space->threads;
     if (!threads) return PROTO_TRUE;
@@ -789,6 +795,20 @@ static const proto::ProtoObject* py_make_thread_handle(
     return handle;
 }
 
+// The non-daemon threads started by start_joinable_thread, which
+// _thread._shutdown joins at interpreter exit.  A ProtoThread is never
+// collected (its cells live on a scratch context protoCore never submits),
+// and a second ProtoThread::join returns at once, so plain pointers are
+// enough.  The mutex is never held across an allocation or a join.  Each
+// entry carries the process that started it: a fork child inherits the
+// list, but not the parent's threads, and must not join them.
+struct NonDaemonThread {
+    proto::ProtoThread* thread;
+    long long pid;
+};
+static std::mutex g_nonDaemonMutex;
+static std::vector<NonDaemonThread> g_nonDaemonThreads;
+
 // _thread.start_joinable_thread(target, handle=<existing handle>, daemon=<bool>)
 //
 // Spawns a real OS thread (via protoCore's ProtoSpace::newThread) running
@@ -841,10 +861,27 @@ static const proto::ProtoObject* py_start_joinable_thread(
     }
     argsForThread = argsForThread->appendLast(ctx, callable);
 
+    // daemon=True threads are not joined at exit (CPython's default is
+    // daemon=True for start_joinable_thread; threading passes it always).
+    bool daemon = true;
+    if (kwargs) {
+        const proto::proto_ulong daemonHash =
+            proto::ProtoString::createSymbol(ctx, "daemon")->getHash(ctx);
+        if (kwargs->has(ctx, daemonHash)) {
+            const proto::ProtoObject* d = kwargs->getAt(ctx, daemonHash);
+            daemon = !(d == PROTO_FALSE || d == PROTO_NONE ||
+                       (d && d->isInteger(ctx) && d->asLong(ctx) == 0));
+        }
+    }
+
     // Spawn.
     const proto::ProtoString* name = proto::ProtoString::createSymbol(ctx, "thread");
     const proto::ProtoThread* thread = ctx->space->newThread(
         ctx, name, thread_bootstrap, argsForThread, nullptr);
+    if (!daemon && thread) {
+        std::lock_guard<std::mutex> lock(g_nonDaemonMutex);
+        g_nonDaemonThreads.push_back({const_cast<proto::ProtoThread*>(thread), current_process_id()});
+    }
 
     // Populate handle with the live thread reference and its ident.
     proto::ProtoObject* mhandle = const_cast<proto::ProtoObject*>(handle);
@@ -862,42 +899,30 @@ static const proto::ProtoObject* py_daemon_threads_allowed(
     return PROTO_TRUE;
 }
 
-// _thread._shutdown — invoked by threading.py at interpreter exit.
-// CPython joins every non-daemon thread so they finish their work
-// (e.g. flushing buffered output) before main returns. Previously
-// this was a no-op, so background workers spawned via
-// `threading.Thread(target=…)` without explicit `.join()` would
-// be killed mid-write at process exit and silently lose data.
-//
-// We don't track daemon-vs-non-daemon yet (CPython exposes it via
-// the .daemon Python attribute, but protoPython's
-// _thread.start_new_thread predates that gate); for now we join
-// every live thread we can see in `space->threads`. The known cost
-// is that a daemon-style worker that wants to be killed on exit
-// will block shutdown — but that mirrors the conservative choice
-// CPython makes when daemon flags aren't set (default is
-// non-daemon).
+// _thread._shutdown — invoked by threading._shutdown at interpreter exit
+// (protopy's finishInterpreter calls it, as CPython's Py_Finalize does).
+// Joins every non-daemon thread started by start_joinable_thread, including
+// threads they start while it waits, so they finish their work (e.g.
+// flushing buffered output) and leave the process space before it is
+// destroyed.  Daemon threads are not waited for, as in CPython.
 static const proto::ProtoObject* py_shutdown(
     proto::ProtoContext* ctx,
     const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
-    if (!ctx || !ctx->space || !ctx->space->threads) return PROTO_NONE;
-    const proto::ProtoSparseListIterator* it = ctx->space->threads->getIterator(ctx);
-    while (it && it->hasNext(ctx)) {
-        const proto::ProtoObject* val = it->nextValue(ctx);
-        it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(ctx);
-        if (!val || val == PROTO_NONE) continue;
-        const proto::ProtoExternalPointer* ext = val->asExternalPointer(ctx);
-        proto::ProtoThread* t = nullptr;
-        if (ext) {
-            t = static_cast<proto::ProtoThread*>(ext->getPointer(ctx));
+    while (true) {
+        std::vector<NonDaemonThread> pending;
+        {
+            std::lock_guard<std::mutex> lock(g_nonDaemonMutex);
+            pending.swap(g_nonDaemonThreads);
         }
-        if (t) {
-            // 2026-05-25: each shutdown-join can take arbitrarily
-            // long (a worker still doing work has to drain it).
-            // Bracket so the GC keeps working while we wait.
+        if (pending.empty()) break;
+        const auto self = current_process_id();
+        for (const NonDaemonThread& t : pending) {
+            if (t.pid != self) continue;
+            // Each join can take arbitrarily long (a worker still doing work
+            // has to drain it).  Bracket so the GC keeps working meanwhile.
             proto::ProtoContext::UnmanagedScope u(ctx);
-            t->join(ctx);
+            t.thread->join(ctx);
         }
     }
     return PROTO_NONE;
@@ -922,6 +947,31 @@ static const proto::ProtoObject* py_is_alive(
         return PROTO_TRUE;
     
     return PROTO_FALSE;
+}
+
+// _thread.stack_size([size]) -> the previous size: the stack size of the
+// threads started from now on (protoCore's ProtoSpace::setThreadStackBytes).
+// 0 means the platform's default; anything else must be at least 32 KiB,
+// as in CPython.
+static const proto::ProtoObject* py_stack_size(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
+    const long long previous = static_cast<long long>(proto::ProtoSpace::threadStackBytes());
+    if (posArgs && posArgs->getSize(ctx) > 0) {
+        const proto::ProtoObject* sizeObj = posArgs->getAt(ctx, 0);
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (!sizeObj || !sizeObj->isInteger(ctx)) {
+            if (env) env->raiseTypeError(ctx, "size must be an integer");
+            return nullptr;
+        }
+        const long long size = sizeObj->asLong(ctx);
+        if (size != 0 && size < 32768) {
+            if (env) env->raiseValueError(ctx, proto::ProtoString::fromUTF8(ctx, ("size not valid: " + std::to_string(size) + " bytes").c_str())->asObject(ctx));
+            return nullptr;
+        }
+        proto::ProtoSpace::setThreadStackBytes(static_cast<size_t>(size));
+    }
+    return ctx->fromInteger(previous);
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
@@ -977,6 +1027,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getpid));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "log_thread_ident"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_log_thread_ident));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "stack_size"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_stack_size));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "allocate_lock"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_allocate_lock));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_lock_acquire"),
