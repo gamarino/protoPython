@@ -24438,6 +24438,31 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
     return exitRequested_ != 0 ? -3 : 0;
 }
 
+void PythonEnvironment::waitForThreadShutdown() {
+    if (!sysModule) return;
+    proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
+    // Only a program that imported threading has threads to wait for; the
+    // module is looked up in sys.modules, never imported here.
+    const proto::ProtoObject* mods = sysModule->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "modules"));
+    if (!mods || mods == PROTO_NONE) return;
+    const proto::ProtoObject* data = mods->getAttribute(ctx, getDataString());
+    const proto::ProtoSparseList* entries = (data && data != PROTO_NONE) ? data->asSparseList(ctx) : nullptr;
+    if (!entries) return;
+    const proto::ProtoString* name = PythonEnvironment::getInternedString(ctx, "threading");
+    const proto::ProtoObject* threading = entries->getAt(ctx, name->getHash(ctx));
+    if (!threading || threading == PROTO_NONE) return;
+    const proto::ProtoObject* shutdownFn = threading->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "_shutdown"));
+    if (!shutdownFn || shutdownFn == PROTO_NONE) return;
+    try {
+        protoPython::invokePythonCallable(ctx, shutdownFn, ctx->newList(), nullptr);
+    } catch (const proto::ProtoException& e) {
+        // CPython reports the exception and goes on finalizing.
+        std::ostringstream out;
+        handleException(e.value(), nullptr, out);
+        std::cerr << "Exception ignored on threading shutdown:\n" << out.str();
+    }
+}
+
 void PythonEnvironment::runExitHandlers() {
     proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     const proto::ProtoObject* atexitMod = resolve("atexit", ctx);

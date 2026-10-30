@@ -1056,6 +1056,13 @@ public:
     void runExitHandlers();
 
     /**
+     * @brief Join the non-daemon threads at interpreter exit, as CPython's
+     * wait_for_thread_shutdown: calls threading._shutdown() when the program
+     * imported threading.
+     */
+    void waitForThreadShutdown();
+
+    /**
      * @brief Execution hook type: (moduleName, phase) where phase 0=before, 1=after.
      */
     using ExecutionHook = std::function<void(const std::string& moduleName, int phase)>;
