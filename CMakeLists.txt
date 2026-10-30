@@ -991,6 +991,14 @@ set_tests_properties(protopy_callable_with_code_attr PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "callable_with_code_attr: ok"
     LABELS "regression_gate")
+# StringIO methods called through the class use the instance.
+add_test(NAME protopy_stringio_unbound_methods
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/stringio_unbound_methods.py)
+set_tests_properties(protopy_stringio_unbound_methods PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "stringio_unbound_methods: ok"
+    LABELS "regression_gate")
 # import pathlib loads the standard library package (Path is callable).
 add_test(NAME protopy_pathlib_package
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/pathlib_package.py)

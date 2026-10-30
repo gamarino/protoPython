@@ -1770,6 +1770,29 @@ static std::string sio_encode(const std::u32string& text) {
     return out;
 }
 
+// StringIO and BytesIO methods called through the class with the instance
+// as the first argument (StringIO.getvalue(s), as doctest's _SpoofOut
+// does): the method is then called unbound, with no receiver (or with the
+// class as one), and `M` read nothing or the class's default empty buffer.
+// The instance becomes the receiver instead.
+template <proto::ProtoMethod M>
+static const proto::ProtoObject* io_method(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink,
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env && args && args->getSize(ctx) >= 1 && (!self || env->isActuallyAClass(ctx, self))) {
+        const proto::ProtoObject* instance = args->getAt(ctx, 0);
+        if (instance && instance != PROTO_NONE && !env->isActuallyAClass(ctx, instance)
+            && (!self || instance->isInstanceOf(ctx, self) == PROTO_TRUE)) {
+            const proto::ProtoList* rest = ctx->newList();
+            for (proto::proto_ulong i = 1; i < args->getSize(ctx); ++i)
+                rest = rest->appendLast(ctx, args->getAt(ctx, static_cast<int>(i)));
+            return M(ctx, instance, parentLink, argsView(proto::ProtoListArguments(ctx, rest)), kwargs);
+        }
+    }
+    return M(ctx, self, parentLink, args, kwargs);
+}
+
 static std::u32string sio_get_buf(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
     const proto::ProtoObject* bufObj = self->getAttribute(ctx, k_sio_buf(ctx));
     if (!bufObj || !bufObj->isString(ctx)) return std::u32string();
@@ -2281,43 +2304,43 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
             PythonEnvironment::getInternedString(ctx, "__new__"),
             ctx->fromMethod(nullptr, py_bio_new));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "write"),
-            ctx->fromMethod(nullptr, py_bio_write));
+            ctx->fromMethod(nullptr, io_method<py_bio_write>));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getvalue"),
-            ctx->fromMethod(nullptr, py_bio_getvalue));
+            ctx->fromMethod(nullptr, io_method<py_bio_getvalue>));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getbuffer"),
-            ctx->fromMethod(nullptr, py_bio_getbuffer));
+            ctx->fromMethod(nullptr, io_method<py_bio_getbuffer>));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "read"),
-            ctx->fromMethod(nullptr, py_bio_read));
+            ctx->fromMethod(nullptr, io_method<py_bio_read>));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "readline"),
-            ctx->fromMethod(nullptr, py_bio_readline));
+            ctx->fromMethod(nullptr, io_method<py_bio_readline>));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "readlines"),
-            ctx->fromMethod(nullptr, py_bio_readlines));
+            ctx->fromMethod(nullptr, io_method<py_bio_readlines>));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__iter__"),
-            ctx->fromMethod(nullptr, py_bio_iter));
+            ctx->fromMethod(nullptr, io_method<py_bio_iter>));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__next__"),
-            ctx->fromMethod(nullptr, py_bio_next));
+            ctx->fromMethod(nullptr, io_method<py_bio_next>));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "seek"),
-            ctx->fromMethod(nullptr, py_bio_seek));
+            ctx->fromMethod(nullptr, io_method<py_bio_seek>));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "fileno"),
-            ctx->fromMethod(nullptr, py_memio_fileno));
+            ctx->fromMethod(nullptr, io_method<py_memio_fileno>));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tell"),
-            ctx->fromMethod(nullptr, py_bio_tell));
+            ctx->fromMethod(nullptr, io_method<py_bio_tell>));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "truncate"),
-            ctx->fromMethod(nullptr, py_bio_truncate));
+            ctx->fromMethod(nullptr, io_method<py_bio_truncate>));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "close"),
-            ctx->fromMethod(nullptr, py_bio_close));
+            ctx->fromMethod(nullptr, io_method<py_bio_close>));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "flush"),
-            ctx->fromMethod(nullptr, py_bio_flush));
+            ctx->fromMethod(nullptr, io_method<py_bio_flush>));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "writable"),
-            ctx->fromMethod(nullptr, py_bio_writable));
+            ctx->fromMethod(nullptr, io_method<py_bio_writable>));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "readable"),
-            ctx->fromMethod(nullptr, py_bio_readable));
+            ctx->fromMethod(nullptr, io_method<py_bio_readable>));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "seekable"),
-            ctx->fromMethod(nullptr, py_bio_seekable));
+            ctx->fromMethod(nullptr, io_method<py_bio_seekable>));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__enter__"),
-            ctx->fromMethod(nullptr, py_bio_enter));
+            ctx->fromMethod(nullptr, io_method<py_bio_enter>));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__exit__"),
-            ctx->fromMethod(nullptr, py_bio_exit));
+            ctx->fromMethod(nullptr, io_method<py_bio_exit>));
         // Empty initial state so `hasattr` reports True before the
         // first write — matches StringIO's startup contract.
         bio = bio->setAttribute(ctx, k_bio_buf(ctx), bio_make_bytes(ctx, std::string()));
@@ -2343,39 +2366,39 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
             ctx->fromMethod(nullptr, py_sio_new));
         // Instance methods are installed on the prototype so instances inherit them.
         sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "write"),
-            ctx->fromMethod(nullptr, py_sio_write));
+            ctx->fromMethod(nullptr, io_method<py_sio_write>));
         sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getvalue"),
-            ctx->fromMethod(nullptr, py_sio_getvalue));
+            ctx->fromMethod(nullptr, io_method<py_sio_getvalue>));
         sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "read"),
-            ctx->fromMethod(nullptr, py_sio_read));
+            ctx->fromMethod(nullptr, io_method<py_sio_read>));
         sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "readline"),
-            ctx->fromMethod(nullptr, py_sio_readline));
+            ctx->fromMethod(nullptr, io_method<py_sio_readline>));
         sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "readlines"),
-            ctx->fromMethod(nullptr, py_sio_readlines));
+            ctx->fromMethod(nullptr, io_method<py_sio_readlines>));
         sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__iter__"),
-            ctx->fromMethod(nullptr, py_sio_iter));
+            ctx->fromMethod(nullptr, io_method<py_sio_iter>));
         sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__next__"),
-            ctx->fromMethod(nullptr, py_sio_next));
+            ctx->fromMethod(nullptr, io_method<py_sio_next>));
         sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "seek"),
-            ctx->fromMethod(nullptr, py_sio_seek));
+            ctx->fromMethod(nullptr, io_method<py_sio_seek>));
         sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tell"),
-            ctx->fromMethod(nullptr, py_sio_tell));
+            ctx->fromMethod(nullptr, io_method<py_sio_tell>));
         sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "truncate"),
-            ctx->fromMethod(nullptr, py_sio_truncate));
+            ctx->fromMethod(nullptr, io_method<py_sio_truncate>));
         sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "close"),
-            ctx->fromMethod(nullptr, py_sio_close));
+            ctx->fromMethod(nullptr, io_method<py_sio_close>));
         sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "writable"),
-            ctx->fromMethod(nullptr, py_sio_writable));
+            ctx->fromMethod(nullptr, io_method<py_sio_writable>));
         sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "readable"),
-            ctx->fromMethod(nullptr, py_sio_readable));
+            ctx->fromMethod(nullptr, io_method<py_sio_readable>));
         sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "seekable"),
-            ctx->fromMethod(nullptr, py_sio_seekable));
+            ctx->fromMethod(nullptr, io_method<py_sio_seekable>));
         sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "fileno"),
-            ctx->fromMethod(nullptr, py_memio_fileno));
+            ctx->fromMethod(nullptr, io_method<py_memio_fileno>));
         sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__enter__"),
-            ctx->fromMethod(nullptr, py_sio_enter));
+            ctx->fromMethod(nullptr, io_method<py_sio_enter>));
         sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__exit__"),
-            ctx->fromMethod(nullptr, py_sio_exit));
+            ctx->fromMethod(nullptr, io_method<py_sio_exit>));
         // Default buffer state so hasattr returns True before first write.
         sio = sio->setAttribute(ctx, k_sio_buf(ctx),
             PythonEnvironment::getInternedString(ctx, "")->asObject(ctx));
