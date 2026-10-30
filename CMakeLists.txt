@@ -920,6 +920,14 @@ set_tests_properties(protopy_frame_chain_ends_in_none PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "frame_chain_ends_in_none: ok"
     LABELS "regression_gate")
+# bytes() calls a class's __bytes__ bound once.
+add_test(NAME protopy_bytes_dunder_bytes
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/bytes_dunder_bytes.py)
+set_tests_properties(protopy_bytes_dunder_bytes PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "bytes_dunder_bytes: ok"
+    LABELS "regression_gate")
 # function.__annotations__ comes from __annotate__.
 add_test(NAME protopy_function_annotations_from_annotate
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/function_annotations_from_annotate.py)

@@ -7038,6 +7038,9 @@ static const proto::ProtoObject* py_bytes_call(
                 const proto::ProtoObject* bmType = env->getType(context, bytesM);
                 const proto::ProtoObject* getMb = bmType
                     ? env->getAttribute(context, bmType, getDSb, false) : nullptr;
+                // Bound by its __get__ (a def function is bound to `arg`),
+                // the method is called with no arguments.
+                bool bound = false;
                 if (getMb && getMb != PROTO_NONE) {
                     if (getMb->asMethod(context)) {
                         const proto::ProtoList* gargs =
@@ -7047,9 +7050,12 @@ static const proto::ProtoObject* py_bytes_call(
                     } else {
                         bytesM = env->callObject(getMb, {bytesM, arg, argType});
                     }
+                    bound = true;
                 }
                 const proto::ProtoObject* result = nullptr;
-                if (bytesM && bytesM->asMethod(context)) {
+                if (bound && bytesM) {
+                    result = env->callObject(bytesM, {});
+                } else if (bytesM && bytesM->asMethod(context)) {
                     const proto::ProtoList* mArgs = context->newList();
                     result = bytesM->asMethod(context)(context,
                         const_cast<proto::ProtoObject*>(arg), nullptr, argsView(proto::ProtoListArguments(context, mArgs)), nullptr);
