@@ -1039,7 +1039,10 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
             gen->setAttribute(calleeCtx, PythonEnvironment::getInternedString(calleeCtx, table[0]), codeObj);
             gen->setAttribute(calleeCtx, PythonEnvironment::getInternedString(calleeCtx, table[1]), frame);
             gen->setAttribute(calleeCtx, PythonEnvironment::getInternedString(calleeCtx, table[2]), PROTO_FALSE);
+            gen->setAttribute(calleeCtx, PythonEnvironment::getInternedString(calleeCtx,
+                isAsyncGenerator ? "ag_suspended" : "cr_suspended"), PROTO_FALSE);
         }
+        gen->setAttribute(calleeCtx, PythonEnvironment::getInternedString(calleeCtx, "gi_suspended"), PROTO_FALSE);
         
         // Generator/coroutine introspection: `gen.__name__` is the wrapped
         // function's name (from co_name) and `gen.__qualname__` is the
@@ -3358,6 +3361,31 @@ static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const pr
 // nullptr instead of raising StopIteration (iteration's exhaustion is not an
 // exception internally; py_generator_step). Without it, a finished generator
 // raises StopIteration carrying its return value, as __next__ / send do.
+// The generator's suspended/running state as CPython exposes it:
+// gi_suspended (inspect.getgeneratorstate reads it), and for a coroutine or
+// an async generator cr_/ag_suspended and cr_/ag_running as well
+// (getcoroutinestate, getasyncgenstate).  gi_running is written by the
+// callers.  Suspended means stopped at a yield: not before the first
+// resume, not while running, not once finished.
+static void setGeneratorSuspended(proto::ProtoContext* ctx, const proto::ProtoObject* gen,
+                                  bool running, bool suspended) {
+    static const proto::ProtoString* giSuspended =
+        PythonEnvironment::getInternedString(ctx, "gi_suspended");
+    static const proto::ProtoString* names[2][2] = {
+        {PythonEnvironment::getInternedString(ctx, "cr_suspended"),
+         PythonEnvironment::getInternedString(ctx, "cr_running")},
+        {PythonEnvironment::getInternedString(ctx, "ag_suspended"),
+         PythonEnvironment::getInternedString(ctx, "ag_running")},
+    };
+    gen->setAttribute(ctx, giSuspended, suspended ? PROTO_TRUE : PROTO_FALSE);
+    for (const auto& kind : names) {
+        if (gen->hasOwnAttribute(ctx, kind[0]) == PROTO_TRUE) {
+            gen->setAttribute(ctx, kind[0], suspended ? PROTO_TRUE : PROTO_FALSE);
+            gen->setAttribute(ctx, kind[1], running ? PROTO_TRUE : PROTO_FALSE);
+        }
+    }
+}
+
 static const proto::ProtoObject* py_generator_resume(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
@@ -3494,6 +3522,7 @@ static const proto::ProtoObject* py_generator_resume(
         // consumer (sum, any, str.join, list) of a 100,000-step generator
         // held about 1.6 M cells of them.
         self->setAttribute(calleeCtx, env->getGiRunningString(), PROTO_TRUE);
+        setGeneratorSuspended(calleeCtx, self, /*running=*/true, /*suspended=*/false);
 
         // Restore locals from gi_locals
         const proto::ProtoObject* localsObj = self->getAttribute(ctx, env->getGiLocalsString());
@@ -3564,6 +3593,7 @@ static const proto::ProtoObject* py_generator_resume(
         } catch (const proto::ProtoException&) {
             // An exception out of the body finishes the generator.
             self->setAttribute(ctx, env->getGiRunningString(), PROTO_FALSE);
+            setGeneratorSuspended(ctx, self, /*running=*/false, /*suspended=*/false);
             self->setAttribute(ctx, env->getGiPCString(), ctx->fromInteger(co_code_tuple->getSize(ctx)));
             throw;
         }
@@ -3619,6 +3649,7 @@ static const proto::ProtoObject* py_generator_resume(
 
         // 8. Clear running
         self->setAttribute(calleeCtx, env->getGiRunningString(), PROTO_FALSE);
+        setGeneratorSuspended(calleeCtx, self, /*running=*/false, /*suspended=*/yielded);
         if (!yielded) {
             nextPc = co_code_tuple->getSize(calleeCtx);
         }
