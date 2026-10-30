@@ -13277,6 +13277,10 @@ static std::string applyFormatSpec(proto::ProtoContext* context, const proto::Pr
     return result;
 }
 
+// The mapping str.format_map() resolves named fields from, for the
+// py_str_format call it makes on this thread (nullptr otherwise).
+static thread_local const proto::ProtoObject* t_formatMapping = nullptr;
+
 static const proto::ProtoObject* py_str_format(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -13356,6 +13360,21 @@ static const proto::ProtoObject* py_str_format(
             proto::proto_ulong idx = std::stoul(baseName) + static_cast<proto::proto_ulong>(formatPosOff);
             if (positionalParameters && idx < positionalParameters->getSize(context))
                 val = positionalParameters->getAt(context, static_cast<int>(idx));
+        } else if (t_formatMapping && env) {
+            // str.format_map(mapping): mapping[name], read through
+            // __getitem__ (a dict subclass's __missing__ applies; a missing
+            // key raises KeyError).  Nested format_map calls made by the
+            // looked-up value's __format__ do not see this mapping.
+            const proto::ProtoObject* mapping = t_formatMapping;
+            t_formatMapping = nullptr;
+            struct Restore { const proto::ProtoObject* m; ~Restore() { t_formatMapping = m; } } restore{mapping};
+            const proto::ProtoObject* getitem = env->getAttribute(context, mapping,
+                PythonEnvironment::getInternedString(context, "__getitem__"));
+            if (!getitem) return nullptr;
+            const proto::ProtoObject* found = env->callObject(getitem,
+                {PythonEnvironment::newStr(context, baseName)});
+            if (!found) return nullptr;
+            val = found;
         } else {
             // keyword
             if (keywordParameters && env) {
@@ -13468,6 +13487,30 @@ static const proto::ProtoObject* py_str_format(
         }
     }
     return PythonEnvironment::newStr(context, out);
+}
+
+// str.format_map(mapping): str.format(**mapping) without copying the
+// mapping, so a dict subclass's __missing__ supplies absent names.
+static const proto::ProtoObject* py_str_format_map(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::proto_ulong argc = positionalParameters ? positionalParameters->getSize(context) : 0;
+    if (argc != 1 || keywordParameters) {
+        if (env) env->raiseTypeError(context, argc == 1
+            ? "format_map() takes no keyword arguments"
+            : "format_map() takes exactly one argument (" + std::to_string(argc) + " given)");
+        return nullptr;
+    }
+    const proto::ProtoObject* previous = t_formatMapping;
+    t_formatMapping = positionalParameters->getAt(context, 0);
+    struct Restore { const proto::ProtoObject* m; ~Restore() { t_formatMapping = m; } } restore{previous};
+    const proto::ProtoList* noArgs = context->newList();
+    return py_str_format(context, self, parentLink,
+        argsView(proto::ProtoListArguments(context, noArgs)), nullptr);
 }
 
 // str.__mod__(other): implements "format_string % args"
@@ -20989,6 +21032,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(rootContext_, py_upper, rootContext_->fromMethod(nullptr, py_str_upper));
     strPrototype = strPrototype->setAttribute(rootContext_, py_lower, rootContext_->fromMethod(nullptr, py_str_lower));
     strPrototype = strPrototype->setAttribute(rootContext_, py_format, rootContext_->fromMethod(nullptr, py_str_format));
+    strPrototype = strPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "format_map"),
+        rootContext_->fromMethod(nullptr, py_str_format_map));
     strPrototype = strPrototype->setAttribute(rootContext_, py_format_dunder, rootContext_->fromMethod(nullptr, py_str_format_dunder));
     strPrototype = strPrototype->setAttribute(rootContext_, py_hash, rootContext_->fromMethod(nullptr, py_str_hash));
     strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__getnewargs__"), rootContext_->fromMethod(nullptr, py_str_getnewargs));
