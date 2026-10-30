@@ -468,6 +468,14 @@ add_test(NAME protopy_load_method_pic_receivers
 set_tests_properties(protopy_load_method_pic_receivers PROPERTIES
     TIMEOUT 60
     LABELS "regression_gate")
+# Exit joins the non-daemon threads (issue #54).
+add_test(NAME protopy_exit_joins_non_daemon_threads
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/exit_joins_non_daemon_threads.py)
+set_tests_properties(protopy_exit_joins_non_daemon_threads PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 60
+    PASS_REGULAR_EXPRESSION "exit_joins_non_daemon_threads: ok"
+    LABELS "regression_gate")
 # threading.Thread.join() must wait for the thread to finish.
 add_test(NAME protopy_thread_join_waits
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/thread_join_waits.py)
