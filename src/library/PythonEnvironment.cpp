@@ -4733,6 +4733,26 @@ static const proto::ProtoObject* py_tuple_hash(proto::ProtoContext*, const proto
 static const proto::ProtoSet* set_underlying(proto::ProtoContext* context, const proto::ProtoObject* self);
 
 static bool keyHash(proto::ProtoContext* context, const proto::ProtoObject* key, bool raiseUnhashable, proto::proto_ulong& out);
+static bool bytes_data_view(proto::ProtoContext* context, const proto::ProtoObject* self, std::string& out);
+static const proto::ProtoObject* py_bytes_hash(proto::ProtoContext*, const proto::ProtoObject*,
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*);
+
+// The key hash of a bytes object (or of a bytes subclass that keeps
+// bytes.__hash__): its content's.  A bytes object is a wrapper cell whose
+// protoCore hash is the cell's, so b"a" and bytes([97]) were two keys.  The
+// content hash is salted: a dict or set keys by hash alone, and
+// hash(b"a") == hash("a") (as in CPython) must not make them one key.
+static bool bytesKeyHash(proto::ProtoContext* context, const proto::ProtoObject* key, proto::proto_ulong& out) {
+    std::string raw;
+    if (!bytes_data_view(context, key, raw)) return false;
+    proto::proto_ulong h = PROTO_UL(14695981039346656037);
+    for (unsigned char c : raw) {
+        h ^= c;
+        h *= PROTO_UL(1099511628211);
+    }
+    out = h ^ PROTO_UL(0x9e3779b97f4a7c15);
+    return true;
+}
 
 // The hash of a NaN float object: CPython 3.10+ hashes NaN by identity, so
 // distinct NaN objects are distinct dict and set keys while the same object is
@@ -4802,6 +4822,7 @@ static bool keyHash(proto::ProtoContext* context, const proto::ProtoObject* key,
             const TupleView t = PythonEnvironment::tupleView(context, key);
             if (t) return tupleKeyHash(context, t, raiseUnhashable, out);
         }
+        if (cls == env->getBytesPrototype() && bytesKeyHash(context, key, out)) return true;
         // The other built-in primitives keep protoCore's value-based hash.
         bool isPrimitive = (cls == env->getStrPrototype()
             || cls == env->getIntPrototype()
@@ -4825,6 +4846,7 @@ static bool keyHash(proto::ProtoContext* context, const proto::ProtoObject* key,
             }
             if (hM && hM != PROTO_NONE) {
                 const proto::ProtoMethod m = hM->asMethod(context);
+                if (m == py_bytes_hash && bytesKeyHash(context, key, out)) return true;
                 if (m == py_int_hash || m == py_float_hash || m == py_str_hash || m == py_tuple_hash) {
                     // A subclass of int, float, str or tuple that keeps the
                     // built-in __hash__ is keyed by its value: MyInt(3) finds 3.

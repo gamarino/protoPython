@@ -951,6 +951,14 @@ set_tests_properties(protopy_os_pipe_subprocess_stdin PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "os_pipe_subprocess_stdin: ok"
     LABELS "regression_gate")
+# Equal bytes objects are one dict key.
+add_test(NAME protopy_bytes_dict_key
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/bytes_dict_key.py)
+set_tests_properties(protopy_bytes_dict_key PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "bytes_dict_key: ok"
+    LABELS "regression_gate")
 # A bound builtin method stored on a class keeps its receiver.
 add_test(NAME protopy_bound_builtin_class_attr
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/bound_builtin_class_attr.py)
