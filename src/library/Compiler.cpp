@@ -2039,6 +2039,7 @@ bool Compiler::compileComprehensionScope(const char* scopeName, std::vector<Comp
 
     int flags = CO_OPTIMIZED | CO_NEWLOCALS;
     if (isAsync) flags |= 0x80; // CO_COROUTINE
+    else if (isGenExpr) flags |= 0x20; // CO_GENERATOR
     // Slots for the operand stack too: a stack held in a std::vector is not
     // a GC root (executeBytecodeRange).
     const int automatic = static_cast<int>(orderedLocals.size() + freeVars.size()) + body.getMaxStack() + 128;
@@ -4930,6 +4931,7 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     if (!captured.empty()) co_flags |= CO_NESTED;
     if (!n->vararg.empty()) co_flags |= CO_VARARGS;
     if (!n->kwarg.empty()) co_flags |= CO_VARKEYWORDS;
+    if (bodyCompiler.isGenerator_) co_flags |= 0x20; // CO_GENERATOR
 
     std::vector<const proto::ProtoObject*> varnamesVec;
     varnamesVec.reserve(varnamesOrdered.size());

@@ -2022,7 +2022,7 @@ code 0: <module> (15-generators.py, line 1)
           32  RETURN_VALUE                  0
 
 code 0.0: countdown (15-generators.py, line 2)
-  flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only), generator
+  flags 0x33 (OPTIMIZED | NEWLOCALS | NESTED | GENERATOR), parameters 1 (0 positional-only, 0 keyword-only), generator
   slots 131: variables 0..0, operand stack from 1
   constants:
     #0   int     0
@@ -2047,7 +2047,7 @@ code 0.0: countdown (15-generators.py, line 2)
           26  RETURN_VALUE                  0
 
 code 0.1: chain (15-generators.py, line 8)
-  flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 2 (0 positional-only, 0 keyword-only), generator
+  flags 0x33 (OPTIMIZED | NEWLOCALS | NESTED | GENERATOR), parameters 2 (0 positional-only, 0 keyword-only), generator
   slots 133: variables 0..1, operand stack from 2
   constants:
     #0   none    None
@@ -2069,7 +2069,7 @@ code 0.1: chain (15-generators.py, line 8)
           22  RETURN_VALUE                  0
 
 code 0.2: <genexpr> (15-generators.py, line 12)
-  flags 0x3 (OPTIMIZED | NEWLOCALS), parameters 1 (0 positional-only, 0 keyword-only), generator
+  flags 0x23 (OPTIMIZED | NEWLOCALS | GENERATOR), parameters 1 (0 positional-only, 0 keyword-only), generator
   slots 133: variables 0..1, operand stack from 2
   constants:
     #0   int     2
@@ -2529,7 +2529,7 @@ code 0: <module> (19-async.py, line 1)
           14  RETURN_VALUE                  0
 
 code 0.0: fetch (19-async.py, line 2)
-  flags 0x113 (OPTIMIZED | NEWLOCALS | NESTED | COROUTINE), parameters 1 (0 positional-only, 0 keyword-only), generator
+  flags 0x93 (OPTIMIZED | NEWLOCALS | NESTED | COROUTINE), parameters 1 (0 positional-only, 0 keyword-only), generator
   slots 138: variables 0..1, operand stack from 2
   constants:
     #0   none    None
@@ -2596,7 +2596,7 @@ code 0.0: fetch (19-async.py, line 2)
          100  RETURN_VALUE                  0
 
 code 0.1: collect (19-async.py, line 7)
-  flags 0x113 (OPTIMIZED | NEWLOCALS | NESTED | COROUTINE), parameters 1 (0 positional-only, 0 keyword-only), generator
+  flags 0x93 (OPTIMIZED | NEWLOCALS | NESTED | COROUTINE), parameters 1 (0 positional-only, 0 keyword-only), generator
   slots 135: variables 0..2, operand stack from 3
   constants:
     #0   NoneType None
