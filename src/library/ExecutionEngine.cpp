@@ -431,13 +431,16 @@ static void raiseRecursionLimit(PythonEnvironment* env, proto::ProtoContext* ctx
 namespace {
 thread_local const char* t_pythonStackBase = nullptr;
 thread_local size_t t_pythonStackBudget = 0;  // 0: unknown size, no guard
+thread_local size_t t_pythonStackHardBudget = 0;
+
+enum class NativeStack { Ok, Exhausted, Critical };
 
 #if defined(_MSC_VER)
 __declspec(noinline)
 #else
 __attribute__((noinline))
 #endif
-bool nativeStackExhausted() {
+NativeStack nativeStackState() {
     char probe = 0;
     const char* here = &probe;
     if (!t_pythonStackBase) {
@@ -445,13 +448,17 @@ bool nativeStackExhausted() {
         const size_t size = proto::ProtoSpace::currentThreadStackBytes();
 #if defined(_WIN32)
         t_pythonStackBudget = size / 2;
+        t_pythonStackHardBudget = size / 8 * 5;
 #else
         t_pythonStackBudget = size / 4 * 3;
+        t_pythonStackHardBudget = size / 8 * 7;
 #endif
-        return false;
+        return NativeStack::Ok;
     }
-    return t_pythonStackBudget != 0 && t_pythonStackBase > here
-        && static_cast<size_t>(t_pythonStackBase - here) > t_pythonStackBudget;
+    if (t_pythonStackBudget == 0 || t_pythonStackBase <= here) return NativeStack::Ok;
+    const size_t used = static_cast<size_t>(t_pythonStackBase - here);
+    if (used > t_pythonStackHardBudget) return NativeStack::Critical;
+    return used > t_pythonStackBudget ? NativeStack::Exhausted : NativeStack::Ok;
 }
 }  // namespace
 
@@ -460,11 +467,14 @@ RecursionScope::RecursionScope(PythonEnvironment* env, proto::ProtoContext* ctx)
     
     int limit = env_->getRecursionLimit();
     // The native stack nearly full is the recursion limit too.
-    if (nativeStackExhausted()) limit = PythonEnvironment::s_recursionDepth;
+    const NativeStack stack = nativeStackState();
+    if (stack != NativeStack::Ok) limit = PythonEnvironment::s_recursionDepth;
 
-    // If we are already raising a recursion error, allow more depth (up to a hard limit)
+    // If we are already raising a recursion error, allow more depth (up to a
+    // hard limit), but not past the stack's hard budget: the 100 extra
+    // frames do not fit in what is left of a small thread stack.
     if (PythonEnvironment::s_inRecursionError) {
-        if (PythonEnvironment::s_recursionDepth >= limit + 100) {
+        if (stack == NativeStack::Critical || PythonEnvironment::s_recursionDepth >= limit + 100) {
             overflowed_ = true;
             return;
         }
