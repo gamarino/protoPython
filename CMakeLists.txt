@@ -912,6 +912,14 @@ set_tests_properties(protopy_frame_chain_ends_in_none PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "frame_chain_ends_in_none: ok"
     LABELS "regression_gate")
+# function.__annotations__ comes from __annotate__.
+add_test(NAME protopy_function_annotations_from_annotate
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/function_annotations_from_annotate.py)
+set_tests_properties(protopy_function_annotations_from_annotate PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "function_annotations_from_annotate: ok"
+    LABELS "regression_gate")
 # platform.python_version() parses sys.version.
 add_test(NAME protopy_platform_version
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/platform_version.py)

@@ -1257,6 +1257,50 @@ static const proto::ProtoObject* py_type_get_dict(
     return proxy;
 }
 
+// fget of function.__annotations__ (see functionPrototype's setup).
+static const proto::ProtoObject* py_function_annotations_get(
+    proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* fn = self;
+    if (!env || !fn || fn == PROTO_NONE) return PROTO_NONE;
+    const proto::ProtoString* annS = PythonEnvironment::getInternedString(context, "__annotations__");
+    if (fn->hasOwnAttribute(context, annS) == PROTO_TRUE) return fn->getOwnAttributeDirect(context, annS);
+    const proto::ProtoString* annotateS = PythonEnvironment::getInternedString(context, "__annotate__");
+    const proto::ProtoObject* annotate = fn->hasOwnAttribute(context, annotateS) == PROTO_TRUE
+        ? fn->getOwnAttributeDirect(context, annotateS) : nullptr;
+    const proto::ProtoObject* annotations = nullptr;
+    if (annotate && annotate != PROTO_NONE) {
+        annotations = env->callObject(annotate, {context->fromInteger(1)});
+        if (!annotations) return nullptr;
+        if (annotations->isInstanceOf(context, env->getDictPrototype()) != PROTO_TRUE) {
+            const proto::ProtoObject* type = env->getType(context, annotations);
+            const proto::ProtoObject* name = type ? type->getAttribute(context, env->getNameString()) : nullptr;
+            std::string typeName = "object";
+            if (name && name->isString(context)) name->asString(context)->toUTF8String(context, typeName);
+            env->raiseTypeError(context, "__annotate__ returned non-dict of type '" + typeName + "'");
+            return nullptr;
+        }
+    } else {
+        const proto::ProtoObject* dictType = env->getBuiltins()->getAttribute(context,
+            PythonEnvironment::getInternedString(context, "dict"));
+        annotations = env->callObject(dictType, {});
+        if (!annotations) return nullptr;
+    }
+    const_cast<proto::ProtoObject*>(fn)->setAttribute(context, annS, annotations);
+    return annotations;
+}
+
+// fset of function.__annotations__: the function's own dict.
+static const proto::ProtoObject* py_function_annotations_set(
+    proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
+    if (!self || !args || args->getSize(context) < 2) return PROTO_NONE;
+    const_cast<proto::ProtoObject*>(self)->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "__annotations__"), args->getAt(context, 1));
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_type_get_annotations(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -22667,6 +22711,25 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     codePrototype = codePrototype->setAttribute(rootContext_,
         PythonEnvironment::getInternedString(rootContext_, "replace"),
         rootContext_->fromMethod(nullptr, py_code_replace));
+
+    // function.__annotations__, a getset as in CPython (PEP 649): the
+    // function's own dict when it has one (MAKE_FUNCTION stores it for a
+    // function that declares annotations), else annotate(Format.VALUE) when
+    // the function has an __annotate__ function, else a new empty dict;
+    // either is then kept as the function's own dict.
+    if (getSetDescriptorPrototype) {
+        const proto::ProtoString* annS = PythonEnvironment::getInternedString(rootContext_, "__annotations__");
+        proto::ProtoObject* annDescr = const_cast<proto::ProtoObject*>(
+            getSetDescriptorPrototype->newChild(rootContext_, true));
+        annDescr->setAttribute(rootContext_, py_class, getSetDescriptorPrototype);
+        annDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fget"),
+            rootContext_->fromMethod(nullptr, py_function_annotations_get));
+        annDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fset"),
+            rootContext_->fromMethod(nullptr, py_function_annotations_set));
+        annDescr->setAttribute(rootContext_, py_name, annS->asObject(rootContext_));
+        annDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__objclass__"), functionPrototype);
+        functionPrototype = functionPrototype->setAttribute(rootContext_, annS, annDescr);
+    }
 
     // V75: Provide class-level attributes for types.py
     const proto::ProtoObject* codeDesc = objectPrototype->newChild(rootContext_, true);

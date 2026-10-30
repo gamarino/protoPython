@@ -1555,11 +1555,12 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
                                   ctx->newList()->asObject(ctx));
             return d;
         };
-        const proto::ProtoObject* emptyDict1 = makeFreshEmptyDict();
-        const proto::ProtoObject* emptyDict2 = makeFreshEmptyDict();
-
-        fn = fn->setAttribute(ctx, dictS, emptyDict1);
-        fn = fn->setAttribute(ctx, annS, emptyDict2);
+        fn = fn->setAttribute(ctx, dictS, makeFreshEmptyDict());
+        // No own __annotations__ here: functionPrototype's __annotations__
+        // descriptor makes it on first read, from __annotate__ when one was
+        // assigned (functools.wraps copies __annotate__, not
+        // __annotations__), else an empty dict.  MAKE_FUNCTION sets both
+        // for a function that declares annotations.
         // Surface the function's docstring (the compiler stores it on the
         // code object as `co_doc` when the body's first statement is a
         // string literal). Default to None for non-docstring functions —
