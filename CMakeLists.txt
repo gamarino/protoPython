@@ -1002,6 +1002,14 @@ set_tests_properties(protopy_io_open_write_modes PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# binascii rejects data that is not bytes-like.
+add_test(NAME protopy_binascii_argument_types
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/binascii_argument_types.py)
+set_tests_properties(protopy_binascii_argument_types PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "binascii_argument_types: ok"
+    LABELS "regression_gate")
 # io.text_encoding follows CPython; Path.read_text and write_text work.
 add_test(NAME protopy_io_text_encoding
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/io_text_encoding.py)
