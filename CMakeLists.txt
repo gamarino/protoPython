@@ -473,7 +473,7 @@ add_test(NAME protopy_exit_joins_non_daemon_threads
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/exit_joins_non_daemon_threads.py)
 set_tests_properties(protopy_exit_joins_non_daemon_threads PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    TIMEOUT 120
+    TIMEOUT 60
     PASS_REGULAR_EXPRESSION "exit_joins_non_daemon_threads: ok"
     LABELS "regression_gate")
 # threading.Thread.join() must wait for the thread to finish.
