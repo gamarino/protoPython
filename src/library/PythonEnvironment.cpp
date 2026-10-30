@@ -13278,12 +13278,20 @@ static std::string applyFormatSpec(proto::ProtoContext* context, const proto::Pr
     return result;
 }
 
+// The mapping str.format_map() resolves named fields from, for the
+// py_str_format call it makes on this thread (nullptr otherwise).
+static thread_local const proto::ProtoObject* t_formatMapping = nullptr;
+
 static const proto::ProtoObject* py_str_format(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
+    // Taken once: nothing this call runs (a value's __format__, a
+    // __getitem__) formats with the format_map mapping of this call.
+    const proto::ProtoObject* fmtMapping = t_formatMapping;
+    t_formatMapping = nullptr;
     int formatPosOff = 0;
     const proto::ProtoString* str = str_from_self_or_arg(context, self, positionalParameters, &formatPosOff);
     if (!str) return PROTO_NONE;
@@ -13357,6 +13365,17 @@ static const proto::ProtoObject* py_str_format(
             proto::proto_ulong idx = std::stoul(baseName) + static_cast<proto::proto_ulong>(formatPosOff);
             if (positionalParameters && idx < positionalParameters->getSize(context))
                 val = positionalParameters->getAt(context, static_cast<int>(idx));
+        } else if (fmtMapping && env) {
+            // str.format_map(mapping): mapping[name], read through
+            // __getitem__ (a dict subclass's __missing__ applies; a missing
+            // key raises KeyError).
+            const proto::ProtoObject* getitem = env->getAttribute(context, fmtMapping,
+                PythonEnvironment::getInternedString(context, "__getitem__"));
+            if (!getitem) return nullptr;
+            const proto::ProtoObject* found = env->callObject(getitem,
+                {PythonEnvironment::newStr(context, baseName)});
+            if (!found) return nullptr;
+            val = found;
         } else {
             // keyword
             if (keywordParameters && env) {
@@ -13375,10 +13394,14 @@ static const proto::ProtoObject* py_str_format(
                 size_t end = ti + 1;
                 while (end < tail.size() && tail[end] != '.' && tail[end] != '[') ++end;
                 std::string attrName = tail.substr(ti + 1, end - ti - 1);
-                if (val && val != PROTO_NONE) {
+                // getattr(val, name): descriptors apply ("{0.real}" is the
+                // int, not the member descriptor) and a missing name raises
+                // AttributeError.
+                if (val && env) {
                     const proto::ProtoString* nm = PythonEnvironment::getInternedString(context, attrName.c_str());
-                    const proto::ProtoObject* next = val->getAttribute(context, nm);
-                    val = next ? next : PROTO_NONE;
+                    const proto::ProtoObject* next = env->getAttribute(context, val, nm);
+                    if (!next) return nullptr;
+                    val = next;
                 }
                 ti = end;
             } else if (tail[ti] == '[') {
@@ -13469,6 +13492,31 @@ static const proto::ProtoObject* py_str_format(
         }
     }
     return PythonEnvironment::newStr(context, out);
+}
+
+// str.format_map(mapping): str.format(**mapping) without copying the
+// mapping, so a dict subclass's __missing__ supplies absent names.
+static const proto::ProtoObject* py_str_format_map(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::proto_ulong argc = positionalParameters ? positionalParameters->getSize(context) : 0;
+    const bool hasKeywords = keywordParameters && keywordParameters->getSize(context) > 0;
+    if (argc != 1 || hasKeywords) {
+        if (env) env->raiseTypeError(context, argc == 1
+            ? "format_map() takes no keyword arguments"
+            : "format_map() takes exactly one argument (" + std::to_string(argc) + " given)");
+        return nullptr;
+    }
+    const proto::ProtoObject* previous = t_formatMapping;
+    t_formatMapping = positionalParameters->getAt(context, 0);
+    struct Restore { const proto::ProtoObject* m; ~Restore() { t_formatMapping = m; } } restore{previous};
+    const proto::ProtoList* noArgs = context->newList();
+    return py_str_format(context, self, parentLink,
+        argsView(proto::ProtoListArguments(context, noArgs)), nullptr);
 }
 
 // str.__mod__(other): implements "format_string % args"
@@ -21063,6 +21111,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(rootContext_, py_upper, rootContext_->fromMethod(nullptr, py_str_upper));
     strPrototype = strPrototype->setAttribute(rootContext_, py_lower, rootContext_->fromMethod(nullptr, py_str_lower));
     strPrototype = strPrototype->setAttribute(rootContext_, py_format, rootContext_->fromMethod(nullptr, py_str_format));
+    strPrototype = strPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "format_map"),
+        rootContext_->fromMethod(nullptr, py_str_format_map));
     strPrototype = strPrototype->setAttribute(rootContext_, py_format_dunder, rootContext_->fromMethod(nullptr, py_str_format_dunder));
     strPrototype = strPrototype->setAttribute(rootContext_, py_hash, rootContext_->fromMethod(nullptr, py_str_hash));
     strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__getnewargs__"), rootContext_->fromMethod(nullptr, py_str_getnewargs));

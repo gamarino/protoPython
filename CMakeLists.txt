@@ -1423,6 +1423,14 @@ set_tests_properties(protopy_init_subclass_exception PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 60
     LABELS "regression_gate")
+# str.format_map reads names from the mapping.
+add_test(NAME protopy_str_format_map
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/str_format_map.py)
+set_tests_properties(protopy_str_format_map PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "str_format_map: ok"
+    LABELS "regression_gate")
 # Sets key elements like dict keys: __hash__, 1 == 1.0 == True, tuples by elements, unhashables raise.
 add_test(NAME protopy_set_python_hash
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/set_python_hash.py)
