@@ -19,15 +19,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        name: [protoCore 3.3.1, protoCore 3.0.0, protoCore fec4394c]
+        name: [protoCore fec4394c]
         round: [a, b]
         include:
-          - name: protoCore 3.3.1
-            protocore_ref: 5a8cd7c7aae68edbb34720445736b14685efae6f
-          - name: protoCore 3.0.0
-            protocore_ref: ce00a4a26b6583ea8a58e776eee2ea91c743469e
           - name: protoCore fec4394c
-            protocore_ref: fec4394c
+            protocore_ref: fec4394c046ea44cc629b3aac8ccf37a6b176c3f
     defaults:
       run:
         shell: bash
