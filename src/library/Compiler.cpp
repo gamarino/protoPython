@@ -2038,7 +2038,8 @@ bool Compiler::compileComprehensionScope(const char* scopeName, std::vector<Comp
     const proto::ProtoTuple* co_varnames = ctx_->newTuple(varnamesVec);
 
     int flags = CO_OPTIMIZED | CO_NEWLOCALS;
-    if (isAsync) flags |= 256; // CO_COROUTINE (CPython 0x100, matches inspect.CO_COROUTINE)
+    if (isAsync) flags |= 0x80; // CO_COROUTINE
+    else if (isGenExpr) flags |= 0x20; // CO_GENERATOR
     // Slots for the operand stack too: a stack held in a std::vector is not
     // a GC root (executeBytecodeRange).
     const int automatic = static_cast<int>(orderedLocals.size() + freeVars.size()) + body.getMaxStack() + 128;
@@ -4931,6 +4932,7 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     if (!captured.empty()) co_flags |= CO_NESTED;
     if (!n->vararg.empty()) co_flags |= CO_VARARGS;
     if (!n->kwarg.empty()) co_flags |= CO_VARKEYWORDS;
+    if (bodyCompiler.isGenerator_) co_flags |= 0x20; // CO_GENERATOR
 
     std::vector<const proto::ProtoObject*> varnamesVec;
     varnamesVec.reserve(varnamesOrdered.size());
@@ -5446,13 +5448,14 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
         varnamesVec.push_back(PythonEnvironment::getInternedString(ctx_, name.c_str())->asObject(ctx_));
     const proto::ProtoTuple* co_varnames = ctx_->newTuple(varnamesVec);
     
-    // CPython CO_COROUTINE = 0x100 (matches inspect.CO_COROUTINE)
-    int co_flags = 256 | CO_NEWLOCALS;
+    // CPython's numbering: CO_COROUTINE 0x80 for an async def, and
+    // CO_ASYNC_GENERATOR 0x200 (without CO_GENERATOR) when it yields.
+    int co_flags = CO_NEWLOCALS;
     if (!forceMapped) co_flags |= CO_OPTIMIZED;
     if (!captured.empty()) co_flags |= CO_NESTED;
     if (!n->vararg.empty()) co_flags |= CO_VARARGS;
     if (!n->kwarg.empty()) co_flags |= CO_VARKEYWORDS;
-    if (bodyCompiler.isGenerator_) co_flags |= 0x20; // CO_GENERATOR
+    co_flags |= bodyCompiler.isGenerator_ ? 0x200 : 0x80; // CO_ASYNC_GENERATOR : CO_COROUTINE
 
     const proto::ProtoTuple* co_lnotab = bodyCompiler.getLnotab();
 
@@ -6275,7 +6278,7 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_kwonlyargcount"), ctx->fromInteger(kwonlyargcount));
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_automatic_count"), ctx->fromInteger(automatic_count));
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_flags"), ctx->fromInteger(flags));
-    bool isGenOrCoro = isGenerator || (flags & 0x100);  // 0x100 = CO_COROUTINE
+    bool isGenOrCoro = isGenerator || (flags & (0x80 | 0x200));  // CO_COROUTINE | CO_ASYNC_GENERATOR
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_is_generator"), ctx->fromBoolean(isGenOrCoro));
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_name"), co_name ? co_name->asObject(ctx) : PythonEnvironment::getInternedString(ctx, "<module>")->asObject(ctx));
     

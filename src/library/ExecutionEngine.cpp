@@ -1003,9 +1003,9 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         }
         proto::ProtoObject* gen = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
         // PB3: select prototype based on co_flags.
-        //   CO_COROUTINE (0x100) + yield (0x20) → async_generator
-        //   CO_COROUTINE (0x100) alone          → coroutine
-        //   else (CO_GENERATOR 0x20)            → generator
+        //   CO_ASYNC_GENERATOR (0x200)   → async_generator
+        //   CO_COROUTINE (0x80)          → coroutine
+        //   else (CO_GENERATOR 0x20)     → generator
         bool hasCoroutineFlag = false;
         bool hasGeneratorFlag = false;
         bool isAsyncGenerator = false;
@@ -1013,8 +1013,8 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
             const proto::ProtoObject* genProto = env->getGeneratorPrototype();
             const proto::ProtoObject* coFlagsObj = codeObj->getAttribute(calleeCtx, env->getCoFlagsString());
             long long co_flags_val = (coFlagsObj && coFlagsObj->isInteger(calleeCtx)) ? coFlagsObj->asLong(calleeCtx) : 0;
-            hasCoroutineFlag = (co_flags_val & 0x100) != 0;
-            hasGeneratorFlag = (co_flags_val & 0x20) != 0;
+            hasCoroutineFlag = (co_flags_val & (0x80 | 0x200)) != 0;
+            hasGeneratorFlag = (co_flags_val & (0x20 | 0x200)) != 0;
             if (hasCoroutineFlag && hasGeneratorFlag && env->getAsyncGeneratorPrototype()) {
                 genProto = env->getAsyncGeneratorPrototype();
                 isAsyncGenerator = true;

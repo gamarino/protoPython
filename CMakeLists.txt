@@ -1749,6 +1749,14 @@ set_tests_properties(protopy_dict_unbound_methods PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# Code flags use CPython's numbering.
+add_test(NAME protopy_code_flags_cpython
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/code_flags_cpython.py)
+set_tests_properties(protopy_code_flags_cpython PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "code_flags_cpython: ok"
+    LABELS "regression_gate")
 # list.__init__ clears the list before extending it: x.__init__(x) empties x.
 add_test(NAME protopy_list_init_self
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/list_init_self.py)
