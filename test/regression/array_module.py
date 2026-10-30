@@ -80,4 +80,14 @@ if len(sys.argv) == 1:
     assert base64.b64decode(array('B', b'YWJj')) == b'abc'
     assert binascii.hexlify(raw) == b'616263'
     assert struct.unpack('=i', array('i', [7])) == (7,)
+# bytes.join drives its iterable with the iterator protocol (byteswap joins
+# a generator) and takes only bytes-like items.
+assert b'-'.join(x for x in [b'a', bytearray(b'b'), memoryview(b'c')]) == b'a-b-c'
+for bad in ([1], ['a'], [None]):
+    try:
+        b''.join(bad)
+    except TypeError:
+        pass
+    else:
+        raise AssertionError("bytes.join accepted %r" % (bad,))
 print("array_module: ok")
