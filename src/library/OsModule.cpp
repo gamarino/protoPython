@@ -12,6 +12,7 @@
 #include <iostream>
 #include <fstream>
 #include <thread>
+#include <mutex>
 #include <cerrno>
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
 #include <signal.h>
@@ -1910,12 +1911,63 @@ static const proto::ProtoObject* py_os_get_inheritable(
 #endif
 }
 
-// os.fork() -> 0 in child, child-pid in parent.  Subject to the
-// usual fork-in-multithreaded-runtime caveats (protoCore's
-// concurrent GC thread does NOT survive fork) — callers that do
-// not immediately exec must be aware that the child is in a
-// degraded state.  subprocess.Popen exec's immediately, so it is
-// safe; bare os.fork() for application threads is unsupported.
+// os.register_at_fork hooks, in registration order.  Each callable is
+// pinned for the life of the environment, as CPython keeps them for the
+// life of the interpreter.  The mutex guards only the vectors: no protoCore
+// allocation happens while it is held.
+namespace {
+struct ForkHooks {
+    std::mutex m;
+    std::vector<const proto::ProtoObject*> before, afterInParent, afterInChild;
+};
+ForkHooks& forkHooks() {
+    static ForkHooks* hooks = new ForkHooks();  // never destroyed: used up to exit
+    return *hooks;
+}
+
+// Runs `hooks` (a copy taken under the mutex); `reverse`: last registered
+// first, as CPython runs the `before` hooks.  A hook that raises is
+// reported through sys.unraisablehook and the others still run.
+void runForkHooks(proto::ProtoContext* ctx, std::vector<const proto::ProtoObject*> hooks, bool reverse) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return;
+    if (reverse) std::reverse(hooks.begin(), hooks.end());
+    for (const proto::ProtoObject* fn : hooks) {
+        try {
+            env->callObject(fn, {});
+        } catch (const proto::ProtoException& e) {
+            std::string msg = "Exception ignored in fork hook ";
+            try { msg += PythonEnvironment::reprObject(ctx, fn); } catch (const proto::ProtoException&) {}
+            env->reportUnraisable(ctx, e.value(), msg);
+        }
+    }
+}
+
+std::vector<const proto::ProtoObject*> copyHooks(std::vector<const proto::ProtoObject*> ForkHooks::*which) {
+    ForkHooks& h = forkHooks();
+    std::lock_guard<std::mutex> lock(h.m);
+    return h.*which;
+}
+
+// The number of Python threads (ProtoThreads registered in the space); the
+// collector's own threads are not among them.
+proto::proto_ulong pythonThreadCount(proto::ProtoContext* ctx) {
+    const proto::ProtoSparseList* threads = ctx && ctx->space ? ctx->space->threads : nullptr;
+    return threads ? threads->getSize(ctx) : 0;
+}
+}  // namespace
+
+// os.fork() -> 0 in the child, the child's pid in the parent.
+//
+// The child has only the calling thread.  protoCore's collector thread is
+// not in it, so PythonEnvironment::noteForkedChild() lets the child allocate
+// without waiting for collections (its heap grows instead) and exit without
+// joining the collector; before that, an allocation past the heap's soft
+// limit and the exit itself both waited for ever.  As in CPython, the
+// register_at_fork hooks run around the fork (threading, random, logging
+// and concurrent.futures register theirs), and the parent gets a
+// DeprecationWarning when other Python threads exist, since a lock one of
+// them held stays held in the child.
 static const proto::ProtoObject* py_os_fork(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
@@ -1923,11 +1975,35 @@ static const proto::ProtoObject* py_os_fork(
     const proto::ProtoArguments* /*posArgs*/,
     const proto::ProtoKeywordArguments* /*kwargs*/) {
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    runForkHooks(ctx, copyHooks(&ForkHooks::before), true);
+    const proto::proto_ulong threadsBefore = pythonThreadCount(ctx);
+    std::fflush(nullptr);
     pid_t pid = ::fork();
     if (pid < 0) {
-        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-        if (env) env->raiseOSError(ctx, errno, std::strerror(errno), "");
+        const int err = errno;
+        runForkHooks(ctx, copyHooks(&ForkHooks::afterInParent), false);
+        if (env) env->raiseOSError(ctx, err, std::strerror(err), "");
         return nullptr;
+    }
+    if (pid == 0) {
+        PythonEnvironment::noteForkedChild();
+        runForkHooks(ctx, copyHooks(&ForkHooks::afterInChild), false);
+        return ctx->fromInteger(0);
+    }
+    runForkHooks(ctx, copyHooks(&ForkHooks::afterInParent), false);
+    if (env && threadsBefore > 1) {
+        const proto::ProtoObject* warnings = env->resolveModule("warnings", ctx);
+        const proto::ProtoObject* warn = (warnings && warnings != PROTO_NONE)
+            ? warnings->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "warn")) : nullptr;
+        const proto::ProtoObject* category = env->getBuiltins()->getAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "DeprecationWarning"));
+        if (warn && warn != PROTO_NONE && category && category != PROTO_NONE) {
+            const std::string msg = "This process (pid=" + std::to_string(static_cast<long long>(getpid()))
+                + ") is multi-threaded, use of fork() may lead to deadlocks in the child.";
+            env->callObject(warn, {proto::ProtoString::fromUTF8(ctx, msg.c_str())->asObject(ctx), category,
+                                   ctx->fromInteger(2)});
+        }
     }
     return ctx->fromInteger(static_cast<long long>(pid));
 #else
@@ -2556,16 +2632,53 @@ static const proto::ProtoObject* py_os_fstat(
 #endif
 }
 
-// os.register_at_fork(before=..., after_in_parent=..., after_in_child=...) -> None.
-// Stub: protoPython's fork support is "fork+exec only" — bare fork()
-// from a multithreaded host is not safe, so the fork-handler chain
-// CPython uses never runs.  Accept and ignore the callables.
+// os.register_at_fork(*, before=None, after_in_child=None,
+// after_in_parent=None) -> None: hooks py_os_fork runs around fork().
+// At least one argument is required, and each must be callable (TypeError
+// otherwise, as in CPython).
 static const proto::ProtoObject* py_os_register_at_fork(
-    proto::ProtoContext* /*ctx*/,
+    proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoArguments* /*posArgs*/,
-    const proto::ProtoKeywordArguments* /*kwargs*/) {
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwargs) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return PROTO_NONE;
+    if (posArgs && posArgs->getSize(ctx) > 0) {
+        env->raiseTypeError(ctx, "register_at_fork() takes no positional arguments");
+        return nullptr;
+    }
+    const char* const names[3] = {"before", "after_in_child", "after_in_parent"};
+    const proto::ProtoObject* fns[3] = {nullptr, nullptr, nullptr};
+    bool any = false;
+    for (int i = 0; i < 3; ++i) {
+        const proto::ProtoString* key = PythonEnvironment::getInternedString(ctx, names[i]);
+        if (!kwargs || !kwargs->has(ctx, key->getHash(ctx))) continue;
+        const proto::ProtoObject* fn = kwargs->getAt(ctx, key->getHash(ctx));
+        if (!fn || fn == PROTO_NONE) continue;
+        const proto::ProtoObject* callable = env->getBuiltins()->getAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "callable"));
+        if (callable && callable != PROTO_NONE && env->callObject(callable, {fn}) != PROTO_TRUE) {
+            std::string tn = "object";
+            const proto::ProtoObject* cls = env->getType(ctx, fn);
+            const proto::ProtoObject* nm = cls ? cls->getAttribute(ctx, env->getNameString()) : nullptr;
+            if (nm && nm != PROTO_NONE && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, tn);
+            env->raiseTypeError(ctx, std::string("'") + names[i] + "' must be callable, not " + tn);
+            return nullptr;
+        }
+        fns[i] = fn;
+        any = true;
+    }
+    if (!any) {
+        env->raiseTypeError(ctx, "At least one argument is required.");
+        return nullptr;
+    }
+    for (const proto::ProtoObject* fn : fns) if (fn) env->pinForever(fn);
+    ForkHooks& h = forkHooks();
+    std::lock_guard<std::mutex> lock(h.m);
+    if (fns[0]) h.before.push_back(fns[0]);
+    if (fns[1]) h.afterInChild.push_back(fns[1]);
+    if (fns[2]) h.afterInParent.push_back(fns[2]);
     return PROTO_NONE;
 }
 

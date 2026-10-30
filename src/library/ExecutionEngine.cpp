@@ -1039,7 +1039,10 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
             gen->setAttribute(calleeCtx, PythonEnvironment::getInternedString(calleeCtx, table[0]), codeObj);
             gen->setAttribute(calleeCtx, PythonEnvironment::getInternedString(calleeCtx, table[1]), frame);
             gen->setAttribute(calleeCtx, PythonEnvironment::getInternedString(calleeCtx, table[2]), PROTO_FALSE);
+            gen->setAttribute(calleeCtx, PythonEnvironment::getInternedString(calleeCtx,
+                isAsyncGenerator ? "ag_suspended" : "cr_suspended"), PROTO_FALSE);
         }
+        gen->setAttribute(calleeCtx, PythonEnvironment::getInternedString(calleeCtx, "gi_suspended"), PROTO_FALSE);
         
         // Generator/coroutine introspection: `gen.__name__` is the wrapped
         // function's name (from co_name) and `gen.__qualname__` is the
@@ -3358,6 +3361,31 @@ static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const pr
 // nullptr instead of raising StopIteration (iteration's exhaustion is not an
 // exception internally; py_generator_step). Without it, a finished generator
 // raises StopIteration carrying its return value, as __next__ / send do.
+// The generator's suspended/running state as CPython exposes it:
+// gi_suspended (inspect.getgeneratorstate reads it), and for a coroutine or
+// an async generator cr_/ag_suspended and cr_/ag_running as well
+// (getcoroutinestate, getasyncgenstate).  gi_running is written by the
+// callers.  Suspended means stopped at a yield: not before the first
+// resume, not while running, not once finished.
+static void setGeneratorSuspended(proto::ProtoContext* ctx, const proto::ProtoObject* gen,
+                                  bool running, bool suspended) {
+    static const proto::ProtoString* giSuspended =
+        PythonEnvironment::getInternedString(ctx, "gi_suspended");
+    static const proto::ProtoString* names[2][2] = {
+        {PythonEnvironment::getInternedString(ctx, "cr_suspended"),
+         PythonEnvironment::getInternedString(ctx, "cr_running")},
+        {PythonEnvironment::getInternedString(ctx, "ag_suspended"),
+         PythonEnvironment::getInternedString(ctx, "ag_running")},
+    };
+    gen->setAttribute(ctx, giSuspended, suspended ? PROTO_TRUE : PROTO_FALSE);
+    for (const auto& kind : names) {
+        if (gen->hasOwnAttribute(ctx, kind[0]) == PROTO_TRUE) {
+            gen->setAttribute(ctx, kind[0], suspended ? PROTO_TRUE : PROTO_FALSE);
+            gen->setAttribute(ctx, kind[1], running ? PROTO_TRUE : PROTO_FALSE);
+        }
+    }
+}
+
 static const proto::ProtoObject* py_generator_resume(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
@@ -3494,6 +3522,7 @@ static const proto::ProtoObject* py_generator_resume(
         // consumer (sum, any, str.join, list) of a 100,000-step generator
         // held about 1.6 M cells of them.
         self->setAttribute(calleeCtx, env->getGiRunningString(), PROTO_TRUE);
+        setGeneratorSuspended(calleeCtx, self, /*running=*/true, /*suspended=*/false);
 
         // Restore locals from gi_locals
         const proto::ProtoObject* localsObj = self->getAttribute(ctx, env->getGiLocalsString());
@@ -3564,6 +3593,7 @@ static const proto::ProtoObject* py_generator_resume(
         } catch (const proto::ProtoException&) {
             // An exception out of the body finishes the generator.
             self->setAttribute(ctx, env->getGiRunningString(), PROTO_FALSE);
+            setGeneratorSuspended(ctx, self, /*running=*/false, /*suspended=*/false);
             self->setAttribute(ctx, env->getGiPCString(), ctx->fromInteger(co_code_tuple->getSize(ctx)));
             throw;
         }
@@ -3619,6 +3649,7 @@ static const proto::ProtoObject* py_generator_resume(
 
         // 8. Clear running
         self->setAttribute(calleeCtx, env->getGiRunningString(), PROTO_FALSE);
+        setGeneratorSuspended(calleeCtx, self, /*running=*/false, /*suspended=*/yielded);
         if (!yielded) {
             nextPc = co_code_tuple->getSize(calleeCtx);
         }
@@ -3969,18 +4000,82 @@ const proto::ProtoObject* py_async_generator_aclose(
     return wrapper;
 }
 
-// athrow: throw an exception into the underlying agen.  Implemented as a
-// thin wrapper similar to asend but invoking py_generator_throw.
-const proto::ProtoObject* py_async_generator_athrow(
+// athrow(typ[, val[, tb]]): an awaitable that throws into the async
+// generator when it is driven, as in CPython.  athrow used to throw at
+// once and return what the generator yielded, so `await agen.athrow(E)`
+// awaited that value: a yielded StopIteration(2) hung test_asyncgen's
+// test_async_gen_asyncio_athrow_stopiteration.  Driven, the awaitable
+// finishes with the value the generator yields next; a generator that
+// returns instead raises StopAsyncIteration; an exception it raises
+// propagates.  Single-shot; the cells are unbound (CONFORMANCE rule 13).
+static const proto::ProtoObject* py_athrow_wrapper_send(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* pl,
+    const proto::ProtoArguments*,
+    const proto::ProtoKeywordArguments*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return PROTO_NONE;
+    if (!self || self == PROTO_NONE) {
+        env->raiseTypeError(ctx, "athrow() awaitable: called without the awaitable");
+        return nullptr;
+    }
+    const proto::ProtoString* targetS = PythonEnvironment::getInternedString(ctx, "_athrow_target");
+    const proto::ProtoString* argsS   = PythonEnvironment::getInternedString(ctx, "_athrow_args");
+    const proto::ProtoString* doneS   = PythonEnvironment::getInternedString(ctx, "_athrow_done");
+    if (self->hasOwnAttribute(ctx, doneS) == PROTO_TRUE
+            && self->getOwnAttributeDirect(ctx, doneS) == PROTO_TRUE) {
+        env->raiseRuntimeError(ctx, "cannot reuse already awaited aclose()/athrow()");
+        return nullptr;
+    }
+    const_cast<proto::ProtoObject*>(self)->setAttribute(ctx, doneS, PROTO_TRUE);
+    const proto::ProtoObject* target = self->hasOwnAttribute(ctx, targetS) == PROTO_TRUE
+        ? self->getOwnAttributeDirect(ctx, targetS) : nullptr;
+    const proto::ProtoObject* argsObj = self->hasOwnAttribute(ctx, argsS) == PROTO_TRUE
+        ? self->getOwnAttributeDirect(ctx, argsS) : nullptr;
+    const proto::ProtoList* argList = argsObj ? ::protoPython::listStorage(ctx, argsObj) : nullptr;
+    if (!target || target == PROTO_NONE || !argList) {
+        env->raiseStopIteration(ctx, PROTO_NONE);
+        return nullptr;
+    }
+    const proto::ProtoObject* val = nullptr;
+    try {
+        val = py_generator_throw(ctx, target, pl, argsView(proto::ProtoListArguments(ctx, argList)), nullptr);
+    } catch (const proto::ProtoException& e) {
+        // The generator returned: the async-iteration sentinel.
+        if (!env->isStopIteration(ctx, e.value())) throw;
+        env->raiseStopAsyncIteration(ctx);
+        return nullptr;
+    }
+    env->raiseStopIteration(ctx, val ? val : PROTO_NONE);
+    return nullptr;
+}
+
+const proto::ProtoObject* py_async_generator_athrow(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
     const proto::ProtoArguments* posArgs,
-    const proto::ProtoKeywordArguments* kw) {
-    // Reuse py_generator_throw directly — its return value semantics
-    // (yielded value, or pending exception on raise) match what awaitable
-    // drivers expect for a single-shot throw.
-    return py_generator_throw(ctx, self, pl, posArgs, kw);
+    const proto::ProtoKeywordArguments*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env || !self) return PROTO_NONE;
+    if (!posArgs || posArgs->getSize(ctx) < 1) {
+        env->raiseTypeError(ctx, "athrow expected at least 1 argument, got 0");
+        return nullptr;
+    }
+    const proto::ProtoList* args = ctx->newList();
+    for (proto::proto_ulong i = 0; i < posArgs->getSize(ctx); ++i)
+        args = args->appendLast(ctx, posArgs->getAt(ctx, static_cast<int>(i)));
+    proto::ProtoObject* wrapper = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+    wrapper->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "_athrow_target"), self);
+    wrapper->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "_athrow_args"), args->asObject(ctx));
+    const proto::ProtoObject* sendCell = ctx->fromMethod(nullptr, py_athrow_wrapper_send);
+    wrapper->setAttribute(ctx, env->getSendString(), sendCell);
+    wrapper->setAttribute(ctx, env->getNextString(), sendCell);
+    const proto::ProtoObject* selfCell = ctx->fromMethod(nullptr, py_aclose_wrapper_await);
+    wrapper->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__await__"), selfCell);
+    wrapper->setAttribute(ctx, env->getIterString(), selfCell);
+    return wrapper;
 }
 
 const proto::ProtoObject* py_generator_send(
