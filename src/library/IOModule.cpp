@@ -2190,6 +2190,30 @@ const proto::ProtoObject* makeStandardOutputBuffer(proto::ProtoContext* ctx, con
     return binary;
 }
 
+// Makes a native in-memory stream class a real type: an instance of type
+// whose parent and MRO end in object, as datetime's native types are.  The
+// bare prototypes it replaces could be instantiated but not subclassed: a
+// subclass got the MRO (Sub, object) and no write/getvalue/seek, so
+// doctest's _SpoofOut(StringIO) failed in every doctest.
+static const proto::ProtoObject* io_make_type(proto::ProtoContext* ctx,
+                                              const proto::ProtoObject* cls) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env || !env->getTypePrototype() || !env->getObjectPrototype()) return cls;
+    cls = cls->setAttribute(ctx, env->getClassString(), env->getTypePrototype());
+    cls = cls->addParent(ctx, env->getObjectPrototype());
+    // A mutable class keeps its identity, so __mro__[0] is the class itself.
+    cls = cls->clone(ctx, true);
+    const proto::ProtoList* mroL = ctx->newList()
+        ->appendLast(ctx, cls)
+        ->appendLast(ctx, env->getObjectPrototype());
+    cls = cls->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__mro__"),
+        ctx->newTupleFromList(mroL)->asObject(ctx));
+    const proto::ProtoList* basesL = ctx->newList()->appendLast(ctx, env->getObjectPrototype());
+    cls = cls->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__bases__"),
+        ctx->newTupleFromList(basesL)->asObject(ctx));
+    return cls;
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* ioMod = ctx->newObject(false);
     
@@ -2298,6 +2322,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         // first write — matches StringIO's startup contract.
         bio = bio->setAttribute(ctx, k_bio_buf(ctx), bio_make_bytes(ctx, std::string()));
         bio = bio->setAttribute(ctx, k_bio_pos(ctx), ctx->fromInteger(0));
+        bio = io_make_type(ctx, bio);
         ioMod = ioMod->setAttribute(ctx, nameS, bio);
     }
     // StringIO: real implementation (not a stub) so tests can use it.
@@ -2355,6 +2380,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         sio = sio->setAttribute(ctx, k_sio_buf(ctx),
             PythonEnvironment::getInternedString(ctx, "")->asObject(ctx));
         sio = sio->setAttribute(ctx, k_sio_pos(ctx), ctx->fromInteger(0));
+        sio = io_make_type(ctx, sio);
         ioMod = ioMod->setAttribute(ctx, nameS, sio);
     }
     add_stub("BufferedReader");

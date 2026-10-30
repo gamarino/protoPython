@@ -12,6 +12,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 #include <algorithm>
 #include <memory>
@@ -4016,49 +4017,16 @@ static const proto::ProtoObject* py_memoryview(
         ndim = 1;
     }
 
-    // Case 3: input has _data attribute (array.array stores bytes
-    // there; older array stubs stored a string). The _data may be
-    // either a ProtoString OR a `bytes` wrapper whose own __data__
-    // is a ByteBuffer. Accept both — store the input obj itself on
-    // __mv_data__ so the round-trip preserves type identity, and
-    // remember the typecode for `cast`/`format`/etc.
-    if (!bytesData) {
-        const proto::ProtoObject* arrData = obj->getAttribute(context, PythonEnvironment::getInternedString(context, "_data"));
-        if (arrData && arrData != PROTO_NONE) {
-            bool useable = arrData->isString(context) || arrData->isByteBuffer(context);
-            if (!useable && env) {
-                // bytes wrapper: walk into its __data__.
-                const proto::ProtoObject* inner = arrData->getAttribute(context, env->getDataString());
-                if (inner && (inner->isString(context) || inner->isByteBuffer(context))) {
-                    useable = true;
-                }
-            }
-            if (useable) {
-                bytesData = obj;
-                const proto::ProtoObject* tcObj = obj->getAttribute(context, PythonEnvironment::getInternedString(context, "typecode"));
-                if (tcObj && tcObj != PROTO_NONE && tcObj->isString(context)) {
-                    tcObj->asString(context)->toUTF8String(context, format);
-                }
-                ndim = 1;
-            }
-        }
-    }
-
     // Case 4: input has tobytes() method. The method's return is a
     // bytes instance — accept whether it's str-backed or
     // ByteBuffer-backed.
     if (!bytesData && env) {
-        const proto::ProtoObject* tobytesMeth = obj->getAttribute(context, PythonEnvironment::getInternedString(context, "tobytes"));
+        // Called bound: a Python method reached through asMethod() did not
+        // receive the instance as self (array.array's tobytes).
+        const proto::ProtoObject* tobytesMeth = env->getAttribute(context, obj,
+            PythonEnvironment::getInternedString(context, "tobytes"), /*raiseError=*/false);
         if (tobytesMeth && tobytesMeth != PROTO_NONE) {
-            const proto::ProtoList* emptyArgs = context->newList();
-            const proto::ProtoObject* result = nullptr;
-            if (tobytesMeth->asMethod(context)) {
-                result = tobytesMeth->asMethod(context)(context,
-                    const_cast<proto::ProtoObject*>(obj),
-                    nullptr, argsView(proto::ProtoListArguments(context, emptyArgs)), nullptr);
-            } else {
-                result = ::protoPython::invokePythonCallable(context, tobytesMeth, emptyArgs, nullptr);
-            }
+            const proto::ProtoObject* result = env->callObject(tobytesMeth, {});
             if (result && result != PROTO_NONE) {
                 bool useable = result->isString(context) || result->isByteBuffer(context);
                 if (!useable) {
@@ -4070,6 +4038,13 @@ static const proto::ProtoObject* py_memoryview(
                 if (useable) {
                     bytesData = result;
                     ndim = 1;
+                    // array.array: the view's format is the typecode.
+                    const proto::ProtoObject* tcObj = env->getAttribute(context, obj,
+                        PythonEnvironment::getInternedString(context, "typecode"), /*raiseError=*/false);
+                    if (tcObj && tcObj != PROTO_NONE && tcObj->isString(context)) {
+                        format.clear();
+                        tcObj->asString(context)->toUTF8String(context, format);
+                    }
                 }
             }
         }
@@ -7129,6 +7104,13 @@ const proto::ProtoObject* py_type(
                 fprintf(stderr, "DEBUG py_type: dict=%p keysObj=%p keysList=%p\n", (void*)dict, (void*)keysObj, (void*)keysList);
             }
             if (keysList) {
+                // The class's own __keys__, as text, for the membership test
+                // below: a linear ProtoList::has() per namespace entry made
+                // creating a class quadratic in its namespace size
+                // (namedtuple with 150,000 fields never finished).  Rebuilt
+                // whenever __keys__ is not the list this loop last stored.
+                std::unordered_set<std::string> classKeyTexts;
+                const proto::ProtoList* classKeysTracked = nullptr;
                 for (size_t i = 0; i < keysList->getSize(context); ++i) {
                     const proto::ProtoObject* keyObj = keysList->getAt(context, static_cast<int>(i));
 
@@ -7371,8 +7353,23 @@ const proto::ProtoObject* py_type(
                             if (tKeysObj == PROTO_NONE) tKeysObj = nullptr;
                             const proto::ProtoList* tKeysList = tKeysObj ? ::protoPython::listStorage(context, tKeysObj) : nullptr;
                             if (tKeysList) {
-                                if (!tKeysList->has(context, keyObj)) {
-                                    targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, keysName, tKeysList->appendLast(context, keyObj)->asObject(context)));
+                                if (tKeysList != classKeysTracked) {
+                                    classKeyTexts.clear();
+                                    const proto::proto_ulong nk = tKeysList->getSize(context);
+                                    for (proto::proto_ulong j = 0; j < nk; ++j) {
+                                        const proto::ProtoObject* e = tKeysList->getAt(context, static_cast<int>(j));
+                                        if (e && e->isString(context)) {
+                                            std::string es; e->asString(context)->toUTF8String(context, es);
+                                            classKeyTexts.insert(std::move(es));
+                                        }
+                                    }
+                                    classKeysTracked = tKeysList;
+                                }
+                                std::string ks; k->toUTF8String(context, ks);
+                                if (classKeyTexts.insert(ks).second) {
+                                    tKeysList = tKeysList->appendLast(context, keyObj);
+                                    classKeysTracked = tKeysList;
+                                    targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, keysName, tKeysList->asObject(context)));
                                 }
                             } else {
                                 const proto::ProtoList* newList = context->newList()->appendLast(context, keyObj);
