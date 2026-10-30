@@ -1390,6 +1390,7 @@ static const proto::ProtoObject* py_function_get(proto::ProtoContext* ctx,
     // Set __func__ (the original function)
     bound = bound->setAttribute(ctx, env ? env->getFuncDunderString() : protoPython::PythonEnvironment::getInternalString(ctx, "__func__"),
                                self);
+    if (env) bound = env->stampBoundMethodMetadata(ctx, bound, self);
     
     // Copy __name__ and __qualname__ from the original function
     const proto::ProtoObject* funcName = self->getAttribute(ctx, env ? env->getNameString() : protoPython::PythonEnvironment::getInternalString(ctx, "__name__"));
