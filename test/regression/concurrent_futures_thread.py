@@ -12,6 +12,22 @@ for lock in (threading.Lock(), threading.RLock()):
     assert lock.acquire(False), "reinitialised lock is not free"
     lock.release()
 
+# A bound method stored on a class keeps its receiver (method.__get__
+# returns the method), as ThreadPoolExecutor's _counter does.
+import itertools
+
+
+class Holder:
+    _counter = itertools.count().__next__
+
+    def take(self):
+        return self._counter()
+
+
+assert (Holder().take(), Holder().take()) == (0, 1)
+bound = Holder().take
+assert bound.__get__(object()) is bound
+
 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
     results = list(ex.map(lambda x: x * x, range(20)))
 assert results == [x * x for x in range(20)], results
