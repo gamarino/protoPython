@@ -904,6 +904,14 @@ set_tests_properties(protopy_sysconfig_nt_vars PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "sysconfig_nt_vars: ok"
     LABELS "regression_gate")
+# A walrus in a function binds a local.
+add_test(NAME protopy_walrus_function_scope
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/walrus_function_scope.py)
+set_tests_properties(protopy_walrus_function_scope PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "walrus_function_scope: ok"
+    LABELS "regression_gate")
 # Walking f_back ends in None at the main module.
 add_test(NAME protopy_frame_chain_ends_in_none
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/frame_chain_ends_in_none.py)
