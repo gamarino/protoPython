@@ -289,6 +289,30 @@ static const proto::ProtoObject* py_rlock_locked(
     if (!ld) return PROTO_FALSE;
     return ld->count > 0 ? PROTO_TRUE : PROTO_FALSE;
 }
+// lock._at_fork_reinit() / RLock._at_fork_reinit(): give the lock a fresh,
+// unlocked state, as CPython does in a child process after fork().  The
+// state the lock had may belong to a thread that does not exist in the
+// child, so it is replaced rather than released; the old state is freed by
+// its finalizer.  concurrent.futures.thread and threading register these
+// with os.register_at_fork at import time.
+static const proto::ProtoObject* py_lock_at_fork_reinit(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
+    if (!self || self == PROTO_NONE) return PROTO_NONE;
+    const_cast<proto::ProtoObject*>(self)->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_handle"),
+        ctx->fromExternalPointer(new LockData, mutex_finalizer));
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_rlock_at_fork_reinit(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
+    if (!self || self == PROTO_NONE) return PROTO_NONE;
+    const_cast<proto::ProtoObject*>(self)->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_handle"),
+        ctx->fromExternalPointer(new RLockData, rmutex_finalizer));
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_lock_enter(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
@@ -841,6 +865,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(nullptr, py_lock_enter));
     lockProt = lockProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__exit__"), 
         ctx->fromMethod(nullptr, py_lock_exit));
+    lockProt = lockProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_at_fork_reinit"),
+        ctx->fromMethod(nullptr, py_lock_at_fork_reinit));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_lockProt"), lockProt);
 
     const proto::ProtoObject* rlockProt = ctx->newObject(false);
@@ -854,6 +880,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(nullptr, py_rlock_enter));
     rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__exit__"), 
         ctx->fromMethod(nullptr, py_rlock_exit));
+    rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_at_fork_reinit"),
+        ctx->fromMethod(nullptr, py_rlock_at_fork_reinit));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_rlockProt"), rlockProt);
 
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "start_new_thread"),
