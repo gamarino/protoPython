@@ -904,6 +904,14 @@ set_tests_properties(protopy_sysconfig_nt_vars PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "sysconfig_nt_vars: ok"
     LABELS "regression_gate")
+# A walrus in a function binds a local.
+add_test(NAME protopy_walrus_function_scope
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/walrus_function_scope.py)
+set_tests_properties(protopy_walrus_function_scope PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "walrus_function_scope: ok"
+    LABELS "regression_gate")
 # Walking f_back ends in None at the main module.
 add_test(NAME protopy_frame_chain_ends_in_none
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/frame_chain_ends_in_none.py)
@@ -911,6 +919,14 @@ set_tests_properties(protopy_frame_chain_ends_in_none PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "frame_chain_ends_in_none: ok"
+    LABELS "regression_gate")
+# function.__annotations__ comes from __annotate__.
+add_test(NAME protopy_function_annotations_from_annotate
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/function_annotations_from_annotate.py)
+set_tests_properties(protopy_function_annotations_from_annotate PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "function_annotations_from_annotate: ok"
     LABELS "regression_gate")
 # platform.python_version() parses sys.version.
 add_test(NAME protopy_platform_version
@@ -934,6 +950,14 @@ set_tests_properties(protopy_bound_builtin_class_attr PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "bound_builtin_class_attr: ok"
+    LABELS "regression_gate")
+# test.support's helpers import on every platform.
+add_test(NAME protopy_test_support_helpers_import
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/test_support_helpers_import.py)
+set_tests_properties(protopy_test_support_helpers_import PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "test_support_helpers_import: ok"
     LABELS "regression_gate")
 # os.execv/execve reject bad argument lists and environments with ValueError.
 add_test(NAME protopy_os_exec_argument_checks
@@ -1091,6 +1115,14 @@ add_test(NAME protopy_re_anchors
 set_tests_properties(protopy_re_anchors PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
+    LABELS "regression_gate")
+# datetime is the complete pure-Python implementation.
+add_test(NAME protopy_datetime_pure_python
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/datetime_pure_python.py)
+set_tests_properties(protopy_datetime_pure_python PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "datetime_pure_python: ok"
     LABELS "regression_gate")
 # time/datetime conversions before 1970 and after 3000 answer or raise, never crash.
 add_test(NAME protopy_time_out_of_range
@@ -1756,6 +1788,14 @@ add_test(NAME protopy_dict_unbound_methods
 set_tests_properties(protopy_dict_unbound_methods PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
+    LABELS "regression_gate")
+# Code flags use CPython's numbering.
+add_test(NAME protopy_code_flags_cpython
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/code_flags_cpython.py)
+set_tests_properties(protopy_code_flags_cpython PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "code_flags_cpython: ok"
     LABELS "regression_gate")
 # list.__init__ clears the list before extending it: x.__init__(x) empties x.
 add_test(NAME protopy_list_init_self
