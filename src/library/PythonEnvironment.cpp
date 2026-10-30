@@ -17135,11 +17135,29 @@ proto::ProtoSpace* PythonEnvironment::getProcessSpace() {
     return s_processSpaceShutDown ? nullptr : s_space;
 }
 
+namespace {
+std::atomic<bool> s_forkedChild{false};
+}  // namespace
+
 void PythonEnvironment::shutdownProcessSpace() {
     if (s_processSpaceShutDown) return;
     s_processSpaceShutDown = true;
+    // A fork child: ~ProtoSpace would join a collector thread that exists
+    // only in the parent and never return.  The OS reclaims the space.
+    if (s_forkedChild.load(std::memory_order_relaxed)) return;
     delete s_processSpacePtr;
     s_processSpacePtr = nullptr;
+}
+
+void PythonEnvironment::noteForkedChild() {
+    s_forkedChild.store(true, std::memory_order_relaxed);
+    // No collector runs in the child: with no limits, an allocation takes
+    // more memory from the OS instead of waiting for a cycle.
+    if (s_processSpacePtr) s_processSpacePtr->setHeapLimits(0, 0);
+}
+
+bool PythonEnvironment::isForkedChild() {
+    return s_forkedChild.load(std::memory_order_relaxed);
 }
 
 /** Singleton enforcement: L-Shape mandates one ProtoSpace per process. Log if multiple PythonEnvironment instances exist. */
