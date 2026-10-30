@@ -4386,6 +4386,7 @@ static const proto::ProtoObject* py_super_getattr(
                 }
                 bound = const_cast<proto::ProtoObject*>(bound->setAttribute(context, PythonEnvironment::getInternedString(context, "__self__"), obj));
                 bound = const_cast<proto::ProtoObject*>(bound->setAttribute(context, PythonEnvironment::getInternedString(context, "__func__"), val));
+                if (env) bound = const_cast<proto::ProtoObject*>(env->stampBoundMethodMetadata(context, bound, val));
                 return bound;
             }
             return val;
@@ -9703,6 +9704,7 @@ static const proto::ProtoObject* py_classmethod_get(
     
     // Set __func__ (the original function)
     bound = const_cast<proto::ProtoObject*>(bound->setAttribute(context, PythonEnvironment::getInternedString(context, "__func__"), func));
+    if (env) bound = const_cast<proto::ProtoObject*>(env->stampBoundMethodMetadata(context, bound, func));
     
     // Set __call__ to delegate to runBoundMethodCall
     bound = const_cast<proto::ProtoObject*>(bound->setAttribute(context, env ? env->getCallString() : PythonEnvironment::getInternedString(context, "__call__"),
