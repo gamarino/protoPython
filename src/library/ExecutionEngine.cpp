@@ -1362,7 +1362,28 @@ struct LoadAttrPicEntry {
     bool                      isUnbound    = false;
 };
 constexpr size_t kLoadAttrPicSize = 1024;
-thread_local LoadAttrPicEntry g_loadAttrPic[kLoadAttrPicSize];
+// Each thread's table is on the heap, allocated on first use.  As a
+// thread_local array (56 KiB, with getType's 40 KiB table about 100 KiB of
+// this library's static thread-local storage) it lived where glibc puts
+// static TLS: at the top of every thread's stack, inside the size the
+// thread was created with.  A thread started after
+// threading.stack_size(128 * 1024) had about 28 KiB left, the native stack
+// guard (sized by the whole stack) let it overflow, and with the guard
+// told the truth not even threading's bootstrap fitted.
+thread_local LoadAttrPicEntry* t_loadAttrPic = nullptr;
+struct LoadAttrPicReclaimer {
+    ~LoadAttrPicReclaimer() { delete[] t_loadAttrPic; t_loadAttrPic = nullptr; }
+};
+LoadAttrPicEntry* allocLoadAttrPic() {
+    static thread_local LoadAttrPicReclaimer reclaimer;
+    (void)reclaimer;
+    t_loadAttrPic = new LoadAttrPicEntry[kLoadAttrPicSize];
+    return t_loadAttrPic;
+}
+inline LoadAttrPicEntry* loadAttrPic() {
+    LoadAttrPicEntry* pic = t_loadAttrPic;
+    return pic ? pic : allocLoadAttrPic();
+}
 
 static inline size_t loadAttrPicIndex(const proto::ProtoObject* type,
                                        const proto::ProtoString* name) {
@@ -8123,7 +8144,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                             const uint64_t gen = env->resolveCacheGeneration();
                             const uint64_t gcEpoch = ctx->space->getGCCycleCount();
                             LoadAttrPicEntry* slot =
-                                &g_loadAttrPic[loadAttrPicIndex(type, attrName)];
+                                &loadAttrPic()[loadAttrPicIndex(type, attrName)];
                             if (slot->type == type
                                 && slot->name == attrName
                                 && slot->generation == gen

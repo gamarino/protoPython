@@ -29,7 +29,11 @@ def worker():
         result.append("no error")
     except RecursionError:
         result.append("RecursionError")
-    result.append(down(50))
+    # Recorded rather than raised, so a failure here shows in the assertion.
+    try:
+        result.append(down(50))
+    except BaseException as e:
+        result.append(repr(e))
 
 
 t = threading.Thread(target=worker)
