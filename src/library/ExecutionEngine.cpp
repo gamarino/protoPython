@@ -15,7 +15,6 @@
 #include <iostream>
 #include <limits>
 #include <mutex>
-#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -4715,25 +4714,32 @@ PROTOPY_EXC_NOINLINE static void chainCaughtException(proto::ProtoContext* ctx, 
     if (env) env->chainException(ctx, exc, active);
 }
 
+// The C++ exception of the innermost handler level running on this thread
+// (Activation::runHandler).  A handler runs after the catch that caught its
+// exception, so std::current_exception() no longer reaches it.
+static thread_local const std::exception_ptr* t_handlerException = nullptr;
+
 // A bare `raise` and OP_RERAISE: `exc` is thrown again. The activation that
 // caught it notes nothing more for it (executeBytecodeRange's noteFrame).
-// protoCore's rule E3: a re-raised exception leaves unchanged. A handler
-// level runs inside the catch of the exception it handles, so the C++
-// exception being handled is that one: when it carries `exc` it is thrown
-// again as it is, and a runtime's ProtoException subclass keeps its extras.
+// protoCore's rule E3: a re-raised exception leaves unchanged. The C++
+// exception being handled -- the one of the innermost catch, or else the
+// one of the handler level running -- is thrown again as it is when it
+// carries `exc`, so a runtime's ProtoException subclass keeps its extras.
 // Only a handler resumed after a yield (a generator's saved levels hold the
 // value, not the C++ object) throws a new exception with the same value.
 [[noreturn]] PROTOPY_EXC_NOINLINE static void reraiseException(PythonEnvironment* env, const proto::ProtoObject* exc) {
-    if (std::exception_ptr current = std::current_exception()) {
-        bool same = false;
+    auto carries = [exc](const std::exception_ptr& p) {
+        if (!p) return false;
         try {
-            std::rethrow_exception(current);
+            std::rethrow_exception(p);
         } catch (const proto::ProtoException& e) {
-            same = e.value() == exc;
+            return e.value() == exc;
         } catch (...) {
         }
-        if (same) std::rethrow_exception(current);
-    }
+        return false;
+    };
+    if (std::exception_ptr current = std::current_exception(); carries(current)) std::rethrow_exception(current);
+    if (t_handlerException && carries(*t_handlerException)) std::rethrow_exception(*t_handlerException);
     throw PyException(env, exc);
 }
 
@@ -5897,19 +5903,22 @@ struct Activation {
         notedExc = exc;
         notedTb = exc->getAttribute(ctx, tbS);
     }
-    // A handler level runs inside the catch of the exception it handles,
-    // which is the active one (bare raise, sys.exc_info) while it runs; a
-    // RERAISE rethrows that catch's exception.
+    // A handler level: the exception it handles is the active one (bare
+    // raise, sys.exc_info) while it runs, and a RERAISE throws `caught`, the
+    // C++ exception that carried it, again.
     template <typename HandlerBody>
-    const proto::ProtoObject* runHandler(const proto::ProtoObject* handled, HandlerBody&& handlerBody) {
+    const proto::ProtoObject* runHandler(const proto::ProtoObject* handled, HandlerBody&& handlerBody,
+                                         const std::exception_ptr* caught = nullptr) {
         Block handlerLevel{0, stack.size()};
         handlerLevel.isHandler = true;
         handlerLevel.exc = handled;
         blockStack.push_back(handlerLevel);
         struct HandlerGuard {
             std::vector<Block>& levels;
-            ~HandlerGuard() { levels.pop_back(); }
-        } handlerGuard{blockStack};
+            const std::exception_ptr* outer;
+            ~HandlerGuard() { levels.pop_back(); t_handlerException = outer; }
+        } handlerGuard{blockStack, t_handlerException};
+        t_handlerException = caught;
         PythonEnvironment::HandledExceptionScope handling(handledSlot, handled);
         levelExit = LevelExit::Return;
         return handlerBody();
@@ -5923,10 +5932,12 @@ struct Activation {
     // stack, before the native frames of the raising calls are released, so
     // an except clause run inside the catch of a RecursionError ran with the
     // stack as full as at the deepest call, and every call it made failed
-    // again.  The copy of the exception keeps its value pinned meanwhile.
+    // again.  `caught` keeps the C++ exception (and so its value's pin)
+    // alive for the handler, which may throw it again.
     template <typename RangeBody, typename HandlerBody>
     const proto::ProtoObject* runRange(const Block& tryRange, RangeBody&& rangeBody, HandlerBody&& handlerBody) {
-        std::optional<proto::ProtoException> caught;
+        std::exception_ptr caught;
+        const proto::ProtoObject* handled = nullptr;
         try {
             blockStack.push_back(tryRange);
             struct RangeGuard {
@@ -5936,9 +5947,9 @@ struct Activation {
             levelExit = LevelExit::Return;
             return rangeBody();
         } catch (const proto::ProtoException& raised) {
-            caught.emplace(raised);
+            handled = raised.value();
+            caught = std::current_exception();
         }
-        const proto::ProtoObject* handled = caught->value();
         noteFrame(handled);
         if (dbgOn) [[unlikely]] debugException(handled, &tryRange);
         while (stack.size() > tryRange.stackDepth) stack.pop_back();
@@ -5949,7 +5960,7 @@ struct Activation {
             stack.push_back(handled);
             stack.push_back(handled);
         }
-        return runHandler(handled, handlerBody);
+        return runHandler(handled, handlerBody, &caught);
     }
     // Source-level debugging (include/protoPython/Debugger.h). dbgOn is set
     // when the activation starts on a thread that reports line events; the
@@ -6696,7 +6707,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             // Re-raise the exception being handled. No traceback entry is
             // added: the exception already has this frame's. In a handler
             // level that is the exception of the catch it runs in: rethrow it.
-            if (!blockStack.empty() && blockStack.back().isHandler && std::current_exception()) throw;
+            if (!blockStack.empty() && blockStack.back().isHandler && env) reraiseException(env, blockStack.back().exc);
             if (env) reraiseActiveException(ctx, env);
             i = next_i;
             continue;
