@@ -896,6 +896,22 @@ set_tests_properties(protopy_bound_method_module_doc PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "bound_method_module_doc: ok"
     LABELS "regression_gate")
+# _sysconfig exists, so test.support imports on Windows.
+add_test(NAME protopy_sysconfig_nt_vars
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/sysconfig_nt_vars.py)
+set_tests_properties(protopy_sysconfig_nt_vars PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "sysconfig_nt_vars: ok"
+    LABELS "regression_gate")
+# A walrus in a function binds a local.
+add_test(NAME protopy_walrus_function_scope
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/walrus_function_scope.py)
+set_tests_properties(protopy_walrus_function_scope PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "walrus_function_scope: ok"
+    LABELS "regression_gate")
 # Walking f_back ends in None at the main module.
 add_test(NAME protopy_frame_chain_ends_in_none
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/frame_chain_ends_in_none.py)
@@ -911,6 +927,14 @@ set_tests_properties(protopy_thread_deep_recursion PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "thread_deep_recursion: ok"
+    LABELS "regression_gate")
+# function.__annotations__ comes from __annotate__.
+add_test(NAME protopy_function_annotations_from_annotate
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/function_annotations_from_annotate.py)
+set_tests_properties(protopy_function_annotations_from_annotate PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "function_annotations_from_annotate: ok"
     LABELS "regression_gate")
 # platform.python_version() parses sys.version.
 add_test(NAME protopy_platform_version
@@ -943,12 +967,28 @@ set_tests_properties(protopy_os_exec_argument_checks PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "os_exec_argument_checks: ok"
     LABELS "regression_gate")
+# Calling an instance with its own __code__ runs __call__.
+add_test(NAME protopy_callable_with_code_attr
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/callable_with_code_attr.py)
+set_tests_properties(protopy_callable_with_code_attr PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "callable_with_code_attr: ok"
+    LABELS "regression_gate")
 # import pathlib loads the standard library package (Path is callable).
 add_test(NAME protopy_pathlib_package
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/pathlib_package.py)
 set_tests_properties(protopy_pathlib_package PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
+    LABELS "regression_gate")
+# operator applies the language's operators.
+add_test(NAME protopy_operator_module
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/operator_module.py)
+set_tests_properties(protopy_operator_module PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "operator_module: ok"
     LABELS "regression_gate")
 # copy.copy of tuple/str/bytes/int/float subclass instances keeps the value.
 add_test(NAME protopy_copy_builtin_subclass
@@ -1075,6 +1115,14 @@ add_test(NAME protopy_re_anchors
 set_tests_properties(protopy_re_anchors PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
+    LABELS "regression_gate")
+# datetime is the complete pure-Python implementation.
+add_test(NAME protopy_datetime_pure_python
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/datetime_pure_python.py)
+set_tests_properties(protopy_datetime_pure_python PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "datetime_pure_python: ok"
     LABELS "regression_gate")
 # time/datetime conversions before 1970 and after 3000 answer or raise, never crash.
 add_test(NAME protopy_time_out_of_range
@@ -1732,6 +1780,14 @@ add_test(NAME protopy_dict_unbound_methods
 set_tests_properties(protopy_dict_unbound_methods PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
+    LABELS "regression_gate")
+# Code flags use CPython's numbering.
+add_test(NAME protopy_code_flags_cpython
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/code_flags_cpython.py)
+set_tests_properties(protopy_code_flags_cpython PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "code_flags_cpython: ok"
     LABELS "regression_gate")
 # list.__init__ clears the list before extending it: x.__init__(x) empties x.
 add_test(NAME protopy_list_init_self

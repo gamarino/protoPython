@@ -1257,6 +1257,50 @@ static const proto::ProtoObject* py_type_get_dict(
     return proxy;
 }
 
+// fget of function.__annotations__ (see functionPrototype's setup).
+static const proto::ProtoObject* py_function_annotations_get(
+    proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* fn = self;
+    if (!env || !fn || fn == PROTO_NONE) return PROTO_NONE;
+    const proto::ProtoString* annS = PythonEnvironment::getInternedString(context, "__annotations__");
+    if (fn->hasOwnAttribute(context, annS) == PROTO_TRUE) return fn->getOwnAttributeDirect(context, annS);
+    const proto::ProtoString* annotateS = PythonEnvironment::getInternedString(context, "__annotate__");
+    const proto::ProtoObject* annotate = fn->hasOwnAttribute(context, annotateS) == PROTO_TRUE
+        ? fn->getOwnAttributeDirect(context, annotateS) : nullptr;
+    const proto::ProtoObject* annotations = nullptr;
+    if (annotate && annotate != PROTO_NONE) {
+        annotations = env->callObject(annotate, {context->fromInteger(1)});
+        if (!annotations) return nullptr;
+        if (annotations->isInstanceOf(context, env->getDictPrototype()) != PROTO_TRUE) {
+            const proto::ProtoObject* type = env->getType(context, annotations);
+            const proto::ProtoObject* name = type ? type->getAttribute(context, env->getNameString()) : nullptr;
+            std::string typeName = "object";
+            if (name && name->isString(context)) name->asString(context)->toUTF8String(context, typeName);
+            env->raiseTypeError(context, "__annotate__ returned non-dict of type '" + typeName + "'");
+            return nullptr;
+        }
+    } else {
+        const proto::ProtoObject* dictType = env->getBuiltins()->getAttribute(context,
+            PythonEnvironment::getInternedString(context, "dict"));
+        annotations = env->callObject(dictType, {});
+        if (!annotations) return nullptr;
+    }
+    const_cast<proto::ProtoObject*>(fn)->setAttribute(context, annS, annotations);
+    return annotations;
+}
+
+// fset of function.__annotations__: the function's own dict.
+static const proto::ProtoObject* py_function_annotations_set(
+    proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
+    if (!self || !args || args->getSize(context) < 2) return PROTO_NONE;
+    const_cast<proto::ProtoObject*>(self)->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "__annotations__"), args->getAt(context, 1));
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_type_get_annotations(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -18673,6 +18717,59 @@ static const proto::ProtoObject* py_code_member_get(
     return nullptr;
 }
 
+// code.replace(**changes): a copy of the code object with the given fields
+// changed (code objects are immutable, so setAttribute answers the copy).
+// types.coroutine uses it to add CO_ITERABLE_COROUTINE to a generator
+// function's flags.  The fields the VM executes from (co_code, co_consts,
+// co_names, co_varnames and the argument counts) hold protoPython's own
+// representation and cannot be replaced; the descriptive ones can.
+static const proto::ProtoObject* py_code_replace(
+    proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !self) return nullptr;
+    if (args && args->getSize(context) > 0) {
+        env->raiseTypeError(context, "replace() takes no positional arguments");
+        return nullptr;
+    }
+    // Keyword keys are the names' hashes, so the fields are looked up by name.
+    const proto::ProtoObject* code = self;
+    proto::proto_ulong matched = 0;
+    static const char* const changeable[] = {"co_flags", "co_firstlineno", "co_name", "co_qualname", "co_filename"};
+    static const char* const fixed[] = {
+        "co_argcount", "co_posonlyargcount", "co_kwonlyargcount", "co_nlocals",
+        "co_stacksize", "co_code", "co_consts", "co_names", "co_varnames",
+        "co_freevars", "co_cellvars", "co_linetable", "co_exceptiontable",
+    };
+    for (const char* f : fixed) {
+        if (kwargs && kwargs->has(context, PythonEnvironment::getInternedString(context, f)->getHash(context))) {
+            env->raiseValueError(context, PythonEnvironment::newStr(context,
+                std::string("code.replace() cannot change ") + f + " in protoPython"));
+            return nullptr;
+        }
+    }
+    for (const char* f : changeable) {
+        const proto::ProtoString* name = PythonEnvironment::getInternedString(context, f);
+        const proto::proto_ulong key = name->getHash(context);
+        if (!kwargs || !kwargs->has(context, key)) continue;
+        ++matched;
+        const proto::ProtoObject* value = kwargs->getAt(context, key);
+        const std::string field(f);
+        const bool intField = field == "co_flags" || field == "co_firstlineno";
+        if (intField ? !value->isInteger(context) : !value->isString(context)) {
+            env->raiseTypeError(context, std::string("replace() argument '") + f + "' must be "
+                + (intField ? "int" : "str"));
+            return nullptr;
+        }
+        code = code->setAttribute(context, name, value);
+    }
+    if (kwargs && kwargs->getSize(context) > matched) {
+        env->raiseTypeError(context, "replace() got an unexpected keyword argument");
+        return nullptr;
+    }
+    return code;
+}
+
 static const proto::ProtoObject* py_code_member_readonly(
     proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
@@ -22611,6 +22708,28 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                 PythonEnvironment::getInternedString(rootContext_, member), descr);
         }
     }
+    codePrototype = codePrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "replace"),
+        rootContext_->fromMethod(nullptr, py_code_replace));
+
+    // function.__annotations__, a getset as in CPython (PEP 649): the
+    // function's own dict when it has one (MAKE_FUNCTION stores it for a
+    // function that declares annotations), else annotate(Format.VALUE) when
+    // the function has an __annotate__ function, else a new empty dict;
+    // either is then kept as the function's own dict.
+    if (getSetDescriptorPrototype) {
+        const proto::ProtoString* annS = PythonEnvironment::getInternedString(rootContext_, "__annotations__");
+        proto::ProtoObject* annDescr = const_cast<proto::ProtoObject*>(
+            getSetDescriptorPrototype->newChild(rootContext_, true));
+        annDescr->setAttribute(rootContext_, py_class, getSetDescriptorPrototype);
+        annDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fget"),
+            rootContext_->fromMethod(nullptr, py_function_annotations_get));
+        annDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fset"),
+            rootContext_->fromMethod(nullptr, py_function_annotations_set));
+        annDescr->setAttribute(rootContext_, py_name, annS->asObject(rootContext_));
+        annDescr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__objclass__"), functionPrototype);
+        functionPrototype = functionPrototype->setAttribute(rootContext_, annS, annDescr);
+    }
 
     // V75: Provide class-level attributes for types.py
     const proto::ProtoObject* codeDesc = objectPrototype->newChild(rootContext_, true);
@@ -22983,7 +23102,6 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // implementation and now wins the import lookup. Same approach
     // taken for heapq and bisect.
     // registerNativeModule(nativeProviderPtr, "logging", [](proto::ProtoContext* ctx) { return logging::initialize(ctx); });
-    registerNativeModule(nativeProviderPtr, "operator", [](proto::ProtoContext* ctx) { return operator_::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "_operator", [](proto::ProtoContext* ctx) { return operator_::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "math", [](proto::ProtoContext* ctx) { return math::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "time", [](proto::ProtoContext* ctx) { return time_module::initialize(ctx); });
@@ -23018,7 +23136,11 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     registerNativeModule(nativeProviderPtr, "binascii", [](proto::ProtoContext* c) { return binascii::initialize(c); });
     // Digests behind hashlib's _md5, _sha1, _sha2, _sha3 and _blake2 (Python).
     registerNativeModule(nativeProviderPtr, "_hashcore", [](proto::ProtoContext* c) { return hashcore::initialize(c); });
-    registerNativeModule(nativeProviderPtr, "_datetime", [](proto::ProtoContext* c) { return datetime::initialize(c); });
+    // No native _datetime: datetime.py falls back to _pydatetime, CPython's
+    // complete implementation.  DatetimeModule.cpp lacked fromisoformat,
+    // strptime, min/max, astimezone and pickling, and reported its classes
+    // as builtins.*; with it importable, `import datetime` gave every
+    // program those classes.
 #if defined(_WIN32)
     registerNativeModule(nativeProviderPtr, "_winapi", [](proto::ProtoContext* c) { return winapi_module::initialize(c); });
 #else

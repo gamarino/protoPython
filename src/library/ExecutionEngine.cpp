@@ -985,9 +985,9 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         }
         proto::ProtoObject* gen = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
         // PB3: select prototype based on co_flags.
-        //   CO_COROUTINE (0x100) + yield (0x20) → async_generator
-        //   CO_COROUTINE (0x100) alone          → coroutine
-        //   else (CO_GENERATOR 0x20)            → generator
+        //   CO_ASYNC_GENERATOR (0x200)   → async_generator
+        //   CO_COROUTINE (0x80)          → coroutine
+        //   else (CO_GENERATOR 0x20)     → generator
         bool hasCoroutineFlag = false;
         bool hasGeneratorFlag = false;
         bool isAsyncGenerator = false;
@@ -995,8 +995,8 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
             const proto::ProtoObject* genProto = env->getGeneratorPrototype();
             const proto::ProtoObject* coFlagsObj = codeObj->getAttribute(calleeCtx, env->getCoFlagsString());
             long long co_flags_val = (coFlagsObj && coFlagsObj->isInteger(calleeCtx)) ? coFlagsObj->asLong(calleeCtx) : 0;
-            hasCoroutineFlag = (co_flags_val & 0x100) != 0;
-            hasGeneratorFlag = (co_flags_val & 0x20) != 0;
+            hasCoroutineFlag = (co_flags_val & (0x80 | 0x200)) != 0;
+            hasGeneratorFlag = (co_flags_val & (0x20 | 0x200)) != 0;
             if (hasCoroutineFlag && hasGeneratorFlag && env->getAsyncGeneratorPrototype()) {
                 genProto = env->getAsyncGeneratorPrototype();
                 isAsyncGenerator = true;
@@ -1558,11 +1558,12 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
                                   ctx->newList()->asObject(ctx));
             return d;
         };
-        const proto::ProtoObject* emptyDict1 = makeFreshEmptyDict();
-        const proto::ProtoObject* emptyDict2 = makeFreshEmptyDict();
-
-        fn = fn->setAttribute(ctx, dictS, emptyDict1);
-        fn = fn->setAttribute(ctx, annS, emptyDict2);
+        fn = fn->setAttribute(ctx, dictS, makeFreshEmptyDict());
+        // No own __annotations__ here: functionPrototype's __annotations__
+        // descriptor makes it on first read, from __annotate__ when one was
+        // assigned (functools.wraps copies __annotate__, not
+        // __annotations__), else an empty dict.  MAKE_FUNCTION sets both
+        // for a function that declares annotations.
         // Surface the function's docstring (the compiler stores it on the
         // code object as `co_doc` when the body's first statement is a
         // string literal). Default to None for non-docstring functions —
@@ -3040,8 +3041,14 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
     // (set in createUserFunction). Avoid the expensive getType + getAttribute(__call__) path.
     // A class whose namespace binds `__code__` (annotationlib.ForwardRef
     // declares it in __slots__) is not a function: it takes the class path.
+    // Nor is an instance that stores a `__code__` of its own without
+    // `__globals__` (unittest.mock's AsyncMock stores a mock code object so
+    // inspect sees a coroutine function): runUserFunctionCall needs both
+    // and answered None for it, so `AsyncMock(...)(...)` returned None
+    // instead of calling the mock's __call__.
     if (env && env->getCodeString() &&
         callable->hasOwnAttribute(ctx, env->getCodeString()) == PROTO_TRUE &&
+        callable->hasOwnAttribute(ctx, env->getGlobalsString()) == PROTO_TRUE &&
         callable->hasOwnAttribute(ctx, env->getIsPythonClassString()) != PROTO_TRUE) {
         return runUserFunctionCall(ctx, callable, nullptr, argsView(proto::ProtoListArguments(ctx, args)), kwargsView(proto::ProtoSparseListKeywordArguments(ctx, kwargs)));
     }
@@ -10532,13 +10539,25 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             if (stack.empty()) { i = next_i; continue; }
             const proto::ProtoObject* obj = stack.back();
             stack.pop_back();
-            // In a robust implementation, we'd check if obj is already a coroutine.
-            // For now, try __await__ or just keep as is if it has a send method.
+            // obj.__await__(), or obj itself when it is generator-like (a
+            // generator-based coroutine has send but no __await__).  Anything
+            // else cannot be awaited: `await None` used to push None and spin
+            // in YIELD_FROM forever.
             const proto::ProtoString* awaitS = env ? env->getAwaitString() : PythonEnvironment::getInternedString(ctx, "__await__");
             const proto::ProtoObject* awaitable = invokeDunder(ctx, obj, awaitS, ctx->newList());
             if (awaitable) {
                 stack.push_back(awaitable);
             } else {
+                const proto::ProtoObject* send = (env && obj && obj != PROTO_NONE)
+                    ? obj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "send")) : nullptr;
+                if (env && (!send || send == PROTO_NONE)) {
+                    const proto::ProtoObject* type = env->getType(ctx, obj);
+                    const proto::ProtoObject* name = type ? type->getAttribute(ctx, env->getNameString()) : nullptr;
+                    std::string typeName = "object";
+                    if (name && name->isString(ctx)) name->asString(ctx)->toUTF8String(ctx, typeName);
+                    env->raiseTypeError(ctx, "'" + typeName + "' object can't be awaited");
+                    continue;
+                }
                 stack.push_back(obj);
             }
         } break;
