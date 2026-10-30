@@ -917,6 +917,47 @@ static const proto::ProtoObject* sys_set_coroutine_origin_tracking_depth(
     return PROTO_NONE;
 }
 
+#if defined(_WIN32)
+// sys.getwindowsversion(): (major, minor, build, platform, service_pack)
+// plus the attribute-only fields, as CPython reports them.  The version
+// comes from ntdll's RtlGetVersion: GetVersionEx answers with the version
+// the executable's manifest declares, not the running system's.
+static const proto::ProtoObject* sys_getwindowsversion(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
+    OSVERSIONINFOEXW info{};
+    info.dwOSVersionInfoSize = sizeof(info);
+    using RtlGetVersionFn = LONG(WINAPI*)(OSVERSIONINFOEXW*);
+    HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+    auto rtlGetVersion = ntdll ? reinterpret_cast<RtlGetVersionFn>(
+        reinterpret_cast<void*>(GetProcAddress(ntdll, "RtlGetVersion"))) : nullptr;
+    if (!rtlGetVersion || rtlGetVersion(&info) != 0) {
+        info = OSVERSIONINFOEXW{};
+        info.dwPlatformId = VER_PLATFORM_WIN32_NT;
+    }
+    std::string servicePack;
+    for (const wchar_t* c = info.szCSDVersion; *c; ++c) servicePack += static_cast<char>(*c < 128 ? *c : '?');
+    auto integer = [ctx](unsigned long v) { return ctx->fromInteger(static_cast<long long>(v)); };
+    const proto::ProtoObject* platformVersion = newStructSequence(ctx, {
+        {nullptr, integer(info.dwMajorVersion)},
+        {nullptr, integer(info.dwMinorVersion)},
+        {nullptr, integer(info.dwBuildNumber)},
+    });
+    return newStructSequence(ctx, {
+        {"major", integer(info.dwMajorVersion)},
+        {"minor", integer(info.dwMinorVersion)},
+        {"build", integer(info.dwBuildNumber)},
+        {"platform", integer(info.dwPlatformId)},
+        {"service_pack", proto::ProtoString::fromUTF8String(ctx, servicePack.c_str())->asObject(ctx)},
+        {"service_pack_major", integer(info.wServicePackMajor)},
+        {"service_pack_minor", integer(info.wServicePackMinor)},
+        {"suite_mask", integer(info.wSuiteMask)},
+        {"product_type", integer(info.wProductType)},
+        {"platform_version", platformVersion},
+    }, 5);
+}
+#endif
+
 static const proto::ProtoObject* sys_getrecursionlimit(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -988,6 +1029,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     // the VPATH config variable.  protoPython is not run from a CPython
     // build tree, so it is empty.
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_vpath"), PythonEnvironment::getInternedString(ctx, "")->asObject(ctx));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getwindowsversion"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getwindowsversion));
 #elif defined(__APPLE__)
     // sys._framework: CPython on macOS always has it, "" when it is not a
     // framework build; site.py and sysconfig read it on darwin.
