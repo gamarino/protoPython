@@ -896,6 +896,14 @@ set_tests_properties(protopy_bound_method_module_doc PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "bound_method_module_doc: ok"
     LABELS "regression_gate")
+# _sysconfig exists, so test.support imports on Windows.
+add_test(NAME protopy_sysconfig_nt_vars
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/sysconfig_nt_vars.py)
+set_tests_properties(protopy_sysconfig_nt_vars PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "sysconfig_nt_vars: ok"
+    LABELS "regression_gate")
 # Walking f_back ends in None at the main module.
 add_test(NAME protopy_frame_chain_ends_in_none
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/frame_chain_ends_in_none.py)
@@ -935,12 +943,28 @@ set_tests_properties(protopy_os_exec_argument_checks PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "os_exec_argument_checks: ok"
     LABELS "regression_gate")
+# Calling an instance with its own __code__ runs __call__.
+add_test(NAME protopy_callable_with_code_attr
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/callable_with_code_attr.py)
+set_tests_properties(protopy_callable_with_code_attr PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "callable_with_code_attr: ok"
+    LABELS "regression_gate")
 # import pathlib loads the standard library package (Path is callable).
 add_test(NAME protopy_pathlib_package
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/pathlib_package.py)
 set_tests_properties(protopy_pathlib_package PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
+    LABELS "regression_gate")
+# operator applies the language's operators.
+add_test(NAME protopy_operator_module
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/operator_module.py)
+set_tests_properties(protopy_operator_module PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "operator_module: ok"
     LABELS "regression_gate")
 # copy.copy of tuple/str/bytes/int/float subclass instances keeps the value.
 add_test(NAME protopy_copy_builtin_subclass
@@ -1531,6 +1555,14 @@ set_tests_properties(protopy_generator_suspended_state PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "generator_suspended_state: ok"
+    LABELS "regression_gate")
+# StopIteration escaping a generator body becomes RuntimeError (PEP 479).
+add_test(NAME protopy_generator_stopiteration_pep479
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/generator_stopiteration_pep479.py)
+set_tests_properties(protopy_generator_stopiteration_pep479 PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "generator_stopiteration_pep479: ok"
     LABELS "regression_gate")
 # An uncaught SystemExit sets the process exit status: an int is the status,
 # None is 0, anything else is printed to stderr and exits with 1.
