@@ -6,25 +6,25 @@
 import sys
 from test.support.import_helper import import_fresh_module
 
-import _datetime  # native
+import _struct  # native
 
-saved = sys.modules.pop("_datetime")
-sys.modules["_datetime"] = None
+saved = sys.modules.pop("_struct")
+sys.modules["_struct"] = None
 try:
     try:
-        import _datetime
+        import _struct
     except ImportError:
         pass
     else:
         raise AssertionError("blocked native module imported")
     try:
-        from _datetime import datetime
+        from _struct import pack
     except ImportError:
         pass
     else:
         raise AssertionError("blocked native module imported by from-import")
 finally:
-    sys.modules["_datetime"] = saved
+    sys.modules["_struct"] = saved
 
 pure = import_fresh_module("datetime", fresh=["datetime", "_pydatetime"], blocked=["_datetime"])
 assert pure.datetime.__module__ in ("datetime", "_pydatetime"), pure.datetime.__module__
