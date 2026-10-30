@@ -216,7 +216,8 @@ private:
         out_ << "  flags 0x" << std::hex << flags << std::dec;
         static const std::pair<long long, const char*> kFlags[] = {
             {CO_OPTIMIZED, "OPTIMIZED"}, {CO_NEWLOCALS, "NEWLOCALS"}, {CO_VARARGS, "VARARGS"},
-            {CO_VARKEYWORDS, "VARKEYWORDS"}, {CO_NESTED, "NESTED"}, {0x20, "GENERATOR"}, {0x100, "COROUTINE"}};
+            {CO_VARKEYWORDS, "VARKEYWORDS"}, {CO_NESTED, "NESTED"}, {0x20, "GENERATOR"}, {0x80, "COROUTINE"},
+            {0x100, "ITERABLE_COROUTINE"}, {0x200, "ASYNC_GENERATOR"}};
         std::string names;
         for (const auto& f : kFlags)
             if (flags & f.first) names += (names.empty() ? "" : " | ") + std::string(f.second);

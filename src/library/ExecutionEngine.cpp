@@ -1003,9 +1003,9 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         }
         proto::ProtoObject* gen = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
         // PB3: select prototype based on co_flags.
-        //   CO_COROUTINE (0x100) + yield (0x20) → async_generator
-        //   CO_COROUTINE (0x100) alone          → coroutine
-        //   else (CO_GENERATOR 0x20)            → generator
+        //   CO_ASYNC_GENERATOR (0x200)   → async_generator
+        //   CO_COROUTINE (0x80)          → coroutine
+        //   else (CO_GENERATOR 0x20)     → generator
         bool hasCoroutineFlag = false;
         bool hasGeneratorFlag = false;
         bool isAsyncGenerator = false;
@@ -1013,8 +1013,8 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
             const proto::ProtoObject* genProto = env->getGeneratorPrototype();
             const proto::ProtoObject* coFlagsObj = codeObj->getAttribute(calleeCtx, env->getCoFlagsString());
             long long co_flags_val = (coFlagsObj && coFlagsObj->isInteger(calleeCtx)) ? coFlagsObj->asLong(calleeCtx) : 0;
-            hasCoroutineFlag = (co_flags_val & 0x100) != 0;
-            hasGeneratorFlag = (co_flags_val & 0x20) != 0;
+            hasCoroutineFlag = (co_flags_val & (0x80 | 0x200)) != 0;
+            hasGeneratorFlag = (co_flags_val & (0x20 | 0x200)) != 0;
             if (hasCoroutineFlag && hasGeneratorFlag && env->getAsyncGeneratorPrototype()) {
                 genProto = env->getAsyncGeneratorPrototype();
                 isAsyncGenerator = true;
@@ -1555,11 +1555,12 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
                                   ctx->newList()->asObject(ctx));
             return d;
         };
-        const proto::ProtoObject* emptyDict1 = makeFreshEmptyDict();
-        const proto::ProtoObject* emptyDict2 = makeFreshEmptyDict();
-
-        fn = fn->setAttribute(ctx, dictS, emptyDict1);
-        fn = fn->setAttribute(ctx, annS, emptyDict2);
+        fn = fn->setAttribute(ctx, dictS, makeFreshEmptyDict());
+        // No own __annotations__ here: functionPrototype's __annotations__
+        // descriptor makes it on first read, from __annotate__ when one was
+        // assigned (functools.wraps copies __annotate__, not
+        // __annotations__), else an empty dict.  MAKE_FUNCTION sets both
+        // for a function that declares annotations.
         // Surface the function's docstring (the compiler stores it on the
         // code object as `co_doc` when the body's first statement is a
         // string literal). Default to None for non-docstring functions —

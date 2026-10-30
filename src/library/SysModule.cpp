@@ -983,6 +983,11 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
 #if defined(_WIN32)
     // sys.winver: the language version, as CPython on Windows (site.py reads it).
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "winver"), PythonEnvironment::getInternedString(ctx, "3.14")->asObject(ctx));
+    // sys._vpath: CPython on Windows always has it (the build's VPATH, the
+    // source tree relative to the build directory); sysconfig reads it into
+    // the VPATH config variable.  protoPython is not run from a CPython
+    // build tree, so it is empty.
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_vpath"), PythonEnvironment::getInternedString(ctx, "")->asObject(ctx));
 #elif defined(__APPLE__)
     // sys._framework: CPython on macOS always has it, "" when it is not a
     // framework build; site.py and sysconfig read it on darwin.
