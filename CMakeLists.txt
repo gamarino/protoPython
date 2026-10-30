@@ -920,6 +920,14 @@ set_tests_properties(protopy_function_annotations_from_annotate PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "function_annotations_from_annotate: ok"
     LABELS "regression_gate")
+# bytes() calls a class's __bytes__ bound once.
+add_test(NAME protopy_bytes_dunder_bytes
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/bytes_dunder_bytes.py)
+set_tests_properties(protopy_bytes_dunder_bytes PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "bytes_dunder_bytes: ok"
+    LABELS "regression_gate")
 # platform.python_version() parses sys.version.
 add_test(NAME protopy_platform_version
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/platform_version.py)
