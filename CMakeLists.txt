@@ -856,6 +856,14 @@ set_tests_properties(protopy_deep_recursion_raises PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "deep_recursion_raises: ok"
     LABELS "regression_gate")
+# Code flags use CPython's numbering.
+add_test(NAME protopy_code_flags_cpython
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/code_flags_cpython.py)
+set_tests_properties(protopy_code_flags_cpython PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "code_flags_cpython: ok"
+    LABELS "regression_gate")
 # Walking f_back ends in None at the main module.
 add_test(NAME protopy_frame_chain_ends_in_none
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/frame_chain_ends_in_none.py)

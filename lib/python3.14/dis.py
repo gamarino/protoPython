@@ -124,9 +124,9 @@ COMPILER_FLAG_NAMES = {
     0x10: 'NESTED',
     0x20: 'GENERATOR',
     0x40: 'NOFREE',
-    0x100: 'COROUTINE',
-    0x200: 'ITERABLE_COROUTINE',
-    0x400: 'ASYNC_GENERATOR',
+    0x80: 'COROUTINE',
+    0x100: 'ITERABLE_COROUTINE',
+    0x200: 'ASYNC_GENERATOR',
 }
 
 def get_instructions(co):
