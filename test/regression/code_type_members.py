@@ -51,5 +51,6 @@ async def coro(x):
 
 
 m = mock.AsyncMock(spec=coro)
-assert m.__code__.co_flags & 0x80, m.__code__.co_flags  # CO_COROUTINE
+import inspect
+assert m.__code__.co_flags & inspect.CO_COROUTINE, m.__code__.co_flags
 print("code_type_members: ok")
