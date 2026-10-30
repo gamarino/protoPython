@@ -10119,21 +10119,14 @@ static bool bytes_view(proto::ProtoContext* context,
             return true;
         }
     }
-    // array.array exposes raw octets via `_data` (the lib's own
-    // attribute) and via `tobytes()` (the public buffer-protocol
-    // bridge). Both are recursive — the inner value is a bytes
-    // wrapper or ProtoString that the cases above will accept.
-    const proto::ProtoObject* underData = obj->getAttribute(context,
-        PythonEnvironment::getInternalString(context, "_data"));
-    if (underData && underData != PROTO_NONE && underData != obj) {
-        return bytes_view(context, underData, out);
-    }
-    const proto::ProtoObject* tobytesM = obj->getAttribute(context,
-        PythonEnvironment::getInternedString(context, "tobytes"));
-    if (tobytesM && tobytesM != PROTO_NONE && tobytesM->asMethod(context)) {
-        const proto::ProtoObject* res = tobytesM->asMethod(context)(context,
-            const_cast<proto::ProtoObject*>(obj),
-            nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
+    // array.array (and any other object with a tobytes() method) gives
+    // its octets through tobytes(), called bound: a Python method reached
+    // through asMethod() did not receive the instance as self.
+    if (PythonEnvironment* env = PythonEnvironment::fromContext(context)) {
+        const proto::ProtoObject* tobytesM = env->getAttribute(context, obj,
+            PythonEnvironment::getInternedString(context, "tobytes"), /*raiseError=*/false);
+        const proto::ProtoObject* res = (tobytesM && tobytesM != PROTO_NONE)
+            ? env->callObject(tobytesM, {}) : nullptr;
         if (res && res != obj) return bytes_view(context, res, out);
     }
     return false;
@@ -12408,33 +12401,46 @@ static const proto::ProtoObject* py_bytes_split(
     return wrap_list_as_pylist(context, result);
 }
 
+// bytes.join(iterable): the items must be bytes-like.  It drove __next__
+// through the raw method cell, so a generator's StopIteration escaped as an
+// error and a None item ended the iteration, and it accepted ints.
 static const proto::ProtoObject* py_bytes_join(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
     std::string sepStr;
-    if (!bytes_data_view(context, self, sepStr) || !posArgs || posArgs->getSize(context) < 1) return PROTO_NONE;
-    const proto::ProtoObject* iterable = posArgs->getAt(context, 0);
-    const proto::ProtoObject* iterM = iterable->getAttribute(context, PythonEnvironment::getInternalString(context, "__iter__"));
-    if (!iterM || !iterM->asMethod(context)) return PROTO_NONE;
-    const proto::ProtoObject* it = iterM->asMethod(context)(context, iterable, nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
-    if (!it) return PROTO_NONE;
-    const proto::ProtoObject* nextM = it->getAttribute(context, PythonEnvironment::getInternalString(context, "__next__"));
-    if (!nextM || !nextM->asMethod(context)) return PROTO_NONE;
+    if (!env || !bytes_data_view(context, self, sepStr)) return PROTO_NONE;
+    if (!posArgs || posArgs->getSize(context) != 1) {
+        env->raiseTypeError(context, "join() takes exactly one argument ("
+            + std::to_string(posArgs ? posArgs->getSize(context) : 0) + " given)");
+        return nullptr;
+    }
+    const proto::ProtoObject* it = env->iter(posArgs->getAt(context, 0));
+    if (!it) {
+        env->raiseTypeError(context, "can only join an iterable");
+        return nullptr;
+    }
+    // env->next runs Python code that may collect; `it` lives only here.
+    PythonEnvironment::TransientPin pinIt(env, it);
     std::string out;
-    bool first = true;
-    for (;;) {
-        const proto::ProtoObject* item = nextM->asMethod(context)(context, it, nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
-        if (!item || item == PROTO_NONE) break;
-        if (!first) out += sepStr;
-        first = false;
-        if (item->isInteger(context)) {
-            long long v = item->asLong(context);
-            if (v >= 0 && v <= 255) out += static_cast<char>(static_cast<unsigned char>(v));
-        } else {
-            std::string p;
-            if (bytes_view(context, item, p)) out += p;
+    for (size_t k = 0; ; ++k) {
+        // nullptr on exhaustion (StopIteration included); other exceptions propagate.
+        const proto::ProtoObject* item = env->next(it);
+        if (!item) break;
+        std::string part;
+        if (item == PROTO_NONE || item->isInteger(context) || item->isString(context)
+            || !bytes_view(context, item, part)) {
+            const proto::ProtoObject* type = env->getType(context, item);
+            const proto::ProtoObject* name = type ? type->getAttribute(context, env->getNameString()) : nullptr;
+            std::string typeName = "object";
+            if (name && name->isString(context)) name->asString(context)->toUTF8String(context, typeName);
+            env->raiseTypeError(context, "sequence item " + std::to_string(k)
+                + ": expected a bytes-like object, " + typeName + " found");
+            return nullptr;
         }
+        if (k) out += sepStr;
+        out += part;
     }
     return bytes_make_object(context, out.data(), static_cast<proto::proto_ulong>(out.size()));
 }

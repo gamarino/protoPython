@@ -1260,6 +1260,14 @@ set_tests_properties(protopy_platform_implementation PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# The array module stores typed values.
+add_test(NAME protopy_array_module
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/array_module.py)
+set_tests_properties(protopy_array_module PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "array_module: ok"
+    LABELS "regression_gate")
 # sys.version carries the build date generated at configure time.
 add_test(NAME protopy_sys_version_build_date
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/sys_version_build_date.py
