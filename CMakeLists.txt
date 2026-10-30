@@ -856,6 +856,14 @@ set_tests_properties(protopy_deep_recursion_raises PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "deep_recursion_raises: ok"
     LABELS "regression_gate")
+# agen.athrow() returns an awaitable that throws when driven.
+add_test(NAME protopy_async_gen_athrow
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/async_gen_athrow.py)
+set_tests_properties(protopy_async_gen_athrow PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "async_gen_athrow: ok"
+    LABELS "regression_gate")
 # Walking f_back ends in None at the main module.
 add_test(NAME protopy_frame_chain_ends_in_none
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/frame_chain_ends_in_none.py)
