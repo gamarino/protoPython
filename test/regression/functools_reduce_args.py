@@ -1,6 +1,9 @@
 # The native functools.reduce follows CPython 3.14's signature and errors.
 import sys
-from operator import add
+def add(a, b):
+    return a + b
+
+
 if len(sys.argv) > 1 and sys.argv[1] == "py":
     from test.support.import_helper import import_fresh_module
     reduce = import_fresh_module("functools", blocked=["_functools"]).reduce
