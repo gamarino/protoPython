@@ -1,5 +1,6 @@
 #include <protoPython/FunctoolsModule.h>
 #include <protoPython/PythonEnvironment.h>
+#include <string>
 
 namespace protoPython {
 namespace functools {
@@ -48,19 +49,48 @@ static const proto::ProtoObject* py_partial(
     return p;
 }
 
+// reduce(function, iterable, /[, initial]): CPython 3.14's signature, with
+// initial also accepted by keyword.  Wrong arity, a non-iterable and an
+// empty iterable without an initial value raise TypeError; they returned
+// None (or ignored initial= given by keyword).
 static const proto::ProtoObject* py_reduce(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink*,
     const proto::ProtoArguments* posArgs,
-    const proto::ProtoKeywordArguments*) {
-    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    const proto::ProtoKeywordArguments* kwArgs) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return PROTO_NONE;
+    const proto::proto_ulong argc = posArgs ? posArgs->getSize(ctx) : 0;
+    const proto::proto_ulong kwc = kwArgs ? kwArgs->getSize(ctx) : 0;
+    const proto::ProtoString* initialS = PythonEnvironment::getInternedString(ctx, "initial");
+    const proto::ProtoObject* initialKw = nullptr;
+    if (kwc) {
+        const proto::proto_ulong h = initialS->getHash(ctx);
+        if (kwc != 1 || !kwArgs->has(ctx, h)) {
+            env->raiseTypeError(ctx, "reduce() got an unexpected keyword argument");
+            return nullptr;
+        }
+        initialKw = kwArgs->getAt(ctx, h);
+    }
+    if (argc < 2) {
+        env->raiseTypeError(ctx, argc == 0
+            ? "reduce() missing required argument 'function' (pos 1)"
+            : "reduce() missing required argument 'iterable' (pos 2)");
+        return nullptr;
+    }
+    if (argc > 3 || (argc == 3 && initialKw)) {
+        env->raiseTypeError(ctx, argc > 3
+            ? "reduce() takes at most 3 arguments (" + std::to_string(argc + kwc) + " given)"
+            : "argument for reduce() given by name ('initial') and position (3)");
+        return nullptr;
+    }
     const proto::ProtoObject* func = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* iterable = posArgs->getAt(ctx, 1);
 
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    const proto::ProtoObject* it = env ? env->iter(iterable) : nullptr;
-    if (!it) return PROTO_NONE;
+    // env->iter raises TypeError for a non-iterable.
+    const proto::ProtoObject* it = env->iter(iterable);
+    if (!it) return nullptr;
 
     // Pin iterator and accumulator across the loop: env->next runs user
     // __next__ which can trigger GC; env->callObject runs user reducer
@@ -68,10 +98,13 @@ static const proto::ProtoObject* py_reduce(
     // C++ stack of this function — invisible to the GC unless pinned.
     PythonEnvironment::TransientPin pinIt(env, it);
 
-    const proto::ProtoObject* res = (posArgs->getSize(ctx) > 2) ? posArgs->getAt(ctx, 2) : nullptr;
+    const proto::ProtoObject* res = (argc == 3) ? posArgs->getAt(ctx, 2) : initialKw;
     if (!res) {
         res = env->next(it);
-        if (!res) return PROTO_NONE;
+        if (!res) {
+            env->raiseTypeError(ctx, "reduce() of empty iterable with no initial value");
+            return nullptr;
+        }
     }
 
     while (const proto::ProtoObject* item = env->next(it)) {

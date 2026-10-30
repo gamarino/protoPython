@@ -171,19 +171,12 @@ static bool extract_bytes(proto::ProtoContext* ctx, const proto::ProtoObject* ob
                 return true;
             }
         }
-        const proto::ProtoObject* underData = obj->getAttribute(ctx,
-            PythonEnvironment::getInternedString(ctx, "_data"));
-        if (underData && underData != PROTO_NONE && underData != obj) {
-            return extract_bytes(ctx, underData, out);
-        }
-        const proto::ProtoObject* tobytesM = obj->getAttribute(ctx,
-            PythonEnvironment::getInternedString(ctx, "tobytes"));
-        if (tobytesM && tobytesM->asMethod(ctx)) {
-            const proto::ProtoObject* res = tobytesM->asMethod(ctx)(ctx,
-                const_cast<proto::ProtoObject*>(obj),
-                nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
-            if (res && res != obj) return extract_bytes(ctx, res, out);
-        }
+        // array.array and other objects with tobytes(), called bound.
+        const proto::ProtoObject* tobytesM = env->getAttribute(ctx, obj,
+            PythonEnvironment::getInternedString(ctx, "tobytes"), /*raiseError=*/false);
+        const proto::ProtoObject* res = (tobytesM && tobytesM != PROTO_NONE)
+            ? env->callObject(tobytesM, {}) : nullptr;
+        if (res && res != obj) return extract_bytes(ctx, res, out);
     }
     return false;
 }

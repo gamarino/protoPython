@@ -176,6 +176,21 @@ public:
     static void shutdownProcessSpace();
 
     /**
+     * @brief Called in the child of os.fork(), before it runs Python code.
+     *
+     * The child has only the forking thread: protoCore's collector thread
+     * did not survive the fork.  The space's heap limits are removed, so an
+     * allocation never waits for a collection that cannot come (the child's
+     * heap grows instead), and shutdownProcessSpace() leaves the space to
+     * the operating system instead of joining the collector, which would
+     * never return.
+     */
+    static void noteForkedChild();
+
+    /** @brief True in a process created by os.fork() (noteForkedChild). */
+    static bool isForkedChild();
+
+    /**
      * @brief Returns the root context.
      */
     proto::ProtoContext* getContext() { return rootContext_; }
@@ -1710,6 +1725,7 @@ public:
     const proto::ProtoObject* getBuiltinFunctionOrMethodPrototype() const { return builtinFunctionOrMethodPrototype; }
     const proto::ProtoObject* getUnionTypePrototype() const { return unionTypePrototype; }
     const proto::ProtoObject* getStopAsyncIterationType() const { return stopAsyncIterationType; }
+    const proto::ProtoObject* getRuntimeErrorType() const { return runtimeErrorType; }
     /** Process-singleton "unbound local" sentinel.  Compiler stores this
         into CO_OPTIMIZED slots that correspond to annotation-only locals
         (`x: int` with no initial value).  LOAD_FAST detects it and raises

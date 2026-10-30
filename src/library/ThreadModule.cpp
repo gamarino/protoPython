@@ -289,6 +289,103 @@ static const proto::ProtoObject* py_rlock_locked(
     if (!ld) return PROTO_FALSE;
     return ld->count > 0 ? PROTO_TRUE : PROTO_FALSE;
 }
+// The RLock methods threading.Condition uses when its lock has them, as
+// CPython's C RLock does.  Without _is_owned, Condition fell back to
+// probing with acquire(False), which a reentrant lock grants to its owner,
+// so notify() on a Condition over an RLock (the default) always raised
+// "cannot notify on un-acquired lock".
+static RLockData* rlockData(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
+    const proto::ProtoObject* handle = self ? self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_handle")) : nullptr;
+    if (!handle || handle == PROTO_NONE) return nullptr;
+    const proto::ProtoExternalPointer* ext = handle->asExternalPointer(ctx);
+    return ext ? static_cast<RLockData*>(ext->getPointer(ctx)) : nullptr;
+}
+
+static bool rlockOwnedByMe(const RLockData* ld) {
+    return ld->count > 0 && ld->owner.load(std::memory_order_acquire) == current_thread_id();
+}
+
+static const proto::ProtoObject* py_rlock_is_owned(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
+    RLockData* ld = rlockData(ctx, self);
+    return ld && rlockOwnedByMe(ld) ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_rlock_recursion_count(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
+    RLockData* ld = rlockData(ctx, self);
+    return ctx->fromInteger(ld && rlockOwnedByMe(ld) ? ld->count.load() : 0);
+}
+
+// _release_save(): release every level of the calling thread's hold and
+// answer (count, owner) for _acquire_restore (Condition.wait).
+static const proto::ProtoObject* py_rlock_release_save(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
+    RLockData* ld = rlockData(ctx, self);
+    if (!ld || !rlockOwnedByMe(ld)) {
+        if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx))
+            env->raiseRuntimeError(ctx, "cannot release un-acquired lock");
+        return nullptr;
+    }
+    const int count = ld->count.exchange(0);
+    const long long owner = ld->owner.exchange(0, std::memory_order_acq_rel);
+    for (int k = 0; k < count; ++k) ld->m.unlock();
+    std::vector<const proto::ProtoObject*> state{ctx->fromInteger(count), ctx->fromInteger(owner)};
+    return ctx->newTuple(state)->asObject(ctx);
+}
+
+// _acquire_restore((count, owner)): take the lock again, blocking, at the
+// depth _release_save recorded.
+static const proto::ProtoObject* py_rlock_acquire_restore(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
+    RLockData* ld = rlockData(ctx, self);
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoObject* stateObj = posArgs && posArgs->getSize(ctx) == 1 ? posArgs->getAt(ctx, 0) : nullptr;
+    const proto::ProtoTuple* state = stateObj ? stateObj->asTuple(ctx) : nullptr;
+    if (!ld || !state || state->getSize(ctx) != 2 || !state->getAt(ctx, 0)->isInteger(ctx)) {
+        if (env) env->raiseTypeError(ctx, "_acquire_restore() argument must be a (count, owner) tuple");
+        return nullptr;
+    }
+    const long long count = state->getAt(ctx, 0)->asLong(ctx);
+    if (!ld->m.try_lock()) {
+        // Blocked waiting for another holder: unmanaged, as in acquire().
+        proto::ProtoContext::UnmanagedScope u(ctx);
+        ld->m.lock();
+    }
+    for (long long k = 1; k < count; ++k) ld->m.lock();  // reentrant: never blocks
+    ld->count = static_cast<int>(count < 1 ? 1 : count);
+    ld->owner.store(current_thread_id(), std::memory_order_release);
+    return PROTO_NONE;
+}
+
+// lock._at_fork_reinit() / RLock._at_fork_reinit(): give the lock a fresh,
+// unlocked state, as CPython does in a child process after fork().  The
+// state the lock had may belong to a thread that does not exist in the
+// child, so it is replaced rather than released; the old state is freed by
+// its finalizer.  concurrent.futures.thread and threading register these
+// with os.register_at_fork at import time.
+static const proto::ProtoObject* py_lock_at_fork_reinit(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
+    if (!self || self == PROTO_NONE) return PROTO_NONE;
+    const_cast<proto::ProtoObject*>(self)->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_handle"),
+        ctx->fromExternalPointer(new LockData, mutex_finalizer));
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_rlock_at_fork_reinit(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
+    if (!self || self == PROTO_NONE) return PROTO_NONE;
+    const_cast<proto::ProtoObject*>(self)->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_handle"),
+        ctx->fromExternalPointer(new RLockData, rmutex_finalizer));
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_lock_enter(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
@@ -866,6 +963,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(nullptr, py_lock_enter));
     lockProt = lockProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__exit__"), 
         ctx->fromMethod(nullptr, py_lock_exit));
+    lockProt = lockProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_at_fork_reinit"),
+        ctx->fromMethod(nullptr, py_lock_at_fork_reinit));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_lockProt"), lockProt);
 
     const proto::ProtoObject* rlockProt = ctx->newObject(false);
@@ -879,6 +978,16 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(nullptr, py_rlock_enter));
     rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__exit__"), 
         ctx->fromMethod(nullptr, py_rlock_exit));
+    rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_at_fork_reinit"),
+        ctx->fromMethod(nullptr, py_rlock_at_fork_reinit));
+    rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_is_owned"),
+        ctx->fromMethod(nullptr, py_rlock_is_owned));
+    rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_recursion_count"),
+        ctx->fromMethod(nullptr, py_rlock_recursion_count));
+    rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_release_save"),
+        ctx->fromMethod(nullptr, py_rlock_release_save));
+    rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_acquire_restore"),
+        ctx->fromMethod(nullptr, py_rlock_acquire_restore));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_rlockProt"), rlockProt);
 
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "start_new_thread"),
