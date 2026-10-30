@@ -19,7 +19,7 @@ code 0: <module> (19-async.py, line 1)
           14  RETURN_VALUE                  0
 
 code 0.0: fetch (19-async.py, line 2)
-  flags 0x113 (OPTIMIZED | NEWLOCALS | NESTED | COROUTINE), parameters 1 (0 positional-only, 0 keyword-only), generator
+  flags 0x93 (OPTIMIZED | NEWLOCALS | NESTED | COROUTINE), parameters 1 (0 positional-only, 0 keyword-only), generator
   slots 138: variables 0..1, operand stack from 2
   constants:
     #0   none    None
@@ -86,7 +86,7 @@ code 0.0: fetch (19-async.py, line 2)
          100  RETURN_VALUE                  0
 
 code 0.1: collect (19-async.py, line 7)
-  flags 0x113 (OPTIMIZED | NEWLOCALS | NESTED | COROUTINE), parameters 1 (0 positional-only, 0 keyword-only), generator
+  flags 0x93 (OPTIMIZED | NEWLOCALS | NESTED | COROUTINE), parameters 1 (0 positional-only, 0 keyword-only), generator
   slots 135: variables 0..2, operand stack from 3
   constants:
     #0   NoneType None

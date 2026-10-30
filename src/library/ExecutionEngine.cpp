@@ -1003,9 +1003,9 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         }
         proto::ProtoObject* gen = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
         // PB3: select prototype based on co_flags.
-        //   CO_COROUTINE (0x100) + yield (0x20) → async_generator
-        //   CO_COROUTINE (0x100) alone          → coroutine
-        //   else (CO_GENERATOR 0x20)            → generator
+        //   CO_ASYNC_GENERATOR (0x200)   → async_generator
+        //   CO_COROUTINE (0x80)          → coroutine
+        //   else (CO_GENERATOR 0x20)     → generator
         bool hasCoroutineFlag = false;
         bool hasGeneratorFlag = false;
         bool isAsyncGenerator = false;
@@ -1013,8 +1013,8 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
             const proto::ProtoObject* genProto = env->getGeneratorPrototype();
             const proto::ProtoObject* coFlagsObj = codeObj->getAttribute(calleeCtx, env->getCoFlagsString());
             long long co_flags_val = (coFlagsObj && coFlagsObj->isInteger(calleeCtx)) ? coFlagsObj->asLong(calleeCtx) : 0;
-            hasCoroutineFlag = (co_flags_val & 0x100) != 0;
-            hasGeneratorFlag = (co_flags_val & 0x20) != 0;
+            hasCoroutineFlag = (co_flags_val & (0x80 | 0x200)) != 0;
+            hasGeneratorFlag = (co_flags_val & (0x20 | 0x200)) != 0;
             if (hasCoroutineFlag && hasGeneratorFlag && env->getAsyncGeneratorPrototype()) {
                 genProto = env->getAsyncGeneratorPrototype();
                 isAsyncGenerator = true;
@@ -3037,8 +3037,14 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
     // (set in createUserFunction). Avoid the expensive getType + getAttribute(__call__) path.
     // A class whose namespace binds `__code__` (annotationlib.ForwardRef
     // declares it in __slots__) is not a function: it takes the class path.
+    // Nor is an instance that stores a `__code__` of its own without
+    // `__globals__` (unittest.mock's AsyncMock stores a mock code object so
+    // inspect sees a coroutine function): runUserFunctionCall needs both
+    // and answered None for it, so `AsyncMock(...)(...)` returned None
+    // instead of calling the mock's __call__.
     if (env && env->getCodeString() &&
         callable->hasOwnAttribute(ctx, env->getCodeString()) == PROTO_TRUE &&
+        callable->hasOwnAttribute(ctx, env->getGlobalsString()) == PROTO_TRUE &&
         callable->hasOwnAttribute(ctx, env->getIsPythonClassString()) != PROTO_TRUE) {
         return runUserFunctionCall(ctx, callable, nullptr, argsView(proto::ProtoListArguments(ctx, args)), kwargsView(proto::ProtoSparseListKeywordArguments(ctx, kwargs)));
     }
@@ -3386,6 +3392,33 @@ static void setGeneratorSuspended(proto::ProtoContext* ctx, const proto::ProtoOb
     }
 }
 
+// PEP 479: StopIteration raised out of a generator's or a coroutine's body
+// (and StopAsyncIteration out of an async generator's) becomes RuntimeError,
+// with the original as __cause__ and __context__.  Without it a stray
+// StopIteration silently ended the consumer's loop.
+[[noreturn]] static void raiseStopIterationAsRuntimeError(
+        proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* gen,
+        const proto::ProtoException& e) {
+    const proto::ProtoObject* exc = e.value();
+    const bool isAsyncGen = gen->hasOwnAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "ag_code")) == PROTO_TRUE;
+    const bool isCoro = !isAsyncGen && gen->hasOwnAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "cr_code")) == PROTO_TRUE;
+    const bool stopIteration = env->isStopIteration(ctx, exc);
+    const bool stopAsync = !stopIteration && isAsyncGen && env->getStopAsyncIterationType()
+        && e.isInstanceOf(ctx, env->getStopAsyncIterationType());
+    if ((!stopIteration && !stopAsync) || !env->getRuntimeErrorType()) throw;
+    std::string msg = isAsyncGen ? "async generator" : (isCoro ? "coroutine" : "generator");
+    msg += stopIteration ? " raised StopIteration" : " raised StopAsyncIteration";
+    const proto::ProtoObject* rt = invokePythonCallable(ctx, env->getRuntimeErrorType(),
+        ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx)),
+        nullptr);
+    if (!rt || rt == PROTO_NONE) throw;
+    rt->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__cause__"), exc);
+    rt->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__context__"), exc);
+    throw PyException(env, rt);
+}
+
 static const proto::ProtoObject* py_generator_resume(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
@@ -3590,12 +3623,12 @@ static const proto::ProtoObject* py_generator_resume(
                 &finalTop,
                 nullptr, nullptr, nullptr,
                 throwExc);
-        } catch (const proto::ProtoException&) {
+        } catch (const proto::ProtoException& e) {
             // An exception out of the body finishes the generator.
             self->setAttribute(ctx, env->getGiRunningString(), PROTO_FALSE);
             setGeneratorSuspended(ctx, self, /*running=*/false, /*suspended=*/false);
             self->setAttribute(ctx, env->getGiPCString(), ctx->fromInteger(co_code_tuple->getSize(ctx)));
-            throw;
+            raiseStopIterationAsRuntimeError(ctx, env, self, e);
         }
 
         // Save the variable slots only, [0, stackOffset): the operand stack
@@ -10482,13 +10515,25 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             if (stack.empty()) { i = next_i; continue; }
             const proto::ProtoObject* obj = stack.back();
             stack.pop_back();
-            // In a robust implementation, we'd check if obj is already a coroutine.
-            // For now, try __await__ or just keep as is if it has a send method.
+            // obj.__await__(), or obj itself when it is generator-like (a
+            // generator-based coroutine has send but no __await__).  Anything
+            // else cannot be awaited: `await None` used to push None and spin
+            // in YIELD_FROM forever.
             const proto::ProtoString* awaitS = env ? env->getAwaitString() : PythonEnvironment::getInternedString(ctx, "__await__");
             const proto::ProtoObject* awaitable = invokeDunder(ctx, obj, awaitS, ctx->newList());
             if (awaitable) {
                 stack.push_back(awaitable);
             } else {
+                const proto::ProtoObject* send = (env && obj && obj != PROTO_NONE)
+                    ? obj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "send")) : nullptr;
+                if (env && (!send || send == PROTO_NONE)) {
+                    const proto::ProtoObject* type = env->getType(ctx, obj);
+                    const proto::ProtoObject* name = type ? type->getAttribute(ctx, env->getNameString()) : nullptr;
+                    std::string typeName = "object";
+                    if (name && name->isString(ctx)) name->asString(ctx)->toUTF8String(ctx, typeName);
+                    env->raiseTypeError(ctx, "'" + typeName + "' object can't be awaited");
+                    continue;
+                }
                 stack.push_back(obj);
             }
         } break;

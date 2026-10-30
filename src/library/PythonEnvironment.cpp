@@ -10119,21 +10119,14 @@ static bool bytes_view(proto::ProtoContext* context,
             return true;
         }
     }
-    // array.array exposes raw octets via `_data` (the lib's own
-    // attribute) and via `tobytes()` (the public buffer-protocol
-    // bridge). Both are recursive — the inner value is a bytes
-    // wrapper or ProtoString that the cases above will accept.
-    const proto::ProtoObject* underData = obj->getAttribute(context,
-        PythonEnvironment::getInternalString(context, "_data"));
-    if (underData && underData != PROTO_NONE && underData != obj) {
-        return bytes_view(context, underData, out);
-    }
-    const proto::ProtoObject* tobytesM = obj->getAttribute(context,
-        PythonEnvironment::getInternedString(context, "tobytes"));
-    if (tobytesM && tobytesM != PROTO_NONE && tobytesM->asMethod(context)) {
-        const proto::ProtoObject* res = tobytesM->asMethod(context)(context,
-            const_cast<proto::ProtoObject*>(obj),
-            nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
+    // array.array (and any other object with a tobytes() method) gives
+    // its octets through tobytes(), called bound: a Python method reached
+    // through asMethod() did not receive the instance as self.
+    if (PythonEnvironment* env = PythonEnvironment::fromContext(context)) {
+        const proto::ProtoObject* tobytesM = env->getAttribute(context, obj,
+            PythonEnvironment::getInternedString(context, "tobytes"), /*raiseError=*/false);
+        const proto::ProtoObject* res = (tobytesM && tobytesM != PROTO_NONE)
+            ? env->callObject(tobytesM, {}) : nullptr;
         if (res && res != obj) return bytes_view(context, res, out);
     }
     return false;
@@ -12408,33 +12401,46 @@ static const proto::ProtoObject* py_bytes_split(
     return wrap_list_as_pylist(context, result);
 }
 
+// bytes.join(iterable): the items must be bytes-like.  It drove __next__
+// through the raw method cell, so a generator's StopIteration escaped as an
+// error and a None item ended the iteration, and it accepted ints.
 static const proto::ProtoObject* py_bytes_join(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
     std::string sepStr;
-    if (!bytes_data_view(context, self, sepStr) || !posArgs || posArgs->getSize(context) < 1) return PROTO_NONE;
-    const proto::ProtoObject* iterable = posArgs->getAt(context, 0);
-    const proto::ProtoObject* iterM = iterable->getAttribute(context, PythonEnvironment::getInternalString(context, "__iter__"));
-    if (!iterM || !iterM->asMethod(context)) return PROTO_NONE;
-    const proto::ProtoObject* it = iterM->asMethod(context)(context, iterable, nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
-    if (!it) return PROTO_NONE;
-    const proto::ProtoObject* nextM = it->getAttribute(context, PythonEnvironment::getInternalString(context, "__next__"));
-    if (!nextM || !nextM->asMethod(context)) return PROTO_NONE;
+    if (!env || !bytes_data_view(context, self, sepStr)) return PROTO_NONE;
+    if (!posArgs || posArgs->getSize(context) != 1) {
+        env->raiseTypeError(context, "join() takes exactly one argument ("
+            + std::to_string(posArgs ? posArgs->getSize(context) : 0) + " given)");
+        return nullptr;
+    }
+    const proto::ProtoObject* it = env->iter(posArgs->getAt(context, 0));
+    if (!it) {
+        env->raiseTypeError(context, "can only join an iterable");
+        return nullptr;
+    }
+    // env->next runs Python code that may collect; `it` lives only here.
+    PythonEnvironment::TransientPin pinIt(env, it);
     std::string out;
-    bool first = true;
-    for (;;) {
-        const proto::ProtoObject* item = nextM->asMethod(context)(context, it, nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
-        if (!item || item == PROTO_NONE) break;
-        if (!first) out += sepStr;
-        first = false;
-        if (item->isInteger(context)) {
-            long long v = item->asLong(context);
-            if (v >= 0 && v <= 255) out += static_cast<char>(static_cast<unsigned char>(v));
-        } else {
-            std::string p;
-            if (bytes_view(context, item, p)) out += p;
+    for (size_t k = 0; ; ++k) {
+        // nullptr on exhaustion (StopIteration included); other exceptions propagate.
+        const proto::ProtoObject* item = env->next(it);
+        if (!item) break;
+        std::string part;
+        if (item == PROTO_NONE || item->isInteger(context) || item->isString(context)
+            || !bytes_view(context, item, part)) {
+            const proto::ProtoObject* type = env->getType(context, item);
+            const proto::ProtoObject* name = type ? type->getAttribute(context, env->getNameString()) : nullptr;
+            std::string typeName = "object";
+            if (name && name->isString(context)) name->asString(context)->toUTF8String(context, typeName);
+            env->raiseTypeError(context, "sequence item " + std::to_string(k)
+                + ": expected a bytes-like object, " + typeName + " found");
+            return nullptr;
         }
+        if (k) out += sepStr;
+        out += part;
     }
     return bytes_make_object(context, out.data(), static_cast<proto::proto_ulong>(out.size()));
 }
@@ -13278,12 +13284,20 @@ static std::string applyFormatSpec(proto::ProtoContext* context, const proto::Pr
     return result;
 }
 
+// The mapping str.format_map() resolves named fields from, for the
+// py_str_format call it makes on this thread (nullptr otherwise).
+static thread_local const proto::ProtoObject* t_formatMapping = nullptr;
+
 static const proto::ProtoObject* py_str_format(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
+    // Taken once: nothing this call runs (a value's __format__, a
+    // __getitem__) formats with the format_map mapping of this call.
+    const proto::ProtoObject* fmtMapping = t_formatMapping;
+    t_formatMapping = nullptr;
     int formatPosOff = 0;
     const proto::ProtoString* str = str_from_self_or_arg(context, self, positionalParameters, &formatPosOff);
     if (!str) return PROTO_NONE;
@@ -13357,6 +13371,17 @@ static const proto::ProtoObject* py_str_format(
             proto::proto_ulong idx = std::stoul(baseName) + static_cast<proto::proto_ulong>(formatPosOff);
             if (positionalParameters && idx < positionalParameters->getSize(context))
                 val = positionalParameters->getAt(context, static_cast<int>(idx));
+        } else if (fmtMapping && env) {
+            // str.format_map(mapping): mapping[name], read through
+            // __getitem__ (a dict subclass's __missing__ applies; a missing
+            // key raises KeyError).
+            const proto::ProtoObject* getitem = env->getAttribute(context, fmtMapping,
+                PythonEnvironment::getInternedString(context, "__getitem__"));
+            if (!getitem) return nullptr;
+            const proto::ProtoObject* found = env->callObject(getitem,
+                {PythonEnvironment::newStr(context, baseName)});
+            if (!found) return nullptr;
+            val = found;
         } else {
             // keyword
             if (keywordParameters && env) {
@@ -13375,10 +13400,14 @@ static const proto::ProtoObject* py_str_format(
                 size_t end = ti + 1;
                 while (end < tail.size() && tail[end] != '.' && tail[end] != '[') ++end;
                 std::string attrName = tail.substr(ti + 1, end - ti - 1);
-                if (val && val != PROTO_NONE) {
+                // getattr(val, name): descriptors apply ("{0.real}" is the
+                // int, not the member descriptor) and a missing name raises
+                // AttributeError.
+                if (val && env) {
                     const proto::ProtoString* nm = PythonEnvironment::getInternedString(context, attrName.c_str());
-                    const proto::ProtoObject* next = val->getAttribute(context, nm);
-                    val = next ? next : PROTO_NONE;
+                    const proto::ProtoObject* next = env->getAttribute(context, val, nm);
+                    if (!next) return nullptr;
+                    val = next;
                 }
                 ti = end;
             } else if (tail[ti] == '[') {
@@ -13469,6 +13498,31 @@ static const proto::ProtoObject* py_str_format(
         }
     }
     return PythonEnvironment::newStr(context, out);
+}
+
+// str.format_map(mapping): str.format(**mapping) without copying the
+// mapping, so a dict subclass's __missing__ supplies absent names.
+static const proto::ProtoObject* py_str_format_map(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::proto_ulong argc = positionalParameters ? positionalParameters->getSize(context) : 0;
+    const bool hasKeywords = keywordParameters && keywordParameters->getSize(context) > 0;
+    if (argc != 1 || hasKeywords) {
+        if (env) env->raiseTypeError(context, argc == 1
+            ? "format_map() takes no keyword arguments"
+            : "format_map() takes exactly one argument (" + std::to_string(argc) + " given)");
+        return nullptr;
+    }
+    const proto::ProtoObject* previous = t_formatMapping;
+    t_formatMapping = positionalParameters->getAt(context, 0);
+    struct Restore { const proto::ProtoObject* m; ~Restore() { t_formatMapping = m; } } restore{previous};
+    const proto::ProtoList* noArgs = context->newList();
+    return py_str_format(context, self, parentLink,
+        argsView(proto::ProtoListArguments(context, noArgs)), nullptr);
 }
 
 // str.__mod__(other): implements "format_string % args"
@@ -18619,6 +18673,59 @@ static const proto::ProtoObject* py_code_member_get(
     return nullptr;
 }
 
+// code.replace(**changes): a copy of the code object with the given fields
+// changed (code objects are immutable, so setAttribute answers the copy).
+// types.coroutine uses it to add CO_ITERABLE_COROUTINE to a generator
+// function's flags.  The fields the VM executes from (co_code, co_consts,
+// co_names, co_varnames and the argument counts) hold protoPython's own
+// representation and cannot be replaced; the descriptive ones can.
+static const proto::ProtoObject* py_code_replace(
+    proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !self) return nullptr;
+    if (args && args->getSize(context) > 0) {
+        env->raiseTypeError(context, "replace() takes no positional arguments");
+        return nullptr;
+    }
+    // Keyword keys are the names' hashes, so the fields are looked up by name.
+    const proto::ProtoObject* code = self;
+    proto::proto_ulong matched = 0;
+    static const char* const changeable[] = {"co_flags", "co_firstlineno", "co_name", "co_qualname", "co_filename"};
+    static const char* const fixed[] = {
+        "co_argcount", "co_posonlyargcount", "co_kwonlyargcount", "co_nlocals",
+        "co_stacksize", "co_code", "co_consts", "co_names", "co_varnames",
+        "co_freevars", "co_cellvars", "co_linetable", "co_exceptiontable",
+    };
+    for (const char* f : fixed) {
+        if (kwargs && kwargs->has(context, PythonEnvironment::getInternedString(context, f)->getHash(context))) {
+            env->raiseValueError(context, PythonEnvironment::newStr(context,
+                std::string("code.replace() cannot change ") + f + " in protoPython"));
+            return nullptr;
+        }
+    }
+    for (const char* f : changeable) {
+        const proto::ProtoString* name = PythonEnvironment::getInternedString(context, f);
+        const proto::proto_ulong key = name->getHash(context);
+        if (!kwargs || !kwargs->has(context, key)) continue;
+        ++matched;
+        const proto::ProtoObject* value = kwargs->getAt(context, key);
+        const std::string field(f);
+        const bool intField = field == "co_flags" || field == "co_firstlineno";
+        if (intField ? !value->isInteger(context) : !value->isString(context)) {
+            env->raiseTypeError(context, std::string("replace() argument '") + f + "' must be "
+                + (intField ? "int" : "str"));
+            return nullptr;
+        }
+        code = code->setAttribute(context, name, value);
+    }
+    if (kwargs && kwargs->getSize(context) > matched) {
+        env->raiseTypeError(context, "replace() got an unexpected keyword argument");
+        return nullptr;
+    }
+    return code;
+}
+
 static const proto::ProtoObject* py_code_member_readonly(
     proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
@@ -20064,6 +20171,26 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             return PROTO_NONE;
         }));
     methodPrototype = methodPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__doc__"), PROTO_NONE);
+    // CPython's method.__get__ returns the bound method itself: one stored
+    // as a class attribute (`_counter = itertools.count().__next__` in
+    // concurrent.futures.thread) keeps its receiver.  Without it the
+    // __getattr__ below forwarded __get__ to the function, which bound the
+    // method again to the instance it was read through.
+    methodPrototype = methodPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__get__"),
+        rootContext_->fromMethod(nullptr,
+        [](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoArguments* args,
+           const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
+            // Called bound (self is the method) or through the type
+            // (the method is the first argument).
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            const proto::ProtoString* funcS = PythonEnvironment::getInternedString(ctx, "__func__");
+            if (self && self != PROTO_NONE && self->hasOwnAttribute(ctx, funcS) == PROTO_TRUE) return self;
+            if (args && args->getSize(ctx) >= 1) return args->getAt(ctx, 0);
+            if (env) env->raiseTypeError(ctx, "descriptor '__get__' of 'method' object needs an argument");
+            return nullptr;
+        }));
     // CPython's method_getattro: a name the method type does not define is
     // read from the function (`C().m.__defaults__`, `__name__`, attributes set
     // on the function).  Missing there too, the error names the function.
@@ -21043,6 +21170,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(rootContext_, py_upper, rootContext_->fromMethod(nullptr, py_str_upper));
     strPrototype = strPrototype->setAttribute(rootContext_, py_lower, rootContext_->fromMethod(nullptr, py_str_lower));
     strPrototype = strPrototype->setAttribute(rootContext_, py_format, rootContext_->fromMethod(nullptr, py_str_format));
+    strPrototype = strPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "format_map"),
+        rootContext_->fromMethod(nullptr, py_str_format_map));
     strPrototype = strPrototype->setAttribute(rootContext_, py_format_dunder, rootContext_->fromMethod(nullptr, py_str_format_dunder));
     strPrototype = strPrototype->setAttribute(rootContext_, py_hash, rootContext_->fromMethod(nullptr, py_str_hash));
     strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__getnewargs__"), rootContext_->fromMethod(nullptr, py_str_getnewargs));
@@ -22534,6 +22664,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                 PythonEnvironment::getInternedString(rootContext_, member), descr);
         }
     }
+    codePrototype = codePrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "replace"),
+        rootContext_->fromMethod(nullptr, py_code_replace));
 
     // V75: Provide class-level attributes for types.py
     const proto::ProtoObject* codeDesc = objectPrototype->newChild(rootContext_, true);
@@ -22906,7 +23039,6 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // implementation and now wins the import lookup. Same approach
     // taken for heapq and bisect.
     // registerNativeModule(nativeProviderPtr, "logging", [](proto::ProtoContext* ctx) { return logging::initialize(ctx); });
-    registerNativeModule(nativeProviderPtr, "operator", [](proto::ProtoContext* ctx) { return operator_::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "_operator", [](proto::ProtoContext* ctx) { return operator_::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "math", [](proto::ProtoContext* ctx) { return math::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "time", [](proto::ProtoContext* ctx) { return time_module::initialize(ctx); });
