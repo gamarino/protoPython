@@ -856,6 +856,14 @@ set_tests_properties(protopy_deep_recursion_raises PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "deep_recursion_raises: ok"
     LABELS "regression_gate")
+# Creating a class with a large namespace is linear.
+add_test(NAME protopy_namedtuple_large_size
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/namedtuple_large_size.py)
+set_tests_properties(protopy_namedtuple_large_size PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "namedtuple_large_size: ok"
+    LABELS "regression_gate")
 # Walking f_back ends in None at the main module.
 add_test(NAME protopy_frame_chain_ends_in_none
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/frame_chain_ends_in_none.py)

@@ -42,6 +42,7 @@
 #include <protoPython/FcntlModule.h>
 #include <protoPython/SelectModule.h>
 #include <protoPython/BisectModule.h>
+#include <protoPython/MersenneTwisterModule.h>
 #include <protoPython/FaulthandlerModule.h>
 #include <protoPython/ExecutionEngine.h>
 #include <protoPython/Parser.h>
@@ -22840,6 +22841,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     registerNativeModule(nativeProviderPtr, "nt", [this, pathMod](proto::ProtoContext* ctx) { return os_module::initialize(ctx, this, pathMod); });
     registerNativeModule(nativeProviderPtr, "_signal", [](proto::ProtoContext* ctx) { return signal_module::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "_thread", [](proto::ProtoContext* ctx) { return thread_module::initialize(ctx); });
+    registerNativeModule(nativeProviderPtr, "_mt19937", [](proto::ProtoContext* ctx) { return mersenne_twister::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "_functools", [](proto::ProtoContext* ctx) { return functools::initialize(ctx); });
     // itertools has no native module: lib/python3.14/itertools.py.
     registerNativeModule(nativeProviderPtr, "re", [](proto::ProtoContext* ctx) { return re::initialize(ctx); });
