@@ -856,13 +856,13 @@ set_tests_properties(protopy_deep_recursion_raises PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "deep_recursion_raises: ok"
     LABELS "regression_gate")
-# str.format_map reads names from the mapping.
-add_test(NAME protopy_str_format_map
-    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/str_format_map.py)
-set_tests_properties(protopy_str_format_map PROPERTIES
+# A bound method answers __module__ and __doc__ from its function.
+add_test(NAME protopy_bound_method_module_doc
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/bound_method_module_doc.py)
+set_tests_properties(protopy_bound_method_module_doc PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
-    PASS_REGULAR_EXPRESSION "str_format_map: ok"
+    PASS_REGULAR_EXPRESSION "bound_method_module_doc: ok"
     LABELS "regression_gate")
 # Walking f_back ends in None at the main module.
 add_test(NAME protopy_frame_chain_ends_in_none
@@ -1374,6 +1374,14 @@ add_test(NAME protopy_init_subclass_exception
 set_tests_properties(protopy_init_subclass_exception PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 60
+    LABELS "regression_gate")
+# str.format_map reads names from the mapping.
+add_test(NAME protopy_str_format_map
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/str_format_map.py)
+set_tests_properties(protopy_str_format_map PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "str_format_map: ok"
     LABELS "regression_gate")
 # Sets key elements like dict keys: __hash__, 1 == 1.0 == True, tuples by elements, unhashables raise.
 add_test(NAME protopy_set_python_hash
