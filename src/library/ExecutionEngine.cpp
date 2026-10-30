@@ -15,6 +15,7 @@
 #include <iostream>
 #include <limits>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -5916,9 +5917,16 @@ struct Activation {
     // A protected range: a nested dispatch inside a C++ try. On a Python
     // exception the operand stack is cut to the depth the range started at,
     // the exception pushed ([tb, exc, exc], or exc alone for a with block)
-    // and the handler run inside the catch.
+    // and the handler run after the catch.
+    //
+    // After the catch, not inside it: MSVC runs a catch block on top of the
+    // stack, before the native frames of the raising calls are released, so
+    // an except clause run inside the catch of a RecursionError ran with the
+    // stack as full as at the deepest call, and every call it made failed
+    // again.  The copy of the exception keeps its value pinned meanwhile.
     template <typename RangeBody, typename HandlerBody>
     const proto::ProtoObject* runRange(const Block& tryRange, RangeBody&& rangeBody, HandlerBody&& handlerBody) {
+        std::optional<proto::ProtoException> caught;
         try {
             blockStack.push_back(tryRange);
             struct RangeGuard {
@@ -5928,19 +5936,20 @@ struct Activation {
             levelExit = LevelExit::Return;
             return rangeBody();
         } catch (const proto::ProtoException& raised) {
-            const proto::ProtoObject* handled = raised.value();
-            noteFrame(handled);
-            if (dbgOn) [[unlikely]] debugException(handled, &tryRange);
-            while (stack.size() > tryRange.stackDepth) stack.pop_back();
-            if (tryRange.isWithBlock) {
-                stack.push_back(handled);
-            } else {
-                stack.push_back(env ? env->getNonePrototype() : PROTO_NONE);
-                stack.push_back(handled);
-                stack.push_back(handled);
-            }
-            return runHandler(handled, handlerBody);
+            caught.emplace(raised);
         }
+        const proto::ProtoObject* handled = caught->value();
+        noteFrame(handled);
+        if (dbgOn) [[unlikely]] debugException(handled, &tryRange);
+        while (stack.size() > tryRange.stackDepth) stack.pop_back();
+        if (tryRange.isWithBlock) {
+            stack.push_back(handled);
+        } else {
+            stack.push_back(env ? env->getNonePrototype() : PROTO_NONE);
+            stack.push_back(handled);
+            stack.push_back(handled);
+        }
+        return runHandler(handled, handlerBody);
     }
     // Source-level debugging (include/protoPython/Debugger.h). dbgOn is set
     // when the activation starts on a thread that reports line events; the
