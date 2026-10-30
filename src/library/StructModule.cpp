@@ -183,6 +183,101 @@ static bool extract_bytes(proto::ProtoContext* ctx, const proto::ProtoObject* ob
 
 // ---- Pack -----------------------------------------------------------------
 
+// struct.error (an alias of ValueError here) with `msg`.
+static void raise_struct_error(proto::ProtoContext* ctx, const std::string& msg) {
+    if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx))
+        env->raiseValueError(ctx, proto::ProtoString::fromUTF8String(ctx, msg.c_str())->asObject(ctx));
+}
+
+// The integer to pack for code `code` (`size` bytes) from `v`, two's
+// complement in `out`.  As CPython: a bool packs as 0/1, any other value
+// must be an int or have __index__ ("required argument is not an
+// integer"), and it must fit the code's range ("'I' format requires
+// 0 <= number <= 4294967295").  Values were truncated silently, so
+// pack('!I', 2**32) gave b'\0\0\0\0' and base64's overflow checks never
+// fired.
+static bool pack_integer(proto::ProtoContext* ctx, const proto::ProtoObject* v, char code, int size, uint64_t& out) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (v == PROTO_TRUE || v == PROTO_FALSE) {
+        out = v == PROTO_TRUE ? 1 : 0;
+        return true;
+    }
+    if (!v || !v->isInteger(ctx)) {
+        const proto::ProtoObject* idx = (env && v && v != PROTO_NONE && !v->isFloat(ctx))
+            ? env->getAttribute(ctx, v, PythonEnvironment::getInternedString(ctx, "__index__"), false) : nullptr;
+        const proto::ProtoObject* r = (idx && idx != PROTO_NONE) ? env->callObject(idx, {}) : nullptr;
+        if (!r || !r->isInteger(ctx)) {
+            raise_struct_error(ctx, "required argument is not an integer");
+            return false;
+        }
+        v = r;
+    }
+    const bool isSigned = code >= 'a' && code <= 'z';
+    const int bits = size * 8;
+    auto rangeError = [&]() {
+        std::string lo, hi;
+        if (isSigned) {
+            lo = "-" + std::to_string(1ULL << (bits - 1));
+            hi = std::to_string((1ULL << (bits - 1)) - 1);
+        } else {
+            lo = "0";
+            hi = std::to_string(bits == 64 ? ~0ULL : (1ULL << bits) - 1);
+        }
+        raise_struct_error(ctx, std::string("'") + code + "' format requires " + lo + " <= number <= " + hi);
+        return false;
+    };
+    long long iv = 0;
+    try {
+        iv = v->asLong(ctx);
+    } catch (const proto::ProtoException& overflow) {
+        PythonEnvironment::rethrowUnlessOverflow(ctx, overflow);
+        // Beyond long long: only an unsigned 64-bit code can hold it.
+        if (isSigned || bits != 64 || v->integerSign(ctx) < 0) return rangeError();
+        std::string hex;
+        v->asIntegerString(ctx, 16)->toUTF8String(ctx, hex);
+        if (hex.size() > 16) return rangeError();
+        out = std::stoull(hex, nullptr, 16);
+        return true;
+    }
+    if (isSigned) {
+        if (bits < 64) {
+            const long long lim = 1LL << (bits - 1);
+            if (iv < -lim || iv > lim - 1) return rangeError();
+        }
+    } else {
+        if (iv < 0) return rangeError();
+        if (bits < 64 && static_cast<unsigned long long>(iv) > (1ULL << bits) - 1) return rangeError();
+    }
+    out = static_cast<uint64_t>(iv);
+    return true;
+}
+
+// The float to pack for 'f' or 'd': an int or a float, else
+// "required argument is not a float".
+static bool pack_float(proto::ProtoContext* ctx, const proto::ProtoObject* v, double& out) {
+    if (v && v->isFloat(ctx)) { out = v->asDouble(ctx); return true; }
+    if (v == PROTO_TRUE || v == PROTO_FALSE) { out = v == PROTO_TRUE ? 1.0 : 0.0; return true; }
+    if (v && v->isInteger(ctx)) {
+        try {
+            out = static_cast<double>(v->asLong(ctx));
+        } catch (const proto::ProtoException& overflow) {
+            PythonEnvironment::rethrowUnlessOverflow(ctx, overflow);
+            std::string dec;
+            v->asIntegerString(ctx, 10)->toUTF8String(ctx, dec);
+            out = std::stod(dec);
+        }
+        return true;
+    }
+    if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx)) {
+        const proto::ProtoObject* f = (v && v != PROTO_NONE)
+            ? env->getAttribute(ctx, v, PythonEnvironment::getInternedString(ctx, "__float__"), false) : nullptr;
+        const proto::ProtoObject* r = (f && f != PROTO_NONE) ? env->callObject(f, {}) : nullptr;
+        if (r && r->isFloat(ctx)) { out = r->asDouble(ctx); return true; }
+    }
+    raise_struct_error(ctx, "required argument is not a float");
+    return false;
+}
+
 static const proto::ProtoObject* pack_impl(proto::ProtoContext* ctx,
                                            const std::string& fmt,
                                            const proto::ProtoArguments* values,
@@ -232,15 +327,15 @@ static const proto::ProtoObject* pack_impl(proto::ProtoContext* ctx,
                 case 'b': case 'B': case 'h': case 'H':
                 case 'i': case 'I': case 'l': case 'L':
                 case 'q': case 'Q': {
-                    long long iv = v->isInteger(ctx) ? v->asLong(ctx) : 0;
-                    pack_uint(buf, static_cast<uint64_t>(iv), it.size, order);
+                    uint64_t uv = 0;
+                    if (!pack_integer(ctx, v, it.code, it.size, uv)) return nullptr;
+                    pack_uint(buf, uv, it.size, order);
                     out.append(buf, it.size);
                     break;
                 }
                 case 'f': {
-                    double dv = v->isInteger(ctx) ? static_cast<double>(v->asLong(ctx))
-                              : v->isFloat(ctx)   ? v->asDouble(ctx)
-                              : 0.0;
+                    double dv = 0.0;
+                    if (!pack_float(ctx, v, dv)) return nullptr;
                     float fv = static_cast<float>(dv);
                     uint32_t bits;
                     std::memcpy(&bits, &fv, 4);
@@ -249,9 +344,8 @@ static const proto::ProtoObject* pack_impl(proto::ProtoContext* ctx,
                     break;
                 }
                 case 'd': {
-                    double dv = v->isInteger(ctx) ? static_cast<double>(v->asLong(ctx))
-                              : v->isFloat(ctx)   ? v->asDouble(ctx)
-                              : 0.0;
+                    double dv = 0.0;
+                    if (!pack_float(ctx, v, dv)) return nullptr;
                     uint64_t bits;
                     std::memcpy(&bits, &dv, 8);
                     pack_uint(buf, bits, 8, order);
