@@ -4733,6 +4733,26 @@ static const proto::ProtoObject* py_tuple_hash(proto::ProtoContext*, const proto
 static const proto::ProtoSet* set_underlying(proto::ProtoContext* context, const proto::ProtoObject* self);
 
 static bool keyHash(proto::ProtoContext* context, const proto::ProtoObject* key, bool raiseUnhashable, proto::proto_ulong& out);
+static bool bytes_data_view(proto::ProtoContext* context, const proto::ProtoObject* self, std::string& out);
+static const proto::ProtoObject* py_bytes_hash(proto::ProtoContext*, const proto::ProtoObject*,
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*);
+
+// The key hash of a bytes object (or of a bytes subclass that keeps
+// bytes.__hash__): its content's.  A bytes object is a wrapper cell whose
+// protoCore hash is the cell's, so b"a" and bytes([97]) were two keys.  The
+// content hash is salted: a dict or set keys by hash alone, and
+// hash(b"a") == hash("a") (as in CPython) must not make them one key.
+static bool bytesKeyHash(proto::ProtoContext* context, const proto::ProtoObject* key, proto::proto_ulong& out) {
+    std::string raw;
+    if (!bytes_data_view(context, key, raw)) return false;
+    proto::proto_ulong h = PROTO_UL(14695981039346656037);
+    for (unsigned char c : raw) {
+        h ^= c;
+        h *= PROTO_UL(1099511628211);
+    }
+    out = h ^ PROTO_UL(0x9e3779b97f4a7c15);
+    return true;
+}
 
 // The hash of a NaN float object: CPython 3.10+ hashes NaN by identity, so
 // distinct NaN objects are distinct dict and set keys while the same object is
@@ -4802,6 +4822,7 @@ static bool keyHash(proto::ProtoContext* context, const proto::ProtoObject* key,
             const TupleView t = PythonEnvironment::tupleView(context, key);
             if (t) return tupleKeyHash(context, t, raiseUnhashable, out);
         }
+        if (cls == env->getBytesPrototype() && bytesKeyHash(context, key, out)) return true;
         // The other built-in primitives keep protoCore's value-based hash.
         bool isPrimitive = (cls == env->getStrPrototype()
             || cls == env->getIntPrototype()
@@ -4825,6 +4846,7 @@ static bool keyHash(proto::ProtoContext* context, const proto::ProtoObject* key,
             }
             if (hM && hM != PROTO_NONE) {
                 const proto::ProtoMethod m = hM->asMethod(context);
+                if (m == py_bytes_hash && bytesKeyHash(context, key, out)) return true;
                 if (m == py_int_hash || m == py_float_hash || m == py_str_hash || m == py_tuple_hash) {
                     // A subclass of int, float, str or tuple that keeps the
                     // built-in __hash__ is keyed by its value: MyInt(3) finds 3.
@@ -7038,6 +7060,9 @@ static const proto::ProtoObject* py_bytes_call(
                 const proto::ProtoObject* bmType = env->getType(context, bytesM);
                 const proto::ProtoObject* getMb = bmType
                     ? env->getAttribute(context, bmType, getDSb, false) : nullptr;
+                // Bound by its __get__ (a def function is bound to `arg`),
+                // the method is called with no arguments.
+                bool bound = false;
                 if (getMb && getMb != PROTO_NONE) {
                     if (getMb->asMethod(context)) {
                         const proto::ProtoList* gargs =
@@ -7047,9 +7072,12 @@ static const proto::ProtoObject* py_bytes_call(
                     } else {
                         bytesM = env->callObject(getMb, {bytesM, arg, argType});
                     }
+                    bound = true;
                 }
                 const proto::ProtoObject* result = nullptr;
-                if (bytesM && bytesM->asMethod(context)) {
+                if (bound && bytesM) {
+                    result = env->callObject(bytesM, {});
+                } else if (bytesM && bytesM->asMethod(context)) {
                     const proto::ProtoList* mArgs = context->newList();
                     result = bytesM->asMethod(context)(context,
                         const_cast<proto::ProtoObject*>(arg), nullptr, argsView(proto::ProtoListArguments(context, mArgs)), nullptr);
@@ -13995,6 +14023,164 @@ static const proto::ProtoObject* py_str_mod(
         return nullptr;
     }
     return PythonEnvironment::newStr(context, out);
+}
+
+// bytes % args (PEP 461).  The conversions that format a number (d i u o x
+// X e E f F g G) are formatted by str % with the same spec, which is ASCII;
+// %s and %b take a bytes-like object or one with __bytes__, %r and %a give
+// ascii(), %c an integer in range(256) or a single byte.  A mapping
+// argument is indexed with the bytes key of %(key)s.
+static const proto::ProtoObject* py_bytes_mod(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    std::string fmt;
+    if (!env || !bytes_data_view(context, self, fmt)) return PROTO_NONE;
+    const proto::ProtoObject* argObj = (positionalParameters && positionalParameters->getSize(context) >= 1)
+        ? positionalParameters->getAt(context, 0) : PROTO_NONE;
+
+    auto typeNameOf = [&](const proto::ProtoObject* o) {
+        const proto::ProtoObject* type = env->getType(context, o);
+        const proto::ProtoObject* name = type ? type->getAttribute(context, env->getNameString()) : nullptr;
+        std::string typeName = "object";
+        if (name && name->isString(context)) name->asString(context)->toUTF8String(context, typeName);
+        return typeName;
+    };
+    auto builtin = [&](const char* name) {
+        return env->getBuiltins()->getAttribute(context, PythonEnvironment::getInternedString(context, name));
+    };
+
+    ::protoPython::TupleView argTuple = argObj ? PythonEnvironment::tupleView(context, argObj) : nullptr;
+    // A mapping: anything but a tuple, bytes-like object or str with __getitem__.
+    const proto::ProtoObject* mapping = nullptr;
+    if (!argTuple && argObj && argObj != PROTO_NONE && !argObj->isString(context)) {
+        std::string probe;
+        if (!bytes_view(context, argObj, probe)
+            && env->getAttribute(context, argObj, PythonEnvironment::getInternedString(context, "__getitem__"), false)) {
+            mapping = argObj;
+        }
+    }
+    const proto::proto_ulong argCount = argTuple ? argTuple->getSize(context) : 1;
+    proto::proto_ulong argIdx = 0;
+    auto nextArg = [&]() -> const proto::ProtoObject* {
+        if (argIdx >= argCount) {
+            env->raiseTypeError(context, "not enough arguments for format string");
+            return nullptr;
+        }
+        return argTuple ? argTuple->getAt(context, static_cast<int>(argIdx++)) : (argIdx++, argObj);
+    };
+
+    std::string out;
+    const size_t n = fmt.size();
+    for (size_t i = 0; i < n; ) {
+        if (fmt[i] != '%') { out += fmt[i++]; continue; }
+        if (++i >= n) { env->raiseValueError(context, PythonEnvironment::getInternedString(context, "incomplete format")->asObject(context)); return nullptr; }
+        const proto::ProtoObject* mapValue = nullptr;
+        if (fmt[i] == '(') {
+            if (!mapping) { env->raiseTypeError(context, "format requires a mapping"); return nullptr; }
+            size_t depth = 1, start = ++i;
+            while (i < n && depth) { if (fmt[i] == '(') ++depth; else if (fmt[i] == ')') --depth; ++i; }
+            if (depth) { env->raiseValueError(context, PythonEnvironment::getInternedString(context, "incomplete format key")->asObject(context)); return nullptr; }
+            const std::string key = fmt.substr(start, i - 1 - start);
+            const proto::ProtoObject* getitem = env->getAttribute(context, mapping, PythonEnvironment::getInternedString(context, "__getitem__"));
+            if (!getitem) return nullptr;
+            mapValue = env->callObject(getitem, {bytes_make_object(context, key.data(), static_cast<proto::proto_ulong>(key.size()))});
+            if (!mapValue) return nullptr;
+        }
+        std::string flags;
+        while (i < n && std::strchr("-+ #0", fmt[i])) flags += fmt[i++];
+        auto readNumber = [&](std::string& into) -> bool {
+            if (i < n && fmt[i] == '*') {
+                ++i;
+                const proto::ProtoObject* w = nextArg();
+                if (!w) return false;
+                if (!w->isInteger(context)) { env->raiseTypeError(context, "* wants int"); return false; }
+                into = std::to_string(w->asLong(context));
+                return true;
+            }
+            while (i < n && fmt[i] >= '0' && fmt[i] <= '9') into += fmt[i++];
+            return true;
+        };
+        std::string width, precision;
+        bool hasPrecision = false;
+        if (!readNumber(width)) return nullptr;
+        if (i < n && fmt[i] == '.') { ++i; hasPrecision = true; if (!readNumber(precision)) return nullptr; }
+        while (i < n && (fmt[i] == 'h' || fmt[i] == 'l' || fmt[i] == 'L')) ++i;
+        if (i >= n) { env->raiseValueError(context, PythonEnvironment::getInternedString(context, "incomplete format")->asObject(context)); return nullptr; }
+        const char conv = fmt[i++];
+        if (conv == '%') { out += '%'; continue; }
+        const proto::ProtoObject* arg = mapValue ? mapValue : nextArg();
+        if (!arg) return nullptr;
+
+        std::string piece;
+        if (std::strchr("diuoxXeEfFgG", conv)) {
+            // `arg` is a number (str % rejects anything else), never a tuple.
+            std::string spec = "%" + flags + width + (hasPrecision ? "." + precision : "") + conv;
+            const proto::ProtoList* modArgs = context->newList()->appendLast(context, arg);
+            const proto::ProtoObject* r = py_str_mod(context,
+                proto::ProtoString::fromUTF8String(context, spec.c_str())->asObject(context), nullptr,
+                argsView(proto::ProtoListArguments(context, modArgs)), nullptr);
+            if (!r || !r->isString(context)) return nullptr;
+            std::string formatted;
+            r->asString(context)->toUTF8String(context, formatted);
+            out += formatted;
+            continue;
+        } else if (conv == 's' || conv == 'b') {
+            bool ok = !arg->isString(context) && bytes_view(context, arg, piece);
+            if (!ok && !arg->isString(context)
+                && env->getAttribute(context, env->getType(context, arg), PythonEnvironment::getInternedString(context, "__bytes__"), false)) {
+                const proto::ProtoObject* b = env->callObject(builtin("bytes"), {arg});
+                if (!b) return nullptr;
+                ok = bytes_view(context, b, piece);
+            }
+            if (!ok) {
+                env->raiseTypeError(context, std::string("%b requires a bytes-like object, or an object that implements __bytes__, not '")
+                    + typeNameOf(arg) + "'");
+                return nullptr;
+            }
+        } else if (conv == 'r' || conv == 'a') {
+            const proto::ProtoObject* r = env->callObject(builtin("ascii"), {arg});
+            if (!r || !r->isString(context)) return nullptr;
+            r->asString(context)->toUTF8String(context, piece);
+        } else if (conv == 'c') {
+            std::string one;
+            if (arg->isInteger(context) && arg != PROTO_TRUE && arg != PROTO_FALSE) {
+                const long long v = arg->asLong(context);
+                if (v < 0 || v > 255) { env->raiseOverflowError(context, "%c arg not in range(256)"); return nullptr; }
+                piece.assign(1, static_cast<char>(v));
+            } else if (!arg->isString(context) && bytes_view(context, arg, one) && one.size() == 1) {
+                piece = one;
+            } else {
+                env->raiseTypeError(context, "%c requires an integer in range(256) or a single byte");
+                return nullptr;
+            }
+        } else {
+            env->raiseValueError(context, proto::ProtoString::fromUTF8String(context,
+                (std::string("unsupported format character '") + conv + "' (0x"
+                 + [&] { char h[8]; std::snprintf(h, sizeof h, "%x", static_cast<unsigned char>(conv)); return std::string(h); }()
+                 + ") at index " + std::to_string(i - 1)).c_str())->asObject(context));
+            return nullptr;
+        }
+        if (hasPrecision && conv != 'c') {
+            const size_t p = precision.empty() ? 0 : std::stoul(precision);
+            if (piece.size() > p) piece.resize(p);
+        }
+        const size_t w = width.empty() ? 0 : static_cast<size_t>(std::stol(width) < 0 ? -std::stol(width) : std::stol(width));
+        const bool left = flags.find('-') != std::string::npos || (!width.empty() && width[0] == '-');
+        if (piece.size() < w) {
+            if (left) piece.append(w - piece.size(), ' ');
+            else piece.insert(0, w - piece.size(), ' ');
+        }
+        out += piece;
+    }
+    if (!mapping && argIdx < argCount) {
+        env->raiseTypeError(context, "not all arguments converted during bytes formatting");
+        return nullptr;
+    }
+    return bytes_make_object(context, out.data(), static_cast<proto::proto_ulong>(out.size()));
 }
 
 static const proto::ProtoObject* py_str_lower(
@@ -21717,6 +21903,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "rstrip"), rootContext_->fromMethod(nullptr, py_bytes_rstrip));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "split"), rootContext_->fromMethod(nullptr, py_bytes_split));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "join"), rootContext_->fromMethod(nullptr, py_bytes_join));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__mod__"), rootContext_->fromMethod(nullptr, py_bytes_mod));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "replace"), rootContext_->fromMethod(nullptr, py_bytes_replace));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "isdigit"), rootContext_->fromMethod(nullptr, py_bytes_isdigit));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "isalpha"), rootContext_->fromMethod(nullptr, py_bytes_isalpha));
@@ -29468,9 +29655,15 @@ const proto::ProtoObject* PythonEnvironment::resolveModule(const std::string& na
                         const proto::ProtoObject* sysMod = dict->getAt(ctx, PythonEnvironment::getInternedString(ctx, nameStr.c_str())->getHash(ctx));
                         if (sysMod == result) {
                             isNative = true;
-                        } else if (sysMod && sysMod != PROTO_NONE) {
+                        } else if (sysMod) {
                             // sys.modules has a richer version (e.g., Python posixpath vs native os.path stub).
                             // Prefer sys.modules over the ProtoSpace native stub.
+                            // None there blocks the import (CPython: "import of X
+                            // halted; None in sys.modules"), as it does for a
+                            // module that is not native: the caller raises
+                            // ImportError.  test.support.import_fresh_module
+                            // blocks _datetime this way to test _pydatetime, and
+                            // the native module was imported regardless.
                             return sysMod;
                         }
                     }

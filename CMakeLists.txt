@@ -912,6 +912,14 @@ set_tests_properties(protopy_walrus_function_scope PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "walrus_function_scope: ok"
     LABELS "regression_gate")
+# Recursion past a thread's own stack raises RecursionError.
+add_test(NAME protopy_thread_deep_recursion
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/thread_deep_recursion.py)
+set_tests_properties(protopy_thread_deep_recursion PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "thread_deep_recursion: ok"
+    LABELS "regression_gate")
 # Walking f_back ends in None at the main module.
 add_test(NAME protopy_frame_chain_ends_in_none
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/frame_chain_ends_in_none.py)
@@ -920,13 +928,13 @@ set_tests_properties(protopy_frame_chain_ends_in_none PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "frame_chain_ends_in_none: ok"
     LABELS "regression_gate")
-# Recursion past a thread's own stack raises RecursionError.
-add_test(NAME protopy_thread_deep_recursion
-    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/thread_deep_recursion.py)
-set_tests_properties(protopy_thread_deep_recursion PROPERTIES
+# bytes() calls a class's __bytes__ bound once.
+add_test(NAME protopy_bytes_dunder_bytes
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/bytes_dunder_bytes.py)
+set_tests_properties(protopy_bytes_dunder_bytes PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
-    PASS_REGULAR_EXPRESSION "thread_deep_recursion: ok"
+    PASS_REGULAR_EXPRESSION "bytes_dunder_bytes: ok"
     LABELS "regression_gate")
 # function.__annotations__ comes from __annotate__.
 add_test(NAME protopy_function_annotations_from_annotate
@@ -943,6 +951,14 @@ set_tests_properties(protopy_platform_version PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# bytes % args formats as PEP 461 says.
+add_test(NAME protopy_bytes_percent_format
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/bytes_percent_format.py)
+set_tests_properties(protopy_bytes_percent_format PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "bytes_percent_format: ok"
+    LABELS "regression_gate")
 # os.pipe is non-inheritable; Popen with a stdin pipe does not wait for the child.
 add_test(NAME protopy_os_pipe_subprocess_stdin
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/os_pipe_subprocess_stdin.py)
@@ -951,6 +967,14 @@ set_tests_properties(protopy_os_pipe_subprocess_stdin PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "os_pipe_subprocess_stdin: ok"
     LABELS "regression_gate")
+# Equal bytes objects are one dict key.
+add_test(NAME protopy_bytes_dict_key
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/bytes_dict_key.py)
+set_tests_properties(protopy_bytes_dict_key PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "bytes_dict_key: ok"
+    LABELS "regression_gate")
 # A bound builtin method stored on a class keeps its receiver.
 add_test(NAME protopy_bound_builtin_class_attr
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/bound_builtin_class_attr.py)
@@ -958,6 +982,14 @@ set_tests_properties(protopy_bound_builtin_class_attr PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "bound_builtin_class_attr: ok"
+    LABELS "regression_gate")
+# test.support's helpers import on every platform.
+add_test(NAME protopy_test_support_helpers_import
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/test_support_helpers_import.py)
+set_tests_properties(protopy_test_support_helpers_import PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "test_support_helpers_import: ok"
     LABELS "regression_gate")
 # os.execv/execve reject bad argument lists and environments with ValueError.
 add_test(NAME protopy_os_exec_argument_checks
@@ -974,6 +1006,14 @@ set_tests_properties(protopy_callable_with_code_attr PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "callable_with_code_attr: ok"
+    LABELS "regression_gate")
+# StringIO methods called through the class use the instance.
+add_test(NAME protopy_stringio_unbound_methods
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/stringio_unbound_methods.py)
+set_tests_properties(protopy_stringio_unbound_methods PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "stringio_unbound_methods: ok"
     LABELS "regression_gate")
 # import pathlib loads the standard library package (Path is callable).
 add_test(NAME protopy_pathlib_package
@@ -1011,6 +1051,14 @@ set_tests_properties(protopy_oserror_errno_subclass PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# struct.pack checks each value's range and type.
+add_test(NAME protopy_struct_pack_range
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/struct_pack_range.py)
+set_tests_properties(protopy_struct_pack_range PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "struct_pack_range: ok"
+    LABELS "regression_gate")
 # open() with a path in "w", "a" or "x" mode writes to the file.
 add_test(NAME protopy_io_open_write_modes
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/io_open_write_modes.py)
@@ -1018,12 +1066,28 @@ set_tests_properties(protopy_io_open_write_modes PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# binascii rejects data that is not bytes-like.
+add_test(NAME protopy_binascii_argument_types
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/binascii_argument_types.py)
+set_tests_properties(protopy_binascii_argument_types PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "binascii_argument_types: ok"
+    LABELS "regression_gate")
 # io.text_encoding follows CPython; Path.read_text and write_text work.
 add_test(NAME protopy_io_text_encoding
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/io_text_encoding.py)
 set_tests_properties(protopy_io_text_encoding PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
+    LABELS "regression_gate")
+# _functools.cmp_to_key is a builtin.
+add_test(NAME protopy_functools_native_cmp_to_key
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/functools_native_cmp_to_key.py)
+set_tests_properties(protopy_functools_native_cmp_to_key PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "functools_native_cmp_to_key: ok"
     LABELS "regression_gate")
 # os.DirEntry.is_junction exists; os.walk, shutil.rmtree and TemporaryDirectory work.
 add_test(NAME protopy_direntry_is_junction
@@ -1147,6 +1211,14 @@ set_tests_properties(protopy_file_close_on_collect PROPERTIES
     ENVIRONMENT "PROTOCORE_HEAP_LIMIT_CELLS=1000000"
     TIMEOUT 120
     LABELS "regression_gate")
+# _testsinglephase exists, as in every standard CPython build.
+add_test(NAME protopy_testsinglephase_module
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/testsinglephase_module.py)
+set_tests_properties(protopy_testsinglephase_module PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "testsinglephase_module: ok"
+    LABELS "regression_gate")
 # seek/tell/seekable/readable/writable on every kind of file object; source
 # lines in traceback.format_exc() (tokenize.open rewinds the file).
 add_test(NAME protopy_file_seek_tell
@@ -1238,6 +1310,14 @@ add_test(NAME protopy_copytree_symlinks
 set_tests_properties(protopy_copytree_symlinks PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
+    LABELS "regression_gate")
+# None in sys.modules blocks a native module's import.
+add_test(NAME protopy_blocked_native_module
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/blocked_native_module.py)
+set_tests_properties(protopy_blocked_native_module PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "blocked_native_module: ok"
     LABELS "regression_gate")
 # bool(), `if` / `while` and the native truth test agree on every shape.
 add_test(NAME protopy_truth_tests

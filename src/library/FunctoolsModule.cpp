@@ -117,6 +117,45 @@ static const proto::ProtoObject* py_reduce(
     return res;
 }
 
+// _functools.cmp_to_key(mycmp): a builtin, as in CPython, so a class that
+// stores it (TestCmpToKeyC: `cmp_to_key = c_functools.cmp_to_key`) does
+// not bind it as a method.  The key class it returns is defined in
+// lib/_functools_keywrapper.py.
+static const proto::ProtoObject* py_cmp_to_key(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject*,
+    const proto::ParentLink*,
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* kwargs) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return PROTO_NONE;
+    const proto::proto_ulong npos = posArgs ? posArgs->getSize(ctx) : 0;
+    const proto::proto_ulong nkw = kwargs ? kwargs->getSize(ctx) : 0;
+    const proto::proto_ulong mycmpKey = PythonEnvironment::getInternedString(ctx, "mycmp")->getHash(ctx);
+    const proto::ProtoObject* mycmp = nullptr;
+    if (npos + nkw > 1) {
+        env->raiseTypeError(ctx, "cmp_to_key() takes at most 1 argument (" + std::to_string(npos + nkw) + " given)");
+        return nullptr;
+    }
+    if (npos == 1) {
+        mycmp = posArgs->getAt(ctx, 0);
+    } else if (nkw == 1 && kwargs->has(ctx, mycmpKey)) {
+        mycmp = kwargs->getAt(ctx, mycmpKey);
+    } else if (nkw == 1) {
+        env->raiseTypeError(ctx, "cmp_to_key() got an unexpected keyword argument");
+        return nullptr;
+    } else {
+        env->raiseTypeError(ctx, "cmp_to_key() missing required argument 'mycmp' (pos 1)");
+        return nullptr;
+    }
+    const proto::ProtoObject* helper = env->importModule("_functools_keywrapper");
+    if (!helper || helper == PROTO_NONE) return nullptr;
+    const proto::ProtoObject* make = env->getAttribute(ctx, helper,
+        PythonEnvironment::getInternedString(ctx, "cmp_to_key"));
+    if (!make || make == PROTO_NONE) return nullptr;
+    return env->callObject(make, {mycmp});
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(false);
     
@@ -144,8 +183,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     // user class so `type(p)` is the class itself.
     (void)placeholder;
     (void)placeholderType;
-    // No native cmp_to_key: functools.py's pure-Python one is used (the
-    // `from _functools import cmp_to_key` there fails and is swallowed).
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "cmp_to_key"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_cmp_to_key));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "reduce"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_reduce));
     

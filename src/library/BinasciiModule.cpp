@@ -39,21 +39,22 @@ static bool is_str_instance(proto::ProtoContext* ctx, const proto::ProtoObject* 
     return env->getType(ctx, obj) == env->getStrPrototype();
 }
 
-static std::string obj_to_bytes(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
-    if (!obj || obj == PROTO_NONE) return "";
+// The octets of a bytes-like object (bytes, bytearray, memoryview, or an
+// object with tobytes() such as array.array); false for anything else.
+static bool extract_octets(proto::ProtoContext* ctx, const proto::ProtoObject* obj, std::string& out) {
+    if (!obj || obj == PROTO_NONE) return false;
     if (obj->isString(ctx)) {
-        std::string s;
-        obj->asString(ctx)->toUTF8String(ctx, s);
-        return s;
+        obj->asString(ctx)->toUTF8String(ctx, out);
+        return true;
     }
     // Direct ByteBuffer cell — read its octets directly.
     if (const proto::ProtoByteBuffer* bb = obj->asByteBuffer(ctx)) {
         proto::proto_ulong n = bb->getSize(ctx);
-        std::string out(n, '\0');
+        out.assign(n, '\0');
         for (proto::proto_ulong i = 0; i < n; ++i) {
             out[i] = static_cast<char>(static_cast<unsigned char>(bb->getAt(ctx, static_cast<int>(i))));
         }
-        return out;
+        return true;
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (env) {
@@ -63,7 +64,7 @@ static std::string obj_to_bytes(proto::ProtoContext* ctx, const proto::ProtoObje
         const proto::ProtoObject* mv = obj->getAttribute(ctx,
             PythonEnvironment::getInternedString(ctx, "__mv_data__"));
         if (mv && mv != PROTO_NONE && mv != obj) {
-            return obj_to_bytes(ctx, mv);
+            return extract_octets(ctx, mv, out);
         }
 
         const proto::ProtoObject* data = obj->getAttribute(ctx, env->getDataString());
@@ -73,18 +74,16 @@ static std::string obj_to_bytes(proto::ProtoContext* ctx, const proto::ProtoObje
             const proto::ProtoByteBuffer* bb = data->asByteBuffer(ctx);
             if (bb) {
                 proto::proto_ulong n = bb->getSize(ctx);
-                std::string out;
-                out.resize(n);
+                out.assign(n, '\0');
                 for (proto::proto_ulong i = 0; i < n; ++i) {
                     out[i] = static_cast<char>(static_cast<unsigned char>(bb->getAt(ctx, static_cast<int>(i))));
                 }
-                return out;
+                return true;
             }
             // Fallback: stringly-stored bytes (UTF-8 reinterpretation).
             if (data->isString(ctx)) {
-                std::string s;
-                data->asString(ctx)->toUTF8String(ctx, s);
-                return s;
+                data->asString(ctx)->toUTF8String(ctx, out);
+                return true;
             }
         }
         // array.array (and any other object with a tobytes() method)
@@ -95,15 +94,62 @@ static std::string obj_to_bytes(proto::ProtoContext* ctx, const proto::ProtoObje
                 PythonEnvironment::getInternedString(ctx, "tobytes"), /*raiseError=*/false);
             const proto::ProtoObject* res = (tobytesM && tobytesM != PROTO_NONE)
                 ? env->callObject(tobytesM, {}) : nullptr;
-            if (res && res != obj) return obj_to_bytes(ctx, res);
+            if (res && res != obj) return extract_octets(ctx, res, out);
         }
     }
-    return "";
+    return false;
+}
+
+static std::string type_name(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (obj == PROTO_TRUE || obj == PROTO_FALSE) return "bool";
+    const proto::ProtoObject* type = env ? env->getType(ctx, obj) : nullptr;
+    const proto::ProtoObject* name = type ? type->getAttribute(ctx, env->getNameString()) : nullptr;
+    std::string n = "object";
+    if (name && name->isString(ctx)) name->asString(ctx)->toUTF8String(ctx, n);
+    return n;
+}
+
+// Not bytes-like however it is stored: an int (whose type may have an
+// int-valued __data__) or a bool.
+static bool is_integer_value(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
+    return obj->isInteger(ctx) || obj == PROTO_TRUE || obj == PROTO_FALSE;
+}
+
+// The data argument of a b2a_* function or crc32: a bytes-like object, as
+// CPython requires ("a bytes-like object is required, not 'str'").
+static bool binary_arg(proto::ProtoContext* ctx, const proto::ProtoObject* obj, std::string& out) {
+    if (obj && !is_str_instance(ctx, obj) && !is_integer_value(ctx, obj) && extract_octets(ctx, obj, out)) return true;
+    if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx))
+        env->raiseTypeError(ctx, "a bytes-like object is required, not '" + type_name(ctx, obj) + "'");
+    return false;
+}
+
+// The data argument of an a2b_* function: a bytes-like object or an ASCII
+// str.
+static bool ascii_arg(proto::ProtoContext* ctx, const proto::ProtoObject* obj, std::string& out) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (obj && is_str_instance(ctx, obj)) {
+        const proto::ProtoString* str = obj->asString(ctx);
+        if (str) str->toUTF8String(ctx, out);
+        else extract_octets(ctx, obj, out);
+        for (unsigned char c : out) {
+            if (c >= 0x80) {
+                if (env) env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx,
+                    "string argument should contain only ASCII characters")->asObject(ctx));
+                return false;
+            }
+        }
+        return true;
+    }
+    if (obj && !is_integer_value(ctx, obj) && extract_octets(ctx, obj, out)) return true;
+    if (env) env->raiseTypeError(ctx, "argument should be bytes, buffer or ASCII string, not '" + type_name(ctx, obj) + "'");
+    return false;
 }
 
 // Produce a Python bytes-shaped object whose `__data__` is a
 // ProtoByteBuffer (NOT a ProtoString) so that downstream consumers
-// (obj_to_bytes above, the base64.py round-trip, repr) see real bytes.
+// (extract_octets above, the base64.py round-trip, repr) see real bytes.
 // Previously this stored the data via PythonEnvironment::getInternedString,
 // which (a) silently truncated non-ASCII octets at the first 0-byte and
 // (b) made the runtime type appear as `str` to introspection.
@@ -152,14 +198,8 @@ static const proto::ProtoObject* py_b2a_base64(
     const proto::ProtoKeywordArguments* kwargs) {
 
     if (!posArgs || posArgs->getSize(ctx) < 1) return make_bytes(ctx, "\n");
-    const proto::ProtoObject* arg0 = posArgs->getAt(ctx, 0);
-    if (is_str_instance(ctx, arg0)) {
-        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-        if (env) env->raiseTypeError(ctx,
-            "a bytes-like object is required, not 'str'");
-        return nullptr;
-    }
-    std::string src = obj_to_bytes(ctx, arg0);
+    std::string src;
+    if (!binary_arg(ctx, posArgs->getAt(ctx, 0), src)) return nullptr;
 
     bool newline = true;
     if (kwargs) {
@@ -198,7 +238,8 @@ static const proto::ProtoObject* py_a2b_base64(
     const proto::ProtoKeywordArguments*) {
 
     if (!posArgs || posArgs->getSize(ctx) < 1) return make_bytes(ctx, "");
-    std::string src = obj_to_bytes(ctx, posArgs->getAt(ctx, 0));
+    std::string src;
+    if (!ascii_arg(ctx, posArgs->getAt(ctx, 0), src)) return nullptr;
 
     // CPython's a2b_base64 (non-validate mode) silently skips
     // anything outside [A-Za-z0-9+/=] — not just whitespace, but
@@ -262,41 +303,8 @@ static const proto::ProtoObject* py_hexlify(
 
     if (!posArgs || posArgs->getSize(ctx) < 1) return make_bytes(ctx, "");
     const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
-    // STRUCT-136: reject buffer-incompatible args.  Int and int
-    // subclasses are NOT bytes-like; CPython's b2a_hex / hexlify
-    // raises TypeError "argument should be a bytes-like object or
-    // ASCII string, not 'int'".  Detection: walk type(arg)'s MRO
-    // looking for intPrototype (catches both raw int and `class
-    // MyInt(int)` instances) while NOT being bytes/str/bytearray.
-    PythonEnvironment* envHex = PythonEnvironment::fromContext(ctx);
-    if (envHex && arg) {
-        const proto::ProtoObject* aT = envHex->getType(ctx, arg);
-        if (aT) {
-            const proto::ProtoObject* intP = envHex->getIntPrototype();
-            const proto::ProtoObject* mAttr = envHex->getAttribute(ctx, aT,
-                envHex->getMroString(), false);
-            ::protoPython::TupleView mT = mAttr ? ::protoPython::PythonEnvironment::tupleView(ctx, mAttr) : nullptr;
-            bool hasInt = false;
-            if (mT && intP) {
-                for (proto::proto_ulong i = 0; i < mT->getSize(ctx); ++i) {
-                    if (mT->getAt(ctx, static_cast<int>(i)) == intP) { hasInt = true; break; }
-                }
-            }
-            // Allow raw bytes / str (they should NOT take the int
-            // branch even though their __mro__ might include int via
-            // unrelated chains in pathological cases).
-            if (hasInt && !arg->isString(ctx)
-                && !(envHex->getBytesPrototype() && aT == envHex->getBytesPrototype())) {
-                std::string cname = "int";
-                if (arg->isBoolean(ctx)) cname = "bool";
-                envHex->raiseTypeError(ctx,
-                    "argument should be a bytes-like object or ASCII string, not '"
-                    + cname + "'");
-                return nullptr;
-            }
-        }
-    }
-    std::string src = obj_to_bytes(ctx, arg);
+    std::string src;
+    if (!binary_arg(ctx, arg, src)) return nullptr;
     static const char hex[] = "0123456789abcdef";
     std::string out;
     out.reserve(src.size() * 2);
@@ -324,7 +332,8 @@ static const proto::ProtoObject* py_unhexlify(
     const proto::ProtoKeywordArguments*) {
 
     if (!posArgs || posArgs->getSize(ctx) < 1) return make_bytes(ctx, "");
-    std::string src = obj_to_bytes(ctx, posArgs->getAt(ctx, 0));
+    std::string src;
+    if (!ascii_arg(ctx, posArgs->getAt(ctx, 0), src)) return nullptr;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (src.size() % 2 != 0) {
         if (env) env->raiseValueError(ctx,
@@ -362,7 +371,8 @@ static const proto::ProtoObject* py_crc32(
     const proto::ProtoKeywordArguments*) {
 
     if (!posArgs || posArgs->getSize(ctx) < 1) return ctx->fromInteger(0);
-    std::string src = obj_to_bytes(ctx, posArgs->getAt(ctx, 0));
+    std::string src;
+    if (!binary_arg(ctx, posArgs->getAt(ctx, 0), src)) return nullptr;
     uint32_t crc = 0xFFFFFFFFu;
     if (posArgs->getSize(ctx) >= 2) {
         const proto::ProtoObject* crcObj = posArgs->getAt(ctx, 1);
