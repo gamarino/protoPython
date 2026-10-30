@@ -951,6 +951,14 @@ set_tests_properties(protopy_bound_builtin_class_attr PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "bound_builtin_class_attr: ok"
     LABELS "regression_gate")
+# test.support's helpers import on every platform.
+add_test(NAME protopy_test_support_helpers_import
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/test_support_helpers_import.py)
+set_tests_properties(protopy_test_support_helpers_import PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "test_support_helpers_import: ok"
+    LABELS "regression_gate")
 # os.execv/execve reject bad argument lists and environments with ValueError.
 add_test(NAME protopy_os_exec_argument_checks
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/os_exec_argument_checks.py)
