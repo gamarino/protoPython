@@ -12,6 +12,35 @@ for lock in (threading.Lock(), threading.RLock()):
     assert lock.acquire(False), "reinitialised lock is not free"
     lock.release()
 
+# A Condition over the default RLock knows its owner: notify() used to raise
+# "cannot notify on un-acquired lock" because the native RLock had no
+# _is_owned, and wait() releases every level of a nested hold.
+cond = threading.Condition()
+with cond:
+    assert cond._is_owned()
+    cond.notify_all()
+    with cond:
+        assert cond._lock._recursion_count() == 2
+        assert not cond.wait(0.01)
+        assert cond._lock._recursion_count() == 2
+assert not cond._is_owned()
+ready = []
+
+
+def waiter():
+    with cond:
+        while not ready:
+            cond.wait()
+
+
+t = threading.Thread(target=waiter)
+t.start()
+with cond:
+    ready.append(1)
+    cond.notify()
+t.join(10)
+assert not t.is_alive()
+
 # A bound method stored on a class keeps its receiver (method.__get__
 # returns the method), as ThreadPoolExecutor's _counter does.
 import itertools
