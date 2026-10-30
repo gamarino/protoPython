@@ -780,6 +780,14 @@ set_tests_properties(protopy_io_open_code PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# agen.athrow() returns an awaitable that throws when driven.
+add_test(NAME protopy_async_gen_athrow
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/async_gen_athrow.py)
+set_tests_properties(protopy_async_gen_athrow PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "async_gen_athrow: ok"
+    LABELS "regression_gate")
 # sys.path_hooks / sys.path_importer_cache, PEP 420 namespace packages, an
 # nspkg .pth namespace package and pkgutil.iter_modules.
 add_test(NAME protopy_import_path_hooks
@@ -856,13 +864,13 @@ set_tests_properties(protopy_deep_recursion_raises PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "deep_recursion_raises: ok"
     LABELS "regression_gate")
-# agen.athrow() returns an awaitable that throws when driven.
-add_test(NAME protopy_async_gen_athrow
-    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/async_gen_athrow.py)
-set_tests_properties(protopy_async_gen_athrow PROPERTIES
+# A bound method answers __module__ and __doc__ from its function.
+add_test(NAME protopy_bound_method_module_doc
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/bound_method_module_doc.py)
+set_tests_properties(protopy_bound_method_module_doc PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
-    PASS_REGULAR_EXPRESSION "async_gen_athrow: ok"
+    PASS_REGULAR_EXPRESSION "bound_method_module_doc: ok"
     LABELS "regression_gate")
 # Walking f_back ends in None at the main module.
 add_test(NAME protopy_frame_chain_ends_in_none
