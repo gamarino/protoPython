@@ -1,0 +1,70 @@
+name: Windows exit hang reproduction (temporary)
+
+# Temporary, never merged: issue #14.  Runs the heap-limited tests in which
+# the process hung after its last line, many times, on Windows, against the
+# pinned protoCore 3.3.1, the 3.0.0 floor and protoCore master fec4394c.
+
+on:
+  push:
+    branches: ['ci/windows-exit-hang-repro']
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: ${{ matrix.name }} (${{ matrix.round }})
+    runs-on: windows-2022
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [protoCore 3.3.1, protoCore 3.0.0, protoCore fec4394c]
+        round: [a, b]
+        include:
+          - name: protoCore 3.3.1
+            protocore_ref: 5a8cd7c7aae68edbb34720445736b14685efae6f
+          - name: protoCore 3.0.0
+            protocore_ref: ce00a4a26b6583ea8a58e776eee2ea91c743469e
+          - name: protoCore fec4394c
+            protocore_ref: fec4394c
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: protoPython
+      - uses: actions/checkout@v4
+        with:
+          repository: numaes/protoCore
+          ref: ${{ matrix.protocore_ref }}
+          path: protoCore
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build and install protoCore
+        run: |
+          cmake -S protoCore -B protoCore/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build protoCore/build --parallel 4
+          cmake --install protoCore/build --prefix "$GITHUB_WORKSPACE/prefix"
+      - name: Build protoPython
+        working-directory: protoPython
+        run: |
+          cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/prefix"
+          cmake --build build --parallel 4
+      - name: Heap-limited tests, repeated until a failure (300 rounds)
+        working-directory: protoPython
+        run: |
+          start=$(date +%s)
+          set +e
+          ctest --test-dir build -j3 --output-on-failure --timeout 300 --repeat until-fail:300 \
+            -R '^(adaptive_heap_off_by_env|adaptive_heap_bounded_memory|protopy_helper_garbage_is_collected|protopy_file_close_on_collect|protopy_heap_limit_live_frames)$' \
+            < /dev/null > repro.log 2>&1
+          rc=$?
+          set -e
+          tail -40 repro.log
+          echo "rc=$rc elapsed=$(( $(date +%s) - start ))s"
+          echo "${{ matrix.name }} (${{ matrix.round }}): rc=$rc, passes=$(grep -c ' Passed ' repro.log), timeouts=$(grep -c 'Timeout' repro.log)" >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
