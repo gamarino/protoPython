@@ -1576,6 +1576,14 @@ set_tests_properties(protopy_list_subclass_init PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# The native reduce follows CPython's signature.
+add_test(NAME protopy_functools_reduce_args
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/functools_reduce_args.py)
+set_tests_properties(protopy_functools_reduce_args PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "functools_reduce_args: ok"
+    LABELS "regression_gate")
 # __init_subclass__ runs once for type(), types.new_class() and metaclasses.
 add_test(NAME protopy_init_subclass_dynamic
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/init_subclass_dynamic.py)
