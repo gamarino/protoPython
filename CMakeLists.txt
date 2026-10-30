@@ -984,6 +984,14 @@ set_tests_properties(protopy_direntry_is_junction PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# concurrent.futures.thread imports and its executor runs work.
+add_test(NAME protopy_concurrent_futures_thread
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/concurrent_futures_thread.py)
+set_tests_properties(protopy_concurrent_futures_thread PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "concurrent_futures_thread: ok"
+    LABELS "regression_gate")
 # `return` from inside a loop that runs inside a `with` block drops the loop's
 # iterator before the with-block cleanup runs.
 add_test(NAME protopy_with_return_in_loop

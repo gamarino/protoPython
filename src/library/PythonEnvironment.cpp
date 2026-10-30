@@ -20064,6 +20064,26 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             return PROTO_NONE;
         }));
     methodPrototype = methodPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__doc__"), PROTO_NONE);
+    // CPython's method.__get__ returns the bound method itself: one stored
+    // as a class attribute (`_counter = itertools.count().__next__` in
+    // concurrent.futures.thread) keeps its receiver.  Without it the
+    // __getattr__ below forwarded __get__ to the function, which bound the
+    // method again to the instance it was read through.
+    methodPrototype = methodPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__get__"),
+        rootContext_->fromMethod(nullptr,
+        [](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoArguments* args,
+           const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
+            // Called bound (self is the method) or through the type
+            // (the method is the first argument).
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            const proto::ProtoString* funcS = PythonEnvironment::getInternedString(ctx, "__func__");
+            if (self && self != PROTO_NONE && self->hasOwnAttribute(ctx, funcS) == PROTO_TRUE) return self;
+            if (args && args->getSize(ctx) >= 1) return args->getAt(ctx, 0);
+            if (env) env->raiseTypeError(ctx, "descriptor '__get__' of 'method' object needs an argument");
+            return nullptr;
+        }));
     // CPython's method_getattro: a name the method type does not define is
     // read from the function (`C().m.__defaults__`, `__name__`, attributes set
     // on the function).  Missing there too, the error names the function.
