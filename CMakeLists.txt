@@ -1163,6 +1163,14 @@ set_tests_properties(protopy_file_close_on_collect PROPERTIES
     ENVIRONMENT "PROTOCORE_HEAP_LIMIT_CELLS=1000000"
     TIMEOUT 120
     LABELS "regression_gate")
+# _testsinglephase exists, as in every standard CPython build.
+add_test(NAME protopy_testsinglephase_module
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/testsinglephase_module.py)
+set_tests_properties(protopy_testsinglephase_module PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "testsinglephase_module: ok"
+    LABELS "regression_gate")
 # seek/tell/seekable/readable/writable on every kind of file object; source
 # lines in traceback.format_exc() (tokenize.open rewinds the file).
 add_test(NAME protopy_file_seek_tell
