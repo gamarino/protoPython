@@ -87,24 +87,14 @@ static std::string obj_to_bytes(proto::ProtoContext* ctx, const proto::ProtoObje
                 return s;
             }
         }
-        // array.array exposes its data via `_data` (the lib's own
-        // attribute name) and via `tobytes()` (the public API).
-        // Without these branches `binascii.hexlify(array('B', …))`
-        // silently returned "", breaking test_b16encode's
-        // check_other_types path.
-        const proto::ProtoString* underData =
-            PythonEnvironment::getInternedString(ctx, "_data");
-        const proto::ProtoObject* underDataAttr = obj->getAttribute(ctx, underData);
-        if (underDataAttr && underDataAttr != PROTO_NONE && underDataAttr != obj) {
-            return obj_to_bytes(ctx, underDataAttr);
-        }
-        const proto::ProtoString* tobytesS =
-            PythonEnvironment::getInternedString(ctx, "tobytes");
-        const proto::ProtoObject* tobytesM = obj->getAttribute(ctx, tobytesS);
-        if (tobytesM && tobytesM != PROTO_NONE && tobytesM->asMethod(ctx)) {
-            const proto::ProtoObject* res = tobytesM->asMethod(ctx)(ctx,
-                const_cast<proto::ProtoObject*>(obj),
-                nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
+        // array.array (and any other object with a tobytes() method)
+        // gives its octets through tobytes(), called bound.  Without this
+        // `binascii.hexlify(array('B', ...))` silently returned "".
+        if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx)) {
+            const proto::ProtoObject* tobytesM = env->getAttribute(ctx, obj,
+                PythonEnvironment::getInternedString(ctx, "tobytes"), /*raiseError=*/false);
+            const proto::ProtoObject* res = (tobytesM && tobytesM != PROTO_NONE)
+                ? env->callObject(tobytesM, {}) : nullptr;
             if (res && res != obj) return obj_to_bytes(ctx, res);
         }
     }

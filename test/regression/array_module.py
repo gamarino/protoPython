@@ -69,4 +69,15 @@ assert array('u', 'abc').tounicode() == 'abc'
 assert array('B', b'\x01\x02').tolist() == [1, 2]
 assert array('i', [1, 2]) + array('i', [3]) == array('i', [1, 2, 3])
 assert array('b', [1]) * 3 == array('b', [1, 1, 1])
+# Bytes-like consumers read an array through its buffer.
+if len(sys.argv) == 1:
+    import base64, binascii, struct
+    raw = array('B', b'abc')
+    assert bytes(raw) == b'abc'
+    assert memoryview(raw).tobytes() == b'abc'
+    assert memoryview(array('i', [1])).format == 'i'
+    assert base64.b64encode(raw) == b'YWJj'
+    assert base64.b64decode(array('B', b'YWJj')) == b'abc'
+    assert binascii.hexlify(raw) == b'616263'
+    assert struct.unpack('=i', array('i', [7])) == (7,)
 print("array_module: ok")

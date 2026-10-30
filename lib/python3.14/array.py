@@ -244,7 +244,7 @@ class array:
         return (id(self), len(self._items))
 
     def __buffer__(self, flags):
-        return memoryview(self.tobytes()).cast(self._fmt[1:] if self._typecode not in 'uw' else 'B')
+        return memoryview(self)
 
     def __reduce_ex__(self, protocol):
         return (array, (self._typecode, list(self._items)), getattr(self, '__dict__', None))

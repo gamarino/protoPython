@@ -10118,21 +10118,14 @@ static bool bytes_view(proto::ProtoContext* context,
             return true;
         }
     }
-    // array.array exposes raw octets via `_data` (the lib's own
-    // attribute) and via `tobytes()` (the public buffer-protocol
-    // bridge). Both are recursive — the inner value is a bytes
-    // wrapper or ProtoString that the cases above will accept.
-    const proto::ProtoObject* underData = obj->getAttribute(context,
-        PythonEnvironment::getInternalString(context, "_data"));
-    if (underData && underData != PROTO_NONE && underData != obj) {
-        return bytes_view(context, underData, out);
-    }
-    const proto::ProtoObject* tobytesM = obj->getAttribute(context,
-        PythonEnvironment::getInternedString(context, "tobytes"));
-    if (tobytesM && tobytesM != PROTO_NONE && tobytesM->asMethod(context)) {
-        const proto::ProtoObject* res = tobytesM->asMethod(context)(context,
-            const_cast<proto::ProtoObject*>(obj),
-            nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
+    // array.array (and any other object with a tobytes() method) gives
+    // its octets through tobytes(), called bound: a Python method reached
+    // through asMethod() did not receive the instance as self.
+    if (PythonEnvironment* env = PythonEnvironment::fromContext(context)) {
+        const proto::ProtoObject* tobytesM = env->getAttribute(context, obj,
+            PythonEnvironment::getInternedString(context, "tobytes"), /*raiseError=*/false);
+        const proto::ProtoObject* res = (tobytesM && tobytesM != PROTO_NONE)
+            ? env->callObject(tobytesM, {}) : nullptr;
         if (res && res != obj) return bytes_view(context, res, out);
     }
     return false;

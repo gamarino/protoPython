@@ -4016,49 +4016,16 @@ static const proto::ProtoObject* py_memoryview(
         ndim = 1;
     }
 
-    // Case 3: input has _data attribute (array.array stores bytes
-    // there; older array stubs stored a string). The _data may be
-    // either a ProtoString OR a `bytes` wrapper whose own __data__
-    // is a ByteBuffer. Accept both — store the input obj itself on
-    // __mv_data__ so the round-trip preserves type identity, and
-    // remember the typecode for `cast`/`format`/etc.
-    if (!bytesData) {
-        const proto::ProtoObject* arrData = obj->getAttribute(context, PythonEnvironment::getInternedString(context, "_data"));
-        if (arrData && arrData != PROTO_NONE) {
-            bool useable = arrData->isString(context) || arrData->isByteBuffer(context);
-            if (!useable && env) {
-                // bytes wrapper: walk into its __data__.
-                const proto::ProtoObject* inner = arrData->getAttribute(context, env->getDataString());
-                if (inner && (inner->isString(context) || inner->isByteBuffer(context))) {
-                    useable = true;
-                }
-            }
-            if (useable) {
-                bytesData = obj;
-                const proto::ProtoObject* tcObj = obj->getAttribute(context, PythonEnvironment::getInternedString(context, "typecode"));
-                if (tcObj && tcObj != PROTO_NONE && tcObj->isString(context)) {
-                    tcObj->asString(context)->toUTF8String(context, format);
-                }
-                ndim = 1;
-            }
-        }
-    }
-
     // Case 4: input has tobytes() method. The method's return is a
     // bytes instance — accept whether it's str-backed or
     // ByteBuffer-backed.
     if (!bytesData && env) {
-        const proto::ProtoObject* tobytesMeth = obj->getAttribute(context, PythonEnvironment::getInternedString(context, "tobytes"));
+        // Called bound: a Python method reached through asMethod() did not
+        // receive the instance as self (array.array's tobytes).
+        const proto::ProtoObject* tobytesMeth = env->getAttribute(context, obj,
+            PythonEnvironment::getInternedString(context, "tobytes"), /*raiseError=*/false);
         if (tobytesMeth && tobytesMeth != PROTO_NONE) {
-            const proto::ProtoList* emptyArgs = context->newList();
-            const proto::ProtoObject* result = nullptr;
-            if (tobytesMeth->asMethod(context)) {
-                result = tobytesMeth->asMethod(context)(context,
-                    const_cast<proto::ProtoObject*>(obj),
-                    nullptr, argsView(proto::ProtoListArguments(context, emptyArgs)), nullptr);
-            } else {
-                result = ::protoPython::invokePythonCallable(context, tobytesMeth, emptyArgs, nullptr);
-            }
+            const proto::ProtoObject* result = env->callObject(tobytesMeth, {});
             if (result && result != PROTO_NONE) {
                 bool useable = result->isString(context) || result->isByteBuffer(context);
                 if (!useable) {
@@ -4070,6 +4037,13 @@ static const proto::ProtoObject* py_memoryview(
                 if (useable) {
                     bytesData = result;
                     ndim = 1;
+                    // array.array: the view's format is the typecode.
+                    const proto::ProtoObject* tcObj = env->getAttribute(context, obj,
+                        PythonEnvironment::getInternedString(context, "typecode"), /*raiseError=*/false);
+                    if (tcObj && tcObj != PROTO_NONE && tcObj->isString(context)) {
+                        format.clear();
+                        tcObj->asString(context)->toUTF8String(context, format);
+                    }
                 }
             }
         }
