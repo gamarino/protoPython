@@ -2734,6 +2734,92 @@ static void collectGlobalsFromNode(ASTNode* node, std::unordered_set<std::string
     }
 }
 
+// The targets of the assignment expressions (`name := value`) in a scope's
+// statements and expressions: they are locals of the scope like any other
+// assignment.  collectDefinedNames looks at statement targets only, so a
+// walrus in an `if`/`while` test, a call argument or a return value bound
+// a global: two closures made by two calls of
+// `def deco(f): if ex := v: def inner(): return ex` shared one `ex`
+// (test.support's hypothesis stub ran every test with the last test's
+// examples).  Nested function, lambda and class bodies are other scopes,
+// and comprehensions keep their current handling (PEP 572 binds their
+// walrus targets in this scope; not done here).
+static void collectWalrusTargets(ASTNode* node, OrderedNameSet& out) {
+    if (!node) return;
+    auto each = [&](std::initializer_list<ASTNode*> nodes) {
+        for (ASTNode* n : nodes) collectWalrusTargets(n, out);
+    };
+    auto eachOf = [&](const std::vector<std::unique_ptr<ASTNode>>& nodes) {
+        for (const auto& n : nodes) collectWalrusTargets(n.get(), out);
+    };
+    if (auto* ne = dynamic_cast<NamedExprNode*>(node)) {
+        if (auto* nm = dynamic_cast<NameNode*>(ne->target.get())) out.insert(nm->id);
+        return each({ne->value.get()});
+    }
+    if (auto* s = dynamic_cast<SuiteNode*>(node)) return eachOf(s->statements);
+    if (auto* b = dynamic_cast<BinOpNode*>(node)) return each({b->left.get(), b->right.get()});
+    if (auto* u = dynamic_cast<UnaryOpNode*>(node)) return each({u->operand.get()});
+    if (auto* c = dynamic_cast<CondExprNode*>(node)) return each({c->body.get(), c->cond.get(), c->orelse.get()});
+    if (auto* c = dynamic_cast<ConditionalExprNode*>(node)) return each({c->body.get(), c->test.get(), c->orelse.get()});
+    if (auto* st = dynamic_cast<StarredNode*>(node)) return each({st->value.get()});
+    if (auto* call = dynamic_cast<CallNode*>(node)) {
+        each({call->func.get()});
+        eachOf(call->args);
+        for (auto& kw : call->keywords) collectWalrusTargets(kw.second.get(), out);
+        return;
+    }
+    if (auto* a = dynamic_cast<AttributeNode*>(node)) return each({a->value.get()});
+    if (auto* sb = dynamic_cast<SubscriptNode*>(node)) return each({sb->value.get(), sb->index.get()});
+    if (auto* sl = dynamic_cast<SliceNode*>(node)) return each({sl->start.get(), sl->stop.get(), sl->step.get()});
+    if (auto* l = dynamic_cast<ListLiteralNode*>(node)) return eachOf(l->elements);
+    if (auto* t = dynamic_cast<TupleLiteralNode*>(node)) return eachOf(t->elements);
+    if (auto* st = dynamic_cast<SetLiteralNode*>(node)) return eachOf(st->elements);
+    if (auto* d = dynamic_cast<DictLiteralNode*>(node)) { eachOf(d->keys); return eachOf(d->values); }
+    if (auto* fv = dynamic_cast<FormattedValueNode*>(node)) return each({fv->value.get()});
+    if (auto* js = dynamic_cast<JoinedStrNode*>(node)) return eachOf(js->values);
+    if (auto* aw = dynamic_cast<AwaitNode*>(node)) return each({aw->value.get()});
+    if (auto* y = dynamic_cast<YieldNode*>(node)) return each({y->value.get()});
+    if (auto* r = dynamic_cast<ReturnNode*>(node)) return each({r->value.get()});
+    if (auto* r = dynamic_cast<RaiseNode*>(node)) return each({r->exc.get(), r->cause.get()});
+    if (auto* a = dynamic_cast<AssertNode*>(node)) return each({a->test.get(), a->msg.get()});
+    if (auto* as = dynamic_cast<AssignNode*>(node)) { eachOf(as->targets); return each({as->value.get()}); }
+    if (auto* aug = dynamic_cast<AugAssignNode*>(node)) return each({aug->target.get(), aug->value.get()});
+    if (auto* ann = dynamic_cast<AnnAssignNode*>(node)) return each({ann->value.get()});
+    if (auto* f = dynamic_cast<ForNode*>(node)) return each({f->iter.get(), f->body.get(), f->orelse.get()});
+    if (auto* f = dynamic_cast<AsyncForNode*>(node)) return each({f->iter.get(), f->body.get(), f->orelse.get()});
+    if (auto* w = dynamic_cast<WhileNode*>(node)) return each({w->test.get(), w->body.get(), w->orelse.get()});
+    if (auto* iff = dynamic_cast<IfNode*>(node)) return each({iff->test.get(), iff->body.get(), iff->orelse.get()});
+    if (auto* w = dynamic_cast<WithNode*>(node)) {
+        for (auto& it : w->items) collectWalrusTargets(it.context_expr.get(), out);
+        return each({w->body.get()});
+    }
+    if (auto* w = dynamic_cast<AsyncWithNode*>(node)) {
+        for (auto& it : w->items) collectWalrusTargets(it.context_expr.get(), out);
+        return each({w->body.get()});
+    }
+    if (auto* t = dynamic_cast<TryNode*>(node)) {
+        each({t->body.get(), t->orelse.get(), t->finalbody.get()});
+        for (auto& h : t->handlers) each({h.type.get(), h.body.get()});
+        return;
+    }
+    if (auto* m = dynamic_cast<MatchNode*>(node)) {
+        each({m->subject.get()});
+        for (auto& c : m->cases) if (c) each({c->guard.get(), c->body.get()});
+        return;
+    }
+    // Default values and decorators run in this scope; the bodies do not.
+    if (auto* fn = dynamic_cast<FunctionDefNode*>(node)) { eachOf(fn->decorator_list); eachOf(fn->defaults); return eachOf(fn->kw_defaults); }
+    if (auto* fn = dynamic_cast<AsyncFunctionDefNode*>(node)) { eachOf(fn->decorator_list); eachOf(fn->defaults); return eachOf(fn->kw_defaults); }
+    if (auto* lam = dynamic_cast<LambdaNode*>(node)) { eachOf(lam->defaults); return eachOf(lam->kw_defaults); }
+    if (auto* cd = dynamic_cast<ClassDefNode*>(node)) {
+        eachOf(cd->bases); eachOf(cd->decorator_list);
+        for (auto& kw : cd->keywords) collectWalrusTargets(kw.second.get(), out);
+        return;
+    }
+    // Names, constants, comprehensions and the remaining statements hold no
+    // walrus of this scope.
+}
+
 void Compiler::collectLocalsFromBody(ASTNode* body,
     std::unordered_set<std::string>& globalsOut,
     std::unordered_set<std::string>& nonlocalsOut,
@@ -2750,6 +2836,7 @@ void Compiler::collectLocalsFromBody(ASTNode* body,
     // local), in the order of their first binding in the source.
     OrderedNameSet defined;
     collectDefinedNames(body, defined);
+    collectWalrusTargets(body, defined);
 
     // Filter out those explicitly declared global or nonlocal.
     for (const auto& name : defined.order) {
