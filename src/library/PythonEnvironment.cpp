@@ -18601,6 +18601,59 @@ static const proto::ProtoObject* py_code_member_get(
     return nullptr;
 }
 
+// code.replace(**changes): a copy of the code object with the given fields
+// changed (code objects are immutable, so setAttribute answers the copy).
+// types.coroutine uses it to add CO_ITERABLE_COROUTINE to a generator
+// function's flags.  The fields the VM executes from (co_code, co_consts,
+// co_names, co_varnames and the argument counts) hold protoPython's own
+// representation and cannot be replaced; the descriptive ones can.
+static const proto::ProtoObject* py_code_replace(
+    proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !self) return nullptr;
+    if (args && args->getSize(context) > 0) {
+        env->raiseTypeError(context, "replace() takes no positional arguments");
+        return nullptr;
+    }
+    // Keyword keys are the names' hashes, so the fields are looked up by name.
+    const proto::ProtoObject* code = self;
+    proto::proto_ulong matched = 0;
+    static const char* const changeable[] = {"co_flags", "co_firstlineno", "co_name", "co_qualname", "co_filename"};
+    static const char* const fixed[] = {
+        "co_argcount", "co_posonlyargcount", "co_kwonlyargcount", "co_nlocals",
+        "co_stacksize", "co_code", "co_consts", "co_names", "co_varnames",
+        "co_freevars", "co_cellvars", "co_linetable", "co_exceptiontable",
+    };
+    for (const char* f : fixed) {
+        if (kwargs && kwargs->has(context, PythonEnvironment::getInternedString(context, f)->getHash(context))) {
+            env->raiseValueError(context, PythonEnvironment::newStr(context,
+                std::string("code.replace() cannot change ") + f + " in protoPython"));
+            return nullptr;
+        }
+    }
+    for (const char* f : changeable) {
+        const proto::ProtoString* name = PythonEnvironment::getInternedString(context, f);
+        const proto::proto_ulong key = name->getHash(context);
+        if (!kwargs || !kwargs->has(context, key)) continue;
+        ++matched;
+        const proto::ProtoObject* value = kwargs->getAt(context, key);
+        const std::string field(f);
+        const bool intField = field == "co_flags" || field == "co_firstlineno";
+        if (intField ? !value->isInteger(context) : !value->isString(context)) {
+            env->raiseTypeError(context, std::string("replace() argument '") + f + "' must be "
+                + (intField ? "int" : "str"));
+            return nullptr;
+        }
+        code = code->setAttribute(context, name, value);
+    }
+    if (kwargs && kwargs->getSize(context) > matched) {
+        env->raiseTypeError(context, "replace() got an unexpected keyword argument");
+        return nullptr;
+    }
+    return code;
+}
+
 static const proto::ProtoObject* py_code_member_readonly(
     proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
@@ -22516,6 +22569,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                 PythonEnvironment::getInternedString(rootContext_, member), descr);
         }
     }
+    codePrototype = codePrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "replace"),
+        rootContext_->fromMethod(nullptr, py_code_replace));
 
     // V75: Provide class-level attributes for types.py
     const proto::ProtoObject* codeDesc = objectPrototype->newChild(rootContext_, true);

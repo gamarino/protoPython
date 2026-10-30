@@ -56,4 +56,14 @@ async def use_legacy():
 
 
 assert asyncio.run(use_legacy()) == 2
+assert legacy.__code__.co_flags & 0x120 == 0x120  # types.coroutine's replace()
+r = gen.__code__.replace(co_name="renamed", co_flags=gen.__code__.co_flags | 0x100)
+assert r.co_name == "renamed" and r.co_flags & 0x100 and gen.__code__.co_name == "gen"
+for bad in ({"co_code": b""}, {"co_bogus": 1}):
+    try:
+        gen.__code__.replace(**bad)
+    except (ValueError, TypeError):
+        pass
+    else:
+        raise AssertionError("replace accepted %r" % (bad,))
 print("code_flags_cpython: ok")
