@@ -942,6 +942,14 @@ set_tests_properties(protopy_pathlib_package PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# operator applies the language's operators.
+add_test(NAME protopy_operator_module
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/operator_module.py)
+set_tests_properties(protopy_operator_module PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "operator_module: ok"
+    LABELS "regression_gate")
 # copy.copy of tuple/str/bytes/int/float subclass instances keeps the value.
 add_test(NAME protopy_copy_builtin_subclass
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/copy_builtin_subclass.py)

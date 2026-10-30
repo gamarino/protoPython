@@ -22983,7 +22983,6 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // implementation and now wins the import lookup. Same approach
     // taken for heapq and bisect.
     // registerNativeModule(nativeProviderPtr, "logging", [](proto::ProtoContext* ctx) { return logging::initialize(ctx); });
-    registerNativeModule(nativeProviderPtr, "operator", [](proto::ProtoContext* ctx) { return operator_::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "_operator", [](proto::ProtoContext* ctx) { return operator_::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "math", [](proto::ProtoContext* ctx) { return math::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "time", [](proto::ProtoContext* ctx) { return time_module::initialize(ctx); });
