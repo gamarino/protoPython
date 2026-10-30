@@ -6277,6 +6277,19 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_firstlineno"), ctx->fromInteger(firstlineno));
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_lnotab"), lnotab ? reinterpret_cast<const proto::ProtoObject*>(lnotab) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
 
+    // Every attribute the code type exposes as a member (PythonEnvironment:
+    // installCodeMembers) is an own attribute of every code object, so a raw
+    // protoCore read never falls through to the type's descriptor.  The
+    // compiler overwrites these for function bodies (stampArgCounts,
+    // stampClosureLayout, co_qualname); the defaults are CPython's values
+    // for module, class and comprehension code.
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_argcount"), ctx->fromInteger(nparams));
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_posonlyargcount"), ctx->fromInteger(0));
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_freevars"), ctx->newTuple()->asObject(ctx));
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_cellvars"), ctx->newTuple()->asObject(ctx));
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_qualname"), co_name ? co_name->asObject(ctx) : PythonEnvironment::getInternedString(ctx, "<module>")->asObject(ctx));
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_nlocals"), ctx->fromInteger(varnames ? static_cast<long long>(varnames->getSize(ctx)) : 0));
+
     return code;
 }
 

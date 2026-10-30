@@ -18578,6 +18578,41 @@ static const proto::ProtoObject* py_slot_member_delete(
 // these three handlers as `__get__` / `__set__` / `__delete__` on each
 // slot member_descriptor it creates.  Declared in PythonEnvironment.h
 // alongside the existing descriptor-helper exports.
+// code.co_*: read-only members of the code type, as in CPython, so
+// dir(types.CodeType) lists them (unittest.mock's spec_set=CodeType, used by
+// AsyncMock, accepts only the names dir() reports).  The values are own
+// attributes of each code object (makeCodeObject sets all of them); the
+// descriptor reads the instance's own attribute named by its __name__.
+static const proto::ProtoObject* py_code_member_get(
+    proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !self || !args || args->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* instance = args->getAt(context, 0);
+    if (!instance || instance == PROTO_NONE) return self;
+    const proto::ProtoObject* nameAttr = self->getAttribute(context, env->getNameString());
+    if (!nameAttr || !nameAttr->isString(context)) return PROTO_NONE;
+    const proto::ProtoString* nameS = nameAttr->asString(context);
+    if (instance->hasOwnAttribute(context, nameS) == PROTO_TRUE)
+        return instance->getOwnAttributeDirect(context, nameS);
+    std::string nm; nameS->toUTF8String(context, nm);
+    env->raiseAttributeError(context, instance, nm);
+    return nullptr;
+}
+
+static const proto::ProtoObject* py_code_member_readonly(
+    proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return nullptr;
+    std::string nm = "?";
+    const proto::ProtoObject* nameAttr = self ? self->getAttribute(context, env->getNameString()) : nullptr;
+    if (nameAttr && nameAttr->isString(context)) nameAttr->asString(context)->toUTF8String(context, nm);
+    const proto::ProtoObject* instance = (args && args->getSize(context) > 0) ? args->getAt(context, 0) : PROTO_NONE;
+    env->raiseAttributeErrorWithMessage(context, instance, "readonly attribute", nm);
+    return nullptr;
+}
+
 namespace slot_member {
     proto::ProtoMethod get_handler() { return py_slot_member_get; }
     proto::ProtoMethod set_handler() { return py_slot_member_set; }
@@ -22454,6 +22489,31 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             ->appendLast(rootContext_, objectPrototype);
         codePrototype = codePrototype->setAttribute(rootContext_, mroS,
             rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
+    }
+
+    if (memberDescriptorPrototype) {
+        static const char* const codeMembers[] = {
+            "co_argcount", "co_cellvars", "co_code", "co_consts", "co_filename",
+            "co_firstlineno", "co_flags", "co_freevars", "co_kwonlyargcount",
+            "co_lnotab", "co_name", "co_names", "co_nlocals", "co_posonlyargcount",
+            "co_qualname", "co_varnames",
+        };
+        for (const char* member : codeMembers) {
+            proto::ProtoObject* descr = const_cast<proto::ProtoObject*>(
+                memberDescriptorPrototype->newChild(rootContext_, true));
+            const proto::ProtoObject* nameS = PythonEnvironment::getInternedString(rootContext_, member)->asObject(rootContext_);
+            descr->setAttribute(rootContext_, py_class, memberDescriptorPrototype);
+            descr->setAttribute(rootContext_, py_name, nameS);
+            descr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"),
+                PythonEnvironment::getInternedString(rootContext_, (std::string("code.") + member).c_str())->asObject(rootContext_));
+            descr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__objclass__"), codePrototype);
+            descr->setAttribute(rootContext_, getGetDunderString(), rootContext_->fromMethod(nullptr, py_code_member_get));
+            descr->setAttribute(rootContext_, getSetDunderString(), rootContext_->fromMethod(nullptr, py_code_member_readonly));
+            descr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__delete__"),
+                rootContext_->fromMethod(nullptr, py_code_member_readonly));
+            codePrototype = codePrototype->setAttribute(rootContext_,
+                PythonEnvironment::getInternedString(rootContext_, member), descr);
+        }
     }
 
     // V75: Provide class-level attributes for types.py
