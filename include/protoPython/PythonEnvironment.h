@@ -141,6 +141,34 @@ public:
     static const proto::ProtoString* getInternedString(proto::ProtoContext* ctx, const std::string& str);
 
     /**
+     * @brief The interned symbol with @p name's content, for use as an
+     * attribute key.
+     *
+     * Attribute keys are compared by pointer: protoCore canonicalises a
+     * heap-string name on every attribute operation (a content hash and a
+     * walk of the symbol table), while a symbol is used as is.  A name that
+     * becomes an attribute (a class namespace key, setattr's argument) is
+     * interned by protoCore anyway, so interning it first costs nothing more.
+     * Uses ProtoString::intern (protoCore >= 3.2.0), which allocates nothing
+     * for a spelling already interned; on an older protoCore it goes through
+     * getInternedString.
+     */
+    template <class S>
+    static auto internNameImpl(proto::ProtoContext* ctx, const S* name, int)
+        -> decltype(name->intern(ctx)) {
+        return name->intern(ctx);
+    }
+    template <class S>
+    static const S* internNameImpl(proto::ProtoContext* ctx, const S* name, long) {
+        std::string text;
+        name->toUTF8String(ctx, text);
+        return getInternedString(ctx, text);
+    }
+    static const proto::ProtoString* internName(proto::ProtoContext* ctx, const proto::ProtoString* name) {
+        return name ? internNameImpl(ctx, name, 0) : name;
+    }
+
+    /**
      * @brief A new, collectable `str` object holding @p str.
      *
      * The counterpart of getInternedString() for computed data strings: the
