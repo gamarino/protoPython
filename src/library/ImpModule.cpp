@@ -89,7 +89,7 @@ static const proto::ProtoObject* imp_create_builtin(
     if (sysMod && sysMod != PROTO_NONE) {
         const proto::ProtoObject* sysMods = sysMod->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "modules"));
         if (sysMods && sysMods != PROTO_NONE) {
-            const proto::ProtoString* nameStr = nameAttr->isString(ctx) ? nameAttr->asString(ctx) : nullptr;
+            const proto::ProtoString* nameStr = nameAttr->isString(ctx) ? PythonEnvironment::internName(ctx, nameAttr->asString(ctx)) : nullptr;
             if (nameStr) {
                 const proto::ProtoObject* existing = sysMods->getAttribute(ctx, nameStr);
                 if (existing && existing != PROTO_NONE) {

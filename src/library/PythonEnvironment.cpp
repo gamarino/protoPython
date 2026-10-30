@@ -806,6 +806,9 @@ static const proto::ProtoObject* py_mappingproxy_getitem(
                  if (kData && kData->isString(context)) sKey = kData->asString(context);
              }
 
+             // Attribute names are looked up by their interned symbol, as
+             // getattr() does.
+             if (sKey) sKey = PythonEnvironment::internName(context, sKey);
              if (sKey && data->hasOwnAttribute(context, sKey) == PROTO_TRUE) {
                  std::string nmKey;
                  sKey->toUTF8String(context, nmKey);
@@ -883,6 +886,9 @@ static const proto::ProtoObject* py_mappingproxy_contains(
                  if (kData && kData->isString(context)) sKey = kData->asString(context);
              }
 
+             // Attribute names are looked up by their interned symbol, as
+             // getattr() does.
+             if (sKey) sKey = PythonEnvironment::internName(context, sKey);
              if (sKey && data->hasOwnAttribute(context, sKey) == PROTO_TRUE) {
                  // Filter out protoPython-internal bookkeeping names
                  // (matches the keys/values/items filtering) so e.g.
@@ -2193,7 +2199,9 @@ static void instanceDictOwnerSet(proto::ProtoContext* ctx, PythonEnvironment* en
     if (kl && !kl->has(ctx, nm->asObject(ctx))) {
         o->setAttribute(ctx, kS, kl->appendLast(ctx, nm->asObject(ctx))->asObject(ctx));
     }
-    o->setAttribute(ctx, nm, value);
+    // The attribute key is the interned symbol (setAttribute would
+    // canonicalise a heap-string name on every call).
+    o->setAttribute(ctx, PythonEnvironment::internName(ctx, nm), value);
 }
 
 /** `del owner.<name>` as a namespace removal: mirror entry and attribute. */
@@ -17289,15 +17297,24 @@ const proto::ProtoObject* PythonEnvironment::wrapList(proto::ProtoContext* ctx,
     return listObj;
 }
 
+// The attribute of the Python thread object that holds its trace function.
+// getTraceFunction runs on every call and line event, so the key is the
+// interned symbol (perennial), looked up once per process: a heap string made
+// protoCore canonicalise the name on every lookup.
+static const proto::ProtoString* traceFuncKey(proto::ProtoContext* ctx) {
+    static const proto::ProtoString* const key = PythonEnvironment::getInternedString(ctx, "_trace_func");
+    return key;
+}
+
 void PythonEnvironment::setTraceFunction(const proto::ProtoObject* func) {
     if (!s_threadContext) return;
-    const proto::ProtoString* key = proto::ProtoString::fromUTF8(getCurrentContext(), "_trace_func");
+    const proto::ProtoString* key = traceFuncKey(getCurrentContext());
     const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(getCurrentContext(), key, func ? func : PROTO_NONE);
 }
 
 const proto::ProtoObject* PythonEnvironment::getTraceFunction() const {
     if (!s_threadContext) return nullptr;
-    const proto::ProtoString* key = proto::ProtoString::fromUTF8(getCurrentContext(), "_trace_func");
+    const proto::ProtoString* key = traceFuncKey(getCurrentContext());
     const proto::ProtoObject* func = getPyThread(s_threadContext)->getAttribute(s_threadContext, key);
     return func == PROTO_NONE ? nullptr : func;
 }
@@ -18439,7 +18456,9 @@ static void moduleNamespaceSet(proto::ProtoContext* context, PythonEnvironment* 
                                const proto::ProtoObject* value) {
     if (!value) value = PROTO_NONE;
     proto::ProtoObject* target = const_cast<proto::ProtoObject*>(self);
-    target->setAttribute(context, name, value);
+    // The attribute key is the interned symbol (setAttribute would
+    // canonicalise a heap-string name on every call).
+    target->setAttribute(context, PythonEnvironment::internName(context, name), value);
     // STORE_NAME mirrors module globals into __data__, which dict.update()
     // and friends read directly: keep an existing mirror current.
     const proto::ProtoString* dataS = env->getDataString();
@@ -24633,10 +24652,10 @@ std::string PythonEnvironment::formatTraceback(const proto::ProtoContext* ctx, c
     };
     std::vector<const proto::ProtoObject*> tracebacks;
     if (exc && exc != PROTO_NONE) {
-        const proto::ProtoObject* tb = exc->getAttribute(nonConstCtx, proto::ProtoString::fromUTF8(nonConstCtx, "__traceback__"));
+        const proto::ProtoObject* tb = exc->getAttribute(nonConstCtx, PythonEnvironment::getInternedString(nonConstCtx, "__traceback__"));
         while (!isEnd(tb)) {
             tracebacks.push_back(tb);
-            tb = tb->getAttribute(nonConstCtx, proto::ProtoString::fromUTF8(nonConstCtx, "tb_next"));
+            tb = tb->getAttribute(nonConstCtx, PythonEnvironment::getInternedString(nonConstCtx, "tb_next"));
             if (tracebacks.size() > 50) break; // Safety limit
         }
     }
@@ -24676,8 +24695,8 @@ std::string PythonEnvironment::formatTraceback(const proto::ProtoContext* ctx, c
         std::string funcName = "<module>";
         int lineno = 0;
         
-        const proto::ProtoObject* f = tb->getAttribute(nonConstCtx, proto::ProtoString::fromUTF8(nonConstCtx, "tb_frame"));
-        const proto::ProtoObject* linenoObj = tb->getAttribute(nonConstCtx, proto::ProtoString::fromUTF8(nonConstCtx, "tb_lineno"));
+        const proto::ProtoObject* f = tb->getAttribute(nonConstCtx, PythonEnvironment::getInternedString(nonConstCtx, "tb_frame"));
+        const proto::ProtoObject* linenoObj = tb->getAttribute(nonConstCtx, PythonEnvironment::getInternedString(nonConstCtx, "tb_lineno"));
         if (linenoObj && linenoObj->isInteger(nonConstCtx)) {
             lineno = static_cast<int>(linenoObj->asLong(nonConstCtx));
         }
@@ -24690,7 +24709,7 @@ std::string PythonEnvironment::formatTraceback(const proto::ProtoContext* ctx, c
                     fileObj->asString(nonConstCtx)->toUTF8String(nonConstCtx, filename);
                 }
                 
-                const proto::ProtoObject* nameObj = codeObj->getAttribute(nonConstCtx, proto::ProtoString::fromUTF8(nonConstCtx, "co_name"));
+                const proto::ProtoObject* nameObj = codeObj->getAttribute(nonConstCtx, PythonEnvironment::getInternedString(nonConstCtx, "co_name"));
                 if (nameObj && nameObj->isString(nonConstCtx)) {
                     nameObj->asString(nonConstCtx)->toUTF8String(nonConstCtx, funcName);
                 }

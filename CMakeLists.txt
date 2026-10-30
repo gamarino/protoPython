@@ -468,6 +468,14 @@ add_test(NAME protopy_load_method_pic_receivers
 set_tests_properties(protopy_load_method_pic_receivers PROPERTIES
     TIMEOUT 60
     LABELS "regression_gate")
+# Run-time attribute names are interned symbols.
+add_test(NAME protopy_interned_attribute_names
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/interned_attribute_names.py)
+set_tests_properties(protopy_interned_attribute_names PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "interned_attribute_names: ok"
+    LABELS "regression_gate")
 # threading.Thread.join() must wait for the thread to finish.
 add_test(NAME protopy_thread_join_waits
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/thread_join_waits.py)

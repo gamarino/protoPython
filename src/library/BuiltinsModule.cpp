@@ -5607,7 +5607,8 @@ static const proto::ProtoObject* py_hasattr(
             "hasattr(): attribute name must be string");
         return nullptr;
     }
-    const proto::ProtoString* nameStr = nameObj->asString(context);
+    // Looked up by its interned symbol, as getattr() does.
+    const proto::ProtoString* nameStr = PythonEnvironment::internName(context, nameObj->asString(context));
 
     std::string nString;
     nameStr->toUTF8String(context, nString);
@@ -7247,7 +7248,13 @@ const proto::ProtoObject* py_type(
                         continue;
                     }
                     if (keyObj && keyObj->isString(context)) {
-                        const proto::ProtoString* k = keyObj->asString(context);
+                        // The name as its interned symbol: it becomes an
+                        // attribute key (setAttribute would canonicalise a
+                        // heap string on every call anyway), and __keys__
+                        // keeps the symbol, so later passes over it look the
+                        // attributes up by pointer.
+                        const proto::ProtoString* k = PythonEnvironment::internName(context, keyObj->asString(context));
+                        keyObj = k->asObject(context);
 
                         // Skip keys that py_type sets explicitly or that are internal storage
                         // primitives — these must never be overwritten from classdict, even if
