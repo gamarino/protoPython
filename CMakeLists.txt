@@ -522,6 +522,14 @@ set_tests_properties(protopy_frame_f_back_after_return PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 60
     LABELS "regression_gate")
+# The code type lists its co_* members.
+add_test(NAME protopy_code_type_members
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/code_type_members.py)
+set_tests_properties(protopy_code_type_members PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "code_type_members: ok"
+    LABELS "regression_gate")
 # What native helpers (iteration, exceptions) allocate during a call must be
 # collectable while the caller runs; under a 2.5 M-cell fixed limit this ran
 # out of memory when they allocated in the module's context.
@@ -615,6 +623,14 @@ add_test(NAME protopy_functools_cmp_to_key
 set_tests_properties(protopy_functools_cmp_to_key PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
+    LABELS "regression_gate")
+# Creating a class with a large namespace is linear.
+add_test(NAME protopy_namedtuple_large_size
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/namedtuple_large_size.py)
+set_tests_properties(protopy_namedtuple_large_size PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "namedtuple_large_size: ok"
     LABELS "regression_gate")
 # vars(o) is o's namespace: deleting, popping and clearing through it remove attributes.
 add_test(NAME protopy_vars_namespace_writes
@@ -779,6 +795,14 @@ add_test(NAME protopy_io_open_code
 set_tests_properties(protopy_io_open_code PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
+    LABELS "regression_gate")
+# agen.athrow() returns an awaitable that throws when driven.
+add_test(NAME protopy_async_gen_athrow
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/async_gen_athrow.py)
+set_tests_properties(protopy_async_gen_athrow PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "async_gen_athrow: ok"
     LABELS "regression_gate")
 # sys.path_hooks / sys.path_importer_cache, PEP 420 namespace packages, an
 # nspkg .pth namespace package and pkgutil.iter_modules.
@@ -1452,6 +1476,14 @@ set_tests_properties(protopy_system_exit_code PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# gi_suspended and cr_suspended track a generator stopped at a yield.
+add_test(NAME protopy_generator_suspended_state
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/generator_suspended_state.py)
+set_tests_properties(protopy_generator_suspended_state PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "generator_suspended_state: ok"
+    LABELS "regression_gate")
 # An uncaught SystemExit sets the process exit status: an int is the status,
 # None is 0, anything else is printed to stderr and exits with 1.
 foreach(exit_case IN ITEMS raise_int:3 raise_from_main:5 sys_exit_int:4 raise_str:1 sys_exit_str:1 raise_bare:0)
@@ -1559,6 +1591,14 @@ add_test(NAME protopy_list_subclass_init
 set_tests_properties(protopy_list_subclass_init PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
+    LABELS "regression_gate")
+# The native reduce follows CPython's signature.
+add_test(NAME protopy_functools_reduce_args
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/functools_reduce_args.py)
+set_tests_properties(protopy_functools_reduce_args PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "functools_reduce_args: ok"
     LABELS "regression_gate")
 # __init_subclass__ runs once for type(), types.new_class() and metaclasses.
 add_test(NAME protopy_init_subclass_dynamic

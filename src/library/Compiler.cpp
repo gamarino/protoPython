@@ -4688,13 +4688,13 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     // but ONLY if they are actually available as locals or nonlocals in the
     // enclosing scope. Names that appear only in module-level globals or builtins
     // must NOT become LOAD_DEREF in this function — they remain LOAD_GLOBAL/LOAD_NAME.
+    std::unordered_set<std::string> ownNames(params.begin(), params.end());
+    ownNames.insert(n->kwonlyargs.begin(), n->kwonlyargs.end());
+    if (!n->vararg.empty()) ownNames.insert(n->vararg);
+    if (!n->kwarg.empty()) ownNames.insert(n->kwarg);
+    ownNames.insert(localsOrdered.begin(), localsOrdered.end());
     for (const auto& c : captured) {
-        bool isLocal = false;
-        for (const auto& p : params) if (p == c) isLocal = true;
-        for (const auto& kw : n->kwonlyargs) if (kw == c) isLocal = true;
-        if (n->vararg == c) isLocal = true;
-        if (n->kwarg == c) isLocal = true;
-        for (const auto& l : localsOrdered) if (l == c) isLocal = true;
+        const bool isLocal = ownNames.count(c) != 0;
         if (!isLocal) {
             // Only treat as nonlocal if the outer scope actually has it as a
             // local or nonlocal (i.e. it can be closed over via a cell).
@@ -4765,10 +4765,11 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     }
 
     // 4. Then other locals
-    for (const auto& loc : localsOrdered) {
-        bool alreadyIn = false;
-        for (const auto& v : varnamesOrdered) if (v == loc) alreadyIn = true;
-        if (!alreadyIn) varnamesOrdered.push_back(loc);
+    {
+        std::unordered_set<std::string> inVarnames(varnamesOrdered.begin(), varnamesOrdered.end());
+        for (const auto& loc : localsOrdered) {
+            if (inVarnames.insert(loc).second) varnamesOrdered.push_back(loc);
+        }
     }
 
     std::unordered_map<std::string, int> slotMap;
@@ -5102,12 +5103,15 @@ bool Compiler::compileLambda(LambdaNode* n) {
     // and the lambda silently treats `x` as None.  Mirrors the
     // compileFunctionDef logic added later in this file.
     std::unordered_set<std::string> bodyNonlocals;
+    // A set, not a scan of the parameter list per captured name: that was
+    // quadratic in the parameter count (namedtuple's __new__ is a lambda
+    // with one parameter per field).
+    std::unordered_set<std::string> paramNames(params.begin(), params.end());
+    paramNames.insert(n->kwonlyargs.begin(), n->kwonlyargs.end());
+    if (!n->vararg.empty()) paramNames.insert(n->vararg);
+    if (!n->kwarg.empty()) paramNames.insert(n->kwarg);
     for (const auto& c : captured) {
-        bool isParam = false;
-        for (const auto& p : params) if (p == c) isParam = true;
-        for (const auto& kw : n->kwonlyargs) if (kw == c) isParam = true;
-        if (n->vararg == c) isParam = true;
-        if (n->kwarg == c) isParam = true;
+        const bool isParam = paramNames.count(c) != 0;
         if (!isParam) {
             bool isInOuterScope = localSlotMap_.count(c) || definedLocals_.count(c) || nonlocalNames_.count(c);
             if (isInOuterScope) bodyNonlocals.insert(c);
@@ -5300,13 +5304,13 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
     // resolve via LOAD_GLOBAL, not LOAD_DEREF, otherwise `print(...)` inside
     // an `async def` resolves to the wrong slot and TypeErrors at call.
     // This mirrors the logic in compileFunctionDef.
+    std::unordered_set<std::string> ownNames(params.begin(), params.end());
+    ownNames.insert(n->kwonlyargs.begin(), n->kwonlyargs.end());
+    if (!n->vararg.empty()) ownNames.insert(n->vararg);
+    if (!n->kwarg.empty()) ownNames.insert(n->kwarg);
+    ownNames.insert(localsOrdered.begin(), localsOrdered.end());
     for (const auto& c : captured) {
-        bool isLocal = false;
-        for (const auto& p : params) if (p == c) isLocal = true;
-        for (const auto& kw : n->kwonlyargs) if (kw == c) isLocal = true;
-        if (n->vararg == c) isLocal = true;
-        if (n->kwarg == c) isLocal = true;
-        for (const auto& l : localsOrdered) if (l == c) isLocal = true;
+        const bool isLocal = ownNames.count(c) != 0;
         if (!isLocal) {
             bool isInOuterScope = localSlotMap_.count(c) || definedLocals_.count(c) || nonlocalNames_.count(c);
             if (isInOuterScope) bodyNonlocals.insert(c);
@@ -5351,10 +5355,11 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
     }
 
     // 4. Then other locals
-    for (const auto& loc : localsOrdered) {
-        bool alreadyIn = false;
-        for (const auto& v : varnamesOrdered) if (v == loc) alreadyIn = true;
-        if (!alreadyIn) varnamesOrdered.push_back(loc);
+    {
+        std::unordered_set<std::string> inVarnames(varnamesOrdered.begin(), varnamesOrdered.end());
+        for (const auto& loc : localsOrdered) {
+            if (inVarnames.insert(loc).second) varnamesOrdered.push_back(loc);
+        }
     }
 
     std::unordered_map<std::string, int> slotMap;
@@ -6279,6 +6284,19 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_firstlineno"), ctx->fromInteger(firstlineno));
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_lnotab"), lnotab ? reinterpret_cast<const proto::ProtoObject*>(lnotab) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
+
+    // Every attribute the code type exposes as a member (PythonEnvironment:
+    // installCodeMembers) is an own attribute of every code object, so a raw
+    // protoCore read never falls through to the type's descriptor.  The
+    // compiler overwrites these for function bodies (stampArgCounts,
+    // stampClosureLayout, co_qualname); the defaults are CPython's values
+    // for module, class and comprehension code.
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_argcount"), ctx->fromInteger(nparams));
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_posonlyargcount"), ctx->fromInteger(0));
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_freevars"), ctx->newTuple()->asObject(ctx));
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_cellvars"), ctx->newTuple()->asObject(ctx));
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_qualname"), co_name ? co_name->asObject(ctx) : PythonEnvironment::getInternedString(ctx, "<module>")->asObject(ctx));
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_nlocals"), ctx->fromInteger(varnames ? static_cast<long long>(varnames->getSize(ctx)) : 0));
 
     return code;
 }

@@ -54,6 +54,7 @@ add_library(protoPython SHARED
     FcntlModule.cpp
     SelectModule.cpp
     BisectModule.cpp
+    MersenneTwisterModule.cpp
     FaulthandlerModule.cpp
 )
 protopython_warnings(protoPython)
