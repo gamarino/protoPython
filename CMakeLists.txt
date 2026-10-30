@@ -624,6 +624,14 @@ set_tests_properties(protopy_functools_cmp_to_key PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# Creating a class with a large namespace is linear.
+add_test(NAME protopy_namedtuple_large_size
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/namedtuple_large_size.py)
+set_tests_properties(protopy_namedtuple_large_size PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "namedtuple_large_size: ok"
+    LABELS "regression_gate")
 # vars(o) is o's namespace: deleting, popping and clearing through it remove attributes.
 add_test(NAME protopy_vars_namespace_writes
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/vars_namespace_writes.py)

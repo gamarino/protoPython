@@ -12,6 +12,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 #include <algorithm>
 #include <memory>
@@ -7129,6 +7130,13 @@ const proto::ProtoObject* py_type(
                 fprintf(stderr, "DEBUG py_type: dict=%p keysObj=%p keysList=%p\n", (void*)dict, (void*)keysObj, (void*)keysList);
             }
             if (keysList) {
+                // The class's own __keys__, as text, for the membership test
+                // below: a linear ProtoList::has() per namespace entry made
+                // creating a class quadratic in its namespace size
+                // (namedtuple with 150,000 fields never finished).  Rebuilt
+                // whenever __keys__ is not the list this loop last stored.
+                std::unordered_set<std::string> classKeyTexts;
+                const proto::ProtoList* classKeysTracked = nullptr;
                 for (size_t i = 0; i < keysList->getSize(context); ++i) {
                     const proto::ProtoObject* keyObj = keysList->getAt(context, static_cast<int>(i));
 
@@ -7371,8 +7379,23 @@ const proto::ProtoObject* py_type(
                             if (tKeysObj == PROTO_NONE) tKeysObj = nullptr;
                             const proto::ProtoList* tKeysList = tKeysObj ? ::protoPython::listStorage(context, tKeysObj) : nullptr;
                             if (tKeysList) {
-                                if (!tKeysList->has(context, keyObj)) {
-                                    targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, keysName, tKeysList->appendLast(context, keyObj)->asObject(context)));
+                                if (tKeysList != classKeysTracked) {
+                                    classKeyTexts.clear();
+                                    const proto::proto_ulong nk = tKeysList->getSize(context);
+                                    for (proto::proto_ulong j = 0; j < nk; ++j) {
+                                        const proto::ProtoObject* e = tKeysList->getAt(context, static_cast<int>(j));
+                                        if (e && e->isString(context)) {
+                                            std::string es; e->asString(context)->toUTF8String(context, es);
+                                            classKeyTexts.insert(std::move(es));
+                                        }
+                                    }
+                                    classKeysTracked = tKeysList;
+                                }
+                                std::string ks; k->toUTF8String(context, ks);
+                                if (classKeyTexts.insert(ks).second) {
+                                    tKeysList = tKeysList->appendLast(context, keyObj);
+                                    classKeysTracked = tKeysList;
+                                    targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, keysName, tKeysList->asObject(context)));
                                 }
                             } else {
                                 const proto::ProtoList* newList = context->newList()->appendLast(context, keyObj);
