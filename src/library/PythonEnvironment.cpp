@@ -13393,10 +13393,14 @@ static const proto::ProtoObject* py_str_format(
                 size_t end = ti + 1;
                 while (end < tail.size() && tail[end] != '.' && tail[end] != '[') ++end;
                 std::string attrName = tail.substr(ti + 1, end - ti - 1);
-                if (val && val != PROTO_NONE) {
+                // getattr(val, name): descriptors apply ("{0.real}" is the
+                // int, not the member descriptor) and a missing name raises
+                // AttributeError.
+                if (val && env) {
                     const proto::ProtoString* nm = PythonEnvironment::getInternedString(context, attrName.c_str());
-                    const proto::ProtoObject* next = val->getAttribute(context, nm);
-                    val = next ? next : PROTO_NONE;
+                    const proto::ProtoObject* next = env->getAttribute(context, val, nm);
+                    if (!next) return nullptr;
+                    val = next;
                 }
                 ti = end;
             } else if (tail[ti] == '[') {
@@ -13499,7 +13503,8 @@ static const proto::ProtoObject* py_str_format_map(
     const proto::ProtoKeywordArguments* keywordParameters) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::proto_ulong argc = positionalParameters ? positionalParameters->getSize(context) : 0;
-    if (argc != 1 || keywordParameters) {
+    const bool hasKeywords = keywordParameters && keywordParameters->getSize(context) > 0;
+    if (argc != 1 || hasKeywords) {
         if (env) env->raiseTypeError(context, argc == 1
             ? "format_map() takes no keyword arguments"
             : "format_map() takes exactly one argument (" + std::to_string(argc) + " given)");
