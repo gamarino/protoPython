@@ -597,6 +597,12 @@ public:
     /** `method` (a native method found on the class of `instance`) bound to
      *  `instance`: a compiled function (isCompiledFunction) becomes a Python
      *  bound method, any other native method is rebound to the instance. */
+    /** A bound method answers __module__ and __doc__ from its function, as
+     *  CPython's method_getattro does: the method type's own values
+     *  ('builtins', None) are not the bound method's.  Returns `bound` with
+     *  the function's values stored on it. */
+    const proto::ProtoObject* stampBoundMethodMetadata(proto::ProtoContext* ctx, const proto::ProtoObject* bound,
+                                                       const proto::ProtoObject* func) const;
     const proto::ProtoObject* bindNativeMethod(proto::ProtoContext* ctx, const proto::ProtoObject* method,
                                                const proto::ProtoObject* instance);
 

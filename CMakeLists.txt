@@ -698,6 +698,14 @@ set_tests_properties(protopy_class_getattr_hook PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "class_getattr_hook: ok"
     LABELS "regression_gate")
+# A fork child runs Python code and exits.
+add_test(NAME protopy_fork_child_runs
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/fork_child_runs.py)
+set_tests_properties(protopy_fork_child_runs PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "fork_child_runs: ok"
+    LABELS "regression_gate")
 # math.isclose: NaN is never close; keyword-only, non-negative tolerances.
 add_test(NAME protopy_math_isclose
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/math_isclose.py)
@@ -856,13 +864,13 @@ set_tests_properties(protopy_deep_recursion_raises PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "deep_recursion_raises: ok"
     LABELS "regression_gate")
-# A fork child runs Python code and exits.
-add_test(NAME protopy_fork_child_runs
-    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/fork_child_runs.py)
-set_tests_properties(protopy_fork_child_runs PROPERTIES
+# A bound method answers __module__ and __doc__ from its function.
+add_test(NAME protopy_bound_method_module_doc
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/bound_method_module_doc.py)
+set_tests_properties(protopy_bound_method_module_doc PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
-    PASS_REGULAR_EXPRESSION "fork_child_runs: ok"
+    PASS_REGULAR_EXPRESSION "bound_method_module_doc: ok"
     LABELS "regression_gate")
 # Walking f_back ends in None at the main module.
 add_test(NAME protopy_frame_chain_ends_in_none
