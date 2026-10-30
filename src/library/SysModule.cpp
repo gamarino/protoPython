@@ -1134,7 +1134,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
 #endif
         "nt", "time", "_thread",
         "_signal", "re", "_weakref", "_warnings", "_collections", "logging",
-        "operator", "_operator", "math", "_functools", "itertools", "json",
+        "_operator", "math", "_functools", "itertools", "json",
         "atexit", "exceptions", "_codecs", "_ast", "errno", "stat",
         "_collections_abc"
     };
