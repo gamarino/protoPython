@@ -827,6 +827,31 @@ static const proto::ProtoObject* py_is_alive(
     return PROTO_FALSE;
 }
 
+// _thread.stack_size([size]) -> the previous size: the stack size of the
+// threads started from now on (protoCore's ProtoSpace::setThreadStackBytes).
+// 0 means the platform's default; anything else must be at least 32 KiB,
+// as in CPython.
+static const proto::ProtoObject* py_stack_size(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
+    const long long previous = static_cast<long long>(proto::ProtoSpace::threadStackBytes());
+    if (posArgs && posArgs->getSize(ctx) > 0) {
+        const proto::ProtoObject* sizeObj = posArgs->getAt(ctx, 0);
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (!sizeObj || !sizeObj->isInteger(ctx)) {
+            if (env) env->raiseTypeError(ctx, "size must be an integer");
+            return nullptr;
+        }
+        const long long size = sizeObj->asLong(ctx);
+        if (size != 0 && size < 32768) {
+            if (env) env->raiseValueError(ctx, proto::ProtoString::fromUTF8(ctx, ("size not valid: " + std::to_string(size) + " bytes").c_str())->asObject(ctx));
+            return nullptr;
+        }
+        proto::ProtoSpace::setThreadStackBytes(static_cast<size_t>(size));
+    }
+    return ctx->fromInteger(previous);
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(false);
     
@@ -868,6 +893,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getpid));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "log_thread_ident"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_log_thread_ident));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "stack_size"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_stack_size));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "allocate_lock"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_allocate_lock));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_lock_acquire"),
