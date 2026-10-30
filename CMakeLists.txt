@@ -1027,6 +1027,14 @@ set_tests_properties(protopy_oserror_errno_subclass PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# struct.pack checks each value's range and type.
+add_test(NAME protopy_struct_pack_range
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/struct_pack_range.py)
+set_tests_properties(protopy_struct_pack_range PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "struct_pack_range: ok"
+    LABELS "regression_gate")
 # open() with a path in "w", "a" or "x" mode writes to the file.
 add_test(NAME protopy_io_open_write_modes
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/io_open_write_modes.py)
