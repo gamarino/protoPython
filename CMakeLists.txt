@@ -951,6 +951,14 @@ set_tests_properties(protopy_platform_version PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# bytes % args formats as PEP 461 says.
+add_test(NAME protopy_bytes_percent_format
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/bytes_percent_format.py)
+set_tests_properties(protopy_bytes_percent_format PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "bytes_percent_format: ok"
+    LABELS "regression_gate")
 # os.pipe is non-inheritable; Popen with a stdin pipe does not wait for the child.
 add_test(NAME protopy_os_pipe_subprocess_stdin
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/os_pipe_subprocess_stdin.py)
@@ -998,6 +1006,14 @@ set_tests_properties(protopy_callable_with_code_attr PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "callable_with_code_attr: ok"
+    LABELS "regression_gate")
+# StringIO methods called through the class use the instance.
+add_test(NAME protopy_stringio_unbound_methods
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/stringio_unbound_methods.py)
+set_tests_properties(protopy_stringio_unbound_methods PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "stringio_unbound_methods: ok"
     LABELS "regression_gate")
 # import pathlib loads the standard library package (Path is callable).
 add_test(NAME protopy_pathlib_package
@@ -1050,12 +1066,28 @@ set_tests_properties(protopy_io_open_write_modes PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# binascii rejects data that is not bytes-like.
+add_test(NAME protopy_binascii_argument_types
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/binascii_argument_types.py)
+set_tests_properties(protopy_binascii_argument_types PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "binascii_argument_types: ok"
+    LABELS "regression_gate")
 # io.text_encoding follows CPython; Path.read_text and write_text work.
 add_test(NAME protopy_io_text_encoding
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/io_text_encoding.py)
 set_tests_properties(protopy_io_text_encoding PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
+    LABELS "regression_gate")
+# _functools.cmp_to_key is a builtin.
+add_test(NAME protopy_functools_native_cmp_to_key
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/functools_native_cmp_to_key.py)
+set_tests_properties(protopy_functools_native_cmp_to_key PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "functools_native_cmp_to_key: ok"
     LABELS "regression_gate")
 # os.DirEntry.is_junction exists; os.walk, shutil.rmtree and TemporaryDirectory work.
 add_test(NAME protopy_direntry_is_junction
