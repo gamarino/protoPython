@@ -919,6 +919,14 @@ set_tests_properties(protopy_os_exec_argument_checks PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "os_exec_argument_checks: ok"
     LABELS "regression_gate")
+# Calling an instance with its own __code__ runs __call__.
+add_test(NAME protopy_callable_with_code_attr
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/callable_with_code_attr.py)
+set_tests_properties(protopy_callable_with_code_attr PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "callable_with_code_attr: ok"
+    LABELS "regression_gate")
 # import pathlib loads the standard library package (Path is callable).
 add_test(NAME protopy_pathlib_package
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/pathlib_package.py)

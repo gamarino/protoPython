@@ -3037,8 +3037,14 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
     // (set in createUserFunction). Avoid the expensive getType + getAttribute(__call__) path.
     // A class whose namespace binds `__code__` (annotationlib.ForwardRef
     // declares it in __slots__) is not a function: it takes the class path.
+    // Nor is an instance that stores a `__code__` of its own without
+    // `__globals__` (unittest.mock's AsyncMock stores a mock code object so
+    // inspect sees a coroutine function): runUserFunctionCall needs both
+    // and answered None for it, so `AsyncMock(...)(...)` returned None
+    // instead of calling the mock's __call__.
     if (env && env->getCodeString() &&
         callable->hasOwnAttribute(ctx, env->getCodeString()) == PROTO_TRUE &&
+        callable->hasOwnAttribute(ctx, env->getGlobalsString()) == PROTO_TRUE &&
         callable->hasOwnAttribute(ctx, env->getIsPythonClassString()) != PROTO_TRUE) {
         return runUserFunctionCall(ctx, callable, nullptr, argsView(proto::ProtoListArguments(ctx, args)), kwargsView(proto::ProtoSparseListKeywordArguments(ctx, kwargs)));
     }
@@ -10482,13 +10488,25 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             if (stack.empty()) { i = next_i; continue; }
             const proto::ProtoObject* obj = stack.back();
             stack.pop_back();
-            // In a robust implementation, we'd check if obj is already a coroutine.
-            // For now, try __await__ or just keep as is if it has a send method.
+            // obj.__await__(), or obj itself when it is generator-like (a
+            // generator-based coroutine has send but no __await__).  Anything
+            // else cannot be awaited: `await None` used to push None and spin
+            // in YIELD_FROM forever.
             const proto::ProtoString* awaitS = env ? env->getAwaitString() : PythonEnvironment::getInternedString(ctx, "__await__");
             const proto::ProtoObject* awaitable = invokeDunder(ctx, obj, awaitS, ctx->newList());
             if (awaitable) {
                 stack.push_back(awaitable);
             } else {
+                const proto::ProtoObject* send = (env && obj && obj != PROTO_NONE)
+                    ? obj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "send")) : nullptr;
+                if (env && (!send || send == PROTO_NONE)) {
+                    const proto::ProtoObject* type = env->getType(ctx, obj);
+                    const proto::ProtoObject* name = type ? type->getAttribute(ctx, env->getNameString()) : nullptr;
+                    std::string typeName = "object";
+                    if (name && name->isString(ctx)) name->asString(ctx)->toUTF8String(ctx, typeName);
+                    env->raiseTypeError(ctx, "'" + typeName + "' object can't be awaited");
+                    continue;
+                }
                 stack.push_back(obj);
             }
         } break;
