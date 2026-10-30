@@ -3386,6 +3386,33 @@ static void setGeneratorSuspended(proto::ProtoContext* ctx, const proto::ProtoOb
     }
 }
 
+// PEP 479: StopIteration raised out of a generator's or a coroutine's body
+// (and StopAsyncIteration out of an async generator's) becomes RuntimeError,
+// with the original as __cause__ and __context__.  Without it a stray
+// StopIteration silently ended the consumer's loop.
+[[noreturn]] static void raiseStopIterationAsRuntimeError(
+        proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* gen,
+        const proto::ProtoException& e) {
+    const proto::ProtoObject* exc = e.value();
+    const bool isAsyncGen = gen->hasOwnAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "ag_code")) == PROTO_TRUE;
+    const bool isCoro = !isAsyncGen && gen->hasOwnAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "cr_code")) == PROTO_TRUE;
+    const bool stopIteration = env->isStopIteration(ctx, exc);
+    const bool stopAsync = !stopIteration && isAsyncGen && env->getStopAsyncIterationType()
+        && e.isInstanceOf(ctx, env->getStopAsyncIterationType());
+    if ((!stopIteration && !stopAsync) || !env->getRuntimeErrorType()) throw;
+    std::string msg = isAsyncGen ? "async generator" : (isCoro ? "coroutine" : "generator");
+    msg += stopIteration ? " raised StopIteration" : " raised StopAsyncIteration";
+    const proto::ProtoObject* rt = invokePythonCallable(ctx, env->getRuntimeErrorType(),
+        ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx)),
+        nullptr);
+    if (!rt || rt == PROTO_NONE) throw;
+    rt->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__cause__"), exc);
+    rt->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__context__"), exc);
+    throw PyException(env, rt);
+}
+
 static const proto::ProtoObject* py_generator_resume(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
@@ -3590,12 +3617,12 @@ static const proto::ProtoObject* py_generator_resume(
                 &finalTop,
                 nullptr, nullptr, nullptr,
                 throwExc);
-        } catch (const proto::ProtoException&) {
+        } catch (const proto::ProtoException& e) {
             // An exception out of the body finishes the generator.
             self->setAttribute(ctx, env->getGiRunningString(), PROTO_FALSE);
             setGeneratorSuspended(ctx, self, /*running=*/false, /*suspended=*/false);
             self->setAttribute(ctx, env->getGiPCString(), ctx->fromInteger(co_code_tuple->getSize(ctx)));
-            throw;
+            raiseStopIterationAsRuntimeError(ctx, env, self, e);
         }
 
         // Save the variable slots only, [0, stackOffset): the operand stack

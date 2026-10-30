@@ -1710,6 +1710,7 @@ public:
     const proto::ProtoObject* getBuiltinFunctionOrMethodPrototype() const { return builtinFunctionOrMethodPrototype; }
     const proto::ProtoObject* getUnionTypePrototype() const { return unionTypePrototype; }
     const proto::ProtoObject* getStopAsyncIterationType() const { return stopAsyncIterationType; }
+    const proto::ProtoObject* getRuntimeErrorType() const { return runtimeErrorType; }
     /** Process-singleton "unbound local" sentinel.  Compiler stores this
         into CO_OPTIMIZED slots that correspond to annotation-only locals
         (`x: int` with no initial value).  LOAD_FAST detects it and raises

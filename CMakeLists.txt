@@ -1468,6 +1468,14 @@ set_tests_properties(protopy_generator_suspended_state PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "generator_suspended_state: ok"
     LABELS "regression_gate")
+# StopIteration escaping a generator body becomes RuntimeError (PEP 479).
+add_test(NAME protopy_generator_stopiteration_pep479
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/generator_stopiteration_pep479.py)
+set_tests_properties(protopy_generator_stopiteration_pep479 PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "generator_stopiteration_pep479: ok"
+    LABELS "regression_gate")
 # An uncaught SystemExit sets the process exit status: an int is the status,
 # None is 0, anything else is printed to stderr and exits with 1.
 foreach(exit_case IN ITEMS raise_int:3 raise_from_main:5 sys_exit_int:4 raise_str:1 sys_exit_str:1 raise_bare:0)
