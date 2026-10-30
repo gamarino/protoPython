@@ -468,6 +468,14 @@ add_test(NAME protopy_load_method_pic_receivers
 set_tests_properties(protopy_load_method_pic_receivers PROPERTIES
     TIMEOUT 60
     LABELS "regression_gate")
+# Unequal dict keys with one hash stay distinct; equal ones are one key.
+add_test(NAME protopy_dict_equal_hash_keys
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/dict_equal_hash_keys.py)
+set_tests_properties(protopy_dict_equal_hash_keys PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "dict_equal_hash_keys: ok"
+    LABELS "regression_gate")
 # Run-time attribute names are interned symbols.
 add_test(NAME protopy_interned_attribute_names
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/interned_attribute_names.py)

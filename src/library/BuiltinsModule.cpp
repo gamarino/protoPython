@@ -44,6 +44,8 @@ static void requireArgs(proto::ProtoContext* context, const proto::ProtoArgument
 // key from the namespace dict's __data__ SparseList; that data is
 // keyed by pyDictKeyHash, not by the bare pointer.
 proto::proto_ulong pyDictKeyHash(proto::ProtoContext* context, const proto::ProtoObject* key);
+const proto::ProtoObject* pyDictStoredValue(proto::ProtoContext* context, const proto::ProtoSparseList* data,
+                                            const proto::ProtoObject* storedKey);
 
 namespace builtins {
 
@@ -7213,10 +7215,7 @@ const proto::ProtoObject* py_type(
                             // The bare-pointer encoding used elsewhere in
                             // this function is for string keys where the
                             // pointer-identity hash happens to coincide.
-                            proto::proto_ulong h = ::protoPython::pyDictKeyHash(context, keyObj);
-                            if (dictOwn->has(context, h)) {
-                                val = dictOwn->getAt(context, h);
-                            }
+                            val = ::protoPython::pyDictStoredValue(context, dictOwn, keyObj);
                             const proto::ProtoString* nseS =
                                 PythonEnvironment::getInternedString(context, "__nonstring_entries__");
                             // Read the underlying raw list out of any
