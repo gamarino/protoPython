@@ -13287,6 +13287,10 @@ static const proto::ProtoObject* py_str_format(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
+    // Taken once: nothing this call runs (a value's __format__, a
+    // __getitem__) formats with the format_map mapping of this call.
+    const proto::ProtoObject* fmtMapping = t_formatMapping;
+    t_formatMapping = nullptr;
     int formatPosOff = 0;
     const proto::ProtoString* str = str_from_self_or_arg(context, self, positionalParameters, &formatPosOff);
     if (!str) return PROTO_NONE;
@@ -13360,15 +13364,11 @@ static const proto::ProtoObject* py_str_format(
             proto::proto_ulong idx = std::stoul(baseName) + static_cast<proto::proto_ulong>(formatPosOff);
             if (positionalParameters && idx < positionalParameters->getSize(context))
                 val = positionalParameters->getAt(context, static_cast<int>(idx));
-        } else if (t_formatMapping && env) {
+        } else if (fmtMapping && env) {
             // str.format_map(mapping): mapping[name], read through
             // __getitem__ (a dict subclass's __missing__ applies; a missing
-            // key raises KeyError).  Nested format_map calls made by the
-            // looked-up value's __format__ do not see this mapping.
-            const proto::ProtoObject* mapping = t_formatMapping;
-            t_formatMapping = nullptr;
-            struct Restore { const proto::ProtoObject* m; ~Restore() { t_formatMapping = m; } } restore{mapping};
-            const proto::ProtoObject* getitem = env->getAttribute(context, mapping,
+            // key raises KeyError).
+            const proto::ProtoObject* getitem = env->getAttribute(context, fmtMapping,
                 PythonEnvironment::getInternedString(context, "__getitem__"));
             if (!getitem) return nullptr;
             const proto::ProtoObject* found = env->callObject(getitem,
