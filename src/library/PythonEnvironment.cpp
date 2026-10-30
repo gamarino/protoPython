@@ -29478,9 +29478,15 @@ const proto::ProtoObject* PythonEnvironment::resolveModule(const std::string& na
                         const proto::ProtoObject* sysMod = dict->getAt(ctx, PythonEnvironment::getInternedString(ctx, nameStr.c_str())->getHash(ctx));
                         if (sysMod == result) {
                             isNative = true;
-                        } else if (sysMod && sysMod != PROTO_NONE) {
+                        } else if (sysMod) {
                             // sys.modules has a richer version (e.g., Python posixpath vs native os.path stub).
                             // Prefer sys.modules over the ProtoSpace native stub.
+                            // None there blocks the import (CPython: "import of X
+                            // halted; None in sys.modules"), as it does for a
+                            // module that is not native: the caller raises
+                            // ImportError.  test.support.import_fresh_module
+                            // blocks _datetime this way to test _pydatetime, and
+                            // the native module was imported regardless.
                             return sysMod;
                         }
                     }

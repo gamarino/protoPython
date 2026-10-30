@@ -1255,6 +1255,14 @@ set_tests_properties(protopy_copytree_symlinks PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# None in sys.modules blocks a native module's import.
+add_test(NAME protopy_blocked_native_module
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/blocked_native_module.py)
+set_tests_properties(protopy_blocked_native_module PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "blocked_native_module: ok"
+    LABELS "regression_gate")
 # bool(), `if` / `while` and the native truth test agree on every shape.
 add_test(NAME protopy_truth_tests
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/truth_tests.py)
