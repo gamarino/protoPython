@@ -23012,7 +23012,11 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     registerNativeModule(nativeProviderPtr, "binascii", [](proto::ProtoContext* c) { return binascii::initialize(c); });
     // Digests behind hashlib's _md5, _sha1, _sha2, _sha3 and _blake2 (Python).
     registerNativeModule(nativeProviderPtr, "_hashcore", [](proto::ProtoContext* c) { return hashcore::initialize(c); });
-    registerNativeModule(nativeProviderPtr, "_datetime", [](proto::ProtoContext* c) { return datetime::initialize(c); });
+    // No native _datetime: datetime.py falls back to _pydatetime, CPython's
+    // complete implementation.  DatetimeModule.cpp lacked fromisoformat,
+    // strptime, min/max, astimezone and pickling, and reported its classes
+    // as builtins.*; with it importable, `import datetime` gave every
+    // program those classes.
 #if defined(_WIN32)
     registerNativeModule(nativeProviderPtr, "_winapi", [](proto::ProtoContext* c) { return winapi_module::initialize(c); });
 #else

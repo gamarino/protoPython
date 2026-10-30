@@ -1068,6 +1068,14 @@ set_tests_properties(protopy_re_anchors PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# datetime is the complete pure-Python implementation.
+add_test(NAME protopy_datetime_pure_python
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/datetime_pure_python.py)
+set_tests_properties(protopy_datetime_pure_python PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "datetime_pure_python: ok"
+    LABELS "regression_gate")
 # time/datetime conversions before 1970 and after 3000 answer or raise, never crash.
 add_test(NAME protopy_time_out_of_range
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/time_out_of_range.py)
