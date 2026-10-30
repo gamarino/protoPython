@@ -896,6 +896,14 @@ set_tests_properties(protopy_bound_method_module_doc PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "bound_method_module_doc: ok"
     LABELS "regression_gate")
+# _sysconfig exists, so test.support imports on Windows.
+add_test(NAME protopy_sysconfig_nt_vars
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/sysconfig_nt_vars.py)
+set_tests_properties(protopy_sysconfig_nt_vars PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "sysconfig_nt_vars: ok"
+    LABELS "regression_gate")
 # Walking f_back ends in None at the main module.
 add_test(NAME protopy_frame_chain_ends_in_none
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/frame_chain_ends_in_none.py)
