@@ -436,7 +436,21 @@ static const proto::ProtoObject* py_len(
     // Try calling __len__ first if it exists
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoString* lenStr = env ? env->getLenString() : PythonEnvironment::getInternedString(context, "__len__");
-    const proto::ProtoObject* lenMethod = env ? env->getAttribute(context, obj, lenStr, false) : (obj->hasOwnAttribute(context, lenStr) == PROTO_TRUE ? obj->getAttribute(context, lenStr) : nullptr);
+    // As CPython, __len__ is looked up on the type, not through the
+    // instance: a type that overrides __getattribute__ (weakref.proxy)
+    // would otherwise hand back its referent's method, which the native
+    // call below then runs on the proxy.  The instance lookup remains for
+    // objects whose type does not resolve it.
+    const proto::ProtoObject* lenMethod = nullptr;
+    if (env) {
+        const proto::ProtoObject* cls = env->getType(context, obj);
+        if (cls && cls != PROTO_NONE && cls != obj && !env->isActuallyAClass(context, obj))
+            lenMethod = env->getAttribute(context, cls, lenStr, false);
+        if (!lenMethod || lenMethod == PROTO_NONE)
+            lenMethod = env->getAttribute(context, obj, lenStr, false);
+    } else if (obj->hasOwnAttribute(context, lenStr) == PROTO_TRUE) {
+        lenMethod = obj->getAttribute(context, lenStr);
+    }
     // CPython validates the __len__ return:
     //   - must be __index__-compatible (int) — else TypeError.
     //   - must be >= 0 — else ValueError("__len__() should return >= 0").
@@ -2651,6 +2665,10 @@ static const proto::ProtoObject* py_object_getattribute(
     std::string nameStr;
     nameObj->asString(context)->toUTF8String(context, nameStr);
     const proto::ProtoString* key = PythonEnvironment::getInternedString(context, nameStr.c_str());
+    // object.__getattribute__ is the default lookup: it never re-enters a
+    // user-defined type(target).__getattribute__ (a proxy's own state is
+    // read this way from inside and outside its override).
+    if (env) PythonEnvironment::skipUserGetattributeOnce = true;
     const proto::ProtoObject* val = env ? env->getAttribute(context, target, key) : target->getAttribute(context, key);
     return val ? val : PROTO_NONE;
 }

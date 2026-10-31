@@ -23750,7 +23750,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             "ProcessLookupError", "TimeoutError", "NotImplementedError",
             "OverflowError", "FloatingPointError",
             "UnicodeError", "UnicodeDecodeError", "UnicodeEncodeError", "UnicodeTranslateError",
-            "BufferError", "MemoryError",
+            "BufferError", "MemoryError", "ReferenceError",
             "EnvironmentError", "IOError",
             "BaseExceptionGroup", "ExceptionGroup",
         };
@@ -26548,7 +26548,13 @@ bool PythonEnvironment::isTypeOnlyAttributeName(proto::ProtoContext* ctx, const 
         || s == "__bases__" || s == "__base__";
 }
 
+thread_local bool PythonEnvironment::skipUserGetattributeOnce = false;
+
 const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, bool raiseError, bool* outIsUnboundFunc) {
+    // Consumed on entry, before any early return, so it never leaks to a
+    // later unrelated lookup.
+    const bool skipUserGetattribute = skipUserGetattributeOnce;
+    skipUserGetattributeOnce = false;
     if (outIsUnboundFunc) *outIsUnboundFunc = false;
     if (!obj || !name) return nullptr;
 
@@ -26803,114 +26809,16 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
             }
         }
     }
-    // Special case: instance.__dict__ on a regular Python instance.
-    // objectPrototype registers `__dict__` as a fromMethod descriptor
-    // (py_object_get_dict).  The slow path's MRO walk would otherwise
-    // return that callable cell raw — `getattr(obj, '__dict__')` then
-    // hands a `<object>` (the descriptor itself) instead of the dict
-    // proxy, so subsequent `.copy()` / `.update()` / etc. fail.
-    // Direct attribute access (`obj.__dict__`) works because OP_LOAD_ATTR
-    // synthesises the result on a different code path; getattr() and
-    // any other env->getAttribute consumer needs this explicit branch.
-    if (!isClass && dictString && name == dictString && objectPrototype) {
-        // STRUCT-258: if the instance's type (or any subclass earlier in
-        // the MRO than objectPrototype) declares its OWN `__dict__`
-        // attribute (e.g. `class M2(Module): __dict__ = property(...)`),
-        // that descriptor wins over the default `py_object_get_dict`.
-        // Invoke its descriptor protocol via `__get__` when present, or
-        // return the raw value otherwise — mirroring CPython's data-
-        // descriptor precedence rule for `__dict__`.
-        if (objClass && objClass != PROTO_NONE && objClass != objectPrototype) {
-            const proto::ProtoObject* mroAttr =
-                getAttribute(ctx, objClass, mroString, false);
-            ::protoPython::TupleView mroT = mroAttr ? ::protoPython::PythonEnvironment::tupleView(ctx, mroAttr) : nullptr;
-            proto::proto_ulong nBases = mroT ? mroT->getSize(ctx) : 0;
-            for (proto::proto_ulong bi = 0; bi < nBases; ++bi) {
-                const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(bi));
-                if (!base || base == PROTO_NONE) continue;
-                if (base == objectPrototype) break;  // stop before default
-                if (base->hasOwnAttribute(ctx, dictString) != PROTO_TRUE) continue;
-                const proto::ProtoObject* ownDesc =
-                    base->getOwnAttributeDirect(ctx, dictString);
-                if (!ownDesc || ownDesc == PROTO_NONE) continue;
-                // Try descriptor protocol: ownDesc.__get__(obj, objClass).
-                const proto::ProtoString* getDunder =
-                    PythonEnvironment::getInternedString(ctx, "__get__");
-                const proto::ProtoObject* descType = getType(ctx, ownDesc);
-                const proto::ProtoObject* getM = descType
-                    ? getAttribute(ctx, descType, getDunder, false) : nullptr;
-                if (getM && getM != PROTO_NONE) {
-                    if (getM->asMethod(ctx)) {
-                        const proto::ProtoList* gaArgs =
-                            ctx->newList()->appendLast(ctx, obj)
-                                          ->appendLast(ctx, objClass);
-                        return getM->asMethod(ctx)(ctx,
-                            const_cast<proto::ProtoObject*>(ownDesc), nullptr,
-                            argsView(proto::ProtoListArguments(ctx, gaArgs)), nullptr);
-                    }
-                    // Plain Python function descriptor.
-                    const proto::ProtoList* fullArgs =
-                        ctx->newList()->appendLast(ctx, ownDesc)
-                                      ->appendLast(ctx, obj)
-                                      ->appendLast(ctx, objClass);
-                    return invokePythonCallable(ctx, getM, fullArgs, nullptr);
-                }
-                // No __get__ — return the raw value (non-descriptor).
-                return ownDesc;
-            }
-        }
-        // No class on the MRO defines its own, and the object stores none
-        // itself (a function keeps its namespace under an own `__dict__`,
-        // which the resolution below returns): the default getter.  It is
-        // called directly.  It used to be read back from objectPrototype,
-        // but that read resolves to type's `__dict__` getset descriptor
-        // (object's chain reaches type), which is not a method, so a type
-        // without its own `__dict__` entry -- the module type, for one --
-        // answered getattr(m, '__dict__') with the raw descriptor.
-        if (obj->hasOwnAttribute(ctx, dictString) != PROTO_TRUE) {
-            return py_object_get_dict(ctx, obj, nullptr, nullptr, nullptr);
-        }
-    }
-
-    // Special handling for __class__.  object's `__class__` is a data
-    // descriptor that answers the type, but a class body may define its own
-    // for its instances (unittest.mock's NonCallableMock: a property that
-    // answers the spec class, which is how isinstance(Mock(spec=C), C)
-    // holds).  Such an entry precedes object's on the MRO and wins.  A
-    // class's own `__class__` that is itself a class is its metaclass slot,
-    // not an entry of its namespace, and is skipped.
-    if (classString && name == classString && !isClass) {
-        if (objClass && objClass != PROTO_NONE && objClass != objectPrototype) {
-            ::protoPython::TupleView mroT = classMroForLookup(this, ctx, objClass);
-            const proto::proto_ulong n = mroT ? mroT->getSize(ctx) : 0;
-            for (proto::proto_ulong i = 0; i < n; ++i) {
-                const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(i));
-                if (!base || base == PROTO_NONE || base == objectPrototype) break;
-                if (base->hasOwnAttribute(ctx, classString) != PROTO_TRUE) continue;
-                const proto::ProtoObject* descr = base->getOwnAttributeDirect(ctx, classString);
-                if (!descr || descr == PROTO_NONE || isActuallyAClass(ctx, descr)) continue;
-                const proto::ProtoObject* descrType = getType(ctx, descr);
-                const proto::ProtoObject* getM = (descrType && descrType != PROTO_NONE)
-                    ? getAttribute(ctx, descrType, getGetDunderString(), false) : nullptr;
-                if (!getM || getM == PROTO_NONE) break;  // not a descriptor: object's answer
-                if (getM->asMethod(ctx)) {
-                    const proto::ProtoList* gaArgs = ctx->newList()->appendLast(ctx, obj)->appendLast(ctx, objClass);
-                    return getM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(descr), nullptr,
-                        argsView(proto::ProtoListArguments(ctx, gaArgs)), nullptr);
-                }
-                return invokePythonCallable(ctx, getM,
-                    ctx->newList()->appendLast(ctx, descr)->appendLast(ctx, obj)->appendLast(ctx, objClass), nullptr);
-            }
-        }
-        return this->getType(ctx, obj);
-    }
-
     // PI: dispatch through user-defined __getattribute__ if present.
     // CPython invokes type(obj).__getattribute__(obj, name) for every
     // attribute access; fall through to the standard resolution if the
     // class doesn't override it (object.__getattribute__ is the default
     // and we don't recurse into it).  getAttrDepth bounds recursion.
-    if (!isClass && objClass && objClass != PROTO_NONE && getAttrDepth <= 1) {
+    // It precedes the __dict__ and __class__ special cases below: CPython
+    // calls type(obj).__getattribute__ for every name, so a proxy-like
+    // override (weakref.proxy, unittest.mock) answers those too.
+    if (!isClass && objClass && objClass != PROTO_NONE && getAttrDepth <= 1
+        && !skipUserGetattribute) {
         // Cached symbol — avoids the per-call mutex + std::map lookup that
         // would otherwise fire on every attribute access.  Profiling
         // attributed ~5 % of nqueens CPU to the std::map<std::string, ...>
@@ -27034,6 +26942,108 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                 }
             }
         }
+    }
+
+    // Special case: instance.__dict__ on a regular Python instance.
+    // objectPrototype registers `__dict__` as a fromMethod descriptor
+    // (py_object_get_dict).  The slow path's MRO walk would otherwise
+    // return that callable cell raw — `getattr(obj, '__dict__')` then
+    // hands a `<object>` (the descriptor itself) instead of the dict
+    // proxy, so subsequent `.copy()` / `.update()` / etc. fail.
+    // Direct attribute access (`obj.__dict__`) works because OP_LOAD_ATTR
+    // synthesises the result on a different code path; getattr() and
+    // any other env->getAttribute consumer needs this explicit branch.
+    if (!isClass && dictString && name == dictString && objectPrototype) {
+        // STRUCT-258: if the instance's type (or any subclass earlier in
+        // the MRO than objectPrototype) declares its OWN `__dict__`
+        // attribute (e.g. `class M2(Module): __dict__ = property(...)`),
+        // that descriptor wins over the default `py_object_get_dict`.
+        // Invoke its descriptor protocol via `__get__` when present, or
+        // return the raw value otherwise — mirroring CPython's data-
+        // descriptor precedence rule for `__dict__`.
+        if (objClass && objClass != PROTO_NONE && objClass != objectPrototype) {
+            const proto::ProtoObject* mroAttr =
+                getAttribute(ctx, objClass, mroString, false);
+            ::protoPython::TupleView mroT = mroAttr ? ::protoPython::PythonEnvironment::tupleView(ctx, mroAttr) : nullptr;
+            proto::proto_ulong nBases = mroT ? mroT->getSize(ctx) : 0;
+            for (proto::proto_ulong bi = 0; bi < nBases; ++bi) {
+                const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(bi));
+                if (!base || base == PROTO_NONE) continue;
+                if (base == objectPrototype) break;  // stop before default
+                if (base->hasOwnAttribute(ctx, dictString) != PROTO_TRUE) continue;
+                const proto::ProtoObject* ownDesc =
+                    base->getOwnAttributeDirect(ctx, dictString);
+                if (!ownDesc || ownDesc == PROTO_NONE) continue;
+                // Try descriptor protocol: ownDesc.__get__(obj, objClass).
+                const proto::ProtoString* getDunder =
+                    PythonEnvironment::getInternedString(ctx, "__get__");
+                const proto::ProtoObject* descType = getType(ctx, ownDesc);
+                const proto::ProtoObject* getM = descType
+                    ? getAttribute(ctx, descType, getDunder, false) : nullptr;
+                if (getM && getM != PROTO_NONE) {
+                    if (getM->asMethod(ctx)) {
+                        const proto::ProtoList* gaArgs =
+                            ctx->newList()->appendLast(ctx, obj)
+                                          ->appendLast(ctx, objClass);
+                        return getM->asMethod(ctx)(ctx,
+                            const_cast<proto::ProtoObject*>(ownDesc), nullptr,
+                            argsView(proto::ProtoListArguments(ctx, gaArgs)), nullptr);
+                    }
+                    // Plain Python function descriptor.
+                    const proto::ProtoList* fullArgs =
+                        ctx->newList()->appendLast(ctx, ownDesc)
+                                      ->appendLast(ctx, obj)
+                                      ->appendLast(ctx, objClass);
+                    return invokePythonCallable(ctx, getM, fullArgs, nullptr);
+                }
+                // No __get__ — return the raw value (non-descriptor).
+                return ownDesc;
+            }
+        }
+        // No class on the MRO defines its own, and the object stores none
+        // itself (a function keeps its namespace under an own `__dict__`,
+        // which the resolution below returns): the default getter.  It is
+        // called directly.  It used to be read back from objectPrototype,
+        // but that read resolves to type's `__dict__` getset descriptor
+        // (object's chain reaches type), which is not a method, so a type
+        // without its own `__dict__` entry -- the module type, for one --
+        // answered getattr(m, '__dict__') with the raw descriptor.
+        if (obj->hasOwnAttribute(ctx, dictString) != PROTO_TRUE) {
+            return py_object_get_dict(ctx, obj, nullptr, nullptr, nullptr);
+        }
+    }
+
+    // Special handling for __class__.  object's `__class__` is a data
+    // descriptor that answers the type, but a class body may define its own
+    // for its instances (unittest.mock's NonCallableMock: a property that
+    // answers the spec class, which is how isinstance(Mock(spec=C), C)
+    // holds).  Such an entry precedes object's on the MRO and wins.  A
+    // class's own `__class__` that is itself a class is its metaclass slot,
+    // not an entry of its namespace, and is skipped.
+    if (classString && name == classString && !isClass) {
+        if (objClass && objClass != PROTO_NONE && objClass != objectPrototype) {
+            ::protoPython::TupleView mroT = classMroForLookup(this, ctx, objClass);
+            const proto::proto_ulong n = mroT ? mroT->getSize(ctx) : 0;
+            for (proto::proto_ulong i = 0; i < n; ++i) {
+                const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(i));
+                if (!base || base == PROTO_NONE || base == objectPrototype) break;
+                if (base->hasOwnAttribute(ctx, classString) != PROTO_TRUE) continue;
+                const proto::ProtoObject* descr = base->getOwnAttributeDirect(ctx, classString);
+                if (!descr || descr == PROTO_NONE || isActuallyAClass(ctx, descr)) continue;
+                const proto::ProtoObject* descrType = getType(ctx, descr);
+                const proto::ProtoObject* getM = (descrType && descrType != PROTO_NONE)
+                    ? getAttribute(ctx, descrType, getGetDunderString(), false) : nullptr;
+                if (!getM || getM == PROTO_NONE) break;  // not a descriptor: object's answer
+                if (getM->asMethod(ctx)) {
+                    const proto::ProtoList* gaArgs = ctx->newList()->appendLast(ctx, obj)->appendLast(ctx, objClass);
+                    return getM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(descr), nullptr,
+                        argsView(proto::ProtoListArguments(ctx, gaArgs)), nullptr);
+                }
+                return invokePythonCallable(ctx, getM,
+                    ctx->newList()->appendLast(ctx, descr)->appendLast(ctx, obj)->appendLast(ctx, objClass), nullptr);
+            }
+        }
+        return this->getType(ctx, obj);
     }
 
     // PI: data descriptors take precedence over instance attributes.

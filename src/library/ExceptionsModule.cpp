@@ -753,6 +753,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoObject* exceptionGroupType = make_exception_type(ctx, objectProto, typeProto, "ExceptionGroup", exceptionType);
     const proto::ProtoObject* memoryErrorType = make_exception_type(ctx, objectProto, typeProto, "MemoryError", exceptionType);
     const proto::ProtoObject* bufferErrorType = make_exception_type(ctx, objectProto, typeProto, "BufferError", exceptionType);
+    // Raised by a weakref.proxy whose referent is gone.
+    const proto::ProtoObject* referenceErrorType = make_exception_type(ctx, objectProto, typeProto, "ReferenceError", exceptionType);
     const proto::ProtoObject* overflowErrorType = make_exception_type(ctx, objectProto, typeProto, "OverflowError", arithmeticErrorType);
     const proto::ProtoObject* floatingPointErrorType = make_exception_type(ctx, objectProto, typeProto, "FloatingPointError", arithmeticErrorType);
     const proto::ProtoObject* environmentErrorType = osErrorType;  // alias
@@ -843,6 +845,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "ExceptionGroup"),     exceptionGroupType);
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "MemoryError"),         memoryErrorType);
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "BufferError"),         bufferErrorType);
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "ReferenceError"),      referenceErrorType);
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "OverflowError"),       overflowErrorType);
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "FloatingPointError"),  floatingPointErrorType);
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "EnvironmentError"),    environmentErrorType);

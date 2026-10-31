@@ -19,6 +19,16 @@ from _weakref import (
      ReferenceType,
      _remove_dead_weakref)
 
+# protoPython: the native _weakref's proxy is a plain ref; the proxy types are
+# implemented in Python (_weakrefproxy) and installed in _weakref too, for the
+# modules that import them from there.
+import _weakref
+from _weakrefproxy import proxy, ProxyType, CallableProxyType
+_weakref.proxy = proxy
+_weakref.ProxyType = ProxyType
+_weakref.CallableProxyType = CallableProxyType
+del _weakref
+
 from _weakrefset import WeakSet
 
 import _collections_abc  # Import after _weakref to avoid circular import.
