@@ -167,3 +167,11 @@ The most fundamental difference from CPython is the **absence of the Global Inte
    concurrently each get whole lines, every line once. (CPython's
    `TextIOWrapper` is not thread-safe: on CPython 3.14 the same eight-thread
    test, `test/regression/stdin_threads.py`, returned a torn line.)
+12. **`subprocess` on Windows is not supported.** The module imports, but
+   `Popen` (and therefore `run`, `call`, `check_output`) raises
+   `OSError(ENOTSUP)`. protoPython's `_winapi` implements only the few
+   functions other modules need (`LCMapStringEx`,
+   `NeedCurrentDirectoryForExePath`), not process creation, pipes or handle
+   management, and there is no `msvcrt`. On Linux and macOS `subprocess` runs
+   on `_posixsubprocess`, with text mode (`text=True`, `encoding=`,
+   `universal_newlines=True`) going through `io.TextIOWrapper`.
