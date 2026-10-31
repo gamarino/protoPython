@@ -1352,6 +1352,13 @@ public:
      * @brief Returns the environment for the given context (for use by dunder methods).
      */
     static PythonEnvironment* fromContext(proto::ProtoContext* ctx);
+    /**
+     * Set by object.__getattribute__ just before it calls getAttribute: the
+     * next outermost lookup skips a user-defined type(obj).__getattribute__,
+     * which is the override object.__getattribute__ exists to bypass.
+     * getAttribute consumes (clears) it on entry.
+     */
+    static thread_local bool skipUserGetattributeOnce;
 
     /** Registers a context (e.g. worker thread) with this environment so fromContext() resolves. */
     static void registerContext(proto::ProtoContext* ctx, PythonEnvironment* env);

@@ -516,6 +516,14 @@ set_tests_properties(protopy_sys_modules_iteration PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "sys_modules_iteration: ok"
     LABELS "regression_gate")
+# weakref.proxy forwards to its referent and raises ReferenceError once it is gone.
+add_test(NAME protopy_weakref_proxy
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/weakref_proxy.py)
+set_tests_properties(protopy_weakref_proxy PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "weakref_proxy: ok"
+    LABELS "regression_gate")
 # Run-time attribute names are interned symbols.
 add_test(NAME protopy_interned_attribute_names
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/interned_attribute_names.py)
