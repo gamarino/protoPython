@@ -479,6 +479,54 @@ set_tests_properties(protopy_dict_equal_hash_keys PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "dict_equal_hash_keys: ok"
     LABELS "regression_gate")
+# Unequal set elements with one hash stay distinct; membership calls __eq__.
+add_test(NAME protopy_set_colliding_hash
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/set_colliding_hash.py)
+set_tests_properties(protopy_set_colliding_hash PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "set_colliding_hash: ok"
+    LABELS "regression_gate")
+# Every set / frozenset operation keeps colliding elements apart.
+add_test(NAME protopy_set_colliding_hash_ops
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/set_colliding_hash_ops.py)
+set_tests_properties(protopy_set_colliding_hash_ops PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "set_colliding_hash_ops: ok"
+    LABELS "regression_gate")
+# An exception raised by __eq__ inside a set operation propagates.
+add_test(NAME protopy_set_eq_raises
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/set_eq_raises.py)
+set_tests_properties(protopy_set_eq_raises PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "set_eq_raises: ok"
+    LABELS "regression_gate")
+# 1, 1.0 and True are one set element.
+add_test(NAME protopy_set_numeric_equal_elements
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/set_numeric_equal_elements.py)
+set_tests_properties(protopy_set_numeric_equal_elements PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "set_numeric_equal_elements: ok"
+    LABELS "regression_gate")
+# A large set, with colliding groups, keeps every element.
+add_test(NAME protopy_set_large
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/set_large.py)
+set_tests_properties(protopy_set_large PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "set_large: ok"
+    LABELS "regression_gate")
+# A set's element table is never an attribute or item store.
+add_test(NAME protopy_set_namespace_isolation
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/set_namespace_isolation.py)
+set_tests_properties(protopy_set_namespace_isolation PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "set_namespace_isolation: ok"
+    LABELS "regression_gate")
 # struct.error is an Exception subclass of its own.
 add_test(NAME protopy_struct_error_class
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/struct_error_class.py)

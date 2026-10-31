@@ -7683,8 +7683,8 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 // val remains on stack
                 const proto::ProtoObject* setObj = stack[stack.size() - arg - 1];
                 const proto::ProtoString* dataString = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
-                const proto::ProtoObject* data = setObj->getAttribute(ctx, dataString);
-                const proto::ProtoSet* s = (data && data->asSet(ctx)) ? data->asSet(ctx) : ctx->newSet();
+                const proto::ProtoSparseList* s = PythonEnvironment::setStorage(ctx, setObj);
+                if (!s) s = PythonEnvironment::newSetStorage(ctx);
                 s = PythonEnvironment::setAdd(ctx, s, val);
                 if (!s) continue;
                 const proto::ProtoObject* newSet = setObj->setAttribute(ctx, dataString, s->asObject(ctx));
@@ -7899,9 +7899,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 const proto::ProtoObject* iterable = stack.back();
                 proto::ProtoObject* setObj = const_cast<proto::ProtoObject*>(stack[stack.size() - arg - 1]);
                 const proto::ProtoString* dataString = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
-                const proto::ProtoObject* dataObj = setObj->getAttribute(ctx, dataString);
-                if (dataObj && dataObj->asSet(ctx)) {
-                    const proto::ProtoSet* s = dataObj->asSet(ctx);
+                if (const proto::ProtoSparseList* s = PythonEnvironment::setStorage(ctx, setObj)) {
                     // Fast path: pull elements directly when the iterable is
                     // a raw / wrapped list or set.  Falls back to the
                     // env->iter / env->next loop so user classes with
@@ -7941,7 +7939,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 setObj = const_cast<proto::ProtoObject*>(setObj->setAttribute(ctx, env->getClassString(), env->getSetPrototype()));
                 stack.back() = setObj;
             }
-            const proto::ProtoSet* data = ctx->newSet();
+            const proto::ProtoSparseList* data = PythonEnvironment::newSetStorage(ctx);
             const proto::ProtoObject* dataPinned = data->asObject(ctx);
             stack.push_back(dataPinned); // Root data
             
@@ -7949,7 +7947,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             bool unhashable = false;
             for (int j = 0; j < arg; ++j) {
                 const proto::ProtoObject* item = stack[baseIdx + j];
-                const proto::ProtoSet* next = PythonEnvironment::setAdd(ctx, data, item);
+                const proto::ProtoSparseList* next = PythonEnvironment::setAdd(ctx, data, item);
                 if (!next) { unhashable = true; break; }
                 data = next;
                 stack[stack.size() - 1] = const_cast<proto::ProtoObject*>(data->asObject(ctx)); // Update root
@@ -9195,10 +9193,12 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key)->appendLast(ctx, value);
                 invokeDunder(ctx, container, setItemS, args);
             } else if (env && (container->isString(ctx)
-                               || ::protoPython::PythonEnvironment::isTupleValue(ctx, container))) {
-                // Immutable sequences have no __setitem__: `s[0] = "x"` on a
-                // str (or bytes) or a tuple is a TypeError.  The namespace
-                // fallback below used to swallow the write silently.
+                               || ::protoPython::PythonEnvironment::isTupleValue(ctx, container)
+                               || PythonEnvironment::setStorage(ctx, container))) {
+                // Immutable sequences and sets have no __setitem__: `s[0] = "x"`
+                // on a str (or bytes), a tuple or a set is a TypeError.  The
+                // namespace fallback below used to swallow the write silently
+                // (into a set's element table, for a set).
                 std::string typeName = "object";
                 const proto::ProtoObject* tp = env->getType(ctx, container);
                 const proto::ProtoObject* tn = tp ? tp->getAttribute(ctx, env->getNameString()) : nullptr;
@@ -10340,7 +10340,9 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                         {
                             const proto::ProtoObject* probe = mobj->hasOwnAttribute(ctx, dataS) == PROTO_TRUE
                                 ? mobj->getAttribute(ctx, dataS) : nullptr;
-                            if (probe && probe != PROTO_NONE && !probe->asSparseList(ctx)) {
+                            // A set's table is a sparse list too, but holds the elements.
+                            if (probe && probe != PROTO_NONE
+                                && (!probe->asSparseList(ctx) || PythonEnvironment::setStorage(ctx, mobj))) {
                                 isBuiltinContainerSubclass = true;
                             }
                         }

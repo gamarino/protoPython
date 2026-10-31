@@ -1143,7 +1143,7 @@ TEST_F(FoundationTest, SetBasic) {
     proto::ProtoContext* context = env.getContext();
 
     const proto::ProtoObject* setObj = context->newObject(true)->addParent(context, env.getSetPrototype());
-    setObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSet()->asObject(context));
+    setObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), protoPython::PythonEnvironment::newSetStorage(context)->asObject(context));
 
     const proto::ProtoObject* addM = setObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "add"));
     const proto::ProtoObject* removeM = setObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "remove"));
@@ -1205,7 +1205,7 @@ TEST_F(FoundationTest, SetUnion) {
     ASSERT_NE(copyM, nullptr);
 
     const proto::ProtoObject* set1 = context->newObject(true)->addParent(context, setPrototype);
-    set1->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSet()->asObject(context));
+    set1->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), protoPython::PythonEnvironment::newSetStorage(context)->asObject(context));
     const proto::ProtoObject* addM = set1->getAttribute(context, proto::ProtoString::fromUTF8String(context, "add"));
     ASSERT_NE(addM, nullptr);
     addM->asMethod(context)(context, set1, nullptr, protoPython::argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, context->fromInteger(1)))), nullptr);

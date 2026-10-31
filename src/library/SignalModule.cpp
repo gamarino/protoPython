@@ -283,18 +283,18 @@ static const proto::ProtoObject* py_valid_signals(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    const proto::ProtoSet* s = ctx->newSet();
+    const proto::ProtoSparseList* s = PythonEnvironment::newSetStorage(ctx);
 #if defined(_WIN32)
     for (int i : {SIGINT, SIGILL, SIGFPE, SIGSEGV, SIGTERM, SIGBREAK, SIGABRT}) {
-        s = s->add(ctx, ctx->fromInteger(i));
+        s = PythonEnvironment::setAdd(ctx, s, ctx->fromInteger(i));
     }
 #else
     for (int i = 1; i < NSIG; ++i) {
-        s = s->add(ctx, ctx->fromInteger(i));
+        s = PythonEnvironment::setAdd(ctx, s, ctx->fromInteger(i));
     }
 #endif
     (void)env;
-    return s->asObject(ctx);
+    return PythonEnvironment::newSetObject(ctx, s);
 }
 
 // Synchronous helper exposed as `signal.raise_signal(sig)`: triggers a

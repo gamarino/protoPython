@@ -2211,6 +2211,18 @@ static bool isDictSubclassInstance(proto::ProtoContext* context, PythonEnvironme
     return env->getType(context, obj) != dictProto && obj->isInstanceOf(context, dictProto) == PROTO_TRUE;
 }
 
+// Whether `obj`'s own `__data__` (`data`) holds a built-in's storage rather
+// than the mirror of its instance namespace: anything but a sparse list, or
+// the set table of a set or frozenset (a sparse list too, but the elements).
+// Such an instance keeps its namespace mirror in `__pydict_data__` /
+// `__pydict_keys__`.
+static bool dataHoldsBuiltinStorage(proto::ProtoContext* context, const proto::ProtoObject* obj,
+                                    const proto::ProtoObject* data) {
+    if (!data || data == PROTO_NONE) return false;
+    if (!data->asSparseList(context)) return true;
+    return PythonEnvironment::setStorage(context, obj) != nullptr;
+}
+
 // --- An instance's __dict__ view and its owner -----------------------------
 //
 // py_object_get_dict answers a dict whose items mirror the instance's own
@@ -2247,8 +2259,7 @@ static void instanceDictMirrorSlots(proto::ProtoContext* ctx, PythonEnvironment*
     kS = env->getKeysString();
     const proto::ProtoObject* probe = owner->hasOwnAttribute(ctx, dS) == PROTO_TRUE
         ? owner->getOwnAttributeDirect(ctx, dS) : nullptr;
-    if ((probe && probe != PROTO_NONE && !probe->asSparseList(ctx))
-        || isDictSubclassInstance(ctx, env, owner)) {
+    if (dataHoldsBuiltinStorage(ctx, owner, probe) || isDictSubclassInstance(ctx, env, owner)) {
         dS = PythonEnvironment::getInternedString(ctx, "__pydict_data__");
         kS = PythonEnvironment::getInternedString(ctx, "__pydict_keys__");
     }
@@ -2503,7 +2514,7 @@ static const proto::ProtoObject* py_object_get_dict(
     if (!isBuiltinSubclass) {
         const proto::ProtoObject* probeData = mutableSelf->hasOwnAttribute(context, canonicalDataS) == PROTO_TRUE
             ? mutableSelf->getAttribute(context, canonicalDataS) : nullptr;
-        if (probeData && probeData != PROTO_NONE && !probeData->asSparseList(context)) {
+        if (dataHoldsBuiltinStorage(context, mutableSelf, probeData)) {
             isBuiltinSubclass = true;
         }
     }
@@ -4814,7 +4825,7 @@ static const proto::ProtoObject* py_str_hash(proto::ProtoContext*, const proto::
     const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*);
 static const proto::ProtoObject* py_tuple_hash(proto::ProtoContext*, const proto::ProtoObject*,
     const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*);
-static const proto::ProtoSet* set_underlying(proto::ProtoContext* context, const proto::ProtoObject* self);
+static const proto::ProtoSparseList* set_underlying(proto::ProtoContext* context, const proto::ProtoObject* self);
 
 static bool keyHash(proto::ProtoContext* context, const proto::ProtoObject* key, bool raiseUnhashable, proto::proto_ulong& out,
                     bool* exact = nullptr, bool allowUserCode = true);
@@ -4863,17 +4874,6 @@ static bool tupleKeyHash(proto::ProtoContext* context, const TupleView& t, bool 
     }
     out = h;
     return true;
-}
-
-// A frozenset's hash, from the hashes its elements are stored under and
-// independent of their order.
-static proto::proto_ulong frozensetKeyHash(proto::ProtoContext* context, const proto::ProtoSet* s) {
-    proto::proto_ulong h = PROTO_UL(0x345678) ^ (s->getSize(context) * PROTO_UL(1927868237));
-    for (const proto::ProtoSetIterator* it = s->getIterator(context); it && it->hasNext(context); it = it->advance(context)) {
-        const proto::proto_ulong eh = it->nextHash(context);
-        h ^= (eh ^ (eh << 16) ^ PROTO_UL(89869747)) * PROTO_UL(3644798167);
-    }
-    return h;
 }
 
 // The hash a dict or a set stores `key` under. Python makes 1 == 1.0 == True
@@ -5222,25 +5222,258 @@ bool PythonEnvironment::hashKey(proto::ProtoContext* ctx, const proto::ProtoObje
     return keyHash(ctx, value, true, hash);
 }
 
-const proto::ProtoSet* PythonEnvironment::setAdd(proto::ProtoContext* ctx, const proto::ProtoSet* s, const proto::ProtoObject* value) {
-    proto::proto_ulong h = 0;
-    if (!keyHash(ctx, value, true, h)) return nullptr;
-    return s->hasHash(ctx, h) ? s : s->addWithHash(ctx, h, value);
+// --- Set storage ---
+//
+// A set or frozenset keeps its elements in `__data__`, a ProtoSparseList
+// indexed by the element's key hash (keyHash, the hash dict keys are filed
+// under, so 1, 1.0 and True are one element). A slot is either
+//  - the element itself, when it is the only element filed under that hash
+//    and its hash is exact (see keyHash): built-in primitives and
+//    identity-hashed objects, the common case, keep a single lookup; or
+//  - a bucket: a ProtoList of the distinct elements filed under that hash,
+//    for any element with an inexact hash (a class's own __hash__, a
+//    frozenset) and for several elements sharing a hash.
+// A lookup that reaches a bucket compares the candidate with the stored
+// elements by identity, then with the stored element's __eq__, as CPython
+// compares set entries of equal hash; an exception raised by __eq__
+// propagates. A bucket is recognised by its pointer tag: a bare ProtoList is
+// never stored as a slot of its own (a list is unhashable, and the add path
+// files any bare list in a bucket).
+//
+// The length is the number of element slots plus the elements buckets hold
+// beyond their first. That surplus lives in the reserved slot kSetSurplusSlot,
+// present only while it is non-zero, so len() stays O(1) and a set version is
+// one sparse list with no wrapper cell. No element is filed under the
+// reserved index: a key hash equal to it is folded onto the index below it,
+// as CPython folds a hash of -1 onto -2. Every operation files and finds
+// elements by the folded index, so the fold is invisible.
+//
+// The elements iterate in ascending slot order, the order the former
+// ProtoSet-based storage produced; the order stays unspecified to Python.
+static constexpr proto::proto_ulong kSetSurplusSlot = ~static_cast<proto::proto_ulong>(0);
+
+static inline proto::proto_ulong setSlotIndex(proto::proto_ulong hash) {
+    return hash == kSetSurplusSlot ? hash - 1 : hash;
 }
 
-// set.__contains__, remove and discard look a set up as the equal frozenset,
-// as CPython does.
-static bool setLookupHash(proto::ProtoContext* context, const proto::ProtoObject* value, proto::proto_ulong& out) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    if (env && value && !value->isInteger(context) && !value->isString(context)) {
-        const proto::ProtoObject* cls = env->getType(context, value);
-        const proto::ProtoSet* data = cls ? set_underlying(context, value) : nullptr;
-        if (data && env->getAttribute(context, cls, env->getHashString(), false) == PROTO_NONE) {
-            out = frozensetKeyHash(context, data);
+// The bucket a slot holds, or nullptr for a single element. Tag-only: an
+// object (pointer tag 0) or a string is never a bucket, whatever its
+// __data__ holds.
+static inline const proto::ProtoList* setBucket(proto::ProtoContext* context, const proto::ProtoObject* slot) {
+    if (!slot || (reinterpret_cast<uintptr_t>(slot) & 0x3F) == 0 || proto::ProtoObject::isStringTagFast(slot)) return nullptr;
+    return slot->asList(context);
+}
+
+static proto::proto_ulong setSurplus(proto::ProtoContext* context, const proto::ProtoSparseList* table) {
+    if (!table->has(context, kSetSurplusSlot)) return 0;
+    return static_cast<proto::proto_ulong>(table->getAt(context, kSetSurplusSlot)->asLong(context));
+}
+
+static const proto::ProtoSparseList* setWithSurplus(proto::ProtoContext* context, const proto::ProtoSparseList* table,
+                                                    long long delta) {
+    const long long n = static_cast<long long>(setSurplus(context, table)) + delta;
+    if (n > 0) return table->setAt(context, kSetSurplusSlot, context->fromInteger(n));
+    return table->has(context, kSetSurplusSlot) ? table->removeAt(context, kSetSurplusSlot) : table;
+}
+
+static proto::proto_ulong setTableSize(proto::ProtoContext* context, const proto::ProtoSparseList* table) {
+    if (!table) return 0;
+    const proto::proto_ulong slots = table->getSize(context);
+    if (!table->has(context, kSetSurplusSlot)) return slots;
+    return slots - 1 + setSurplus(context, table);
+}
+
+// Walks the elements of a set table: slots in ascending index order, a
+// bucket's elements in the order they were added. Each element comes as a
+// DictKey: the element, the index it is filed under, and whether that index
+// identifies it (a single-element slot, whose hash is exact). The iterators
+// it holds are allocated in `context`, so the table stays reachable while
+// the walk runs Python code (an __eq__).
+class SetCursor {
+public:
+    SetCursor(proto::ProtoContext* context, const proto::ProtoSparseList* table)
+        : context_(context), it_(table ? table->getIterator(context) : nullptr) {}
+
+    bool next(DictKey& out) {
+        for (;;) {
+            if (bucket_ && pos_ < bucketSize_) {
+                out.key = bucket_->getAt(context_, static_cast<int>(pos_++));
+                out.hash = index_;
+                out.exact = false;
+                return true;
+            }
+            bucket_ = nullptr;
+            if (!it_ || !it_->hasNext(context_)) return false;
+            index_ = it_->nextKey(context_);
+            const proto::ProtoObject* slot = it_->nextValue(context_);
+            it_ = const_cast<proto::ProtoSparseListIterator*>(it_)->advance(context_);
+            if (index_ == kSetSurplusSlot) continue;
+            if (const proto::ProtoList* bucket = setBucket(context_, slot)) {
+                bucket_ = bucket;
+                pos_ = 0;
+                bucketSize_ = bucket->getSize(context_);
+                continue;
+            }
+            out.key = slot;
+            out.hash = index_;
+            out.exact = true;
             return true;
         }
     }
-    return keyHash(context, value, true, out);
+
+private:
+    proto::ProtoContext* context_;
+    const proto::ProtoSparseListIterator* it_;
+    const proto::ProtoList* bucket_ = nullptr;
+    proto::proto_ulong pos_ = 0;
+    proto::proto_ulong bucketSize_ = 0;
+    proto::proto_ulong index_ = 0;
+};
+
+// The position in `bucket` of the element equal to `key`: the same object,
+// else the first stored element whose __eq__ accepts it; -1 if none.
+static long long setBucketPosition(proto::ProtoContext* context, const proto::ProtoList* bucket,
+                                   const proto::ProtoObject* key) {
+    const proto::proto_ulong n = bucket->getSize(context);
+    for (proto::proto_ulong i = 0; i < n; ++i) {
+        if (bucket->getAt(context, static_cast<int>(i)) == key) return static_cast<long long>(i);
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return -1;
+    for (proto::proto_ulong i = 0; i < n; ++i) {
+        if (env->objectsEqual(context, bucket->getAt(context, static_cast<int>(i)), key)) return static_cast<long long>(i);
+    }
+    return -1;
+}
+
+// Whether the single element `stored` of a slot equals `dk.key`. A stored
+// single element has an exact hash, so an exact candidate filed under the
+// same index is equal to it; an inexact one is compared with __eq__.
+static bool setSlotMatches(proto::ProtoContext* context, const proto::ProtoObject* stored, const DictKey& dk) {
+    if (stored == dk.key || dk.exact) return true;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    return env && env->objectsEqual(context, stored, dk.key);
+}
+
+// The stored element equal to `dk.key`, or nullptr.
+static const proto::ProtoObject* setFind(proto::ProtoContext* context, const proto::ProtoSparseList* table,
+                                         const DictKey& dk) {
+    const proto::proto_ulong index = setSlotIndex(dk.hash);
+    if (!table || !table->has(context, index)) return nullptr;
+    const proto::ProtoObject* slot = table->getAt(context, index);
+    if (const proto::ProtoList* bucket = setBucket(context, slot)) {
+        const long long pos = setBucketPosition(context, bucket, dk.key);
+        return pos < 0 ? nullptr : bucket->getAt(context, static_cast<int>(pos));
+    }
+    return setSlotMatches(context, slot, dk) ? slot : nullptr;
+}
+
+// `table` with `dk.key` added: `table` itself when an equal element is
+// already stored (the stored object stays, as in CPython).
+static const proto::ProtoSparseList* setPut(proto::ProtoContext* context, const proto::ProtoSparseList* table,
+                                            const DictKey& dk) {
+    const proto::proto_ulong index = setSlotIndex(dk.hash);
+    if (!table->has(context, index)) {
+        if (dk.exact && !setBucket(context, dk.key)) return table->setAt(context, index, dk.key);
+        return table->setAt(context, index, context->newList()->appendLast(context, dk.key)->asObject(context));
+    }
+    const proto::ProtoObject* slot = table->getAt(context, index);
+    if (const proto::ProtoList* bucket = setBucket(context, slot)) {
+        if (setBucketPosition(context, bucket, dk.key) >= 0) return table;
+        return setWithSurplus(context, table->setAt(context, index, bucket->appendLast(context, dk.key)->asObject(context)), 1);
+    }
+    if (setSlotMatches(context, slot, dk)) return table;
+    // Two unequal elements under one hash: the slot becomes a bucket.
+    const proto::ProtoList* bucket = context->newList()->appendLast(context, slot)->appendLast(context, dk.key);
+    return setWithSurplus(context, table->setAt(context, index, bucket->asObject(context)), 1);
+}
+
+// `table` without the element equal to `dk.key`; nullptr when it is absent.
+static const proto::ProtoSparseList* setRemove(proto::ProtoContext* context, const proto::ProtoSparseList* table,
+                                               const DictKey& dk) {
+    const proto::proto_ulong index = setSlotIndex(dk.hash);
+    if (!table || !table->has(context, index)) return nullptr;
+    const proto::ProtoObject* slot = table->getAt(context, index);
+    if (const proto::ProtoList* bucket = setBucket(context, slot)) {
+        const long long pos = setBucketPosition(context, bucket, dk.key);
+        if (pos < 0) return nullptr;
+        if (bucket->getSize(context) == 1) return table->removeAt(context, index);
+        const proto::ProtoList* rest = bucket->removeAt(context, static_cast<int>(pos));
+        return setWithSurplus(context, table->setAt(context, index, rest->asObject(context)), -1);
+    }
+    return setSlotMatches(context, slot, dk) ? table->removeAt(context, index) : nullptr;
+}
+
+// A frozenset's hash, from the indexes its elements are filed under and
+// independent of their order.
+static proto::proto_ulong frozensetKeyHash(proto::ProtoContext* context, const proto::ProtoSparseList* table) {
+    proto::proto_ulong h = PROTO_UL(0x345678) ^ (setTableSize(context, table) * PROTO_UL(1927868237));
+    SetCursor cursor(context, table);
+    DictKey e;
+    while (cursor.next(e)) {
+        const proto::proto_ulong eh = e.hash;
+        h ^= (eh ^ (eh << 16) ^ PROTO_UL(89869747)) * PROTO_UL(3644798167);
+    }
+    return h;
+}
+
+// The key a set element is filed under. False when the value is unhashable
+// (TypeError raised).
+static bool setElementKey(proto::ProtoContext* context, const proto::ProtoObject* value, DictKey& dk) {
+    return dictKeyResolve(context, value, true, dk);
+}
+
+// The key set.__contains__, remove and discard look `value` up with: a set
+// is looked up as the equal frozenset, as CPython does.
+static bool setLookupKey(proto::ProtoContext* context, const proto::ProtoObject* value, DictKey& dk) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (env && value && !value->isInteger(context) && !value->isString(context)) {
+        const proto::ProtoSparseList* data = set_underlying(context, value);
+        const proto::ProtoObject* cls = data ? env->getType(context, value) : nullptr;
+        if (cls && env->getAttribute(context, cls, env->getHashString(), false) == PROTO_NONE) {
+            dk.key = value;
+            dk.hash = frozensetKeyHash(context, data);
+            dk.exact = false;
+            return true;
+        }
+    }
+    return setElementKey(context, value, dk);
+}
+
+// `acc` with every element of the set table `other` added.
+static const proto::ProtoSparseList* setMerge(proto::ProtoContext* context, const proto::ProtoSparseList* acc,
+                                              const proto::ProtoSparseList* other) {
+    SetCursor cursor(context, other);
+    DictKey e;
+    while (cursor.next(e)) acc = setPut(context, acc, e);
+    return acc;
+}
+
+const proto::ProtoSparseList* PythonEnvironment::newSetStorage(proto::ProtoContext* ctx) {
+    return ctx->newSparseList();
+}
+
+const proto::ProtoSparseList* PythonEnvironment::setAdd(proto::ProtoContext* ctx, const proto::ProtoSparseList* s,
+                                                        const proto::ProtoObject* value) {
+    DictKey dk;
+    if (!setElementKey(ctx, value, dk)) return nullptr;
+    return setPut(ctx, s, dk);
+}
+
+const proto::ProtoSparseList* PythonEnvironment::setStorage(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
+    return set_underlying(ctx, obj);
+}
+
+proto::proto_ulong PythonEnvironment::setSize(proto::ProtoContext* ctx, const proto::ProtoSparseList* s) {
+    return setTableSize(ctx, s);
+}
+
+const proto::ProtoList* PythonEnvironment::setElements(proto::ProtoContext* ctx, const proto::ProtoSparseList* s) {
+    const proto::ProtoList* out = ctx->newList();
+    SetCursor cursor(ctx, s);
+    DictKey e;
+    while (cursor.next(e)) out = out->appendLast(ctx, e.key);
+    return out;
 }
 
 proto::proto_ulong pyDictKeyHash(proto::ProtoContext* context, const proto::ProtoObject* key) {
@@ -7492,7 +7725,7 @@ static const proto::ProtoObject* py_set_call(
     proto::ProtoObject* instance = const_cast<proto::ProtoObject*>(cls->newChild(context, true));
     instance->setAttribute(context, PythonEnvironment::getInternalString(context, "__class__"), cls);
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    instance->setAttribute(context, dataName, context->newSet()->asObject(context));
+    instance->setAttribute(context, dataName, context->newSparseList()->asObject(context));
     return instance;
 }
 
@@ -8343,13 +8576,22 @@ static const proto::ProtoObject* py_str_translate(
     return PythonEnvironment::newStr(context, out);
 }
 
+// The set table a `__data__` payload holds, or nullptr. Tag-only on the
+// payload: an object (pointer tag 0) would answer asSparseList with its own
+// attribute storage.
+static inline const proto::ProtoSparseList* setPayload(proto::ProtoContext* context, const proto::ProtoObject* data) {
+    if (!data || (reinterpret_cast<uintptr_t>(data) & 0x3F) == 0) return nullptr;
+    return data->asSparseList(context);
+}
+
 // The elements of `iterable` for set.__init__. Returns nullptr, with the
 // exception pending, when iterating raises or an element is unhashable.
-static const proto::ProtoSet* set_items_from_iterable(
+static const proto::ProtoSparseList* set_items_from_iterable(
     proto::ProtoContext* context,
     PythonEnvironment* env,
     const proto::ProtoObject* iterable) {
-    const proto::ProtoSet* s = context->newSet();
+    if (const proto::ProtoSparseList* other = set_underlying(context, iterable)) return other;
+    const proto::ProtoSparseList* s = context->newSparseList();
     // Drive iteration through env->iter / env->next so user
     // classes with Python-level __iter__ / __next__ work too —
     // the previous direct asMethod check skipped every Python
@@ -8415,7 +8657,7 @@ static const proto::ProtoObject* py_set_init(
     }
     // Collect the elements first: an arbitrary iterable can be consumed only
     // once, so a retried publish must not iterate it again.
-    const proto::ProtoSet* items = context->newSet();
+    const proto::ProtoSparseList* items = context->newSparseList();
     if (nargs - posOff == 1) {
         items = set_items_from_iterable(context, env,
             positionalParameters->getAt(context, static_cast<int>(posOff)));
@@ -8435,14 +8677,7 @@ static const proto::ProtoObject* py_set_len(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    const proto::ProtoSet* s = self->asSet(context);
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__"));
-    if (!s) {
-        s = data ? data->asSet(context) : nullptr;
-    }
-    if (!s) return context->fromInteger(0);
-    return context->fromInteger(s->getSize(context));
+    return context->fromInteger(static_cast<long long>(setTableSize(context, set_underlying(context, self))));
 }
 
 static const proto::ProtoObject* py_set_contains(
@@ -8451,30 +8686,19 @@ static const proto::ProtoObject* py_set_contains(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoString* dataS = env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoSet* s = self ? self->asSet(context) : nullptr;
-    if (!s && self) {
-        const proto::ProtoObject* data = self->getAttribute(context, dataS);
-        s = data ? data->asSet(context) : nullptr;
-    }
+    const proto::ProtoSparseList* s = set_underlying(context, self);
     const proto::ProtoObject* value = nullptr;
     if (!s && positionalParameters && positionalParameters->getSize(context) >= 2) {
         // Unbound: set.__contains__(receiver, value)
-        const proto::ProtoObject* recv = positionalParameters->getAt(context, 0);
-        s = recv ? recv->asSet(context) : nullptr;
-        if (!s && recv) {
-            const proto::ProtoObject* data = recv->getAttribute(context, dataS);
-            s = data ? data->asSet(context) : nullptr;
-        }
+        s = set_underlying(context, positionalParameters->getAt(context, 0));
         value = positionalParameters->getAt(context, 1);
     } else if (positionalParameters && positionalParameters->getSize(context) >= 1) {
         value = positionalParameters->getAt(context, 0);
     }
     if (!s || !value) return PROTO_FALSE;
-    proto::proto_ulong h = 0;
-    if (!setLookupHash(context, value, h)) return nullptr;
-    return s->hasHash(context, h) ? PROTO_TRUE : PROTO_FALSE;
+    DictKey dk;
+    if (!setLookupKey(context, value, dk)) return nullptr;
+    return setFind(context, s, dk) ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_set_bool(
@@ -8483,14 +8707,8 @@ static const proto::ProtoObject* py_set_bool(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    const proto::ProtoSet* s = self->asSet(context);
-    if (!s) {
-        PythonEnvironment* env = PythonEnvironment::fromContext(context);
-        const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__"));
-        s = data ? data->asSet(context) : nullptr;
-    }
-    if (!s) return PROTO_FALSE;
-    return s->getSize(context) > 0 ? PROTO_TRUE : PROTO_FALSE;
+    const proto::ProtoSparseList* s = set_underlying(context, self);
+    return setTableSize(context, s) > 0 ? PROTO_TRUE : PROTO_FALSE;
 }
 
 // Helper: extract set-like receiver from self or positional[0].  Returns
@@ -8499,18 +8717,10 @@ static const proto::ProtoObject* set_self_or_arg(proto::ProtoContext* context,
         const proto::ProtoObject* self, const proto::ProtoArguments* args,
         int* posOff = nullptr) {
     if (posOff) *posOff = 0;
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoString* dataS = env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__");
-    auto isSetLike = [&](const proto::ProtoObject* x) -> bool {
-        if (!x) return false;
-        if (x->asSet(context)) return true;
-        const proto::ProtoObject* d = x->getAttribute(context, dataS);
-        return d && d->asSet(context);
-    };
-    if (isSetLike(self)) return self;
+    if (set_underlying(context, self)) return self;
     if (args && args->getSize(context) >= 1) {
         const proto::ProtoObject* cand = args->getAt(context, 0);
-        if (isSetLike(cand)) {
+        if (set_underlying(context, cand)) {
             if (posOff) *posOff = 1;
             return cand;
         }
@@ -8531,16 +8741,19 @@ static const proto::ProtoObject* py_set_add(
     if (!receiver) return PROTO_NONE;
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
     const proto::ProtoObject* item = positionalParameters->getAt(context, posOff);
-    proto::proto_ulong h = 0;
-    if (!PythonEnvironment::hashKey(context, item, h)) return nullptr;
+    // The element's __hash__ runs once; only the insertion into the current
+    // payload is retried.
+    DictKey dk;
+    if (!setElementKey(context, item, dk)) return nullptr;
     // Retry loop: set payloads use the same compare-and-swap publish as
     // lists (see publishListData).
     for (;;) {
-        const proto::ProtoObject* data = receiver->proto::ProtoObject::getAttribute(context, dataName);
-        const proto::ProtoSet* s = data && data->asSet(context) ? data->asSet(context) : context->newSet();
-        if (data && s->hasHash(context, h)) return PROTO_NONE;
-        const proto::ProtoSet* newSet = s->addWithHash(context, h, item);
-        if (publishListData(context, receiver, dataName, data, newSet->asObject(context))) return PROTO_NONE;
+        const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
+        const proto::ProtoSparseList* s = setPayload(context, data);
+        if (!s) s = context->newSparseList();
+        const proto::ProtoSparseList* next = setPut(context, s, dk);
+        if (data && next == s) return PROTO_NONE;
+        if (publishListData(context, receiver, dataName, data, next->asObject(context))) return PROTO_NONE;
     }
 }
 
@@ -8556,21 +8769,21 @@ static const proto::ProtoObject* py_set_remove(
     if (positionalParameters->getSize(context) < static_cast<proto::proto_ulong>(1 + posOff)) return PROTO_NONE;
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
     const proto::ProtoObject* value = positionalParameters->getAt(context, posOff);
-    proto::proto_ulong h = 0;
-    if (!setLookupHash(context, value, h)) return nullptr;
+    DictKey dk;
+    if (!setLookupKey(context, value, dk)) return nullptr;
     for (;;) {
         const proto::ProtoObject* data = receiver ? receiver->getAttribute(context, dataName) : nullptr;
-        const proto::ProtoSet* s = data && data->asSet(context) ? data->asSet(context) : context->newSet();
+        const proto::ProtoSparseList* s = setPayload(context, data);
+        const proto::ProtoSparseList* rest = setRemove(context, s, dk);
         // CPython: `s.remove(x)` raises KeyError when x is not in s.
         // discard() is the silent variant.
-        if (!s->hasHash(context, h)) {
+        if (!rest) {
             PythonEnvironment* env = PythonEnvironment::fromContext(context);
             if (env) env->raiseKeyError(context, value);
             return nullptr;
         }
         if (!receiver) return PROTO_NONE;
-        const proto::ProtoSet* newSet = s->removeHash(context, h);
-        if (publishListData(context, receiver, dataName, data, newSet->asObject(context))) return PROTO_NONE;
+        if (publishListData(context, receiver, dataName, data, rest->asObject(context))) return PROTO_NONE;
     }
 }
 
@@ -8595,26 +8808,20 @@ static const proto::ProtoObject* py_set_repr(
         const proto::ProtoObject* cls = env->getType(context, self);
         if (cls && cls == env->getFrozensetPrototype()) isFrozen = true;
     }
-    const proto::ProtoSet* s = self->asSet(context);
-    // Wrapped set instances store the underlying ProtoSet on __data__.
-    if (!s && env) {
-        const proto::ProtoObject* d = self->getAttribute(context, env->getDataString());
-        if (d) s = d->asSet(context);
-    }
-    if (!s || s->getSize(context) == 0) {
+    const proto::ProtoSparseList* s = set_underlying(context, self);
+    if (setTableSize(context, s) == 0) {
         const char* empty = isFrozen ? "frozenset()" : "set()";
         return PythonEnvironment::getInternedString(context, empty)->asObject(context);
     }
 
     std::string body = "{";
-    const proto::ProtoSetIterator* it = s->getIterator(context);
+    SetCursor cursor(context, s);
+    DictKey e;
     bool first = true;
-    while (it && it->hasNext(context)) {
+    while (cursor.next(e)) {
         if (!first) body += ", ";
         first = false;
-        const proto::ProtoObject* item = it->next(context);
-        body += PythonEnvironment::reprObject(context, item);
-        it = it->advance(context);
+        body += PythonEnvironment::reprObject(context, e.key);
     }
     body += "}";
     std::string out = isFrozen ? ("frozenset(" + body + ")") : body;
@@ -8634,15 +8841,13 @@ static const proto::ProtoObject* py_set_discard(
     if (!receiver) return PROTO_NONE;
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
     const proto::ProtoObject* elem = positionalParameters->getAt(context, posOff);
-    proto::proto_ulong h = 0;
-    if (!setLookupHash(context, elem, h)) return nullptr;
+    DictKey dk;
+    if (!setLookupKey(context, elem, dk)) return nullptr;
     for (;;) {
         const proto::ProtoObject* d = receiver->getAttribute(context, dataName);
-        const proto::ProtoSet* s = d ? d->asSet(context) : nullptr;
-        if (!s) return PROTO_NONE;
-        if (!s->hasHash(context, h)) return PROTO_NONE;
-        const proto::ProtoSet* newSet = s->removeHash(context, h);
-        if (publishListData(context, receiver, dataName, d, newSet->asObject(context))) return PROTO_NONE;
+        const proto::ProtoSparseList* rest = setRemove(context, setPayload(context, d), dk);
+        if (!rest) return PROTO_NONE;
+        if (publishListData(context, receiver, dataName, d, rest->asObject(context))) return PROTO_NONE;
     }
 }
 
@@ -8650,19 +8855,14 @@ static const proto::ProtoObject* py_set_discard(
 // next to the binary set operations that share it.
 static const proto::ProtoObject* new_set_like(proto::ProtoContext* context,
                                               const proto::ProtoObject* receiver,
-                                              const proto::ProtoSet* data);
+                                              const proto::ProtoSparseList* data);
 
 static const proto::ProtoObject* py_set_copy(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     const proto::ProtoObject* receiver = set_self_or_arg(context, self, args);
-    const proto::ProtoSet* s = receiver ? receiver->asSet(context) : nullptr;
-    if (!s) {
-        const proto::ProtoString* dn = PythonEnvironment::getInternalString(context, "__data__");
-        const proto::ProtoObject* d = receiver ? receiver->getAttribute(context, dn) : nullptr;
-        s = d ? d->asSet(context) : nullptr;
-    }
+    const proto::ProtoSparseList* s = set_underlying(context, receiver);
     if (!s || !receiver) return PROTO_NONE;
     // new_set_like reproduces the receiver's kind — a frozenset copy stays a
     // frozenset, including its __class__.  Rebuilding from parents[0] alone
@@ -8678,20 +8878,18 @@ static const proto::ProtoObject* py_set_clear(
     const proto::ProtoObject* receiver = set_self_or_arg(context, self, args);
     if (!receiver) return PROTO_NONE;
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, context->newSet()->asObject(context));
+    const_cast<proto::ProtoObject*>(receiver)->setAttribute(context, dataName, context->newSparseList()->asObject(context));
     return PROTO_NONE;
 }
 
 // Adds every element of `iterable` to `acc`. False, with the exception
 // pending, when iterating raises or an element is unhashable. The elements of
-// a set are taken with the hashes they are stored under.
-static bool add_iterable_to_set(proto::ProtoContext* context, const proto::ProtoObject* iterable, const proto::ProtoSet*& acc) {
+// a set are taken with the indexes they are filed under.
+static bool add_iterable_to_set(proto::ProtoContext* context, const proto::ProtoObject* iterable,
+                                const proto::ProtoSparseList*& acc) {
     if (!iterable || iterable == PROTO_NONE) return true;
-    if (const proto::ProtoSet* other = set_underlying(context, iterable)) {
-        for (const proto::ProtoSetIterator* it = other->getIterator(context); it && it->hasNext(context); it = it->advance(context)) {
-            const proto::proto_ulong h = it->nextHash(context);
-            if (!acc->hasHash(context, h)) acc = acc->addWithHash(context, h, it->next(context));
-        }
+    if (const proto::ProtoSparseList* other = set_underlying(context, iterable)) {
+        acc = setMerge(context, acc, other);
         return true;
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
@@ -8701,81 +8899,99 @@ static bool add_iterable_to_set(proto::ProtoContext* context, const proto::Proto
     for (;;) {
         const proto::ProtoObject* val = env->next(iterator);
         if (!val) return env->handleExhaustion(context);
-        const proto::ProtoSet* next = PythonEnvironment::setAdd(context, acc, val);
+        const proto::ProtoSparseList* next = PythonEnvironment::setAdd(context, acc, val);
         if (!next) return false;
         acc = next;
     }
 }
 
-// The elements of `iterable` as a set: its own payload when it is a set.
-// nullptr with the exception pending on failure.
-static const proto::ProtoSet* set_from_iterable(proto::ProtoContext* context, const proto::ProtoObject* iterable) {
-    if (const proto::ProtoSet* s = set_underlying(context, iterable)) return s;
-    const proto::ProtoSet* s = context->newSet();
+// The elements of `iterable` as a set table: its own payload when it is a
+// set. nullptr with the exception pending on failure.
+static const proto::ProtoSparseList* set_from_iterable(proto::ProtoContext* context, const proto::ProtoObject* iterable) {
+    if (const proto::ProtoSparseList* s = set_underlying(context, iterable)) return s;
+    const proto::ProtoSparseList* s = context->newSparseList();
     return add_iterable_to_set(context, iterable, s) ? s : nullptr;
 }
 
-static bool set_is_subset(proto::ProtoContext* context, const proto::ProtoSet* a, const proto::ProtoSet* b) {
-    if (a->getSize(context) > b->getSize(context)) return false;
-    for (const proto::ProtoSetIterator* it = a->getIterator(context); it && it->hasNext(context); it = it->advance(context)) {
-        if (!b->hasHash(context, it->nextHash(context))) return false;
+// Whether every element of `a` is in `b`.
+static bool set_is_subset(proto::ProtoContext* context, const proto::ProtoSparseList* a, const proto::ProtoSparseList* b) {
+    if (setTableSize(context, a) > setTableSize(context, b)) return false;
+    SetCursor cursor(context, a);
+    DictKey e;
+    while (cursor.next(e)) {
+        if (!setFind(context, b, e)) return false;
     }
     return true;
 }
 
-static bool set_shares_element(proto::ProtoContext* context, const proto::ProtoSet* a, const proto::ProtoSet* b) {
-    if (a->getSize(context) > b->getSize(context)) { const proto::ProtoSet* t = a; a = b; b = t; }
-    for (const proto::ProtoSetIterator* it = a->getIterator(context); it && it->hasNext(context); it = it->advance(context)) {
-        if (b->hasHash(context, it->nextHash(context))) return true;
+static bool set_shares_element(proto::ProtoContext* context, const proto::ProtoSparseList* a, const proto::ProtoSparseList* b) {
+    if (setTableSize(context, a) > setTableSize(context, b)) { const proto::ProtoSparseList* t = a; a = b; b = t; }
+    SetCursor cursor(context, a);
+    DictKey e;
+    while (cursor.next(e)) {
+        if (setFind(context, b, e)) return true;
     }
     return false;
 }
 
-// The elements of `s` that are in every set of `others` (a list of sets).
-static const proto::ProtoSet* set_intersect(proto::ProtoContext* context, const proto::ProtoSet* s, const proto::ProtoList* others) {
+// The elements of `s` that are in every set table of `others` (a list of
+// set tables).
+static const proto::ProtoSparseList* set_intersect(proto::ProtoContext* context, const proto::ProtoSparseList* s,
+                                                   const proto::ProtoList* others) {
     const proto::proto_ulong n = others->getSize(context);
-    const proto::ProtoSet* acc = context->newSet();
-    for (const proto::ProtoSetIterator* it = s->getIterator(context); it && it->hasNext(context); it = it->advance(context)) {
-        const proto::proto_ulong h = it->nextHash(context);
+    const proto::ProtoSparseList* acc = context->newSparseList();
+    SetCursor cursor(context, s);
+    DictKey e;
+    while (cursor.next(e)) {
         bool inAll = true;
         for (proto::proto_ulong i = 0; i < n && inAll; ++i) {
-            inAll = others->getAt(context, static_cast<int>(i))->asSet(context)->hasHash(context, h);
+            inAll = setFind(context, setPayload(context, others->getAt(context, static_cast<int>(i))), e) != nullptr;
         }
-        if (inAll) acc = acc->addWithHash(context, h, it->next(context));
+        if (inAll) acc = setPut(context, acc, e);
     }
     return acc;
 }
 
 // `s` without the elements of `remove`.
-static const proto::ProtoSet* set_without(proto::ProtoContext* context, const proto::ProtoSet* s, const proto::ProtoSet* remove) {
-    if (remove->getSize(context) <= s->getSize(context)) {
-        const proto::ProtoSet* acc = s;
-        for (const proto::ProtoSetIterator* it = remove->getIterator(context); it && it->hasNext(context); it = it->advance(context)) {
-            acc = acc->removeHash(context, it->nextHash(context));
+static const proto::ProtoSparseList* set_without(proto::ProtoContext* context, const proto::ProtoSparseList* s,
+                                                 const proto::ProtoSparseList* remove) {
+    DictKey e;
+    if (setTableSize(context, remove) <= setTableSize(context, s)) {
+        const proto::ProtoSparseList* acc = s;
+        SetCursor cursor(context, remove);
+        while (cursor.next(e)) {
+            if (const proto::ProtoSparseList* rest = setRemove(context, acc, e)) acc = rest;
         }
         return acc;
     }
-    const proto::ProtoSet* acc = context->newSet();
-    for (const proto::ProtoSetIterator* it = s->getIterator(context); it && it->hasNext(context); it = it->advance(context)) {
-        const proto::proto_ulong h = it->nextHash(context);
-        if (!remove->hasHash(context, h)) acc = acc->addWithHash(context, h, it->next(context));
+    const proto::ProtoSparseList* acc = context->newSparseList();
+    SetCursor cursor(context, s);
+    while (cursor.next(e)) {
+        if (!setFind(context, remove, e)) acc = setPut(context, acc, e);
     }
     return acc;
 }
 
 // The elements in exactly one of `a` and `b`.
-static const proto::ProtoSet* set_symmetric(proto::ProtoContext* context, const proto::ProtoSet* a, const proto::ProtoSet* b) {
-    const proto::ProtoSet* acc = a;
-    for (const proto::ProtoSetIterator* it = b->getIterator(context); it && it->hasNext(context); it = it->advance(context)) {
-        const proto::proto_ulong h = it->nextHash(context);
-        acc = a->hasHash(context, h) ? acc->removeHash(context, h) : acc->addWithHash(context, h, it->next(context));
+static const proto::ProtoSparseList* set_symmetric(proto::ProtoContext* context, const proto::ProtoSparseList* a,
+                                                   const proto::ProtoSparseList* b) {
+    const proto::ProtoSparseList* acc = a;
+    SetCursor cursor(context, b);
+    DictKey e;
+    while (cursor.next(e)) {
+        if (setFind(context, a, e)) {
+            if (const proto::ProtoSparseList* rest = setRemove(context, acc, e)) acc = rest;
+        } else {
+            acc = setPut(context, acc, e);
+        }
     }
     return acc;
 }
 
 // The result of a set operation on `receiver`: a frozenset when the receiver
 // is one (as in CPython), a set otherwise.
-static const proto::ProtoObject* new_set_like(proto::ProtoContext* context, const proto::ProtoObject* receiver, const proto::ProtoSet* data) {
+static const proto::ProtoObject* new_set_like(proto::ProtoContext* context, const proto::ProtoObject* receiver,
+                                              const proto::ProtoSparseList* data) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (!env) return PROTO_NONE;
     const proto::ProtoObject* frozen = env->getFrozensetPrototype();
@@ -8804,18 +9020,17 @@ static const proto::ProtoObject* new_set_like(proto::ProtoContext* context, cons
     return result;
 }
 
+const proto::ProtoObject* PythonEnvironment::newSetObject(proto::ProtoContext* ctx, const proto::ProtoSparseList* s) {
+    return new_set_like(ctx, nullptr, s ? s : ctx->newSparseList());
+}
+
 static const proto::ProtoObject* py_set_union(
     proto::ProtoContext* context, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     std::optional<proto::ProtoListArguments> restaged_posArgs;   // posArgs re-staged below
     int posOff = 0;
     const proto::ProtoObject* receiver = set_self_or_arg(context, self, posArgs, &posOff);
-    const proto::ProtoSet* s = receiver ? receiver->asSet(context) : nullptr;
-    if (!s) {
-        const proto::ProtoString* dn = PythonEnvironment::getInternalString(context, "__data__");
-        const proto::ProtoObject* d = receiver ? receiver->getAttribute(context, dn) : nullptr;
-        s = d ? d->asSet(context) : nullptr;
-    }
+    const proto::ProtoSparseList* s = set_underlying(context, receiver);
     if (!s) return PROTO_NONE;
     if (posOff > 0) {
         const proto::ProtoList* shifted = context->newList();
@@ -8825,7 +9040,7 @@ static const proto::ProtoObject* py_set_union(
         restaged_posArgs.emplace(context, shifted);   // shifted is young in context for the call
         posArgs = &*restaged_posArgs;
     }
-    const proto::ProtoSet* acc = s;
+    const proto::ProtoSparseList* acc = s;
     for (proto::proto_ulong i = 0; i < posArgs->getSize(context); ++i) {
         if (!add_iterable_to_set(context, posArgs->getAt(context, static_cast<int>(i)), acc)) return nullptr;
     }
@@ -8843,15 +9058,14 @@ static const proto::ProtoObject* py_set_update(
     // Iterating the arguments runs Python code and cannot be repeated, so
     // the incoming elements are collected once; only the merge into the
     // current payload is retried.
-    const proto::ProtoSet* incoming = context->newSet();
+    const proto::ProtoSparseList* incoming = context->newSparseList();
     for (proto::proto_ulong i = posOff; i < posArgs->getSize(context); ++i) {
         if (!add_iterable_to_set(context, posArgs->getAt(context, static_cast<int>(i)), incoming)) return nullptr;
     }
     for (;;) {
         const proto::ProtoObject* d = receiver->getAttribute(context, dn);
-        const proto::ProtoSet* s = d && d->asSet(context) ? d->asSet(context) : context->newSet();
-        const proto::ProtoSet* acc = s;
-        add_iterable_to_set(context, incoming->asObject(context), acc);
+        const proto::ProtoSparseList* s = setPayload(context, d);
+        const proto::ProtoSparseList* acc = setMerge(context, s ? s : context->newSparseList(), incoming);
         if (publishListData(context, receiver, dn, d, acc->asObject(context))) return PROTO_NONE;
     }
 }
@@ -8863,12 +9077,10 @@ static const proto::ProtoObject* py_set_isdisjoint(
     int posOff = 0;
     const proto::ProtoObject* receiver = set_self_or_arg(context, self, posArgs, &posOff);
     if (!receiver) return PROTO_TRUE;
-    const proto::ProtoString* dn = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* d = receiver->getAttribute(context, dn);
-    const proto::ProtoSet* s = d && d->asSet(context) ? d->asSet(context) : nullptr;
+    const proto::ProtoSparseList* s = set_underlying(context, receiver);
     if (!s || posArgs->getSize(context) <= static_cast<proto::proto_ulong>(posOff)) return PROTO_TRUE;
     // Walk the other iterable; return False on the first element in s.
-    const proto::ProtoSet* otherSet = set_from_iterable(context, posArgs->getAt(context, posOff));
+    const proto::ProtoSparseList* otherSet = set_from_iterable(context, posArgs->getAt(context, posOff));
     if (!otherSet) return nullptr;
     return set_shares_element(context, s, otherSet) ? PROTO_FALSE : PROTO_TRUE;
 }
@@ -8882,19 +9094,19 @@ static const proto::ProtoObject* py_set_intersection_update(
     const proto::ProtoObject* receiver = set_self_or_arg(context, self, posArgs, &posOff);
     if (!receiver) return PROTO_NONE;
     const proto::ProtoString* dn = PythonEnvironment::getInternalString(context, "__data__");
-    // Materialise every argument as a ProtoSet once (walking a non-set
+    // Materialise every argument as a set table once (walking a non-set
     // iterable runs Python code); only the filter over the current payload
     // is retried.
     const proto::ProtoList* others = context->newList();
     for (proto::proto_ulong i = posOff; i < posArgs->getSize(context); ++i) {
-        const proto::ProtoSet* os = set_from_iterable(context, posArgs->getAt(context, static_cast<int>(i)));
+        const proto::ProtoSparseList* os = set_from_iterable(context, posArgs->getAt(context, static_cast<int>(i)));
         if (!os) return nullptr;
         others = others->appendLast(context, os->asObject(context));
     }
     for (;;) {
         const proto::ProtoObject* d = receiver->getAttribute(context, dn);
-        const proto::ProtoSet* s = d && d->asSet(context) ? d->asSet(context) : context->newSet();
-        const proto::ProtoSet* acc = set_intersect(context, s, others);
+        const proto::ProtoSparseList* s = setPayload(context, d);
+        const proto::ProtoSparseList* acc = set_intersect(context, s ? s : context->newSparseList(), others);
         if (publishListData(context, receiver, dn, d, acc->asObject(context))) return PROTO_NONE;
     }
 }
@@ -8906,14 +9118,14 @@ static const proto::ProtoObject* py_set_difference_update(
     const proto::ProtoObject* receiver = set_self_or_arg(context, self, posArgs, &posOff);
     if (!receiver) return PROTO_NONE;
     const proto::ProtoString* dn = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoSet* removeSet = context->newSet();
+    const proto::ProtoSparseList* removeSet = context->newSparseList();
     for (proto::proto_ulong i = posOff; i < posArgs->getSize(context); ++i) {
         if (!add_iterable_to_set(context, posArgs->getAt(context, static_cast<int>(i)), removeSet)) return nullptr;
     }
     for (;;) {
         const proto::ProtoObject* d = receiver->getAttribute(context, dn);
-        const proto::ProtoSet* s = d && d->asSet(context) ? d->asSet(context) : context->newSet();
-        const proto::ProtoSet* acc = set_without(context, s, removeSet);
+        const proto::ProtoSparseList* s = setPayload(context, d);
+        const proto::ProtoSparseList* acc = set_without(context, s ? s : context->newSparseList(), removeSet);
         if (publishListData(context, receiver, dn, d, acc->asObject(context))) return PROTO_NONE;
     }
 }
@@ -8926,12 +9138,12 @@ static const proto::ProtoObject* py_set_symmetric_difference_update(
     if (!receiver) return PROTO_NONE;
     const proto::ProtoString* dn = PythonEnvironment::getInternalString(context, "__data__");
     if (posArgs->getSize(context) <= static_cast<proto::proto_ulong>(posOff)) return PROTO_NONE;
-    const proto::ProtoSet* other = set_from_iterable(context, posArgs->getAt(context, posOff));
+    const proto::ProtoSparseList* other = set_from_iterable(context, posArgs->getAt(context, posOff));
     if (!other) return nullptr;
     for (;;) {
         const proto::ProtoObject* d = receiver->getAttribute(context, dn);
-        const proto::ProtoSet* s = d && d->asSet(context) ? d->asSet(context) : context->newSet();
-        const proto::ProtoSet* acc = set_symmetric(context, s, other);
+        const proto::ProtoSparseList* s = setPayload(context, d);
+        const proto::ProtoSparseList* acc = set_symmetric(context, s ? s : context->newSparseList(), other);
         if (publishListData(context, receiver, dn, d, acc->asObject(context))) return PROTO_NONE;
     }
 }
@@ -8942,12 +9154,7 @@ static const proto::ProtoObject* py_set_intersection(
     std::optional<proto::ProtoListArguments> restaged_posArgs;   // posArgs re-staged below
     int posOff = 0;
     const proto::ProtoObject* receiver = set_self_or_arg(context, self, posArgs, &posOff);
-    const proto::ProtoSet* s = receiver ? receiver->asSet(context) : nullptr;
-    if (!s) {
-        const proto::ProtoString* dn = PythonEnvironment::getInternalString(context, "__data__");
-        const proto::ProtoObject* d = receiver ? receiver->getAttribute(context, dn) : nullptr;
-        s = d ? d->asSet(context) : nullptr;
-    }
+    const proto::ProtoSparseList* s = set_underlying(context, receiver);
     if (!s) return PROTO_NONE;
     if (posOff > 0) {
         const proto::ProtoList* shifted = context->newList();
@@ -8959,7 +9166,7 @@ static const proto::ProtoObject* py_set_intersection(
     }
     const proto::ProtoList* others = context->newList();
     for (proto::proto_ulong i = 0; i < posArgs->getSize(context); ++i) {
-        const proto::ProtoSet* os = set_from_iterable(context, posArgs->getAt(context, static_cast<int>(i)));
+        const proto::ProtoSparseList* os = set_from_iterable(context, posArgs->getAt(context, static_cast<int>(i)));
         if (!os) return nullptr;
         others = others->appendLast(context, os->asObject(context));
     }
@@ -8972,12 +9179,7 @@ static const proto::ProtoObject* py_set_difference(
     std::optional<proto::ProtoListArguments> restaged_posArgs;   // posArgs re-staged below
     int posOff = 0;
     const proto::ProtoObject* receiver = set_self_or_arg(context, self, posArgs, &posOff);
-    const proto::ProtoSet* s = receiver ? receiver->asSet(context) : nullptr;
-    if (!s) {
-        const proto::ProtoString* dn = PythonEnvironment::getInternalString(context, "__data__");
-        const proto::ProtoObject* d = receiver ? receiver->getAttribute(context, dn) : nullptr;
-        s = d ? d->asSet(context) : nullptr;
-    }
+    const proto::ProtoSparseList* s = set_underlying(context, receiver);
     if (!s) return PROTO_NONE;
     if (posOff > 0) {
         const proto::ProtoList* shifted = context->newList();
@@ -8987,9 +9189,9 @@ static const proto::ProtoObject* py_set_difference(
         restaged_posArgs.emplace(context, shifted);   // shifted is young in context for the call
         posArgs = &*restaged_posArgs;
     }
-    const proto::ProtoSet* acc = s;
+    const proto::ProtoSparseList* acc = s;
     for (proto::proto_ulong i = 0; i < posArgs->getSize(context); ++i) {
-        const proto::ProtoSet* os = set_from_iterable(context, posArgs->getAt(context, static_cast<int>(i)));
+        const proto::ProtoSparseList* os = set_from_iterable(context, posArgs->getAt(context, static_cast<int>(i)));
         if (!os) return nullptr;
         acc = set_without(context, acc, os);
     }
@@ -9001,9 +9203,9 @@ static const proto::ProtoObject* py_set_symmetric_difference(
     const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     int posOff = 0;
     const proto::ProtoObject* receiver = set_self_or_arg(context, self, posArgs, &posOff);
-    const proto::ProtoSet* s = set_underlying(context, receiver);
+    const proto::ProtoSparseList* s = set_underlying(context, receiver);
     if (!s || posArgs->getSize(context) <= static_cast<proto::proto_ulong>(posOff)) return PROTO_NONE;
-    const proto::ProtoSet* other = set_from_iterable(context, posArgs->getAt(context, posOff));
+    const proto::ProtoSparseList* other = set_from_iterable(context, posArgs->getAt(context, posOff));
     if (!other) return nullptr;
     return new_set_like(context, receiver, set_symmetric(context, s, other));
 }
@@ -9016,17 +9218,7 @@ static void unwrap_set_binop_args(proto::ProtoContext* ctx,
     const proto::ProtoObject*& self, const proto::ProtoArguments*& args,
     std::optional<proto::ProtoListArguments>& restaged) {
     if (!args) return;
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    const proto::ProtoString* dataS = env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "__data__");
-    bool selfIsSet = false;
-    if (self) {
-        if (self->asSet(ctx)) selfIsSet = true;
-        else {
-            const proto::ProtoObject* d = self->getAttribute(ctx, dataS);
-            if (d && d->asSet(ctx)) selfIsSet = true;
-        }
-    }
-    if (selfIsSet) return;
+    if (set_underlying(ctx, self)) return;
     if (args->getSize(ctx) >= 2) {
         self = args->getAt(ctx, 0);
         const proto::ProtoList* shifted = ctx->newList()->appendLast(ctx, args->getAt(ctx, 1));
@@ -9046,11 +9238,7 @@ static void unwrap_set_binop_args(proto::ProtoContext* ctx,
 static bool set_op_other_is_setlike(proto::ProtoContext* context,
                                     const proto::ProtoObject* other) {
     if (!other) return false;
-    if (other->asSet(context)) return true;
-    // Wrapped set / frozenset instance: __data__ is a ProtoSet.
-    const proto::ProtoString* dataS = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* d = other->getAttribute(context, dataS);
-    if (d && d->asSet(context)) return true;
+    if (set_underlying(context, other)) return true;
     // dict_keys / dict_items views also use set semantics in CPython.
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (env) {
@@ -9134,7 +9322,7 @@ static const proto::ProtoObject* set_reflected(
     if (!set_op_other_is_setlike(context, left)) return notImplemented;
     const proto::ProtoObject* leftSet = left;
     if (!set_underlying(context, left)) {
-        const proto::ProtoSet* elements = set_from_iterable(context, left);
+        const proto::ProtoSparseList* elements = set_from_iterable(context, left);
         if (!elements) return nullptr;
         leftSet = new_set_like(context, nullptr, elements);
     }
@@ -9165,17 +9353,21 @@ static const proto::ProtoObject* py_set_rxor(
     return set_reflected(context, self, args, kwargs, py_set_xor);
 }
 
-// Resolve `self`'s underlying ProtoSet, honouring set instances that store
-// the data in the `__data__` attribute (the standard layout produced by
-// py_set_call). Returns nullptr if the object isn't set-like.
-static const proto::ProtoSet* set_underlying(proto::ProtoContext* context, const proto::ProtoObject* self) {
-    if (!self) return nullptr;
-    const proto::ProtoSet* s = self->asSet(context);
-    if (s) return s;
+// The set table of a set or frozenset (an instance of either type or of a
+// subclass), or nullptr for any other object. Set-ness comes from the type:
+// a dict, a namespace and every ordinary instance answer asSparseList too,
+// so the shape of `__data__` alone cannot tell a set.
+static const proto::ProtoSparseList* set_underlying(proto::ProtoContext* context, const proto::ProtoObject* self) {
+    if (!self || (reinterpret_cast<uintptr_t>(self) & 0x3F) != 0) return nullptr;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoObject* data = self->getAttribute(context,
-        env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__"));
-    return data ? data->asSet(context) : nullptr;
+    if (!env) return nullptr;
+    const proto::ProtoObject* setProto = env->getSetPrototype();
+    const proto::ProtoObject* frozenProto = env->getFrozensetPrototype();
+    if (self == setProto || self == frozenProto) return nullptr;
+    if (!(setProto && self->hasParent(context, setProto)) && !(frozenProto && self->hasParent(context, frozenProto))) {
+        return nullptr;
+    }
+    return setPayload(context, self->getAttribute(context, env->getDataString()));
 }
 
 // set / frozenset __eq__: equal iff sizes match and each element of `self`
@@ -9188,10 +9380,10 @@ static const proto::ProtoObject* py_set_eq(
     if (!args || args->getSize(context) < 1) return PROTO_FALSE;
     const proto::ProtoObject* other = args->getAt(context, 0);
     if (self == other) return PROTO_TRUE;
-    const proto::ProtoSet* a = set_underlying(context, self);
-    const proto::ProtoSet* b = set_underlying(context, other);
+    const proto::ProtoSparseList* a = set_underlying(context, self);
+    const proto::ProtoSparseList* b = set_underlying(context, other);
     if (!a || !b) return PROTO_NONE;
-    if (a->getSize(context) != b->getSize(context)) return PROTO_FALSE;
+    if (setTableSize(context, a) != setTableSize(context, b)) return PROTO_FALSE;
     return set_is_subset(context, a, b) ? PROTO_TRUE : PROTO_FALSE;
 }
 
@@ -9210,9 +9402,9 @@ static const proto::ProtoObject* set_subset_method(
     proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ProtoArguments* posArgs, bool superset) {
     int posOff = 0;
     const proto::ProtoObject* receiver = set_self_or_arg(context, self, posArgs, &posOff);
-    const proto::ProtoSet* s = set_underlying(context, receiver);
+    const proto::ProtoSparseList* s = set_underlying(context, receiver);
     if (!s || posArgs->getSize(context) <= static_cast<proto::proto_ulong>(posOff)) return PROTO_NONE;
-    const proto::ProtoSet* other = set_from_iterable(context, posArgs->getAt(context, posOff));
+    const proto::ProtoSparseList* other = set_from_iterable(context, posArgs->getAt(context, posOff));
     if (!other) return nullptr;
     const bool result = superset ? set_is_subset(context, other, s) : set_is_subset(context, s, other);
     return result ? PROTO_TRUE : PROTO_FALSE;
@@ -9239,11 +9431,11 @@ static const proto::ProtoObject* set_compare(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* notImplemented = env ? env->getNotImplementedPrototype() : PROTO_NONE;
     if (!args || args->getSize(context) != 1) return notImplemented;
-    const proto::ProtoSet* a = set_underlying(context, self);
-    const proto::ProtoSet* b = set_underlying(context, args->getAt(context, 0));
+    const proto::ProtoSparseList* a = set_underlying(context, self);
+    const proto::ProtoSparseList* b = set_underlying(context, args->getAt(context, 0));
     if (!a || !b) return notImplemented;
-    if (superset) { const proto::ProtoSet* t = a; a = b; b = t; }
-    if (strict && a->getSize(context) == b->getSize(context)) return PROTO_FALSE;
+    if (superset) { const proto::ProtoSparseList* t = a; a = b; b = t; }
+    if (strict && setTableSize(context, a) == setTableSize(context, b)) return PROTO_FALSE;
     return set_is_subset(context, a, b) ? PROTO_TRUE : PROTO_FALSE;
 }
 
@@ -9273,22 +9465,24 @@ static const proto::ProtoObject* py_set_pop(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
+    const proto::ProtoObject* receiver = set_self_or_arg(context, self, positionalParameters);
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
     // Retry loop: the element is chosen from, and removed out of, the same
     // payload snapshot, so two threads never pop the same element.
     for (;;) {
-        const proto::ProtoObject* data = self->getAttribute(context, dataName);
-        const proto::ProtoSet* s = data && data->asSet(context) ? data->asSet(context) : self->asSet(context);
-        if (!s || s->getSize(context) == 0) {
+        const proto::ProtoObject* data = receiver ? receiver->getAttribute(context, dataName) : nullptr;
+        const proto::ProtoSparseList* s = setPayload(context, data);
+        SetCursor cursor(context, s);
+        DictKey e;
+        if (!cursor.next(e)) {
             PythonEnvironment* env = PythonEnvironment::fromContext(context);
             if (env) env->raiseKeyError(context, PythonEnvironment::getInternedString(context, "pop from an empty set")->asObject(context));
             return PROTO_NONE;
         }
-        const proto::ProtoSetIterator* it = s->getIterator(context);
-        if (!it || !it->hasNext(context)) return PROTO_NONE;
-        const proto::ProtoObject* value = it->next(context);
-        const proto::ProtoSet* newSet = s->removeHash(context, it->nextHash(context));
-        if (publishListData(context, self, dataName, data, newSet->asObject(context))) return value;
+        // The element is removed by identity: no __eq__ runs.
+        const proto::ProtoSparseList* rest = setRemove(context, s, e);
+        if (!rest) return PROTO_NONE;
+        if (publishListData(context, receiver, dataName, data, rest->asObject(context))) return e.key;
     }
 }
 
@@ -9303,13 +9497,9 @@ static const proto::ProtoObject* py_set_reduce(
     const proto::ParentLink*, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* receiver = set_self_or_arg(context, self, args);
-    const proto::ProtoSet* items = set_underlying(context, receiver);
+    const proto::ProtoSparseList* items = set_underlying(context, receiver);
     if (!env || !items) return PROTO_NONE;
-    const proto::ProtoList* elements = context->newList();
-    for (const proto::ProtoSetIterator* it = items->getIterator(context);
-         it && it->hasNext(context); it = it->advance(context)) {
-        elements = elements->appendLast(context, it->next(context));
-    }
+    const proto::ProtoList* elements = PythonEnvironment::setElements(context, items);
     PythonEnvironment::TransientPin pinElements(env, elements->asObject(context));
     const proto::ProtoObject* state = PROTO_NONE;
     const proto::ProtoObject* getState = nullptr;
@@ -9332,12 +9522,12 @@ static const proto::ProtoObject* py_set_reduce(
     return ::protoPython::PythonEnvironment::tupleFromList(context, result);
 }
 
-static const proto::ProtoObject* py_set_iter(
-    proto::ProtoContext* context,
-    const proto::ProtoObject* self,
-    const proto::ParentLink* parentLink,
-    const proto::ProtoArguments* positionalParameters,
-    const proto::ProtoKeywordArguments* keywordParameters) {
+// A set iterator keeps the walk over the table it was created from (a
+// snapshot: later changes to the set do not reach it):
+//   __iter_it__      the sparse-list iterator over the remaining slots;
+//   __iter_bucket__  the bucket being walked, or None;
+//   __iter_pos__     the position of the next element in that bucket.
+static const proto::ProtoObject* set_new_iterator(proto::ProtoContext* context, const proto::ProtoObject* self) {
     const proto::ProtoString* iterProtoName = PythonEnvironment::getInternedString(context, "__iter_prototype__");
     const proto::ProtoObject* iterProto = self->getAttribute(context, iterProtoName);
     // A set subclass instance does not reach it through its own chain: look
@@ -9347,15 +9537,23 @@ static const proto::ProtoObject* py_set_iter(
         iterProto = env->getAttribute(context, env->getType(context, self), iterProtoName, false);
     }
     if (!iterProto || iterProto == PROTO_NONE) return PROTO_NONE;
-    const proto::ProtoSet* s = set_underlying(context, self);
+    const proto::ProtoSparseList* s = set_underlying(context, self);
     if (!s) return PROTO_NONE;
-    const proto::ProtoSetIterator* it = s->getIterator(context);
+    const proto::ProtoSparseListIterator* it = s->getIterator(context);
     const proto::ProtoObject* iterObj = iterProto->newChild(context, true);
-    const proto::ProtoString* iterItName = PythonEnvironment::getInternedString(context, "__iter_it__");
-    iterObj->setAttribute(context, iterItName, it->asObject(context));
-    if (get_env_diag()) {
-    }
+    iterObj->setAttribute(context, PythonEnvironment::getInternedString(context, "__iter_it__"),
+                          it ? it->asObject(context) : PROTO_NONE);
+    iterObj->setAttribute(context, PythonEnvironment::getInternedString(context, "__iter_bucket__"), PROTO_NONE);
     return iterObj;
+}
+
+static const proto::ProtoObject* py_set_iter(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
+    return set_new_iterator(context, self);
 }
 
 static const proto::ProtoObject* py_set_iter_next(
@@ -9365,14 +9563,35 @@ static const proto::ProtoObject* py_set_iter_next(
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
     const proto::ProtoString* iterItName = PythonEnvironment::getInternedString(context, "__iter_it__");
+    const proto::ProtoString* bucketName = PythonEnvironment::getInternedString(context, "__iter_bucket__");
+    const proto::ProtoString* posName = PythonEnvironment::getInternedString(context, "__iter_pos__");
+    const proto::ProtoObject* bucketObj = self->getAttribute(context, bucketName);
+    if (const proto::ProtoList* bucket = setBucket(context, bucketObj)) {
+        const proto::ProtoObject* posObj = self->getAttribute(context, posName);
+        const long long pos = (posObj && posObj->isInteger(context)) ? posObj->asLong(context) : 0;
+        if (pos >= 0 && static_cast<proto::proto_ulong>(pos) < bucket->getSize(context)) {
+            self->setAttribute(context, posName, context->fromInteger(pos + 1));
+            return bucket->getAt(context, static_cast<int>(pos));
+        }
+        self->setAttribute(context, bucketName, PROTO_NONE);
+    }
     const proto::ProtoObject* itObj = self->getAttribute(context, iterItName);
-    if (!itObj || !itObj->asSetIterator(context)) return nullptr;
-    const proto::ProtoSetIterator* it = itObj->asSetIterator(context);
-    if (!it || !it->hasNext(context)) return nullptr;
-    const proto::ProtoObject* value = it->next(context);
-    const proto::ProtoSetIterator* nextIt = it->advance(context);
-    self->setAttribute(context, iterItName, nextIt->asObject(context));
-    return value;
+    const proto::ProtoSparseListIterator* it = itObj ? itObj->asSparseListIterator(context) : nullptr;
+    while (it && it->hasNext(context)) {
+        const proto::proto_ulong index = it->nextKey(context);
+        const proto::ProtoObject* slot = it->nextValue(context);
+        it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(context);
+        self->setAttribute(context, iterItName, it ? it->asObject(context) : PROTO_NONE);
+        if (index == kSetSurplusSlot) continue;
+        if (const proto::ProtoList* bucket = setBucket(context, slot)) {
+            if (bucket->getSize(context) == 0) continue;
+            self->setAttribute(context, bucketName, slot);
+            self->setAttribute(context, posName, context->fromInteger(1));
+            return bucket->getAt(context, 0);
+        }
+        return slot;
+    }
+    return nullptr;
 }
 
 static const proto::ProtoObject* py_frozenset_len(
@@ -9381,9 +9600,7 @@ static const proto::ProtoObject* py_frozenset_len(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    const proto::ProtoSet* s = set_underlying(context, self);
-    if (!s) return context->fromInteger(0);
-    return context->fromInteger(s->getSize(context));
+    return context->fromInteger(static_cast<long long>(setTableSize(context, set_underlying(context, self))));
 }
 
 static const proto::ProtoObject* py_frozenset_contains(
@@ -9392,11 +9609,11 @@ static const proto::ProtoObject* py_frozenset_contains(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    const proto::ProtoSet* s = set_underlying(context, self);
+    const proto::ProtoSparseList* s = set_underlying(context, self);
     if (!s || positionalParameters->getSize(context) < 1) return PROTO_FALSE;
-    proto::proto_ulong h = 0;
-    if (!setLookupHash(context, positionalParameters->getAt(context, 0), h)) return nullptr;
-    return s->hasHash(context, h) ? PROTO_TRUE : PROTO_FALSE;
+    DictKey dk;
+    if (!setLookupKey(context, positionalParameters->getAt(context, 0), dk)) return nullptr;
+    return setFind(context, s, dk) ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_frozenset_bool(
@@ -9405,9 +9622,7 @@ static const proto::ProtoObject* py_frozenset_bool(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    const proto::ProtoSet* s = set_underlying(context, self);
-    if (!s) return PROTO_FALSE;
-    return s->getSize(context) > 0 ? PROTO_TRUE : PROTO_FALSE;
+    return setTableSize(context, set_underlying(context, self)) > 0 ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_frozenset_iter(
@@ -9416,20 +9631,7 @@ static const proto::ProtoObject* py_frozenset_iter(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    const proto::ProtoString* iterProtoName = PythonEnvironment::getInternedString(context, "__iter_prototype__");
-    const proto::ProtoObject* iterProto = self->getAttribute(context, iterProtoName);
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    if ((!iterProto || iterProto == PROTO_NONE) && env) {
-        iterProto = env->getAttribute(context, env->getType(context, self), iterProtoName, false);
-    }
-    if (!iterProto || iterProto == PROTO_NONE) return PROTO_NONE;
-    const proto::ProtoSet* s = set_underlying(context, self);
-    if (!s) return PROTO_NONE;
-    const proto::ProtoSetIterator* it = s->getIterator(context);
-    const proto::ProtoObject* iterObj = iterProto->newChild(context, true);
-    const proto::ProtoString* iterItName = PythonEnvironment::getInternedString(context, "__iter_it__");
-    iterObj->setAttribute(context, iterItName, it->asObject(context));
-    return iterObj;
+    return set_new_iterator(context, self);
 }
 
 static const proto::ProtoObject* py_frozenset_hash(
@@ -9438,7 +9640,7 @@ static const proto::ProtoObject* py_frozenset_hash(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    const proto::ProtoSet* s = set_underlying(context, self);
+    const proto::ProtoSparseList* s = set_underlying(context, self);
     if (!s) return context->fromInteger(0);
     return context->fromInteger(static_cast<long long>(frozensetKeyHash(context, s)));
 }
@@ -9455,21 +9657,26 @@ static const proto::ProtoObject* py_frozenset_call(
     const proto::ProtoObject* cls = (positionalParameters && positionalParameters->getSize(context) > 0) ? positionalParameters->getAt(context, 0) : self;
     if (!cls) return PROTO_NONE;
 
-    const proto::ProtoSet* acc = context->newSet();
+    const proto::ProtoSparseList* acc = context->newSparseList();
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
 
     if (positionalParameters && positionalParameters->getSize(context) >= 2) {
         const proto::ProtoObject* itObj = positionalParameters->getAt(context, 1);
-        const proto::ProtoObject* it = env ? env->iter(itObj) : nullptr;
-        if (it && it != PROTO_NONE) {
-            for (;;) {
-                const proto::ProtoObject* item = env->next(it);
-                if (!item) {
-                    if (!env->handleExhaustion(context)) return nullptr;
-                    break;
+        if (const proto::ProtoSparseList* other = set_underlying(context, itObj)) {
+            acc = other;
+        } else {
+            const proto::ProtoObject* it = env ? env->iter(itObj) : nullptr;
+            if (it && it != PROTO_NONE) {
+                PythonEnvironment::TransientPin pinIt(env, it);
+                for (;;) {
+                    const proto::ProtoObject* item = env->next(it);
+                    if (!item) {
+                        if (!env->handleExhaustion(context)) return nullptr;
+                        break;
+                    }
+                    acc = PythonEnvironment::setAdd(context, acc, item);
+                    if (!acc) return nullptr;
                 }
-                acc = PythonEnvironment::setAdd(context, acc, item);
-                if (!acc) return nullptr;
             }
         }
     }
@@ -16981,7 +17188,7 @@ kwargs_phase:
             const proto::ProtoString* kS = keysName;
             const proto::ProtoObject* probe = underlying->hasOwnAttribute(context, dS) == PROTO_TRUE
                 ? underlying->getAttribute(context, dS) : nullptr;
-            if (probe && probe != PROTO_NONE && !probe->asSparseList(context)) {
+            if (dataHoldsBuiltinStorage(context, underlying, probe)) {
                 dS = PythonEnvironment::getInternedString(context, "__pydict_data__");
                 kS = PythonEnvironment::getInternedString(context, "__pydict_keys__");
             }
@@ -26259,7 +26466,9 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
             // tuple, which the list fallback below would not see.
             else if (obj->getFirstParent(ctx) == tuplePrototype && isListBackedTuple(ctx, obj)) res = tuplePrototype;
             else if (::protoPython::listStorage(ctx, obj)) res = listPrototype;
-            else if (obj->asSet(ctx)) res = setPrototype;
+            else if (set_underlying(ctx, obj)) {
+                res = (frozensetPrototype && obj->hasParent(ctx, frozensetPrototype)) ? frozensetPrototype : setPrototype;
+            }
             else if (obj->asSparseList(ctx)) {
                 // A dict: no parent, or dict itself as the first one. The
                 // first parent is read with getFirstParent (PROTO_NONE when
@@ -27810,7 +28019,8 @@ bool PythonEnvironment::deleteAttribute(proto::ProtoContext* ctx, const proto::P
     const proto::ProtoString* keysName = getKeysString();
     const proto::ProtoObject* d = (obj->hasOwnAttribute(ctx, dataName) == PROTO_TRUE) ? obj->getAttribute(ctx, dataName) : nullptr;
     const proto::ProtoObject* k = (keysName && obj->hasOwnAttribute(ctx, keysName) == PROTO_TRUE) ? obj->getAttribute(ctx, keysName) : nullptr;
-    if (d && d != PROTO_NONE && d->asSparseList(ctx)) {
+    // A set's __data__ is its element table, never an attribute mirror.
+    if (d && d != PROTO_NONE && d->asSparseList(ctx) && !dataHoldsBuiltinStorage(ctx, obj, d)) {
         proto::proto_ulong h = nameS->getHash(ctx);
         const proto::ProtoSparseList* sl = d->asSparseList(ctx);
         if (sl->has(ctx, h)) {
@@ -31807,17 +32017,9 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
                 return iterObj;
             }
         }
-    } else if (obj->asSet(ctx) || (obj->getPrototype(ctx) && obj->getPrototype(ctx) == setPrototype)) {
-        const proto::ProtoString* iterProtoName = PythonEnvironment::getInternedString(ctx, "__iter_prototype__");
-        const proto::ProtoObject* iterProto = setPrototype ? setPrototype->getAttribute(ctx, iterProtoName) : nullptr;
-        if (iterProto) {
-            // ProtoSet in protoCore might not have asSet() if it's a raw object, but getPrototype() works
-            // For now, let's assume it has an internal iterator we can use via a helper or just use __iter__ from proto
-            const proto::ProtoObject* itM = setPrototype->getAttribute(ctx, getIterString());
-            if (itM && itM->asMethod(ctx)) {
-                return itM->asMethod(ctx)(ctx, obj, nullptr, argsView(proto::ProtoListArguments(ctx, getEmptyList())), kwargsView(proto::ProtoSparseListKeywordArguments(ctx, getEmptySparseList())));
-            }
-        }
+    } else if (set_underlying(ctx, obj)) {
+        const proto::ProtoObject* iterObj = set_new_iterator(ctx, obj);
+        if (iterObj && iterObj != PROTO_NONE) return iterObj;
     } else if (obj->getPrototype(ctx) && obj->getPrototype(ctx) == bytesPrototype) {
         const proto::ProtoString* iterProtoName = PythonEnvironment::getInternedString(ctx, "__iter_prototype__");
         const proto::ProtoObject* iterProto = bytesPrototype ? bytesPrototype->getAttribute(ctx, iterProtoName) : nullptr;
@@ -32299,7 +32501,7 @@ bool PythonEnvironment::isTrue(const proto::ProtoObject* obj) {
     // Raw protoCore containers, which reach here only without dunders.
     //
     // Each check demands pointer identity between the container and the object:
-    // asList / asSparseList / asSet also answer for a *wrapped* instance, by
+    // asList / asSparseList also answer for a *wrapped* instance, by
     // following its __data__ payload, and asSparseList answers for the
     // own-attribute storage of any ordinary Python instance. Without the
     // identity test an object with no own attributes measured as size 0, so
@@ -32308,9 +32510,6 @@ bool PythonEnvironment::isTrue(const proto::ProtoObject* obj) {
     if (rawList && reinterpret_cast<const proto::ProtoObject*>(rawList) == obj)
         return rawList->getSize(ctx) > 0;
     if (::protoPython::PythonEnvironment::isTupleValue(ctx, obj)) return ::protoPython::PythonEnvironment::tupleView(ctx, obj)->getSize(ctx) > 0;
-    const proto::ProtoSet* rawSet = obj->asSet(ctx);
-    if (rawSet && reinterpret_cast<const proto::ProtoObject*>(rawSet) == obj)
-        return rawSet->getSize(ctx) > 0;
     const proto::ProtoSparseList* rawMap = obj->asSparseList(ctx);
     if (rawMap && reinterpret_cast<const proto::ProtoObject*>(rawMap) == obj)
         return rawMap->getSize(ctx) > 0;
@@ -32618,8 +32817,7 @@ const proto::ProtoObject* PythonEnvironment::initDictStorage(proto::ProtoContext
     // separate __pydict_data__ / __pydict_keys__ slots for the Python
     // instance dict storage.  See py_object_get_dict and the proxy
     // setitem/delitem handlers for the read/write paths.
-    bool dataIsSparse = (d && d != PROTO_NONE && d->asSparseList(ctx) != nullptr);
-    if (d && d != PROTO_NONE && !dataIsSparse) {
+    if (dataHoldsBuiltinStorage(ctx, currentObj, d)) {
         const proto::ProtoString* pdData =
             PythonEnvironment::getInternedString(ctx, "__pydict_data__");
         const proto::ProtoString* pdKeys =

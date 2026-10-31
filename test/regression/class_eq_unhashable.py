@@ -39,7 +39,9 @@ assert raises(TypeError, lambda: hash(A()))
 assert raises(TypeError, lambda: {A()})
 assert raises(TypeError, lambda: {A(): 1})
 assert B.__hash__ is None and raises(TypeError, lambda: hash(B()))
-assert hash(C()) == 1 and len({C(), C()}) == 1
+# Two C instances share a hash but are unequal (identity __eq__): two elements,
+# as in CPython.
+assert hash(C()) == 1 and len({C(), C()}) == 2
 d = D()
 assert hash(d) == hash(d) and {d: 1}[d] == 1
 e = E()
