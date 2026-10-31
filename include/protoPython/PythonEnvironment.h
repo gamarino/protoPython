@@ -1252,6 +1252,14 @@ public:
      *  and free variables included): frame.f_locals, and locals() in a
      *  function, as CPython 3.13+ snapshots them. */
     const proto::ProtoObject* frameLocalsSnapshot(proto::ProtoContext* ctx, const proto::ProtoObject* frame);
+    /** frame.f_locals[name] = value, written through to the frame (PEP 667):
+     *  a fast local of a running function goes into its slot, a cell or
+     *  free variable into its cell, and any name of a frame that keeps its
+     *  variables as attributes (module, class body, mapped function) onto
+     *  the frame.  False when the frame has nowhere to keep the name (a new
+     *  name on a function whose locals live in slots). */
+    bool frameSetLocal(proto::ProtoContext* ctx, const proto::ProtoObject* frame,
+                       const proto::ProtoString* name, const proto::ProtoObject* value);
 
     /**
      * @brief Sets the current globals for the current thread.

@@ -524,6 +524,14 @@ set_tests_properties(protopy_weakref_proxy PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "weakref_proxy: ok"
     LABELS "regression_gate")
+# A function frame's f_locals writes through to its variables (PEP 667).
+add_test(NAME protopy_frame_locals_write_through
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/frame_locals_write_through.py)
+set_tests_properties(protopy_frame_locals_write_through PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "frame_locals_write_through: ok"
+    LABELS "regression_gate")
 # Run-time attribute names are interned symbols.
 add_test(NAME protopy_interned_attribute_names
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/interned_attribute_names.py)
