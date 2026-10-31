@@ -1441,12 +1441,37 @@ public:
 
     /**
      * @brief The hash dicts and sets store `value` under (1, 1.0 and True are one key, tuples hash
-     * by their elements, a class's __hash__ is honoured), and set insertion by that hash.
-     * @details Both raise TypeError for an unhashable value and return false / nullptr. setAdd keeps
-     * the element already stored under an equal key.
+     * by their elements, a class's __hash__ is honoured).
+     * @details Raises TypeError for an unhashable value and returns false.
      */
     static bool hashKey(proto::ProtoContext* ctx, const proto::ProtoObject* value, proto::proto_ulong& hash);
-    static const proto::ProtoSet* setAdd(proto::ProtoContext* ctx, const proto::ProtoSet* s, const proto::ProtoObject* value);
+
+    /**
+     * @name Set storage
+     * A set or frozenset keeps its elements in `__data__`, a set table: a ProtoSparseList indexed
+     * by the key hash, whose slots hold an element or a bucket (a ProtoList) of the distinct
+     * elements sharing that hash; elements are compared by identity, then with __eq__. The
+     * layout is described next to its implementation ("Set storage" in PythonEnvironment.cpp);
+     * code outside it goes through these functions and never reads a table directly.
+     */
+    ///@{
+    /** An empty set table. */
+    static const proto::ProtoSparseList* newSetStorage(proto::ProtoContext* ctx);
+    /** `s` with `value` added (`s` itself when an equal element is stored, which stays). Raises
+     *  TypeError for an unhashable value, and propagates an exception raised by __hash__ or
+     *  __eq__; returns nullptr when the value is unhashable and nothing was raised. */
+    static const proto::ProtoSparseList* setAdd(proto::ProtoContext* ctx, const proto::ProtoSparseList* s,
+                                                const proto::ProtoObject* value);
+    /** The set table of a set or frozenset (or of an instance of a subclass); nullptr for any
+     *  other object. */
+    static const proto::ProtoSparseList* setStorage(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
+    /** The number of elements of a set table (0 for nullptr). */
+    static proto::proto_ulong setSize(proto::ProtoContext* ctx, const proto::ProtoSparseList* s);
+    /** The elements of a set table, in its iteration order. */
+    static const proto::ProtoList* setElements(proto::ProtoContext* ctx, const proto::ProtoSparseList* s);
+    /** A new set object holding the set table `s` (an empty set for nullptr). */
+    static const proto::ProtoObject* newSetObject(proto::ProtoContext* ctx, const proto::ProtoSparseList* s);
+    ///@}
 
     /**
      * @brief Returns true if the object is a StopIteration exception.

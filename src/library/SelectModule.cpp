@@ -77,15 +77,9 @@ static bool collectFds(proto::ProtoContext* ctx, const proto::ProtoObject* obj,
         for (size_t i = 0; i < tup->getSize(ctx); ++i) if (!process(tup->getAt(ctx, static_cast<int>(i)))) return false;
         return true;
     }
-    if (obj->isSet(ctx)) {
-        const proto::ProtoSet* s = obj->asSet(ctx);
-        if (s) {
-            auto* it = const_cast<proto::ProtoSetIterator*>(s->getIterator(ctx));
-            while (it && it->hasNext(ctx)) {
-                if (!process(it->next(ctx))) return false;
-                it = const_cast<proto::ProtoSetIterator*>(it->advance(ctx));
-            }
-        }
+    if (const proto::ProtoSparseList* s = ::protoPython::PythonEnvironment::setStorage(ctx, obj)) {
+        const proto::ProtoList* elements = ::protoPython::PythonEnvironment::setElements(ctx, s);
+        for (size_t i = 0; i < elements->getSize(ctx); ++i) if (!process(elements->getAt(ctx, static_cast<int>(i)))) return false;
         return true;
     }
     if (env) env->raiseTypeError(ctx, "arguments 1-3 must be sequences");

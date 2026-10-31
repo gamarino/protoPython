@@ -51,7 +51,7 @@ is still pending.
 | [C_MODULES_TO_REPLACE.md](C_MODULES_TO_REPLACE.md) | Standard library modules CPython implements in C, and how protoPython provides each one. |
 | [STUBS.md](STUBS.md) | Catalogue of native and standard library stub implementations kept during early development. |
 | [EXCEPTIONS.md](EXCEPTIONS.md) | The native `exceptions` module and how native code reports exceptions. |
-| [SET_SUPPORT.md](SET_SUPPORT.md) | `set` objects backed by `ProtoSet`. |
+| [SET_SUPPORT.md](SET_SUPPORT.md) | `set` and `frozenset` storage: hash-indexed buckets compared with `__eq__`. |
 | [tests/conformity/README.md](../tests/conformity/README.md) | Layout and usage of the conformity test suite. |
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | Prerequisites, building, running and adding tests, file placement, documentation, commits and pull requests. |
 | [CHANGELOG.md](../CHANGELOG.md) | Notable changes by release. |

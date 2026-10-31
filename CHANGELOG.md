@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Sets and frozensets with colliding hashes.** A set kept one element per hash, so `{a, b}` with `hash(a) == hash(b)` and `a != b` silently lost `b`, and `x in s` was true for any `x` with a stored hash, without calling `__eq__`. Sets and frozensets now keep their elements in a hash-indexed `ProtoSparseList` whose slots hold an element or a bucket of the distinct elements sharing a hash, compared by identity and then `__eq__` (an exception from `__eq__` propagates). Every operation uses it: construction, literals and comprehensions (including protopyc's generated code), `add` / `discard` / `remove` / `pop` / `clear` / `copy`, `in`, `len`, iteration, the set algebra and its in-place forms, subset tests, comparisons, the frozenset hash, `repr` and pickling. `signal.valid_signals()` returns a real `set`. See docs/SET_SUPPORT.md.
+
 ## [1.2.0] - 2026-10-31
 
 **Requires protoCore 3.4.0** (SOVERSION 5), the declared minimum for a build from source; the `.deb` depends on `protocore (>= 3.4.0), protocore (<< 4.0.0)`. protoCore 3.4.0 removed `ProtoContext::pendingRoot`, which changes the layout of `ProtoContext`: a protoPython built against 3.4.0 does not load an older `libprotoCore` and vice versa. For protoPython this is a rebuild, with no source change. CI pins protoCore tag `v3.4.0` on every job; the Windows floor job builds 3.4.0 too, since no older protoCore satisfies SOVERSION 5.

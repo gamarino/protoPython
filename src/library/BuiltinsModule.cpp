@@ -522,7 +522,8 @@ static const proto::ProtoObject* py_len(
     // bound `__len__` above; do not reintroduce that fallback here.
     if (::protoPython::listStorage(context, obj)) return context->fromInteger(::protoPython::listStorage(context, obj)->getSize(context));
     if (::protoPython::PythonEnvironment::tupleView(context, obj)) return context->fromInteger(::protoPython::PythonEnvironment::tupleView(context, obj)->getSize(context));
-    if (obj->asSet(context)) return context->fromInteger(obj->asSet(context)->getSize(context));
+    if (const proto::ProtoSparseList* setTable = ::protoPython::PythonEnvironment::setStorage(context, obj))
+        return context->fromInteger(static_cast<long long>(::protoPython::PythonEnvironment::setSize(context, setTable)));
     if (obj->isString(context)) return context->fromInteger(obj->asString(context)->getSize(context));
 
     if (env) {
@@ -7989,7 +7990,7 @@ static const proto::ProtoObject* resolveClassType(protoPython::PythonEnvironment
     const proto::ProtoObject* typeAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "type"));
     const proto::ProtoObject* objectAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "object"));
     const proto::ProtoObject* listAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "list"));
-    if (::protoPython::PythonEnvironment::isTupleValue(context, cls) || ::protoPython::listStorage(context, cls) || cls->isSet(context) || cls->asSparseList(context)) return cls;
+    if (::protoPython::PythonEnvironment::isTupleValue(context, cls) || ::protoPython::listStorage(context, cls) || ::protoPython::PythonEnvironment::setStorage(context, cls) || cls->asSparseList(context)) return cls;
     if (cls->isInteger(context) || cls->isString(context) || cls->isFloat(context) || cls->isBoolean(context)) return cls;
     if (cls == PROTO_NONE || cls == PROTO_TRUE || cls == PROTO_FALSE) return cls;
 
@@ -8102,7 +8103,6 @@ static bool checkInterfaceInstanceOf(proto::ProtoContext* context, const proto::
             && !::protoPython::PythonEnvironment::isTupleValue(context, obj)) return true;
         if (::protoPython::PythonEnvironment::isTupleValue(context, obj) && cls == env->getTuplePrototype()) return true;
         if (obj->asSparseList(context) && cls == env->getDictPrototype() && classIsDictLike) return true;
-        if (obj->isSet(context) && cls == env->getSetPrototype()) return true;
     }
 
     if (obj->isInstanceOf(context, cls) == PROTO_TRUE) return true;

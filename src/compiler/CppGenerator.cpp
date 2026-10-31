@@ -2695,9 +2695,10 @@ bool CppGenerator::generateTupleLiteral(TupleLiteralNode* n) {
 }
 
 bool CppGenerator::generateSetLiteral(SetLiteralNode* n) {
-    *out_ << "([&]() {\n";
-    *out_ << "        auto* setObj = static_cast<const proto::ProtoObject*>(ctx->newObject(true));\n";
-    *out_ << "        auto* data = ctx->newSparseList();\n";
+    // Elements are filed as the runtime files them (PythonEnvironment::setAdd:
+    // Python hash, buckets compared with __eq__); an unhashable element raises.
+    *out_ << "([&]() -> const proto::ProtoObject* {\n";
+    *out_ << "        auto* data = protoPython::PythonEnvironment::newSetStorage(ctx);\n";
     for (auto& elt : n->elements) {
         if (auto* s = dynamic_cast<StarredNode*>(elt.get())) {
             *out_ << "        {\n";
@@ -2706,19 +2707,19 @@ bool CppGenerator::generateSetLiteral(SetLiteralNode* n) {
             *out_ << "            while (true) {\n";
             *out_ << "                auto* item = env->next(i);\n";
             *out_ << "                if (!item || item == PROTO_NONE) break;\n";
-            *out_ << "                data = data->setAt(ctx, item->getHash(ctx), item);\n";
+            *out_ << "                data = protoPython::PythonEnvironment::setAdd(ctx, data, item);\n";
+            *out_ << "                if (!data) return nullptr;\n";
             *out_ << "            }\n";
             *out_ << "        }\n";
         } else {
             *out_ << "        {\n";
             *out_ << "            auto* e = "; if (!generateNode(elt.get())) return false; *out_ << ";\n";
-            *out_ << "            data = data->setAt(ctx, e->getHash(ctx), e);\n";
+            *out_ << "            data = protoPython::PythonEnvironment::setAdd(ctx, data, e);\n";
+            *out_ << "            if (!data) return nullptr;\n";
             *out_ << "        }\n";
         }
     }
-    *out_ << "        setObj->setAttribute(ctx, env->getDataString(), (const proto::ProtoObject*)data);\n";
-    *out_ << "        if (env->getSetPrototype()) setObj->addParent(ctx, env->getSetPrototype());\n";
-    *out_ << "        return (const proto::ProtoObject*)setObj;\n";
+    *out_ << "        return protoPython::PythonEnvironment::newSetObject(ctx, data);\n";
     *out_ << "    })()";
     return true;
 }
@@ -3879,12 +3880,9 @@ bool CppGenerator::generateGeneratorExp(GeneratorExpNode* n) {
 bool CppGenerator::generateSetComp(SetCompNode* n) {
     if (!n) return false;
     *out_ << "([&]() -> const proto::ProtoObject* {\n";
-    *out_ << "        auto* setObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));\n";
-    *out_ << "        auto* __set_acc = ctx->newSet();\n";
+    *out_ << "        auto* __set_acc = protoPython::PythonEnvironment::newSetStorage(ctx);\n";
     if (!emitComprehensionBody(n->generators, 0, n->elt.get(), nullptr, 1)) return false;
-    *out_ << "        setObj->setAttribute(ctx, env->getDataString(), __set_acc->asObject(ctx));\n";
-    *out_ << "        if (env->getSetPrototype()) setObj->addParent(ctx, env->getSetPrototype());\n";
-    *out_ << "        return setObj;\n";
+    *out_ << "        return protoPython::PythonEnvironment::newSetObject(ctx, __set_acc);\n";
     *out_ << "    })()";
     return true;
 }
