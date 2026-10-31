@@ -548,6 +548,14 @@ set_tests_properties(protopy_sysconfig_build_vars PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "sysconfig_build_vars: ok"
     LABELS "regression_gate")
+# Only the platform's own module (posix or nt) exists.
+add_test(NAME protopy_platform_module_only
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/platform_module_only.py)
+set_tests_properties(protopy_platform_module_only PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "platform_module_only: ok"
+    LABELS "regression_gate")
 # Run-time attribute names are interned symbols.
 add_test(NAME protopy_interned_attribute_names
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/interned_attribute_names.py)

@@ -1221,8 +1221,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         "builtins", "sys", "_imp", "_io", "_os",
 #if !defined(_WIN32)
         "posix",
+#else
+        "nt",
 #endif
-        "nt", "time", "_thread",
+        "time", "_thread",
         "_signal", "re", "_weakref", "_warnings", "_collections",
         "_operator", "math", "_functools", "marshal", "_stat", "_string",
         "atexit", "exceptions", "_ast", "errno",
