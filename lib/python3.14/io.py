@@ -153,10 +153,18 @@ class Writer(metaclass=abc.ABCMeta):
 # protoPython: _io implements no TextIOWrapper or IncrementalNewlineDecoder
 # (the names are placeholders that cannot be instantiated); the pure-Python
 # ones from _pyio stand in, over any binary buffer, so subprocess(text=True)
-# and TextIOWrapper(buffer) work.
+# and TextIOWrapper(buffer) work.  _pyio is a large module, so it is loaded
+# on the first use of either name (PEP 562), not by every `import io`.
 if not isinstance(TextIOWrapper, type):
-    import _pyio
-    TextIOWrapper = _pyio.TextIOWrapper
-    IncrementalNewlineDecoder = _pyio.IncrementalNewlineDecoder
-    TextIOBase.register(TextIOWrapper)
-    del _pyio
+    del TextIOWrapper, IncrementalNewlineDecoder
+
+    def __getattr__(name):
+        if name in ("TextIOWrapper", "IncrementalNewlineDecoder"):
+            import _pyio
+            g = globals()
+            if "TextIOWrapper" not in g:
+                g["TextIOWrapper"] = _pyio.TextIOWrapper
+                g["IncrementalNewlineDecoder"] = _pyio.IncrementalNewlineDecoder
+                TextIOBase.register(_pyio.TextIOWrapper)
+            return g[name]
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
