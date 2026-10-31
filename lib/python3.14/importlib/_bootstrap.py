@@ -1560,6 +1560,12 @@ def _setup(sys_module, _imp_module):
             else:
                 continue
             spec = _spec_from_module(module, loader)
+            # protoPython: the interpreter registers its built-in modules
+            # before importlib exists, with a placeholder spec that has no
+            # loader; they get a real ModuleSpec here.
+            if spec.loader is None:
+                module.__spec__ = None
+                spec = _spec_from_module(module, loader)
             _init_module_attrs(spec, module)
             if loader is FrozenImporter:
                 loader._fix_up_module(module)

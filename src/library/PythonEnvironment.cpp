@@ -2147,6 +2147,8 @@ static bool isDictSubclassInstance(proto::ProtoContext* context, PythonEnvironme
 
 static const proto::ProtoObject* py_dict_setitem(proto::ProtoContext*, const proto::ProtoObject*,
     const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*);
+static void sysModulesStore(proto::ProtoContext* ctx, const proto::ProtoObject* modules,
+                            const proto::ProtoString* name, const proto::ProtoObject* mod);
 static const proto::ProtoObject* py_dict_delitem(proto::ProtoContext*, const proto::ProtoObject*,
     const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*);
 
@@ -24242,13 +24244,8 @@ static const proto::ProtoObject* ensureMainModule(PythonEnvironment* env,
         if (modules) {
             const_cast<proto::ProtoObject*>(modules)->setAttribute(context, mainName, mod);
             const proto::ProtoObject* dataAttr = modules->getAttribute(context, env->getDataString());
-            if (dataAttr && dataAttr != PROTO_NONE) {
-                const proto::ProtoSparseList* dictData = dataAttr->asSparseList(context);
-                if (dictData) {
-                    dictData = dictData->setAt(context, mainName->getHash(context), mod);
-                    const_cast<proto::ProtoObject*>(modules)->setAttribute(context, env->getDataString(), dictData->asObject(context));
-                }
-            }
+            if (dataAttr && dataAttr != PROTO_NONE && dataAttr->asSparseList(context))
+                sysModulesStore(context, modules, mainName, mod);
         }
     }
 
@@ -24612,13 +24609,11 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                                     if (dataAttr && dataAttr != PROTO_NONE) {
                                             const proto::ProtoSparseList* dict = dataAttr->asSparseList(ctx);
                                             if (dict) {
-                                                dict = dict->setAt(ctx, modNameS->getHash(ctx), mutableMod);
+                                                sysModulesStore(ctx, mods, modNameS, mutableMod);
                                                 if (asMain) {
                                                     const proto::ProtoString* mainS = PythonEnvironment::getInternedString(ctx, "__main__");
-                                                    mods->setAttribute(ctx, mainS, mutableMod);
-                                                    dict = dict->setAt(ctx, mainS->getHash(ctx), mutableMod);
+                                                    sysModulesStore(ctx, mods, mainS, mutableMod);
                                                 }
-                                                mods->setAttribute(ctx, getDataString(), dict->asObject(ctx));
                                                 if (protoPython::diagModEnabled()) {
                                                     const proto::ProtoObject* checkData = mods->getAttribute(ctx, getDataString());
                                                     const proto::ProtoSparseList* checkDict = checkData ? checkData->asSparseList(ctx) : nullptr;
@@ -29689,6 +29684,20 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
     return result;
 }
 
+// sys.modules[name] = mod, as a dict store: the key goes into __keys__ when it
+// is new, so iterating sys.modules lists it.  The interpreter's own stores
+// used to set only __data__ (and the attribute), so list(sys.modules) missed
+// almost every module; test.support.import_helper, which saves and restores
+// entries by iterating sys.modules, then left a blocking None behind (after
+// import_fresh_module(..., blocked=['_functools']), _functools could no longer
+// be imported).  The attribute is kept for the interpreter's own lookups.
+static void sysModulesStore(proto::ProtoContext* ctx, const proto::ProtoObject* modules,
+                            const proto::ProtoString* name, const proto::ProtoObject* mod) {
+    const_cast<proto::ProtoObject*>(modules)->setAttribute(ctx, name, mod);
+    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, name->asObject(ctx))->appendLast(ctx, mod);
+    py_dict_setitem(ctx, modules, nullptr, argsView(proto::ProtoListArguments(ctx, args)), nullptr);
+}
+
 void PythonEnvironment::registerInSysModules(proto::ProtoContext* ctx, const proto::ProtoObject* sysModule, const std::string& name, const proto::ProtoObject* mod) {
     if (!sysModule || !mod || mod == PROTO_NONE) return;
     
@@ -29703,14 +29712,37 @@ void PythonEnvironment::registerInSysModules(proto::ProtoContext* ctx, const pro
     const proto::ProtoSparseList* dict = (dataAttr && dataAttr != PROTO_NONE) ? dataAttr->asSparseList(ctx) : modules->asSparseList(ctx);
     
     if (!dict || !dict->has(ctx, nameObj->getHash(ctx)) || dict->getAt(ctx, nameObj->getHash(ctx)) != mod) {
-        const_cast<proto::ProtoObject*>(modules)->setAttribute(ctx, nameObj, mod);
         if (dataAttr && dataAttr != PROTO_NONE) {
-            const proto::ProtoSparseList* newDict = dataAttr->asSparseList(ctx)->setAt(ctx, nameObj->getHash(ctx), mod);
-            const_cast<proto::ProtoObject*>(modules)->setAttribute(ctx, dataString, newDict->asObject(ctx));
+            sysModulesStore(ctx, modules, nameObj, mod);
+        } else {
+            const_cast<proto::ProtoObject*>(modules)->setAttribute(ctx, nameObj, mod);
         }
         if (get_env_diag()) {
             fprintf(stderr, "DEBUG: registerInSysModules %s -> %p\n", name.c_str(), (void*)mod);
         }
+    }
+}
+
+// importlib's spec_from_file_location(name, path) for a module loaded from a
+// .py file: a ModuleSpec with a SourceFileLoader. nullptr while
+// importlib._bootstrap_external is not loaded (or the spec cannot be built:
+// the module then keeps its placeholder spec).
+const proto::ProtoObject* PythonEnvironment::sourceFileSpecFor(proto::ProtoContext* ctx, const std::string& name,
+                                                               const proto::ProtoObject* path) {
+    std::string p;
+    path->asString(ctx)->toUTF8String(ctx, p);
+    if (p.size() < 3 || p.compare(p.size() - 3, 3, ".py") != 0) return nullptr;
+    const proto::ProtoObject* modules = sysModule ? sysModule->getAttribute(ctx, getInternedString(ctx, "modules")) : nullptr;
+    if (!modules || modules == PROTO_NONE) return nullptr;
+    const proto::ProtoObject* ext = modules->getAttribute(ctx, getInternedString(ctx, "importlib._bootstrap_external"));
+    if (!ext || ext == PROTO_NONE) return nullptr;
+    const proto::ProtoObject* make = ext->getAttribute(ctx, getInternedString(ctx, "spec_from_file_location"));
+    if (!make || make == PROTO_NONE) return nullptr;
+    try {
+        const proto::ProtoObject* spec = callObject(make, {getInternedString(ctx, name.c_str())->asObject(ctx), path});
+        return (spec && spec != PROTO_NONE) ? spec : nullptr;
+    } catch (const proto::ProtoException&) {
+        return nullptr;
     }
 }
 
@@ -29746,11 +29778,29 @@ void PythonEnvironment::ensureModuleInSysModules(proto::ProtoContext* ctx, const
         spec = spec->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "has_location"),
                                   hasFile ? PROTO_TRUE : PROTO_FALSE);
         spec = spec->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "_initializing"), PROTO_FALSE);
+        // The rest of ModuleSpec's attributes: importlib._bootstrap._setup
+        // walks sys.modules and reads them (cached, loader_state) for every
+        // module it finds.
+        spec = spec->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "cached"), PROTO_NONE);
+        spec = spec->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "loader_state"), PROTO_NONE);
         size_t dot = name.rfind('.');
         std::string parent = isPackage ? name
             : ((dot == std::string::npos) ? std::string() : name.substr(0, dot));
         spec = spec->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "parent"),
                                   PythonEnvironment::getInternedString(ctx, parent.c_str())->asObject(ctx));
+        // Once importlib is loaded (it is not frozen into the interpreter) a
+        // source module gets a real ModuleSpec with a SourceFileLoader; the
+        // modules registered before that get theirs from
+        // importlib._bootstrap_external._fix_up_source_modules.
+        if (hasFile) {
+            if (const proto::ProtoObject* fileSpec = sourceFileSpecFor(ctx, name, fileV)) {
+                spec = fileSpec;
+                const proto::ProtoObject* loader = fileSpec->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "loader"));
+                const proto::ProtoString* loaderS = PythonEnvironment::getInternedString(ctx, "__loader__");
+                if (loader && mod->hasOwnAttribute(ctx, loaderS) != PROTO_TRUE)
+                    const_cast<proto::ProtoObject*>(mod)->setAttribute(ctx, loaderS, loader);
+            }
+        }
         const_cast<proto::ProtoObject*>(mod)->setAttribute(ctx, specName, spec);
     }
     const proto::ProtoString* nameAttr = PythonEnvironment::getInternedString(ctx, "__name__");
@@ -29903,7 +29953,16 @@ const proto::ProtoObject* PythonEnvironment::resolveModule(const std::string& na
                 if (modules && modules != PROTO_NONE) {
                     const proto::ProtoObject* dataAttr = modules->getAttribute(ctx, dataString);
                     const proto::ProtoSparseList* dict = (dataAttr && dataAttr != PROTO_NONE) ? dataAttr->asSparseList(ctx) : modules->asSparseList(ctx);
-                    if (dict && dict->has(ctx, PythonEnvironment::getInternedString(ctx, nameStr.c_str())->getHash(ctx))) {
+                    const bool listed = dict && dict->has(ctx, PythonEnvironment::getInternedString(ctx, nameStr.c_str())->getHash(ctx));
+                    // A source module removed from sys.modules is imported
+                    // anew, as CPython does (test.support.import_fresh_module
+                    // deletes it to get a fresh copy); the cache entry would
+                    // hand back the old module object.
+                    if (!listed && executedVal == PROTO_TRUE
+                        && result->hasOwnAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__file__")) == PROTO_TRUE) {
+                        goto skip_cache_label;
+                    }
+                    if (listed) {
                         const proto::ProtoObject* sysMod = dict->getAt(ctx, PythonEnvironment::getInternedString(ctx, nameStr.c_str())->getHash(ctx));
                         if (sysMod == result) {
                             isNative = true;

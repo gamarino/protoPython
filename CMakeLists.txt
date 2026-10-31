@@ -508,6 +508,14 @@ set_tests_properties(protopy_walrus_class_comprehension PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "walrus_class_comprehension: ok"
     LABELS "regression_gate")
+# Iterating sys.modules lists every module; modules carry real specs.
+add_test(NAME protopy_sys_modules_iteration
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/sys_modules_iteration.py)
+set_tests_properties(protopy_sys_modules_iteration PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "sys_modules_iteration: ok"
+    LABELS "regression_gate")
 # Run-time attribute names are interned symbols.
 add_test(NAME protopy_interned_attribute_names
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/interned_attribute_names.py)

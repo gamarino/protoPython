@@ -1175,15 +1175,19 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     const proto::ProtoList* builtinsList = ctx->newList();
     // os.py picks its platform module from this list: posix where there is
     // one, nt on Windows (where "posix" is not a module, as in CPython).
+    // Only modules the interpreter implements natively: importlib gives these
+    // a BuiltinImporter spec (_bootstrap._setup), and the stdlib takes a name
+    // here to mean there is no source file. json, logging, itertools and stat
+    // are Python modules in lib/; re is native here (ReModule, on PCRE2).
     const char* builtin_names[] = {
-        "builtins", "sys", "_io", "_os",
+        "builtins", "sys", "_imp", "_io", "_os",
 #if !defined(_WIN32)
         "posix",
 #endif
         "nt", "time", "_thread",
-        "_signal", "re", "_weakref", "_warnings", "_collections", "logging",
-        "_operator", "math", "_functools", "itertools", "json",
-        "atexit", "exceptions", "_ast", "errno", "stat",
+        "_signal", "re", "_weakref", "_warnings", "_collections",
+        "_operator", "math", "_functools", "marshal", "_stat", "_string",
+        "atexit", "exceptions", "_ast", "errno",
         "_collections_abc"
     };
     for (const char* name : builtin_names) {
