@@ -1183,7 +1183,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         "nt", "time", "_thread",
         "_signal", "re", "_weakref", "_warnings", "_collections", "logging",
         "_operator", "math", "_functools", "itertools", "json",
-        "atexit", "exceptions", "_codecs", "_ast", "errno", "stat",
+        "atexit", "exceptions", "_ast", "errno", "stat",
         "_collections_abc"
     };
     for (const char* name : builtin_names) {

@@ -34,7 +34,6 @@ add_library(protoPython SHARED
     BuiltinsModule.cpp
     IOModule.cpp
     CollectionsModule.cpp
-    CodecsModule.cpp
     ExceptionsModule.cpp
     WeakrefModule.cpp
     AstModule.cpp
