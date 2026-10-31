@@ -14,9 +14,6 @@
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
 #include <unistd.h>
 #endif
-#if defined(__linux__)
-#include <sys/syscall.h>
-#endif
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -55,7 +52,7 @@ struct RLockData {
 
 /** Return current OS thread id. Forward-declared so RLock owner
  *  tracking in acquire/release can call it before the definition. */
-static long long current_thread_id();
+static long long current_thread_id(proto::ProtoContext* ctx);
 
 static void mutex_finalizer(void* ptr) {
     delete static_cast<LockData*>(ptr);
@@ -187,7 +184,7 @@ static const proto::ProtoObject* py_rlock_acquire(
 
     auto recordAcquired = [&]() {
         ld->count++;
-        ld->owner.store(current_thread_id(), std::memory_order_release);
+        ld->owner.store(current_thread_id(ctx), std::memory_order_release);
     };
 
     if (ld->m.try_lock()) { recordAcquired(); return PROTO_TRUE; }
@@ -236,7 +233,7 @@ static const proto::ProtoObject* py_rlock_release(
     // lock"). The previous code blindly decrement-and-unlocked, so a
     // cross-thread release was silent UB (the recursive_mutex would
     // throw or assert under -O0, but produced nothing under -O3).
-    long long me = current_thread_id();
+    long long me = current_thread_id(ctx);
     long long current_owner = ld->owner.load(std::memory_order_acquire);
     if (current_owner == 0 || current_owner != me) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -251,19 +248,20 @@ static const proto::ProtoObject* py_rlock_release(
     return PROTO_NONE;
 }
 
-/** Return current OS thread id (TID on Linux, hash of thread::id elsewhere). */
-static long long current_thread_id() {
-#if defined(__linux__)
-    return static_cast<long long>(syscall(SYS_gettid));
-#elif defined(_WIN32)
-    return static_cast<long long>(GetCurrentThreadId());
-#else
-    return static_cast<long long>(std::hash<std::thread::id>{}(std::this_thread::get_id()));
-#endif
+/** The current thread's identity (_thread.get_ident, RLock ownership): its
+ *  ProtoThread, which protoCore keeps for the thread's lifetime.  As in
+ *  CPython, it is unique among live threads and may be reused afterwards.
+ *  It is the same value start_new_thread / start_joinable_thread report as
+ *  the new thread's ident.  No OS thread API is involved. */
+static long long current_thread_id(proto::ProtoContext* ctx) {
+    // ctx->thread, not ProtoThread::getCurrentThread: protoCore declares that
+    // but does not define it (its conformance suite reads ctx->thread too).
+    return static_cast<long long>(reinterpret_cast<uintptr_t>(ctx ? ctx->thread : nullptr));
 }
 
-// Captured once at module initialization — the OS-level thread ID of the main thread.
-static long long g_main_thread_id = current_thread_id();
+// The main thread's identity, captured when the module is initialized (on
+// the main thread).
+static long long g_main_thread_id = 0;
 
 /** Return current process id (PID). */
 static long long current_process_id() {
@@ -272,7 +270,7 @@ static long long current_process_id() {
 #elif defined(_WIN32)
     return static_cast<long long>(_getpid());
 #else
-    return static_cast<long long>(std::hash<std::thread::id>{}(std::this_thread::get_id()));
+    return 0;
 #endif
 }
 
@@ -302,22 +300,22 @@ static RLockData* rlockData(proto::ProtoContext* ctx, const proto::ProtoObject* 
     return ext ? static_cast<RLockData*>(ext->getPointer(ctx)) : nullptr;
 }
 
-static bool rlockOwnedByMe(const RLockData* ld) {
-    return ld->count > 0 && ld->owner.load(std::memory_order_acquire) == current_thread_id();
+static bool rlockOwnedByMe(proto::ProtoContext* ctx, const RLockData* ld) {
+    return ld->count > 0 && ld->owner.load(std::memory_order_acquire) == current_thread_id(ctx);
 }
 
 static const proto::ProtoObject* py_rlock_is_owned(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     RLockData* ld = rlockData(ctx, self);
-    return ld && rlockOwnedByMe(ld) ? PROTO_TRUE : PROTO_FALSE;
+    return ld && rlockOwnedByMe(ctx, ld) ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_rlock_recursion_count(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     RLockData* ld = rlockData(ctx, self);
-    return ctx->fromInteger(ld && rlockOwnedByMe(ld) ? ld->count.load() : 0);
+    return ctx->fromInteger(ld && rlockOwnedByMe(ctx, ld) ? ld->count.load() : 0);
 }
 
 // _release_save(): release every level of the calling thread's hold and
@@ -326,7 +324,7 @@ static const proto::ProtoObject* py_rlock_release_save(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     RLockData* ld = rlockData(ctx, self);
-    if (!ld || !rlockOwnedByMe(ld)) {
+    if (!ld || !rlockOwnedByMe(ctx, ld)) {
         if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx))
             env->raiseRuntimeError(ctx, "cannot release un-acquired lock");
         return nullptr;
@@ -359,7 +357,7 @@ static const proto::ProtoObject* py_rlock_acquire_restore(
     }
     for (long long k = 1; k < count; ++k) ld->m.lock();  // reentrant: never blocks
     ld->count = static_cast<int>(count < 1 ? 1 : count);
-    ld->owner.store(current_thread_id(), std::memory_order_release);
+    ld->owner.store(current_thread_id(ctx), std::memory_order_release);
     return PROTO_NONE;
 }
 
@@ -589,7 +587,7 @@ static const proto::ProtoObject* py_log_thread_ident(
     const proto::ProtoKeywordArguments* /*kwargs*/) {
     if (protoPython::diagThreadEnabled()) {
         fprintf(stderr, "[thread] ident=%lld\n",
-            static_cast<long long>(current_thread_id()));
+            static_cast<long long>(current_thread_id(ctx)));
         fflush(stderr);
     }
     return PROTO_NONE;
@@ -642,7 +640,7 @@ static const proto::ProtoObject* py_get_ident(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoArguments* /*posArgs*/,
     const proto::ProtoKeywordArguments* /*kwargs*/) {
-    return ctx->fromInteger(current_thread_id());
+    return ctx->fromInteger(current_thread_id(ctx));
 }
 
 static const proto::ProtoObject* py_getpid(
@@ -975,6 +973,7 @@ static const proto::ProtoObject* py_stack_size(
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
+    if (g_main_thread_id == 0) g_main_thread_id = current_thread_id(ctx);
     const proto::ProtoObject* mod = ctx->newObject(false);
     
     const proto::ProtoObject* lockProt = ctx->newObject(false);
