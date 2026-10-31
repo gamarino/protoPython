@@ -23601,10 +23601,14 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoObject* pathMod = os_path::initialize(rootContext_);
     registerNativeModule(nativeProviderPtr, "os.path", [pathMod](proto::ProtoContext* ctx) { return pathMod; });
     registerNativeModule(nativeProviderPtr, "_os", [this, pathMod](proto::ProtoContext* ctx) { return os_module::initialize(ctx, this, pathMod); });
+    // The platform module is posix or nt, never both, as in CPython: the
+    // stdlib reads a successful `import nt` as "this is Windows" (ntpath's
+    // _getfullpathname, shutil's copy strategy).
 #if !defined(_WIN32)
     registerNativeModule(nativeProviderPtr, "posix", [this, pathMod](proto::ProtoContext* ctx) { return os_module::initialize(ctx, this, pathMod); });
-#endif
+#else
     registerNativeModule(nativeProviderPtr, "nt", [this, pathMod](proto::ProtoContext* ctx) { return os_module::initialize(ctx, this, pathMod); });
+#endif
     registerNativeModule(nativeProviderPtr, "_signal", [](proto::ProtoContext* ctx) { return signal_module::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "_thread", [](proto::ProtoContext* ctx) { return thread_module::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "_mt19937", [](proto::ProtoContext* ctx) { return mersenne_twister::initialize(ctx); });
