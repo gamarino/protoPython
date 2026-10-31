@@ -44,6 +44,7 @@ assert f.seek(100) == 100 and f.read() == ""
 raises(ValueError, f.seek, -1)
 e = raises(io.UnsupportedOperation, f.seek, 1, 1)
 assert isinstance(e, OSError) and isinstance(e, ValueError)
+assert io.UnsupportedOperation.__mro__[:3] == (io.UnsupportedOperation, OSError, ValueError)
 raises(io.UnsupportedOperation, f.seek, 1, 2)
 raises(io.UnsupportedOperation, f.write, "x")
 f.close()

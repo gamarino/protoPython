@@ -837,6 +837,19 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
         const proto::ProtoList* bases = ctx->newList()->appendLast(ctx, osErrorType)->appendLast(ctx, valueErrorType);
         unsupported = unsupported->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__bases__"),
                                                 ctx->newTupleFromList(bases)->asObject(ctx));
+        // The C3 order of (OSError, ValueError): both bases, then their shared
+        // Exception chain.  make_exception_type only knew the first base.
+        const proto::ProtoList* mro = ctx->newList()->appendLast(ctx, unsupported)
+                                          ->appendLast(ctx, osErrorType)->appendLast(ctx, valueErrorType);
+        const proto::ProtoObject* excMro = exceptionType->getAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__mro__"));
+        if (excMro && ::protoPython::PythonEnvironment::isTupleValue(ctx, excMro)) {
+            ::protoPython::TupleView et = ::protoPython::PythonEnvironment::tupleView(ctx, excMro);
+            for (size_t i = 0; i < et->getSize(ctx); ++i)
+                mro = mro->appendLast(ctx, et->getAt(ctx, static_cast<int>(i)));
+        }
+        unsupported = unsupported->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__mro__"),
+                                                ctx->newTupleFromList(mro)->asObject(ctx));
         unsupported = unsupported->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__module__"),
                                                 PythonEnvironment::getInternedString(ctx, "io")->asObject(ctx));
         mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "UnsupportedOperation"), unsupported);
