@@ -5,12 +5,15 @@ name: Cross-platform
 # run locally, against an INSTALLED protoCore package -- the supported mode on
 # Windows -- with GoogleTest fetched so the C++ suites run too. protoCore refs,
 # exactly:
-#   * macOS and the first Windows job build protoCore 3.3.1 (tag v3.3.1, commit 5a8cd7c7),
-#     as ci.yml does on Linux;
-#   * the "floor" Windows job builds protoCore 3.0.0 as well,
-#     PROTOCORE_MIN_VERSION in CMakeLists.txt, the oldest release protoPython
-#     accepts (natives read ProtoArguments descriptors).  It is the
-#     repository's only floor job.
+#   * macOS and the first Windows job build protoCore 3.4.0 (tag v3.4.0, commit
+#     f63adc08), as ci.yml does on Linux;
+#   * the "floor" Windows job builds PROTOCORE_MIN_VERSION in CMakeLists.txt,
+#     the oldest release protoPython accepts.  It is the repository's only
+#     floor job.  For now the floor and the pin coincide at 3.4.0: protoCore
+#     3.4.0 moved to SOVERSION 5 (ProtoContext::pendingRoot removed), so no
+#     older protoCore can satisfy the build.  The floor entry stays on 3.4.0
+#     when the pin later moves to a newer 3.4.x/3.5.x, which is what keeps it
+#     meaningful.
 
 on:
   push:
@@ -41,17 +44,19 @@ jobs:
         include:
           - name: macOS (Apple clang, arm64)
             os: macos-15
-            # protoCore 3.3.1 (tag v3.3.1, 5a8cd7c7)
-            protocore_ref: 5a8cd7c7aae68edbb34720445736b14685efae6f
+            # protoCore 3.4.0 (tag v3.4.0, f63adc08)
+            protocore_ref: f63adc0881eb00547cc42c1c1cf18c7c4941b978
           - name: Windows (MSVC, x64)
             os: windows-2022
-            # protoCore 3.3.1 (tag v3.3.1, 5a8cd7c7)
-            protocore_ref: 5a8cd7c7aae68edbb34720445736b14685efae6f
-          - name: Windows (MSVC, x64), protoCore 3.0.0 floor
+            # protoCore 3.4.0 (tag v3.4.0, f63adc08)
+            protocore_ref: f63adc0881eb00547cc42c1c1cf18c7c4941b978
+          - name: Windows (MSVC, x64), protoCore 3.4.0 floor
             os: windows-2022
-            # THE FLOOR JOB, the only one: protoCore 3.0.0 (tag v3.0.0, ce00a4a2),
-            # PROTOCORE_MIN_VERSION in CMakeLists.txt
-            protocore_ref: ce00a4a26b6583ea8a58e776eee2ea91c743469e
+            # THE FLOOR JOB, the only one: protoCore 3.4.0 (tag v3.4.0,
+            # f63adc08), PROTOCORE_MIN_VERSION in CMakeLists.txt.
+            # Same ref as the pin for now (SOVERSION 5); it stays here when
+            # the pin moves on.
+            protocore_ref: f63adc0881eb00547cc42c1c1cf18c7c4941b978
     defaults:
       run:
         shell: bash
