@@ -492,6 +492,14 @@ set_tests_properties(protopy_divmod_dunders PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "divmod_dunders: ok"
     LABELS "regression_gate")
+# io.TextIOWrapper and subprocess text mode, over the _codecs registry.
+add_test(NAME protopy_text_io_wrapper
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/text_io_wrapper.py)
+set_tests_properties(protopy_text_io_wrapper PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "text_io_wrapper: ok"
+    LABELS "regression_gate")
 # Run-time attribute names are interned symbols.
 add_test(NAME protopy_interned_attribute_names
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/interned_attribute_names.py)

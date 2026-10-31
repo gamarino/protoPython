@@ -154,12 +154,28 @@ static const proto::ProtoObject* py_import(
         fflush(stderr);
     }
 
-    const proto::ProtoObject* globals = (argCount >= 2) ? positionalParameters->getAt(context, 1) : PROTO_NONE;
-    const proto::ProtoObject* fromListObj = (argCount >= 4) ? positionalParameters->getAt(context, 3) : PROTO_NONE;
+    // __import__(name, globals=None, locals=None, fromlist=(), level=0): each
+    // parameter after the name may also come by keyword
+    // (encodings.search_function passes fromlist= and level=).
+    auto param = [&](size_t pos, const char* kwName) -> const proto::ProtoObject* {
+        if (argCount > pos) return positionalParameters->getAt(context, static_cast<int>(pos));
+        if (keywordParameters) {
+            const proto::proto_ulong h = PythonEnvironment::getInternedString(context, kwName)->getHash(context);
+            if (keywordParameters->has(context, h)) return keywordParameters->getAt(context, h);
+        }
+        return PROTO_NONE;
+    };
+    const proto::ProtoObject* globals = param(1, "globals");
+    const proto::ProtoObject* fromListObj = param(3, "fromlist");
+    // A tuple fromlist is read as the list of its items.
+    if (fromListObj && fromListObj != PROTO_NONE && !::protoPython::listStorage(context, fromListObj)) {
+        if (const ::protoPython::TupleView t = PythonEnvironment::tupleView(context, fromListObj))
+            fromListObj = PythonEnvironment::fromContext(context)->newList(t->asList(context));
+    }
     int level = 0;
-    if (argCount >= 5) {
-        const proto::ProtoObject* levelObj = positionalParameters->getAt(context, 4);
-        if (levelObj->isInteger(context)) level = (int)levelObj->asLong(context);
+    {
+        const proto::ProtoObject* levelObj = param(4, "level");
+        if (levelObj && levelObj != PROTO_NONE && levelObj->isInteger(context)) level = (int)levelObj->asLong(context);
     }
 
     PythonEnvironment* env = PythonEnvironment::fromContext(context);

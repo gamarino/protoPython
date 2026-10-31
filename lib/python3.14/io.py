@@ -148,3 +148,15 @@ class Writer(metaclass=abc.ABCMeta):
         return NotImplemented
 
     __class_getitem__ = classmethod(GenericAlias)
+
+
+# protoPython: _io implements no TextIOWrapper or IncrementalNewlineDecoder
+# (the names are placeholders that cannot be instantiated); the pure-Python
+# ones from _pyio stand in, over any binary buffer, so subprocess(text=True)
+# and TextIOWrapper(buffer) work.
+if not isinstance(TextIOWrapper, type):
+    import _pyio
+    TextIOWrapper = _pyio.TextIOWrapper
+    IncrementalNewlineDecoder = _pyio.IncrementalNewlineDecoder
+    TextIOBase.register(TextIOWrapper)
+    del _pyio

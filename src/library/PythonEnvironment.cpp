@@ -19,7 +19,6 @@
 #include <protoPython/StatModule.h>
 #include <protoPython/StructModule.h>
 #include <protoPython/ContextvarsModule.h>
-#include <protoPython/CodecsModule.h>
 #include <protoPython/IOModule.h>
 #include <protoPython/CollectionsModule.h>
 #include <protoPython/ExceptionsModule.h>
@@ -28,7 +27,6 @@
 #include <protoPython/MathModule.h>
 #include <protoPython/OperatorModule.h>
 #include <protoPython/FunctoolsModule.h>
-#include <protoPython/CodecsModule.h>
 #include <protoPython/ReModule.h>
 #include <protoPython/OsModule.h>
 #include <protoPython/OsPathModule.h>
@@ -23538,8 +23536,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     registerNativeModule(nativeProviderPtr, "_weakref", [](proto::ProtoContext* ctx) { return weakref::initialize(ctx); });
     exceptionsModule = exceptions::initialize(rootContext_, objectPrototype, typePrototype);
     registerNativeModule(nativeProviderPtr, "exceptions", [](proto::ProtoContext* ctx) { PythonEnvironment* e = fromContext(ctx); return e ? e->exceptionsModule : nullptr; });
-    const proto::ProtoObject* codecsMod = codecs::initialize(rootContext_, objectPrototype, typePrototype);
-    registerNativeModule(nativeProviderPtr, "_codecs", [codecsMod](proto::ProtoContext* ctx) { return codecsMod; });
+    // _codecs is lib/python3.14/_codecs.py: the codec registry and the codec
+    // functions the encodings package uses.
     registerNativeModule(nativeProviderPtr, "_ast", [](proto::ProtoContext* ctx) { return ast::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "errno", [](proto::ProtoContext* ctx) { return errno_module::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "_stat", [](proto::ProtoContext* ctx) { return stat_module::initialize(ctx); });
