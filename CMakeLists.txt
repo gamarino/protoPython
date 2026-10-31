@@ -476,6 +476,14 @@ set_tests_properties(protopy_dict_equal_hash_keys PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "dict_equal_hash_keys: ok"
     LABELS "regression_gate")
+# struct.error is an Exception subclass of its own.
+add_test(NAME protopy_struct_error_class
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/struct_error_class.py)
+set_tests_properties(protopy_struct_error_class PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "struct_error_class: ok"
+    LABELS "regression_gate")
 # Run-time attribute names are interned symbols.
 add_test(NAME protopy_interned_attribute_names
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/interned_attribute_names.py)
