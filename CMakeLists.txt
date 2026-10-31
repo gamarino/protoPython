@@ -556,6 +556,14 @@ set_tests_properties(protopy_platform_module_only PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "platform_module_only: ok"
     LABELS "regression_gate")
+# str.format raises for a field without an argument.
+add_test(NAME protopy_format_missing_field
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/format_missing_field.py)
+set_tests_properties(protopy_format_missing_field PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "format_missing_field: ok"
+    LABELS "regression_gate")
 # Run-time attribute names are interned symbols.
 add_test(NAME protopy_interned_attribute_names
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/interned_attribute_names.py)
