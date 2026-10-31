@@ -11,7 +11,12 @@ import sys
 # Import _thread instead of threading to reduce startup cost
 from _thread import allocate_lock as Lock
 if sys.platform in {'win32', 'cygwin'}:
-    from msvcrt import setmode as _setmode
+    # protoPython has no msvcrt module; without it the stream modes are left
+    # as they are (io falls back to this module's TextIOWrapper).
+    try:
+        from msvcrt import setmode as _setmode
+    except ImportError:
+        _setmode = None
 else:
     _setmode = None
 
