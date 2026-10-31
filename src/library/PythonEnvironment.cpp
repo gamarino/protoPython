@@ -4864,15 +4864,20 @@ static proto::proto_ulong nanIdentityHash(const proto::ProtoObject* obj) {
 // tuple of ints and strings keeps the hash protoCore gives it.
 static bool tupleKeyHash(proto::ProtoContext* context, const TupleView& t, bool raiseUnhashable, proto::proto_ulong& out,
                          bool* exact, bool allowUserCode) {
+    // CPython's xxHash-based tuple hash: the multiply-then-XOR mix it
+    // replaces gave (a, (b, c)) and (b, (a, c)) one hash, and a dict keys a
+    // tuple by its hash alone.
     const proto::proto_ulong size = t.size(context);
-    proto::proto_ulong h = PROTO_UL(0x345678) ^ (size * PROTO_UL(0xa6b3f7) + PROTO_UL(1));
+    proto::proto_ulong h = PROTO_UL(2870177450012600261);
     for (proto::proto_ulong i = 0; i < size; ++i) {
         const proto::ProtoObject* e = t.at(context, i);
         proto::proto_ulong eh = 0;
         if (e && !keyHash(context, e, raiseUnhashable, eh, exact, allowUserCode)) return false;
-        h = (h * PROTO_UL(1000003)) ^ eh;
+        h += eh * PROTO_UL(14029467366897019727);
+        h = (h << 31) | (h >> 33);
+        h *= PROTO_UL(11400714785074694791);
     }
-    out = h;
+    out = h + (size ^ (PROTO_UL(2870177450012600261) ^ PROTO_UL(3527539)));
     return true;
 }
 

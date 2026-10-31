@@ -487,6 +487,15 @@ set_tests_properties(protopy_set_colliding_hash PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "set_colliding_hash: ok"
     LABELS "regression_gate")
+# Nested tuples that swap elements across levels hash apart: (a, (b, c)) and
+# (b, (a, c)) are two dict keys and two set elements.
+add_test(NAME protopy_tuple_hash_nested
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/tuple_hash_nested.py)
+set_tests_properties(protopy_tuple_hash_nested PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "tuple_hash_nested: ok"
+    LABELS "regression_gate")
 # Every set / frozenset operation keeps colliding elements apart.
 add_test(NAME protopy_set_colliding_hash_ops
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/set_colliding_hash_ops.py)
