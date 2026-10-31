@@ -358,6 +358,63 @@ void PythonEnvironment::forEachFastLocal(proto::ProtoContext* ctx, const proto::
     }
 }
 
+bool PythonEnvironment::frameSetLocal(proto::ProtoContext* ctx, const proto::ProtoObject* frame,
+                                      const proto::ProtoString* name, const proto::ProtoObject* value) {
+    if (!frame || frame == PROTO_NONE || !name || !value) return false;
+    const proto::ProtoObject* code = frame->getAttribute(ctx, getFCodeString());
+    proto::ProtoContext* live = findLiveFrameContext(frame);
+    if (live && code && code != PROTO_NONE) {
+        const proto::ProtoObject* const* slots = live->getAutomaticLocals();
+        const unsigned int nSlots = live->getAutomaticLocalsCount();
+        const proto::ProtoObject* flags = code->getAttribute(ctx, getCoFlagsString());
+        const bool optimized = flags && flags->isInteger(ctx) && (flags->asLong(ctx) & CO_OPTIMIZED);
+        const proto::ProtoObject* vn = code->getAttribute(ctx, getCoVarnamesString());
+        ::protoPython::TupleView varnames = (vn && vn != PROTO_NONE) ? tupleView(ctx, vn) : nullptr;
+        const proto::proto_ulong nVar = varnames ? varnames->getSize(ctx) : 0;
+        const proto::ProtoObject* cs = code->getAttribute(ctx, getInternedString(ctx, "co_cellslots"));
+        ::protoPython::TupleView cellSlots = (cs && cs != PROTO_NONE) ? tupleView(ctx, cs) : nullptr;
+        auto isCellSlot = [&](proto::proto_ulong i) {
+            for (proto::proto_ulong k = 0; cellSlots && k < cellSlots->getSize(ctx); ++k) {
+                const proto::ProtoObject* idx = cellSlots->getAt(ctx, static_cast<int>(k));
+                if (idx && idx->isInteger(ctx) && static_cast<proto::proto_ulong>(idx->asLong(ctx)) == i) return true;
+            }
+            return false;
+        };
+        auto sameName = [&](const proto::ProtoObject* nm) {
+            return nm && nm->isString(ctx) && nm->asString(ctx)->cmp_to_string(ctx, name) == 0;
+        };
+        for (proto::proto_ulong i = 0; slots && i < nVar && i < nSlots; ++i) {
+            if (!sameName(varnames->getAt(ctx, static_cast<int>(i)))) continue;
+            if (isCellSlot(i)) {
+                if (!slots[i]) return false;
+                cellSet(ctx, slots[i], value);
+                return true;
+            }
+            if (optimized) return live->setAutomaticLocal(static_cast<unsigned int>(i), value);
+            break;
+        }
+        const proto::ProtoObject* fv = code->getAttribute(ctx, getInternedString(ctx, "co_freevars"));
+        ::protoPython::TupleView freevars = (fv && fv != PROTO_NONE) ? tupleView(ctx, fv) : nullptr;
+        const proto::ProtoObject* sr = code->getAttribute(ctx, getInternedString(ctx, "co_selfref"));
+        const long selfRef = (sr && sr->isInteger(ctx)) ? static_cast<long>(sr->asLong(ctx)) : -1;
+        const bool selfRefCell = code->getAttribute(ctx, getInternedString(ctx, "co_selfref_cell")) == PROTO_TRUE;
+        for (proto::proto_ulong j = 0; slots && freevars && j < freevars->getSize(ctx) && nVar + j < nSlots; ++j) {
+            if (!sameName(freevars->getAt(ctx, static_cast<int>(j)))) continue;
+            // A function's reference to itself held directly in the slot is
+            // not a cell: there is nothing to write through.
+            if (static_cast<long>(j) == selfRef && !selfRefCell) return false;
+            if (!slots[nVar + j]) return false;
+            cellSet(ctx, slots[nVar + j], value);
+            return true;
+        }
+    }
+    // A frame that keeps its variables as attributes (a mapped function's,
+    // built mutable) takes the name itself; setAttribute on an immutable one
+    // (a function whose locals live in slots) answers a new object instead,
+    // and the name has nowhere to go.
+    return frame->setAttribute(ctx, name, value) == frame;
+}
+
 const proto::ProtoObject* PythonEnvironment::frameNamespaceWithCells(proto::ProtoContext* ctx,
                                                                      const proto::ProtoObject* frame) {
     if (!frame || frame == PROTO_NONE) return frame;
@@ -412,18 +469,10 @@ static void collectFrameLocals(proto::ProtoContext* context, PythonEnvironment* 
         });
 }
 
-/** frame.f_locals: a dict snapshot of the frame's local variables.
- *  Module frames (the module object) and class bodies store their namespace
- *  as an own f_locals attribute, which shadows this getter.  CPython 3.13+
- *  returns a write-through FrameLocalsProxy for function frames; this
- *  runtime returns a snapshot (see docs/PYTHON_COMPATIBILITY.md). */
-static const proto::ProtoObject* py_frame_get_locals(
-    proto::ProtoContext* context,
-    const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoArguments* positionalParameters, const proto::ProtoKeywordArguments*) {
+/** A dict snapshot of the frame's local variables (locals() in a function,
+ *  and what frame.f_locals' proxy reads). */
+static const proto::ProtoObject* frameLocalsDict(proto::ProtoContext* context, const proto::ProtoObject* frame) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoObject* frame = (positionalParameters && positionalParameters->getSize(context) > 0)
-        ? positionalParameters->getAt(context, 0) : self;
     if (!env || !env->getDictPrototype() || !frame) return PROTO_NONE;
     FrameLocalsSnapshot snap{context, env->getUnboundSentinel(), context->newSparseList(), context->newList()};
     collectFrameLocals(context, env, frame, snap, 0);
@@ -433,9 +482,37 @@ static const proto::ProtoObject* py_frame_get_locals(
     return d;
 }
 
+/** frame.f_locals.  Module frames (the module object) and class bodies store
+ *  their namespace as an own f_locals attribute, which shadows this getter.
+ *  A function frame answers a write-through FrameLocalsProxy, as CPython
+ *  3.13+ (PEP 667): reads see the variables' current values, and a store
+ *  changes the variable (lib/python3.14/_framelocalsproxy.py over
+ *  frameLocalsDict and PythonEnvironment::frameSetLocal).  The snapshot
+ *  dict is the answer while that module cannot be loaded. */
+static const proto::ProtoObject* py_frame_get_locals(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoArguments* positionalParameters, const proto::ProtoKeywordArguments*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* frame = (positionalParameters && positionalParameters->getSize(context) > 0)
+        ? positionalParameters->getAt(context, 0) : self;
+    if (!env || !frame) return PROTO_NONE;
+    try {
+        const proto::ProtoObject* mod = env->resolveModule("_framelocalsproxy", context);
+        const proto::ProtoObject* cls = (mod && mod != PROTO_NONE)
+            ? mod->getAttribute(context, PythonEnvironment::getInternedString(context, "FrameLocalsProxy")) : nullptr;
+        if (cls && cls != PROTO_NONE) {
+            const proto::ProtoObject* proxy = env->callObject(cls, {frame});
+            if (proxy && proxy != PROTO_NONE) return proxy;
+        }
+    } catch (const proto::ProtoException&) {
+    }
+    return frameLocalsDict(context, frame);
+}
+
 const proto::ProtoObject* PythonEnvironment::frameLocalsSnapshot(proto::ProtoContext* ctx,
                                                                  const proto::ProtoObject* frame) {
-    return py_frame_get_locals(ctx, frame, nullptr, nullptr, nullptr);
+    return frameLocalsDict(ctx, frame);
 }
 
 /** frame.f_lineno: the runtime records the executing line only when an

@@ -7,6 +7,7 @@
 #endif
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/ExecutionEngine.h>
+#include <protoPython/Compiler.h>
 #include <protoPython/StructSequence.h>
 #include <protoPython/Version.h>
 #include <atomic>
@@ -264,6 +265,41 @@ static const proto::ProtoObject* sys_gettrace(
         }
     }
     return PROTO_NONE; 
+}
+
+// sys._protopy_frame_locals(frame): a dict snapshot of a frame's variables,
+// and sys._protopy_frame_set_local(frame, name, value): a write-through
+// store, True when the frame took it.  Private hooks of
+// lib/python3.14/_framelocalsproxy.py (frame.f_locals, PEP 667).
+static const proto::ProtoObject* sys_protopy_frame_locals(
+    proto::ProtoContext* context, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !args || args->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* frame = args->getAt(context, 0);
+    // A function whose variables live in fast slots loses them when it
+    // returns: answer None, and the proxy keeps the last values it read
+    // (CPython's finished frame keeps its final values).
+    if (frame && frame != PROTO_NONE && !PythonEnvironment::findLiveFrameContext(frame)) {
+        const proto::ProtoObject* code = frame->getAttribute(context, env->getFCodeString());
+        const proto::ProtoObject* flags = (code && code != PROTO_NONE)
+            ? code->getAttribute(context, env->getCoFlagsString()) : nullptr;
+        if (flags && flags->isInteger(context) && (flags->asLong(context) & CO_OPTIMIZED))
+            return PROTO_NONE;
+    }
+    return env->frameLocalsSnapshot(context, frame);
+}
+
+static const proto::ProtoObject* sys_protopy_frame_set_local(
+    proto::ProtoContext* context, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !args || args->getSize(context) < 3) return PROTO_FALSE;
+    const proto::ProtoObject* name = args->getAt(context, 1);
+    if (!name || !name->isString(context)) return PROTO_FALSE;
+    return env->frameSetLocal(context, args->getAt(context, 0),
+                              PythonEnvironment::internName(context, name->asString(context)),
+                              args->getAt(context, 2)) ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* sys_getframe(
@@ -992,6 +1028,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getsizeof"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getsizeof));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_current_rss"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_current_rss));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_getframe"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getframe));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_protopy_frame_locals"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_protopy_frame_locals));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_protopy_frame_set_local"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_protopy_frame_set_local));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_getframemodulename"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getframemodulename));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "setrecursionlimit"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_setrecursionlimit));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getrecursionlimit"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getrecursionlimit));

@@ -57,11 +57,15 @@ The most fundamental difference from CPython is the **absence of the Global Inte
 3. **Known semantic gaps**: frozen dataclasses, some introspection (`types.FunctionType` with a closure, `inspect.getclosurevars`), a few error messages and reprs, and `gc.collect()` being a no-op. The maintained list is in [CPYTHON_CONFORMANCE.md](CPYTHON_CONFORMANCE.md#known-divergences-pending).
 4. **Frame objects** (`sys._getframe()`, `inspect.currentframe()`, `f_back`):
    - `f_locals` at module level is the module namespace, the same object as
-     `f_globals` and `globals()`, as in CPython. In a function it is a **snapshot
-     dict** of the local variables taken when the attribute is read; CPython 3.13+
-     returns a write-through `FrameLocalsProxy`, so writing to it does not change
-     the function's variables here. Cell variables of a function whose locals live
-     in fast slots may be missing from the snapshot.
+     `f_globals` and `globals()`, as in CPython. In a function it is a
+     write-through `FrameLocalsProxy`, as in CPython 3.13+ (PEP 667): it reads the
+     variables' current values, and storing a name changes the variable (its fast
+     slot, its cell, or the frame). A function whose locals live in fast slots has
+     no room for a name it does not define: storing one raises `ValueError` (CPython
+     keeps such names in an extra dict of the frame). Once such a function returns,
+     its fast slots are gone: the proxy answers the values it last read or stored
+     (CPython's answers the values at return). `locals()` in a function
+     stays a snapshot dict, as in CPython.
    - `exec(source)` without explicit namespaces runs, inside a function, in a frame
      of its own whose `f_back` is the calling function (so the setuptools
      `*-nspkg.pth` line `sys._getframe(1).f_locals['sitedir']` works). It reads the
