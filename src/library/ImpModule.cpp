@@ -58,14 +58,18 @@ static const proto::ProtoObject* imp_is_builtin(
     const proto::ProtoObject* sysMods = env->resolve("sys", ctx);
     if (sysMods && sysMods != PROTO_NONE) {
          const proto::ProtoObject* builtinsDef = sysMods->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "builtin_module_names"));
+         // A module is built in when sys.builtin_module_names lists it.
          if (builtinsDef && ::protoPython::PythonEnvironment::isTupleValue(ctx, builtinsDef)) {
-             // Logic to check tuple
+             const ::protoPython::TupleView names = ::protoPython::PythonEnvironment::tupleView(ctx, builtinsDef);
+             for (proto::proto_ulong i = 0; i < names.size(ctx); ++i) {
+                 const proto::ProtoObject* n = names.at(ctx, i);
+                 if (!n || !n->isString(ctx)) continue;
+                 std::string s;
+                 n->asString(ctx)->toUTF8String(ctx, s);
+                 if (s == name) return ctx->fromInteger(1);
+             }
+             return PROTO_FALSE;
          }
-    }
-    
-    // Core built-ins we must affirmatively report:
-    if (name == "sys" || name == "builtins" || name == "_imp" || name == "_thread" || name == "_warnings" || name == "_weakref" || name == "_collections" || name == "itertools") {
-         return PROTO_TRUE;
     }
     return PROTO_FALSE;
 }
@@ -91,7 +95,14 @@ static const proto::ProtoObject* imp_create_builtin(
         if (sysMods && sysMods != PROTO_NONE) {
             const proto::ProtoString* nameStr = nameAttr->isString(ctx) ? PythonEnvironment::internName(ctx, nameAttr->asString(ctx)) : nullptr;
             if (nameStr) {
-                const proto::ProtoObject* existing = sysMods->getAttribute(ctx, nameStr);
+                // sys.modules' entries are its dict data: an attribute left
+                // by a module that `del sys.modules[name]` removed would hand
+                // back the old module instead of a fresh import.
+                const proto::ProtoObject* data = sysMods->getAttribute(ctx, env->getDataString());
+                const proto::ProtoSparseList* entries = (data && data != PROTO_NONE) ? data->asSparseList(ctx) : nullptr;
+                const proto::ProtoObject* existing = entries
+                    ? (entries->has(ctx, nameStr->getHash(ctx)) ? entries->getAt(ctx, nameStr->getHash(ctx)) : nullptr)
+                    : sysMods->getAttribute(ctx, nameStr);
                 if (existing && existing != PROTO_NONE) {
                     return existing;
                 }

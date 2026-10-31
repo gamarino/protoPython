@@ -360,6 +360,7 @@ public:
     const proto::ProtoObject* getBuiltinsModule() const { return builtinsModule; }
     
     /** @brief Ensures a module is registered in sys.modules. */
+    const proto::ProtoObject* sourceFileSpecFor(proto::ProtoContext* ctx, const std::string& name, const proto::ProtoObject* path);
     void ensureModuleInSysModules(proto::ProtoContext* ctx, const std::string& name, const proto::ProtoObject* mod);
 
     /** @brief Internal registration logic for sys.modules. */

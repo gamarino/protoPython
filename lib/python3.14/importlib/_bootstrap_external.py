@@ -1556,6 +1556,39 @@ def _set_bootstrap_module(_bootstrap_module):
     _bootstrap = _bootstrap_module
 
 
+def _fix_up_source_modules():
+    """protoPython: give a ModuleSpec with a SourceFileLoader to the source
+    modules the interpreter loaded before importlib was imported.
+
+    The interpreter loads modules natively and records a placeholder spec
+    without a loader until importlib exists; once it does, the interpreter
+    builds the spec with spec_from_file_location itself
+    (PythonEnvironment::ensureModuleInSysModules).  This replaces the
+    placeholders registered earlier, as CPython's
+    FrozenImporter._fix_up_module does for its frozen stdlib modules.
+    """
+    for name, module in list(sys.modules.items()):
+        spec = getattr(module, '__spec__', None)
+        if spec is None or isinstance(spec, _bootstrap.ModuleSpec):
+            continue
+        if getattr(spec, 'loader', None) is not None:
+            continue
+        origin = getattr(spec, 'origin', None)
+        if not getattr(spec, 'has_location', False) or not isinstance(origin, str):
+            continue
+        if not origin.endswith(tuple(SOURCE_SUFFIXES)):
+            continue
+        new_spec = spec_from_file_location(getattr(spec, 'name', name), origin)
+        if new_spec is None:
+            continue
+        try:
+            module.__spec__ = new_spec
+            if getattr(module, '__loader__', None) is None:
+                module.__loader__ = new_spec.loader
+        except AttributeError:
+            pass
+
+
 def _install_path_hooks():
     """protoPython: install the path hooks CPython installs at startup.
 
