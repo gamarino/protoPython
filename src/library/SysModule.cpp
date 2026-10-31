@@ -1348,6 +1348,27 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     });
     impl = impl->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "version"), impl_version);
     impl = impl->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "cache_tag"), PythonEnvironment::getInternedString(ctx, "protopython-314")->asObject(ctx));
+    // sys.implementation._multiarch, as CPython sets it on Linux and macOS.
+    // sysconfig names its build-time data module after it
+    // (_sysconfigdata__linux_x86_64-linux-gnu); without it every config
+    // variable (Py_DEBUG, Py_GIL_DISABLED, ...) read as None.
+    {
+        const char* multiarch = nullptr;
+#if defined(__APPLE__)
+        multiarch = "darwin";
+#elif defined(__linux__) && defined(__x86_64__)
+        multiarch = "x86_64-linux-gnu";
+#elif defined(__linux__) && defined(__aarch64__)
+        multiarch = "aarch64-linux-gnu";
+#elif defined(__linux__) && defined(__i386__)
+        multiarch = "i386-linux-gnu";
+#elif defined(__linux__) && defined(__arm__)
+        multiarch = "arm-linux-gnueabihf";
+#endif
+        if (multiarch)
+            impl = impl->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_multiarch"),
+                                      PythonEnvironment::getInternedString(ctx, multiarch)->asObject(ctx));
+    }
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "implementation"), impl);
 
     // sys.flags: struct sequence with CPython 3.14's 18 visible fields;
