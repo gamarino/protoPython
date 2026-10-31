@@ -8151,6 +8151,47 @@ static const proto::ProtoObject* py_isinstance(
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 1);
 
+    // The common case first: cls is a class whose metaclass is exactly
+    // `type` (so no __instancecheck__ can apply, and it is neither a tuple
+    // nor a union) and obj is not a class.  Then isinstance is
+    // issubclass(type(obj), cls); a no can be final only when obj.__class__
+    // cannot differ from type(obj), which holds for the built-in value types.
+    // Everything else takes the general path below.
+    if (env && cls && obj && cls != env->getTypePrototype()
+        && env->getType(context, cls) == env->getTypePrototype()
+        && env->isActuallyAClass(context, cls) && !env->isActuallyAClass(context, obj)) {
+        const proto::ProtoObject* objType = env->getType(context, obj);
+        if (objType && objType != PROTO_NONE) {
+            if (objType == cls || py_issubclass_check_single(context, objType, cls)) return PROTO_TRUE;
+            if (objType == env->getIntPrototype() || objType == env->getFloatPrototype()
+                || objType == env->getStrPrototype() || objType == env->getBoolPrototype()
+                || objType == env->getNoneTypePrototype() || objType == env->getTuplePrototype()
+                || objType == env->getListPrototype())
+                return PROTO_FALSE;
+            // Likewise for an instance of a class none of whose bases (before
+            // object) defines __class__ or __getattribute__.
+            ::protoPython::TupleView mro = env->getMroString()
+                ? ::protoPython::PythonEnvironment::tupleView(context,
+                      env->getAttribute(context, objType, env->getMroString(), false))
+                : nullptr;
+            if (mro) {
+                const proto::ProtoString* gaS = PythonEnvironment::getInternedString(context, "__getattribute__");
+                const proto::ProtoString* classS = env->getClassString();
+                bool plain = true;
+                for (proto::proto_ulong i = 0; plain && i < mro->getSize(context); ++i) {
+                    const proto::ProtoObject* b = mro->getAt(context, static_cast<int>(i));
+                    if (!b || b == PROTO_NONE) continue;
+                    if (b == env->getObjectPrototype()) break;
+                    if (b->hasOwnAttribute(context, gaS) == PROTO_TRUE
+                        || (classS && b->hasOwnAttribute(context, classS) == PROTO_TRUE
+                            && !env->isActuallyAClass(context, b->getOwnAttributeDirect(context, classS))))
+                        plain = false;
+                }
+                if (plain) return PROTO_FALSE;
+            }
+        }
+    }
+
     // PEP 604: isinstance(obj, X | Y | Z) is True iff any member matches.
     // Detect UnionType by presence of the `__args__` attribute and a
     // `__class__` whose name is "UnionType" — this avoids relying on
