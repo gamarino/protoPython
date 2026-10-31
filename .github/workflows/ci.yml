@@ -49,12 +49,14 @@ concurrency:
 
 env:
   PROTOCORE_REPO: numaes/protoCore
-  # protoCore 3.3.1 (tag v3.3.1, commit 5a8cd7c7), SOVERSION 4: natives
-  # receive ProtoArguments descriptors. protopy enables its adaptive heap
-  # controller (README, "Memory"). The minimum CMakeLists.txt declares
-  # (PROTOCORE_MIN_VERSION, 3.0.0) is what the floor job in cross-platform.yml
-  # (Windows) tests. Bump this deliberately.
-  PROTOCORE_REF: ${{ github.event_name == 'schedule' && 'master' || '5a8cd7c7aae68edbb34720445736b14685efae6f' }}
+  # protoCore 3.4.0 (tag v3.4.0, commit f63adc08), SOVERSION 5
+  # (ProtoContext::pendingRoot removed): natives receive ProtoArguments
+  # descriptors. protopy enables its adaptive heap controller (README,
+  # "Memory"). The minimum CMakeLists.txt declares (PROTOCORE_MIN_VERSION,
+  # 3.4.0) is what the floor job in cross-platform.yml (Windows) tests; for
+  # now it coincides with this pin because of the SOVERSION bump. Bump this
+  # deliberately.
+  PROTOCORE_REF: ${{ github.event_name == 'schedule' && 'master' || 'f63adc0881eb00547cc42c1c1cf18c7c4941b978' }}
   # The clock-dependent cases in this combined suite.  protoPython's own:
   #   protopy_dict_key_hash          assert elapsed < 20.0 for 20000 dict inserts
   #                                  (test/regression/dict_key_hash.py:124)

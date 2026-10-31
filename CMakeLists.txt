@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(protoPython VERSION 1.1.0 LANGUAGES CXX)
+project(protoPython VERSION 1.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -96,10 +96,13 @@ set(PROTOPYTHON_STDLIB_INSTALL_PARENT "${CMAKE_INSTALL_LIBDIR}/protoPython")
 # major version and its soname move together; the SOVERSION is asserted below.
 # 3.0.0: methods receive their arguments as ProtoArguments /
 # ProtoKeywordArguments descriptors (protoCore docs/CALLING_CONVENTION.md).
-set(PROTOCORE_MIN_VERSION      "3.0")
-set(PROTOCORE_MIN_VERSION_FULL "3.0.0")
+# 3.4.0: SOVERSION 5, ProtoContext::pendingRoot removed (ProtoContext layout
+# changed), so a build against 3.4.0 headers does not load an older library
+# and vice versa; no source change in protoPython.
+set(PROTOCORE_MIN_VERSION      "3.4")
+set(PROTOCORE_MIN_VERSION_FULL "3.4.0")
 set(PROTOCORE_NEXT_MAJOR       "4.0.0")
-set(PROTOCORE_ABI_SOVERSION    "4")
+set(PROTOCORE_ABI_SOVERSION    "5")
 option(PROTOCORE_REQUIRE_PACKAGE
     "Require an installed protoCore CMake package; never fall back to ../protoCore" OFF)
 
@@ -2682,7 +2685,7 @@ elseif(UNIX)
     # protoCore's package (which provides libprotoCore), the same strategy
     # protoJS and protoST use. protoCore is never bundled. protoCore's major
     # version and its soname move together, so the dependency is bounded on
-    # both sides: a 3.x protoCore would be ABI-incompatible with this build.
+    # both sides: a 4.x protoCore would be ABI-incompatible with this build.
     set(CPACK_DEBIAN_PACKAGE_DEPENDS
         "protocore (>= ${PROTOCORE_MIN_VERSION_FULL}), protocore (<< ${PROTOCORE_NEXT_MAJOR}), libpcre2-8-0 (>= 10.34)")
     # SHLIBDEPS is meant to add a SONAME dependency (libprotoCore.so.N)

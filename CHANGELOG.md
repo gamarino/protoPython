@@ -7,6 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-31
+
+**Requires protoCore 3.4.0** (SOVERSION 5), the declared minimum for a build from source; the `.deb` depends on `protocore (>= 3.4.0), protocore (<< 4.0.0)`. protoCore 3.4.0 removed `ProtoContext::pendingRoot`, which changes the layout of `ProtoContext`: a protoPython built against 3.4.0 does not load an older `libprotoCore` and vice versa. For protoPython this is a rebuild, with no source change. CI pins protoCore tag `v3.4.0` on every job; the Windows floor job builds 3.4.0 too, since no older protoCore satisfies SOVERSION 5.
+
+This release collects pull requests #3 to #73 and the work merged directly before them: about seventy conformance fixes, most of them found by running CPython's own test files (`tests/run_cpython_subset.py`, new in #10) and each with a regression test that also passes on CPython 3.14; `re` on PCRE2; collectable strings from I/O and str methods; a Debug Adapter Protocol server with a VS Code extension; and docs/VM.md with `protopy --disasm`.
+
+### Fixed — language and compiler
+
+- **Assignment expressions.** Inside a function, `name := value` in an `if` / `while` test, a call argument or a return value bound a global; it binds a local of the enclosing function (#43). A walrus inside a comprehension directly in a class body is a `SyntaxError`, as PEP 572 specifies (#63).
+- **Generators and coroutines.** A `StopIteration` raised in a generator body becomes `RuntimeError` (PEP 479; also `StopIteration` in a coroutine and `StopAsyncIteration` in an async generator) (#39). `gi_suspended`, `cr_suspended` and `ag_suspended` are tracked, so `inspect.getgeneratorstate` and friends work (#36). Code flags use CPython's numbering (`CO_COROUTINE` 0x80, `CO_ITERABLE_COROUTINE` 0x100, `CO_ASYNC_GENERATOR` 0x200), which fixes `inspect.isasyncgenfunction` and `types.coroutine` (#38).
+- **Async generators.** `aclose()` and `__anext__()` return awaitables (`await agen.aclose()` hung) (#21); `athrow()` is a single-shot awaitable (#30). `await` of a non-awaitable raises `TypeError` instead of spinning forever (#41).
+- **Calls.** An instance that stores its own `__code__` (`unittest.mock.AsyncMock`) is called through its class's `__call__` (#41, #13). Bound methods forward unknown attributes to `__func__` and answer `__module__` and `__doc__` from it (#20, #25). `function.__defaults__` / `__kwdefaults__` are `None` without defaults (#20); `function.__annotations__` is derived from `__annotate__` when the function has none, so `functools.wraps` and `singledispatch` see annotations (#44).
+- **Attributes.** `C().__name__`, `C().__mro__`, `(1).__name__` and the other class-only attributes raise `AttributeError` on instances (#17). A class's `__getattr__` serves its instances, not the class itself (#22). `object.__setattr__` is the generic store (frozen dataclasses, `uuid.UUID`) (#22). A user `__getattribute__` also answers `__class__` and `__dict__`, and `object.__getattribute__` never re-enters it (#66). `object.__subclasshook__` exists and `abc` calls it as CPython does (#11). Class namespaces may bind `__code__` and `__class__` (#13).
+- **`isinstance`.** `isinstance(1, bool)` is False (#15); `io.UnsupportedOperation`'s MRO includes `ValueError` (#68).
+- **Instance `__dict__` and `vars()`.** Removals through `vars(o)` / `o.__dict__` remove the attribute; `vars()` of an object without `__dict__` raises `TypeError` (#9). Reading an instance `__dict__` no longer leaves a permanent self-cycle (#19); neither does `super()` (#12).
+- **Frames.** Every frame has `f_back` (`None` at the bottom) (#23). A function frame's `f_locals` is a write-through `FrameLocalsProxy` (PEP 667) (#67).
+- **Dicts and bytes keys.** Unequal keys whose hashes collide are kept apart with `__eq__` (#59). bytes are keyed by content in dicts and sets (#48).
+- **Recursion.** The recursion guard is sized from each thread's real stack (`_thread.stack_size` added), the attribute caches moved off static TLS, and on MSVC an `except` clause catching a deep `RecursionError` runs after the stack unwinds (#31).
+- **Quadratic costs.** Class creation and lambda/function compilation were quadratic in namespace or parameter count (namedtuple with 150,000 fields never finished); `_random` runs MT19937 natively (new `_mt19937`) (#28).
+
+### Fixed — builtins and standard-library modules
+
+- **str.** `str.format_map` (#35). A `str.format` field without an argument raises `KeyError` / `IndexError`, and mixed automatic and manual numbering raises `ValueError` (#72).
+- **bytes.** `bytes % args` follows PEP 461 (#52). `bytes(x)` calls a class's `__bytes__` once bound (#46).
+- **`divmod()`** dispatches `__divmod__` / `__rdivmod__` (aware datetimes could not be printed) (#62).
+- **`aiter` / `anext`, `int.to_bytes` overflow, `memoryview.__getitem__`, `sys.stdout.buffer`** (#21, #22).
+- **struct.** `struct.pack` checks values against the format code (#49); `struct.error` is an `Exception` subclass of its own, no longer an alias of `ValueError` (#60).
+- **binascii** rejects data that is not bytes-like (#50).
+- **array** is implemented over struct with CPython's item sizes, range checks and methods (#33).
+- **operator.** CPython's `operator.py` is loaded; the native `_operator` keeps only the functions that matched CPython (#40).
+- **functools.** The broken native `cmp_to_key` stub is gone (the unittest loader could not sort test names) (#6); `_functools.cmp_to_key` is a native builtin as in CPython (#53); `reduce` has CPython's signature and errors (#37).
+- **datetime.** The incomplete native `_datetime` is replaced by CPython's `_pydatetime` (#45); `_datetime` loads with `_pydatetime` blocked, as test_datetime's fast variant needs (#69).
+- **codecs.** `_codecs` has a real registry and the utf_8 / latin_1 / ascii / charmap codec functions, so `io.TextIOWrapper` and `subprocess.run(text=True)` work; `__import__` takes `fromlist` / `level` by keyword (#61).
+- **weakref.** `weakref.proxy` is a forwarding proxy (`ProxyType`, `CallableProxyType`); `ReferenceError` is a builtin (#66).
+- **Imports and `sys.modules`.** `None` in `sys.modules` blocks a native module's import (#32). Iterating `sys.modules` lists every module, modules get real specs, `sys.builtin_module_names` lists only native modules, and a deleted module re-imports fresh (#64). `from module import name` honours a module `__getattr__` (PEP 562) (#21). A package's `__path__` is a real list; `os.listdir()` results are mutable lists (#20). `iter()` binds a non-function `__iter__` on the type (MagicMock) (#20).
+- **sys.** `sys.set_coroutine_origin_tracking_depth` / `get_...` (#23); `sys.implementation._multiarch`, so `sysconfig` finds its build data on Linux and macOS (#70). `nt` exists only on Windows, `posix` only on POSIX (#71).
+- **Test support.** `types.CodeType` exposes `co_*` member descriptors (`AsyncMock` with `spec_set`) (#24); the `_testsinglephase` test module (#27); `tests/run_cpython_subset.py` runs CPython's test files with per-file limits derived from measured times (#10).
+
+### Fixed — threading, fork and exit
+
+- **Interpreter exit joins non-daemon threads** (`threading._shutdown`), as CPython does; a 5 s poll used to let the space be destroyed under a finishing thread (macOS aborts) (#55).
+- **`os.fork`** is safe: the child runs Python code and exits (its heap limits are lifted, since the collector thread does not survive fork); `os.register_at_fork` hooks run (#29). `Lock._at_fork_reinit` / `RLock._at_fork_reinit` (`concurrent.futures.thread` imports) (#26).
+- **Thread identity** comes from the current context's ProtoThread, not OS thread calls (`_thread.get_ident`, RLock ownership, the main thread's ident) (#73).
+- **protopy destroys the process space before `main` returns**, which addresses the Windows post-exit hangs of heap-limited tests (#16; the mechanism is inferred, see the PR).
+
+### Fixed — I/O and processes
+
+- **`io.StringIO` and `io.BytesIO`** are real, subclassable types (#34), and their methods called through the class use the instance (doctest's `_SpoofOut`) (#51).
+- **`os.pipe()`** returns non-inheritable descriptors (PEP 446; `Popen` with pipes hung); `os.execv` / `os.execve` check their arguments; `os.write` accepts memoryviews (#22).
+- **Reads and str methods return collectable strings, not interned ones.** Each distinct line read from a file became a permanent intern-table entry: 200,000 lines took 83.6 s, now about 1.1 s, linear in the line count. NUL characters survive (3d6afee0).
+
+### Windows and macOS
+
+- `_sysconfig` (#42) and `sys.getwindowsversion()` (#47), so `sysconfig` and `test.support` import on Windows.
+- subprocess is documented as unsupported on Windows (`Popen` raises `OSError(ENOTSUP)`) in docs/PYTHON_COMPATIBILITY.md (#65).
+- The macOS CI job runs on `macos-15` (#57).
+
+### Performance
+
+- **`re` runs on PCRE2 with JIT** instead of `std::wregex` recompiled per call (about 47 us per search before), with `re.error`, bytes patterns, `re.Scanner` and CPython's `lastindex`; PCRE2 is a system library or a pinned static build. The DEB depends on `libpcre2-8-0` (938b63de).
+- **Own-attribute enumeration** uses protoCore's `processOwnAttributes` (24 sites) (#4), and single own-attribute probes use the keyed API (#5).
+- **Attribute names are passed as interned symbols** at the hot sites (78,179 non-interned name operations in a ctest run, now 56, none from protopy) (#56).
+- **`isinstance(obj, cls)`** for a plain class takes a direct path, about 2x faster (#68).
+
+### Tests and CI
+
+- `adaptive_heap_check.py --deadline` reports a hang with evidence instead of a bare ctest timeout (#8); `dap_session` waits for output that is not ordered with `stopped` events (#7, #18).
+- CI moved from protoCore v3.0.0 to v3.3.1 during the cycle (0c40efe7), and to v3.4.0 for this release.
+
+### Known limitations
+
+- Sets still compare elements by hash only (#59 fixed dicts; sets need a protoCore addition), and an int key and a user key whose `__hash__` equals `hash(n)` do not meet (#59).
+- `bytearray % args` is not implemented (#52); the native `str.encode` / `bytes.decode` get several non-strict cases wrong and `UnicodeError` instances lack `start` / `end` / `object` (#61).
+- A finished function's `f_locals` proxy answers the values it last saw; storing a name the function does not define raises `ValueError` (#67).
+- Daemon threads still rely on the 5 s exit poll; the complete fix belongs in protoCore (#54, #55).
+- `test_datetime` does not finish within its 305 s subset limit (#68, #69); `subprocess` is unsupported on Windows (#65); `threading.get_native_id` is not implemented (#73).
+
+### Earlier in the cycle
+
 - **Fixed: a str is no longer taken for a list.** protoCore's `asList`
   converts a string into a list of its characters; protoPython used it as
   its list test, so `isinstance("abc", list)` was True and `[1] + "abc"`,
@@ -45,7 +124,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was dropped), and an escaped brace in an f-string is a literal brace
   (`str_named_escape`).
 
-- **Fixed: the defects docs/VM.md section 6 listed.** Each has a regression
+- **Fixed: the defects docs/VM.md section 6 listed (#3).** Each has a regression
   test (`test/regression/*.py`, ctest `protopy_<name>`).
   - The peephole specialiser fused a window that a jump enters part-way:
     `while (x if c else y) < b` skipped the comparison on the `x` branch.

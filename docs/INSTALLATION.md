@@ -77,16 +77,19 @@ rules. **A prefix holding only `libprotoCore` and `protoCore.h` is no longer
 accepted**: without the package configuration there is no way to tell protoCore 1.x
 from 2.x, and linking the wrong major version is silent.
 
-The version floor is `3.0` and the ceiling is the next major version: natives
-receive their arguments as `ProtoArguments` / `ProtoKeywordArguments` descriptors,
-protoCore 3.0.0's calling convention (from 2026-10-03 to 2026-10-20 the floor was
+The version floor is `3.4` and the ceiling is the next major version: protoCore
+3.4.0 moved to SOVERSION 5 (`ProtoContext::pendingRoot` was removed, which changes
+the layout of `ProtoContext`), so a protoPython built against 3.4.0 does not load
+an older library and vice versa. From 2026-10-20 to 2026-10-30 the floor was `3.0`:
+natives receive their arguments as `ProtoArguments` / `ProtoKeywordArguments`
+descriptors, protoCore 3.0.0's calling convention (from 2026-10-03 to 2026-10-20 the floor was
 `2.11`, for attribute write groups published with `ProtoObject::setAttributes`;
 from 2026-10-01 to 2026-10-03 the floor was
 `2.7`, for the 64-bit integers `proto::proto_long` / `proto::proto_ulong`; before
 that `2.0`), and protoCore's major version and its soname move together. A sibling
 `../protoCore` whose `protoCore.h` lacks `setAttributes` is refused at configure
 time.
-protoPython additionally asserts that the package's `SOVERSION` is `3`.
+protoPython additionally asserts that the package's `SOVERSION` is `5`.
 
 Pass `-DPROTOCORE_REQUIRE_PACKAGE=ON` to forbid the developer fallback. **Every
 packaging build must set it**: the fallback performs no version check and warns that it
@@ -175,8 +178,8 @@ prints whether a generator was enabled or disabled and why.
 
 Package names are pinned rather than left to each generator's default casing:
 `protopython` for DEB, `protoPython` for RPM. Both declare a bounded dependency on
-protoCore's own package (`protocore (>= 3.0.0), protocore (<< 4.0.0)` for DEB;
-`protoCore >= 3.0.0, protoCore < 4.0.0` for RPM). The DEB, RPM and TGZ
+protoCore's own package (`protocore (>= 3.4.0), protocore (<< 4.0.0)` for DEB;
+`protoCore >= 3.4.0, protoCore < 4.0.0` for RPM). The DEB, RPM and TGZ
 packages do not bundle protoCore; the Windows ZIP and installer do (see
 [Windows (MSVC)](#windows-msvc)).
 
@@ -277,7 +280,7 @@ To compile in a different installed location, configure with
 
 protoPython builds and runs natively on Windows with Visual Studio 2022 (MSVC
 19.44 verified, Windows 11), using the CMake and Ninja that ship with it. Build
-protoCore 3.0.0 or newer first (its `docs/INSTALLATION.md`, "Windows (MSVC)") and
+protoCore 3.4.0 or newer first (its `docs/INSTALLATION.md`, "Windows (MSVC)") and
 install it into a prefix; protoPython uses that installed package
 (`-DCMAKE_PREFIX_PATH`).
 From an "x64 Native Tools Command Prompt":
