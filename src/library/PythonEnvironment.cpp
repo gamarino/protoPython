@@ -13700,6 +13700,7 @@ static const proto::ProtoObject* py_str_format(
     std::string out;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     proto::proto_ulong autoIdx = static_cast<proto::proto_ulong>(formatPosOff);
+    bool autoNumbering = false, manualNumbering = false;
 
     for (size_t i = 0; i < tpl.size(); ++i) {
         if (tpl[i] == '{' && i + 1 < tpl.size() && tpl[i + 1] == '{') {
@@ -13754,17 +13755,39 @@ static const proto::ProtoObject* py_str_format(
         }
 
         // Resolve base value via the auto / numeric / keyword rules.
+        // A field with no argument raises, as in CPython: IndexError for a
+        // positional field, KeyError for a named one.  (It formatted None.)
         const proto::ProtoObject* val = PROTO_NONE;
+        auto positionalAt = [&](proto::proto_ulong idx) -> const proto::ProtoObject* {
+            if (positionalParameters && idx < positionalParameters->getSize(context))
+                return positionalParameters->getAt(context, static_cast<int>(idx));
+            if (env) env->raiseIndexError(context, "Replacement index "
+                + std::to_string(idx - static_cast<proto::proto_ulong>(formatPosOff))
+                + " out of range for positional args tuple");
+            return nullptr;
+        };
         if (baseName.empty()) {
             // auto-index
-            if (positionalParameters && autoIdx < positionalParameters->getSize(context))
-                val = positionalParameters->getAt(context, static_cast<int>(autoIdx));
+            if (manualNumbering) {
+                if (env) env->raiseValueError(context,
+                    PythonEnvironment::newStr(context, "cannot switch from manual field specification to automatic field numbering"));
+                return nullptr;
+            }
+            autoNumbering = true;
+            val = positionalAt(autoIdx);
+            if (!val) return nullptr;
             autoIdx++;
         } else if (!baseName.empty() && baseName[0] >= '0' && baseName[0] <= '9') {
             // numeric index — shifted by formatPosOff when called unbound
+            if (autoNumbering) {
+                if (env) env->raiseValueError(context,
+                    PythonEnvironment::newStr(context, "cannot switch from automatic field numbering to manual field specification"));
+                return nullptr;
+            }
+            manualNumbering = true;
             proto::proto_ulong idx = std::stoul(baseName) + static_cast<proto::proto_ulong>(formatPosOff);
-            if (positionalParameters && idx < positionalParameters->getSize(context))
-                val = positionalParameters->getAt(context, static_cast<int>(idx));
+            val = positionalAt(idx);
+            if (!val) return nullptr;
         } else if (fmtMapping && env) {
             // str.format_map(mapping): mapping[name], read through
             // __getitem__ (a dict subclass's __missing__ applies; a missing
@@ -13778,11 +13801,19 @@ static const proto::ProtoObject* py_str_format(
             val = found;
         } else {
             // keyword
+            const proto::ProtoObject* found = nullptr;
             if (keywordParameters && env) {
                 const proto::ProtoString* keyS = PythonEnvironment::getInternedString(context, baseName.c_str());
-                const proto::ProtoObject* found = keywordParameters->getAt(context, keyS->getHash(context));
-                if (found) val = found;
+                // getAt answers PROTO_NONE for an absent key; has() tells it
+                // from an argument whose value is None.
+                if (keywordParameters->has(context, keyS->getHash(context)))
+                    found = keywordParameters->getAt(context, keyS->getHash(context));
             }
+            if (!found) {
+                if (env) env->raiseKeyError(context, PythonEnvironment::newStr(context, baseName));
+                return nullptr;
+            }
+            val = found;
         }
 
         // Walk the access tail: each '.attr' becomes a getattr, each
