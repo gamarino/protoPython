@@ -30,6 +30,15 @@ namespace protoPython {
 // with py_dict_getitem / setitem — keeps user-__hash__ overrides
 // (cistr, etc.) consistent across the entire dict pipeline.
 proto::proto_ulong pyDictKeyHash(proto::ProtoContext* context, const proto::ProtoObject* key);
+// Dict entry operations that compare keys of equal hash with __eq__ (see
+// "Dict entries under colliding hashes" in PythonEnvironment.cpp).
+bool pyDictFind(proto::ProtoContext* context, const proto::ProtoSparseList* data, const proto::ProtoList* keys,
+                const proto::ProtoObject* key, const proto::ProtoObject** value);
+const proto::ProtoSparseList* pyDictPut(proto::ProtoContext* context, const proto::ProtoSparseList* data,
+                                        const proto::ProtoList* keys, const proto::ProtoObject* key,
+                                        const proto::ProtoObject* value, bool& isNew);
+const proto::ProtoObject* pyDictStoredValue(proto::ProtoContext* context, const proto::ProtoSparseList* data,
+                                            const proto::ProtoObject* storedKey);
 
 // Compact metadata cache pre-computed at createUserFunction time.
 // Stored as a ProtoByteBuffer on the function object (__fn_meta_cache__) so
@@ -2749,9 +2758,12 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
                 else if (data->asSparseList(ctx)) {
                     // The key is looked up by the hash the dict stores it
                     // under; an unhashable key raises TypeError.
-                    proto::proto_ulong hash = 0;
-                    if (!PythonEnvironment::hashKey(ctx, a, hash)) return nullptr;
-                    if (data->asSparseList(ctx)->has(ctx, hash)) {
+                    const proto::ProtoObject* bKeys = b->getAttribute(ctx,
+                        protoPython::PythonEnvironment::getInternalString(ctx, "__keys__"));
+                    const proto::ProtoObject* hit = nullptr;
+                    if (!::protoPython::pyDictFind(ctx, data->asSparseList(ctx),
+                            bKeys ? ::protoPython::listStorage(ctx, bKeys) : nullptr, a, &hit)) return nullptr;
+                    if (hit) {
                         found = true;
                         result = (op == 6) ? found : !found;
                         return result ? PROTO_TRUE : PROTO_FALSE;
@@ -7645,10 +7657,11 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 const proto::ProtoObject* data = mapObj->getAttribute(ctx, dataString);
                 if (data && data->asSparseList(ctx)) {
                     const proto::ProtoSparseList* sl = data->asSparseList(ctx);
-                    proto::proto_ulong h = 0;
-                    if (!PythonEnvironment::hashKey(ctx, key, h)) continue;
-                    bool isNew = !sl->has(ctx, h);
-                    sl = sl->setAt(ctx, h, val);
+                    const proto::ProtoString* keysS0 = protoPython::PythonEnvironment::getInternalString(ctx, "__keys__");
+                    const proto::ProtoObject* keys0 = mapObj->getAttribute(ctx, keysS0);
+                    bool isNew = false;
+                    sl = ::protoPython::pyDictPut(ctx, sl, keys0 ? ::protoPython::listStorage(ctx, keys0) : nullptr, key, val, isNew);
+                    if (!sl) continue;
                     const proto::ProtoObject* newMap = mapObj->setAttribute(ctx, dataString, sl->asObject(ctx));
                     stack[stack.size() - arg - 1] = const_cast<proto::ProtoObject*>(newMap);
                     if (isNew) {
@@ -7738,11 +7751,12 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                         const proto::ProtoList* fromKeys = ::protoPython::listStorage(ctx, fromKeysObj);
                         for (proto::proto_ulong j = 0; j < fromKeys->getSize(ctx); ++j) {
                             const proto::ProtoObject* k = fromKeys->getAt(ctx, static_cast<int>(j));
-                            proto::proto_ulong h = ::protoPython::pyDictKeyHash(ctx, k);
-                            const proto::ProtoObject* v = fromSL->getAt(ctx, h);
-                            bool isNew = !toSL->has(ctx, h);
-                            if (!isNew && rejectDuplicate(k)) break;
-                            toSL = toSL->setAt(ctx, h, v);
+                            const proto::ProtoObject* v = ::protoPython::pyDictStoredValue(ctx, fromSL, k);
+                            const proto::ProtoObject* existing = nullptr;
+                            if (!::protoPython::pyDictFind(ctx, toSL, toKeys, k, &existing)) break;
+                            if (existing && rejectDuplicate(k)) break;
+                            bool isNew = false;
+                            toSL = ::protoPython::pyDictPut(ctx, toSL, toKeys, k, v, isNew);
                             if (isNew) toKeys = toKeys->appendLast(ctx, k);
                         }
                         merged = true;
@@ -7793,10 +7807,11 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                                         const proto::ProtoList* gA = ctx->newList()->appendLast(ctx, k);
                                         const proto::ProtoObject* v = invokeBound(getitemM, from, gA);
                                         if (!v) continue;
-                                        proto::proto_ulong h = ::protoPython::pyDictKeyHash(ctx, k);
-                                        bool isNew = !toSL->has(ctx, h);
-                                        if (!isNew && rejectDuplicate(k)) break;
-                                        toSL = toSL->setAt(ctx, h, v);
+                                        const proto::ProtoObject* existing = nullptr;
+                                        if (!::protoPython::pyDictFind(ctx, toSL, toKeys, k, &existing)) break;
+                                        if (existing && rejectDuplicate(k)) break;
+                                        bool isNew = false;
+                                        toSL = ::protoPython::pyDictPut(ctx, toSL, toKeys, k, v, isNew);
                                         if (isNew) toKeys = toKeys->appendLast(ctx, k);
                                     }
                                 }
@@ -9077,11 +9092,11 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 // Use the env-aware hash so user __hash__ overrides
                 // (cistr et al.) bucket the same way as
                 // py_dict_getitem / setitem.
-                proto::proto_ulong h = 0;
-                if (!PythonEnvironment::hashKey(ctx, key, h)) { unhashable = true; break; }
-                data = data->setAt(ctx, h, val);
+                bool isNew = false;
+                data = ::protoPython::pyDictPut(ctx, data, keys, key, val, isNew);
+                if (!data) { unhashable = true; break; }
                 stack[stack.size() - 2] = const_cast<proto::ProtoObject*>(data->asObject(ctx)); // Update data root
-                keys = keys->appendLast(ctx, key);
+                if (isNew) keys = keys->appendLast(ctx, key);
                 stack[stack.size() - 1] = const_cast<proto::ProtoObject*>(keys->asObject(ctx)); // Update keys root
             }
             if (unhashable) continue;
