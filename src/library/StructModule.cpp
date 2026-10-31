@@ -51,6 +51,23 @@ static int element_size(char c) {
 
 // Returns (byte_order, items). byte_order: '<' = little, '>' = big.
 // Throws via env on invalid format.
+// Raises struct.error(msg): _struct.error, an Exception subclass of its own
+// as in CPython (it was an alias of ValueError, so `except ValueError`
+// caught it and `except struct.error` caught every ValueError).
+static void raise_struct_error(proto::ProtoContext* ctx, const std::string& msg) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return;
+    const proto::ProtoObject* text = proto::ProtoString::fromUTF8String(ctx, msg.c_str())->asObject(ctx);
+    const proto::ProtoObject* mod = env->resolveModule("_struct", ctx);
+    const proto::ProtoObject* errCls = (mod && mod != PROTO_NONE)
+        ? mod->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "error")) : nullptr;
+    if (errCls && errCls != PROTO_NONE) {
+        const proto::ProtoObject* exc = env->callObject(errCls, {text});
+        if (exc && exc != PROTO_NONE) env->raiseException(exc);
+    }
+    env->raiseValueError(ctx, text);
+}
+
 static bool parse_format(proto::ProtoContext* ctx, const std::string& fmt,
                          char& byte_order, std::vector<FmtItem>& items) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -74,9 +91,7 @@ static bool parse_format(proto::ProtoContext* ctx, const std::string& fmt,
         if (c == ' ' || c == '\t') continue;
         int sz = element_size(c);
         if (sz < 0) {
-            if (env) env->raiseValueError(ctx,
-                PythonEnvironment::getInternedString(ctx,
-                    "bad char in struct format")->asObject(ctx));
+            raise_struct_error(ctx, "bad char in struct format");
             return false;
         }
         int n = has_count ? pending_count : 1;
@@ -183,11 +198,6 @@ static bool extract_bytes(proto::ProtoContext* ctx, const proto::ProtoObject* ob
 
 // ---- Pack -----------------------------------------------------------------
 
-// struct.error (an alias of ValueError here) with `msg`.
-static void raise_struct_error(proto::ProtoContext* ctx, const std::string& msg) {
-    if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx))
-        env->raiseValueError(ctx, proto::ProtoString::fromUTF8String(ctx, msg.c_str())->asObject(ctx));
-}
 
 // The integer to pack for code `code` (`size` bytes) from `v`, two's
 // complement in `out`.  As CPython: a bool packs as 0/1, any other value
@@ -399,9 +409,7 @@ static const proto::ProtoObject* unpack_impl(proto::ProtoContext* ctx,
 
     int total = format_total_size(items);
     if (buf.size() < offset + static_cast<size_t>(total)) {
-        if (env) env->raiseValueError(ctx,
-            PythonEnvironment::getInternedString(ctx,
-                "unpack requires a buffer of correct size")->asObject(ctx));
+        raise_struct_error(ctx, "unpack requires a buffer of " + std::to_string(total) + " bytes");
         return nullptr;
     }
 
@@ -600,12 +608,25 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(mod, py_pack));
     mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "unpack_from"),
         ctx->fromMethod(mod, py_unpack_from));
-    // struct.error aliases ValueError so `except struct.error` catches
-    // our ValueErrors. Real CPython makes it a subclass; for our use
-    // it's enough that the exception type is in the catch chain.
+    // struct.error: class error(Exception), __module__ 'struct', as in CPython.
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "error"),
-        env ? env->lookupName("ValueError") : PROTO_NONE);
+    const proto::ProtoObject* errorCls = PROTO_NONE;
+    if (env) {
+        const proto::ProtoObject* typeCls = env->lookupName("type");
+        const proto::ProtoObject* excCls = env->lookupName("Exception");
+        const proto::ProtoObject* dictCls = env->lookupName("dict");
+        if (typeCls && excCls && dictCls) {
+            const proto::ProtoObject* bases = env->newTuple(ctx->newList()->appendLast(ctx, excCls));
+            const proto::ProtoObject* ns = env->callObject(dictCls, {});
+            errorCls = env->callObject(typeCls,
+                {PythonEnvironment::getInternedString(ctx, "error")->asObject(ctx), bases, ns});
+            if (errorCls && errorCls != PROTO_NONE)
+                env->setAttribute(ctx, errorCls, PythonEnvironment::getInternedString(ctx, "__module__"),
+                                  PythonEnvironment::getInternedString(ctx, "struct")->asObject(ctx));
+        }
+        if (!errorCls || errorCls == PROTO_NONE) errorCls = env->lookupName("ValueError");
+    }
+    mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "error"), errorCls);
 
     // Struct class: real impl with format-parsing __new__ that
     // pre-computes .size, plus pack/unpack methods that read .format.
