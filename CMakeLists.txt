@@ -500,6 +500,14 @@ set_tests_properties(protopy_text_io_wrapper PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "text_io_wrapper: ok"
     LABELS "regression_gate")
+# An assignment expression in a class-body comprehension is a SyntaxError.
+add_test(NAME protopy_walrus_class_comprehension
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/walrus_class_comprehension.py)
+set_tests_properties(protopy_walrus_class_comprehension PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "walrus_class_comprehension: ok"
+    LABELS "regression_gate")
 # Run-time attribute names are interned symbols.
 add_test(NAME protopy_interned_attribute_names
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/interned_attribute_names.py)
