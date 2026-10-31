@@ -33,6 +33,7 @@ struct OrderedNameSet {
     size_t count(const std::string& name) const { return seen.count(name); }
 };
 static void collectNonlocalsFromNode(ASTNode* node, std::unordered_set<std::string>& out);
+static void collectWalrusTargets(ASTNode* node, OrderedNameSet& out);
 static void collectCapturedNamesImpl(ASTNode* node, const std::unordered_set<std::string>& globalsInScope, std::unordered_set<std::string>& capturedOut, int depth = 0);
 // Buffer to reserve on the VM stack for GC-visible operand storage.
 // Must be large enough to hold the maximum operand stack depth needed by any
@@ -1935,6 +1936,24 @@ bool Compiler::compileComprehensionScope(const char* scopeName, std::vector<Comp
         const std::function<void(Compiler&)>& emitStart,
         const std::function<bool(Compiler&, int)>& emitElement,
         const std::function<void(Compiler&)>& emitEnd) {
+    // PEP 572: a comprehension directly in a class body cannot bind a name
+    // with `:=` (the target would belong to the class scope).
+    if (isClassBody_) {
+        OrderedNameSet walrus;
+        for (size_t gi = 0; gi < generators.size(); ++gi) {
+            if (gi > 0) collectWalrusTargets(generators[gi].iter.get(), walrus);
+            for (const auto& i : generators[gi].ifs) collectWalrusTargets(i.get(), walrus);
+        }
+        for (ASTNode* e : exprs) collectWalrusTargets(e, walrus);
+        if (!walrus.order.empty()) {
+            if (auto* env = PythonEnvironment::getCurrentEnvironment()) {
+                env->raiseSyntaxError(ctx_,
+                    "assignment expression within a comprehension cannot be used in a class body",
+                    exprs.empty() || !exprs[0] ? 0 : exprs[0]->line, 0, std::string());
+            }
+            return false;
+        }
+    }
     // Collect locals and nonlocals for the comprehension scope.
     OrderedNameSet compLocals;
     for (const auto& gen : generators) collectDefinedNames(gen.target.get(), compLocals);
