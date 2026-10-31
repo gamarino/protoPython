@@ -484,6 +484,14 @@ set_tests_properties(protopy_struct_error_class PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "struct_error_class: ok"
     LABELS "regression_gate")
+# divmod() dispatches __divmod__ and __rdivmod__.
+add_test(NAME protopy_divmod_dunders
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/divmod_dunders.py)
+set_tests_properties(protopy_divmod_dunders PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "divmod_dunders: ok"
+    LABELS "regression_gate")
 # Run-time attribute names are interned symbols.
 add_test(NAME protopy_interned_attribute_names
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/interned_attribute_names.py)
