@@ -9174,7 +9174,27 @@ static const proto::ProtoObject* py_divmod(
         return env ? env->newTuple(pair) : ::protoPython::PythonEnvironment::tupleFromList(context, pair);
     }
     if (!objA->isInteger(context) || !objB->isInteger(context)) {
-        if (env) env->raiseTypeError(context, "divmod() argument must be a number");
+        // Any other operands: a.__divmod__(b), then b.__rdivmod__(a), as the
+        // binary operators dispatch (timedelta defines both).
+        if (env) {
+            const proto::ProtoObject* notImpl = env->getNotImplementedPrototype();
+            const proto::ProtoString* dm = PythonEnvironment::getInternedString(context, "__divmod__");
+            const proto::ProtoString* rdm = PythonEnvironment::getInternedString(context, "__rdivmod__");
+            const proto::ProtoObject* clsA = env->getType(context, objA);
+            const proto::ProtoObject* clsB = env->getType(context, objB);
+            const proto::ProtoObject* m = clsA ? env->getAttribute(context, clsA, dm, false) : nullptr;
+            if (m && m != PROTO_NONE) {
+                const proto::ProtoObject* r = env->callMethod(objA, dm, {objB});
+                if (r && r != notImpl) return r;
+            }
+            m = clsB ? env->getAttribute(context, clsB, rdm, false) : nullptr;
+            if (m && m != PROTO_NONE) {
+                const proto::ProtoObject* r = env->callMethod(objB, rdm, {objA});
+                if (r && r != notImpl) return r;
+            }
+            env->raiseTypeError(context, "unsupported operand type(s) for divmod(): '"
+                + asyncTypeName(context, env, objA) + "' and '" + asyncTypeName(context, env, objB) + "'");
+        }
         return PROTO_NONE;
     }
     if (objB->integerSign(context) == 0) {
