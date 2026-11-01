@@ -5,15 +5,13 @@ name: Cross-platform
 # run locally, against an INSTALLED protoCore package -- the supported mode on
 # Windows -- with GoogleTest fetched so the C++ suites run too. protoCore refs,
 # exactly:
-#   * macOS and the first Windows job build protoCore 3.4.0 (tag v3.4.0, commit
-#     f63adc08), as ci.yml does on Linux;
+#   * macOS and the first Windows job build protoCore 3.5.0 (tag v3.5.0, commit
+#     64ca282e), as ci.yml does on Linux;
 #   * the "floor" Windows job builds PROTOCORE_MIN_VERSION in CMakeLists.txt,
-#     the oldest release protoPython accepts.  It is the repository's only
-#     floor job.  For now the floor and the pin coincide at 3.4.0: protoCore
+#     protoCore 3.4.0 (tag v3.4.0, commit f63adc08), the oldest release
+#     protoPython accepts.  It is the repository's only floor job.  protoCore
 #     3.4.0 moved to SOVERSION 5 (ProtoContext::pendingRoot removed), so no
-#     older protoCore can satisfy the build.  The floor entry stays on 3.4.0
-#     when the pin later moves to a newer 3.4.x/3.5.x, which is what keeps it
-#     meaningful.
+#     older protoCore can satisfy the build; 3.5.0 kept SOVERSION 5.
 
 on:
   push:
@@ -44,18 +42,17 @@ jobs:
         include:
           - name: macOS (Apple clang, arm64)
             os: macos-15
-            # protoCore 3.4.0 (tag v3.4.0, f63adc08)
-            protocore_ref: f63adc0881eb00547cc42c1c1cf18c7c4941b978
+            # protoCore 3.5.0 (tag v3.5.0, 64ca282e)
+            protocore_ref: 64ca282e2ec7d2de31255dc7c3a16b06b3cc5e00
           - name: Windows (MSVC, x64)
             os: windows-2022
-            # protoCore 3.4.0 (tag v3.4.0, f63adc08)
-            protocore_ref: f63adc0881eb00547cc42c1c1cf18c7c4941b978
+            # protoCore 3.5.0 (tag v3.5.0, 64ca282e)
+            protocore_ref: 64ca282e2ec7d2de31255dc7c3a16b06b3cc5e00
           - name: Windows (MSVC, x64), protoCore 3.4.0 floor
             os: windows-2022
             # THE FLOOR JOB, the only one: protoCore 3.4.0 (tag v3.4.0,
-            # f63adc08), PROTOCORE_MIN_VERSION in CMakeLists.txt.
-            # Same ref as the pin for now (SOVERSION 5); it stays here when
-            # the pin moves on.
+            # f63adc08), PROTOCORE_MIN_VERSION in CMakeLists.txt, one
+            # release behind the pin (3.5.0 kept SOVERSION 5).
             protocore_ref: f63adc0881eb00547cc42c1c1cf18c7c4941b978
     defaults:
       run:
