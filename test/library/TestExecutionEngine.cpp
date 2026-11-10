@@ -1318,18 +1318,22 @@ TEST(ExecutionEngineTest, KeywordArgumentsFromCppByNamePointer) {
     ASSERT_NE(f, nullptr);
     ASSERT_NE(f, PROTO_NONE);
     const proto::ProtoObject* argv[1] = {ctx->fromInteger(1)};
-    const proto::ProtoKeywordArgument pairs[2] = {
+    // "extra" fits an inline string; "long_keyword_name" (more than six
+    // bytes) is a heap string: both keywords are found by the interned
+    // name's pointer.
+    const proto::ProtoKeywordArgument pairs[3] = {
         {proto::ProtoString::createSymbol(ctx, "b"), ctx->fromInteger(2)},
         {proto::ProtoString::createSymbol(ctx, "extra"), ctx->fromInteger(3)},
+        {proto::ProtoString::createSymbol(ctx, "long_keyword_name"), ctx->fromInteger(4)},
     };
     proto::ProtoArguments args(argv, 1);
-    proto::ProtoKeywordArguments kwargs(pairs, 2);
+    proto::ProtoKeywordArguments kwargs(pairs, 3);
     const proto::ProtoObject* r = protoPython::invokePythonCallable(ctx, f, &args, &kwargs);
     ASSERT_NE(r, nullptr);
     env.setAttribute(ctx, sysm, proto::ProtoString::createSymbol(ctx, "kwresult"), r);
     ASSERT_EQ(env.executeString(
         "import sys\n"
-        "assert sys.kwresult == (1, 2, [('extra', 3)]), sys.kwresult\n", "<kwcheck>"), 0);
+        "assert sys.kwresult == (1, 2, [('extra', 3), ('long_keyword_name', 4)]), sys.kwresult\n", "<kwcheck>"), 0);
 
     // A built-in that enumerates its keywords (dict.update) reads the pairs.
     const proto::ProtoObject* d = sysm->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "kwdict"));
@@ -1341,5 +1345,5 @@ TEST(ExecutionEngineTest, KeywordArgumentsFromCppByNamePointer) {
     upd->asMethod(ctx)(ctx, d, nullptr, &none, &kwargs);
     ASSERT_EQ(env.executeString(
         "import sys\n"
-        "assert sys.kwdict == {'b': 2, 'extra': 3}, sys.kwdict\n", "<kwcheck2>"), 0);
+        "assert sys.kwdict == {'b': 2, 'extra': 3, 'long_keyword_name': 4}, sys.kwdict\n", "<kwcheck2>"), 0);
 }

@@ -1,6 +1,7 @@
 #include <optional>
 #include <protoPython/Debugger.h>
 #include <protoPython/PythonEnvironment.h>
+#include <protoPython/BuiltinSignature.h>
 #include <protoPython/CheckedArith.h>
 #include <protoPython/DiagUtils.h>
 #include <protoPython/Version.h>
@@ -2852,7 +2853,7 @@ static const proto::ProtoObject* py_float_call(
     const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwargs) {
     if (kwargs && kwargs->getSize(ctx) > 0) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-        if (env) env->raiseTypeError(ctx, "float() takes no keyword argument");
+        if (env) env->raiseTypeError(ctx, "float() takes no keyword arguments");
         return nullptr;
     }
     // `float` is bound as `__call__` on the float prototype, so posArgs is
@@ -3157,17 +3158,21 @@ static const proto::ProtoObject* py_float_fromhex(
 
 static const proto::ProtoObject* py_int_call(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwargs);
+// CPython 3.14 signatures of constructors registered through withSignature<>
+// (include/protoPython/BuiltinSignature.h); the class is the first argument.
+static const BuiltinSignature kSig_int{"int", 2, {{"base", BuiltinParam::Int, 10}}, {}};
+static const BuiltinSignature kSig_bytes{"bytes", 1, {{"source", BuiltinParam::Required, 0},
+    {"encoding", BuiltinParam::Str, 0, "utf-8"}, {"errors", BuiltinParam::Str, 0, "strict"}}, {}};
+static const BuiltinSignature kSig_slice{"slice", 0, {}, {}};
+
+static const proto::ProtoObject* py_int_call(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwargs) {
-    // CPython: int() accepts only `x` and `base` positionally; any
-    // arbitrary keyword argument should raise TypeError.  The runtime
-    // does not yet honour the `base` keyword either, so we simply
-    // reject any kwargs here — `int(x=1)` / `int(bogus=1)` both fail.
-    if (kwargs && kwargs->getSize(ctx) > 0) {
-        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-        if (env) env->raiseTypeError(ctx,
-            "int() takes no keyword argument");
-        return nullptr;
-    }
+    // int(x=0, /, base=10): registered through withSignature<>, so `base`
+    // given by keyword arrives as posArgs[2] and any other keyword has
+    // already raised TypeError.
+    (void)kwargs;
     const proto::ProtoObject* targetCls = posArgs && posArgs->getSize(ctx) > 0 ? posArgs->getAt(ctx, 0) : self;
     const proto::ProtoObject* x = nullptr;
     if (!posArgs || posArgs->getSize(ctx) <= 1) {
@@ -3488,7 +3493,7 @@ static const proto::ProtoObject* py_bool_call(
     const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwargs) {
     if (kwargs && kwargs->getSize(ctx) > 0) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-        if (env) env->raiseTypeError(ctx, "bool() takes no keyword argument");
+        if (env) env->raiseTypeError(ctx, "bool() takes no keyword arguments");
         return nullptr;
     }
     if (!posArgs || posArgs->getSize(ctx) <= 1) return PROTO_FALSE;
@@ -4584,6 +4589,9 @@ static const proto::ProtoObject* py_list_contains(
     // ProtoList::has only matched identical objects, ints and strings.
     const proto::ProtoList* list = ::protoPython::listStorage(context, data);
     const proto::proto_ulong size = list->getSize(context);
+    // __eq__ may replace the list's storage: keep this version reachable
+    // (docs/GC_BRIDGING.md).
+    PythonEnvironment::TransientPin pinData(PythonEnvironment::fromContext(context), data);
     for (proto::proto_ulong i = 0; i < size; ++i) {
         if (list_elem_equal(context, list->getAt(context, static_cast<int>(i)), value)) return PROTO_TRUE;
     }
@@ -4626,6 +4634,10 @@ static const proto::ProtoObject* py_list_eq(
     // Not a list: NotImplemented, so the other operand's __eq__ answers
     // (`[1] == AnyEq()`) and `[1] == (1,)` falls back to identity.
     if (!list || !otherList) return env ? env->getNotImplementedPrototype() : PROTO_FALSE;
+    // __eq__ may replace the list's storage: keep this version reachable
+    // (docs/GC_BRIDGING.md).
+    PythonEnvironment::TransientPin pinData(env, data);
+    PythonEnvironment::TransientPin pinOther(env, otherData);
     if (list == otherList) return PROTO_TRUE;
     proto::proto_ulong size = list->getSize(context);
     if (size != otherList->getSize(context)) return PROTO_FALSE;
@@ -4676,12 +4688,18 @@ static int compare_lists(proto::ProtoContext* context, const proto::ProtoObject*
     const proto::ProtoObject* otherData = (other->hasOwnAttribute(context, dataName) == PROTO_TRUE) ? other->getAttribute(context, dataName) : nullptr;
     const proto::ProtoList* list = data && ::protoPython::listStorage(context, data) ? ::protoPython::listStorage(context, data) : ::protoPython::listStorage(context, self);
     const proto::ProtoList* otherList = otherData && ::protoPython::listStorage(context, otherData) ? ::protoPython::listStorage(context, otherData) : ::protoPython::listStorage(context, other);
-    // A tuple keeps a ProtoList too, and a list does not compare with it.
+    // A tuple keeps a ProtoList too, and so does a dict view's snapshot: a
+    // list orders against neither (NotImplemented, then TypeError).
     if (!list || !otherList || PythonEnvironment::isTupleValue(context, self)
-        || PythonEnvironment::isTupleValue(context, other)) {
+        || PythonEnvironment::isTupleValue(context, other)
+        || isDictView(context, self) || isDictView(context, other)) {
         if (ok) *ok = false;
         return 0;
     }
+    // __eq__ may replace the list's storage: keep this version reachable
+    // (docs/GC_BRIDGING.md).
+    PythonEnvironment::TransientPin pinData(PythonEnvironment::fromContext(context), data);
+    PythonEnvironment::TransientPin pinOther(PythonEnvironment::fromContext(context), otherData);
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     proto::proto_ulong size = list->getSize(context);
     proto::proto_ulong otherSize = otherList->getSize(context);
@@ -4849,43 +4867,101 @@ static bool bytesKeyHash(proto::ProtoContext* context, const proto::ProtoObject*
     return true;
 }
 
-// hash() of a non-integral float other than NaN: its IEEE 754 bit pattern
-// (-1 reads -2).
-static long long floatBitsPyHash(double v) {
-    union { double d; unsigned long long u; } pun;
-    pun.d = v;
-    const long long h = static_cast<long long>(pun.u);
+// Numeric hashes follow CPython's (Python/pyhash.c, "Numeric hashes"): a
+// number's hash is its value reduced modulo the Mersenne prime 2**61 - 1,
+// with the sign of the number, -1 reading -2. Equal numbers of any type hash
+// alike (hash(2**61) == hash(1) == hash(1.0)), and every value matches
+// CPython's on a 64-bit build.
+static constexpr unsigned long long kPyHashModulus = (1ULL << 61) - 1;
+static constexpr int kPyHashBits = 61;
+
+static long long signedNumericHash(unsigned long long magnitude, bool negative) {
+    const long long h = negative ? -static_cast<long long>(magnitude) : static_cast<long long>(magnitude);
     return h == -1 ? -2 : h;
 }
 
-// hash() of an int value (a SmallInteger or a LargeInteger): the value when
-// it fits a long long (-1 reads -2, as in CPython), else FNV-1a over its hex
-// digits.
+// hash() of a finite non-integral float (CPython's _Py_HashDouble); an
+// infinity hashes as +-314159. NaN is hashed by identity by the caller.
+static long long floatBitsPyHash(double v) {
+    if (std::isinf(v)) return v > 0 ? 314159 : -314159;
+    int e = 0;
+    double m = std::frexp(v, &e);
+    bool negative = false;
+    if (m < 0) { negative = true; m = -m; }
+    unsigned long long x = 0;
+    while (m) {
+        x = ((x << 28) & kPyHashModulus) | x >> (kPyHashBits - 28);
+        m *= 268435456.0;   // 2**28
+        e -= 28;
+        const unsigned long long y = static_cast<unsigned long long>(m);
+        m -= static_cast<double>(y);
+        x += y;
+        if (x >= kPyHashModulus) x -= kPyHashModulus;
+    }
+    e = e >= 0 ? e % kPyHashBits : kPyHashBits - 1 - ((-1 - e) % kPyHashBits);
+    x = ((x << e) & kPyHashModulus) | x >> (kPyHashBits - e);
+    return signedNumericHash(x, negative);
+}
+
+// hash() of an int value (a SmallInteger or a LargeInteger): its magnitude
+// modulo 2**61 - 1, with its sign; -1 reads -2.
 static long long intPyHash(proto::ProtoContext* context, const proto::ProtoObject* intObj) {
     if (proto::isSmallInt(intObj)) {
+        // |v| < 2**55: already reduced.
         const long long v = proto::asSmallInt(intObj);
         return v == -1 ? -2 : v;
     }
     try {
         const long long v = intObj->asLong(context);
-        return v == -1 ? -2 : v;
+        const bool negative = v < 0;
+        const unsigned long long magnitude = negative ? 0ULL - static_cast<unsigned long long>(v)
+                                                      : static_cast<unsigned long long>(v);
+        return signedNumericHash(magnitude % kPyHashModulus, negative);
     } catch (const proto::ProtoException& overflow) {
         PythonEnvironment::rethrowUnlessOverflow(context, overflow);
     }
+    // A LargeInteger: reduce its hex digits, most significant first.
     const proto::ProtoString* s = intObj->asIntegerString(context, 16);
     std::string digits;
     s->toUTF8String(context, digits);
-    unsigned long long h = 14695981039346656037ULL;
-    for (char c : digits) {
-        h ^= static_cast<unsigned long long>(static_cast<unsigned char>(c));
-        h *= 1099511628211ULL;
+    bool negative = false;
+    unsigned long long m = 0;
+    for (size_t i = 0; i < digits.size(); ++i) {
+        const char c = digits[i];
+        unsigned d = 0;
+        if (c == '-') { negative = true; continue; }
+        if (c >= '0' && c <= '9') d = static_cast<unsigned>(c - '0');
+        else if (c >= 'a' && c <= 'f') d = static_cast<unsigned>(c - 'a' + 10);
+        else if (c >= 'A' && c <= 'F') d = static_cast<unsigned>(c - 'A' + 10);
+        else if ((c == 'x' || c == 'X') && i > 0 && digits[i - 1] == '0') { m = 0; continue; }
+        else continue;
+        // m * 16 modulo 2**61 - 1 is a 4-bit rotation within 61 bits.
+        m = ((m << 4) & kPyHashModulus) | (m >> (kPyHashBits - 4));
+        m += d;
+        if (m >= kPyHashModulus) m -= kPyHashModulus;
     }
-    const long long sh = static_cast<long long>(h);
-    return sh == -1 ? -2 : sh;
+    return signedNumericHash(m, negative);
 }
 
 long long PythonEnvironment::intHashValue(proto::ProtoContext* ctx, const proto::ProtoObject* intObj) {
     return intPyHash(ctx, intObj);
+}
+
+// hash() of an object whose __hash__ returned the int `res`, as CPython's
+// slot_tp_hash reads it: the value itself when it fits a 64-bit word (-1
+// reading -2), else the int's own hash.
+static long long hashMethodResult(proto::ProtoContext* context, const proto::ProtoObject* res) {
+    if (proto::isSmallInt(res)) {
+        const long long v = proto::asSmallInt(res);
+        return v == -1 ? -2 : v;
+    }
+    try {
+        const long long v = res->asLong(context);
+        return v == -1 ? -2 : v;
+    } catch (const proto::ProtoException& overflow) {
+        PythonEnvironment::rethrowUnlessOverflow(context, overflow);
+    }
+    return intPyHash(context, res);
 }
 
 // The index a dict or set files a key under, from the key's Python hash
@@ -5071,9 +5147,14 @@ static bool keyPyHash(proto::ProtoContext* context, const proto::ProtoObject* ke
                         res = ::protoPython::invokePythonCallable(context, hM, a, nullptr);
                     }
                 }
+                if (res == PROTO_TRUE || res == PROTO_FALSE) {
+                    // A bool result is the int it equals, as hash() reads it.
+                    ph = res == PROTO_TRUE ? 1 : 0;
+                    return true;
+                }
                 if (res && res->isInteger(context)) {
-                    // As hash() reduces it: an int result hashes as that int.
-                    ph = intPyHash(context, res);
+                    // As hash() reads it (hashMethodResult).
+                    ph = hashMethodResult(context, res);
                     return true;
                 }
             }
@@ -5155,6 +5236,53 @@ struct DictKey {
     bool exact = true;
 };
 
+// Keeps a dict or set storage version (and the key being looked up) reachable
+// while a lookup compares keys with __eq__ (docs/GC_BRIDGING.md). A lookup
+// walks one immutable version of the storage held in C++ locals; a user
+// __eq__ may replace the container's storage, after which that version is
+// referenced by nothing the collector traces, and the walk would read freed
+// cells. The pin is taken lazily, on the first comparison that can run
+// Python code, so a lookup that ends on identity or on built-in str and
+// embedded values costs nothing. A writer whose storage changed under it
+// publishes nothing (its compare-and-swap fails) and restarts on the new
+// storage, as CPython restarts a lookup the comparison mutated; readers
+// restart too (see dictReadUntilStable).
+class StoragePin {
+public:
+    StoragePin(proto::ProtoContext* context, const proto::ProtoObject* storage, const proto::ProtoObject* key)
+        : context_(context), storage_(storage), key_(key) {}
+    ~StoragePin() {
+        if (!roots_) return;
+        roots_->remove(hStorage_);
+        roots_->remove(hKey_);
+    }
+    StoragePin(const StoragePin&) = delete;
+    StoragePin& operator=(const StoragePin&) = delete;
+
+    // Called before comparing `a` with `b`: pins when the comparison may run
+    // Python code (anything but two strs or two embedded values).
+    void beforeCompare(const proto::ProtoObject* a, const proto::ProtoObject* b) {
+        if (roots_ || (trivial(a) && trivial(b))) return;
+        PythonEnvironment* env = PythonEnvironment::fromContext(context_);
+        roots_ = env ? env->getTransientArgsRoots() : nullptr;
+        if (!roots_) return;
+        hStorage_ = storage_ ? roots_->add(storage_) : proto::ProtoRootSet::kNullHandle;
+        hKey_ = key_ ? roots_->add(key_) : proto::ProtoRootSet::kNullHandle;
+    }
+    bool ranUserCompare() const { return roots_ != nullptr; }
+
+private:
+    static bool trivial(const proto::ProtoObject* o) {
+        return proto::ProtoObject::isStringTagFast(o) || (reinterpret_cast<uintptr_t>(o) & 0x3F) == 1;
+    }
+    proto::ProtoContext* context_;
+    const proto::ProtoObject* storage_;
+    const proto::ProtoObject* key_;
+    proto::ProtoRootSet* roots_ = nullptr;
+    proto::ProtoRootSet::Handle hStorage_ = proto::ProtoRootSet::kNullHandle;
+    proto::ProtoRootSet::Handle hKey_ = proto::ProtoRootSet::kNullHandle;
+};
+
 static bool dictKeyResolve(proto::ProtoContext* context, const proto::ProtoObject* key, bool raiseUnhashable, DictKey& dk) {
     dk.key = key;
     dk.exact = true;
@@ -5191,13 +5319,14 @@ static inline const proto::ProtoObject* dictBucketKey(const DictKey& dk) {
 // one whose __eq__ accepts it (stored == key, the order CPython compares a
 // dict's keys in); nullptr if none.
 static const proto::ProtoObject* dictBucketMatch(proto::ProtoContext* context, const proto::ProtoMap* bucket,
-                                                 const DictKey& dk) {
+                                                 const DictKey& dk, StoragePin& pin) {
     const proto::ProtoObject* bk = dictBucketKey(dk);
     if (bucket->has(context, bk)) return bk;
     if (dk.key != bk && bucket->has(context, dk.key)) return dk.key;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     for (const proto::ProtoMapIterator* it = bucket->getIterator(context); it && it->hasNext(context); it = it->advance(context)) {
         const proto::ProtoObject* stored = it->nextKey(context);
+        pin.beforeCompare(stored, dk.key);
         if (env && env->objectsEqual(context, stored, dk.key)) return stored;
     }
     return nullptr;
@@ -5205,28 +5334,57 @@ static const proto::ProtoObject* dictBucketMatch(proto::ProtoContext* context, c
 
 // Whether `dk` is the key of the single-value slot at its index, whose key is
 // the embedded word the index decodes to.
-static bool dictSlotMatches(proto::ProtoContext* context, const DictKey& dk) {
+static bool dictSlotMatches(proto::ProtoContext* context, const DictKey& dk, StoragePin& pin) {
     if (dk.exact) return true;
     const proto::ProtoObject* occupant = dictWordKey(dk.hash);
     if (!isEmbeddedKey(occupant)) return false;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    pin.beforeCompare(occupant, dk.key);
     return env && env->objectsEqual(context, occupant, dk.key);
 }
 
 // The value stored for `dk` (nullptr if absent); `stored` receives the key
 // object it is filed under in a bucket, or nullptr for a single-value slot.
+// `ranUserCompare`, when given, is set when a comparison could run Python
+// code: a reader then checks that the container's storage did not change
+// under it (CPython restarts such a lookup).
 static const proto::ProtoObject* dictFind(proto::ProtoContext* context, const proto::ProtoSparseList* data,
-                                          const DictKey& dk, const proto::ProtoObject** stored = nullptr) {
+                                          const DictKey& dk, const proto::ProtoObject** stored = nullptr,
+                                          bool* ranUserCompare = nullptr) {
     if (stored) *stored = nullptr;
     if (!data || !data->has(context, dk.hash)) return nullptr;
+    StoragePin pin(context, data->asObject(context), dk.key);
+    struct Report {
+        StoragePin& pin; bool* out;
+        ~Report() { if (out && pin.ranUserCompare()) *out = true; }
+    } report{pin, ranUserCompare};
     const proto::ProtoObject* slot = data->getAt(context, dk.hash);
     if (const proto::ProtoMap* bucket = dictBucket(context, slot)) {
-        const proto::ProtoObject* match = dictBucketMatch(context, bucket, dk);
+        const proto::ProtoObject* match = dictBucketMatch(context, bucket, dk, pin);
         if (!match) return nullptr;
         if (stored) *stored = match;
         return bucket->getAt(context, match);
     }
-    return dictSlotMatches(context, dk) ? slot : nullptr;
+    return dictSlotMatches(context, dk, pin) ? slot : nullptr;
+}
+
+// dictFind on the storage `owner` keeps under `dataName`, `dict` being the
+// version already read. When a comparison ran Python code and the owner's
+// storage is no longer `dict`, the lookup restarts on the new storage, as
+// CPython's lookdict does; the answer returned comes from the storage the
+// dict holds, so it stays reachable.
+static const proto::ProtoObject* dictFindInOwner(proto::ProtoContext* context, const proto::ProtoObject* owner,
+                                                 const proto::ProtoString* dataName,
+                                                 const proto::ProtoSparseList* dict, const DictKey& dk) {
+    for (;;) {
+        bool ranUser = false;
+        const proto::ProtoObject* found = dictFind(context, dict, dk, nullptr, &ranUser);
+        if (!ranUser || !owner) return found;
+        const proto::ProtoObject* d = owner->getAttribute(context, dataName);
+        const proto::ProtoSparseList* now = d ? d->asSparseList(context) : nullptr;
+        if (!now || now == dict) return found;
+        dict = now;
+    }
 }
 
 // `data` with `value` stored for `dk`. `isNew` tells whether the key was
@@ -5240,13 +5398,14 @@ static const proto::ProtoSparseList* dictPut(proto::ProtoContext* context, const
         if (dk.exact) return data->setAt(context, dk.hash, value);
         return data->setAt(context, dk.hash, context->newMap()->setAt(context, dk.key, value)->asObject(context));
     }
+    StoragePin pin(context, data->asObject(context), dk.key);
     const proto::ProtoObject* slot = data->getAt(context, dk.hash);
     if (const proto::ProtoMap* bucket = dictBucket(context, slot)) {
-        const proto::ProtoObject* match = dictBucketMatch(context, bucket, dk);
+        const proto::ProtoObject* match = dictBucketMatch(context, bucket, dk, pin);
         if (!match) { isNew = true; match = dictBucketKey(dk); }
         return data->setAt(context, dk.hash, bucket->setAt(context, match, value)->asObject(context));
     }
-    if (dictSlotMatches(context, dk)) return data->setAt(context, dk.hash, value);
+    if (dictSlotMatches(context, dk, pin)) return data->setAt(context, dk.hash, value);
     // Two unequal keys under one index: the slot becomes a bucket.
     isNew = true;
     const proto::ProtoMap* bucket = context->newMap()
@@ -5261,16 +5420,17 @@ static const proto::ProtoSparseList* dictRemove(proto::ProtoContext* context, co
                                                 const DictKey& dk, const proto::ProtoObject** stored) {
     *stored = nullptr;
     if (!data || !data->has(context, dk.hash)) return nullptr;
+    StoragePin pin(context, data->asObject(context), dk.key);
     const proto::ProtoObject* slot = data->getAt(context, dk.hash);
     if (const proto::ProtoMap* bucket = dictBucket(context, slot)) {
-        const proto::ProtoObject* match = dictBucketMatch(context, bucket, dk);
+        const proto::ProtoObject* match = dictBucketMatch(context, bucket, dk, pin);
         if (!match) return nullptr;
         *stored = match;
         const proto::ProtoMap* rest = bucket->removeAt(context, match);
         if (rest->getSize(context) == 0) return data->removeAt(context, dk.hash);
         return data->setAt(context, dk.hash, rest->asObject(context));
     }
-    if (!dictSlotMatches(context, dk)) return nullptr;
+    if (!dictSlotMatches(context, dk, pin)) return nullptr;
     return data->removeAt(context, dk.hash);
 }
 
@@ -5430,6 +5590,9 @@ const proto::ProtoList* PythonEnvironment::dictKeysWithout(proto::ProtoContext* 
     }
     DictKey dk;
     dictKeyResolve(ctx, key, false, dk);
+    // __eq__ below may run Python code: keep the key list reachable.
+    TransientPin pinKeys(fromContext(ctx), keys->asObject(ctx));
+    TransientPin pinKey(fromContext(ctx), key);
     for (proto::proto_ulong i = 0; i < n; ++i) {
         const proto::ProtoObject* k = keys->getAt(ctx, static_cast<int>(i));
         DictKey kk;
@@ -5554,8 +5717,12 @@ static proto::proto_ulong setTableSize(proto::ProtoContext* context, const proto
 // the walk runs Python code (an __eq__).
 class SetCursor {
 public:
+    // The table is pinned: a walk that runs __eq__ between steps (set
+    // algebra, subset tests) must not lose a table the owner dropped.
     SetCursor(proto::ProtoContext* context, const proto::ProtoSparseList* table)
-        : context_(context), it_(table ? table->getIterator(context) : nullptr) {}
+        : context_(context),
+          pin_(PythonEnvironment::fromContext(context), table ? table->asObject(context) : nullptr),
+          it_(table ? table->getIterator(context) : nullptr) {}
 
     bool next(DictKey& out) {
         for (;;) {
@@ -5586,6 +5753,7 @@ public:
 
 private:
     proto::ProtoContext* context_;
+    PythonEnvironment::TransientPin pin_;
     const proto::ProtoSparseListIterator* it_;
     const proto::ProtoList* bucket_ = nullptr;
     proto::proto_ulong pos_ = 0;
@@ -5596,7 +5764,7 @@ private:
 // The position in `bucket` of the element equal to `key`: the same object,
 // else the first stored element whose __eq__ accepts it; -1 if none.
 static long long setBucketPosition(proto::ProtoContext* context, const proto::ProtoList* bucket,
-                                   const proto::ProtoObject* key) {
+                                   const proto::ProtoObject* key, StoragePin& pin) {
     const proto::proto_ulong n = bucket->getSize(context);
     for (proto::proto_ulong i = 0; i < n; ++i) {
         if (bucket->getAt(context, static_cast<int>(i)) == key) return static_cast<long long>(i);
@@ -5604,7 +5772,9 @@ static long long setBucketPosition(proto::ProtoContext* context, const proto::Pr
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (!env) return -1;
     for (proto::proto_ulong i = 0; i < n; ++i) {
-        if (env->objectsEqual(context, bucket->getAt(context, static_cast<int>(i)), key)) return static_cast<long long>(i);
+        const proto::ProtoObject* stored = bucket->getAt(context, static_cast<int>(i));
+        pin.beforeCompare(stored, key);
+        if (env->objectsEqual(context, stored, key)) return static_cast<long long>(i);
     }
     return -1;
 }
@@ -5614,23 +5784,31 @@ static long long setBucketPosition(proto::ProtoContext* context, const proto::Pr
 // filed under one index equal: a str, bytes, LargeInteger or float hash is a
 // digest that can equal an int's (see keyHash), and {s, n} with
 // hash(s) == n's key hash and s != n has two elements.
-static bool setSlotMatches(proto::ProtoContext* context, const proto::ProtoObject* stored, const DictKey& dk) {
+static bool setSlotMatches(proto::ProtoContext* context, const proto::ProtoObject* stored, const DictKey& dk,
+                           StoragePin& pin) {
     if (stored == dk.key) return true;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    pin.beforeCompare(stored, dk.key);
     return env && env->objectsEqual(context, stored, dk.key);
 }
 
-// The stored element equal to `dk.key`, or nullptr.
+// The stored element equal to `dk.key`, or nullptr. `ranUserCompare` as for
+// dictFind.
 static const proto::ProtoObject* setFind(proto::ProtoContext* context, const proto::ProtoSparseList* table,
-                                         const DictKey& dk) {
+                                         const DictKey& dk, bool* ranUserCompare = nullptr) {
     const proto::proto_ulong index = setSlotIndex(dk.hash);
     if (!table || !table->has(context, index)) return nullptr;
+    StoragePin pin(context, table->asObject(context), dk.key);
+    struct Report {
+        StoragePin& pin; bool* out;
+        ~Report() { if (out && pin.ranUserCompare()) *out = true; }
+    } report{pin, ranUserCompare};
     const proto::ProtoObject* slot = table->getAt(context, index);
     if (const proto::ProtoList* bucket = setBucket(context, slot)) {
-        const long long pos = setBucketPosition(context, bucket, dk.key);
+        const long long pos = setBucketPosition(context, bucket, dk.key, pin);
         return pos < 0 ? nullptr : bucket->getAt(context, static_cast<int>(pos));
     }
-    return setSlotMatches(context, slot, dk) ? slot : nullptr;
+    return setSlotMatches(context, slot, dk, pin) ? slot : nullptr;
 }
 
 // `table` with `dk.key` added: `table` itself when an equal element is
@@ -5642,12 +5820,13 @@ static const proto::ProtoSparseList* setPut(proto::ProtoContext* context, const 
         if (!setBucket(context, dk.key)) return table->setAt(context, index, dk.key);
         return table->setAt(context, index, context->newList()->appendLast(context, dk.key)->asObject(context));
     }
+    StoragePin pin(context, table->asObject(context), dk.key);
     const proto::ProtoObject* slot = table->getAt(context, index);
     if (const proto::ProtoList* bucket = setBucket(context, slot)) {
-        if (setBucketPosition(context, bucket, dk.key) >= 0) return table;
+        if (setBucketPosition(context, bucket, dk.key, pin) >= 0) return table;
         return setWithSurplus(context, table->setAt(context, index, bucket->appendLast(context, dk.key)->asObject(context)), 1);
     }
-    if (setSlotMatches(context, slot, dk)) return table;
+    if (setSlotMatches(context, slot, dk, pin)) return table;
     // Two unequal elements under one hash: the slot becomes a bucket.
     const proto::ProtoList* bucket = context->newList()->appendLast(context, slot)->appendLast(context, dk.key);
     return setWithSurplus(context, table->setAt(context, index, bucket->asObject(context)), 1);
@@ -5658,15 +5837,16 @@ static const proto::ProtoSparseList* setRemove(proto::ProtoContext* context, con
                                                const DictKey& dk) {
     const proto::proto_ulong index = setSlotIndex(dk.hash);
     if (!table || !table->has(context, index)) return nullptr;
+    StoragePin pin(context, table->asObject(context), dk.key);
     const proto::ProtoObject* slot = table->getAt(context, index);
     if (const proto::ProtoList* bucket = setBucket(context, slot)) {
-        const long long pos = setBucketPosition(context, bucket, dk.key);
+        const long long pos = setBucketPosition(context, bucket, dk.key, pin);
         if (pos < 0) return nullptr;
         if (bucket->getSize(context) == 1) return table->removeAt(context, index);
         const proto::ProtoList* rest = bucket->removeAt(context, static_cast<int>(pos));
         return setWithSurplus(context, table->setAt(context, index, rest->asObject(context)), -1);
     }
-    return setSlotMatches(context, slot, dk) ? table->removeAt(context, index) : nullptr;
+    return setSlotMatches(context, slot, dk, pin) ? table->removeAt(context, index) : nullptr;
 }
 
 // A frozenset's hash, from the indexes its elements are filed under and
@@ -5781,7 +5961,7 @@ static const proto::ProtoObject* py_dict_getitem(
             }
         }
         {
-            const proto::ProtoObject* found = dictFind(context, dict, dk);
+            const proto::ProtoObject* found = dictFindInOwner(context, realSelf, dataName, dict, dk);
             if (found) return found;
         }
         // CPython: if this is a dict subclass that overrides __missing__,
@@ -5854,6 +6034,9 @@ static const proto::ProtoObject* py_dict_setitem(
         const proto::ProtoObject* data = realSelf->getAttribute(context, dataName);
         if (!data || !data->asSparseList(context)) return PROTO_NONE;
         const proto::ProtoObject* keysObj = realSelf->getAttribute(context, keysName);
+        // A key's __eq__ may replace this storage while it is read; keep the
+        // snapshot reachable (docs/GC_BRIDGING.md).
+        PythonEnvironment::TransientPin pinData(PythonEnvironment::fromContext(context), data), pinKeysObj(PythonEnvironment::fromContext(context), keysObj);
         bool isNew = false;
         const proto::ProtoSparseList* newSparse = dictPut(context, data->asSparseList(context), dk, value, isNew);
         const proto::ProtoObject* newKeysObj = keysObj;
@@ -5896,6 +6079,9 @@ static const proto::ProtoObject* py_dict_delitem(
         const proto::ProtoObject* data = realSelf->getAttribute(context, dataName);
         if (!data || !data->asSparseList(context)) return PROTO_NONE;
         const proto::ProtoObject* keysObj = realSelf->getAttribute(context, keysName);
+        // A key's __eq__ may replace this storage while it is read; keep the
+        // snapshot reachable (docs/GC_BRIDGING.md).
+        PythonEnvironment::TransientPin pinData(PythonEnvironment::fromContext(context), data), pinKeysObj(PythonEnvironment::fromContext(context), keysObj);
         const proto::ProtoList* list = keysObj ? ::protoPython::listStorage(context, keysObj) : nullptr;
         const proto::ProtoObject* stored = nullptr;
         const proto::ProtoSparseList* newSparse = dictRemove(context, data->asSparseList(context), dk, &stored);
@@ -6029,14 +6215,13 @@ static const proto::ProtoObject* py_dict_contains(
     if (dict) {
         DictKey dk;
         if (!dictKeyResolve(context, key, true, dk)) return nullptr;
-        return dictFind(context, dict, dk) ? PROTO_TRUE : PROTO_FALSE;
+        return dictFindInOwner(context, self, dataName, dict, dk) ? PROTO_TRUE : PROTO_FALSE;
     }
     
     // Fallback for objects used as dicts (like modules)
     if (key->isString(context)) {
-        std::string k;
-        key->asString(context)->toUTF8String(context, k);
-        bool has = (self->hasAttribute(context, key->asString(context)) == PROTO_TRUE);
+        // Attribute names are compared by pointer: intern a runtime-built str.
+        bool has = (self->hasAttribute(context, PythonEnvironment::internName(context, key->asString(context))) == PROTO_TRUE);
         if (has) return PROTO_TRUE;
     }
     
@@ -6080,6 +6265,11 @@ static const proto::ProtoObject* py_dict_eq(
     const proto::ProtoList* keysB = keysObjB && ::protoPython::listStorage(context, keysObjB) ? ::protoPython::listStorage(context, keysObjB) : context->newList();
     if (keysA->getSize(context) != keysB->getSize(context)) return PROTO_FALSE;
 
+    // A value's __eq__ may replace either dict's storage: keep the versions
+    // compared reachable (docs/GC_BRIDGING.md).
+    PythonEnvironment* pinEnv = PythonEnvironment::fromContext(context);
+    PythonEnvironment::TransientPin pinA(pinEnv, data), pinB(pinEnv, otherData);
+    PythonEnvironment::TransientPin pinKA(pinEnv, keysObjA), pinKB(pinEnv, keysObjB);
     proto::proto_ulong size = keysA->getSize(context);
     for (proto::proto_ulong i = 0; i < size; ++i) {
         const proto::ProtoObject* key = keysA->getAt(context, static_cast<int>(i));
@@ -6884,6 +7074,11 @@ static const proto::ProtoObject* py_list_sort(
     std::vector<const proto::ProtoObject*> elems(size);
     for (proto::proto_ulong i = 0; i < size; ++i)
         elems[i] = list->getAt(context, static_cast<int>(i));
+    // The elements stay reachable through this list version, the keys
+    // through `pinnedKeys`: key functions and __lt__ run Python code, which
+    // may replace the list's storage (docs/GC_BRIDGING.md).
+    PythonEnvironment::TransientPin pinData(PythonEnvironment::fromContext(context), data);
+    PythonEnvironment::TransientPinSet pinnedKeys(PythonEnvironment::fromContext(context));
 
     // Honour `key` and `reverse` keyword arguments.
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
@@ -6939,6 +7134,7 @@ static const proto::ProtoObject* py_list_sort(
             const proto::ProtoList* args = context->newList()->appendLast(context, el);
             const proto::ProtoObject* k = ::protoPython::invokePythonCallable(context, keyFn, args, nullptr);
             if (!k) return PROTO_NONE;  // pending exception will be propagated by caller
+            pinnedKeys.add(k);
             keys.push_back(k);
         }
         std::vector<size_t> idx(elems.size());
@@ -7059,6 +7255,9 @@ static const proto::ProtoObject* py_list_remove(
         const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
         const proto::ProtoList* list = data && ::protoPython::listStorage(context, data) ? ::protoPython::listStorage(context, data) : nullptr;
         if (!list) return PROTO_NONE;
+        // __eq__ may replace the list's storage: keep this version reachable
+        // (docs/GC_BRIDGING.md).
+        PythonEnvironment::TransientPin pinData(PythonEnvironment::fromContext(context), data);
         proto::proto_ulong size = list->getSize(context);
         bool matched = false;
         for (proto::proto_ulong i = 0; i < size; ++i) {
@@ -7223,6 +7422,9 @@ static const proto::ProtoObject* py_list_index(
     if (positionalParameters->getSize(context) >= static_cast<proto::proto_ulong>(3 + posOff)
         && positionalParameters->getAt(context, 2 + posOff)->isInteger(context))
         stop = positionalParameters->getAt(context, 2 + posOff)->asLong(context);
+    // __eq__ may replace the list's storage: keep this version reachable
+    // (docs/GC_BRIDGING.md).
+    PythonEnvironment::TransientPin pinData(PythonEnvironment::fromContext(context), data);
     if (start < 0) start = 0;
     for (long long i = start; i < stop && static_cast<proto::proto_ulong>(i) < list->getSize(context); ++i) {
         const proto::ProtoObject* elem = list->getAt(context, static_cast<int>(i));
@@ -7255,6 +7457,9 @@ static const proto::ProtoObject* py_list_count(
     const proto::ProtoList* list = data && ::protoPython::listStorage(context, data) ? ::protoPython::listStorage(context, data) : nullptr;
     if (!list || positionalParameters->getSize(context) < static_cast<proto::proto_ulong>(1 + posOff)) return context->fromInteger(0);
     const proto::ProtoObject* value = positionalParameters->getAt(context, posOff);
+    // __eq__ may replace the list's storage: keep this version reachable
+    // (docs/GC_BRIDGING.md).
+    PythonEnvironment::TransientPin pinData(PythonEnvironment::fromContext(context), data);
     proto::proto_long count = 0;
     proto::proto_ulong size = list->getSize(context);
     for (proto::proto_ulong i = 0; i < size; ++i) {
@@ -8948,7 +9153,18 @@ static const proto::ProtoObject* py_set_contains(
     if (!s || !value) return PROTO_FALSE;
     DictKey dk;
     if (!setLookupKey(context, value, dk)) return nullptr;
-    return setFind(context, s, dk) ? PROTO_TRUE : PROTO_FALSE;
+    // A comparison that replaced the set's storage restarts the lookup on
+    // the new storage, as CPython does.
+    const proto::ProtoObject* owner = set_underlying(context, self) ? self
+        : (positionalParameters && positionalParameters->getSize(context) >= 2 ? positionalParameters->getAt(context, 0) : nullptr);
+    for (;;) {
+        bool ranUser = false;
+        const bool found = setFind(context, s, dk, &ranUser) != nullptr;
+        if (!ranUser || !owner) return found ? PROTO_TRUE : PROTO_FALSE;
+        const proto::ProtoSparseList* now = set_underlying(context, owner);
+        if (now == s || !now) return found ? PROTO_TRUE : PROTO_FALSE;
+        s = now;
+    }
 }
 
 static const proto::ProtoObject* py_set_bool(
@@ -9632,7 +9848,12 @@ static const proto::ProtoObject* py_set_eq(
     if (self == other) return PROTO_TRUE;
     const proto::ProtoSparseList* a = set_underlying(context, self);
     const proto::ProtoSparseList* b = set_underlying(context, other);
-    if (!a || !b) return PROTO_NONE;
+    if (!a || !b) {
+        // Not a set: NotImplemented, so the other operand answers and ==
+        // falls back to identity, as in CPython.
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    }
     if (setTableSize(context, a) != setTableSize(context, b)) return PROTO_FALSE;
     return set_is_subset(context, a, b) ? PROTO_TRUE : PROTO_FALSE;
 }
@@ -9643,7 +9864,7 @@ static const proto::ProtoObject* py_set_ne(
     proto::ProtoContext* context, const proto::ProtoObject* self,
     const proto::ParentLink* parent, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
     const proto::ProtoObject* eq = py_set_eq(context, self, parent, args, kwargs);
-    if (eq == PROTO_NONE) return PROTO_NONE;
+    if (eq != PROTO_TRUE && eq != PROTO_FALSE) return eq;
     return (eq == PROTO_TRUE) ? PROTO_FALSE : PROTO_TRUE;
 }
 
@@ -9902,13 +10123,19 @@ static const proto::ProtoObject* py_frozenset_call(
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
     (void)parentLink;
-    (void)keywordParameters;
 
     const proto::ProtoObject* cls = (positionalParameters && positionalParameters->getSize(context) > 0) ? positionalParameters->getAt(context, 0) : self;
     if (!cls) return PROTO_NONE;
 
     const proto::ProtoSparseList* acc = context->newSparseList();
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    // As CPython: frozenset itself takes no keywords; a subclass's __init__
+    // may take its own.
+    if (keywordParameters && keywordParameters->getSize(context) > 0 && env
+        && cls == env->getFrozensetPrototype()) {
+        env->raiseTypeError(context, "frozenset() takes no keyword arguments");
+        return nullptr;
+    }
 
     if (positionalParameters && positionalParameters->getSize(context) >= 2) {
         const proto::ProtoObject* itObj = positionalParameters->getAt(context, 1);
@@ -10424,19 +10651,43 @@ static const proto::ProtoObject* py_int_rshift(
     const proto::ParentLink*, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     return py_int_arith(ctx, self, args, TokenType::RShift);
 }
+// bool.__and__ / __or__ / __xor__: two bools give a bool, as in CPython
+// (True & True is True); any other operand takes int's operation. nullptr
+// when the operands are not two bools.
+static const proto::ProtoObject* boolBitwise(proto::ProtoContext* ctx, const proto::ProtoObject* self,
+                                             const proto::ProtoArguments* args, TokenType op) {
+    auto isBool = [](const proto::ProtoObject* x) { return x == PROTO_TRUE || x == PROTO_FALSE; };
+    if (!args) return nullptr;
+    const proto::ProtoObject* a = nullptr;
+    const proto::ProtoObject* b = nullptr;
+    if (isBool(self) && args->getSize(ctx) == 1) {
+        a = self;
+        b = args->getAt(ctx, 0);
+    } else if (args->getSize(ctx) == 2) {
+        a = args->getAt(ctx, 0);
+        b = args->getAt(ctx, 1);
+    }
+    if (!isBool(a) || !isBool(b)) return nullptr;
+    const bool x = a == PROTO_TRUE, y = b == PROTO_TRUE;
+    const bool r = op == TokenType::BitAnd ? (x && y) : op == TokenType::BitOr ? (x || y) : (x != y);
+    return r ? PROTO_TRUE : PROTO_FALSE;
+}
 static const proto::ProtoObject* py_int_and(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
+    if (const proto::ProtoObject* r = boolBitwise(ctx, self, args, TokenType::BitAnd)) return r;
     return py_int_arith(ctx, self, args, TokenType::BitAnd);
 }
 static const proto::ProtoObject* py_int_or(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
+    if (const proto::ProtoObject* r = boolBitwise(ctx, self, args, TokenType::BitOr)) return r;
     return py_int_arith(ctx, self, args, TokenType::BitOr);
 }
 static const proto::ProtoObject* py_int_xor(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
+    if (const proto::ProtoObject* r = boolBitwise(ctx, self, args, TokenType::BitXor)) return r;
     return py_int_arith(ctx, self, args, TokenType::BitXor);
 }
 
@@ -10864,12 +11115,11 @@ static const proto::ProtoObject* py_float_hash(
     // CPython: integer-valued floats hash the same as the int, including
     // floats beyond the long long range (the `(long long)v` cast used here
     // before was undefined there, so hash(2.0**70) != hash(2**70)).
-    // Non-integral floats fall through to a deterministic value-based hash
-    // (the bit pattern).
+    // Other floats hash as CPython hashes them (floatBitsPyHash).
     if (std::isfinite(v) && v == std::trunc(v)) {
         return py_int_hash(context, integralDoubleToInt(context, v), nullptr, nullptr, nullptr);
     }
-    // Non-integer: hash from the IEEE 754 bit pattern.
+    // Non-integral or infinite: CPython's numeric hash.
     return context->fromInteger(floatBitsPyHash(v));
 }
 
@@ -16362,6 +16612,9 @@ static bool dictViewContains(proto::ProtoContext* context, const proto::ProtoObj
                              const proto::ProtoObject* x) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoSparseList* storage = dictViewStorage(context, view);
+    // The key's __eq__ may replace the dict's storage; the value found in
+    // this version is compared after it (docs/GC_BRIDGING.md).
+    PythonEnvironment::TransientPin pinStorage(env, storage ? storage->asObject(context) : nullptr);
     if (kind == DictViewKind::Items) {
         const TupleView t = x ? PythonEnvironment::tupleView(context, x) : TupleView{};
         if (!t || t->getSize(context) != 2) return false;
@@ -16489,6 +16742,9 @@ static const proto::ProtoObject* dictViewSetOp(proto::ProtoContext* context, con
     if (!leftElements) return nullptr;
     // A fresh mutable set, even when `left` is itself a set: set(left).
     const proto::ProtoObject* leftSet = new_set_like(context, nullptr, leftElements);
+    // setOp is called directly, not through invokeCallable, and iterates a
+    // Python iterable: pin the receiver it gets (docs/GC_BRIDGING.md).
+    PythonEnvironment::TransientPin pinLeft(env, leftSet);
     return setOp(context, leftSet, nullptr,
                  argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, right))), nullptr);
 }
@@ -17369,7 +17625,7 @@ static const proto::ProtoObject* py_dict_get(
     if (!dict) return defaultVal;
     DictKey dk;
     if (!dictKeyResolve(context, key, true, dk)) return nullptr;
-    const proto::ProtoObject* res = dictFind(context, dict, dk);
+    const proto::ProtoObject* res = dictFindInOwner(context, receiver, dataName, dict, dk);
     return res ? res : defaultVal;
 }
 
@@ -17631,6 +17887,9 @@ kwargs_phase:
         for (;;) {
             const proto::ProtoObject* keysObj = (target->hasOwnAttribute(context, keysName) == PROTO_TRUE) ? target->getAttribute(context, keysName) : nullptr;
             const proto::ProtoObject* dataObj = (target->hasOwnAttribute(context, dataName) == PROTO_TRUE) ? target->getAttribute(context, dataName) : nullptr;
+            // A key's __eq__ may replace this storage while it is read; keep the
+            // snapshot reachable (docs/GC_BRIDGING.md).
+            PythonEnvironment::TransientPin pinKeysObj(PythonEnvironment::fromContext(context), keysObj), pinDataObj(PythonEnvironment::fromContext(context), dataObj);
             keys = keysObj && ::protoPython::listStorage(context, keysObj) ? ::protoPython::listStorage(context, keysObj) : context->newList();
             dict = dataObj && dataObj->asSparseList(context) ? dataObj->asSparseList(context) : context->newSparseList();
             for (proto::proto_ulong u = 0; u < updSize; ++u) {
@@ -17881,8 +18140,10 @@ static const proto::ProtoObject* py_dict_or(
             dictStore(context, dict, keys, key, value);
         }
     }
-    const proto::ProtoList* parents = self->getParents(context);
-    const proto::ProtoObject* parent = parents && parents->getSize(context) > 0 ? parents->getAt(context, 0) : nullptr;
+    // The result is a plain dict, whatever subclass the operands are, as
+    // CPython's dict.__or__ builds it.
+    PythonEnvironment* resultEnv = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* parent = resultEnv ? resultEnv->getDictPrototype() : nullptr;
     // A new dict is mutable: an immutable result silently dropped every
     // later write (`c = a | b; c[k] = v`).
     const proto::ProtoObject* result = context->newObject(true);
@@ -17924,8 +18185,10 @@ static const proto::ProtoObject* py_dict_ror(
             dictStore(context, dict, keys, key, value);
         }
     }
-    const proto::ProtoList* parents = other->getParents(context);
-    const proto::ProtoObject* parent = parents && parents->getSize(context) > 0 ? parents->getAt(context, 0) : nullptr;
+    // The result is a plain dict, whatever subclass the operands are, as
+    // CPython's dict.__or__ builds it.
+    PythonEnvironment* resultEnv = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* parent = resultEnv ? resultEnv->getDictPrototype() : nullptr;
     // A new dict is mutable: an immutable result silently dropped every
     // later write (`c = a | b; c[k] = v`).
     const proto::ProtoObject* result = context->newObject(true);
@@ -17946,6 +18209,9 @@ static const proto::ProtoObject* py_dict_ior(
     const proto::ProtoObject* otherKeysObj = (other->hasOwnAttribute(context, keysName) == PROTO_TRUE) ? other->getAttribute(context, keysName) : nullptr;
     const proto::ProtoList* otherKeys = otherKeysObj && ::protoPython::listStorage(context, otherKeysObj) ? ::protoPython::listStorage(context, otherKeysObj) : context->newList();
     const proto::ProtoObject* otherDataObj = (other->hasOwnAttribute(context, dataName) == PROTO_TRUE) ? other->getAttribute(context, dataName) : nullptr;
+    // A key's __eq__ may replace this storage while it is read; keep the
+    // snapshot reachable (docs/GC_BRIDGING.md).
+    PythonEnvironment::TransientPin pinOtherKeysObj(PythonEnvironment::fromContext(context), otherKeysObj), pinOtherDataObj(PythonEnvironment::fromContext(context), otherDataObj);
     const proto::ProtoSparseList* otherDict = otherDataObj && otherDataObj->asSparseList(context) ? otherDataObj->asSparseList(context) : nullptr;
     // Retry loop: the merged pair is derived from one snapshot of self and
     // installed with publishDictState.
@@ -17953,6 +18219,9 @@ static const proto::ProtoObject* py_dict_ior(
         const proto::ProtoObject* selfKeysObj = self->getAttribute(context, keysName);
         const proto::ProtoList* selfKeys = selfKeysObj && ::protoPython::listStorage(context, selfKeysObj) ? ::protoPython::listStorage(context, selfKeysObj) : context->newList();
         const proto::ProtoObject* selfDataObj = self->getAttribute(context, dataName);
+        // A key's __eq__ may replace this storage while it is read; keep the
+        // snapshot reachable (docs/GC_BRIDGING.md).
+        PythonEnvironment::TransientPin pinSelfKeysObj(PythonEnvironment::fromContext(context), selfKeysObj), pinSelfDataObj(PythonEnvironment::fromContext(context), selfDataObj);
         const proto::ProtoSparseList* selfDict = selfDataObj && selfDataObj->asSparseList(context) ? selfDataObj->asSparseList(context) : context->newSparseList();
         const proto::ProtoList* keys = context->newList();
         const proto::ProtoSparseList* dict = context->newSparseList();
@@ -18010,6 +18279,9 @@ static const proto::ProtoObject* py_dict_setdefault(
         if (!dict) return PROTO_NONE;
 
         const proto::ProtoObject* keysObj = receiver->getAttribute(context, keysName);
+        // A key's __eq__ may replace this storage while it is read; keep the
+        // snapshot reachable (docs/GC_BRIDGING.md).
+        PythonEnvironment::TransientPin pinData(PythonEnvironment::fromContext(context), data), pinKeysObj(PythonEnvironment::fromContext(context), keysObj);
         const proto::ProtoList* keysList = keysObj && ::protoPython::listStorage(context, keysObj) ? ::protoPython::listStorage(context, keysObj) : context->newList();
         if (const proto::ProtoObject* found = dictFind(context, dict, dk)) return found;
 
@@ -18054,6 +18326,9 @@ static const proto::ProtoObject* py_dict_pop(
     for (;;) {
         const proto::ProtoObject* keysObj = receiver ? receiver->getAttribute(context, keysName) : nullptr;
         const proto::ProtoObject* dataObj = receiver ? receiver->getAttribute(context, dataName) : nullptr;
+        // A key's __eq__ may replace this storage while it is read; keep the
+        // snapshot reachable (docs/GC_BRIDGING.md).
+        PythonEnvironment::TransientPin pinKeysObj(PythonEnvironment::fromContext(context), keysObj), pinDataObj(PythonEnvironment::fromContext(context), dataObj);
         const proto::ProtoList* keys = keysObj && ::protoPython::listStorage(context, keysObj) ? ::protoPython::listStorage(context, keysObj) : context->newList();
         const proto::ProtoSparseList* dict = dataObj && dataObj->asSparseList(context) ? dataObj->asSparseList(context) : nullptr;
         if (!dict) {
@@ -18101,6 +18376,9 @@ static const proto::ProtoObject* py_dict_popitem(
     for (;;) {
         const proto::ProtoObject* keysObj = receiver->getAttribute(context, keysName);
         const proto::ProtoObject* dataObj = receiver->getAttribute(context, dataName);
+        // A key's __eq__ may replace this storage while it is read; keep the
+        // snapshot reachable (docs/GC_BRIDGING.md).
+        PythonEnvironment::TransientPin pinKeysObj(PythonEnvironment::fromContext(context), keysObj), pinDataObj(PythonEnvironment::fromContext(context), dataObj);
         const proto::ProtoList* keys = keysObj && ::protoPython::listStorage(context, keysObj) ? ::protoPython::listStorage(context, keysObj) : context->newList();
         const proto::ProtoSparseList* dict = dataObj && dataObj->asSparseList(context) ? dataObj->asSparseList(context) : nullptr;
         if (!dict || keys->getSize(context) == 0) {
@@ -19133,11 +19411,9 @@ static const proto::ProtoObject* py_module_items(
             });
         result = sink.result;
     }
-    const proto::ProtoObject* listObj = result->asObject(context);
-    if (env && env->getListPrototype()) {
-        listObj = listObj->addParent(context, env->getListPrototype());
-    }
-    return listObj;
+    // A view, as CPython's: keys and items are set-like (vars(m).keys() & s).
+    (void)env;
+    return wrapInDictView(context, result, "dict_items");
 }
 
 // module.keys() — iterate module global names
@@ -19182,11 +19458,9 @@ static const proto::ProtoObject* py_module_keys(
                 *out = (*out)->appendLast(ctx, name->asObject(ctx));
             });
     }
-    const proto::ProtoObject* listObj = result->asObject(context);
-    if (env && env->getListPrototype()) {
-        listObj = listObj->addParent(context, env->getListPrototype());
-    }
-    return listObj;
+    // A view, as CPython's: keys and items are set-like (vars(m).keys() & s).
+    (void)env;
+    return wrapInDictView(context, result, "dict_keys");
 }
 
 // module.values() — iterate module global values (CPython parity for
@@ -19229,12 +19503,8 @@ static const proto::ProtoObject* py_module_values(
                 *out = (*out)->appendLast(ctx, val);
             });
     }
-    if (env && env->getListPrototype()) {
-        const proto::ProtoObject* listObj = env->getListPrototype()->newChild(context, true);
-        listObj->setAttribute(context, env->getDataString(), result->asObject(context));
-        return listObj;
-    }
-    return result->asObject(context);
+    (void)env;
+    return wrapInDictView(context, result, "dict_values");
 }
 
 // module.copy() — return a Python-dict snapshot of the module's attributes.
@@ -19336,6 +19606,9 @@ static const proto::ProtoObject* py_module_update(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (!self || self == PROTO_NONE || !env || !env->getDictPrototype()) return PROTO_NONE;
     const proto::ProtoObject* scratch = env->initDictStorage(context, env->getDictPrototype()->newChild(context, true));
+    // dict.update runs Python iterators and __getitem__ while `scratch` is
+    // held only here (docs/GC_BRIDGING.md).
+    PythonEnvironment::TransientPin pinScratch(env, scratch);
     const proto::ProtoList* noArgs = context->newList();
     proto::ProtoListArguments emptyArgs(context, noArgs);
     const proto::ProtoArguments* args = positionalParameters ? positionalParameters : argsView(emptyArgs);
@@ -19376,12 +19649,15 @@ static const proto::ProtoString* moduleNamespaceKey(proto::ProtoContext* context
                                                     PythonEnvironment* env,
                                                     const proto::ProtoObject* key) {
     if (!key) return nullptr;
-    if (key->isString(context)) return key->asString(context);
+    // Namespace names are attribute keys, compared by pointer: a str built
+    // at run time ("long_" + "name", longer than an inline string) is
+    // interned first, or a name the module binds would not be found.
+    if (key->isString(context)) return PythonEnvironment::internName(context, key->asString(context));
     // A str subclass instance carries its payload in __data__; only cell
     // objects have attributes (see mp_isClassObject).
     if (env && (reinterpret_cast<uintptr_t>(key) & 0x3F) == 0) {
         const proto::ProtoObject* d = key->getAttribute(context, env->getDataString());
-        if (d && d->isString(context)) return d->asString(context);
+        if (d && d->isString(context)) return PythonEnvironment::internName(context, d->asString(context));
     }
     return nullptr;
 }
@@ -21545,7 +21821,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "int")->asObject(rootContext_));
     intPrototype = intPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_int_repr));
     intPrototype = intPrototype->setAttribute(rootContext_, py_module, builtinsVal);
-    intPrototype = intPrototype->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, py_int_call));
+    intPrototype = intPrototype->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, withSignature<py_int_call, kSig_int>));
     intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternalString(rootContext_, "__init__"), rootContext_->fromMethod(nullptr, protoPython::builtins::py_python_ignore_init));
     intPrototype = intPrototype->setAttribute(rootContext_, py_hash, rootContext_->fromMethod(nullptr, py_int_hash));
     intPrototype = intPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_int_bool));
@@ -22205,7 +22481,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         const proto::ProtoString* py_bit_count_s   = PythonEnvironment::getInternedString(rootContext_, "bit_count");
         const proto::ProtoString* py_from_bytes_s  = PythonEnvironment::getInternedString(rootContext_, "from_bytes");
         const proto::ProtoString* py_to_bytes_s    = PythonEnvironment::getInternedString(rootContext_, "to_bytes");
-        intPrototype = intPrototype->setAttribute(rootContext_, newString,         rootContext_->fromMethod(nullptr, py_int_call));
+        intPrototype = intPrototype->setAttribute(rootContext_, newString,         rootContext_->fromMethod(nullptr, withSignature<py_int_call, kSig_int>));
         intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternalString(rootContext_, "__init__"), rootContext_->fromMethod(nullptr, protoPython::builtins::py_python_ignore_init));
         intPrototype = intPrototype->setAttribute(rootContext_, py_hash,          rootContext_->fromMethod(nullptr, py_int_hash));
         intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__getnewargs__"), rootContext_->fromMethod(nullptr, py_number_getnewargs));
@@ -22786,7 +23062,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_bytes_repr));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_getitem, rootContext_->fromMethod(nullptr, py_bytes_getitem));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_bytes_iter));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, py_bytes_call));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, withSignature<py_bytes_call, kSig_bytes>));
     // Operator dunders so the bytes wrapper participates in `b * n`,
     // `b + b'...'`, and `b == b'...'` without falling back to the
     // (now opaque) ProtoByteBuffer __data__.
@@ -22923,8 +23199,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // slice(...) construction is dispatched by type.__call__ via cls.__new__,
     // not via the class's own __call__.  Register on both slots for backward
     // compatibility (some legacy paths invoke __call__ directly).
-    sliceType = sliceType->setAttribute(rootContext_, py_call, rootContext_->fromMethod(nullptr, py_slice_call));
-    sliceType = sliceType->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, py_slice_call));
+    sliceType = sliceType->setAttribute(rootContext_, py_call, rootContext_->fromMethod(nullptr, withSignature<py_slice_call, kSig_slice>));
+    sliceType = sliceType->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, withSignature<py_slice_call, kSig_slice>));
     sliceType = sliceType->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_slice_repr));
     // CPython: slice equality compares (start, stop, step) tuples; the
     // identity test that ProtoObject's default __eq__ falls back to
@@ -31593,7 +31869,7 @@ const proto::ProtoObject* PythonEnvironment::callObjectEx(const proto::ProtoObje
         ~KwNamesGuard() { if (pushed) env->popKwNames(); }
     } kwGuard{this, false};
     if (kwNames->getSize(ctx) > 0) {
-        this->pushKwNames(ctx->newTupleFromList(kwNames));
+        this->pushKwNames(ctx->newTupleFromList(kwNames), psKwargs);
         kwGuard.pushed = true;
     }
 
@@ -33104,15 +33380,23 @@ const proto::ProtoObject* PythonEnvironment::getScopeModuleName(proto::proto_ulo
 // pop another thread's names. A std::vector is invisible to the GC, so
 // each entry is pinned in transientArgsRoots_ while it is on the stack
 // (same pattern as the py_thread records / pyThreadRoots_).
-static thread_local std::vector<const proto::ProtoTuple*> s_kwNamesStack;
+// Each entry: the keyword names of one call, in call order, and the
+// ProtoSparseList that call passes its keywords in (the entry's owner).
+struct KwNamesEntry {
+    const proto::ProtoTuple* names;
+    const proto::ProtoSparseList* kwargs;
+};
+static thread_local std::vector<KwNamesEntry> s_kwNamesStack;
 static thread_local std::vector<proto::ProtoRootSet::Handle> s_kwNamesHandles;
 
-void PythonEnvironment::pushKwNames(const proto::ProtoTuple* names) {
+void PythonEnvironment::pushKwNames(const proto::ProtoTuple* names, const proto::ProtoSparseList* kwargs) {
     proto::ProtoRootSet::Handle h = proto::ProtoRootSet::kNullHandle;
     if (transientArgsRoots_ && names) {
         h = transientArgsRoots_->add(names->asObject(s_threadContext ? innermostContext(s_threadContext) : rootContext_));
     }
-    s_kwNamesStack.push_back(names);
+    // The caller holds `kwargs` for the duration of the call; it is only
+    // compared by identity here.
+    s_kwNamesStack.push_back({names, kwargs});
     s_kwNamesHandles.push_back(h);
 }
 
@@ -33126,16 +33410,17 @@ void PythonEnvironment::popKwNames() {
     }
 }
 
-const proto::ProtoTuple* PythonEnvironment::getCurrentKwNames() const {
-    return s_kwNamesStack.empty() ? nullptr : s_kwNamesStack.back();
-}
 
 std::vector<proto::ProtoKeywordArgument> PythonEnvironment::keywordsInCallOrder(
         proto::ProtoContext* ctx, const proto::ProtoKeywordArguments* kwargs) const {
     std::vector<proto::ProtoKeywordArgument> out;
     if (!kwargs || kwargs->count() == 0) return out;
     const unsigned n = kwargs->count();
-    if (const proto::ProtoTuple* names = getCurrentKwNames()) {
+    const proto::ProtoTuple* names = nullptr;
+    if (!s_kwNamesStack.empty() && s_kwNamesStack.back().kwargs
+        && kwargs->asSparseList(ctx) == s_kwNamesStack.back().kwargs)
+        names = s_kwNamesStack.back().names;
+    if (names) {
         const proto::proto_ulong sz = names->getSize(ctx);
         for (proto::proto_ulong i = 0; i < sz && out.size() <= n; ++i) {
             const proto::ProtoObject* k = names->getAt(ctx, static_cast<int>(i));

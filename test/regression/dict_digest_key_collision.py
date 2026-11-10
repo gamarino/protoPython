@@ -72,6 +72,11 @@ found = {
     "float": find("float", lambda i: (i + 2) ** 0.5 + 0.1),
     "tuple": find("tuple", lambda i: (i, "t")),
 }
+# A skipped family is reported above; the test still fails unless at least
+# one digest family produced a checked colliding pair, so a change in the
+# hash functions cannot turn it into a test of nothing.
+assert any(p is not None for p in found.values()), \
+    "dict_digest_key_collision: no digest family produced a colliding pair"
 uh, n_uh = UserHashed("u"), 1
 assert index_of(hash(uh)) == index_of(hash(n_uh))
 

@@ -169,22 +169,24 @@ public:
     }
 
     /**
+     * @brief hash() of the int @p intObj (a SmallInteger or a LargeInteger),
+     * as CPython computes it: its magnitude modulo 2**61 - 1, with its sign,
+     * -1 reading -2. hash() reduces an int that a __hash__ method returns
+     * with it, and dicts and sets index keys by it.
+     */
+    static long long intHashValue(proto::ProtoContext* ctx, const proto::ProtoObject* intObj);
+
+    /**
      * @brief The key of keyword argument @p name in protoCore's calling
      * convention: the interned name's pointer (protoCore
      * docs/CALLING_CONVENTION.md, rule 3), the key ProtoKeywordArguments::has
      * and getAt compare and ProtoKeywordArgument::name carries. Never the
      * content hash: two names with one hash would be one keyword, and a
      * caller following the convention would never be found. Interned names
-     * are perennial, so the key needs no tracing.
+     * are perennial, so the key needs no tracing; a name built at run time
+     * (`f(**{str(i): v})`) is interned here and stays in the symbol table
+     * for the life of the process (docs/CPYTHON_CONFORMANCE.md).
      */
-    /**
-     * @brief hash() of the int @p intObj (a SmallInteger or a LargeInteger):
-     * its value when it fits a long long, -1 reading -2 as in CPython, else
-     * a digest of its digits. hash() reduces an int that a __hash__ method
-     * returns with it, and dicts and sets index keys by it.
-     */
-    static long long intHashValue(proto::ProtoContext* ctx, const proto::ProtoObject* intObj);
-
     static proto::proto_ulong kwKey(proto::ProtoContext* ctx, const proto::ProtoString* name) {
         return reinterpret_cast<proto::proto_ulong>(internName(ctx, name));
     }
@@ -1600,17 +1602,26 @@ public:
     std::string formatTraceback(const proto::ProtoContext* ctx, const proto::ProtoObject* exc = nullptr);
     
     // Keyword Names Stack management (for **kwargs refinement)
-    void pushKwNames(const proto::ProtoTuple* names);
+    /**
+     * @brief Records the call order of the keywords of one call.
+     *
+     * @p names are the keyword names in call order; @p kwargs is the
+     * ProtoSparseList the call passes its keywords in. The entry applies to
+     * that call only: keywordsInCallOrder uses it for keyword arguments made
+     * from that very list, so a native call made inside the callee never
+     * takes an outer call's order.
+     */
+    void pushKwNames(const proto::ProtoTuple* names, const proto::ProtoSparseList* kwargs);
     void popKwNames();
-    const proto::ProtoTuple* getCurrentKwNames() const;
     /**
      * @brief The keyword arguments of one call in call order.
      *
      * The pairs name the keywords (interned names, protoCore's calling
      * convention), but a call made with a ProtoSparseList (the interpreter's
-     * CALL_KW) gives them in key order. When the keyword-name stack holds
-     * exactly this call's names it supplies the order; otherwise (a call from
-     * C++ or another runtime) the pairs' own order is used.
+     * CALL_KW) gives them in key order. When the innermost keyword-name entry
+     * was pushed for the list these keywords come from, it supplies the
+     * order; otherwise (a call from C++ or another runtime) the pairs' own
+     * order is used.
      */
     std::vector<proto::ProtoKeywordArgument> keywordsInCallOrder(proto::ProtoContext* ctx,
                                                                  const proto::ProtoKeywordArguments* kwargs) const;
@@ -1829,6 +1840,32 @@ public:
     private:
         proto::ProtoRootSet* roots_;
         proto::ProtoRootSet::Handle h_;
+    };
+
+    /**
+     * @brief TransientPin for a growing collection of values: every add()ed
+     * object stays pinned until the set goes out of scope.
+     *
+     * For native code that gathers values in a C++ container (a
+     * std::vector of sort keys, the items of an iterable) while it runs
+     * Python code: the collector does not trace the container.
+     */
+    class TransientPinSet {
+    public:
+        explicit TransientPinSet(PythonEnvironment* env)
+            : roots_(env ? env->getTransientArgsRoots() : nullptr) {}
+        ~TransientPinSet() {
+            if (!roots_) return;
+            for (proto::ProtoRootSet::Handle h : handles_) roots_->remove(h);
+        }
+        void add(const proto::ProtoObject* obj) {
+            if (roots_ && obj) handles_.push_back(roots_->add(obj));
+        }
+        TransientPinSet(const TransientPinSet&) = delete;
+        TransientPinSet& operator=(const TransientPinSet&) = delete;
+    private:
+        proto::ProtoRootSet* roots_;
+        std::vector<proto::ProtoRootSet::Handle> handles_;
     };
 
 private:

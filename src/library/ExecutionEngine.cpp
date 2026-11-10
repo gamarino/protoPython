@@ -1939,6 +1939,8 @@ static bool isEmbeddedValue(proto::ProtoContext* ctx, const proto::ProtoObject* 
 // pointers, so isInteger() / isSmallInt() return false for them.  Anywhere a
 // path branches on isInteger() to take an integer fast path, callers should
 // first run operands through this helper so True / False participate as 1 / 0.
+static inline bool isBoolValue(const proto::ProtoObject* obj) { return obj == PROTO_TRUE || obj == PROTO_FALSE; }
+
 static inline const proto::ProtoObject* coerceBoolToInt(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     if (obj && obj->isBoolean(ctx)) return ctx->fromInteger(obj == PROTO_TRUE ? 1 : 0);
     return obj;
@@ -2791,6 +2793,9 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
             // raw ProtoObject pointer-style compare which only succeeds for
             // identity-equal objects.
             PythonEnvironment* env_local = PythonEnvironment::fromContext(ctx);
+            // __eq__ may replace the container's storage: keep this list
+            // version reachable (docs/GC_BRIDGING.md).
+            PythonEnvironment::TransientPin pinList(env_local, lst->asObject(ctx));
             size_t size = lst->getSize(ctx);
             for (size_t i = 0; i < size; ++i) {
                 bool eq = false;
@@ -2835,6 +2840,7 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
                     notIterable = true;
                 }
                 if (it) {
+                    PythonEnvironment::TransientPin pinIt(env, it);
                     for (;;) {
                         // An error from the iteration ends it, as before.
                         const proto::ProtoObject* item = nullptr;
@@ -4364,7 +4370,7 @@ bool invokeInitSubclass(proto::ProtoContext* ctx,
         // STRUCT-69: the SparseList stores key hashes only; the **kwargs
         // binding recovers the key names from the kw-names stack.
         const bool pushNames = kw && kwNames;
-        if (pushNames) env->pushKwNames(kwNames);
+        if (pushNames) env->pushKwNames(kwNames, kw);
         const proto::ProtoObject* outerClass = g_initSubclassClass;
         g_initSubclassClass = cls;
         invokeCallable(ctx, hook, ctx->newList()->appendLast(ctx, cls), kw);
@@ -4393,6 +4399,13 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
         && args && args->getSize(ctx) == 1
         && (!kwargs || kwargs->getSize(ctx) == 0)) {
         return env->getType(ctx, args->getAt(ctx, 0));
+    }
+    // type(x, k=v) and type(k=v): CPython reads them as an incomplete
+    // three-argument call rather than ignoring the keywords.
+    if (env && self == env->getTypePrototype() && kwargs && kwargs->getSize(ctx) > 0
+        && (!args || args->getSize(ctx) <= 1)) {
+        env->raiseTypeError(ctx, "type() takes 1 or 3 arguments");
+        return nullptr;
     }
 
     // The common instantiation, by protoCore. __new__ and __init__ are
@@ -5606,7 +5619,7 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
             }
             if (fk->getSize(ctx) > 0) {
                 kwNamesPushed = ctx->newTupleFromList(fk);
-                env->pushKwNames(kwNamesPushed);
+                env->pushKwNames(kwNamesPushed, kw);
             }
         }
     }
@@ -7006,6 +7019,13 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
         } break;
         case OP_BINARY_AND: {
             if (stack.size() < 2) { i = next_i; continue; }
+            if (isBoolValue(stack.back()) && isBoolValue(stack[stack.top - 2])) {
+                // bool & bool is a bool, as in CPython.
+                const bool r = (stack[stack.top - 2] == PROTO_TRUE) && (stack.back() == PROTO_TRUE);
+                stack.pop_back();
+                stack.back() = r ? PROTO_TRUE : PROTO_FALSE;
+                i = next_i; continue;
+            }
             const proto::ProtoObject* b = coerceBoolToInt(ctx, stack.back());
             const proto::ProtoObject* a = coerceBoolToInt(ctx, stack[stack.top - 2]);
             // SmallInt & SmallInt: AND of two values in 56-bit signed range
@@ -7030,6 +7050,13 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
         } break;
         case OP_BINARY_OR: {
             if (stack.size() < 2) { i = next_i; continue; }
+            if (isBoolValue(stack.back()) && isBoolValue(stack[stack.top - 2])) {
+                // bool | bool is a bool, as in CPython.
+                const bool r = (stack[stack.top - 2] == PROTO_TRUE) || (stack.back() == PROTO_TRUE);
+                stack.pop_back();
+                stack.back() = r ? PROTO_TRUE : PROTO_FALSE;
+                i = next_i; continue;
+            }
             const proto::ProtoObject* b = coerceBoolToInt(ctx, stack.back());
             const proto::ProtoObject* a = coerceBoolToInt(ctx, stack[stack.top - 2]);
             if (proto::isSmallInt(a) && proto::isSmallInt(b)) {
@@ -7098,6 +7125,13 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
         } break;
         case OP_BINARY_XOR: {
             if (stack.size() < 2) { i = next_i; continue; }
+            if (isBoolValue(stack.back()) && isBoolValue(stack[stack.top - 2])) {
+                // bool ^ bool is a bool, as in CPython.
+                const bool r = (stack[stack.top - 2] == PROTO_TRUE) != (stack.back() == PROTO_TRUE);
+                stack.pop_back();
+                stack.back() = r ? PROTO_TRUE : PROTO_FALSE;
+                i = next_i; continue;
+            }
             const proto::ProtoObject* b = coerceBoolToInt(ctx, stack.back());
             const proto::ProtoObject* a = coerceBoolToInt(ctx, stack[stack.top - 2]);
             if (proto::isSmallInt(a) && proto::isSmallInt(b)) {
@@ -9328,7 +9362,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 callArgs = selfArgs;
             }
             
-            if (env) env->pushKwNames(namesTuple.tuple);
+            if (env) env->pushKwNames(namesTuple.tuple, kwMap);
             const proto::ProtoObject* result = invokeCallable(ctx, callable, callArgs, kwMap);
             if (env) env->popKwNames();
             
@@ -9519,7 +9553,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                          }
                      }
                      if (!kwError) {
-                         env->pushKwNames(ctx->newTupleFromList(kl));
+                         env->pushKwNames(ctx->newTupleFromList(kl), kwArgs);
                          pushed = true;
                      }
                  }

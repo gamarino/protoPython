@@ -540,6 +540,49 @@ set_tests_properties(protopy_kwargs_name_pointer PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "kwargs_name_pointer: ok"
     LABELS "regression_gate")
+# Built-ins take keyword arguments as CPython 3.14's signatures declare them.
+add_test(NAME protopy_builtin_keywords
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/builtin_keywords.py)
+set_tests_properties(protopy_builtin_keywords PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "builtin_keywords: ok"
+    LABELS "regression_gate")
+# A module namespace finds a name given as a str built at run time.
+add_test(NAME protopy_module_namespace_runtime_key
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/module_namespace_runtime_key.py)
+set_tests_properties(protopy_module_namespace_runtime_key PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "module_namespace_runtime_key: ok"
+    LABELS "regression_gate")
+# hash() of ints and floats is CPython's numeric hash.
+add_test(NAME protopy_numeric_hash_cpython
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/numeric_hash_cpython.py)
+set_tests_properties(protopy_numeric_hash_cpython PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "numeric_hash_cpython: ok"
+    LABELS "regression_gate")
+# Dict view, set, bool and dict-subclass operators answer as CPython.
+add_test(NAME protopy_operator_view_conformance
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/operator_view_conformance.py)
+set_tests_properties(protopy_operator_view_conformance PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "operator_view_conformance: ok"
+    LABELS "regression_gate")
+# A user __eq__ that mutates the set or dict it is compared in never makes the
+# lookup read freed storage: a tight collection threshold makes the collector
+# run inside every lookup, so the outcome does not depend on timing.
+add_test(NAME protopy_eq_mutates_container
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/eq_mutates_container.py)
+set_tests_properties(protopy_eq_mutates_container PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 300
+    ENVIRONMENT "PROTOCORE_GC_CONTEXT_THRESHOLD=100"
+    PASS_REGULAR_EXPRESSION "eq_mutates_container: ok"
+    LABELS "regression_gate")
 # Unequal set elements with one hash stay distinct; membership calls __eq__.
 add_test(NAME protopy_set_colliding_hash
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/set_colliding_hash.py)
