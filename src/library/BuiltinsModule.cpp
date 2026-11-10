@@ -12289,7 +12289,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     }
     
     // Add dummy bytearray
-    auto py_bytearray_new = [](proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
+    // constexpr: the lambda converts to a function pointer usable as a
+    // template argument (withSignature<>) on every compiler.
+    static constexpr auto py_bytearray_new = [](proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         const proto::ProtoList* shiftedArgs = context->newList();
         const proto::ProtoObject* cls = args ? args->getAt(context, 0) : nullptr;
         if (args) {
@@ -12304,7 +12306,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     // — leaving `ba` empty and breaking test_keyword_arguments.  The
     // implementation mirrors py_bytearray_fallback's source decoding but
     // overwrites the existing buffer instead of returning a new instance.
-    auto py_bytearray_init = [](proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* /*parentLink*/, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
+    static constexpr auto py_bytearray_init = [](proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* /*parentLink*/, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
         if (!self || !args) return PROTO_NONE;
         // `bytearray.__init__(ba, …)` lands here with args = [ba, source?].
         // The first positional is the receiver; the rest are the user-visible
