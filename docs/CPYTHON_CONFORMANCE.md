@@ -103,6 +103,23 @@ defect and adds a `test/regression/*.py` test registered in
   iteration`); the iteration walks the keys present when it started. A module
   namespace (`vars(module)`, `globals()`) accepts only `str` keys: storing
   another key, also through `update()`, raises `TypeError` (CPython stores it).
+- **Module namespace order (found 2026-11-10, review of 1.2.2):** iterating
+  `vars(module)` or `globals()` yields the names in protoCore's attribute order,
+  not in insertion order (`m.z = 1; m.a = 2` may list `a` first). A module's
+  names are the module object's own attributes, and protoCore does not define
+  the order it enumerates attributes in; keeping insertion order would need a
+  key list written on every global store, which protoPython stopped keeping
+  for performance. Dicts keep insertion order.
+- **Keyword names and hashes (found 2026-11-10, review of 1.2.2):** keyword
+  arguments are keyed by the interned name, so a name built at run time and
+  passed as a keyword (`f(**{str(i): v})`) is interned and stays in the
+  symbol table for the life of the process; a program that passes an
+  unbounded number of distinct generated names grows it without limit
+  (CPython does not intern these keys). `hash()` of a tuple is computed by
+  protoPython (CPython's xxHash round over the elements' dict indices), not
+  CPython's value; `hash()` of an int or a float matches CPython's.
+  `exec(..., closure=cells)` raises `TypeError`: cells cannot be supplied from
+  Python.
 - **collections.abc:** the ABCs are native classes without `ABCMeta`; each root ABC's
   `__init_subclass__` computes `__abstractmethods__`, so a subclass whose own
   `__init_subclass__` skips `super()` is not checked for abstract methods.
@@ -132,8 +149,7 @@ defect and adds a `test/regression/*.py` test registered in
   pipes; async-generator hooks are stored but never called;
   `sys.is_finalizing()` is always False.
 - **Runtime:** `gc.collect()` is a no-op (protoCore collects under heap
-  pressure only); sets and dicts treat two distinct keys with equal
-  hashes as the same key (accepted limitation).
+  pressure only).
 - **Files are closed by `close()`, `with`, or collection, not by losing their
   last reference.** CPython closes `open(p, "w").write(s)`'s file at the end
   of the statement (reference counting); protoPython has no reference counts,

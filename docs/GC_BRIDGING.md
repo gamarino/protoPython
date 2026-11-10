@@ -213,6 +213,8 @@ For every native function you write or modify, answer these questions:
 | Does it call `env->callObject` or `invokePythonCallable`? | Pin every `ProtoObject*` argument and the running result. |
 | Does it loop calling user code while holding an accumulator? | Pin the accumulator on each iteration. |
 | Does it call a user `__getitem__`, `__contains__` or similar method? | Pin the receiver if it is only held on the C++ stack. |
+| Does it read a container's storage (a dict's or set's `__data__`, a list's items) and then run user code (`__eq__`, `__hash__`, a key function) before it is done with that storage? | Pin the storage version it reads: the user code may replace the container's storage, and the old version is then held only by C++ locals. |
+| Does it gather values in a C++ container (`std::vector`) across user code? | Pin each value (`PythonEnvironment::TransientPinSet`). |
 | Is the value reachable through the argument list, which `invokeCallable` already pins? | No additional pin is needed. |
 | Is the value reachable through the operand stack, as in a peek-only opcode such as `OP_FOR_ITER`? | No additional pin is needed. |
 
@@ -243,6 +245,17 @@ For every native function you write or modify, answer these questions:
   hold across calls to the user function.
 - The `OP_LIST_EXTEND`, `OP_DICT_UPDATE`, `OP_UNPACK_SEQUENCE` and
   `OP_UNPACK_EX` handlers (`ExecutionEngine.cpp`) pin their internal iterators.
+- Container storage across user `__eq__` (1.2.2): the dict and set lookup,
+  insertion and removal helpers (`StoragePin` in `dictFind`, `dictPut`,
+  `dictRemove`, `setFind`, `setPut`, `setRemove`), the dict writers' snapshot
+  loops, `SetCursor` (set algebra and subset tests), `in` over lists and
+  iterators, `list.index` / `count` / `remove` / `sort`, list, tuple and dict
+  comparison, `sorted`, `min` and `max` (values and keys through
+  `TransientPinSet`), the dict views' membership and set operations, and
+  `vars(module).update()`. A dict or set lookup whose comparison replaced the
+  container's storage restarts on the new storage, as CPython's does;
+  test/regression/eq_mutates_container.py runs these paths with a collection
+  inside every comparison.
 
 When you add a native function that iterates or calls back into Python, follow
 the same pattern. The audit in [docs/audits/03-gc-roots.md](audits/03-gc-roots.md)
