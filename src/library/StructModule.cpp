@@ -160,6 +160,7 @@ static const proto::ProtoObject* make_bytes_obj(proto::ProtoContext* ctx, const 
 
 static bool extract_bytes(proto::ProtoContext* ctx, const proto::ProtoObject* obj, std::string& out) {
     if (!obj || obj == PROTO_NONE) return false;
+    if (PythonEnvironment::bytesLikeContent(ctx, obj, out)) return true;
     if (obj->isString(ctx)) {
         obj->asString(ctx)->toUTF8String(ctx, out);
         return true;
@@ -543,6 +544,64 @@ const proto::ProtoObject* py_clearcache(proto::ProtoContext*,
     return PROTO_NONE;
 }
 
+// pack_into(fmt, buffer, offset, *v): packs into a writable buffer (a
+// bytearray, or a memoryview over one) at offset, a negative offset
+// counting from the end, as CPython's.
+static const proto::ProtoObject* pack_into_impl(proto::ProtoContext* ctx, const std::string& fmt,
+    const proto::ProtoArguments* args, unsigned bufferIndex) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return PROTO_NONE;
+    if (!args || args->getSize(ctx) < bufferIndex + 2) {
+        env->raiseTypeError(ctx, "pack_into expected buffer argument and offset");
+        return nullptr;
+    }
+    const proto::ProtoObject* buffer = args->getAt(ctx, static_cast<int>(bufferIndex));
+    const proto::ProtoObject* offObj = args->getAt(ctx, static_cast<int>(bufferIndex + 1));
+    std::string current;
+    if (!PythonEnvironment::bytesLikeContent(ctx, buffer, current)) {
+        env->raiseTypeError(ctx, "argument must be read-write bytes-like object, not "
+                                 + PythonEnvironment::typeNameOf(ctx, buffer));
+        return nullptr;
+    }
+    if (!offObj || !offObj->isInteger(ctx)) {
+        env->raiseTypeError(ctx, "'" + PythonEnvironment::typeNameOf(ctx, offObj) + "' object cannot be interpreted as an integer");
+        return nullptr;
+    }
+    const proto::ProtoObject* packed = pack_impl(ctx, fmt, args, bufferIndex + 2);
+    if (!packed) return nullptr;
+    std::string data;
+    PythonEnvironment::bytesLikeContent(ctx, packed, data);
+    const long long size = static_cast<long long>(current.size());
+    long long offset = offObj->asLong(ctx);
+    if (offset < 0) {
+        if (offset + static_cast<long long>(data.size()) > 0) {
+            raise_struct_error(ctx, "no space to pack " + std::to_string(data.size()) + " bytes at offset " + std::to_string(offset));
+            return nullptr;
+        }
+        if (offset + size < 0) {
+            raise_struct_error(ctx, "offset " + std::to_string(offset) + " out of range for " + std::to_string(size) + "-byte buffer");
+            return nullptr;
+        }
+        offset += size;
+    }
+    if (size - offset < static_cast<long long>(data.size())) {
+        raise_struct_error(ctx, "pack_into requires a buffer of at least " + std::to_string(data.size() + offset)
+            + " bytes for packing " + std::to_string(data.size()) + " bytes at offset " + std::to_string(offset)
+            + " (actual buffer size is " + std::to_string(size) + ")");
+        return nullptr;
+    }
+    if (!PythonEnvironment::bytearrayWrite(ctx, buffer, static_cast<size_t>(offset), data)) return nullptr;
+    return PROTO_NONE;
+}
+
+const proto::ProtoObject* py_pack_into(proto::ProtoContext* ctx,
+    const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
+    std::string fmt;
+    if (!args || args->getSize(ctx) < 1 || !extract_bytes(ctx, args->getAt(ctx, 0), fmt)) return PROTO_NONE;
+    return pack_into_impl(ctx, fmt, args, 1);
+}
+
 // ---- Struct class ---------------------------------------------------------
 
 const proto::ProtoObject* py_struct_new(proto::ProtoContext* ctx,
@@ -581,6 +640,16 @@ const proto::ProtoObject* py_struct_pack(proto::ProtoContext* ctx,
     return pack_impl(ctx, fmt, args, 0);
 }
 
+const proto::ProtoObject* py_struct_pack_into(proto::ProtoContext* ctx,
+    const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
+    const proto::ProtoObject* fmtObj = self->getAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "format"));
+    std::string fmt;
+    if (fmtObj && fmtObj->isString(ctx)) fmtObj->asString(ctx)->toUTF8String(ctx, fmt);
+    return pack_into_impl(ctx, fmt, args, 0);
+}
+
 const proto::ProtoObject* py_struct_unpack(proto::ProtoContext* ctx,
     const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
@@ -605,7 +674,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "iter_unpack"),
         ctx->fromMethod(mod, py_iter_unpack));
     mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "pack_into"),
-        ctx->fromMethod(mod, py_pack));
+        ctx->fromMethod(mod, py_pack_into));
     mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "unpack_from"),
         ctx->fromMethod(mod, py_unpack_from));
     // struct.error: class error(Exception), __module__ 'struct', as in CPython.
@@ -641,6 +710,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(nullptr, py_struct_new));
     structClass->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "pack"),
         ctx->fromMethod(nullptr, py_struct_pack));
+    structClass->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "pack_into"),
+        ctx->fromMethod(nullptr, py_struct_pack_into));
     structClass->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "unpack"),
         ctx->fromMethod(nullptr, py_struct_unpack));
     mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "Struct"), structClass);

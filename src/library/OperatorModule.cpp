@@ -79,6 +79,7 @@ static const proto::ProtoObject* py_contains(
 // (hmac.compare_digest).  Both ASCII str, or both bytes-like.
 static bool digestOctets(proto::ProtoContext* ctx, PythonEnvironment* env,
                          const proto::ProtoObject* obj, std::string& out) {
+    if (!obj->isString(ctx) && PythonEnvironment::bytesLikeContent(ctx, obj, out)) return true;
     const proto::ProtoObject* asBytes = obj;
     const proto::ProtoObject* bytesType = env->getBytesPrototype();
     if (!bytesType || env->getType(ctx, obj) != bytesType) {

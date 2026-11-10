@@ -1,6 +1,6 @@
 code 0: <module> (09-unpacking.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code unpack, line 2>  -> code 0.0
     #1   code    <code options, line 8>  -> code 0.1
@@ -25,7 +25,7 @@ code 0: <module> (09-unpacking.py, line 1)
 
 code 0.0: unpack (09-unpacking.py, line 2)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 2 (0 positional-only, 0 keyword-only)
-  slots 137: variables 0..5, operand stack from 6
+  slots 138: variables 0..5, operand stack from 6
   constants:
     #0   none    None
   variables (slot):

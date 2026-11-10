@@ -1,5 +1,6 @@
 #include <exception>
 #include <protoPython/ExecutionEngine.h>
+#include <cassert>
 #include <protoPython/DiagUtils.h>
 #include <protoPython/Compiler.h>
 #include <protoPython/PythonEnvironment.h>
@@ -333,7 +334,7 @@ bool PythonEnvironment::storeAttr(proto::ProtoContext* ctx, const proto::ProtoOb
         if (directType && directType != PROTO_NONE && directType != getTypePrototype() &&
                 directType != getModulePrototype() && obj != getBuiltinsModule()) {
             const uint32_t flags = ensureClassFlags(ctx, directType);
-            if ((flags & PYFLAG_HAS_SLOTS) == 0 && !typeChainInterceptsStore(ctx, this, directType, flags, nameS)) {
+            if ((flags & (PYFLAG_HAS_SLOTS | PYFLAG_NO_FAST_STORE)) == 0 && !typeChainInterceptsStore(ctx, this, directType, flags, nameS)) {
                 obj->setAttribute(ctx, nameS, value);
                 return true;
             }
@@ -384,7 +385,7 @@ static bool attrGroupApplies(proto::ProtoContext* ctx, PythonEnvironment* env,
     if (directType == env->getModulePrototype() || obj == env->getBuiltinsModule()) return false;
     if (env->isActuallyAClass(ctx, obj)) return false;
     const uint32_t typeFlags = env->ensureClassFlags(ctx, directType);
-    if (typeFlags & PythonEnvironment::PYFLAG_HAS_SLOTS) return false;
+    if (typeFlags & (PythonEnvironment::PYFLAG_HAS_SLOTS | PythonEnvironment::PYFLAG_NO_FAST_STORE)) return false;
     const proto::proto_ulong descSize = desc->getSize(ctx);
     if (descSize < 1) return false;
     const proto::proto_ulong n = static_cast<proto::proto_ulong>(desc->getAt(ctx, 0)->asLong(ctx));
@@ -4290,6 +4291,24 @@ const proto::ProtoObject* invokePythonCallable(proto::ProtoContext* ctx,
 
 
 namespace {
+// The globals of a function built from `codeObj` in the eval / exec mapping
+// frame `frame`: for a comprehension compiled at a name scope, a namespace
+// that answers the mapping's names first (CPython inlines it); else
+// `globals`. Kept out of the dispatch loop.
+#if defined(_MSC_VER)
+__declspec(noinline)
+#else
+__attribute__((noinline))
+#endif
+static const proto::ProtoObject* nameScopeGlobalsFor(proto::ProtoContext* ctx,
+        const proto::ProtoObject* codeObj, const proto::ProtoObject* frame, const proto::ProtoObject* globals) {
+    if (!codeObj) return globals;
+    const proto::ProtoObject* flags = codeObj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_flags"));
+    if (!flags || !flags->isInteger(ctx) || !(flags->asLong(ctx) & CO_NAME_SCOPE_COMPREHENSION)) return globals;
+    const proto::ProtoObject* g = PythonEnvironment::nameScopeComprehensionGlobals(ctx, frame, globals);
+    return g ? g : globals;
+}
+
 struct GCStack {
     const proto::ProtoObject** slots;
     size_t top;
@@ -4299,6 +4318,10 @@ struct GCStack {
     GCStack(const proto::ProtoObject** s, size_t cap) : slots(s), top(0), capacity(cap), overflowed(false) {}
 
     void push_back(const proto::ProtoObject* obj) {
+        // The compiler sizes every frame for its deepest operand stack
+        // (Compiler.cpp, stackEffect / stackPeak); a debug build stops at
+        // the first push past it, a release build reports it once.
+        assert(top < capacity && "operand stack deeper than the compiler's frame size");
         if (top < capacity) {
             slots[top++] = obj;
         } else if (!overflowed) {
@@ -6295,6 +6318,25 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                         found = true;
                     }
 
+                    // eval() / exec() with a mapping as locals: the mapping,
+                    // then the globals and the builtins (localsMappingFrame).
+                    if (!found) {
+                        if (const proto::ProtoObject* mapping = PythonEnvironment::localsMappingOf(ctx, frame)) {
+                            if (!PythonEnvironment::localsMappingLoad(ctx, mapping, nameObj, val))
+                                val = env ? env->resolveGlobalName(nameS, ctx) : nullptr;
+                            if (!val) {
+                                std::string nStr;
+                                nameS->toUTF8String(ctx, nStr);
+                                if (env) env->raiseNameError(ctx, nStr);
+                                i = next_i;
+                                continue;
+                            }
+                            if (pushNull) stack.push_back(nullptr);
+                            stack.push_back(val);
+                            break;
+                        }
+                    }
+
                     // Closure parent chain: free variables live in parent frames. All name strings
                     // are interned (co_names uses getInternedString), so getAttribute's symbolTable
                     // lookup succeeds and traverses the prototype chain correctly.
@@ -6420,6 +6462,12 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 }
                 const proto::ProtoObject* nameObj = names->getAt(ctx, nameIdx);
                 const proto::ProtoObject* val = stack.back();
+                // eval() / exec() with a mapping as locals: mapping[name] = val.
+                if (const proto::ProtoObject* mapping = PythonEnvironment::localsMappingOf(ctx, frame)) {
+                    PythonEnvironment::localsMappingStore(ctx, mapping, nameObj, val);
+                    stack.pop_back();
+                    break;
+                }
                 // Delay pop until done
                 if (proto::ProtoObject::isStringTagFast(nameObj)) {
                     bool handledBySetitem = false;
@@ -7317,6 +7365,16 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                         frame->setAttribute(ctx, keysNameS, keysList->asObject(ctx)));
                 }
             };
+            // eval() / exec() with a mapping as locals: the names go to the mapping.
+            const proto::ProtoObject* localsMapping = PythonEnvironment::localsMappingOf(ctx, frame);
+            auto bindImported = [&](const proto::ProtoString* nameS, const proto::ProtoObject* val) {
+                if (localsMapping) {
+                    PythonEnvironment::localsMappingStore(ctx, localsMapping, nameS->asObject(ctx), val);
+                    return;
+                }
+                frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nameS, val));
+                recordKeyInFrame(nameS);
+            };
             // mod remains on stack during attribute iteration
             if (mod && mod != PROTO_NONE) {
                 // 1. Check for __all__ — iterate via Python iterator protocol to handle list, tuple, or custom types
@@ -7333,8 +7391,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                                 const proto::ProtoString* nameS = nameObj->asString(ctx);
                                 const proto::ProtoObject* val = mod->getAttribute(ctx, nameS);
                                 if (val) {
-                                    frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nameS, val));
-                                    recordKeyInFrame(nameS);
+                                    bindImported(nameS, val);
                                 }
                             }
                         }
@@ -7358,8 +7415,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                                 const proto::ProtoObject* val = mod->getAttribute(ctx, nameObj->asString(ctx));
                                 if (val) {
                                     const proto::ProtoString* nm = nameObj->asString(ctx);
-                                    frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nm, val));
-                                    recordKeyInFrame(nm);
+                                    bindImported(nm, val);
                                 }
                             }
                             it = it->advance(ctx);
@@ -7380,8 +7436,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                                         if (!n.empty() && n[0] != '_') {
                                             const proto::ProtoObject* val = mod->getAttribute(ctx, s);
                                             if (val) {
-                                                frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, s, val));
-                                                recordKeyInFrame(s);
+                                                bindImported(s, val);
                                             }
                                         }
                                     }
@@ -8788,7 +8843,11 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                         if (directType && directType != PROTO_NONE
                                 && directType != env->getTypePrototype()) {
                             uint32_t flags = env->ensureClassFlags(ctx, directType);
-                            const bool noSlots = (flags & protoPython::PythonEnvironment::PYFLAG_HAS_SLOTS) == 0;
+                            // PYFLAG_NO_FAST_STORE: obj may be a built-in type or
+                            // an instance without __dict__ (env->setAttribute
+                            // rejects new attributes on those).
+                            const bool noSlots = (flags & (protoPython::PythonEnvironment::PYFLAG_HAS_SLOTS
+                                | protoPython::PythonEnvironment::PYFLAG_NO_FAST_STORE)) == 0;
                             // Per-name descriptor probe: when the type
                             // owns an attribute with the same name as
                             // the assignment target, that attribute may
@@ -9667,7 +9726,12 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                     fprintf(stderr, "DEBUG: OP_BUILD_FUNCTION PC=%llu arg=0x%llx codeObj=%p defaults=%p kwDefaults=%p\n", static_cast<unsigned long long>(i), static_cast<unsigned long long>((proto::proto_ulong)arg), (void*)codeObj, (void*)defaults, (void*)kwDefaults);
                     fflush(stderr);
                 }
-                proto::ProtoObject* fn = createUserFunction(ctx, codeObj, const_cast<proto::ProtoObject*>(PythonEnvironment::getCurrentGlobals()), closure, defaults, kwDefaults);
+                const proto::ProtoObject* fnGlobals = PythonEnvironment::getCurrentGlobals();
+                // A comprehension CPython would inline, built in eval / exec
+                // with a mapping as locals, reads that mapping first.
+                if (PythonEnvironment::localsMappingOf(ctx, frame))
+                    fnGlobals = nameScopeGlobalsFor(ctx, codeObj, frame, fnGlobals);
+                proto::ProtoObject* fn = createUserFunction(ctx, codeObj, const_cast<proto::ProtoObject*>(fnGlobals), closure, defaults, kwDefaults);
                 // Push fn as a GC guard immediately.  Subsequent setAttribute
                 // calls allocate (potentially crossing the per-context
                 // threshold and submitting the young chain) and may return a
@@ -10183,6 +10247,12 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 target = const_cast<proto::ProtoObject*>(PythonEnvironment::getCurrentGlobals());
             }
             if (!target) break;
+            if (!isGlobalDel) {
+                if (const proto::ProtoObject* mapping = PythonEnvironment::localsMappingOf(ctx, target)) {
+                    PythonEnvironment::localsMappingDelete(ctx, mapping, nameObj);
+                    break;
+                }
+            }
 
             // Custom class namespace from __prepare__ (e.g. EnumDict): the
             // same interception STORE_NAME does with __setitem__.
@@ -10312,6 +10382,8 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                             "can't delete __class__ attribute of '" + clsName + "' object");
                         continue;
                     }
+                    // A built-in type, or an instance without __dict__.
+                    if (env && env->builtinAttributeWriteRejected(ctx, obj, nameS, /*isDelete=*/true)) continue;
                     // STRUCT-70: `del Cls.__bases__` (and other structural
                     // attrs on a class) is always rejected — these
                     // attributes are part of the type's identity.

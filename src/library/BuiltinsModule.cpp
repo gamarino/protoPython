@@ -1,5 +1,6 @@
 #include <protoPython/BuiltinsModule.h>
 #include <protoPython/BuiltinSignature.h>
+#include <protoPython/BytearrayType.h>
 #include <protoPython/CollectionsAbcModule.h>
 #include <protoPython/DiagUtils.h>
 #include <protoPython/Version.h>
@@ -199,8 +200,6 @@ static const BuiltinSignature kSig_filter{"filter", 0, {}, {}};
 static const BuiltinSignature kSig_memoryview{"memoryview", 1, {{"object", BuiltinParam::Required, 0}}, {}};
 // bytes() and bytearray(): an absent encoding or errors reads None (no codec
 // default is injected: errors without encoding must raise TypeError).
-static const BuiltinSignature kSig_bytearray{"bytearray", 1, {{"source", BuiltinParam::None, 0}, {"encoding", BuiltinParam::None, 0}, {"errors", BuiltinParam::None, 0}}, {}, true};
-static const BuiltinSignature kSig_bytearray_init{"bytearray", 1, {{"source", BuiltinParam::None, 0}, {"encoding", BuiltinParam::None, 0}, {"errors", BuiltinParam::None, 0}}, {}};
 
 // Forward declaration: env-aware hash used by py_dict_setitem and
 // BUILD_MAP.  STRUCT-305 reads the value of a non-string namespace
@@ -1603,8 +1602,14 @@ const proto::ProtoObject* py_complex(
             // imaginary slot and (if complex) subtracts its imag from
             // the real per CPython:
             //   complex(a, b) == complex(a.real - b.imag, a.imag + b.real)
-            imag += ir;
-            real -= ii;
+            // Only a complex argument contributes its imaginary part: for a
+            // real one the sum would turn an imaginary -0.0 into 0.0
+            // (complex(1, -0.0) is (1-0j)).
+            const proto::ProtoObject* rObj = positionalParameters->getAt(context, static_cast<int>(base));
+            const bool firstComplex = rObj && !rObj->isDouble(context) && !rObj->isInteger(context);
+            const bool secondComplex = !iObj->isDouble(context) && !iObj->isInteger(context);
+            imag = firstComplex ? imag + ir : ir;
+            if (secondComplex) real -= ii;
         }
     }
 
@@ -1678,13 +1683,33 @@ const proto::ProtoObject* py_complex_repr(
     double real = (rObj && rObj->isDouble(context)) ? rObj->asDouble(context) : 0.0;
     double imag = (iObj && iObj->isDouble(context)) ? iObj->asDouble(context) : 0.0;
     
-    char buf[128];
-    if (real == 0.0) {
-        std::snprintf(buf, sizeof(buf), "%.17gj", imag);
-    } else {
-        std::snprintf(buf, sizeof(buf), "(%.17g%s%.17gj)", real, (imag >= 0 ? "+" : ""), imag);
-    }
-    return PythonEnvironment::getInternedString(context, buf)->asObject(context);
+    // CPython's complex_repr: each part in the shortest form that reads
+    // back to the same double (float's repr without the ".0"), the real
+    // part omitted when it is +0.0, the imaginary sign from its sign bit.
+    auto part = [](double v) -> std::string {
+        if (std::isnan(v)) return "nan";
+        if (std::isinf(v)) return v < 0 ? "-inf" : "inf";
+        char buf[64];
+        for (int prec = 1; prec <= 17; ++prec) {
+            std::snprintf(buf, sizeof(buf), "%.*g", prec, v);
+            if (std::strtod(buf, nullptr) == v) break;
+        }
+        std::string out(buf);
+        const double a = std::fabs(v);
+        if (out.find('e') != std::string::npos && a >= 1e-4 && a < 1e16) {
+            for (int prec = 0; prec <= 17; ++prec) {
+                std::snprintf(buf, sizeof(buf), "%.*f", prec, v);
+                if (std::strtod(buf, nullptr) == v) { out = buf; break; }
+            }
+        }
+        return out;
+    };
+    std::string im = part(imag);
+    if (im[0] != '-') im = "+" + im;
+    std::string text;
+    if (real == 0.0 && !std::signbit(real)) text = (im[0] == '+' ? im.substr(1) : im) + "j";
+    else text = "(" + part(real) + im + "j)";
+    return PythonEnvironment::newStr(context, text);
 }
 
 // Forward declarations for implicit method wrappings
@@ -2862,6 +2887,9 @@ static const proto::ProtoObject* py_type_setattr(
     }
     if (!target || !nameObj || !nameObj->isString(context)) return PROTO_NONE;
     const proto::ProtoString* nameS = nameObj->asString(context);
+    // A built-in type is immutable, whichever __setattr__ reaches it.
+    if (PythonEnvironment* env = PythonEnvironment::fromContext(context))
+        if (env->builtinAttributeWriteRejected(context, target, nameS, /*isDelete=*/false)) return nullptr;
     const_cast<proto::ProtoObject*>(target)->setAttribute(context, nameS, value);
     return PROTO_NONE;
 }
@@ -3448,6 +3476,7 @@ static const proto::ProtoObject* py_dir(
         }
     }
     collectOwn(target);
+    bool dropMetaDict = false, dropMetaWeakref = false;
     const proto::ProtoObject* clsForWalk = isClass
         ? target
         : (isModuleInstance ? nullptr
@@ -3468,6 +3497,28 @@ static const proto::ProtoObject* py_dir(
                 const proto::ProtoObject* base = mroT->getAt(context, static_cast<int>(i));
                 if (base && base != clsForWalk && base != PROTO_NONE) collectOwn(base);
             }
+        }
+        // `__dict__` and `__weakref__` are object's own descriptors here; in
+        // CPython a type lists `__dict__` only when a class in its MRO gives
+        // its instances one (not list, int, len, ...), and `__weakref__`
+        // only for a class defined in Python.
+        if (env_dir) {
+            auto userClass = [&](const proto::ProtoObject* c) {
+                return c && c != PROTO_NONE && c != env_dir->getObjectPrototype()
+                    && !env_dir->isImmutableBuiltinType(c);
+            };
+            auto givesDict = [&](const proto::ProtoObject* c) {
+                return c && c != PROTO_NONE && c != env_dir->getObjectPrototype()
+                    && !env_dir->isNoDictBuiltinType(c);
+            };
+            bool hasDict = givesDict(clsForWalk), hasWeakref = userClass(clsForWalk);
+            for (proto::proto_ulong i = 0; mroT && i < mroT->getSize(context); ++i) {
+                const proto::ProtoObject* base = mroT->getAt(context, static_cast<int>(i));
+                hasDict = hasDict || givesDict(base);
+                hasWeakref = hasWeakref || userClass(base);
+            }
+            if (!hasDict) dropMetaDict = true;
+            if (!hasWeakref) dropMetaWeakref = true;
         }
     } else if (isModuleInstance) {
         // collectOwn(target) above already gathered the module's namespace.
@@ -3508,6 +3559,7 @@ static const proto::ProtoObject* py_dir(
             }
             // The function storage of a method protopyc compiled.
             if (n.compare(0, 14, "__protopyc_fs_") == 0) return true;
+            if ((dropMetaDict && n == "__dict__") || (dropMetaWeakref && n == "__weakref__")) return true;
             if (!isClass) {
                 for (const auto& cv : classOnlyNames) {
                     if (n == cv) return true;
@@ -3915,74 +3967,6 @@ static const proto::ProtoObject* compile_eval_source(
 
 /** eval(expr, globals=None, locals=None): run a code object, or compile and
  *  run an expression. */
-// A frame for code run by exec() or eval() with a mapping as its locals.
-// The executed code looks names up as attributes of its frame, while a dict
-// keeps its entries in its __data__ storage, not as attributes: the frame is
-// a fresh object whose own attributes copy the mapping's str keys, with the
-// frame prototype as parent (f_globals, f_back and the like resolve) and
-// f_globals / f_code / f_back set. nullptr when `locals` owns no dict
-// storage (it is then a frame or a namespace object used as is).
-static proto::ProtoObject* mirrorLocalsMapping(proto::ProtoContext* context, PythonEnvironment* env,
-                                               const proto::ProtoObject* locals, const proto::ProtoObject* globals,
-                                               const proto::ProtoObject* codeObj) {
-    // Only a mapping that owns its storage: every object inherits a
-    // __data__ from objectPrototype.
-    const proto::ProtoObject* dataObj = locals->hasOwnAttribute(context, env->getDataString()) == PROTO_TRUE
-        ? locals->getAttribute(context, env->getDataString()) : nullptr;
-    const proto::ProtoSparseList* localsData = dataObj ? dataObj->asSparseList(context) : nullptr;
-    if (!localsData) return nullptr;
-    const proto::ProtoObject* keysObj = locals->getAttribute(context, env->getKeysString());
-    const proto::ProtoList* keys = keysObj ? ::protoPython::listStorage(context, keysObj) : nullptr;
-    proto::ProtoObject* mirror = const_cast<proto::ProtoObject*>(context->newObject(true));
-    if (env->getFramePrototype())
-        mirror = const_cast<proto::ProtoObject*>(mirror->addParent(context, env->getFramePrototype()));
-    mirror = const_cast<proto::ProtoObject*>(mirror->setAttribute(context, env->getFGlobalsString(), globals));
-    mirror = const_cast<proto::ProtoObject*>(mirror->setAttribute(context, env->getFCodeString(), codeObj));
-    if (const proto::ProtoObject* callerFrame = PythonEnvironment::getCurrentFrame())
-        mirror = const_cast<proto::ProtoObject*>(mirror->setAttribute(context, env->getFBackString(), callerFrame));
-    const proto::proto_ulong n = keys ? keys->getSize(context) : 0;
-    for (proto::proto_ulong i = 0; i < n; ++i) {
-        const proto::ProtoObject* k = keys->getAt(context, static_cast<int>(i));
-        if (!k || !k->isString(context)) continue;
-        const proto::ProtoObject* v = PythonEnvironment::dictDataGet(context, localsData, k);
-        if (v) mirror = const_cast<proto::ProtoObject*>(mirror->setAttribute(context,
-                            PythonEnvironment::internName(context, k->asString(context)), v));
-    }
-    return mirror;
-}
-
-// Writes the names the code bound in `frame` (a mirrorLocalsMapping frame)
-// back into the mapping `locals`.
-static void writeBackLocalsMapping(proto::ProtoContext* context, PythonEnvironment* env,
-                                   const proto::ProtoObject* locals, const proto::ProtoObject* frame,
-                                   const proto::ProtoObject* codeObj) {
-    if (!env) return;
-    const proto::ProtoString* keysS = env->getKeysString();
-    const proto::ProtoObject* dataObj = locals->getAttribute(context, env->getDataString());
-    const proto::ProtoSparseList* localsData = dataObj ? dataObj->asSparseList(context) : context->newSparseList();
-    const proto::ProtoObject* keysObj = locals->getAttribute(context, keysS);
-    const proto::ProtoList* keysList = (keysObj && ::protoPython::listStorage(context, keysObj))
-        ? ::protoPython::listStorage(context, keysObj) : context->newList();
-    // The names the code object's co_names lists, found as own attributes.
-    const proto::ProtoObject* coNames = codeObj->getAttribute(context, PythonEnvironment::getInternedString(context, "co_names"));
-    ::protoPython::TupleView coNamesT = coNames ? ::protoPython::PythonEnvironment::tupleView(context, coNames) : nullptr;
-    if (!coNamesT) return;
-    const proto::proto_ulong sz = coNamesT->getSize(context);
-    for (proto::proto_ulong i = 0; i < sz; ++i) {
-        const proto::ProtoObject* nm = coNamesT->getAt(context, static_cast<int>(i));
-        if (!nm || !nm->isString(context)) continue;
-        const proto::ProtoString* nmS = nm->asString(context);
-        if (frame->hasOwnAttribute(context, nmS) != PROTO_TRUE) continue;
-        const proto::ProtoObject* v = frame->proto::ProtoObject::getOwnAttributeDirect(context, nmS);
-        if (!v) continue;
-        bool isNew = false;
-        localsData = PythonEnvironment::dictDataPut(context, localsData, nm, v, &isNew);
-        if (isNew) keysList = keysList->appendLast(context, nm);
-    }
-    const_cast<proto::ProtoObject*>(locals)->setAttribute(context, env->getDataString(), localsData->asObject(context));
-    const_cast<proto::ProtoObject*>(locals)->setAttribute(context, keysS, keysList->asObject(context));
-}
-
 static const proto::ProtoObject* py_eval(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -4013,6 +3997,9 @@ static const proto::ProtoObject* py_eval(
         if (l && l != PROTO_NONE) locals = const_cast<proto::ProtoObject*>(l);
     }
     const bool callerNamespace = !globals;
+    // Only a mapping the caller passed is read as a mapping; the caller's
+    // own namespace (bare eval) is a frame.
+    const bool localsGiven = locals != nullptr;
     if (!globals) {
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         if (env) globals = const_cast<proto::ProtoObject*>(env->getGlobals());
@@ -4040,16 +4027,14 @@ static const proto::ProtoObject* py_eval(
             ? const_cast<proto::ProtoObject*>(callerFrame) : globals;
     }
 
-    // A mapping given as locals is read through a frame that mirrors it, as
-    // exec() does (mirrorLocalsMapping).
-    PythonEnvironment* menv = PythonEnvironment::fromContext(context);
+    // A mapping given as locals is read and written in place
+    // (PythonEnvironment::localsMappingFrame).
     proto::ProtoObject* frame = locals;
-    if (menv && locals != globals) {
-        if (proto::ProtoObject* mirror = mirrorLocalsMapping(context, menv, locals, globals, codeObj)) frame = mirror;
+    if (localsGiven && locals != globals) {
+        if (proto::ProtoObject* mf = PythonEnvironment::localsMappingFrame(context, locals, globals, codeObj)) frame = mf;
     }
     GlobalsScope gscope(globals);
     const proto::ProtoObject* result = runCodeObject(context, codeObj, frame);
-    if (result && frame != locals) writeBackLocalsMapping(context, menv, locals, frame, codeObj);
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG: py_eval code=%p result=%p\n", (void*)codeObj, (void*)result);
     }
@@ -4119,25 +4104,38 @@ static const proto::ProtoObject* py_help(
     return PROTO_NONE;
 }
 
-/** memoryview.tobytes() — returns the raw bytes stored on the instance */
+// memoryview: `__mv_data__` is the viewed object (a bytes or a bytearray,
+// or tobytes()'s result for another buffer), `__mv_start__` / `__mv_stop__`
+// the byte range of a slice. A view of a bytearray reads the bytearray's
+// current content and writes through to it (PythonEnvironment::
+// bytearrayWrite), so it shares the memory as CPython's does.
+
+static bool mv_range(proto::ProtoContext* context, const proto::ProtoObject* self, long long& start, long long& stop) {
+    const proto::ProtoObject* a = self->getAttribute(context, PythonEnvironment::getInternalString(context, "__mv_start__"));
+    const proto::ProtoObject* b = self->getAttribute(context, PythonEnvironment::getInternalString(context, "__mv_stop__"));
+    start = a && a->isInteger(context) ? a->asLong(context) : 0;
+    stop = b && b->isInteger(context) ? b->asLong(context) : -1;
+    return true;
+}
+
+/** memoryview.tobytes(): the viewed bytes, as a bytes object. */
 static const proto::ProtoObject* py_memoryview_tobytes(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
     const proto::ProtoArguments*,
     const proto::ProtoKeywordArguments*) {
-    const proto::ProtoObject* data = self->getAttribute(context, PythonEnvironment::getInternedString(context, "__mv_data__"));
-    if (!data || data == PROTO_NONE) {
-        return PythonEnvironment::getInternedString(context, "")->asObject(context);
+    std::string content;
+    if (!PythonEnvironment::bytesLikeContent(context, self, content)) {
+        const proto::ProtoObject* data = self->getAttribute(context, PythonEnvironment::getInternedString(context, "__mv_data__"));
+        if (data && data->isString(context)) data->asString(context)->toUTF8String(context, content);
     }
-    return data;
+    return PythonEnvironment::newBytes(context, content.data(), content.size());
 }
 
-/** memoryview[i] / memoryview[a:b]: an item of the viewed bytes, or a
- *  memoryview of the selected bytes.  memoryview had no __getitem__, so
- *  `mv[1:3]` was None (subprocess's communicate() writes slices of
- *  memoryview(input)).  The slice views a copy of the bytes rather than
- *  sharing the buffer. */
+/** memoryview[i]: the byte at i (format "B"); memoryview[a:b]: a view of
+ *  the same object over that range, so writes through it reach a viewed
+ *  bytearray. */
 static const proto::ProtoObject* py_memoryview_getitem(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -4149,10 +4147,120 @@ static const proto::ProtoObject* py_memoryview_getitem(
     const proto::ProtoObject* data = self->getAttribute(context, PythonEnvironment::getInternedString(context, "__mv_data__"));
     if (!data || data == PROTO_NONE) return PROTO_NONE;
     const proto::ProtoObject* key = args->getAt(context, 0);
-    const proto::ProtoObject* item = env->getItem(data, key, context);
-    if (!item || key->isInteger(context)) return item;
+    const proto::ProtoObject* fmt = self->getAttribute(context, PythonEnvironment::getInternedString(context, "format"));
+    std::string format = "B";
+    if (fmt && fmt->isString(context)) fmt->asString(context)->toUTF8String(context, format);
+    if (format != "B") {
+        // Another item format (array.array): index the copied payload.
+        const proto::ProtoObject* item = env->getItem(data, key, context);
+        if (!item || key->isInteger(context)) return item;
+        const proto::ProtoObject* mvClass = env->getType(context, self);
+        return (mvClass && mvClass != PROTO_NONE) ? env->callObject(mvClass, {item}) : item;
+    }
+    std::string content;
+    if (!PythonEnvironment::bytesLikeContent(context, self, content)) return PROTO_NONE;
+    const long long n = static_cast<long long>(content.size());
+    if (key->isInteger(context) || key == PROTO_TRUE || key == PROTO_FALSE) {
+        long long i = key == PROTO_TRUE ? 1 : key == PROTO_FALSE ? 0 : key->asLong(context);
+        if (i < 0) i += n;
+        if (i < 0 || i >= n) {
+            env->raiseIndexError(context, "index out of bounds on dimension 1");
+            return nullptr;
+        }
+        return context->fromInteger(static_cast<unsigned char>(content[static_cast<size_t>(i)]));
+    }
+    // A slice: [start, stop) of this view, step 1 shares; another step copies.
+    const proto::ProtoObject* stepObj = key->getAttribute(context, PythonEnvironment::getInternedString(context, "step"));
+    const proto::ProtoObject* startObj = key->getAttribute(context, PythonEnvironment::getInternedString(context, "start"));
+    const proto::ProtoObject* stopObj = key->getAttribute(context, PythonEnvironment::getInternedString(context, "stop"));
+    const bool unitStep = !stepObj || stepObj == PROTO_NONE || (stepObj->isInteger(context) && stepObj->asLong(context) == 1);
     const proto::ProtoObject* mvClass = env->getType(context, self);
-    return (mvClass && mvClass != PROTO_NONE) ? env->callObject(mvClass, {item}) : item;
+    if (!unitStep) {
+        const proto::ProtoObject* copy = env->getItem(PythonEnvironment::newBytes(context, content.data(), content.size()), key, context);
+        return copy ? env->callObject(mvClass, {copy}) : nullptr;
+    }
+    auto clamp = [&](const proto::ProtoObject* v, long long dflt) {
+        if (!v || v == PROTO_NONE || !v->isInteger(context)) return dflt;
+        long long x = v->asLong(context);
+        if (x < 0) { x += n; if (x < 0) x = 0; }
+        if (x > n) x = n;
+        return x;
+    };
+    const long long a = clamp(startObj, 0);
+    const long long b = std::max(a, clamp(stopObj, n));
+    long long base = 0, ignored = 0;
+    mv_range(context, self, base, ignored);
+    proto::ProtoObject* view = const_cast<proto::ProtoObject*>(mvClass->newChild(context, true));
+    view->setAttribute(context, PythonEnvironment::getInternedString(context, "__mv_data__"), data);
+    view->setAttribute(context, PythonEnvironment::getInternalString(context, "__mv_start__"), context->fromInteger(base + a));
+    view->setAttribute(context, PythonEnvironment::getInternalString(context, "__mv_stop__"), context->fromInteger(base + b));
+    view->setAttribute(context, PythonEnvironment::getInternedString(context, "format"), PythonEnvironment::getInternedString(context, "B")->asObject(context));
+    view->setAttribute(context, PythonEnvironment::getInternedString(context, "ndim"), context->fromInteger(1));
+    view->setAttribute(context, PythonEnvironment::getInternedString(context, "itemsize"), context->fromInteger(1));
+    view->setAttribute(context, PythonEnvironment::getInternedString(context, "nbytes"), context->fromInteger(b - a));
+    view->setAttribute(context, PythonEnvironment::getInternedString(context, "readonly"),
+                       PythonEnvironment::isBytearray(context, data) ? PROTO_FALSE : PROTO_TRUE);
+    return view;
+}
+
+/** memoryview[i] = byte, memoryview[a:b] = bytes-like of the same length:
+ *  written through to the viewed bytearray; a view of bytes is read-only. */
+static const proto::ProtoObject* py_memoryview_setitem(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoArguments* args,
+    const proto::ProtoKeywordArguments*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !args || args->getSize(context) < 2) return PROTO_NONE;
+    const proto::ProtoObject* data = self->getAttribute(context, PythonEnvironment::getInternedString(context, "__mv_data__"));
+    if (!PythonEnvironment::isBytearray(context, data)) {
+        env->raiseTypeError(context, "cannot modify read-only memory");
+        return nullptr;
+    }
+    const proto::ProtoObject* key = args->getAt(context, 0);
+    const proto::ProtoObject* value = args->getAt(context, 1);
+    std::string content;
+    PythonEnvironment::bytesLikeContent(context, self, content);
+    const long long n = static_cast<long long>(content.size());
+    long long base = 0, ignored = 0;
+    mv_range(context, self, base, ignored);
+    if (key->isInteger(context) || key == PROTO_TRUE || key == PROTO_FALSE) {
+        long long i = key == PROTO_TRUE ? 1 : key == PROTO_FALSE ? 0 : key->asLong(context);
+        if (i < 0) i += n;
+        if (i < 0 || i >= n) {
+            env->raiseIndexError(context, "index out of bounds on dimension 1");
+            return nullptr;
+        }
+        if (!value || !value->isInteger(context) || value->asLong(context) < 0 || value->asLong(context) > 255) {
+            env->raiseValueError(context, PythonEnvironment::newStr(context, "memoryview: invalid value for format 'B'"));
+            return nullptr;
+        }
+        const std::string one(1, static_cast<char>(value->asLong(context)));
+        return PythonEnvironment::bytearrayWrite(context, data, static_cast<size_t>(base + i), one) ? PROTO_NONE : nullptr;
+    }
+    const proto::ProtoObject* startObj = key->getAttribute(context, PythonEnvironment::getInternedString(context, "start"));
+    const proto::ProtoObject* stopObj = key->getAttribute(context, PythonEnvironment::getInternedString(context, "stop"));
+    auto clamp = [&](const proto::ProtoObject* v, long long dflt) {
+        if (!v || v == PROTO_NONE || !v->isInteger(context)) return dflt;
+        long long x = v->asLong(context);
+        if (x < 0) { x += n; if (x < 0) x = 0; }
+        if (x > n) x = n;
+        return x;
+    };
+    const long long a = clamp(startObj, 0);
+    const long long b = std::max(a, clamp(stopObj, n));
+    std::string repl;
+    if (!PythonEnvironment::bytesLikeContent(context, value, repl)) {
+        env->raiseTypeError(context, "a bytes-like object is required, not '" + PythonEnvironment::typeNameOf(context, value) + "'");
+        return nullptr;
+    }
+    if (static_cast<long long>(repl.size()) != b - a) {
+        env->raiseValueError(context, PythonEnvironment::newStr(context,
+            "memoryview assignment: lvalue and rvalue have different structures"));
+        return nullptr;
+    }
+    return PythonEnvironment::bytearrayWrite(context, data, static_cast<size_t>(base + a), repl) ? PROTO_NONE : nullptr;
 }
 
 /** memoryview.cast(format[, shape]) — returns a new view with a different format/shape */
@@ -4240,13 +4348,18 @@ static const proto::ProtoObject* py_memoryview(
         }
     }
 
-    // Case 2: input is a bytes/string object (protoPython represents both as ProtoString)
+    // A str is not bytes-like (bytes are objects holding their buffer).
     if (!bytesData && obj->isString(context)) {
+        if (env) env->raiseTypeError(context, "memoryview: a bytes-like object is required, not 'str'");
+        return PROTO_NONE;
+    }
+
+    // A bytearray: the view reads and writes the bytearray itself.
+    if (!bytesData && PythonEnvironment::isBytearray(context, obj)) {
         bytesData = obj;
         format = "B";
         ndim = 1;
     }
-
     // Case 2b: input is a `bytes` / `bytearray` instance — protoPython
     // stores those as object handles whose `__data__` attribute holds
     // the underlying ProtoString. Without this branch every `bytes`
@@ -4324,7 +4437,10 @@ static const proto::ProtoObject* py_memoryview(
     }
 
     int64_t totalBytes = 0;
-    if (bytesData->isString(context)) {
+    std::string viewed;
+    if (PythonEnvironment::bytesLikeContent(context, bytesData, viewed)) {
+        totalBytes = static_cast<int64_t>(viewed.size());
+    } else if (bytesData->isString(context)) {
         totalBytes = (int64_t)bytesData->asString(context)->getSize(context);
     } else if (bytesData->isByteBuffer(context)) {
         totalBytes = (int64_t)bytesData->asByteBuffer(context)->getSize(context);
@@ -4352,6 +4468,24 @@ static const proto::ProtoObject* py_memoryview(
         PythonEnvironment::getInternedString(context, "nbytes"), context->fromInteger(totalBytes)));
     instance = const_cast<proto::ProtoObject*>(instance->setAttribute(context,
         PythonEnvironment::getInternedString(context, "itemsize"), context->fromInteger(1)));
+    instance = const_cast<proto::ProtoObject*>(instance->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "readonly"),
+        PythonEnvironment::isBytearray(context, bytesData) ? PROTO_FALSE : PROTO_TRUE));
+    // A view of a view keeps the range it was given.
+    {
+        const proto::ProtoObject* a0 = obj->getAttribute(context, PythonEnvironment::getInternalString(context, "__mv_start__"));
+        const proto::ProtoObject* b0 = obj->getAttribute(context, PythonEnvironment::getInternalString(context, "__mv_stop__"));
+        if (a0 && a0->isInteger(context) && b0 && b0->isInteger(context)) {
+            instance->setAttribute(context, PythonEnvironment::getInternalString(context, "__mv_start__"), a0);
+            instance->setAttribute(context, PythonEnvironment::getInternalString(context, "__mv_stop__"), b0);
+            instance->setAttribute(context, PythonEnvironment::getInternedString(context, "nbytes"),
+                                   context->fromInteger(b0->asLong(context) - a0->asLong(context)));
+        } else if (PythonEnvironment::isBytearray(context, bytesData)) {
+            // The view's length is fixed when it is made, as CPython's.
+            instance->setAttribute(context, PythonEnvironment::getInternalString(context, "__mv_start__"), context->fromInteger(0));
+            instance->setAttribute(context, PythonEnvironment::getInternalString(context, "__mv_stop__"), context->fromInteger(totalBytes));
+        }
+    }
 
     return instance;
 }
@@ -5368,17 +5502,14 @@ static const proto::ProtoObject* py_exec(
     }
     if (!locals) locals = globals;
 
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
     proto::ProtoObject* frame = locals;
-    if (env && locals != globals && !execFrame) {
-        if (proto::ProtoObject* mirror = mirrorLocalsMapping(context, env, locals, globals, codeObj)) frame = mirror;
+    if (locals != globals && !execFrame) {
+        if (proto::ProtoObject* mf = PythonEnvironment::localsMappingFrame(context, locals, globals, codeObj)) frame = mf;
     }
 
     GlobalsScope gscope(globals);
     runCodeObject(context, codeObj, frame);
-    if (frame != locals) writeBackLocalsMapping(context, env, locals, frame, codeObj);
     // exec() returns None; an exception raised by the code propagates.
-    (void)env;
     return PROTO_NONE;
 }
 
@@ -5424,6 +5555,8 @@ static const proto::ProtoObject* py_locals(proto::ProtoContext* ctx, const proto
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (env && f->hasOwnAttribute(ctx, env->getFrameNamespaceString()) == PROTO_TRUE)
         return env->frameLocalsSnapshot(ctx, f);
+    // eval() / exec() with a mapping as locals: the mapping itself.
+    if (const proto::ProtoObject* mapping = PythonEnvironment::localsMappingOf(ctx, f)) return mapping;
     return f;
 }
 
@@ -5521,8 +5654,10 @@ static int sorted_compare(proto::ProtoContext* context, const proto::ProtoObject
             const proto::ProtoString* dataS = ::protoPython::PythonEnvironment::getInternalString(context, "__data__");
             const proto::ProtoObject* aData = a->getAttribute(context, dataS);
             const proto::ProtoObject* bData = b->getAttribute(context, dataS);
-            bool aIsBytes = aData && (aData->isByteBuffer(context) || aData->isString(context));
-            bool bIsBytes = bData && (bData->isByteBuffer(context) || bData->isString(context));
+            bool aIsBytes = (aData && (aData->isByteBuffer(context) || aData->isString(context)))
+                || ::protoPython::PythonEnvironment::isBytearray(context, a);
+            bool bIsBytes = (bData && (bData->isByteBuffer(context) || bData->isString(context)))
+                || ::protoPython::PythonEnvironment::isBytearray(context, b);
             if (aIsBytes && bIsBytes) {
                 const proto::ProtoString* ltS = ::protoPython::PythonEnvironment::getInternedString(context, "__lt__");
                 const proto::ProtoObject* ltM = a->getAttribute(context, ltS);
@@ -6000,6 +6135,7 @@ static const proto::ProtoObject* py_delattr(
         // then breaks every MRO walk that visits int.  CPython raises
         // `TypeError: cannot delete '<attr>' attribute of immutable
         // type 'int'`.  Reject the same shape.
+        if (env->builtinAttributeWriteRejected(context, obj, nameStr, /*isDelete=*/true)) return nullptr;
         std::string nm; nameStr->toUTF8String(context, nm);
         bool structural = (nm == "__bases__" || nm == "__base__"
             || nm == "__mro__" || nm == "__name__" || nm == "__qualname__"
@@ -9186,6 +9322,44 @@ static const proto::ProtoObject* modularInverse(proto::ProtoContext* context, co
     return inv;
 }
 
+// pow(base, exp, mod) for three integers, mod != 0 checked here.
+static const proto::ProtoObject* modularPow(proto::ProtoContext* context, const proto::ProtoObject* baseObj,
+                                            const proto::ProtoObject* expObj, const proto::ProtoObject* modObj) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (modObj->integerSign(context) == 0) {
+        if (env) env->raiseValueError(context,
+            PythonEnvironment::getInternedString(context, "pow() 3rd argument cannot be 0")->asObject(context));
+        return nullptr;
+    }
+    const bool negativeModulus = modObj->integerSign(context) < 0;
+    const proto::ProtoObject* m = negativeModulus ? modObj->negate(context) : modObj;
+    auto nonneg = [&](const proto::ProtoObject* x) {
+        const proto::ProtoObject* r = x->modulo(context, m);
+        return r->integerSign(context) < 0 ? r->add(context, m) : r;
+    };
+    const proto::ProtoObject* b = baseObj;
+    const proto::ProtoObject* e = expObj;
+    if (e->integerSign(context) < 0) {
+        b = modularInverse(context, b, m);
+        if (!b) {
+            if (env) env->raiseValueError(context,
+                PythonEnvironment::getInternedString(context, "base is not invertible for the given modulus")->asObject(context));
+            return nullptr;
+        }
+        e = e->negate(context);
+    }
+    const proto::ProtoObject* one = context->fromInteger(1);
+    const proto::ProtoObject* result = nonneg(one);   // 0 when |mod| is 1
+    b = nonneg(b);
+    while (e->integerSign(context) > 0) {
+        if (e->bitwiseAnd(context, one)->integerSign(context) != 0) result = nonneg(result->multiply(context, b));
+        e = e->shiftRight(context, 1);
+        if (e->integerSign(context) > 0) b = nonneg(b->multiply(context, b));
+    }
+    if (negativeModulus && result->integerSign(context) != 0) result = result->subtract(context, m);
+    return result;
+}
+
 static const proto::ProtoObject* py_pow(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -9320,6 +9494,21 @@ static const proto::ProtoObject* py_pow(
         }
     }
 
+    // pow(None as mod) is the two-argument pow.
+    if (modObj && (modObj == PROTO_NONE || (env && modObj == env->getNonePrototype()))) {
+        hasMod = false;
+        modObj = nullptr;
+    }
+    // A float among three numbers: float.__pow__ and float.__rpow__ take
+    // no modulus.
+    if (hasMod) {
+        auto number = [&](const proto::ProtoObject* o) { return o->isInteger(context) || o->isFloat(context); };
+        if (number(baseObj) && number(expObj) && number(modObj)
+                && (baseObj->isFloat(context) || expObj->isFloat(context) || modObj->isFloat(context))) {
+            if (env) env->raiseTypeError(context, "pow() 3rd argument not allowed unless all arguments are integers");
+            return nullptr;
+        }
+    }
     // If any operand is non-integer, try __pow__ dunder on the base
     if (!baseObj->isInteger(context) || !expObj->isInteger(context) ||
         (modObj && !modObj->isInteger(context))) {
@@ -9335,6 +9524,11 @@ static const proto::ProtoObject* py_pow(
         return PROTO_NONE;
     }
 
+    // Three integers: modular exponentiation over any exponent, as CPython
+    // (a negative one through the inverse of the base). The result has
+    // the sign of the modulus: pow(3, 2, -7) == -5.
+    if (hasMod) return modularPow(context, baseObj, expObj, modObj);
+
     // Bignum-safe: use Integer::multiply / modulo so the result can grow
     // beyond 64 bits.  Exponent must still fit a positive int64 (anything
     // larger is astronomically infeasible).
@@ -9348,25 +9542,6 @@ static const proto::ProtoObject* py_pow(
         return PROTO_NONE;
     }
     if (exp < 0) {
-        // With a modulus: the inverse of base modulo mod raised to -exp
-        // (Python 3.8+), ValueError when base and mod are not coprime.
-        if (hasMod) {
-            PythonEnvironment* env = PythonEnvironment::fromContext(context);
-            if (modObj->integerSign(context) == 0) {
-                if (env) env->raiseValueError(context,
-                    PythonEnvironment::getInternedString(context, "pow() 3rd argument cannot be 0")->asObject(context));
-                return nullptr;
-            }
-            const proto::ProtoObject* inv = modularInverse(context, baseObj, modObj);
-            if (!inv) {
-                if (env) env->raiseValueError(context,
-                    PythonEnvironment::getInternedString(context, "base is not invertible for the given modulus")->asObject(context));
-                return nullptr;
-            }
-            const proto::ProtoList* again = context->newList()->appendLast(context, inv)
-                ->appendLast(context, expObj->negate(context))->appendLast(context, modObj);
-            return py_pow(context, self, parentLink, argsView(proto::ProtoListArguments(context, again)), nullptr);
-        }
         // CPython: pow(0, -n) raises ZeroDivisionError.  Without this
         // guard the function multiplied 0 by 0 forever via the
         // exponentiation-by-squaring loop (base stays 0, result stays
@@ -9392,30 +9567,6 @@ static const proto::ProtoObject* py_pow(
         s->toUTF8String(context, digits);
         try { return context->fromDouble(1.0 / std::stod(digits)); }
         catch (...) { return context->fromDouble(0.0); }
-    }
-    if (hasMod) {
-        if (modObj->integerSign(context) == 0) {
-            PythonEnvironment* env = PythonEnvironment::fromContext(context);
-            if (env) env->raiseValueError(context,
-                PythonEnvironment::getInternedString(context, "pow() 3rd argument cannot be 0")->asObject(context));
-            return PROTO_NONE;
-        }
-        // Bignum-safe modular exponentiation.
-        const proto::ProtoObject* result = context->fromInteger(1);
-        const proto::ProtoObject* b = baseObj->modulo(context, modObj);
-        long long e = exp;
-        while (e > 0) {
-            if (e & 1) {
-                result = result->multiply(context, b);
-                result = result->modulo(context, modObj);
-            }
-            e >>= 1;
-            if (e > 0) {
-                b = b->multiply(context, b);
-                b = b->modulo(context, modObj);
-            }
-        }
-        return result;
     }
     // Plain exponentiation by squaring with bignum accumulation.
     const proto::ProtoObject* result = context->fromInteger(1);
@@ -9567,16 +9718,11 @@ static const proto::ProtoObject* py_ord(
         // Match the bytes-wrapper detection used by int(bytes) / float(bytes):
         // __data__ resolves to a ByteBuffer (or ProtoString carrying raw
         // octets) on the bytes prototype.
-        const proto::ProtoObject* d = arg->getAttribute(context, env->getDataString());
         const proto::ProtoObject* cls = env->getType(context, arg);
-        if (d && env->isBytesOrBytearrayType(cls)) {
-            if (d->isByteBuffer(context)) {
-                const proto::ProtoByteBuffer* bb = d->asByteBuffer(context);
-                if (bb) { s.assign(bb->getBuffer(context), bb->getSize(context)); isBytesArg = true; }
-            } else if (d->isString(context)) {
-                d->asString(context)->toUTF8String(context, s);
-                isBytesArg = true;
-            }
+        if (env->isBytesOrBytearrayType(cls) || (cls && env->getBytesPrototype()
+                && cls->isInstanceOf(context, env->getBytesPrototype()) == PROTO_TRUE)
+            || PythonEnvironment::isBytearray(context, arg)) {
+            isBytesArg = PythonEnvironment::bytesLikeContent(context, arg, s);
         }
     }
     if (!isBytesArg && !arg->isString(context)) {
@@ -11709,800 +11855,6 @@ const proto::ProtoObject* py_object_new(
     return cls->newChild(context, true);
 }
 
-// Forward decls (defined after this block; needed by py_bytearray_fallback
-// which assigns __setitem__ on each bytearray instance). Module-init time
-// builds these once and stores them on bytesPrototype as a fallback
-// dispatch target — but instances flagged as bytearray (via the
-// __is_bytearray__ marker the fallback sets) will route OP_STORE_SUBSCR
-// through them and get slice assignment that re-publishes a fresh
-// __data__ string.
-static const proto::ProtoObject* py_bytearray_setitem(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* self,
-    const proto::ParentLink*,
-    const proto::ProtoArguments* posArgs,
-    const proto::ProtoKeywordArguments*);
-static const proto::ProtoObject* py_bytearray_iadd(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* self,
-    const proto::ParentLink*,
-    const proto::ProtoArguments* posArgs,
-    const proto::ProtoKeywordArguments*);
-static const proto::ProtoObject* py_bytearray_extend(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* self,
-    const proto::ParentLink*,
-    const proto::ProtoArguments* posArgs,
-    const proto::ProtoKeywordArguments*);
-
-// STRUCT-35: encode a str via its own .encode(encoding, errors) method,
-// returning the encoded bytes payload in `out`.  Returns true on success;
-// false (and a pending exception on env) on failure.  Centralises the
-// `bytearray(str, encoding=…, errors=…)` and `bytearray.__init__(self,
-// str, encoding=…, errors=…)` paths so they reuse the str.encode logic
-// (which already honours 'ascii'/'latin-1'/'utf-8' plus
-// strict/ignore/replace error policies).
-static bool encode_str_via_method(proto::ProtoContext* ctx,
-                                  const proto::ProtoObject* strObj,
-                                  const proto::ProtoObject* encodingArg,
-                                  const proto::ProtoObject* errorsArg,
-                                  std::string& out) {
-    if (!strObj || !strObj->isString(ctx)) return false;
-    const proto::ProtoString* encodeS = PythonEnvironment::getInternedString(ctx, "encode");
-    const proto::ProtoObject* encodeMethod = strObj->getAttribute(ctx, encodeS);
-    if (!encodeMethod || !encodeMethod->isMethod(ctx)) return false;
-    const proto::ProtoList* callArgs = ctx->newList();
-    if (encodingArg) callArgs = callArgs->appendLast(ctx, encodingArg);
-    if (errorsArg) callArgs = callArgs->appendLast(ctx, errorsArg);
-    const proto::ProtoObject* encoded = encodeMethod->asMethod(ctx)(ctx, strObj, nullptr, argsView(proto::ProtoListArguments(ctx, callArgs)), nullptr);
-    if (!encoded) return false;
-    const proto::ProtoString* dataS = PythonEnvironment::getInternedString(ctx, "__data__");
-    const proto::ProtoObject* data = encoded->getAttribute(ctx, dataS);
-    if (data && data->isByteBuffer(ctx)) {
-        const proto::ProtoByteBuffer* bb = data->asByteBuffer(ctx);
-        out.assign(bb->getBuffer(ctx), bb->getSize(ctx));
-        return true;
-    }
-    if (data && data->isString(ctx)) {
-        data->asString(ctx)->toUTF8String(ctx, out);
-        return true;
-    }
-    if (encoded->isString(ctx)) {
-        encoded->asString(ctx)->toUTF8String(ctx, out);
-        return true;
-    }
-    return false;
-}
-
-// bytearray helpers, defined with its methods below.
-static std::string ba_type_name(proto::ProtoContext* ctx, const proto::ProtoObject* o);
-static bool ba_byte_value(proto::ProtoContext* ctx, const proto::ProtoObject* v, unsigned char& out);
-static const proto::ProtoObject* ba_new(proto::ProtoContext* ctx, const proto::ProtoObject* cls, const std::string& buf);
-static const proto::ProtoObject* bytearrayClassOf(proto::ProtoContext* ctx);
-
-// The initial content of a bytearray from its constructor arguments
-// `args[first]` (source), `args[first + 1]` (encoding) and `args[first + 2]`
-// (errors), as CPython's bytearray.__init__ reads them; an absent argument
-// reads None. False with an exception raised.
-static bool ba_initial_content(proto::ProtoContext* ctx, const proto::ProtoArguments* args, unsigned first,
-                               std::string& initial) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    auto at = [&](unsigned i) -> const proto::ProtoObject* {
-        if (!args || args->getSize(ctx) <= first + i) return nullptr;
-        const proto::ProtoObject* v = args->getAt(ctx, static_cast<int>(first + i));
-        return v == PROTO_NONE ? nullptr : v;
-    };
-    const proto::ProtoObject* initArg = at(0);
-    const proto::ProtoObject* encodingArg = at(1);
-    const proto::ProtoObject* errorsArg = at(2);
-    if (initArg && initArg->isString(ctx)) {
-        if (!encodingArg) {
-            if (env) env->raiseTypeError(ctx, "string argument without an encoding");
-            return false;
-        }
-        return encode_str_via_method(ctx, initArg, encodingArg, errorsArg, initial);
-    }
-    if (encodingArg || errorsArg) {
-        if (env) env->raiseTypeError(ctx, encodingArg ? "encoding without a string argument"
-                                                      : "errors without a string argument");
-        return false;
-    }
-    if (!initArg) return true;
-    // Any bytes-like object: a ProtoByteBuffer, or a wrapper whose __data__
-    // is one (bytes, bytearray, memoryview payloads).
-    if (initArg->isByteBuffer(ctx)) {
-        const proto::ProtoByteBuffer* bb = initArg->asByteBuffer(ctx);
-        initial.assign(bb->getBuffer(ctx), bb->getSize(ctx));
-        return true;
-    }
-    if ((reinterpret_cast<uintptr_t>(initArg) & 0x3F) == 0) {
-        const proto::ProtoObject* d = initArg->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__data__"));
-        if (d && d != PROTO_NONE && d->isByteBuffer(ctx)) {
-            const proto::ProtoByteBuffer* bb = d->asByteBuffer(ctx);
-            initial.assign(bb->getBuffer(ctx), bb->getSize(ctx));
-            return true;
-        }
-    }
-    if (initArg->isInteger(ctx)) {
-        // bytearray(n) makes a zero-filled buffer of length n.
-        const long long n = initArg->asLong(ctx);
-        if (n < 0) {
-            if (env) env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, "negative count")->asObject(ctx));
-            return false;
-        }
-        initial.assign(static_cast<size_t>(n), '\0');
-        return true;
-    }
-    if (!env) return true;
-    // An iterable of ints (list, range, generator, ...).
-    const proto::ProtoObject* it = env->iter(initArg);
-    if (!it) {
-        env->raiseTypeError(ctx, "cannot convert '" + ba_type_name(ctx, initArg) + "' object to bytearray");
-        return false;
-    }
-    PythonEnvironment::TransientPin pinIt(env, it);
-    for (;;) {
-        const proto::ProtoObject* item = env->next(it);
-        if (!item) break;
-        unsigned char b = 0;
-        if (!ba_byte_value(ctx, item, b)) return false;
-        initial += static_cast<char>(b);
-    }
-    return true;
-}
-
-// bytearray.__new__: a new, empty instance of `self` (the bytearray class
-// or a subclass). As in CPython, __init__ reads the arguments and fills it,
-// so an iterator source is consumed once, and a subclass whose __init__
-// does not call bytearray.__init__ gets an empty bytearray.
-const proto::ProtoObject* py_bytearray_fallback(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* link, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) {
-    (void)link;
-    (void)kwargs;
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    const proto::ProtoObject* cls = self && env && env->isActuallyAClass(ctx, self) ? self : bytearrayClassOf(ctx);
-    if (!cls) return PROTO_NONE;
-    (void)args;
-    return ba_new(ctx, cls, std::string());
-}
-
-// Helper: read the bytes-like view of any object (str, ProtoByteBuffer,
-// or wrapper with __data__ pointing to either). Returns false if the
-// object isn't bytes-like.
-static bool ba_bytes_view(proto::ProtoContext* ctx, const proto::ProtoObject* obj, std::string& out) {
-    if (!obj || obj == PROTO_NONE) return false;
-    if (obj->isString(ctx)) {
-        obj->asString(ctx)->toUTF8String(ctx, out);
-        return true;
-    }
-    if (obj->isByteBuffer(ctx)) {
-        const proto::ProtoByteBuffer* bb = obj->asByteBuffer(ctx);
-        out.assign(bb->getBuffer(ctx), bb->getSize(ctx));
-        return true;
-    }
-    const proto::ProtoString* dataS = PythonEnvironment::getInternedString(ctx, "__data__");
-    const proto::ProtoObject* d = obj->getAttribute(ctx, dataS);
-    if (d && d->isString(ctx)) { d->asString(ctx)->toUTF8String(ctx, out); return true; }
-    if (d && d->isByteBuffer(ctx)) {
-        const proto::ProtoByteBuffer* bb = d->asByteBuffer(ctx);
-        out.assign(bb->getBuffer(ctx), bb->getSize(ctx));
-        return true;
-    }
-    return false;
-}
-
-// Append-or-extend semantics for `ba += other` and `ba.extend(other)`.
-// Mutates self in place and returns self so that `ba += x` keeps the
-// bytearray identity.
-static const proto::ProtoObject* py_bytearray_iadd(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* self,
-    const proto::ParentLink*,
-    const proto::ProtoArguments* posArgs,
-    const proto::ProtoKeywordArguments*) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (!self || !posArgs || posArgs->getSize(ctx) < 1) return const_cast<proto::ProtoObject*>(self);
-    const proto::ProtoObject* other = posArgs->getAt(ctx, 0);
-
-    const proto::ProtoString* dataS = PythonEnvironment::getInternedString(ctx, "__data__");
-    std::string buf;
-    const proto::ProtoObject* dataObj = self->getAttribute(ctx, dataS);
-    if (dataObj && dataObj != PROTO_NONE) {
-        if (dataObj->isByteBuffer(ctx)) {
-            const proto::ProtoByteBuffer* bb = dataObj->asByteBuffer(ctx);
-            buf.assign(bb->getBuffer(ctx), bb->getSize(ctx));
-        } else if (dataObj->isString(ctx)) {
-            dataObj->asString(ctx)->toUTF8String(ctx, buf);
-        }
-    }
-
-    std::string add;
-    if (!ba_bytes_view(ctx, other, add)) {
-        // Fall back: iterate other and require ints 0..255 (bytearray
-        // accepts iterables of ints in CPython).
-        const proto::ProtoString* iterS = PythonEnvironment::getInternedString(ctx, "__iter__");
-        const proto::ProtoString* nextS = PythonEnvironment::getInternedString(ctx, "__next__");
-        const proto::ProtoObject* iterM = other->getAttribute(ctx, iterS);
-        if (iterM && iterM != PROTO_NONE && iterM->asMethod(ctx)) {
-            const proto::ProtoObject* it = iterM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(other), nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
-            if (it && it != PROTO_NONE) {
-                const proto::ProtoObject* nextM = it->getAttribute(ctx, nextS);
-                if (nextM && nextM->asMethod(ctx)) {
-                    for (;;) {
-                        const proto::ProtoObject* v = nullptr;
-                        try {
-                            v = nextM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(it), nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
-                        } catch (const proto::ProtoException& e) {
-                            if (!env || !env->isStopIteration(ctx, e.value())) throw;
-                            break;
-                        }
-                        if (!v || v == PROTO_NONE) break;
-                        if (!v->isInteger(ctx)) {
-                            if (env) env->raiseTypeError(ctx, "an integer is required");
-                            return nullptr;
-                        }
-                        long long bv = v->asLong(ctx);
-                        if (bv < 0 || bv > 255) {
-                            if (env) env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, "byte must be in range(0, 256)")->asObject(ctx));
-                            return nullptr;
-                        }
-                        add.push_back(static_cast<char>(bv));
-                    }
-                }
-            }
-        } else {
-            if (env) env->raiseTypeError(ctx, "can't concat non-bytes-like to bytearray");
-            return nullptr;
-        }
-    }
-    buf.append(add);
-    self->setAttribute(ctx, dataS,
-        ctx->newByteBuffer(buf.data(), static_cast<proto::proto_ulong>(buf.size()))->asObject(ctx));
-    return const_cast<proto::ProtoObject*>(self);
-}
-
-static const proto::ProtoObject* py_bytearray_extend(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* self,
-    const proto::ParentLink* pl,
-    const proto::ProtoArguments* posArgs,
-    const proto::ProtoKeywordArguments* kw) {
-    py_bytearray_iadd(ctx, self, pl, posArgs, kw);
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    return env ? env->getNonePrototype() : PROTO_NONE;
-}
-
-// Slice-aware __setitem__ for bytearray instances. Handles:
-//   ba[i]    = int         (single byte assignment)
-//   ba[i:j]  = bytes/str   (slice replacement, supports differing length)
-//   ba[i:j:k] not supported beyond step==1 (CPython requires step==1 for
-//                          assignment with a non-equal-length sequence)
-static const proto::ProtoObject* py_bytearray_setitem(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject* self,
-    const proto::ParentLink*,
-    const proto::ProtoArguments* posArgs,
-    const proto::ProtoKeywordArguments*) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (!self || !posArgs || posArgs->getSize(ctx) < 2) return PROTO_NONE;
-    const proto::ProtoObject* key = posArgs->getAt(ctx, 0);
-    const proto::ProtoObject* value = posArgs->getAt(ctx, 1);
-
-    const proto::ProtoString* dataS = PythonEnvironment::getInternedString(ctx, "__data__");
-    const proto::ProtoObject* dataObj = self->getAttribute(ctx, dataS);
-    if (!dataObj || dataObj == PROTO_NONE) {
-        if (env) env->raiseTypeError(ctx, "bytearray setitem: missing __data__ buffer");
-        return nullptr;
-    }
-    // __data__ may be either a ProtoByteBuffer (preferred — preserves
-    // bytes 0x80..0xFF) or a ProtoString (legacy carrier).
-    std::string buf;
-    if (dataObj->isByteBuffer(ctx)) {
-        const proto::ProtoByteBuffer* bb = dataObj->asByteBuffer(ctx);
-        proto::proto_ulong n = bb->getSize(ctx);
-        buf.assign(bb->getBuffer(ctx), n);
-    } else if (dataObj->isString(ctx)) {
-        dataObj->asString(ctx)->toUTF8String(ctx, buf);
-    } else {
-        if (env) env->raiseTypeError(ctx, "bytearray setitem: __data__ has unexpected shape");
-        return nullptr;
-    }
-    const long long n = static_cast<long long>(buf.size());
-
-    // Detect slice via 'start'/'stop'/'step' attributes; falls back to
-    // integer key otherwise. Mirrors get_slice_bounds() but inlined to
-    // keep this file self-contained and avoid pulling in a private
-    // header.
-    const proto::ProtoString* startS = PythonEnvironment::getInternedString(ctx, "start");
-    const proto::ProtoString* stopS  = PythonEnvironment::getInternedString(ctx, "stop");
-    const proto::ProtoString* stepS  = PythonEnvironment::getInternedString(ctx, "step");
-    bool isSlice = (key->hasOwnAttribute(ctx, startS) == PROTO_TRUE
-                    || key->hasOwnAttribute(ctx, stopS) == PROTO_TRUE
-                    || key->hasOwnAttribute(ctx, stepS) == PROTO_TRUE);
-    if (env && env->getSliceType() && key->isInstanceOf(ctx, env->getSliceType()) == PROTO_TRUE) isSlice = true;
-
-    if (!isSlice) {
-        // Single-index assignment: value must be int 0..255.
-        if (!key->isInteger(ctx)) {
-            if (env) env->raiseTypeError(ctx, "bytearray indices must be integers or slices");
-            return nullptr;
-        }
-        long long idx = key->asLong(ctx);
-        if (idx < 0) idx += n;
-        if (idx < 0 || idx >= n) {
-            if (env) env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, "bytearray assignment index out of range")->asObject(ctx));
-            return nullptr;
-        }
-        if (!value || !value->isInteger(ctx)) {
-            if (env) env->raiseTypeError(ctx, "an integer is required");
-            return nullptr;
-        }
-        long long b = value->asLong(ctx);
-        if (b < 0 || b > 255) {
-            if (env) env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, "byte must be in range(0, 256)")->asObject(ctx));
-            return nullptr;
-        }
-        buf[static_cast<size_t>(idx)] = static_cast<char>(b);
-        self->setAttribute(ctx, dataS,
-            ctx->newByteBuffer(buf.data(), static_cast<proto::proto_ulong>(buf.size()))->asObject(ctx));
-        return env ? env->getNonePrototype() : PROTO_NONE;
-    }
-
-    // Slice assignment.
-    long long step = 1;
-    bool startProvided = false, stopProvided = false;
-    long long start = 0, stop = n;
-    {
-        const proto::ProtoObject* sObj = key->getAttribute(ctx, stepS);
-        if (sObj && sObj != PROTO_NONE && sObj->isInteger(ctx)) step = sObj->asLong(ctx);
-        if (step == 0) step = 1;
-        const proto::ProtoObject* a0 = key->getAttribute(ctx, startS);
-        const proto::ProtoObject* a1 = key->getAttribute(ctx, stopS);
-        if (a0 && a0 != PROTO_NONE && a0->isInteger(ctx)) { start = a0->asLong(ctx); startProvided = true; }
-        else { start = (step > 0) ? 0 : n - 1; }
-        if (a1 && a1 != PROTO_NONE && a1->isInteger(ctx)) { stop = a1->asLong(ctx); stopProvided = true; }
-        else { stop = (step > 0) ? n : -1; }
-    }
-    // PySlice_AdjustIndices clamping.
-    if (step > 0) {
-        if (start < 0) { start += n; if (start < 0) start = 0; }
-        if (start > n) start = n;
-        if (stop < 0) { stop += n; if (stop < 0) stop = 0; }
-        if (stop > n) stop = n;
-        if (start > stop) start = stop;
-    } else {
-        if (startProvided) {
-            if (start < 0) { start += n; if (start < 0) start = -1; }
-            if (start >= n) start = n - 1;
-        }
-        if (stopProvided) {
-            if (stop < 0) { stop += n; if (stop < 0) stop = -1; }
-            if (stop >= n) stop = n - 1;
-        }
-        if (start < stop) start = stop;
-    }
-
-    // Extract the replacement bytes — accept ProtoString, ProtoByteBuffer,
-    // or any wrapper whose __data__ is one of those.
-    std::string repl;
-    bool gotRepl = false;
-    if (value && value != PROTO_NONE) {
-        if (value->isString(ctx)) {
-            value->asString(ctx)->toUTF8String(ctx, repl);
-            gotRepl = true;
-        } else if (value->isByteBuffer(ctx)) {
-            const proto::ProtoByteBuffer* bb = value->asByteBuffer(ctx);
-            proto::proto_ulong m = bb->getSize(ctx);
-            repl.assign(bb->getBuffer(ctx), m);
-            gotRepl = true;
-        } else {
-            const proto::ProtoObject* d = value->getAttribute(ctx, dataS);
-            if (d && d->isString(ctx)) {
-                d->asString(ctx)->toUTF8String(ctx, repl);
-                gotRepl = true;
-            } else if (d && d->isByteBuffer(ctx)) {
-                const proto::ProtoByteBuffer* bb = d->asByteBuffer(ctx);
-                proto::proto_ulong m = bb->getSize(ctx);
-                repl.assign(bb->getBuffer(ctx), m);
-                gotRepl = true;
-            }
-        }
-    } else {
-        gotRepl = true; // empty replacement (deletion)
-    }
-    if (!gotRepl) {
-        if (env) env->raiseTypeError(ctx, "can only assign bytes-like to bytearray slice");
-        return nullptr;
-    }
-
-    if (step == 1) {
-        // Length-changing replacement allowed.
-        std::string newBuf;
-        newBuf.reserve(buf.size() - (stop - start) + repl.size());
-        newBuf.append(buf, 0, static_cast<size_t>(start));
-        newBuf.append(repl);
-        newBuf.append(buf, static_cast<size_t>(stop), buf.size() - static_cast<size_t>(stop));
-        self->setAttribute(ctx, dataS,
-            ctx->newByteBuffer(newBuf.data(), static_cast<proto::proto_ulong>(newBuf.size()))->asObject(ctx));
-        return env ? env->getNonePrototype() : PROTO_NONE;
-    }
-
-    // step != 1: extended slice assignment requires equal length.
-    long long count = (step > 0) ? ((stop - start + step - 1) / step)
-                                 : ((stop - start + step + 1) / step);
-    if (count < 0) count = 0;
-    if (static_cast<long long>(repl.size()) != count) {
-        if (env) env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, "attempt to assign bytes of differing length to extended slice")->asObject(ctx));
-        return nullptr;
-    }
-    std::string newBuf = buf;
-    long long ri = 0;
-    for (long long i = start; (step > 0 ? i < stop : i > stop) && ri < static_cast<long long>(repl.size()); i += step) {
-        newBuf[static_cast<size_t>(i)] = repl[static_cast<size_t>(ri++)];
-    }
-    self->setAttribute(ctx, dataS,
-        ctx->newByteBuffer(newBuf.data(), static_cast<proto::proto_ulong>(newBuf.size()))->asObject(ctx));
-    return env ? env->getNonePrototype() : PROTO_NONE;
-}
-
-
-// --- bytearray: its own mutable type ---------------------------------------
-//
-// A bytearray instance is a child of the bytearray class (whose bases are
-// object only: it is not a bytes), its content a ProtoByteBuffer in
-// __data__ like a bytes object's, so the read-only bytes methods copied onto
-// the class serve it. Each mutation publishes a new buffer.
-
-// The __name__ of `o`'s type, for messages and repr.
-static std::string ba_type_name(proto::ProtoContext* ctx, const proto::ProtoObject* o) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    std::string name = "object";
-    const proto::ProtoObject* cls = env && o ? env->getType(ctx, o) : nullptr;
-    const proto::ProtoObject* nm = cls ? cls->getAttribute(ctx, env->getNameString()) : nullptr;
-    if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, name);
-    return name;
-}
-
-// The bytearray an unbound call (`bytearray.append(ba, x)`) or a bound one
-// (`ba.append(x)`) acts on; `shift` tells how many leading arguments it took.
-static const proto::ProtoObject* ba_receiver(proto::ProtoContext* ctx, const proto::ProtoObject* self,
-                                             const proto::ProtoArguments* args, unsigned& shift) {
-    const proto::ProtoString* dataS = PythonEnvironment::getInternedString(ctx, "__data__");
-    shift = 0;
-    auto holdsBuffer = [&](const proto::ProtoObject* o) {
-        if (!o || (reinterpret_cast<uintptr_t>(o) & 0x3F) != 0) return false;
-        const proto::ProtoObject* d = o->getAttribute(ctx, dataS);
-        return d && d != PROTO_NONE && d->isByteBuffer(ctx);
-    };
-    if (holdsBuffer(self)) return self;
-    if (args && args->getSize(ctx) >= 1 && holdsBuffer(args->getAt(ctx, 0))) {
-        shift = 1;
-        return args->getAt(ctx, 0);
-    }
-    return nullptr;
-}
-
-static bool ba_read(proto::ProtoContext* ctx, const proto::ProtoObject* ba, std::string& out) {
-    return ba_bytes_view(ctx, ba, out);
-}
-
-static void ba_write(proto::ProtoContext* ctx, const proto::ProtoObject* ba, const std::string& buf) {
-    ba->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__data__"),
-        ctx->newByteBuffer(buf.data(), static_cast<proto::proto_ulong>(buf.size()))->asObject(ctx));
-}
-
-// An int argument as a byte value; false (TypeError or ValueError raised)
-// when it is not an int in range(0, 256).
-static bool ba_byte_value(proto::ProtoContext* ctx, const proto::ProtoObject* v, unsigned char& out) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (v == PROTO_TRUE || v == PROTO_FALSE) { out = v == PROTO_TRUE ? 1 : 0; return true; }
-    if (!v || !v->isInteger(ctx)) {
-        if (env) env->raiseTypeError(ctx, "'" + ba_type_name(ctx, v) + "' object cannot be interpreted as an integer");
-        return false;
-    }
-    long long n = 0;
-    try {
-        n = v->asLong(ctx);
-    } catch (const proto::ProtoException& overflow) {
-        PythonEnvironment::rethrowUnlessOverflow(ctx, overflow);
-        n = -1;
-    }
-    if (n < 0 || n > 255) {
-        if (env) env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, "byte must be in range(0, 256)")->asObject(ctx));
-        return false;
-    }
-    out = static_cast<unsigned char>(n);
-    return true;
-}
-
-// A normalized index into a buffer of `n` bytes; false (IndexError raised)
-// when out of range.
-static bool ba_index(proto::ProtoContext* ctx, const proto::ProtoObject* v, long long n, long long& out,
-                     const char* what) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (!v || !v->isInteger(ctx)) {
-        if (env) env->raiseTypeError(ctx, "bytearray indices must be integers or slices");
-        return false;
-    }
-    long long i = v->asLong(ctx);
-    if (i < 0) i += n;
-    if (i < 0 || i >= n) {
-        if (env) env->raiseIndexError(ctx, what);
-        return false;
-    }
-    out = i;
-    return true;
-}
-
-static const proto::ProtoObject* py_bytearray_append(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
-    unsigned shift = 0;
-    const proto::ProtoObject* ba = ba_receiver(ctx, self, args, shift);
-    if (!ba || args->getSize(ctx) != shift + 1) {
-        PythonEnvironment::fromContext(ctx)->raiseTypeError(ctx, "bytearray.append() takes exactly one argument");
-        return nullptr;
-    }
-    unsigned char b = 0;
-    if (!ba_byte_value(ctx, args->getAt(ctx, static_cast<int>(shift)), b)) return nullptr;
-    std::string buf;
-    ba_read(ctx, ba, buf);
-    buf.push_back(static_cast<char>(b));
-    ba_write(ctx, ba, buf);
-    return PROTO_NONE;
-}
-
-static const proto::ProtoObject* py_bytearray_insert(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
-    unsigned shift = 0;
-    const proto::ProtoObject* ba = ba_receiver(ctx, self, args, shift);
-    if (!ba || args->getSize(ctx) != shift + 2) {
-        PythonEnvironment::fromContext(ctx)->raiseTypeError(ctx, "insert expected 2 arguments");
-        return nullptr;
-    }
-    const proto::ProtoObject* idx = args->getAt(ctx, static_cast<int>(shift));
-    if (!idx->isInteger(ctx)) {
-        PythonEnvironment::fromContext(ctx)->raiseTypeError(ctx, "'" + ba_type_name(ctx, idx) + "' object cannot be interpreted as an integer");
-        return nullptr;
-    }
-    unsigned char b = 0;
-    if (!ba_byte_value(ctx, args->getAt(ctx, static_cast<int>(shift + 1)), b)) return nullptr;
-    std::string buf;
-    ba_read(ctx, ba, buf);
-    const long long n = static_cast<long long>(buf.size());
-    long long i = idx->asLong(ctx);
-    if (i < 0) i += n;
-    if (i < 0) i = 0;
-    if (i > n) i = n;
-    buf.insert(buf.begin() + i, static_cast<char>(b));
-    ba_write(ctx, ba, buf);
-    return PROTO_NONE;
-}
-
-static const proto::ProtoObject* py_bytearray_pop(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    unsigned shift = 0;
-    const proto::ProtoObject* ba = ba_receiver(ctx, self, args, shift);
-    if (!ba) return PROTO_NONE;
-    std::string buf;
-    ba_read(ctx, ba, buf);
-    const long long n = static_cast<long long>(buf.size());
-    if (n == 0) {
-        env->raiseIndexError(ctx, "pop from empty bytearray");
-        return nullptr;
-    }
-    long long i = n - 1;
-    if (args->getSize(ctx) > shift && !ba_index(ctx, args->getAt(ctx, static_cast<int>(shift)), n, i, "pop index out of range"))
-        return nullptr;
-    const unsigned char b = static_cast<unsigned char>(buf[static_cast<size_t>(i)]);
-    buf.erase(static_cast<size_t>(i), 1);
-    ba_write(ctx, ba, buf);
-    return ctx->fromInteger(b);
-}
-
-static const proto::ProtoObject* py_bytearray_remove(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
-    unsigned shift = 0;
-    const proto::ProtoObject* ba = ba_receiver(ctx, self, args, shift);
-    if (!ba || args->getSize(ctx) != shift + 1) return PROTO_NONE;
-    unsigned char b = 0;
-    if (!ba_byte_value(ctx, args->getAt(ctx, static_cast<int>(shift)), b)) return nullptr;
-    std::string buf;
-    ba_read(ctx, ba, buf);
-    const size_t at = buf.find(static_cast<char>(b));
-    if (at == std::string::npos) {
-        PythonEnvironment::fromContext(ctx)->raiseValueError(ctx,
-            PythonEnvironment::getInternedString(ctx, "value not found in bytearray")->asObject(ctx));
-        return nullptr;
-    }
-    buf.erase(at, 1);
-    ba_write(ctx, ba, buf);
-    return PROTO_NONE;
-}
-
-static const proto::ProtoObject* py_bytearray_clear(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
-    unsigned shift = 0;
-    const proto::ProtoObject* ba = ba_receiver(ctx, self, args, shift);
-    if (ba) ba_write(ctx, ba, std::string());
-    return PROTO_NONE;
-}
-
-static const proto::ProtoObject* py_bytearray_reverse(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
-    unsigned shift = 0;
-    const proto::ProtoObject* ba = ba_receiver(ctx, self, args, shift);
-    if (!ba) return PROTO_NONE;
-    std::string buf;
-    ba_read(ctx, ba, buf);
-    std::reverse(buf.begin(), buf.end());
-    ba_write(ctx, ba, buf);
-    return PROTO_NONE;
-}
-
-// A new bytearray (of `cls`, the bytearray class or a subclass) holding `buf`.
-static const proto::ProtoObject* ba_new(proto::ProtoContext* ctx, const proto::ProtoObject* cls, const std::string& buf) {
-    const proto::ProtoObject* b = cls->newChild(ctx, true);
-    ba_write(ctx, b, buf);
-    return b;
-}
-
-static const proto::ProtoObject* bytearrayClassOf(proto::ProtoContext* ctx) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    const proto::ProtoObject* b = env && env->getBuiltins()
-        ? env->getBuiltins()->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "bytearray")) : nullptr;
-    return b && b != PROTO_NONE ? b : nullptr;
-}
-
-static const proto::ProtoObject* py_bytearray_copy(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
-    unsigned shift = 0;
-    const proto::ProtoObject* ba = ba_receiver(ctx, self, args, shift);
-    const proto::ProtoObject* cls = bytearrayClassOf(ctx);
-    if (!ba || !cls) return PROTO_NONE;
-    std::string buf;
-    ba_read(ctx, ba, buf);
-    return ba_new(ctx, cls, buf);
-}
-
-static const proto::ProtoObject* py_bytearray_delitem(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* link,
-    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kw) {
-    unsigned shift = 0;
-    const proto::ProtoObject* ba = ba_receiver(ctx, self, args, shift);
-    if (!ba || args->getSize(ctx) != shift + 1) return PROTO_NONE;
-    const proto::ProtoObject* key = args->getAt(ctx, static_cast<int>(shift));
-    if (key->isInteger(ctx)) {
-        std::string buf;
-        ba_read(ctx, ba, buf);
-        long long i = 0;
-        if (!ba_index(ctx, key, static_cast<long long>(buf.size()), i, "bytearray index out of range")) return nullptr;
-        buf.erase(static_cast<size_t>(i), 1);
-        ba_write(ctx, ba, buf);
-        return PROTO_NONE;
-    }
-    // A slice: assign the empty bytes to it.
-    const proto::ProtoList* sargs = ctx->newList()->appendLast(ctx, key)
-        ->appendLast(ctx, ctx->newByteBuffer("", 0)->asObject(ctx));
-    return py_bytearray_setitem(ctx, ba, link, argsView(proto::ProtoListArguments(ctx, sargs)), kw);
-}
-
-// The methods taking the receiver as `self`, adapted to an unbound call.
-template <proto::ProtoMethod Fn>
-static const proto::ProtoObject* ba_bound(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* link,
-    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kw) {
-    unsigned shift = 0;
-    const proto::ProtoObject* ba = ba_receiver(ctx, self, args, shift);
-    if (!ba) return Fn(ctx, self, link, args, kw);
-    if (shift == 0) return Fn(ctx, ba, link, args, kw);
-    const proto::ProtoList* rest = ctx->newList();
-    for (unsigned i = 1; i < args->getSize(ctx); ++i) rest = rest->appendLast(ctx, args->getAt(ctx, static_cast<int>(i)));
-    return Fn(ctx, ba, link, argsView(proto::ProtoListArguments(ctx, rest)), kw);
-}
-
-// bytes' methods serve bytearray, but where CPython's bytearray method
-// returns a new bytearray (b + x, b[1:], b.upper(), b.split(), ...), the
-// bytes method returned a bytes. ba_converted wraps each borrowed method:
-// a bytes result becomes a bytearray, a list or tuple of bytes one of
-// bytearrays. The originals are C functions, the same in every
-// environment, kept in a process-wide table indexed by the wrapper.
-static constexpr int kBytearrayBorrowedMax = 128;
-static std::atomic<proto::ProtoMethod> g_bytearrayBorrowed[kBytearrayBorrowedMax];
-static std::atomic<int> g_bytearrayBorrowedCount{0};
-
-static const proto::ProtoObject* ba_from_bytes_result(proto::ProtoContext* ctx, const proto::ProtoObject* r) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (!r || !env || (reinterpret_cast<uintptr_t>(r) & 0x3F) != 0) return r;
-    const proto::ProtoObject* cls = bytearrayClassOf(ctx);
-    if (!cls) return r;
-    const proto::ProtoObject* type = env->getType(ctx, r);
-    auto isBytes = [&](const proto::ProtoObject* o) {
-        return o && (reinterpret_cast<uintptr_t>(o) & 0x3F) == 0 && env->getType(ctx, o) == env->getBytesPrototype();
-    };
-    auto convert = [&](const proto::ProtoObject* o) -> const proto::ProtoObject* {
-        std::string buf;
-        if (!ba_read(ctx, o, buf)) return o;
-        return ba_new(ctx, cls, buf);
-    };
-    if (type == env->getBytesPrototype()) return convert(r);
-    if (type == env->getListPrototype() || type == env->getTuplePrototype()) {
-        const proto::ProtoList* items = nullptr;
-        ::protoPython::TupleView t = type == env->getTuplePrototype() ? PythonEnvironment::tupleView(ctx, r) : nullptr;
-        if (t) items = t->asList(ctx);
-        else items = ::protoPython::listStorage(ctx, r);
-        if (!items) {
-            const proto::ProtoObject* d = r->getAttribute(ctx, env->getDataString());
-            items = d ? ::protoPython::listStorage(ctx, d) : nullptr;
-        }
-        if (!items) return r;
-        bool any = false;
-        for (proto::proto_ulong i = 0; i < items->getSize(ctx) && !any; ++i) any = isBytes(items->getAt(ctx, static_cast<int>(i)));
-        if (!any) return r;
-        PythonEnvironment::TransientPin pinR(env, r);
-        const proto::ProtoList* out = ctx->newList();
-        for (proto::proto_ulong i = 0; i < items->getSize(ctx); ++i) {
-            PythonEnvironment::TransientPin pinOut(env, out->asObject(ctx));
-            const proto::ProtoObject* o = items->getAt(ctx, static_cast<int>(i));
-            out = out->appendLast(ctx, isBytes(o) ? convert(o) : o);
-        }
-        if (type == env->getTuplePrototype()) return ctx->newTupleFromList(out)->asObject(ctx);
-        return PythonEnvironment::wrapList(ctx, out);
-    }
-    return r;
-}
-
-template <int I>
-static const proto::ProtoObject* ba_converted(proto::ProtoContext* ctx, const proto::ProtoObject* self,
-                                              const proto::ParentLink* link, const proto::ProtoArguments* args,
-                                              const proto::ProtoKeywordArguments* kwargs) {
-    const proto::ProtoMethod original = g_bytearrayBorrowed[I].load(std::memory_order_acquire);
-    if (!original) return PROTO_NONE;
-    const proto::ProtoObject* r = original(ctx, self, link, args, kwargs);
-    return r ? ba_from_bytes_result(ctx, r) : r;
-}
-
-template <int... I>
-static constexpr std::array<proto::ProtoMethod, sizeof...(I)> ba_converted_table(std::integer_sequence<int, I...>) {
-    return {{&ba_converted<I>...}};
-}
-static constexpr auto kBytearrayConverted = ba_converted_table(std::make_integer_sequence<int, kBytearrayBorrowedMax>{});
-
-// The wrapper for a borrowed bytes method `m`: the same wrapper for the same
-// method in every environment; nullptr when the table is full.
-static proto::ProtoMethod ba_wrap_borrowed(proto::ProtoMethod m) {
-    const int n = g_bytearrayBorrowedCount.load(std::memory_order_acquire);
-    for (int i = 0; i < n; ++i)
-        if (g_bytearrayBorrowed[i].load(std::memory_order_acquire) == m) return kBytearrayConverted[i];
-    const int i = g_bytearrayBorrowedCount.fetch_add(1, std::memory_order_acq_rel);
-    if (i >= kBytearrayBorrowedMax) return nullptr;
-    g_bytearrayBorrowed[i].store(m, std::memory_order_release);
-    return kBytearrayConverted[i];
-}
-
-static const proto::ProtoObject* py_bytearray_repr(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    unsigned shift = 0;
-    const proto::ProtoObject* ba = ba_receiver(ctx, self, args, shift);
-    if (!ba || !env) return PROTO_NONE;
-    std::string buf;
-    ba_read(ctx, ba, buf);
-    // The bytes literal of the content, as bytes.__repr__ writes it.
-    const proto::ProtoObject* asBytes = env->getBytesPrototype()->newChild(ctx, true);
-    ba_write(ctx, asBytes, buf);
-    const std::string literal = env->reprObject(ctx, asBytes);
-    return ctx->fromUTF8String((ba_type_name(ctx, ba) + "(" + literal + ")").c_str());
-}
-
-
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::ProtoObject* objectProto,
                                    const proto::ProtoObject* typeProto, const proto::ProtoObject* intProto,
                                    const proto::ProtoObject* strProto, const proto::ProtoObject* listProto,
@@ -12688,100 +12040,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         fprintf(stderr, "DEBUG IN BUILTINS INIT: dictInB=%p dictInB.__new__=%p\n", (void*)dInB, (void*)dNew);
     }
     
-    // Add dummy bytearray
-    // constexpr: the lambda converts to a function pointer usable as a
-    // template argument (withSignature<>) on every compiler.
-    static constexpr auto py_bytearray_new = [](proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kwargs) -> const proto::ProtoObject* {
-        const proto::ProtoList* shiftedArgs = context->newList();
-        const proto::ProtoObject* cls = args ? args->getAt(context, 0) : nullptr;
-        if (args) {
-            for (size_t i = 1; i < args->getSize(context); i++) shiftedArgs = shiftedArgs->appendLast(context, args->getAt(context, static_cast<int>(i)));
-        }
-        return py_bytearray_fallback(context, cls, parentLink, argsView(proto::ProtoListArguments(context, shiftedArgs)), kwargs);
-    };
-    // STRUCT-35: bytearray.__init__(self, source=None, encoding=None,
-    // errors=None) rebuilds self.__data__ in place.  Without this method
-    // `bytearray.__init__(ba, 'abc\xbd€', encoding='latin1',
-    // errors='replace')` fell through to object.__init__ — a silent no-op
-    // — leaving `ba` empty and breaking test_keyword_arguments. It is
-    // also what fills a new bytearray: __new__ (py_bytearray_fallback)
-    // makes it empty, as CPython's does.
-    static constexpr auto py_bytearray_init = [](proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* /*parentLink*/, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* /*kwargs*/) -> const proto::ProtoObject* {
-        // Bound (`ba.__init__(src)`: self is the bytearray) or unbound
-        // (`bytearray.__init__(ba, src)`: the receiver leads the arguments);
-        // withSignature<> moved the keywords to their positions.
-        unsigned shift = 0;
-        const proto::ProtoObject* receiver = ba_receiver(context, self, args, shift);
-        if (!receiver) return PROTO_NONE;
-        std::string initial;
-        if (!ba_initial_content(context, args, shift, initial)) return nullptr;
-        ba_write(context, receiver, initial);
-        return PROTO_NONE;
-    };
-    // bytearray is its own type: object is its only base (it is not a
-    // bytes), and bytes' read-only methods serve it because both keep their
-    // content as a ProtoByteBuffer in __data__. The mutating methods,
-    // __repr__ and __hash__ = None are its own.
-    proto::ProtoObject* bytearrayClass = const_cast<proto::ProtoObject*>(ctx->newObject(true));
-    if (objectProto) bytearrayClass = const_cast<proto::ProtoObject*>(bytearrayClass->addParent(ctx, objectProto));
-    {
-        struct CopySink { proto::ProtoObject* cls; };
-        CopySink sink{bytearrayClass};
-        bytesProto->processOwnAttributes(ctx, &sink,
-            [](proto::ProtoContext* c, void* userData, const proto::ProtoString* name, const proto::ProtoObject* value) {
-                if (!name || !value) return;
-                std::string n;
-                name->toUTF8String(c, n);
-                static const char* const skip[] = {
-                    "__new__", "__init__", "__hash__", "__repr__", "__str__", "__class__", "__name__",
-                    "__qualname__", "__mro__", "__bases__", "__base__", "__module__", "__doc__",
-                    "__dict__", "__data__", "__getnewargs__", "__bytes__", "__is_python_class__"};
-                for (const char* k : skip) if (n == k) return;
-                CopySink* k = static_cast<CopySink*>(userData);
-                // A C method: its bytes results become bytearrays.
-                if (n != "__iter__" && n != "__len__" && n != "__contains__") {
-                    if (const proto::ProtoMethod m = value->asMethod(c)) {
-                        if (const proto::ProtoMethod w = ba_wrap_borrowed(m)) value = c->fromMethod(nullptr, w);
-                    }
-                }
-                k->cls = const_cast<proto::ProtoObject*>(k->cls->setAttribute(c, name, value));
-            });
-        bytearrayClass = sink.cls;
-    }
-    const proto::ProtoString* py_class_local = PythonEnvironment::fromContext(ctx) ? PythonEnvironment::fromContext(ctx)->getClassString() : PythonEnvironment::getInternedString(ctx, "__class__");
-    const proto::ProtoString* py_name_local = PythonEnvironment::fromContext(ctx) ? PythonEnvironment::fromContext(ctx)->getNameString() : PythonEnvironment::getInternedString(ctx, "__name__");
-    auto baSet = [&](const char* name, const proto::ProtoObject* value) {
-        bytearrayClass = const_cast<proto::ProtoObject*>(bytearrayClass->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, name), value));
-    };
-    if (typeProto) bytearrayClass = const_cast<proto::ProtoObject*>(bytearrayClass->setAttribute(ctx, py_class_local, typeProto));
-    bytearrayClass = const_cast<proto::ProtoObject*>(bytearrayClass->setAttribute(ctx, py_name_local, PythonEnvironment::getInternedString(ctx, "bytearray")->asObject(ctx)));
-    baSet("__qualname__", PythonEnvironment::getInternedString(ctx, "bytearray")->asObject(ctx));
-    baSet("__module__", PythonEnvironment::getInternedString(ctx, "builtins")->asObject(ctx));
-    bytearrayClass = const_cast<proto::ProtoObject*>(bytearrayClass->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, withSignature<py_bytearray_new, kSig_bytearray>)));
-    bytearrayClass = const_cast<proto::ProtoObject*>(bytearrayClass->setAttribute(ctx, pEnv->getInitString(), ctx->fromMethod(nullptr, withSignature<py_bytearray_init, kSig_bytearray_init>)));
-    baSet("__hash__", PROTO_NONE);
-    baSet("__repr__", ctx->fromMethod(nullptr, py_bytearray_repr));
-    baSet("__str__", ctx->fromMethod(nullptr, py_bytearray_repr));
-    baSet("__setitem__", ctx->fromMethod(nullptr, ba_bound<py_bytearray_setitem>));
-    baSet("__delitem__", ctx->fromMethod(nullptr, py_bytearray_delitem));
-    baSet("__iadd__", ctx->fromMethod(nullptr, ba_bound<py_bytearray_iadd>));
-    baSet("extend", ctx->fromMethod(nullptr, ba_bound<py_bytearray_extend>));
-    baSet("append", ctx->fromMethod(nullptr, py_bytearray_append));
-    baSet("insert", ctx->fromMethod(nullptr, py_bytearray_insert));
-    baSet("pop", ctx->fromMethod(nullptr, py_bytearray_pop));
-    baSet("remove", ctx->fromMethod(nullptr, py_bytearray_remove));
-    baSet("clear", ctx->fromMethod(nullptr, py_bytearray_clear));
-    baSet("reverse", ctx->fromMethod(nullptr, py_bytearray_reverse));
-    baSet("copy", ctx->fromMethod(nullptr, py_bytearray_copy));
-    if (pEnv->getMroString()) {
-        const proto::ProtoList* mro = ctx->newList()->appendLast(ctx, bytearrayClass);
-        if (objectProto) mro = mro->appendLast(ctx, objectProto);
-        baSet("__mro__", ctx->newTupleFromList(mro)->asObject(ctx));
-    }
-    if (objectProto) {
-        baSet("__bases__", ctx->newTupleFromList(ctx->newList()->appendLast(ctx, objectProto))->asObject(ctx));
-        baSet("__base__", objectProto);
-    }
+    // bytearray: src/library/BytearrayType.cpp.
+    const proto::ProtoObject* bytearrayClass = makeBytearrayType(ctx, objectProto, typeProto, bytesProto);
+    const proto::ProtoString* py_class_local = pEnv ? pEnv->getClassString() : PythonEnvironment::getInternedString(ctx, "__class__");
+    const proto::ProtoString* py_name_local = pEnv ? pEnv->getNameString() : PythonEnvironment::getInternedString(ctx, "__name__");
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "bytearray"), bytearrayClass);
 
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "tuple"), tupleProto);
@@ -13103,6 +12365,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     memoryviewClass = memoryviewClass->setAttribute(ctx,
         PythonEnvironment::getInternedString(ctx, "__getitem__"),
         ctx->fromMethod(nullptr, py_memoryview_getitem));
+    memoryviewClass = memoryviewClass->setAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__setitem__"),
+        ctx->fromMethod(nullptr, py_memoryview_setitem));
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "memoryview"), memoryviewClass);
     // `super` is a real, subclassable type (CPython parity): a class
     // object with __new__ / __init__ on the type.  `super(...)` dispatches
@@ -13535,6 +12800,17 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
 
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "staticmethod"), staticmethodProto);
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "classmethod"), classmethodProto);
+    // bytearray.fromhex is a classmethod, so Sub.fromhex(s) builds a Sub.
+    if (bytearrayClass) {
+        const proto::ProtoString* fromhexS = PythonEnvironment::getInternedString(ctx, "fromhex");
+        const proto::ProtoObject* fromhex = bytearrayClass->getOwnAttributeDirect(ctx, fromhexS);
+        if (fromhex && fromhex->isMethod(ctx)) {
+            const proto::ProtoList* cmArgs = ctx->newList()->appendLast(ctx, classmethodProto)->appendLast(ctx, fromhex);
+            const proto::ProtoObject* cm = py_classmethod(ctx, nullptr, nullptr,
+                argsView(proto::ProtoListArguments(ctx, cmArgs)), nullptr);
+            if (cm) const_cast<proto::ProtoObject*>(bytearrayClass)->setAttribute(ctx, fromhexS, cm);
+        }
+    }
     
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__import__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), withSignature<py_import, kSig_import>));
     

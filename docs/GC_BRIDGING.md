@@ -269,6 +269,17 @@ For every native function you write or modify, answer these questions:
   `beforeCompare` before each comparison, or pins eagerly with
   `TransientPin`.
 
+  The lazy pins rest on one assumption: a trivial comparison neither
+  allocates nor reaches a safepoint, so no collection can run during a walk
+  that has not pinned yet. That covers the hazard the pins exist for, a
+  comparison on the same thread that replaces the storage being walked. It
+  does not cover a storage version that another thread replaces during an
+  all-trivial walk: that version is unpinned until the walk ends, as it was
+  before 1.2.2 (no failure has been reproduced). A change that makes a
+  trivial comparison allocate (a `str` comparison that builds a temporary,
+  for instance) or poll a safepoint breaks the assumption, and such a site
+  must then pin before it compares.
+
 When you add a native function that iterates or calls back into Python, follow
 the same pattern. The audit in [docs/audits/03-gc-roots.md](audits/03-gc-roots.md)
 inventories the sites found so far; if you find a new one, add it there.

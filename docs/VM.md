@@ -674,7 +674,7 @@ def area(w, h):
 ```text
 code 0: <module> (02-locals.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code area, line 2>  -> code 0.0
     #1   NoneType None
@@ -735,7 +735,7 @@ def parity(n):
 ```text
 code 0: <module> (03-conditionals.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code sign, line 2>  -> code 0.0
     #1   code    <code parity, line 10>  -> code 0.1
@@ -979,7 +979,7 @@ def sum_squares(xs):
 ```text
 code 0: <module> (06-loops.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code total, line 2>  -> code 0.0
     #1   code    <code sum_squares, line 11>  -> code 0.1
@@ -1099,7 +1099,7 @@ square = lambda x: x * x
 ```text
 code 0: <module> (07-closures.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code make_adder, line 2>  -> code 0.0
     #1   code    <code counter, line 8>  -> code 0.1
@@ -1124,7 +1124,7 @@ code 0: <module> (07-closures.py, line 1)
 
 code 0.0: make_adder (07-closures.py, line 2)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
-  slots 132: variables 0..1, operand stack from 2
+  slots 134: variables 0..1, operand stack from 2
   constants:
     #0   code    <code add, line 3>  -> code 0.0.0
     #1   none    None
@@ -1162,7 +1162,7 @@ code 0.0.0: add (07-closures.py, line 3)
 
 code 0.1: counter (07-closures.py, line 8)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 0 (0 positional-only, 0 keyword-only)
-  slots 132: variables 0..1, operand stack from 2
+  slots 134: variables 0..1, operand stack from 2
   constants:
     #0   int     0
     #1   code    <code bump, line 10>  -> code 0.1.0
@@ -1241,7 +1241,7 @@ connect("example.org", timeout=5)
 ```text
 code 0: <module> (08-defaults.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 39: operand stack from 0
+  slots 37: operand stack from 0
   constants:
     #0   code    <code connect, line 2>  -> code 0.0
     #1   int     80
@@ -1319,7 +1319,7 @@ def forward(f, args, kw):
 ```text
 code 0: <module> (09-unpacking.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code unpack, line 2>  -> code 0.0
     #1   code    <code options, line 8>  -> code 0.1
@@ -1344,7 +1344,7 @@ code 0: <module> (09-unpacking.py, line 1)
 
 code 0.0: unpack (09-unpacking.py, line 2)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 2 (0 positional-only, 0 keyword-only)
-  slots 137: variables 0..5, operand stack from 6
+  slots 138: variables 0..5, operand stack from 6
   constants:
     #0   none    None
   variables (slot):
@@ -1434,7 +1434,7 @@ def lookup(d, obj):
 ```text
 code 0: <module> (10-keyed-lookup.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code lookup, line 2>  -> code 0.0
     #1   NoneType None
@@ -1449,7 +1449,7 @@ code 0: <module> (10-keyed-lookup.py, line 1)
 
 code 0.0: lookup (10-keyed-lookup.py, line 2)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 2 (0 positional-only, 0 keyword-only)
-  slots 135: variables 0..1, operand stack from 2
+  slots 134: variables 0..1, operand stack from 2
   constants:
     #0   str     'k'
     #1   int     1
@@ -1498,7 +1498,7 @@ def size(xs):
 ```text
 code 0: <module> (11-builtin-call.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code size, line 2>  -> code 0.0
     #1   NoneType None
@@ -1616,7 +1616,7 @@ code 0.0.0: <lambda> (12-higher-order.py, line 5)
 
 code 0.1: sum_squares (12-higher-order.py, line 9)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
-  slots 135: variables 0..0, operand stack from 1
+  slots 136: variables 0..0, operand stack from 1
   constants:
     #0   code    <code <lambda>, line 9>  -> code 0.1.0
     #1   none    None
@@ -1682,7 +1682,7 @@ def fail():
 ```text
 code 0: <module> (13-exceptions.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code safe_div, line 2>  -> code 0.0
     #1   code    <code fail, line 12>  -> code 0.1
@@ -1910,7 +1910,7 @@ code 0.1: double (14-decorators-comprehensions.py, line 7)
           10  RETURN_VALUE                  0
 
 code 0.2: <listcomp> (14-decorators-comprehensions.py, line 10)
-  flags 0x3 (OPTIMIZED | NEWLOCALS), parameters 1 (0 positional-only, 0 keyword-only)
+  flags 0x10000003 (OPTIMIZED | NEWLOCALS), parameters 1 (0 positional-only, 0 keyword-only)
   slots 134: variables 0..1, operand stack from 2
   constants:
     #0   int     2
@@ -1937,7 +1937,7 @@ code 0.2: <listcomp> (14-decorators-comprehensions.py, line 10)
           30  RETURN_VALUE                  0
 
 code 0.3: <dictcomp> (14-decorators-comprehensions.py, line 11)
-  flags 0x3 (OPTIMIZED | NEWLOCALS), parameters 1 (0 positional-only, 0 keyword-only)
+  flags 0x10000003 (OPTIMIZED | NEWLOCALS), parameters 1 (0 positional-only, 0 keyword-only)
   slots 134: variables 0..1, operand stack from 2
   variables (slot):
     #0   .0
@@ -2123,7 +2123,7 @@ class Point:
 ```text
 code 0: <module> (16-shared-state.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 36: operand stack from 0
+  slots 38: operand stack from 0
   constants:
     #0   int     0
     #1   code    <code bump, line 5>  -> code 0.0
@@ -2169,7 +2169,7 @@ code 0.0: bump (16-shared-state.py, line 5)
 
 code 0.1: Point (16-shared-state.py, line 10)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 130: variables 0..0, operand stack from 1
+  slots 132: variables 0..0, operand stack from 1
   constants:
     #0   str     'Point'
     #1   code    <code __init__, line 11>  -> code 0.1.0
@@ -2240,7 +2240,7 @@ def label(name, n):
 ```text
 code 0: <module> (17-misc.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code read, line 2>  -> code 0.0
     #1   code    <code largest, line 7>  -> code 0.1
@@ -2374,7 +2374,7 @@ def kind(value):
 ```text
 code 0: <module> (18-match.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code kind, line 2>  -> code 0.0
     #1   NoneType None
@@ -2510,7 +2510,7 @@ async def collect(stream):
 ```text
 code 0: <module> (19-async.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code fetch, line 2>  -> code 0.0
     #1   code    <code collect, line 7>  -> code 0.1

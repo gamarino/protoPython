@@ -139,10 +139,14 @@ defect and adds a `test/regression/*.py` test registered in
   closure)` fails; `inspect.getclosurevars` fails because `dis` cannot
   decode protoPython bytecode; `types.FrameType` is `object`.
 - **Attributes:** instances see class attributes such as `[].__name__`
-  and `C().__mro__`; built-in types and their instances accept new
-  attributes (`list.x = 1`, `[].x = 1`, `bytearray().x = 1`; CPython raises
-  `TypeError` / `AttributeError`, found 2026-11-10); `dir(module)` lists `__qualname__`, `__module__` and
-  `__class__`.
+  and `C().__mro__`; `dir(module)` lists `__qualname__`, `__module__` and
+  `__class__`. (Since 1.2.2 built-in types are immutable and instances of
+  built-in types without `__dict__` accept no new attribute, as in CPython:
+  `list.x = 1` raises `TypeError`, `[].x = 1` `AttributeError`.)
+- **`ba += ba` (1.2.2):** extending a bytearray with itself doubles it, as
+  CPython 3.13 does; CPython 3.14.0 raises `BufferError` (the bytearray
+  exports a buffer to itself while it resizes). protoPython keeps the
+  working behaviour.
 - **Comparisons:** `object.__ne__` runs a full comparison, so
   `[].__ne__(())` is True where CPython returns NotImplemented.
 - **Error messages and reprs:** `sys.x` raises "'object' object has no

@@ -78,7 +78,7 @@ code 0.1: double (14-decorators-comprehensions.py, line 7)
           10  RETURN_VALUE                  0
 
 code 0.2: <listcomp> (14-decorators-comprehensions.py, line 10)
-  flags 0x3 (OPTIMIZED | NEWLOCALS), parameters 1 (0 positional-only, 0 keyword-only)
+  flags 0x10000003 (OPTIMIZED | NEWLOCALS), parameters 1 (0 positional-only, 0 keyword-only)
   slots 134: variables 0..1, operand stack from 2
   constants:
     #0   int     2
@@ -105,7 +105,7 @@ code 0.2: <listcomp> (14-decorators-comprehensions.py, line 10)
           30  RETURN_VALUE                  0
 
 code 0.3: <dictcomp> (14-decorators-comprehensions.py, line 11)
-  flags 0x3 (OPTIMIZED | NEWLOCALS), parameters 1 (0 positional-only, 0 keyword-only)
+  flags 0x10000003 (OPTIMIZED | NEWLOCALS), parameters 1 (0 positional-only, 0 keyword-only)
   slots 134: variables 0..1, operand stack from 2
   variables (slot):
     #0   .0

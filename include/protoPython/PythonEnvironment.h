@@ -12,6 +12,7 @@
 #include <mutex>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <thread>
 #include <unordered_map>
 #include <cstddef>
@@ -323,14 +324,85 @@ public:
      * @brief Gets the Python 'bytes' prototype.
      */
     const proto::ProtoObject* getBytesPrototype() const { return bytesPrototype; }
-    /** @brief The `bytearray` type: its own class (base object), whose
-     *  instances keep their content as a ProtoByteBuffer in `__data__`, as
-     *  bytes instances do. nullptr before the builtins module exists. */
+    /** @brief The `bytearray` type (src/library/BytearrayType.cpp): its own
+     *  class with object as its only base. nullptr before the builtins module
+     *  exists. */
     const proto::ProtoObject* getBytearrayPrototype() const { return bytearrayPrototype; }
+    void setBytearrayPrototype(const proto::ProtoObject* t) { bytearrayPrototype = t; }
     /** @brief True for the bytes or the bytearray type itself (not a subclass). */
     bool isBytesOrBytearrayType(const proto::ProtoObject* t) const {
         return t && (t == bytesPrototype || t == bytearrayPrototype);
     }
+
+    /**
+     * @name Bytes-like objects (src/library/BytearrayType.cpp)
+     *
+     * A bytearray keeps its content as a persistent list of byte chunks in a
+     * private attribute and publishes every mutation with a compare-and-swap,
+     * as a list does; it has no `__data__`. Code that accepts a bytes-like
+     * argument reads it through bytesLikeContent(), which knows every
+     * representation: bytes (a ProtoByteBuffer, or a legacy ProtoString, in
+     * `__data__`), bytearray, memoryview (over either) and a bare
+     * ProtoByteBuffer. A `str` is not bytes-like.
+     * @{
+     */
+    /**
+     * The frame eval() and exec() run code in when their locals are a
+     * mapping (a dict, a dict subclass, any object with __getitem__): its
+     * own `__locals_mapping__` is the mapping, which LOAD_NAME, STORE_NAME
+     * and DELETE_NAME read and write directly (an exact dict through its
+     * storage, any other mapping through __getitem__ / __setitem__ /
+     * __delitem__), so nothing is copied and a dict subclass's __missing__
+     * answers, as in CPython. nullptr when @p locals is not such a mapping.
+     */
+    static proto::ProtoObject* localsMappingFrame(proto::ProtoContext* ctx, const proto::ProtoObject* locals,
+                                                  const proto::ProtoObject* globals,
+                                                  const proto::ProtoObject* codeObj);
+    /** The mapping of a localsMappingFrame() frame, else nullptr. */
+    static const proto::ProtoObject* localsMappingOf(proto::ProtoContext* ctx, const proto::ProtoObject* frame);
+    /** LOAD_NAME in a localsMappingFrame(): true with @p value set when
+     *  @p mapping holds @p name; false when it does not (a KeyError from
+     *  __getitem__); other exceptions propagate. */
+    static bool localsMappingLoad(proto::ProtoContext* ctx, const proto::ProtoObject* mapping,
+                                  const proto::ProtoObject* name, const proto::ProtoObject*& value);
+    /** STORE_NAME in a localsMappingFrame(): mapping[name] = value. */
+    static void localsMappingStore(proto::ProtoContext* ctx, const proto::ProtoObject* mapping,
+                                   const proto::ProtoObject* name, const proto::ProtoObject* value);
+    /** DELETE_NAME in a localsMappingFrame(): del mapping[name], NameError
+     *  when the name is not there. */
+    static void localsMappingDelete(proto::ProtoContext* ctx, const proto::ProtoObject* mapping,
+                                    const proto::ProtoObject* name);
+    /** The globals a list, set or dict comprehension compiled at a name
+     *  scope (CO_NAME_SCOPE_COMPREHENSION) reads when it is built in a
+     *  localsMappingFrame(): CPython inlines it, so its free names resolve
+     *  in the locals mapping first. A namespace over @p globals holding the
+     *  mapping's str keys; @p globals itself for any other frame. */
+    static const proto::ProtoObject* nameScopeComprehensionGlobals(proto::ProtoContext* ctx,
+                                                                   const proto::ProtoObject* frame,
+                                                                   const proto::ProtoObject* globals);
+    /** The `__name__` of @p obj's type, for error messages. */
+    static std::string typeNameOf(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
+    /** True when @p obj is a bytearray (an instance of bytearray or a subclass). */
+    static bool isBytearray(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
+    /** The content of the bytearray @p obj; false when it is not one. */
+    static bool bytearrayContent(proto::ProtoContext* ctx, const proto::ProtoObject* obj, std::string& out);
+    /** The bytes of a bytes-like @p obj; false (nothing raised) when it is not one. */
+    static bool bytesLikeContent(proto::ProtoContext* ctx, const proto::ProtoObject* obj, std::string& out);
+    /** True when @p obj is bytes-like (bytes, bytearray, memoryview or a subclass of one). */
+    static bool isBytesLike(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
+    /** A new `bytes` object holding @p n bytes from @p data. */
+    static const proto::ProtoObject* newBytes(proto::ProtoContext* ctx, const char* data, size_t n);
+    /** A new `bytearray` (of exactly that type) holding @p n bytes from @p data. */
+    static const proto::ProtoObject* newBytearray(proto::ProtoContext* ctx, const char* data, size_t n);
+    /**
+     * Overwrites the bytes [@p at, @p at + @p data.size()) of the bytearray
+     * @p obj in place, atomically (a memoryview write, readinto,
+     * struct.pack_into). False with IndexError raised when the range is not
+     * inside the bytearray, or TypeError when @p obj is not one.
+     */
+    static bool bytearrayWrite(proto::ProtoContext* ctx, const proto::ProtoObject* obj, size_t at,
+                               const std::string& data);
+    /** @} */
 
     /**
      * @brief Native state of the `re` module (src/library/ReModule.cpp) for
@@ -545,6 +617,27 @@ public:
     const proto::ProtoObject* getType(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
 
     bool isActuallyAClass(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
+    /**
+     * CPython's rule for Python-level attribute writes on built-ins: a
+     * built-in type is immutable ("cannot set 'x' attribute of immutable
+     * type 'list'", TypeError) and an instance of a built-in type without
+     * __dict__ accepts no new attribute (AttributeError, "... is read-only"
+     * when the type has one of that name, "... no __dict__ for setting new
+     * attributes" otherwise). Raises and returns true when the store or
+     * delete of @p name on @p obj is such a write; false otherwise. A data
+     * descriptor of the type, an attribute the instance already owns and
+     * `__class__` (checked on its own) are left to the caller. Native code
+     * that writes with protoCore's setAttribute is not affected.
+     */
+    bool builtinAttributeWriteRejected(proto::ProtoContext* ctx, const proto::ProtoObject* obj,
+                                       const proto::ProtoString* name, bool isDelete);
+    /** A built-in type whose instances have no __dict__ (list, int, ...). */
+    bool isNoDictBuiltinType(const proto::ProtoObject* type) const { return noDictBuiltinTypes_.count(type) != 0; }
+    /** A built-in type (immutable: builtinAttributeWriteRejected). */
+    bool isImmutableBuiltinType(const proto::ProtoObject* type) const { return immutableBuiltinTypes_.count(type) != 0; }
+    /** Records the built-in types builtinAttributeWriteRejected protects;
+     *  called once, when the bootstrap has built them all. */
+    void registerImmutableBuiltinTypes(proto::ProtoContext* ctx);
 
     /** The __getattr__ hook a failed attribute lookup on `obj` falls back
      *  to, or nullptr.  *passObj tells whether the hook takes obj before the
@@ -1060,6 +1153,10 @@ public:
     // attribute write groups decline).  Invalidated with the other dunder
     // flags when a class gains __setattr__ (STRUCT-247).
     static constexpr uint32_t PYFLAG_HAS_CUSTOM_SETATTR    = 1u << 5;
+    /** An instance of this class may be a built-in type or an instance
+     *  without __dict__ (builtinAttributeWriteRejected decides): attribute
+     *  stores on such objects take the full setAttribute path. */
+    static constexpr uint32_t PYFLAG_NO_FAST_STORE         = 1u << 6;
     static constexpr uint32_t PYFLAG_COMPUTED              = 1u << 31;
 
     /** Fast read of cached flags; returns 0 when not yet computed. */
@@ -2076,6 +2173,7 @@ public:
     const proto::ProtoObject* getBuiltinFunctionOrMethodPrototype() const { return builtinFunctionOrMethodPrototype; }
     const proto::ProtoObject* getUnionTypePrototype() const { return unionTypePrototype; }
     const proto::ProtoObject* getStopAsyncIterationType() const { return stopAsyncIterationType; }
+    const proto::ProtoObject* getKeyErrorType() const { return keyErrorType; }
     const proto::ProtoObject* getRuntimeErrorType() const { return runtimeErrorType; }
     /** Process-singleton "unbound local" sentinel.  Compiler stores this
         into CO_OPTIMIZED slots that correspond to annotation-only locals
@@ -2228,6 +2326,13 @@ private:
     // (Phase 4 of the protoCore-delegation design).
     const proto::ProtoString* isPythonClassString{nullptr};
     const proto::ProtoString* pyFlagsString_{nullptr};  // P2: type flags cache key
+    // Built at the end of the bootstrap and read-only afterwards, so threads
+    // read them without synchronisation (registerImmutableBuiltinTypes).
+    std::unordered_set<const proto::ProtoObject*> immutableBuiltinTypes_;
+    std::unordered_set<const proto::ProtoObject*> noDictBuiltinTypes_;
+    // The first parents of the immutable built-in types: an object whose
+    // first parent is one of them may be such a type (PYFLAG_NO_FAST_STORE).
+    std::unordered_set<const proto::ProtoObject*> builtinTypeParents_;
 
     const proto::ProtoString* enumProtoS{nullptr};
     const proto::ProtoString* revProtoS{nullptr};

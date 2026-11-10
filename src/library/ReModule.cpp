@@ -1193,6 +1193,7 @@ PythonEnvironment& envOf(proto::ProtoContext* ctx) {
 // The octets of a bytes or bytearray object; false for anything else.
 bool bytesOf(proto::ProtoContext* ctx, const proto::ProtoObject* obj, std::string& out) {
     if (!obj || obj == PROTO_NONE || obj->isString(ctx) || obj->isInteger(ctx)) return false;
+    if (PythonEnvironment::bytesLikeContent(ctx, obj, out)) return true;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env) return false;
     const proto::ProtoObject* d = obj->getAttribute(ctx, env->getDataString());

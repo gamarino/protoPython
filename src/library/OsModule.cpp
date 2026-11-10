@@ -1679,6 +1679,7 @@ static bool extractRawBytes(
         obj->asString(ctx)->toUTF8String(ctx, out);
         return true;
     }
+    if (PythonEnvironment::bytesLikeContent(ctx, obj, out)) return true;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoString* dataKey = env ? env->getDataString()
                                             : PythonEnvironment::getInternedString(ctx, "__data__");

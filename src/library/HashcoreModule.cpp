@@ -38,6 +38,7 @@ namespace {
 // ProtoByteBuffer (see Compiler::compileConstant, ConstType::Bytes).
 bool bytesOf(proto::ProtoContext* ctx, const proto::ProtoObject* obj, std::string& out) {
     if (!obj || obj == PROTO_NONE) return false;
+    if (PythonEnvironment::bytesLikeContent(ctx, obj, out)) return true;
     const proto::ProtoByteBuffer* bb = obj->asByteBuffer(ctx);
     if (!bb) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);

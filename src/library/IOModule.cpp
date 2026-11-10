@@ -92,10 +92,12 @@ static bool io_extract_bytes(proto::ProtoContext* ctx,
                              const proto::ProtoObject* obj,
                              std::string& out) {
     if (!obj) return false;
+    if (PythonEnvironment::bytesLikeContent(ctx, obj, out)) return true;
     if (obj->isString(ctx)) {
         obj->asString(ctx)->toUTF8String(ctx, out);
         return true;
     }
+    if (PythonEnvironment::bytesLikeContent(ctx, obj, out)) return true;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoString* dataKey = env ? env->getDataString()
         : PythonEnvironment::getInternedString(ctx, "__data__");
@@ -1047,6 +1049,36 @@ static const proto::ProtoObject* py_io_write(
     return nullptr;
 }
 
+// readinto(b) / readinto1(b): reads up to len(b) bytes with the object's
+// own read() and writes them into the writable buffer b (a bytearray, or a
+// memoryview over one); returns the count.
+static const proto::ProtoObject* py_io_readinto(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env || !args || args->getSize(ctx) != 1) {
+        if (env) env->raiseTypeError(ctx, "readinto() takes exactly one argument");
+        return nullptr;
+    }
+    const proto::ProtoObject* target = args->getAt(ctx, 0);
+    std::string current;
+    if (!PythonEnvironment::bytesLikeContent(ctx, target, current)) {
+        env->raiseTypeError(ctx, "readinto() argument must be read-write bytes-like object, not "
+                                 + PythonEnvironment::typeNameOf(ctx, target));
+        return nullptr;
+    }
+    const proto::ProtoObject* data = env->callMethod(self, "read", {ctx->fromInteger(static_cast<long long>(current.size()))});
+    if (!data) return nullptr;
+    std::string got;
+    if (!PythonEnvironment::bytesLikeContent(ctx, data, got)) {
+        env->raiseTypeError(ctx, "read() should have returned a bytes-like object");
+        return nullptr;
+    }
+    if (got.size() > current.size()) got.resize(current.size());
+    if (!PythonEnvironment::bytearrayWrite(ctx, target, 0, got)) return nullptr;
+    return ctx->fromInteger(static_cast<long long>(got.size()));
+}
+
 // The prototype of file objects over an OS descriptor. Their methods live
 // here, not on each instance, so that special-method lookups that ignore
 // instance attributes (the `with` statement) find __enter__ and __exit__:
@@ -1060,6 +1092,8 @@ static const proto::ProtoObject* io_make_fd_file_prototype(proto::ProtoContext* 
     method("read", py_io_read);
     method("readline", py_io_readline);
     method("readlines", py_io_readlines);
+    method("readinto", py_io_readinto);
+    method("readinto1", py_io_readinto);
     method("write", py_io_write);
     method("close", py_io_close);
     method("__enter__", py_io_enter);
@@ -1418,6 +1452,10 @@ static const proto::ProtoObject* bio_make_bytes(proto::ProtoContext* ctx,
 // binascii::obj_to_bytes for consistency across modules.
 static std::string bio_obj_to_bytes(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     if (!obj || obj == PROTO_NONE) return std::string();
+    {
+        std::string content;
+        if (PythonEnvironment::bytesLikeContent(ctx, obj, content)) return content;
+    }
     if (obj->isString(ctx)) {
         std::string s;
         obj->asString(ctx)->toUTF8String(ctx, s);
@@ -2314,6 +2352,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
             ctx->fromMethod(nullptr, io_method<py_bio_read>));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "readline"),
             ctx->fromMethod(nullptr, io_method<py_bio_readline>));
+        bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "readinto"),
+            ctx->fromMethod(nullptr, io_method<py_io_readinto>));
+        bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "readinto1"),
+            ctx->fromMethod(nullptr, io_method<py_io_readinto>));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "readlines"),
             ctx->fromMethod(nullptr, io_method<py_bio_readlines>));
         bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__iter__"),

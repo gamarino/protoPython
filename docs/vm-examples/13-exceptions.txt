@@ -1,6 +1,6 @@
 code 0: <module> (13-exceptions.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code safe_div, line 2>  -> code 0.0
     #1   code    <code fail, line 12>  -> code 0.1

@@ -14,6 +14,8 @@ __all__ = [
     "latin_1_encode", "latin_1_decode",
     "ascii_encode", "ascii_decode",
     "charmap_encode", "charmap_decode", "charmap_build",
+    "raw_unicode_escape_encode", "raw_unicode_escape_decode",
+    "unicode_escape_encode", "unicode_escape_decode",
     "strict_errors", "ignore_errors", "replace_errors",
     "xmlcharrefreplace_errors", "backslashreplace_errors", "namereplace_errors",
 ]
@@ -267,6 +269,141 @@ def ascii_decode(data, errors=None, final=False):
     return (data.decode('ascii', _errors(errors)), len(data))
 
 
+def _escape_code_point(cp):
+    if cp < 0x100:
+        return b'\\x%02x' % cp
+    if cp < 0x10000:
+        return b'\\u%04x' % cp
+    return b'\\U%08x' % cp
+
+
+def raw_unicode_escape_encode(s, errors=None):
+    # Code points below 256 are one byte; others \uXXXX or \UXXXXXXXX.
+    out = bytearray()
+    for c in s:
+        cp = ord(c)
+        if cp < 0x100:
+            out.append(cp)
+        elif cp < 0x10000:
+            out += b'\\u%04x' % cp
+        else:
+            out += b'\\U%08x' % cp
+    return (bytes(out), len(s))
+
+
+def unicode_escape_encode(s, errors=None):
+    # As a str literal's body, without quotes.
+    out = bytearray()
+    for c in s:
+        cp = ord(c)
+        if c == '\\':
+            out += b'\\\\'
+        elif c == '\t':
+            out += b'\\t'
+        elif c == '\n':
+            out += b'\\n'
+        elif c == '\r':
+            out += b'\\r'
+        elif 0x20 <= cp < 0x7f:
+            out.append(cp)
+        else:
+            out += _escape_code_point(cp)
+    return (bytes(out), len(s))
+
+
+_HEX = b'0123456789abcdefABCDEF'
+
+
+def _escape_decode(data, errors, raw, codec):
+    data = bytes(data)
+    handler = None
+    out = []
+    i = 0
+    n = len(data)
+
+    def fail(start, end, reason):
+        nonlocal handler
+        if handler is None:
+            handler = lookup_error(_errors(errors))
+        rep, pos = handler(UnicodeDecodeError(codec, data, start, end, reason))
+        out.append(rep)
+        return pos
+
+    while i < n:
+        b = data[i]
+        if b != 0x5c:  # backslash
+            out.append(chr(b))
+            i += 1
+            continue
+        if raw:
+            # Only \u and \U escape, after an odd run of backslashes.
+            j = i
+            while j < n and data[j] == 0x5c:
+                j += 1
+            run = j - i
+            if run % 2 == 0 or j >= n or data[j] not in b'uU':
+                out.append('\\' * run)
+                i = j
+                continue
+            out.append('\\' * (run - 1))
+            i = j - 1
+        start = i
+        if i + 1 >= n:
+            i = fail(start, n, '\\ at end of string')
+            continue
+        e = chr(data[i + 1])
+        i += 2
+        simple = {'\n': '', '\\': '\\', "'": "'", '"': '"', 'a': '\a', 'b': '\b',
+                  'f': '\f', 'n': '\n', 'r': '\r', 't': '\t', 'v': '\v'}
+        if not raw and e in simple:
+            out.append(simple[e])
+        elif not raw and e in '01234567':
+            j = i - 1
+            k = j
+            while k < n and k < j + 3 and chr(data[k]) in '01234567':
+                k += 1
+            out.append(chr(int(data[j:k], 8)))
+            i = k
+        elif e in 'xuU' and not (raw and e == 'x'):
+            width = {'x': 2, 'u': 4, 'U': 8}[e]
+            k = i
+            while k < n and k < i + width and data[k] in _HEX:
+                k += 1
+            if k - i < width:
+                i = fail(start, k, 'truncated \\%sXX escape' % e if e == 'x' else
+                         'truncated \\%s%s escape' % (e, 'X' * width))
+                continue
+            cp = int(data[i:k], 16)
+            if cp > 0x10ffff:
+                i = fail(start, k, 'illegal Unicode character')
+                continue
+            out.append(chr(cp))
+            i = k
+        elif not raw and e == 'N':
+            close = data.find(b'}', i)
+            if i >= n or data[i] != 0x7b or close < 0:
+                i = fail(start, n if close < 0 else close + 1, 'malformed \\N character escape')
+                continue
+            import unicodedata
+            try:
+                out.append(unicodedata.lookup(data[i + 1:close].decode('ascii')))
+            except (KeyError, UnicodeDecodeError):
+                i = fail(start, close + 1, 'unknown Unicode character name')
+                continue
+            i = close + 1
+        else:
+            out.append('\\' + e)
+    return (''.join(out), n)
+
+
+def raw_unicode_escape_decode(data, errors=None, final=True):
+    return _escape_decode(data, errors, True, 'rawunicodeescape')
+
+
+def unicode_escape_decode(data, errors=None, final=True):
+    return _escape_decode(data, errors, False, 'unicodeescape')
+
+
 def charmap_build(decoding_table):
     return {ord(c): i for i, c in enumerate(decoding_table)}
 
@@ -340,6 +477,13 @@ class _BuiltinFunction:
 
     def __repr__(self):
         return '<built-in function %s>' % self.__name__
+
+    def __reduce__(self):
+        # Pickled by reference, as CPython pickles a C function.
+        return self.__qualname__
+
+    def __reduce_ex__(self, protocol):
+        return self.__qualname__
 
 
 for _name in __all__:

@@ -9,6 +9,24 @@
 #include <algorithm>
 #include <limits>
 #include <unordered_set>
+#include <locale.h>
+#if defined(__APPLE__)
+#include <xlocale.h>
+#endif
+
+// A float literal as Python reads it, whatever LC_NUMERIC an embedding
+// program set: strtod in the "C" locale (std::stod and plain strtod read the
+// current locale's decimal point). Out-of-range values give a subnormal, 0.0
+// or inf, as in Python, where std::stod throws for ERANGE.
+static double cLocaleStrtod(const std::string& text) {
+#if defined(_WIN32)
+    static const _locale_t cLocale = _create_locale(LC_NUMERIC, "C");
+    return _strtod_l(text.c_str(), nullptr, cLocale);
+#else
+    static const locale_t cLocale = newlocale(LC_NUMERIC_MASK, "C", static_cast<locale_t>(0));
+    return strtod_l(text.c_str(), nullptr, cLocale);
+#endif
+}
 
 namespace protoPython {
 
@@ -391,13 +409,11 @@ Token Tokenizer::scanNumber() {
             // can emit a complex(0, numValue) constant instead of a
             // plain float.
             if (cleanValue.back() == 'j' || cleanValue.back() == 'J') cleanValue.pop_back();
-            // strtod: a literal beyond the double range is a subnormal, 0.0
-            // or inf in Python, where std::stod throws for ERANGE.
-            t.numValue = std::strtod(cleanValue.c_str(), nullptr);
+            t.numValue = cLocaleStrtod(cleanValue);
             t.isInteger = false;
             t.isImaginary = true;
         } else if (isFloat) {
-            t.numValue = std::strtod(cleanValue.c_str(), nullptr);
+            t.numValue = cLocaleStrtod(cleanValue);
             t.isInteger = false;
         } else {
             try {

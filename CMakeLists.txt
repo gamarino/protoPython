@@ -639,13 +639,46 @@ set_tests_properties(protopy_eval_locals_mapping PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "eval_locals_mapping: ok"
     LABELS "regression_gate")
-# pow inverse, d |= pairs, deque.index, slice assignment from an iterator, subnormal floats, wide literals, set subclass repr.
+# pow inverse and modulus sign, d |= pairs, deque.index, slice assignment from an iterator, subnormal floats,
+# wide literals, set subclass repr, complex repr; each section compiled and run on its own.
 add_test(NAME protopy_builtins_conformance_gaps
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/builtins_conformance_gaps.py)
 set_tests_properties(protopy_builtins_conformance_gaps PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "builtins_conformance_gaps: ok"
+    LABELS "regression_gate")
+# bytearray: no lost concurrent writes, bytes-like everywhere, copy/pickle, receiver checks, full method set.
+add_test(NAME protopy_bytearray_round6
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/bytearray_round6.py)
+set_tests_properties(protopy_bytearray_round6 PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "bytearray_round6: ok"
+    LABELS "regression_gate")
+# A mutating __eq__ makes a dict or set lookup compare each stored key once.
+add_test(NAME protopy_hash_restart_memo
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/hash_restart_memo.py)
+set_tests_properties(protopy_hash_restart_memo PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "hash_restart_memo: ok"
+    LABELS "regression_gate")
+# A frame's operand stack size does not depend on how often a construct repeats.
+add_test(NAME protopy_stack_effect_drift
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/stack_effect_drift.py)
+set_tests_properties(protopy_stack_effect_drift PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "stack_effect_drift: ok"
+    LABELS "regression_gate")
+# Built-in types are immutable; their instances without __dict__ take no new attribute.
+add_test(NAME protopy_builtin_type_attributes
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/builtin_type_attributes.py)
+set_tests_properties(protopy_builtin_type_attributes PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "builtin_type_attributes: ok"
     LABELS "regression_gate")
 # Native code holding a container's storage while Python code runs keeps it
 # reachable under GC pressure (list_in).

@@ -213,10 +213,19 @@ static int stackEffect(int op, int arg) {
         case OP_GET_YIELD_FROM_ITER:
             return 0;
 
-        // BUILD_FUNCTION pops its closure cells (and, uncounted here, its
-        // defaults and annotations: an overestimate is safe).
+        // BUILD_FUNCTION pops the code object, its closure cells and one
+        // operand per flag bit (defaults 0x01, keyword-only defaults 0x02,
+        // annotations 0x04), and pushes the function.
         case OP_BUILD_FUNCTION:
-            return -(arg >> BUILD_FUNCTION_CELLS_SHIFT);
+            return -((arg >> BUILD_FUNCTION_CELLS_SHIFT) + (arg & 1) + ((arg >> 1) & 1) + ((arg >> 2) & 1));
+        // BUILD_CLASS pops name, bases, keywords and the body function, and
+        // pushes the class.
+        case OP_BUILD_CLASS:
+            return -3;
+        // UNPACK_EX pops the sequence and pushes the `before` items, the
+        // starred list and the `after` items.
+        case OP_UNPACK_EX:
+            return (arg & 0xFF) + ((arg >> 8) & 0xFF);
 
         // PD1: GET_ANEXT keeps the aiter on the stack and pushes the
         // awaitable on top — net +1.  Was previously falling through
@@ -226,11 +235,10 @@ static int stackEffect(int op, int arg) {
         case OP_GET_ANEXT:
             return 1;
 
-        // LOAD_ATTR: pops object, but when loading a method replaces it with NULL and
-        // pushes the method (+1 net). Accounting for the worst case (method) avoids
-        // GCStack overflow from systematic underestimation of max stack depth.
+        // LOAD_ATTR replaces the object with the attribute; with the low
+        // argument bit (a method call) it pushes the NULL / self marker too.
         case OP_LOAD_ATTR:
-            return 1;
+            return arg & 1;
 
         // Binary ops (-1 net: pop 2, push 1)
         case OP_BINARY_ADD:       case OP_BINARY_SUBTRACT:
@@ -280,7 +288,9 @@ static int stackEffect(int op, int arg) {
         case OP_CALL_FUNCTION_KW:
             return -(arg + 2); // also pops kwnames tuple
         case OP_CALL_FUNCTION_EX:
-            return -(1 + (arg & 1)); // EX pops args-tuple [+ kwargs-dict]
+            // Pops [NULL or self][callable][args tuple][kwargs dict if arg & 1],
+            // pushes the result.
+            return -(2 + (arg & 1));
 
         // Comprehension helpers: pop TOS into container at stack[top-arg-1], no push
         case OP_LIST_APPEND: case OP_SET_ADD:
@@ -327,6 +337,23 @@ static int stackEffect(int op, int arg) {
     }
 }
 
+// The slots an opcode uses above the operands it starts with while it runs
+// (an anchor the interpreter pushes and pops again), beyond its net effect.
+static int stackPeak(int op, int arg) {
+    switch (op) {
+        // The closure list and the new function are rooted on the stack
+        // above the operands until the operands are popped.
+        case OP_BUILD_FUNCTION:
+            return 2;
+        // The class namespace, then the class, is rooted above the operands.
+        case OP_BUILD_CLASS:
+            return 1;
+        default:
+            (void)arg;
+            return 0;
+    }
+}
+
 int opcodeStackEffect(int op, int arg) { return stackEffect(op, arg); }
 
 void Compiler::emit(int op, int arg) {
@@ -335,6 +362,7 @@ void Compiler::emit(int op, int arg) {
     }
     bytecodeVec_ = bytecodeVec_->appendLast(ctx_, ctx_->fromInteger(op));
     bytecodeVec_ = bytecodeVec_->appendLast(ctx_, ctx_->fromInteger(arg));
+    if (currentStack_ + stackPeak(op, arg) > maxStack_) maxStack_ = currentStack_ + stackPeak(op, arg);
     currentStack_ += stackEffect(op, arg);
     if (currentStack_ > maxStack_) maxStack_ = currentStack_;
 }
@@ -1713,6 +1741,8 @@ bool Compiler::compileWhile(WhileNode* n) {
 bool Compiler::compileFor(ForNode* n) {
     if (!n || !compileNode(n->iter.get())) return false;
     emit(OP_GET_ITER);
+    // The depth with the iterator on the stack; FOR_ITER pops it on exit.
+    const int iterDepth = currentStack_;
     int loopStart = bytecodeOffset();
     
     loopStack_.push_back({loopStart, {}, blockEnvStack_.size(), true});
@@ -1724,6 +1754,7 @@ bool Compiler::compileFor(ForNode* n) {
     emit(OP_JUMP_ABSOLUTE, loopStart * 2);
     int afterLoop = bytecodeOffset();
     addPatch(argSlot, afterLoop);
+    currentStack_ = iterDepth - 1;
     
     // The else clause is outside the loop (see compileWhile): pop the loop
     // before compiling it so its `break` / `continue` reach the enclosing
@@ -1750,6 +1781,8 @@ bool Compiler::compileBreak(BreakNode* n) {
     // — break suppresses the return per CPython semantics, and leaving
     // the value behind would corrupt the surrounding loop's iterator
     // (FOR_ITER pops what it thinks is the iter on the next iteration).
+    // The code after the jump is reached with the depth before the break.
+    const int depth = currentStack_;
     for (int i = 0; i < returnUnwindDepth_; ++i) emit(OP_POP_TOP, 0);
     if (!unwindBlocks(true)) return false;
     if (loopStack_.back().hasIterator) {
@@ -1757,6 +1790,7 @@ bool Compiler::compileBreak(BreakNode* n) {
     }
     emit(OP_JUMP_ABSOLUTE, 0);
     loopStack_.back().breakPatches.push_back(bytecodeOffset() - 1);
+    currentStack_ = depth;
     return true;
 }
 
@@ -1764,9 +1798,11 @@ bool Compiler::compileContinue(ContinueNode* n) {
     if (loopStack_.empty()) return false;
     // Same rationale as compileBreak: discard any pending return value
     // when continuing out of a finally compiled for `return`.
+    const int depth = currentStack_;
     for (int i = 0; i < returnUnwindDepth_; ++i) emit(OP_POP_TOP, 0);
     if (!unwindBlocks(true)) return false;
     emit(OP_JUMP_ABSOLUTE, loopStack_.back().start * 2);
+    currentStack_ = depth;
     return true;
 }
 
@@ -2024,6 +2060,10 @@ bool Compiler::compileComprehensionScope(const char* scopeName, std::vector<Comp
         body.isGenerator_ = isGenExpr;
         body.globalNames_ = globalNames_;
         body.isFunctionScope_ = true;
+        // A list, set or dict comprehension of a name scope is inlined in
+        // CPython (a generator expression is not, nor one in a class body).
+        body.nameScopeComprehension_ = !isGenExpr
+            && ((!isFunctionScope_ && !isClassBody_ && !classAnnotationScope_) || nameScopeComprehension_);
         // A comprehension is a function scope: inside a method it sees the class cell.
         body.classCellScope_ = classCellScope_ || isClassBody_ || classAnnotationScope_;
         body.nonlocalNames_ = compFree;
@@ -2066,6 +2106,7 @@ bool Compiler::compileComprehensionScope(const char* scopeName, std::vector<Comp
     int flags = CO_OPTIMIZED | CO_NEWLOCALS;
     if (isAsync) flags |= 0x80; // CO_COROUTINE
     else if (isGenExpr) flags |= 0x20; // CO_GENERATOR
+    if (body.nameScopeComprehension_) flags |= CO_NAME_SCOPE_COMPREHENSION;
     // Slots for the operand stack too: a stack held in a std::vector is not
     // a GC root (executeBytecodeRange).
     const int automatic = static_cast<int>(orderedLocals.size() + freeVars.size()) + body.getMaxStack() + 128;
@@ -2182,6 +2223,7 @@ bool Compiler::compileComprehension(const std::vector<Comprehension>& generators
     // not return awaitables from __anext__ either: docs/VM.md, section 6.)
     if (!compileNode(gen.iter.get())) return false;
     emit(gen.is_async ? OP_GET_AITER : OP_GET_ITER);
+    const int iterDepth = currentStack_;
     loopStart = bytecodeOffset();
     emit(OP_FOR_ITER, 0);
     endSlot = bytecodeOffset() - 1;
@@ -2198,6 +2240,7 @@ bool Compiler::compileComprehension(const std::vector<Comprehension>& generators
     
     emit(OP_JUMP_ABSOLUTE, loopStart * 2);
     addPatch(endSlot, bytecodeOffset());
+    currentStack_ = iterDepth - 1;
     for (int slot : ifSlots) {
         addPatch(slot, loopStart);
     }
@@ -5650,6 +5693,7 @@ bool Compiler::compileAsyncFor(AsyncForNode* n) {
 
     if (!compileNode(n->iter.get())) return false;
     emit(OP_GET_AITER);
+    const int iterDepth = currentStack_;
 
     int loopStart = bytecodeOffset();
     loopStack_.push_back({loopStart, {}, blockEnvStack_.size(), true});
@@ -5664,6 +5708,7 @@ bool Compiler::compileAsyncFor(AsyncForNode* n) {
 
     int afterLoop = bytecodeOffset();
     addPatch(argSlot, afterLoop);
+    currentStack_ = iterDepth - 1;
 
     // The else clause is outside the loop (see compileFor).
     std::vector<int> breakPatches = std::move(loopStack_.back().breakPatches);
@@ -6102,10 +6147,13 @@ bool Compiler::compileCondExpr(ConditionalExprNode* n) {
     if (!compileNode(n->test.get())) return false;
     emit(OP_POP_JUMP_IF_FALSE, 0);
     int elseSlot = bytecodeOffset() - 1;
+    // Each branch pushes one value from the same depth.
+    const int depth = currentStack_;
     if (!compileNode(n->body.get())) return false;
     emit(OP_JUMP_ABSOLUTE, 0);
     int endSlot = bytecodeOffset() - 1;
     addPatch(elseSlot, bytecodeOffset());
+    currentStack_ = depth;
     if (!compileNode(n->orelse.get())) return false;
     addPatch(endSlot, bytecodeOffset());
     return true;

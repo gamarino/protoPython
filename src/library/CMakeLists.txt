@@ -32,6 +32,7 @@ add_library(protoPython SHARED
     SignalModule.cpp
     TimeModule.cpp
     BuiltinsModule.cpp
+    BytearrayType.cpp
     IOModule.cpp
     CollectionsModule.cpp
     ExceptionsModule.cpp

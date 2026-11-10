@@ -43,6 +43,7 @@ static bool is_str_instance(proto::ProtoContext* ctx, const proto::ProtoObject* 
 // object with tobytes() such as array.array); false for anything else.
 static bool extract_octets(proto::ProtoContext* ctx, const proto::ProtoObject* obj, std::string& out) {
     if (!obj || obj == PROTO_NONE) return false;
+    if (PythonEnvironment::bytesLikeContent(ctx, obj, out)) return true;
     if (obj->isString(ctx)) {
         obj->asString(ctx)->toUTF8String(ctx, out);
         return true;

@@ -1,6 +1,6 @@
 code 0: <module> (07-closures.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code make_adder, line 2>  -> code 0.0
     #1   code    <code counter, line 8>  -> code 0.1
@@ -25,7 +25,7 @@ code 0: <module> (07-closures.py, line 1)
 
 code 0.0: make_adder (07-closures.py, line 2)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
-  slots 132: variables 0..1, operand stack from 2
+  slots 134: variables 0..1, operand stack from 2
   constants:
     #0   code    <code add, line 3>  -> code 0.0.0
     #1   none    None
@@ -63,7 +63,7 @@ code 0.0.0: add (07-closures.py, line 3)
 
 code 0.1: counter (07-closures.py, line 8)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 0 (0 positional-only, 0 keyword-only)
-  slots 132: variables 0..1, operand stack from 2
+  slots 134: variables 0..1, operand stack from 2
   constants:
     #0   int     0
     #1   code    <code bump, line 10>  -> code 0.1.0

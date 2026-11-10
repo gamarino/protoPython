@@ -2567,7 +2567,7 @@ static const proto::ProtoObject* py_object_get_dict(
                     // these never belong in any user-visible __dict__.
                     if (nm == "__data__" || nm == "__keys__"
                         || nm == "__pydict_data__" || nm == "__pydict_keys__"
-                        || nm == "__is_python_class__") return;
+                        || nm == "__is_python_class__" || nm == "__bytearray__") return;
                     if (s->stripWrapperInternals) {
                         // staticmethod / classmethod: hide the wrapper-
                         // internal storage names that are never part of
@@ -2913,29 +2913,14 @@ static const proto::ProtoObject* py_float_call(
                 // CPython: float() accepts bytes / bytearray containing
                 // ASCII decimal digits.  Detect a bytes wrapper the same
                 // way py_int_call does and steer into the parsing path.
-                PythonEnvironment* envP = PythonEnvironment::fromContext(ctx);
-                if (!envP) return false;
-                const proto::ProtoObject* d = val->getAttribute(ctx,
-                    envP->getDataString());
-                if (!d) return false;
-                const proto::ProtoObject* cls = envP->getType(ctx, val);
-                return envP->isBytesOrBytearrayType(cls)
-                    && (d->isByteBuffer(ctx) || d->isString(ctx));
+                // Any bytes-like object (bytes, bytearray, memoryview).
+                return PythonEnvironment::isBytesLike(ctx, val);
             }()) {
             std::string s;
             if (val->isString(ctx)) {
                 val->asString(ctx)->toUTF8String(ctx, s);
             } else {
-                PythonEnvironment* envBV = PythonEnvironment::fromContext(ctx);
-                const proto::ProtoObject* d = envBV
-                    ? val->getAttribute(ctx, envBV->getDataString())
-                    : nullptr;
-                if (d && d->isByteBuffer(ctx)) {
-                    const proto::ProtoByteBuffer* bb = d->asByteBuffer(ctx);
-                    if (bb) s.assign(bb->getBuffer(ctx), bb->getSize(ctx));
-                } else if (d && d->isString(ctx)) {
-                    d->asString(ctx)->toUTF8String(ctx, s);
-                }
+                PythonEnvironment::bytesLikeContent(ctx, val, s);
             }
             // Trim surrounding whitespace (CPython allows ' 3.14 ').
             size_t fb = s.find_first_not_of(" \t\n\r\f\v");
@@ -3234,30 +3219,15 @@ static const proto::ProtoObject* py_int_call(
                 // digits — `int(b'123')` returns 123.  Detect a bytes wrapper
                 // (own __data__ is ByteBuffer or ProtoString and class is
                 // bytes/bytearray) and steer into the string-parsing branch.
-                PythonEnvironment* envP = PythonEnvironment::fromContext(ctx);
-                if (!envP) return false;
-                const proto::ProtoObject* d = val->getAttribute(ctx,
-                    envP->getDataString());
-                if (!d) return false;
-                const proto::ProtoObject* cls = envP->getType(ctx, val);
-                return envP->isBytesOrBytearrayType(cls)
-                    && (d->isByteBuffer(ctx) || d->isString(ctx));
+                // Any bytes-like object (bytes, bytearray, memoryview).
+                return PythonEnvironment::isBytesLike(ctx, val);
             }()) {
             std::string s;
             if (val->isString(ctx)) {
                 val->asString(ctx)->toUTF8String(ctx, s);
             } else {
                 // bytes path: read the raw octets directly from __data__.
-                PythonEnvironment* envBV = PythonEnvironment::fromContext(ctx);
-                const proto::ProtoObject* d = envBV
-                    ? val->getAttribute(ctx, envBV->getDataString())
-                    : nullptr;
-                if (d && d->isByteBuffer(ctx)) {
-                    const proto::ProtoByteBuffer* bb = d->asByteBuffer(ctx);
-                    if (bb) s.assign(bb->getBuffer(ctx), bb->getSize(ctx));
-                } else if (d && d->isString(ctx)) {
-                    d->asString(ctx)->toUTF8String(ctx, s);
-                }
+                PythonEnvironment::bytesLikeContent(ctx, val, s);
             }
             // Trim surrounding whitespace (CPython allows " 42 ").
             size_t b = s.find_first_not_of(" \t\n\r\f\v");
@@ -3689,8 +3659,11 @@ static const proto::ProtoObject* py_str_call(
         // bytes have __class__ == bytesPrototype.
         {
             PythonEnvironment* env0 = PythonEnvironment::fromContext(ctx);
-            const proto::ProtoObject* xType = env0 ? env0->getType(ctx, x) : nullptr;
-            if (env0 && xType && xType == env0->getBytesPrototype()) {
+            // Any bytes-like object decodes (bytes, bytearray, memoryview,
+            // a subclass); its bytes are read once, into a bytes snapshot.
+            std::string xBytes;
+            const bool xBytesLike = env0 && x && !x->isString(ctx) && PythonEnvironment::bytesLikeContent(ctx, x, xBytes);
+            if (env0) {
                 const proto::ProtoObject* encoding = nullptr;
                 const proto::ProtoObject* errors = nullptr;
                 int posOff = 2;
@@ -3706,7 +3679,13 @@ static const proto::ProtoObject* py_str_call(
                         if (kwArgs->has(ctx, PythonEnvironment::kwKey(ctx, k))) errors = kwArgs->getAt(ctx, PythonEnvironment::kwKey(ctx, k));
                     }
                 }
+                if ((encoding || errors) && !xBytesLike) {
+                    env0->raiseTypeError(ctx, "decoding to str: need a bytes-like object, "
+                        + PythonEnvironment::typeNameOf(ctx, x) + " found");
+                    return nullptr;
+                }
                 if (encoding || errors) {
+                    x = PythonEnvironment::newBytes(ctx, xBytes.data(), xBytes.size());
                     const proto::ProtoString* decS = PythonEnvironment::getInternedString(ctx, "decode");
                     const proto::ProtoObject* decM = env0->getAttribute(ctx, x, decS);
                     if (decM && decM != PROTO_NONE) {
@@ -5301,16 +5280,22 @@ struct DictKey {
     bool exact = true;
 };
 
-// The answer a lookup got from one slot of a dict or set table, kept across
-// a restart or a writer's retry. CPython restarts a lookup only when the
-// table was replaced or the compared entry changed; with persistent storage
-// every write replaces the table, but a write that leaves a slot alone keeps
-// that slot the same object. So a slot that is the very object compared
-// before has the same answer, which is reused without running __eq__ again;
-// a changed slot (a clear and refill, a write to that index) is compared
-// anew. An answer is recorded only when the comparison ran Python code (an
-// all-builtin comparison is cheap to repeat); the slot is then pinned, so its
-// address cannot be reused by another object while the memo holds it.
+// The answers a lookup got from the stored keys it compared, kept across a
+// restart or a writer's retry: CPython's lookdict restarts only when the
+// table was replaced or the compared entry changed, and an entry is the same
+// as long as it holds the same key object. Persistent storage replaces the
+// table on every write, but a stored key stays the same object while it is
+// stored. So on a restart a remembered key that is still stored answers as
+// before without running __eq__ again: a key that matched still matches (the
+// lookup ends there, whatever was added beside it), one that did not is
+// skipped, and only keys stored since are compared. An __eq__ that inserts a
+// key with the same hash then costs what it costs in CPython instead of a
+// restart per insertion.
+//
+// An answer is recorded only once a comparison may have run Python code (an
+// all-builtin comparison is cheap to repeat and has no side effect); each
+// remembered key is pinned, so its address cannot be reused by another
+// object while the memo holds it.
 //
 // The memo also keeps the operation's snapshot (the storage and key list a
 // writer derives its new state from) reachable once Python code has run in
@@ -5321,7 +5306,7 @@ class LookupMemo {
 public:
     explicit LookupMemo(proto::ProtoContext* context) : context_(context) {}
     ~LookupMemo() {
-        unpin(hSlot_);
+        for (Entry& e : entries_) unpin(e.handle);
         unpin(hSnap_[0]);
         unpin(hSnap_[1]);
     }
@@ -5344,22 +5329,41 @@ public:
         roots_ = env ? env->getTransientArgsRoots() : nullptr;
         pinSnapshot();
     }
-    // The answer recorded for `slot`: true and `match` set when there is one.
-    bool recall(const proto::ProtoObject* slot, const proto::ProtoObject*& match) const {
-        if (!valid_ || slot != slot_) return false;
-        match = match_;
-        return true;
+    // The answer recorded for the stored key `stored`: true and `equal` set
+    // when there is one.
+    bool recall(const proto::ProtoObject* stored, bool& equal) const {
+        for (const Entry& e : entries_) {
+            if (e.stored == stored) {
+                equal = e.equal;
+                return true;
+            }
+        }
+        return false;
     }
-    void record(const proto::ProtoObject* slot, const proto::ProtoObject* match) {
-        arm();
-        unpin(hSlot_);
-        if (roots_ && (reinterpret_cast<uintptr_t>(slot) & 0x3F) != 1) hSlot_ = roots_->add(slot);
-        slot_ = slot;
-        match_ = match;
-        valid_ = true;
+    // Records the answer of a comparison with `stored`, once Python code may
+    // have run in the operation.
+    void record(const proto::ProtoObject* stored, bool equal) {
+        if (!armed_) return;
+        bool ignored = false;
+        if (recall(stored, ignored)) return;
+        Entry e{stored, equal, proto::ProtoRootSet::kNullHandle};
+        if (roots_ && (reinterpret_cast<uintptr_t>(stored) & 0x3F) != 1) e.handle = roots_->add(stored);
+        entries_.push_back(e);
+    }
+    // The first remembered matching key for which `stillStored` holds.
+    template <class StillStored>
+    const proto::ProtoObject* recalledMatch(StillStored stillStored) const {
+        for (const Entry& e : entries_)
+            if (e.equal && stillStored(e.stored)) return e.stored;
+        return nullptr;
     }
 
 private:
+    struct Entry {
+        const proto::ProtoObject* stored;
+        bool equal;
+        proto::ProtoRootSet::Handle handle;
+    };
     void pinSnapshot() {
         if (!roots_) return;
         for (int i = 0; i < 2; ++i)
@@ -5371,13 +5375,10 @@ private:
     }
     proto::ProtoContext* context_;
     proto::ProtoRootSet* roots_ = nullptr;
-    proto::ProtoRootSet::Handle hSlot_ = proto::ProtoRootSet::kNullHandle;
     proto::ProtoRootSet::Handle hSnap_[2] = {proto::ProtoRootSet::kNullHandle, proto::ProtoRootSet::kNullHandle};
     const proto::ProtoObject* snap_[2] = {nullptr, nullptr};
-    const proto::ProtoObject* slot_ = nullptr;
-    const proto::ProtoObject* match_ = nullptr;
+    std::vector<Entry> entries_;
     bool armed_ = false;
-    bool valid_ = false;
 };
 
 // Keeps a dict or set storage version (and the key being looked up) reachable
@@ -5401,6 +5402,20 @@ public:
 private:
     LookupMemo* memo_;
 };
+
+// stored == key through the memo: a remembered answer for `stored` when
+// there is one, else the comparison (stored first, CPython's order),
+// recorded.
+static bool memoEqual(proto::ProtoContext* context, const proto::ProtoObject* stored, const proto::ProtoObject* key,
+                      StoragePin& pin, LookupMemo* memo) {
+    bool equal = false;
+    if (memo && memo->recall(stored, equal)) return equal;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    pin.beforeCompare(stored, key);
+    equal = env && env->objectsEqual(context, stored, key);
+    if (memo) memo->record(stored, equal);
+    return equal;
+}
 
 static bool dictKeyResolve(proto::ProtoContext* context, const proto::ProtoObject* key, bool raiseUnhashable, DictKey& dk) {
     dk.key = key;
@@ -5438,43 +5453,40 @@ static inline const proto::ProtoObject* dictBucketKey(const DictKey& dk) {
 // one whose __eq__ accepts it (stored == key, the order CPython compares a
 // dict's keys in); nullptr if none.
 static const proto::ProtoObject* dictBucketMatch(proto::ProtoContext* context, const proto::ProtoMap* bucket,
-                                                 const DictKey& dk, StoragePin& pin) {
+                                                 const DictKey& dk, StoragePin& pin, LookupMemo* memo) {
     const proto::ProtoObject* bk = dictBucketKey(dk);
     if (bucket->has(context, bk)) return bk;
     if (dk.key != bk && bucket->has(context, dk.key)) return dk.key;
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    // A key that matched before a restart and is still stored is the answer.
+    if (memo) {
+        if (const proto::ProtoObject* known = memo->recalledMatch(
+                [&](const proto::ProtoObject* k) { return bucket->has(context, k); }))
+            return known;
+    }
     for (const proto::ProtoMapIterator* it = bucket->getIterator(context); it && it->hasNext(context); it = it->advance(context)) {
         const proto::ProtoObject* stored = it->nextKey(context);
-        pin.beforeCompare(stored, dk.key);
-        if (env && env->objectsEqual(context, stored, dk.key)) return stored;
+        if (memoEqual(context, stored, dk.key, pin, memo)) return stored;
     }
     return nullptr;
 }
 
 // Whether `dk` is the key of the single-value slot at its index, whose key is
 // the embedded word the index decodes to.
-static bool dictSlotMatches(proto::ProtoContext* context, const DictKey& dk, StoragePin& pin) {
+static bool dictSlotMatches(proto::ProtoContext* context, const DictKey& dk, StoragePin& pin, LookupMemo* memo) {
     if (dk.exact) return true;
     const proto::ProtoObject* occupant = dictWordKey(dk.hash);
     if (!isEmbeddedKey(occupant)) return false;
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    pin.beforeCompare(occupant, dk.key);
-    return env && env->objectsEqual(context, occupant, dk.key);
+    return memoEqual(context, occupant, dk.key, pin, memo);
 }
 
 // Which entry of the occupied slot `slot` holds `dk`: for a bucket, the
 // stored key equal to it; for a single-value slot, `slot` itself when its key
-// equals it; nullptr when none does. `memo`, when given, supplies the answer
-// recorded for this very slot object, and records a new answer that ran
-// Python code (LookupMemo).
+// equals it; nullptr when none does. `memo`, when given, answers for the
+// stored keys compared before a restart (LookupMemo).
 static const proto::ProtoObject* dictSlotResolve(proto::ProtoContext* context, const proto::ProtoObject* slot,
                                                  const DictKey& dk, StoragePin& pin, LookupMemo* memo) {
-    const proto::ProtoObject* match = nullptr;
-    if (memo && memo->recall(slot, match)) return match;
-    if (const proto::ProtoMap* bucket = dictBucket(context, slot)) match = dictBucketMatch(context, bucket, dk, pin);
-    else match = dictSlotMatches(context, dk, pin) ? slot : nullptr;
-    if (memo && pin.ranUserCompare()) memo->record(slot, match);
-    return match;
+    if (const proto::ProtoMap* bucket = dictBucket(context, slot)) return dictBucketMatch(context, bucket, dk, pin, memo);
+    return dictSlotMatches(context, dk, pin, memo) ? slot : nullptr;
 }
 
 // The value stored for `dk` (nullptr if absent); `stored` receives the key
@@ -5503,10 +5515,10 @@ static const proto::ProtoObject* dictFind(proto::ProtoContext* context, const pr
 // dictFind on the storage `owner` keeps under `dataName`, `dict` being the
 // version already read. When a comparison ran Python code and the owner's
 // storage changed meanwhile, the lookup is repeated on the new storage; the
-// slot it compared, if still the same object there, answers from the memo
-// without running __eq__ again, so only a replaced or rewritten slot is
-// compared anew. That is CPython's lookdict rule: an __eq__ that writes an
-// unrelated key costs one comparison, not an endless restart.
+// keys it compared that are still stored answer from the memo without
+// running __eq__ again, so only keys stored since are compared. That is
+// CPython's lookdict rule: an __eq__ that writes another key, even one with
+// the same hash, restarts none of the comparisons made.
 static const proto::ProtoObject* dictFindInOwner(proto::ProtoContext* context, const proto::ProtoObject* owner,
                                                  const proto::ProtoString* dataName,
                                                  const proto::ProtoSparseList* dict, const DictKey& dk) {
@@ -5925,17 +5937,21 @@ private:
 // The position in `bucket` of the element equal to `key`: the same object,
 // else the first stored element whose __eq__ accepts it; -1 if none.
 static long long setBucketPosition(proto::ProtoContext* context, const proto::ProtoList* bucket,
-                                   const proto::ProtoObject* key, StoragePin& pin) {
+                                   const proto::ProtoObject* key, StoragePin& pin, LookupMemo* memo = nullptr) {
     const proto::proto_ulong n = bucket->getSize(context);
     for (proto::proto_ulong i = 0; i < n; ++i) {
         if (bucket->getAt(context, static_cast<int>(i)) == key) return static_cast<long long>(i);
     }
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    if (!env) return -1;
+    // An element that matched before a restart and is still stored is the
+    // answer (LookupMemo).
+    if (memo) {
+        for (proto::proto_ulong i = 0; i < n; ++i) {
+            bool equal = false;
+            if (memo->recall(bucket->getAt(context, static_cast<int>(i)), equal) && equal) return static_cast<long long>(i);
+        }
+    }
     for (proto::proto_ulong i = 0; i < n; ++i) {
-        const proto::ProtoObject* stored = bucket->getAt(context, static_cast<int>(i));
-        pin.beforeCompare(stored, key);
-        if (env->objectsEqual(context, stored, key)) return static_cast<long long>(i);
+        if (memoEqual(context, bucket->getAt(context, static_cast<int>(i)), key, pin, memo)) return static_cast<long long>(i);
     }
     return -1;
 }
@@ -5946,27 +5962,20 @@ static long long setBucketPosition(proto::ProtoContext* context, const proto::Pr
 // digest that can equal an int's (see keyHash), and {s, n} with
 // hash(s) == n's key hash and s != n has two elements.
 static bool setSlotMatches(proto::ProtoContext* context, const proto::ProtoObject* stored, const DictKey& dk,
-                           StoragePin& pin) {
+                           StoragePin& pin, LookupMemo* memo = nullptr) {
     if (stored == dk.key) return true;
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    pin.beforeCompare(stored, dk.key);
-    return env && env->objectsEqual(context, stored, dk.key);
+    return memoEqual(context, stored, dk.key, pin, memo);
 }
 
 // The element of the occupied slot `slot` equal to `dk.key` (the single
 // element, or one of a bucket), or nullptr. `memo` as for dictSlotResolve.
 static const proto::ProtoObject* setSlotResolve(proto::ProtoContext* context, const proto::ProtoObject* slot,
                                                 const DictKey& dk, StoragePin& pin, LookupMemo* memo) {
-    const proto::ProtoObject* match = nullptr;
-    if (memo && memo->recall(slot, match)) return match;
     if (const proto::ProtoList* bucket = setBucket(context, slot)) {
-        const long long pos = setBucketPosition(context, bucket, dk.key, pin);
-        match = pos < 0 ? nullptr : bucket->getAt(context, static_cast<int>(pos));
-    } else {
-        match = setSlotMatches(context, slot, dk, pin) ? slot : nullptr;
+        const long long pos = setBucketPosition(context, bucket, dk.key, pin, memo);
+        return pos < 0 ? nullptr : bucket->getAt(context, static_cast<int>(pos));
     }
-    if (memo && pin.ranUserCompare()) memo->record(slot, match);
-    return match;
+    return setSlotMatches(context, slot, dk, pin, memo) ? slot : nullptr;
 }
 
 // The position of the element `match` in `bucket`, by identity.
@@ -7979,12 +7988,17 @@ static const proto::ProtoObject* py_bytes_repr(
     if (!bytes_data_view(context, self, str))
         return PythonEnvironment::getInternedString(context, "b''")->asObject(context);
 
-    std::string res = "b'";
+    // CPython's quote choice: double quotes when the content has a single
+    // quote and no double quote, which is then left unescaped.
+    const char quote = (str.find('\'') != std::string::npos && str.find('"') == std::string::npos) ? '"' : '\'';
+    std::string res = "b";
+    res += quote;
     for (unsigned char c : str) {
-        if (c >= 32 && c < 127 && c != '\'' && c != '\\') {
+        if (c >= 32 && c < 127 && c != quote && c != '\\') {
             res += (char)c;
-        } else if (c == '\'') {
-            res += "\\'";
+        } else if (c == static_cast<unsigned char>(quote)) {
+            res += '\\';
+            res += quote;
         } else if (c == '\\') {
             res += "\\\\";
         } else if (c == '\n') {
@@ -7999,7 +8013,7 @@ static const proto::ProtoObject* py_bytes_repr(
             res += buf;
         }
     }
-    res += "'";
+    res += quote;
     return PythonEnvironment::newStr(context, res);
 }
 
@@ -8318,6 +8332,15 @@ static const proto::ProtoObject* py_bytes_call(
                     result = env->callObject(bytesM, { arg });
                 }
                 if (result && result != PROTO_NONE) {
+                    // For a subclass, a new instance holding the result's
+                    // bytes (the result may be `arg` itself: bytes.__bytes__
+                    // answers self), as CPython's bytes_subtype_new.
+                    if (env && cls != env->getBytesPrototype() && env->isActuallyAClass(context, cls)) {
+                        std::string content;
+                        if (bytes_view(context, result, content))
+                            return wrapForSubclass(bytes_make_object(context, content.data(),
+                                static_cast<proto::proto_ulong>(content.size())));
+                    }
                     return result;
                 }
                 // A None return falls through to the iterable path /
@@ -11423,28 +11446,14 @@ static bool bytes_view(proto::ProtoContext* context,
         out.assign(bb->getBuffer(context), n);
         return true;
     }
-    // memoryview: __mv_data__ holds the underlying bytes / bytearray
-    // / ByteBuffer. Recurse so callers (bytes.maketrans / translate
-    // / etc.) accept memoryview altchars correctly.
-    const proto::ProtoObject* mv = obj->getAttribute(context,
-        PythonEnvironment::getInternalString(context, "__mv_data__"));
-    if (mv && mv != PROTO_NONE && mv != obj) {
-        return bytes_view(context, mv, out);
-    }
+    // bytes, bytearray, memoryview.
+    if (PythonEnvironment::bytesLikeContent(context, obj, out)) return true;
     const proto::ProtoObject* data = obj->getAttribute(context,
         PythonEnvironment::getInternalString(context, "__data__"));
-    if (data && data != PROTO_NONE) {
-        if (data->isByteBuffer(context)) {
-            const proto::ProtoByteBuffer* bb = data->asByteBuffer(context);
-            proto::proto_ulong n = bb->getSize(context);
-            out.assign(bb->getBuffer(context), n);
-            return true;
-        }
-        if (data->isString(context)) {
-            out.clear();
-            data->asString(context)->toUTF8String(context, out);
-            return true;
-        }
+    if (data && data != PROTO_NONE && data->isString(context)) {
+        out.clear();
+        data->asString(context)->toUTF8String(context, out);
+        return true;
     }
     // array.array (and any other object with a tobytes() method) gives
     // its octets through tobytes(), called bound: a Python method reached
@@ -11479,6 +11488,10 @@ static const proto::ProtoObject* bytes_make_object(proto::ProtoContext* context,
     return b;
 }
 
+const proto::ProtoObject* PythonEnvironment::newBytes(proto::ProtoContext* ctx, const char* data, size_t n) {
+    return bytes_make_object(ctx, data, static_cast<proto::proto_ulong>(n));
+}
+
 static const proto::ProtoString* bytes_from_object(proto::ProtoContext* context, const proto::ProtoObject* obj) {
     // Legacy helper: returns a ProtoString view of a bytes-like object.
     // Used by callers that immediately call toUTF8String to get a
@@ -11490,6 +11503,14 @@ static const proto::ProtoString* bytes_from_object(proto::ProtoContext* context,
     // the result as bytes).  New code should prefer bytes_view().
     if (!obj) return nullptr;
     if (obj->isString(context)) return obj->asString(context);
+    {
+        std::string content;
+        if (PythonEnvironment::isBytearray(context, obj) && PythonEnvironment::bytearrayContent(context, obj, content)) {
+            uint8_t rem[4]; uint8_t remCount = 0;
+            return proto::ProtoString::fromUTF8Buffer(context, reinterpret_cast<const uint8_t*>(content.data()),
+                                                      content.size(), nullptr, 0, rem, &remCount);
+        }
+    }
     if (obj->isByteBuffer(context)) {
         const proto::ProtoByteBuffer* bb = obj->asByteBuffer(context);
         uint8_t rem[4]; uint8_t remCount = 0;
@@ -12382,104 +12403,184 @@ static const proto::ProtoObject* py_str_encode(
             if (v && v->isString(context)) v->asString(context)->toUTF8String(context, errorsArg);
         }
     }
-    if (canon == "ascii" || canon == "usascii") {
-        // Iterate code points (UTF-8 decoded) and apply the chosen
-        // error handler.  Strict raises on the first non-ASCII
-        // codepoint; ignore drops it; replace emits '?'.  The raw
-        // UTF-8 byte loop would over-emit multibyte sequences as
-        // multiple errors — decode code-point by code-point.
-        std::string out;
-        size_t i = 0;
-        bool errored = false;
-        while (i < raw.size()) {
-            unsigned char c0 = static_cast<unsigned char>(raw[i]);
-            int len = 1;
-            unsigned int cp = c0;
-            if ((c0 & 0x80) == 0) { len = 1; cp = c0; }
-            else if ((c0 & 0xE0) == 0xC0) len = 2;
-            else if ((c0 & 0xF0) == 0xE0) len = 3;
-            else if ((c0 & 0xF8) == 0xF0) len = 4;
-            if (cp < 0x80) {
-                out += static_cast<char>(cp);
-                i += len;
-                continue;
-            }
-            if (errorsArg == "ignore") { i += len; continue; }
-            if (errorsArg == "replace") { out += '?'; i += len; continue; }
-            errored = true;
-            break;
-        }
-        if (errored) {
-            env->raiseValueError(context,
-                PythonEnvironment::getInternedString(context,
-                    "'ascii' codec can't encode character: "
-                    "ordinal not in range(128)")->asObject(context));
+    // utf-8, ascii and latin-1 natively; any other codec through the
+    // registry (_codecs.encode). The error handlers strict, ignore,
+    // replace, backslashreplace, xmlcharrefreplace, surrogateescape and
+    // surrogatepass run natively, any other through codecs.lookup_error.
+    int codec = -1;  // 0 utf-8, 1 ascii, 2 latin-1
+    if (canon == "utf8" || canon == "u8" || canon == "utf" || canon == "cp65001") codec = 0;
+    else if (canon == "ascii" || canon == "usascii" || canon == "646") codec = 1;
+    else if (canon == "latin1" || canon == "latin" || canon == "iso88591" || canon == "8859" || canon == "l1" || canon == "cp819") codec = 2;
+    if (codec < 0) {
+        const proto::ProtoObject* codecs = env->resolveModule("_codecs", context);
+        const proto::ProtoObject* encode = codecs ? codecs->getAttribute(context, PythonEnvironment::getInternedString(context, "encode")) : nullptr;
+        if (!encode || encode == PROTO_NONE) return PROTO_NONE;
+        const proto::ProtoObject* r = env->callObject(encode, {PythonEnvironment::newStr(context, raw),
+            PythonEnvironment::newStr(context, encoding), PythonEnvironment::newStr(context, errorsArg)});
+        if (r && r != PROTO_NONE && !PythonEnvironment::isBytesLike(context, r)) {
+            env->raiseTypeError(context, "'" + encoding + "' encoder returned '" + PythonEnvironment::typeNameOf(context, r)
+                                         + "' instead of 'bytes'; use codecs.encode() to encode to arbitrary types");
             return nullptr;
         }
-        return bytes_make_object(context, out.data(), static_cast<proto::proto_ulong>(out.size()));
-    } else if (canon == "latin1" || canon == "iso88591" || canon == "8859") {
-        // latin-1 maps each Unicode code point ≤ 0xFF to a byte.
-        // protoPython stores str as UTF-8; iterate code points and apply
-        // the `errors` policy: 'strict' raises ValueError (default),
-        // 'ignore' drops the offending code point, 'replace' emits '?'.
-        std::string out;
-        size_t i = 0;
-        while (i < raw.size()) {
-            unsigned char c = static_cast<unsigned char>(raw[i]);
-            unsigned int cp = 0;
-            int len = 1;
-            if (c < 0x80) { cp = c; len = 1; }
-            else if ((c & 0xE0) == 0xC0 && i + 1 < raw.size()) {
-                cp = ((c & 0x1F) << 6) | (static_cast<unsigned char>(raw[i+1]) & 0x3F);
-                len = 2;
-            } else if ((c & 0xF0) == 0xE0 && i + 2 < raw.size()) {
-                cp = ((c & 0x0F) << 12)
-                   | ((static_cast<unsigned char>(raw[i+1]) & 0x3F) << 6)
-                   | (static_cast<unsigned char>(raw[i+2]) & 0x3F);
-                len = 3;
-            } else if ((c & 0xF8) == 0xF0 && i + 3 < raw.size()) {
-                cp = ((c & 0x07) << 18)
-                   | ((static_cast<unsigned char>(raw[i+1]) & 0x3F) << 12)
-                   | ((static_cast<unsigned char>(raw[i+2]) & 0x3F) << 6)
-                   | (static_cast<unsigned char>(raw[i+3]) & 0x3F);
-                len = 4;
-            } else {
-                if (errorsArg == "ignore") { i += 1; continue; }
-                if (errorsArg == "replace") { out += '?'; i += 1; continue; }
-                env->raiseValueError(context,
-                    PythonEnvironment::getInternedString(context,
-                        "'latin-1' codec can't encode character: "
-                        "ordinal not in range(256)")->asObject(context));
-                return nullptr;
-            }
-            if (cp > 0xFF) {
-                if (errorsArg == "ignore") { i += len; continue; }
-                if (errorsArg == "replace") { out += '?'; i += len; continue; }
-                env->raiseValueError(context,
-                    PythonEnvironment::getInternedString(context,
-                        "'latin-1' codec can't encode character: "
-                        "ordinal not in range(256)")->asObject(context));
-                return nullptr;
-            }
-            out += static_cast<char>(cp);
-            i += len;
-        }
-        raw = out;
+        return r;
     }
-    // utf-8 (default): use raw as-is (protoPython str storage is UTF-8).
-
-    const proto::ProtoObject* bytesProto = env->getBytesPrototype();
-    if (!bytesProto) return PROTO_NONE;
-    const proto::ProtoObject* b = bytesProto->newChild(context, true);
-    // Use ProtoByteBuffer for the bytes payload so non-ASCII octets
-    // round-trip without UTF-8 reinterpretation.
-    const proto::ProtoByteBuffer* bb = context->newByteBuffer(
-        raw.data(), static_cast<proto::proto_ulong>(raw.size()));
-    b->setAttribute(context,
-        PythonEnvironment::getInternalString(context, "__data__"),
-        bb->asObject(context));
-    return b;
+    // The code points of the string (its UTF-8 storage decoded).
+    std::vector<unsigned int> cps;
+    cps.reserve(raw.size());
+    for (size_t k = 0; k < raw.size();) {
+        const unsigned char c = static_cast<unsigned char>(raw[k]);
+        const size_t extra = c >= 0xF0 ? 3 : c >= 0xE0 ? 2 : c >= 0xC0 ? 1 : 0;
+        unsigned int cp = extra ? (c & (0x3F >> extra)) : c;
+        for (size_t m = 1; m <= extra && k + m < raw.size(); ++m) cp = (cp << 6) | (static_cast<unsigned char>(raw[k + m]) & 0x3F);
+        cps.push_back(cp);
+        k += extra + 1;
+    }
+    const char* codecName = codec == 0 ? "utf-8" : codec == 1 ? "ascii" : "latin-1";
+    const unsigned int limit = codec == 1 ? 0x80 : codec == 2 ? 0x100 : 0x110000;
+    auto encodable = [&](unsigned int cp) { return cp < limit && !(codec == 0 && cp >= 0xD800 && cp <= 0xDFFF); };
+    auto appendUtf8Cp = [](std::string& out, unsigned int cp) {
+        if (cp < 0x80) out += static_cast<char>(cp);
+        else if (cp < 0x800) { out += static_cast<char>(0xC0 | (cp >> 6)); out += static_cast<char>(0x80 | (cp & 0x3F)); }
+        else if (cp < 0x10000) { out += static_cast<char>(0xE0 | (cp >> 12)); out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F)); out += static_cast<char>(0x80 | (cp & 0x3F)); }
+        else { out += static_cast<char>(0xF0 | (cp >> 18)); out += static_cast<char>(0x80 | ((cp >> 12) & 0x3F)); out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F)); out += static_cast<char>(0x80 | (cp & 0x3F)); }
+    };
+    auto put = [&](std::string& out, unsigned int cp) {
+        if (codec == 0) appendUtf8Cp(out, cp);
+        else out += static_cast<char>(cp);
+    };
+    const char* reason = codec == 0 ? "surrogates not allowed" : codec == 1 ? "ordinal not in range(128)" : "ordinal not in range(256)";
+    std::string out;
+    out.reserve(raw.size());
+    size_t k = 0;
+    while (k < cps.size()) {
+        const unsigned int cp = cps[k];
+        if (encodable(cp)) { put(out, cp); ++k; continue; }
+        size_t end = k + 1;
+        while (end < cps.size() && !encodable(cps[end])) ++end;
+        if (errorsArg == "ignore") { k = end; continue; }
+        if (errorsArg == "replace") { for (size_t m = k; m < end; ++m) out += '?'; k = end; continue; }
+        if (errorsArg == "backslashreplace") {
+            for (size_t m = k; m < end; ++m) {
+                char hex[12];
+                const unsigned int c = cps[m];
+                if (c <= 0xFF) std::snprintf(hex, sizeof hex, "\\x%02x", c);
+                else if (c <= 0xFFFF) std::snprintf(hex, sizeof hex, "\\u%04x", c);
+                else std::snprintf(hex, sizeof hex, "\\U%08x", c);
+                out += hex;
+            }
+            k = end;
+            continue;
+        }
+        if (errorsArg == "xmlcharrefreplace") {
+            for (size_t m = k; m < end; ++m) out += "&#" + std::to_string(cps[m]) + ";";
+            k = end;
+            continue;
+        }
+        bool handled = false;
+        if (errorsArg == "surrogateescape") {
+            handled = true;
+            for (size_t m = k; m < end && handled; ++m) handled = cps[m] >= 0xDC80 && cps[m] <= 0xDCFF;
+            if (handled) for (size_t m = k; m < end; ++m) out += static_cast<char>(cps[m] - 0xDC00);
+        } else if (errorsArg == "surrogatepass" && codec == 0) {
+            handled = true;
+            for (size_t m = k; m < end && handled; ++m) handled = cps[m] >= 0xD800 && cps[m] <= 0xDFFF;
+            if (handled) for (size_t m = k; m < end; ++m) appendUtf8Cp(out, cps[m]);
+        }
+        if (handled) { k = end; continue; }
+        const proto::ProtoObject* excType = env->getBuiltins()->getAttribute(context,
+            PythonEnvironment::getInternedString(context, "UnicodeEncodeError"));
+        const proto::ProtoObject* exc = env->callObject(excType, {PythonEnvironment::newStr(context, codecName),
+            PythonEnvironment::newStr(context, raw), context->fromInteger(static_cast<long long>(k)),
+            context->fromInteger(static_cast<long long>(end)), PythonEnvironment::newStr(context, reason)});
+        if (!exc) return nullptr;
+        const bool builtinHandler = errorsArg == "strict" || errorsArg == "surrogateescape" || errorsArg == "surrogatepass";
+        if (builtinHandler) env->raiseException(exc);
+        // A registered handler: handler(exc) -> (replacement, new position).
+        const proto::ProtoObject* codecs = env->resolveModule("_codecs", context);
+        const proto::ProtoObject* lookup = codecs ? codecs->getAttribute(context, PythonEnvironment::getInternedString(context, "lookup_error")) : nullptr;
+        const proto::ProtoObject* handler = lookup ? env->callObject(lookup, {PythonEnvironment::newStr(context, errorsArg)}) : nullptr;
+        if (!handler) return nullptr;
+        const proto::ProtoObject* res = env->callObject(handler, {exc});
+        if (!res) return nullptr;
+        TupleView t = PythonEnvironment::tupleView(context, res);
+        if (!t || t->getSize(context) != 2 || !t->getAt(context, 1)->isInteger(context)) {
+            env->raiseTypeError(context, "encoding error handler must return (str/bytes, int) tuple");
+            return nullptr;
+        }
+        const proto::ProtoObject* rep = t->getAt(context, 0);
+        std::string repBytes;
+        if (rep->isString(context)) {
+            std::string repStr;
+            rep->asString(context)->toUTF8String(context, repStr);
+            for (unsigned char c : repStr) {
+                if (c >= 0x80 && codec != 0) {
+                    env->raiseException(exc);
+                }
+            }
+            repBytes = repStr;
+        } else if (!PythonEnvironment::bytesLikeContent(context, rep, repBytes)) {
+            env->raiseTypeError(context, "encoding error handler must return (str/bytes, int) tuple");
+            return nullptr;
+        }
+        out += repBytes;
+        long long pos = t->getAt(context, 1)->asLong(context);
+        if (pos < 0) pos += static_cast<long long>(cps.size());
+        if (pos < 0 || pos > static_cast<long long>(cps.size())) {
+            env->raiseIndexError(context, "position " + std::to_string(pos) + " from error handler out of bounds");
+            return nullptr;
+        }
+        k = static_cast<size_t>(pos);
+    }
+    return bytes_make_object(context, out.data(), static_cast<proto::proto_ulong>(out.size()));
 }
+
+// bytes.decode(encoding='utf-8', errors='strict') and bytearray's: the
+// utf-8, ascii and latin-1 codecs natively, every other encoding through the
+// codec registry (_codecs.decode). The error handlers strict, ignore,
+// replace, surrogateescape and backslashreplace run natively; any other is
+// looked up in the registry (codecs.register_error) and called with the
+// UnicodeDecodeError, as CPython does.
+namespace {
+
+void appendUtf8(std::string& out, unsigned int cp) {
+    if (cp < 0x80) out += static_cast<char>(cp);
+    else if (cp < 0x800) { out += static_cast<char>(0xC0 | (cp >> 6)); out += static_cast<char>(0x80 | (cp & 0x3F)); }
+    else if (cp < 0x10000) {
+        out += static_cast<char>(0xE0 | (cp >> 12));
+        out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (cp & 0x3F));
+    } else {
+        out += static_cast<char>(0xF0 | (cp >> 18));
+        out += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+        out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (cp & 0x3F));
+    }
+}
+
+// The length of the valid UTF-8 sequence at raw[i], or 0 with the length
+// of the maximal invalid subpart in `bad` and CPython's reason.
+size_t utf8Sequence(const std::string& raw, size_t i, unsigned int& cp, size_t& bad, const char*& reason) {
+    const auto at = [&](size_t k) { return static_cast<unsigned char>(raw[k]); };
+    const unsigned char c = at(i);
+    if (c < 0x80) { cp = c; return 1; }
+    size_t need = 0;
+    unsigned char lo = 0x80, hi = 0xBF;
+    if (c >= 0xC2 && c <= 0xDF) need = 1;
+    else if (c >= 0xE0 && c <= 0xEF) { need = 2; if (c == 0xE0) lo = 0xA0; if (c == 0xED) hi = 0x9F; }
+    else if (c >= 0xF0 && c <= 0xF4) { need = 3; if (c == 0xF0) lo = 0x90; if (c == 0xF4) hi = 0x8F; }
+    else { bad = 1; reason = "invalid start byte"; return 0; }
+    cp = c & (need == 1 ? 0x1F : need == 2 ? 0x0F : 0x07);
+    for (size_t k = 1; k <= need; ++k) {
+        if (i + k >= raw.size()) { bad = k; reason = "unexpected end of data"; return 0; }
+        const unsigned char d = at(i + k);
+        const unsigned char l = k == 1 ? lo : 0x80, h = k == 1 ? hi : 0xBF;
+        if (d < l || d > h) { bad = k; reason = "invalid continuation byte"; return 0; }
+        cp = (cp << 6) | (d & 0x3F);
+    }
+    return need + 1;
+}
+
+} // namespace
 
 static const proto::ProtoObject* py_bytes_decode(
     proto::ProtoContext* context,
@@ -12488,17 +12589,147 @@ static const proto::ProtoObject* py_bytes_decode(
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
     (void)parentLink;
-    (void)positionalParameters;
-    (void)keywordParameters;
-    std::string raw;
-    if (!bytes_data_view(context, self, raw)) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (!env) return PROTO_NONE;
-    const proto::ProtoObject* strProto = env->getStrPrototype();
-    if (!strProto) return PROTO_NONE;
-    const proto::ProtoObject* st = strProto->newChild(context, true);
-    st->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"), PythonEnvironment::newStr(context, raw));
-    return st;
+    std::string raw;
+    if (!PythonEnvironment::bytesLikeContent(context, self, raw) && !bytes_data_view(context, self, raw)) {
+        env->raiseTypeError(context, "descriptor 'decode' for 'bytes' objects doesn't apply to a '"
+                                     + PythonEnvironment::typeNameOf(context, self) + "' object");
+        return nullptr;
+    }
+    const proto::ProtoObject* encObj = nullptr;
+    const proto::ProtoObject* errObj = nullptr;
+    const size_t npos = positionalParameters ? positionalParameters->getSize(context) : 0;
+    if (npos > 2) {
+        env->raiseTypeError(context, "decode() takes at most 2 arguments (" + std::to_string(npos) + " given)");
+        return nullptr;
+    }
+    if (npos >= 1) encObj = positionalParameters->getAt(context, 0);
+    if (npos >= 2) errObj = positionalParameters->getAt(context, 1);
+    if (keywordParameters && keywordParameters->getSize(context) > 0) {
+        const proto::ProtoString* eS = PythonEnvironment::getInternedString(context, "encoding");
+        const proto::ProtoString* rS = PythonEnvironment::getInternedString(context, "errors");
+        if (keywordParameters->has(context, PythonEnvironment::kwKey(context, eS)))
+            encObj = keywordParameters->getAt(context, PythonEnvironment::kwKey(context, eS));
+        if (keywordParameters->has(context, PythonEnvironment::kwKey(context, rS)))
+            errObj = keywordParameters->getAt(context, PythonEnvironment::kwKey(context, rS));
+    }
+    std::string encoding = "utf-8", errors = "strict";
+    if (encObj) {
+        if (!encObj->isString(context)) {
+            env->raiseTypeError(context, "decode() argument 'encoding' must be str, not " + PythonEnvironment::typeNameOf(context, encObj));
+            return nullptr;
+        }
+        encoding.clear();
+        encObj->asString(context)->toUTF8String(context, encoding);
+    }
+    if (errObj) {
+        if (!errObj->isString(context)) {
+            env->raiseTypeError(context, "decode() argument 'errors' must be str, not " + PythonEnvironment::typeNameOf(context, errObj));
+            return nullptr;
+        }
+        errors.clear();
+        errObj->asString(context)->toUTF8String(context, errors);
+    }
+    std::string canon;
+    for (char c : encoding) {
+        if (c >= 'A' && c <= 'Z') canon += static_cast<char>(c - 'A' + 'a');
+        else if (c != '-' && c != '_' && c != ' ') canon += c;
+    }
+    int codec = -1;  // 0 utf-8, 1 ascii, 2 latin-1
+    if (canon == "utf8" || canon == "u8" || canon == "utf" || canon == "cp65001") codec = 0;
+    else if (canon == "ascii" || canon == "usascii" || canon == "646") codec = 1;
+    else if (canon == "latin1" || canon == "latin" || canon == "iso88591" || canon == "8859" || canon == "l1" || canon == "cp819") codec = 2;
+    const proto::ProtoObject* bytesObj = nullptr;
+    auto asBytes = [&]() {
+        if (!bytesObj) bytesObj = PythonEnvironment::newBytes(context, raw.data(), raw.size());
+        return bytesObj;
+    };
+    if (codec < 0) {
+        // Another codec: the registry's decoder.
+        const proto::ProtoObject* codecs = env->resolveModule("_codecs", context);
+        const proto::ProtoObject* decode = codecs ? codecs->getAttribute(context, PythonEnvironment::getInternedString(context, "decode")) : nullptr;
+        if (!decode || decode == PROTO_NONE) return PROTO_NONE;
+        const proto::ProtoObject* r = env->callObject(decode, {asBytes(), PythonEnvironment::newStr(context, encoding),
+                                                               PythonEnvironment::newStr(context, errors)});
+        if (r && r != PROTO_NONE && !r->isString(context)) {
+            env->raiseTypeError(context, "'" + encoding + "' decoder returned '" + PythonEnvironment::typeNameOf(context, r)
+                                         + "' instead of 'str'; use codecs.decode() to decode to arbitrary types");
+            return nullptr;
+        }
+        return r;
+    }
+    const char* codecName = codec == 0 ? "utf-8" : codec == 1 ? "ascii" : "latin-1";
+    std::string out;
+    out.reserve(raw.size());
+    size_t i = 0;
+    // Handles the error over raw[start, end); returns where decoding resumes.
+    auto onError = [&](size_t start, size_t end, const char* reason) -> size_t {
+        if (errors == "strict" || errors.empty()) {
+            const proto::ProtoObject* excType = env->getBuiltins()->getAttribute(context,
+                PythonEnvironment::getInternedString(context, "UnicodeDecodeError"));
+            const proto::ProtoObject* exc = env->callObject(excType, {PythonEnvironment::newStr(context, codecName), asBytes(),
+                context->fromInteger(static_cast<long long>(start)), context->fromInteger(static_cast<long long>(end)),
+                PythonEnvironment::newStr(context, reason)});
+            if (exc) env->raiseException(exc);
+            return raw.size();
+        }
+        if (errors == "ignore") return end;
+        if (errors == "replace") { appendUtf8(out, 0xFFFD); return end; }
+        if (errors == "surrogateescape") {
+            // Every byte of an invalid subpart is >= 0x80.
+            for (size_t k = start; k < end; ++k) appendUtf8(out, 0xDC00 + static_cast<unsigned char>(raw[k]));
+            return end;
+        }
+        if (errors == "backslashreplace") {
+            for (size_t k = start; k < end; ++k) {
+                char hex[5];
+                std::snprintf(hex, sizeof hex, "\\x%02x", static_cast<unsigned char>(raw[k]));
+                out += hex;
+            }
+            return end;
+        }
+        // A registered handler: handler(exc) -> (replacement, new position).
+        const proto::ProtoObject* codecs = env->resolveModule("_codecs", context);
+        const proto::ProtoObject* lookup = codecs ? codecs->getAttribute(context, PythonEnvironment::getInternedString(context, "lookup_error")) : nullptr;
+        const proto::ProtoObject* handler = lookup ? env->callObject(lookup, {PythonEnvironment::newStr(context, errors)}) : nullptr;
+        if (!handler) return raw.size();
+        const proto::ProtoObject* excType = env->getBuiltins()->getAttribute(context,
+            PythonEnvironment::getInternedString(context, "UnicodeDecodeError"));
+        const proto::ProtoObject* exc = env->callObject(excType, {PythonEnvironment::newStr(context, codecName), asBytes(),
+            context->fromInteger(static_cast<long long>(start)), context->fromInteger(static_cast<long long>(end)),
+            PythonEnvironment::newStr(context, reason)});
+        if (!exc) return raw.size();
+        const proto::ProtoObject* res = env->callObject(handler, {exc});
+        TupleView t = res ? PythonEnvironment::tupleView(context, res) : TupleView();
+        if (!t || t->getSize(context) != 2 || !t->getAt(context, 0)->isString(context) || !t->getAt(context, 1)->isInteger(context)) {
+            env->raiseTypeError(context, "decoding error handler must return (str, int) tuple");
+            return raw.size();
+        }
+        std::string rep;
+        t->getAt(context, 0)->asString(context)->toUTF8String(context, rep);
+        out += rep;
+        long long pos = t->getAt(context, 1)->asLong(context);
+        if (pos < 0) pos += static_cast<long long>(raw.size());
+        if (pos < 0 || pos > static_cast<long long>(raw.size())) {
+            env->raiseIndexError(context, "position " + std::to_string(pos) + " from error handler out of bounds");
+            return raw.size();
+        }
+        return static_cast<size_t>(pos);
+    };
+    while (i < raw.size()) {
+        const unsigned char c = static_cast<unsigned char>(raw[i]);
+        if (c < 0x80) { out += static_cast<char>(c); ++i; continue; }
+        if (codec == 2) { appendUtf8(out, c); ++i; continue; }
+        if (codec == 1) { i = onError(i, i + 1, "ordinal not in range(128)"); continue; }
+        unsigned int cp = 0;
+        size_t bad = 0;
+        const char* reason = "";
+        const size_t len = utf8Sequence(raw, i, cp, bad, reason);
+        if (len) { out.append(raw, i, len); i += len; continue; }
+        i = onError(i, i + bad, reason);
+    }
+    return PythonEnvironment::newStr(context, out);
 }
 
 static const proto::ProtoObject* py_bytes_mul(
@@ -12545,14 +12776,8 @@ static const proto::ProtoObject* py_bytes_add(
     // "unsupported operand type(s) for +: 'bytes' and 'X'".
     PythonEnvironment* envE = PythonEnvironment::fromContext(context);
     bool otherIsBytes = false;
-    if (other && !other->isString(context)) {
-        if (other->isByteBuffer(context)) otherIsBytes = true;
-        else {
-            const proto::ProtoString* dataS = PythonEnvironment::getInternalString(context, "__data__");
-            const proto::ProtoObject* d = other->getAttribute(context, dataS);
-            if (d && d->isByteBuffer(context)) otherIsBytes = true;
-        }
-    }
+    // Any bytes-like object: bytes, bytearray, memoryview.
+    if (other && !other->isString(context)) otherIsBytes = PythonEnvironment::isBytesLike(context, other);
     if (!otherIsBytes) {
         return envE ? envE->getNotImplementedPrototype() : PROTO_NONE;
     }
@@ -13039,31 +13264,37 @@ static const proto::ProtoObject* py_bytes_hex(
     return PythonEnvironment::newStr(context, out);
 }
 
-// bytes.maketrans(frm, to) → returns a list of 256 ints (translation table).
-// Using a list instead of bytes avoids the null-byte truncation issue with ProtoString storage.
+// bytes.maketrans(frm, to) and bytearray.maketrans: the 256-byte table,
+// as a bytes object (bytes are a ByteBuffer, so the NUL bytes survive).
 static const proto::ProtoObject* py_bytes_maketrans(
     proto::ProtoContext* context,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink*,
     const proto::ProtoArguments* posArgs,
     const proto::ProtoKeywordArguments*) {
-
-    std::array<int, 256> table;
-    for (int i = 0; i < 256; ++i) table[i] = i;
-
-    if (posArgs->getSize(context) >= 2) {
-        std::string frm_str, to_str;
-        bytes_view(context, posArgs->getAt(context, 0), frm_str);
-        bytes_view(context, posArgs->getAt(context, 1), to_str);
-        size_t n = std::min(frm_str.size(), to_str.size());
-        for (size_t i = 0; i < n; ++i)
-            table[static_cast<unsigned char>(frm_str[i])] = static_cast<unsigned char>(to_str[i]);
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    const size_t n = posArgs ? posArgs->getSize(context) : 0;
+    if (n != 2) {
+        env->raiseTypeError(context, "maketrans expected 2 arguments, got " + std::to_string(n));
+        return nullptr;
     }
-
-    const proto::ProtoList* result = context->newList();
-    for (int i = 0; i < 256; ++i)
-        result = result->appendLast(context, context->fromInteger(table[i]));
-    return wrap_list_as_pylist(context, result);
+    std::string frm, to;
+    for (int k = 0; k < 2; ++k) {
+        const proto::ProtoObject* a = posArgs->getAt(context, k);
+        if (a->isString(context) || !PythonEnvironment::bytesLikeContent(context, a, k == 0 ? frm : to)) {
+            env->raiseTypeError(context, "a bytes-like object is required, not '" + PythonEnvironment::typeNameOf(context, a) + "'");
+            return nullptr;
+        }
+    }
+    if (frm.size() != to.size()) {
+        env->raiseValueError(context, PythonEnvironment::newStr(context, "maketrans arguments must have same length"));
+        return nullptr;
+    }
+    std::string table(256, '\0');
+    for (int i = 0; i < 256; ++i) table[static_cast<size_t>(i)] = static_cast<char>(i);
+    for (size_t i = 0; i < frm.size(); ++i) table[static_cast<unsigned char>(frm[i])] = to[i];
+    return bytes_make_object(context, table.data(), 256);
 }
 
 // bytes.translate(table, delete=b'') — applies a translation table produced by bytes.maketrans.
@@ -13657,66 +13888,208 @@ static std::string bytes_sep_from_arg(proto::ProtoContext* context, const proto:
     return " ";
 }
 
+// bytes.split / bytes.rsplit(sep=None, maxsplit=-1), as CPython's: with
+// no separator (or None) runs of ASCII whitespace separate and leading /
+// trailing whitespace yields no empty piece; an empty separator is a
+// ValueError; rsplit counts its maxsplit splits from the right.
+static const proto::ProtoObject* bytes_split_impl(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwargs, bool right) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    std::string raw;
+    if (!bytes_data_view(context, self, raw)) return PROTO_NONE;
+    const char* name = right ? "rsplit" : "split";
+    const size_t npos = posArgs ? posArgs->getSize(context) : 0;
+    if (npos > 2) {
+        env->raiseTypeError(context, std::string(name) + "() takes at most 2 arguments (" + std::to_string(npos) + " given)");
+        return nullptr;
+    }
+    const proto::ProtoObject* sepObj = npos >= 1 ? posArgs->getAt(context, 0) : nullptr;
+    const proto::ProtoObject* msObj = npos >= 2 ? posArgs->getAt(context, 1) : nullptr;
+    if (kwargs && kwargs->getSize(context) > 0) {
+        const proto::ProtoString* sepKey = PythonEnvironment::getInternedString(context, "sep");
+        const proto::ProtoString* msKey = PythonEnvironment::getInternedString(context, "maxsplit");
+        if (kwargs->has(context, PythonEnvironment::kwKey(context, sepKey))) sepObj = kwargs->getAt(context, PythonEnvironment::kwKey(context, sepKey));
+        if (kwargs->has(context, PythonEnvironment::kwKey(context, msKey))) msObj = kwargs->getAt(context, PythonEnvironment::kwKey(context, msKey));
+    }
+    long long maxsplit = -1;
+    if (msObj && msObj != PROTO_NONE) {
+        if (msObj == PROTO_TRUE || msObj == PROTO_FALSE) maxsplit = msObj == PROTO_TRUE ? 1 : 0;
+        else if (msObj->isInteger(context)) maxsplit = msObj->asLong(context);
+        else {
+            env->raiseTypeError(context, "'" + PythonEnvironment::typeNameOf(context, msObj) + "' object cannot be interpreted as an integer");
+            return nullptr;
+        }
+    }
+    const bool whitespace = !sepObj || sepObj == PROTO_NONE;
+    std::string sep;
+    if (!whitespace) {
+        if (sepObj->isString(context) || !PythonEnvironment::bytesLikeContent(context, sepObj, sep)) {
+            env->raiseTypeError(context, "a bytes-like object is required, not '" + PythonEnvironment::typeNameOf(context, sepObj) + "'");
+            return nullptr;
+        }
+        if (sep.empty()) {
+            env->raiseValueError(context, PythonEnvironment::newStr(context, "empty separator"));
+            return nullptr;
+        }
+    }
+    auto isSpace = [](char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\x0b' || c == '\x0c'; };
+    std::vector<std::string> parts;
+    if (whitespace) {
+        if (!right) {
+            size_t i = 0;
+            long long splits = 0;
+            while (true) {
+                while (i < raw.size() && isSpace(raw[i])) ++i;
+                if (i >= raw.size()) break;
+                if (maxsplit >= 0 && splits >= maxsplit) {
+                    size_t e = raw.size();
+                    while (e > i && isSpace(raw[e - 1])) --e;
+                    parts.push_back(raw.substr(i, e - i));
+                    break;
+                }
+                size_t j = i;
+                while (j < raw.size() && !isSpace(raw[j])) ++j;
+                parts.push_back(raw.substr(i, j - i));
+                ++splits;
+                i = j;
+            }
+        } else {
+            size_t i = raw.size();
+            long long splits = 0;
+            while (true) {
+                while (i > 0 && isSpace(raw[i - 1])) --i;
+                if (i == 0) break;
+                if (maxsplit >= 0 && splits >= maxsplit) {
+                    size_t b = 0;
+                    while (b < i && isSpace(raw[b])) ++b;
+                    parts.push_back(raw.substr(b, i - b));
+                    break;
+                }
+                size_t j = i;
+                while (j > 0 && !isSpace(raw[j - 1])) --j;
+                parts.push_back(raw.substr(j, i - j));
+                ++splits;
+                i = j;
+            }
+            std::reverse(parts.begin(), parts.end());
+        }
+    } else if (!right) {
+        size_t start = 0;
+        long long splits = 0;
+        while (true) {
+            const size_t pos = (maxsplit >= 0 && splits >= maxsplit) ? std::string::npos : raw.find(sep, start);
+            if (pos == std::string::npos) { parts.push_back(raw.substr(start)); break; }
+            parts.push_back(raw.substr(start, pos - start));
+            start = pos + sep.size();
+            ++splits;
+        }
+    } else {
+        size_t end = raw.size();
+        long long splits = 0;
+        while (true) {
+            size_t pos = std::string::npos;
+            if (!(maxsplit >= 0 && splits >= maxsplit) && end >= sep.size()) pos = raw.rfind(sep, end - sep.size());
+            if (pos == std::string::npos) { parts.push_back(raw.substr(0, end)); break; }
+            parts.push_back(raw.substr(pos + sep.size(), end - pos - sep.size()));
+            end = pos;
+            ++splits;
+        }
+        std::reverse(parts.begin(), parts.end());
+    }
+    const proto::ProtoList* result = context->newList();
+    for (const std::string& p : parts) {
+        PythonEnvironment::TransientPin pin(env, result->asObject(context));
+        result = result->appendLast(context, bytes_make_object(context, p.data(), static_cast<proto::proto_ulong>(p.size())));
+    }
+    return wrap_list_as_pylist(context, result);
+}
+
 static const proto::ProtoObject* py_bytes_split(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwargs) {
+    return bytes_split_impl(context, self, posArgs, kwargs, false);
+}
+
+static const proto::ProtoObject* py_bytes_rsplit(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwargs) {
+    return bytes_split_impl(context, self, posArgs, kwargs, true);
+}
+
+// bytes.expandtabs(tabsize=8): tabs to spaces up to the next multiple of
+// tabsize, the column restarting after \n and \r.
+static const proto::ProtoObject* py_bytes_expandtabs(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments* kwargs) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    std::string raw;
+    if (!env || !bytes_data_view(context, self, raw)) return PROTO_NONE;
+    const proto::ProtoObject* t = posArgs && posArgs->getSize(context) >= 1 ? posArgs->getAt(context, 0) : nullptr;
+    if (kwargs && kwargs->getSize(context) > 0) {
+        const proto::ProtoString* k = PythonEnvironment::getInternedString(context, "tabsize");
+        if (kwargs->has(context, PythonEnvironment::kwKey(context, k))) t = kwargs->getAt(context, PythonEnvironment::kwKey(context, k));
+    }
+    long long tabsize = 8;
+    if (t) {
+        if (t == PROTO_TRUE || t == PROTO_FALSE) tabsize = t == PROTO_TRUE ? 1 : 0;
+        else if (t->isInteger(context)) tabsize = t->asLong(context);
+        else {
+            env->raiseTypeError(context, "'" + PythonEnvironment::typeNameOf(context, t) + "' object cannot be interpreted as an integer");
+            return nullptr;
+        }
+    }
+    std::string out;
+    long long col = 0;
+    for (char c : raw) {
+        if (c == '\t') {
+            if (tabsize > 0) {
+                const long long n = tabsize - col % tabsize;
+                out.append(static_cast<size_t>(n), ' ');
+                col += n;
+            }
+        } else {
+            out += c;
+            col = (c == '\n' || c == '\r') ? 0 : col + 1;
+        }
+    }
+    return bytes_make_object(context, out.data(), static_cast<proto::proto_ulong>(out.size()));
+}
+
+// bytes.__rmod__(other): CPython's slot computes `other % self` only for a
+// bytes left operand, whose own __mod__ already ran: NotImplemented.
+static const proto::ProtoObject* py_bytes_rmod(
+    proto::ProtoContext* context,
+    const proto::ProtoObject*,
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+}
+
+// bytes.__bytes__(): self for a bytes, a bytes copy for a subclass instance.
+static const proto::ProtoObject* py_bytes_bytes(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (env && env->getType(context, self) == env->getBytesPrototype()) return self;
     std::string raw;
     if (!bytes_data_view(context, self, raw)) return PROTO_NONE;
-    std::string sep = (posArgs && posArgs->getSize(context) >= 1) ? bytes_sep_from_arg(context, posArgs->getAt(context, 0)) : " ";
-    if (sep.empty()) return PROTO_NONE;
+    return bytes_make_object(context, raw.data(), static_cast<proto::proto_ulong>(raw.size()));
+}
+
+// bytes.__buffer__(flags): memoryview(self).
+static const proto::ProtoObject* py_bytes_buffer(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    if (!env) return PROTO_NONE;
-    // CPython: bytes.split(sep, maxsplit=-1) — at most maxsplit splits.
-    // Previously the limit was ignored, so b'a b c'.split(maxsplit=1)
-    // produced [b'a', b'b', b'c'] instead of [b'a', b'b c'].
-    long long maxsplit = -1;
-    auto readMaxsplit = [&](const proto::ProtoObject* msObj) -> bool {
-        if (!msObj) return true;
-        if (msObj == PROTO_NONE) return true;
-        if (msObj->isInteger(context)) { maxsplit = msObj->asLong(context); return true; }
-        if (msObj == PROTO_TRUE) { maxsplit = 1; return true; }
-        if (msObj == PROTO_FALSE) { maxsplit = 0; return true; }
-        env->raiseTypeError(context, "maxsplit must be an integer");
-        return false;
-    };
-    if (posArgs && posArgs->getSize(context) >= 2) {
-        if (!readMaxsplit(posArgs->getAt(context, 1))) return nullptr;
-    }
-    if (kwargs && kwargs->getSize(context) > 0) {
-        {
-            const proto::ProtoString* msKey =
-                PythonEnvironment::getInternedString(context, "maxsplit");
-            proto::proto_ulong hash = PythonEnvironment::kwKey(context, msKey);
-            if (kwargs->has(context, hash)) {
-                if (!readMaxsplit(kwargs->getAt(context, hash))) return nullptr;
-            }
-        }
-    }
-    const proto::ProtoList* result = context->newList();
-    size_t start = 0;
-    long long count = 0;
-    for (;;) {
-        if (maxsplit >= 0 && count >= maxsplit) {
-            std::string seg = raw.substr(start);
-            const proto::ProtoObject* b = bytes_make_object(context, seg.data(), static_cast<proto::proto_ulong>(seg.size()));
-            result = result->appendLast(context, b);
-            break;
-        }
-        size_t pos = raw.find(sep, start);
-        if (pos == std::string::npos) {
-            std::string seg = raw.substr(start);
-            const proto::ProtoObject* b = bytes_make_object(context, seg.data(), static_cast<proto::proto_ulong>(seg.size()));
-            result = result->appendLast(context, b);
-            break;
-        }
-        std::string seg = raw.substr(start, pos - start);
-        const proto::ProtoObject* b = bytes_make_object(context, seg.data(), static_cast<proto::proto_ulong>(seg.size()));
-        result = result->appendLast(context, b);
-        start = pos + sep.size();
-        ++count;
-    }
-    return wrap_list_as_pylist(context, result);
+    const proto::ProtoObject* mv = env ? env->getBuiltins()->getAttribute(context, PythonEnvironment::getInternedString(context, "memoryview")) : nullptr;
+    return mv ? env->callObject(mv, {self}) : PROTO_NONE;
 }
 
 // bytes.join(iterable): the items must be bytes-like.  It drove __next__
@@ -20525,6 +20898,25 @@ namespace slot_member {
     proto::ProtoMethod delete_handler() { return py_slot_member_delete; }
 }
 
+// complex.__rsub__ and friends (initializeRootObjects): `other OP self` for a
+// real number `other`, as complex(other) OP self; NotImplemented otherwise.
+static const proto::ProtoObject* reflectComplex(proto::ProtoContext* ctx, const proto::ProtoObject* self,
+                                                const proto::ProtoArguments* args, const char* forward) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env || !args || args->getSize(ctx) < 1) return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    const proto::ProtoObject* inst = self;
+    const proto::ProtoObject* other = args->getAt(ctx, 0);
+    if (args->getSize(ctx) >= 2) {
+        inst = args->getAt(ctx, 0);
+        other = args->getAt(ctx, 1);
+    }
+    if (!other || !(other->isInteger(ctx) || other->isFloat(ctx) || other->isBoolean(ctx)))
+        return env->getNotImplementedPrototype();
+    const proto::ProtoObject* oc = env->callObject(env->getComplexPrototype(), {other});
+    if (!oc) return nullptr;
+    return env->callMethod(oc, forward, {inst});
+}
+
 void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, const std::vector<std::string>& searchPaths) {
     s_threadEnv = this;
     // The per-thread PyThread record is pinned by `pyThreadRoots_`, created in
@@ -22660,6 +23052,32 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             res->setAttribute(ctx, env->getClassString(), env->getComplexPrototype());
             return (const proto::ProtoObject*)res;
         }));
+    // complex.__rsub__ / __rmul__ / __rtruediv__ / __rpow__ (reflectComplex):
+    // `2.5 - 1j` and the like.
+    {
+        struct Reflected { const char* name; const char* forward; };
+        static const Reflected reflected[] = {
+            {"__rsub__", "__sub__"}, {"__rmul__", "__mul__"},
+            {"__rtruediv__", "__truediv__"}, {"__rpow__", "__pow__"}};
+        for (const Reflected& r : reflected) {
+            proto::ProtoMethod m = nullptr;
+            const std::string fwd = r.forward;
+            if (fwd == "__sub__") m = +[](proto::ProtoContext* c, const proto::ProtoObject* s, const proto::ParentLink*,
+                                          const proto::ProtoArguments* a, const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
+                return reflectComplex(c, s, a, "__sub__"); };
+            else if (fwd == "__mul__") m = +[](proto::ProtoContext* c, const proto::ProtoObject* s, const proto::ParentLink*,
+                                          const proto::ProtoArguments* a, const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
+                return reflectComplex(c, s, a, "__mul__"); };
+            else if (fwd == "__truediv__") m = +[](proto::ProtoContext* c, const proto::ProtoObject* s, const proto::ParentLink*,
+                                          const proto::ProtoArguments* a, const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
+                return reflectComplex(c, s, a, "__truediv__"); };
+            else m = +[](proto::ProtoContext* c, const proto::ProtoObject* s, const proto::ParentLink*,
+                         const proto::ProtoArguments* a, const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
+                return reflectComplex(c, s, a, "__pow__"); };
+            complexPrototype = complexPrototype->setAttribute(rootContext_,
+                PythonEnvironment::getInternedString(rootContext_, r.name), rootContext_->fromMethod(nullptr, m));
+        }
+    }
     // complex.__radd__(self, other) returns other + self.  Accept
     // both bound and unbound call shapes (the test
     // test_explicit_reverse_methods invokes via the type:
@@ -23454,6 +23872,11 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "lstrip"), rootContext_->fromMethod(nullptr, py_bytes_lstrip));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "rstrip"), rootContext_->fromMethod(nullptr, py_bytes_rstrip));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "split"), rootContext_->fromMethod(nullptr, py_bytes_split));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "rsplit"), rootContext_->fromMethod(nullptr, py_bytes_rsplit));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "expandtabs"), rootContext_->fromMethod(nullptr, py_bytes_expandtabs));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__rmod__"), rootContext_->fromMethod(nullptr, py_bytes_rmod));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__bytes__"), rootContext_->fromMethod(nullptr, py_bytes_bytes));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__buffer__"), rootContext_->fromMethod(nullptr, py_bytes_buffer));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "join"), rootContext_->fromMethod(nullptr, py_bytes_join));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__mod__"), rootContext_->fromMethod(nullptr, py_bytes_mod));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "replace"), rootContext_->fromMethod(nullptr, py_bytes_replace));
@@ -25547,7 +25970,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // built-in prototype is fully wired so `[].__add__.__name__`
     // can resolve the descriptor key.
     registerNativeMethodNames(rootContext_);
-    // Final prototype initialization diagnostic removed
+    // From here on Python code cannot add attributes to the built-in types
+    // or to their instances without __dict__ (builtinAttributeWriteRejected).
+    registerImmutableBuiltinTypes(rootContext_);
 }
 
 const proto::ProtoObject* PythonEnvironment::getGlobals() const {
@@ -27094,6 +27519,122 @@ bool PythonEnvironment::isCompleteBlock(const std::string& code) {
 // flag read the stale flags can over-fast-path the LOAD/STORE_ATTR
 // path.  Rejected as a risk because user code does not modify class
 // __slots__ / descriptors after definition in any benchmark we run.
+void PythonEnvironment::registerImmutableBuiltinTypes(proto::ProtoContext* ctx) {
+    auto immutable = [&](const proto::ProtoObject* t) {
+        if (!t || t == PROTO_NONE || (reinterpret_cast<uintptr_t>(t) & 0x3F) != 0) return;
+        immutableBuiltinTypes_.insert(t);
+    };
+    auto noDict = [&](const proto::ProtoObject* t) {
+        if (!t || t == PROTO_NONE || (reinterpret_cast<uintptr_t>(t) & 0x3F) != 0) return;
+        immutableBuiltinTypes_.insert(t);
+        noDictBuiltinTypes_.insert(t);
+    };
+    // Every class the builtins module exposes (the exceptions included: their
+    // instances have a __dict__, their types are immutable).
+    if (builtinsModule) {
+        struct Sink { PythonEnvironment* env; std::vector<const proto::ProtoObject*> classes; };
+        Sink sink{this, {}};
+        builtinsModule->processOwnAttributes(ctx, &sink,
+            [](proto::ProtoContext* c, void* userData, const proto::ProtoString*, const proto::ProtoObject* value) {
+                Sink* k = static_cast<Sink*>(userData);
+                if (value && value != PROTO_NONE && (reinterpret_cast<uintptr_t>(value) & 0x3F) == 0
+                        && k->env->isActuallyAClass(c, value))
+                    k->classes.push_back(value);
+            });
+        for (const proto::ProtoObject* t : sink.classes) immutable(t);
+    }
+    // Built-in types whose instances have no __dict__.
+    for (const char* n : {"object", "int", "float", "complex", "bool", "str", "bytes", "bytearray", "list",
+                          "tuple", "dict", "set", "frozenset", "range", "slice", "memoryview", "map",
+                          "filter", "zip", "enumerate", "reversed", "property", "super"}) {
+        if (!builtinsModule) break;
+        const proto::ProtoObject* t = builtinsModule->getOwnAttributeDirect(ctx, getInternedString(ctx, n));
+        if (t && isActuallyAClass(ctx, t)) noDict(t);
+    }
+    // The types the interpreter's own objects have.
+    noDict(getNoneTypePrototype() ? getNoneTypePrototype() : getType(ctx, getNonePrototype()));
+    noDict(getType(ctx, getNotImplementedPrototype()));
+    noDict(getType(ctx, getEllipsisPrototype()));
+    noDict(getBuiltinFunctionOrMethodPrototype());
+    noDict(getMethodPrototype());
+    noDict(getCodePrototype());
+    noDict(getCellPrototype());
+    noDict(getMappingProxyPrototype());
+    noDict(getGetSetDescriptorPrototype());
+    noDict(getMemberDescriptorPrototype());
+    noDict(getMethodDescriptorPrototype());
+    noDict(getWrapperDescriptorPrototype());
+    noDict(getGeneratorPrototype());
+    noDict(getCoroutinePrototype());
+    noDict(getAsyncGeneratorPrototype());
+    immutable(getFunctionPrototype());
+    immutable(getModulePrototype());
+    immutable(getTypePrototype());
+    immutable(getUnionTypePrototype());
+    // The protoCore parent through which an object can be one of these
+    // types (STORE_ATTR's fast path reads the flags of the first parent).
+    for (const proto::ProtoObject* t : immutableBuiltinTypes_) {
+        const proto::ProtoObject* p = t->getFirstParent(ctx);
+        if (p && p != PROTO_NONE) builtinTypeParents_.insert(p);
+    }
+    // Flags computed during the bootstrap did not know these sets.
+    for (const auto* set : {&noDictBuiltinTypes_, &builtinTypeParents_})
+        for (const proto::ProtoObject* t : *set)
+            const_cast<proto::ProtoObject*>(t)->proto::ProtoObject::setAttribute(ctx, pyFlagsString_, ctx->fromInteger(0));
+}
+
+bool PythonEnvironment::builtinAttributeWriteRejected(proto::ProtoContext* ctx, const proto::ProtoObject* obj,
+                                                     const proto::ProtoString* name, bool isDelete) {
+    (void)isDelete;  // CPython 3.14 reports a delete with the store's messages
+    if (!obj || !name || immutableBuiltinTypes_.empty()) return false;
+    std::string nm;
+    const bool isCell = obj != PROTO_NONE && (reinterpret_cast<uintptr_t>(obj) & 0x3F) == 0;
+    if (isCell && immutableBuiltinTypes_.count(obj)) {
+        name->toUTF8String(ctx, nm);
+        std::string tn = "?";
+        const proto::ProtoObject* n = getAttribute(ctx, obj, getNameString(), false);
+        if (n && n->isString(ctx)) n->asString(ctx)->toUTF8String(ctx, tn);
+        // CPython 3.14 says "set" for a delete too.
+        raiseTypeError(ctx, "cannot set '" + nm + "' attribute of immutable type '" + tn + "'");
+        return true;
+    }
+    // The exact type: the class an instance pins as its own __class__ (an
+    // instance of a subclass of bytes, int, ... does, and getType folds it
+    // back to the built-in type), else getType. A class is not an instance.
+    const proto::ProtoObject* type = nullptr;
+    if (isCell && obj->hasOwnAttribute(ctx, classString) == PROTO_TRUE)
+        type = obj->getOwnAttributeDirect(ctx, classString);
+    if (!type) type = getType(ctx, obj);
+    if (!type || !noDictBuiltinTypes_.count(type)) return false;
+    if (isCell) {
+        if (isActuallyAClass(ctx, obj)) return false;
+        // An instance of a subclass that getType folds (bytes, int, ...)
+        // has the subclass as its first parent.
+        const proto::ProtoObject* parent = obj->getFirstParent(ctx);
+        if (parent && parent != type && !noDictBuiltinTypes_.count(parent) && isActuallyAClass(ctx, parent))
+            return false;
+    }
+    if (PythonEnvironment::sameStringName(ctx, name, classString)) return false;
+    if (isCell && obj->hasOwnAttribute(ctx, name) == PROTO_TRUE) return false;
+    const proto::ProtoObject* onType = getAttribute(ctx, type, name, false);
+    if (onType && onType != PROTO_NONE && (reinterpret_cast<uintptr_t>(onType) & 0x3F) == 0
+            && !isActuallyAClass(ctx, onType)) {
+        // A data descriptor (a property with a setter) decides for itself.
+        const proto::ProtoObject* dt = getType(ctx, onType);
+        if (dt && getAttribute(ctx, dt, setDunderString, false)
+                && getAttribute(ctx, dt, setDunderString, false) != PROTO_NONE)
+            return false;
+    }
+    name->toUTF8String(ctx, nm);
+    const std::string tn = typeNameOf(ctx, obj);
+    if (onType && onType != PROTO_NONE)
+        raiseAttributeErrorWithMessage(ctx, obj, "'" + tn + "' object attribute '" + nm + "' is read-only", nm);
+    else
+        raiseAttributeErrorWithMessage(ctx, obj, "'" + tn + "' object has no attribute '" + nm
+            + "' and no __dict__ for setting new attributes", nm);
+    return true;
+}
+
 uint32_t PythonEnvironment::fastClassFlags(proto::ProtoContext* ctx,
                                             const proto::ProtoObject* cls) const {
     if (!cls || cls == PROTO_NONE || !pyFlagsString_) return 0;
@@ -27164,6 +27705,7 @@ uint32_t PythonEnvironment::ensureClassFlags(proto::ProtoContext* ctx,
             probe(mroT->getAt(ctx, static_cast<int>(i)));
         }
     }
+    if (noDictBuiltinTypes_.count(cls) || builtinTypeParents_.count(cls)) flags |= PYFLAG_NO_FAST_STORE;
 
     // Publish.  Use the protoCore setAttribute directly — bypass the
     // env-level descriptor / slots dispatch, since this is internal
@@ -28982,6 +29524,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
 
 bool PythonEnvironment::deleteAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* nameS) {
     if (!obj || !nameS) return false;
+    if (builtinAttributeWriteRejected(ctx, obj, nameS, /*isDelete=*/true)) return false;
     // Data descriptor __delete__ on the type chain.  Mirrors STORE_ATTR's
     // data-descriptor short-circuit: walk the type's MRO with raw attribute
     // access to avoid __get__ re-entry, then dispatch to either a native or
@@ -29096,6 +29639,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
     const bool skipSetattrOverride = t_skipSetattrOverride;
     t_skipSetattrOverride = false;
     if (!obj || !name || !value) return obj;
+    if (builtinAttributeWriteRejected(ctx, obj, name, /*isDelete=*/false)) return nullptr;
 
     // CPython: setting `__bases__` / `__base__` on a built-in C-level
     // type raises TypeError "cannot set '__bases__' attribute of
@@ -30851,6 +31395,139 @@ const proto::ProtoObject* PythonEnvironment::lookupGlobalName(const proto::Proto
         }
     }
     return nullptr;
+}
+
+// --- eval() / exec() with a mapping as locals ------------------------------
+
+static const proto::ProtoString* localsMappingName(proto::ProtoContext* ctx) {
+    return PythonEnvironment::getInternalString(ctx, "__locals_mapping__");
+}
+
+// An exact dict's entry storage, or nullptr for any other object.
+static const proto::ProtoSparseList* exactDictStorage(proto::ProtoContext* ctx, PythonEnvironment* env,
+                                                      const proto::ProtoObject* mapping) {
+    if (!env || env->getType(ctx, mapping) != env->getDictPrototype()) return nullptr;
+    if (mapping->hasOwnAttribute(ctx, env->getDataString()) != PROTO_TRUE) return nullptr;
+    const proto::ProtoObject* d = mapping->getOwnAttributeDirect(ctx, env->getDataString());
+    return d ? d->asSparseList(ctx) : nullptr;
+}
+
+proto::ProtoObject* PythonEnvironment::localsMappingFrame(proto::ProtoContext* ctx, const proto::ProtoObject* locals,
+                                                         const proto::ProtoObject* globals,
+                                                         const proto::ProtoObject* codeObj) {
+    PythonEnvironment* env = fromContext(ctx);
+    if (!env || !locals || locals == PROTO_NONE || (reinterpret_cast<uintptr_t>(locals) & 0x3F) != 0) return nullptr;
+    const proto::ProtoObject* type = env->getType(ctx, locals);
+    if (!type || type == env->getModulePrototype()) return nullptr;
+    // A dict (any object owning dict storage) or another mapping; a frame
+    // or a namespace object is used as it is.
+    const bool ownsDict = locals->hasOwnAttribute(ctx, env->getDataString()) == PROTO_TRUE
+        && locals->getOwnAttributeDirect(ctx, env->getDataString())
+        && locals->getOwnAttributeDirect(ctx, env->getDataString())->asSparseList(ctx);
+    if (!ownsDict) {
+        const proto::ProtoObject* getitem = env->getAttribute(ctx, type, env->getGetItemString(), false);
+        if (!getitem || getitem == PROTO_NONE) return nullptr;
+    }
+    // The frame's own attributes are the mapping alone: f_globals, f_code and
+    // f_back sit on a parent, so they are not names of the executed code.
+    const proto::ProtoObject* info = ctx->newObject(true);
+    if (env->getFramePrototype()) info = info->addParent(ctx, env->getFramePrototype());
+    info = info->setAttribute(ctx, env->getFGlobalsString(), globals);
+    if (codeObj) info = info->setAttribute(ctx, env->getFCodeString(), codeObj);
+    if (const proto::ProtoObject* callerFrame = getCurrentFrame())
+        info = info->setAttribute(ctx, env->getFBackString(), callerFrame);
+    const proto::ProtoObject* frame = ctx->newObject(true)->addParent(ctx, info);
+    frame = frame->setAttribute(ctx, localsMappingName(ctx), locals);
+    return const_cast<proto::ProtoObject*>(frame);
+}
+
+const proto::ProtoObject* PythonEnvironment::localsMappingOf(proto::ProtoContext* ctx, const proto::ProtoObject* frame) {
+    if (!frame || (reinterpret_cast<uintptr_t>(frame) & 0x3F) != 0) return nullptr;
+    return frame->getOwnAttributeDirect(ctx, localsMappingName(ctx));
+}
+
+bool PythonEnvironment::localsMappingLoad(proto::ProtoContext* ctx, const proto::ProtoObject* mapping,
+                                          const proto::ProtoObject* name, const proto::ProtoObject*& value) {
+    PythonEnvironment* env = fromContext(ctx);
+    if (!env) return false;
+    // An exact dict is read directly, as CPython's PyDict_GetItem.
+    if (const proto::ProtoSparseList* data = exactDictStorage(ctx, env, mapping)) {
+        value = dictDataGet(ctx, data, name);
+        return value != nullptr;
+    }
+    if (env->getType(ctx, mapping) == env->getDictPrototype()) return false;
+    try {
+        value = env->getItem(mapping, name, ctx);
+    } catch (const proto::ProtoException& e) {
+        const proto::ProtoObject* keyError = env->getKeyErrorType();
+        if (keyError && e.value() && e.value()->isInstanceOf(ctx, keyError) == PROTO_TRUE) return false;
+        throw;
+    }
+    return value != nullptr;
+}
+
+void PythonEnvironment::localsMappingStore(proto::ProtoContext* ctx, const proto::ProtoObject* mapping,
+                                           const proto::ProtoObject* name, const proto::ProtoObject* value) {
+    PythonEnvironment* env = fromContext(ctx);
+    if (!env) return;
+    // An exact dict is written directly; any other mapping (a dict subclass
+    // included) through its own __setitem__.
+    if (exactDictStorage(ctx, env, mapping)) env->setItem(mapping, name, value, ctx);
+    else env->callMethod(mapping, "__setitem__", {name, value});
+}
+
+void PythonEnvironment::localsMappingDelete(proto::ProtoContext* ctx, const proto::ProtoObject* mapping,
+                                            const proto::ProtoObject* name) {
+    PythonEnvironment* env = fromContext(ctx);
+    if (!env) return;
+    try {
+        if (exactDictStorage(ctx, env, mapping)) env->delItem(mapping, name, ctx);
+        else env->callMethod(mapping, "__delitem__", {name});
+    } catch (const proto::ProtoException& e) {
+        const proto::ProtoObject* keyError = env->getKeyErrorType();
+        if (!(keyError && e.value() && e.value()->isInstanceOf(ctx, keyError) == PROTO_TRUE)) throw;
+        std::string n;
+        if (name->isString(ctx)) name->asString(ctx)->toUTF8String(ctx, n);
+        env->raiseNameError(ctx, n);
+    }
+}
+
+const proto::ProtoObject* PythonEnvironment::nameScopeComprehensionGlobals(proto::ProtoContext* ctx,
+                                                                          const proto::ProtoObject* frame,
+                                                                          const proto::ProtoObject* globals) {
+    const proto::ProtoObject* mapping = localsMappingOf(ctx, frame);
+    PythonEnvironment* env = fromContext(ctx);
+    if (!mapping || !env || !globals) return globals;
+    // The mapping's str keys, as own attributes over the globals: the
+    // comprehension's LOAD_GLOBAL finds them first, then the globals and the
+    // builtins.
+    const proto::ProtoObject* overlay = ctx->newObject(true)->addParent(ctx, globals);
+    TransientPin pinOverlay(env, overlay);
+    auto put = [&](const proto::ProtoObject* k, const proto::ProtoObject* v) {
+        if (k && v && k->isString(ctx)) overlay = overlay->setAttribute(ctx, internName(ctx, k->asString(ctx)), v);
+    };
+    if (const proto::ProtoSparseList* data = exactDictStorage(ctx, env, mapping)) {
+        const proto::ProtoObject* keysObj = mapping->getAttribute(ctx, env->getKeysString());
+        const proto::ProtoList* keys = keysObj ? listStorage(ctx, keysObj) : nullptr;
+        const proto::proto_ulong n = keys ? keys->getSize(ctx) : 0;
+        for (proto::proto_ulong i = 0; i < n; ++i) {
+            const proto::ProtoObject* k = keys->getAt(ctx, static_cast<int>(i));
+            put(k, k ? dictDataGet(ctx, data, k) : nullptr);
+        }
+    } else {
+        const proto::ProtoObject* keys = env->callMethod(mapping, "keys", {});
+        if (!keys) return nullptr;
+        const proto::ProtoObject* it = env->iter(keys);
+        if (!it) return nullptr;
+        TransientPin pinIt(env, it);
+        for (;;) {
+            const proto::ProtoObject* k = env->next(it);
+            if (!k) break;
+            const proto::ProtoObject* v = nullptr;
+            if (localsMappingLoad(ctx, mapping, k, v)) put(k, v);
+        }
+    }
+    return overlay;
 }
 
 const proto::ProtoObject* PythonEnvironment::resolveGlobalName(const proto::ProtoString* nameObj, proto::ProtoContext* ctx) {
@@ -33822,7 +34499,7 @@ static void syncAttr(proto::ProtoContext* ctx, void* self, const proto::ProtoStr
             // protocol state.
             if (kstr != "__data__" && kstr != "__keys__"
                 && kstr != "__pydict_data__" && kstr != "__pydict_keys__"
-                && kstr != "__is_python_class__"
+                && kstr != "__is_python_class__" && kstr != "__bytearray__"
                 && kstr != "__class__" && kstr != "__name__"
                 && kstr != "__bases__" && kstr != "__mro__") {
                 // protoCore's attribute SparseList is keyed by the
@@ -33971,6 +34648,7 @@ void PythonEnvironment::registerNativeMethodNames(proto::ProtoContext* ctx) {
         methodPrototype, functionPrototype, modulePrototype,
         mappingProxyPrototype, getSetDescriptorPrototype, framePrototype,
         generatorPrototype, sliceType, nonePrototype, complexPrototype,
+        bytearrayPrototype,
         // STRUCT-269: include the builtins module so its bound native
         // method cells (`len`, `print`, `iter`, …) get registered in
         // the side table.  Without this, `type(len)` falls through to
