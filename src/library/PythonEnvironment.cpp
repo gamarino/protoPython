@@ -4860,19 +4860,30 @@ static proto::proto_ulong nanIdentityHash(const proto::ProtoObject* obj) {
 }
 
 // hash((1, 2)) == hash((1.0, 2)): the elements are keyed like dict keys and
-// mixed the way ProtoTupleImplementation::getHash mixes element hashes, so a
-// tuple of ints and strings keeps the hash protoCore gives it.
+// mixed the way ProtoTupleImplementation::getHash mixes element hashes
+// (protoCore 3.5.1, commit 4d8e4876: CPython's tuple hash, the xxHash round of
+// Objects/tupleobject.c), so a tuple of ints and strings keeps the hash
+// protoCore gives it. Keep the two in step. The mix used before,
+// h = (h * 1000003) ^ eh, cancelled on nested tuples: (1, (2, 3)) and
+// (2, (1, 3)) hashed alike.
+//
+// A combined 64-bit hash of several values cannot identify them (tuples of
+// two ints alone outnumber the hash values), so the hash of a tuple is never
+// exact: a dict or set confirms a tuple key found under its hash with __eq__.
 static bool tupleKeyHash(proto::ProtoContext* context, const TupleView& t, bool raiseUnhashable, proto::proto_ulong& out,
                          bool* exact, bool allowUserCode) {
     const proto::proto_ulong size = t.size(context);
-    proto::proto_ulong h = PROTO_UL(0x345678) ^ (size * PROTO_UL(0xa6b3f7) + PROTO_UL(1));
+    proto::proto_ulong h = PROTO_UL(2870177450012600261);
     for (proto::proto_ulong i = 0; i < size; ++i) {
         const proto::ProtoObject* e = t.at(context, i);
         proto::proto_ulong eh = 0;
-        if (e && !keyHash(context, e, raiseUnhashable, eh, exact, allowUserCode)) return false;
-        h = (h * PROTO_UL(1000003)) ^ eh;
+        if (e && !keyHash(context, e, raiseUnhashable, eh, nullptr, allowUserCode)) return false;
+        h += eh * PROTO_UL(14029467366897019727);
+        h = (h << 31) | (h >> 33);
+        h *= PROTO_UL(11400714785074694791);
     }
-    out = h;
+    if (exact) *exact = false;
+    out = h + (size ^ (PROTO_UL(2870177450012600261) ^ PROTO_UL(3527539)));
     return true;
 }
 
@@ -4886,10 +4897,18 @@ static bool tupleKeyHash(proto::ProtoContext* context, const TupleView& t, bool 
 //
 // `exact`, when given, is cleared if the hash does not identify the key: a
 // hash from a class's own __hash__ (or from a built-in digest such as a
-// frozenset's) may be shared by unequal keys, so a dict must compare such a
-// key with __eq__. Value hashes of the built-in primitives and identity
-// hashes leave it set. With allowUserCode false no Python __hash__ runs: such
-// a key makes the function return false with nothing pending.
+// frozenset's, or a tuple's: see tupleKeyHash) may be shared by unequal keys,
+// so a dict must compare such a key with __eq__. Value hashes of the other
+// built-in primitives and identity hashes leave it set. Only part of those are
+// injective: a SmallInteger (and a bool, keyed as the int it equals) hashes as
+// its tagged word, None as its own tagged word and an identity hash is a cell
+// address, and these never collide; but a str (FNV-1a), a bytes object
+// (salted FNV-1a), a LargeInteger and a non-integral float hash by a digest
+// that can equal another key's hash. Sets confirm every single-element hit by
+// equality (setSlotMatches); a dict's single-value slot does not keep its
+// key, so a dict still trusts those digests (see "Dict entries under
+// colliding hashes" below). With allowUserCode false no Python __hash__ runs:
+// such a key makes the function return false with nothing pending.
 static bool keyHash(proto::ProtoContext* context, const proto::ProtoObject* key, bool raiseUnhashable, proto::proto_ulong& out,
                     bool* exact, bool allowUserCode) {
     out = 0;
@@ -5016,6 +5035,14 @@ static proto::proto_ulong dictKeyHash(proto::ProtoContext* context, const proto:
 // ProtoMap is never a Python value, so a bucket is recognised by its tag.
 // `__keys__` lists every stored key in insertion order, so it is longer than
 // `__data__` when keys collide.
+//
+// Known limitation: a single-value slot trusts an exact hash to identify its
+// key, and the digests of str, bytes, LargeInteger and non-integral float
+// keys can equal another exact key's hash (a SmallInteger's tagged word, or
+// another digest), so two such unequal keys become one entry. Confirming the
+// hit needs the slot's key, which a single-value slot does not keep (and C++
+// writers fill `__data__` with str-keyed values directly), so closing it is a
+// storage change, not a local one.
 struct DictKey {
     const proto::ProtoObject* key = nullptr;
     proto::proto_ulong hash = 0;
@@ -5346,11 +5373,13 @@ static long long setBucketPosition(proto::ProtoContext* context, const proto::Pr
     return -1;
 }
 
-// Whether the single element `stored` of a slot equals `dk.key`. A stored
-// single element has an exact hash, so an exact candidate filed under the
-// same index is equal to it; an inexact one is compared with __eq__.
+// Whether the single element `stored` of a slot equals `dk.key`: the same
+// object, else equal by __eq__. An exact hash does not make two elements
+// filed under one index equal: a str, bytes, LargeInteger or float hash is a
+// digest that can equal an int's (see keyHash), and {s, n} with
+// hash(s) == n's key hash and s != n has two elements.
 static bool setSlotMatches(proto::ProtoContext* context, const proto::ProtoObject* stored, const DictKey& dk) {
-    if (stored == dk.key || dk.exact) return true;
+    if (stored == dk.key) return true;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     return env && env->objectsEqual(context, stored, dk.key);
 }

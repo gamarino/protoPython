@@ -6,12 +6,17 @@ hash dict keys are filed under (so `1`, `1.0` and `True` are one element, and a
 class's own `__hash__` is honoured). A slot holds
 
 - the element itself, when it is the only element with that hash and the hash
-  identifies it (built-in primitives and identity-hashed objects); or
+  comes from a built-in primitive other than a tuple, or is an identity hash;
+  or
 - a bucket, a `ProtoList` of the distinct elements sharing that hash, for any
-  element with a user-defined `__hash__` and for colliding elements.
+  element with a user-defined `__hash__`, for tuples and frozensets (whose
+  hashes combine several values and cannot identify them), and for colliding
+  elements.
 
-Membership compares a candidate with the elements of a bucket by identity, then
-with `__eq__`, as CPython does; an exception raised by `__eq__` propagates.
+Membership compares a candidate with a single element, or with the elements of
+a bucket, by identity, then with `__eq__`, as CPython does; an exception raised
+by `__eq__` propagates. A single element is compared too: a `str`, `bytes`,
+large `int` or `float` hash is a digest that can equal another element's hash.
 Distinct elements that share a hash are therefore kept apart, which protoCore's
 `ProtoSet` (one element per hash) could not do.
 

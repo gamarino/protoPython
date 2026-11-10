@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-11-10
+
+Tested locally against protoCore built from `../protoCore` (the 3.5.1 development line, which contains commit 4d8e4876). The change is confined to protoPython, which computes tuple hashes itself, and uses no protoCore API that 3.4.0 lacks, so the declared minimum stays **protoCore 3.4.0** and CI keeps pinning tag `v3.5.0`.
+
+### Fixed
+
+- **Tuples with one hash were one dict key and one set element.** A dict or set trusted a tuple's hash to identify the tuple, so two unequal tuples with the same hash merged without `__eq__` running, and the element mix `h = (h * 1000003) ^ eh` made such pairs common: it cancels on nested tuples, so `{(1, (2, 3)): 'x', (2, (1, 3)): 'y'}` had one key, `{(1, (2, 3)), (2, (1, 3))}` one element and `(2, (1, 3)) in {(1, (2, 3))}` was true. A tuple's hash is no longer treated as identifying it (a combined 64-bit hash of several values cannot be injective), so a hit is confirmed by equality, and tuples mix element hashes with CPython's xxHash round, as protoCore's `ProtoTuple::getHash` does since protoCore PR #23. `hash()` of a tuple therefore changes value. Thanks to Tobias Noceda and Tomás Raiti, whose protoCore PR #23 found the cancellation and pointed at protoPython's copy of the mix.
+- **Set elements whose digest hash equals another element's hash.** A set took an element filed under the same index as a stored single element to be equal to it when both hashes were "exact"; but a `str`, `bytes`, large `int` or non-integral `float` hashes by a digest that can equal an int's hash (an int hashes as its tagged word), so `{s, n}` with such a pair had one element. A set now confirms every hit by identity, then `__eq__`. Dicts keep trusting those digests in single-value slots, whose key is not stored; this remaining case is documented in `src/library/PythonEnvironment.cpp` ("Dict entries under colliding hashes").
+
 ## [1.2.1] - 2026-10-31
 
 **Built and tested against protoCore 3.5.0** (SOVERSION 5, unchanged from 3.4.0); the declared minimum for a build from source stays **protoCore 3.4.0**, which the Windows floor job still builds. The `.deb` is built against the 3.5.0 package, so it depends on `protocore (>= 3.5.0)` through protoCore's shlibs file, besides the declared `protocore (>= 3.4.0), protocore (<< 4.0.0), libpcre2-8-0 (>= 10.34)`. CI pins protoCore tag `v3.5.0` on Linux, macOS and the first Windows job.

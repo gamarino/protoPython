@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(protoPython VERSION 1.2.1 LANGUAGES CXX)
+project(protoPython VERSION 1.2.2 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -481,6 +481,15 @@ set_tests_properties(protopy_dict_equal_hash_keys PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "dict_equal_hash_keys: ok"
+    LABELS "regression_gate")
+# Tuples with one hash (nested pairs under the old mix, real 64-bit
+# collisions) are distinct dict keys and set elements.
+add_test(NAME protopy_tuple_key_hash
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/tuple_key_hash.py)
+set_tests_properties(protopy_tuple_key_hash PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "tuple_key_hash: ok"
     LABELS "regression_gate")
 # Unequal set elements with one hash stay distinct; membership calls __eq__.
 add_test(NAME protopy_set_colliding_hash
