@@ -1,6 +1,6 @@
 code 0: <module> (05-fib.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 35: operand stack from 0
+  slots 37: operand stack from 0
   constants:
     #0   code    <code fib, line 2>  -> code 0.0
     #1   int     20
@@ -23,7 +23,7 @@ code 0: <module> (05-fib.py, line 1)
 
 code 0.0: fib (05-fib.py, line 2)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
-  slots 132: variables 0..0, operand stack from 1
+  slots 134: variables 0..0, operand stack from 1
   constants:
     #0   int     2
     #1   int     1

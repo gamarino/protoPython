@@ -115,7 +115,10 @@ defect and adds a `test/regression/*.py` test registered in
   passed as a keyword (`f(**{str(i): v})`) is interned and stays in the
   symbol table for the life of the process; a program that passes an
   unbounded number of distinct generated names grows it without limit
-  (CPython does not intern these keys). `hash()` of a tuple is computed by
+  (CPython does not intern these keys). Storing a name built at run time into
+  a module namespace (`globals()[name] = v`, `setattr(module, name, v)`)
+  interns it likewise, as an attribute name; reading or testing a name the
+  namespace does not bind interns nothing. `hash()` of a tuple is computed by
   protoPython (CPython's xxHash round over the elements' dict indices), not
   CPython's value; `hash()` of an int or a float matches CPython's.
   `exec(..., closure=cells)` raises `TypeError`: cells cannot be supplied from
@@ -136,7 +139,9 @@ defect and adds a `test/regression/*.py` test registered in
   closure)` fails; `inspect.getclosurevars` fails because `dis` cannot
   decode protoPython bytecode; `types.FrameType` is `object`.
 - **Attributes:** instances see class attributes such as `[].__name__`
-  and `C().__mro__`; `dir(module)` lists `__qualname__`, `__module__` and
+  and `C().__mro__`; built-in types and their instances accept new
+  attributes (`list.x = 1`, `[].x = 1`, `bytearray().x = 1`; CPython raises
+  `TypeError` / `AttributeError`, found 2026-11-10); `dir(module)` lists `__qualname__`, `__module__` and
   `__class__`.
 - **Comparisons:** `object.__ne__` runs a full comparison, so
   `[].__ne__(())` is True where CPython returns NotImplemented.

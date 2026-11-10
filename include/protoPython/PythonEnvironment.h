@@ -175,6 +175,16 @@ public:
      * with it, and dicts and sets index keys by it.
      */
     static long long intHashValue(proto::ProtoContext* ctx, const proto::ProtoObject* intObj);
+    /**
+     * The hash value a `__hash__` result stands for, as CPython's
+     * slot_tp_hash reads it: a bool is the int it equals, an int (or an int
+     * subclass instance) that fits a 64-bit word is the value itself (-1
+     * reading -2), a larger one is reduced by the int hash. Any other result
+     * is not a hash: false, with TypeError raised when `raise` is set. The one
+     * reading of a `__hash__` result: hash() and dict and set indexing both
+     * use it.
+     */
+    static bool hashResultValue(proto::ProtoContext* ctx, const proto::ProtoObject* res, long long& out, bool raise);
 
     /**
      * @brief The key of keyword argument @p name in protoCore's calling
@@ -313,6 +323,14 @@ public:
      * @brief Gets the Python 'bytes' prototype.
      */
     const proto::ProtoObject* getBytesPrototype() const { return bytesPrototype; }
+    /** @brief The `bytearray` type: its own class (base object), whose
+     *  instances keep their content as a ProtoByteBuffer in `__data__`, as
+     *  bytes instances do. nullptr before the builtins module exists. */
+    const proto::ProtoObject* getBytearrayPrototype() const { return bytearrayPrototype; }
+    /** @brief True for the bytes or the bytearray type itself (not a subclass). */
+    bool isBytesOrBytearrayType(const proto::ProtoObject* t) const {
+        return t && (t == bytesPrototype || t == bytearrayPrototype);
+    }
 
     /**
      * @brief Native state of the `re` module (src/library/ReModule.cpp) for
@@ -1868,6 +1886,143 @@ public:
         std::vector<proto::ProtoRootSet::Handle> handles_;
     };
 
+    /**
+     * @brief TransientPinSet that pins nothing until arm(): for native code
+     * that gathers values in a C++ container and only sometimes runs Python
+     * code over them (sorted() over ints runs none; over user objects, or
+     * with a key function, it does). Values add()ed before arm() are pinned
+     * by arm(); later ones as they come. Embedded values are never pinned
+     * (the collector does not own them). arm() before the first step that
+     * may run Python code.
+     */
+    class LazyPinSet {
+    public:
+        explicit LazyPinSet(PythonEnvironment* env) : env_(env) {}
+        ~LazyPinSet() {
+            if (!roots_) return;
+            for (proto::ProtoRootSet::Handle h : handles_) roots_->remove(h);
+        }
+        LazyPinSet(const LazyPinSet&) = delete;
+        LazyPinSet& operator=(const LazyPinSet&) = delete;
+        void add(const proto::ProtoObject* obj) {
+            if (!obj || (reinterpret_cast<uintptr_t>(obj) & 0x3F) == 1) return;
+            if (!armed_) { pending_.push_back(obj); return; }
+            if (roots_) handles_.push_back(roots_->add(obj));
+        }
+        void arm() {
+            if (armed_) return;
+            armed_ = true;
+            roots_ = env_ ? env_->getTransientArgsRoots() : nullptr;
+            if (roots_) for (const proto::ProtoObject* o : pending_) handles_.push_back(roots_->add(o));
+            pending_.clear();
+            pending_.shrink_to_fit();
+        }
+        /** arm() when comparing the values may run Python code. */
+        template <class Container>
+        void armIfAnyNontrivial(const Container& values) {
+            if (armed_) return;
+            for (const proto::ProtoObject* o : values)
+                if (!LazyComparePins::trivialOperand(o)) { arm(); return; }
+        }
+        bool armed() const { return armed_; }
+    private:
+        PythonEnvironment* env_;
+        proto::ProtoRootSet* roots_ = nullptr;
+        std::vector<const proto::ProtoObject*> pending_;
+        std::vector<proto::ProtoRootSet::Handle> handles_;
+        bool armed_ = false;
+    };
+
+    /**
+     * @brief Lazy pins for native code that compares objects held in C++
+     *        locals (a list's storage, a dict snapshot, a key).
+     *
+     * A comparison can run Python code (a user __eq__), which may drop the
+     * last managed reference to those objects and allocate. Pinning them on
+     * every call, though, would put the transient root set's mutex on hot
+     * paths such as `x in lst` over ints. So nothing is pinned until
+     * beforeCompare() meets two operands of which one is not trivial (a str or
+     * an embedded value: comparing two of those runs no Python code); from
+     * then on the objects given to the constructor stay pinned until the
+     * scope ends. Call beforeCompare() before each comparison that may run
+     * Python code, ahead of anything it might allocate.
+     *
+     * An ambient instance (Ambient::Yes) serves code that holds objects
+     * across comparisons made by others, such as a cursor over a set table
+     * whose caller looks each element up in another set: it joins a
+     * per-thread chain, and any instance on the thread that arms (its own
+     * comparison may run Python code) arms the whole chain first. Ambient
+     * instances must be destroyed in reverse order of construction, which
+     * scoped locals are.
+     */
+    class LazyComparePins {
+    public:
+        enum class Ambient { No, Yes };
+        LazyComparePins(proto::ProtoContext* ctx, const proto::ProtoObject* a,
+                        const proto::ProtoObject* b = nullptr, const proto::ProtoObject* c = nullptr,
+                        Ambient ambient = Ambient::No)
+            : ctx_(ctx), objs_{a, b, c} {
+            if (ambient == Ambient::Yes) {
+                ambient_ = true;
+                below_ = ambientTop_;
+                ambientTop_ = this;
+            }
+        }
+        ~LazyComparePins() {
+            if (ambient_) ambientTop_ = below_;
+            if (!roots_) return;
+            for (proto::ProtoRootSet::Handle h : handles_)
+                if (h != proto::ProtoRootSet::kNullHandle) roots_->remove(h);
+        }
+        LazyComparePins(const LazyComparePins&) = delete;
+        LazyComparePins& operator=(const LazyComparePins&) = delete;
+
+        /** Whether comparing `o` with another trivial operand runs no Python code. */
+        static bool trivialOperand(const proto::ProtoObject* o) {
+            return proto::ProtoObject::isStringTagFast(o) || (reinterpret_cast<uintptr_t>(o) & 0x3F) == 1;
+        }
+        /** Pins when comparing `x` with `y` may run Python code; returns armed(). */
+        bool beforeCompare(const proto::ProtoObject* x, const proto::ProtoObject* y) {
+            if (!armed_ && !(trivialOperand(x) && trivialOperand(y))) arm();
+            return armed_;
+        }
+        /** Pins the objects now, and every ambient instance on the thread. */
+        void arm() {
+            if (armed_) return;
+            pinOwn();
+            armAmbient();
+        }
+        /**
+         * Pins every ambient instance on the calling thread. Called where
+         * Python code may run behind them: compareObjects with operands that
+         * are not trivial, a user __hash__ called for a dict or set key.
+         */
+        static void armAmbient() {
+            for (LazyComparePins* p = ambientTop_; p; p = p->below_)
+                if (!p->armed_) p->pinOwn();
+        }
+        /** Whether a comparison that may run Python code was announced. */
+        bool armed() const { return armed_; }
+    private:
+        void pinOwn() {
+            armed_ = true;
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx_);
+            roots_ = env ? env->getTransientArgsRoots() : nullptr;
+            if (!roots_) return;
+            for (int i = 0; i < 3; ++i)
+                handles_[i] = objs_[i] ? roots_->add(objs_[i]) : proto::ProtoRootSet::kNullHandle;
+        }
+        static inline thread_local LazyComparePins* ambientTop_ = nullptr;
+        LazyComparePins* below_ = nullptr;
+        bool ambient_ = false;
+        proto::ProtoContext* ctx_;
+        const proto::ProtoObject* objs_[3];
+        proto::ProtoRootSet* roots_ = nullptr;
+        proto::ProtoRootSet::Handle handles_[3] = {proto::ProtoRootSet::kNullHandle, proto::ProtoRootSet::kNullHandle,
+                                                   proto::ProtoRootSet::kNullHandle};
+        bool armed_ = false;
+    };
+
 private:
 
     const proto::ProtoObject* rangeIteratorProto{nullptr};
@@ -1883,6 +2038,7 @@ private:
     const proto::ProtoObject* tuplePrototype;
     const proto::ProtoObject* setPrototype;
     const proto::ProtoObject* bytesPrototype;
+    const proto::ProtoObject* bytearrayPrototype = nullptr;
     std::shared_ptr<void> reModuleState_;  // see reModuleState()
     const proto::ProtoObject* nonePrototype;
     const proto::ProtoObject* ellipsisPrototype;

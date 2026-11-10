@@ -1830,9 +1830,10 @@ static const proto::ProtoObject* py_sio_write(
     // does — base64.encode(BytesIO, StringIO) depends on it.
     if (env && env->getBytesPrototype() && data) {
         const proto::ProtoObject* cls = env->getType(ctx, data);
-        if (cls == env->getBytesPrototype()) {
-            env->raiseTypeError(ctx,
-                "string argument expected, got 'bytes'");
+        if (env->isBytesOrBytearrayType(cls)) {
+            env->raiseTypeError(ctx, cls == env->getBytesPrototype()
+                ? "string argument expected, got 'bytes'"
+                : "string argument expected, got 'bytearray'");
             return nullptr;
         }
     }

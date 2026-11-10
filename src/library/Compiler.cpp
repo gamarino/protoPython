@@ -159,7 +159,14 @@ int Compiler::addName(const std::string& name) {
 static int stackEffect(int op, int arg) {
     switch (op) {
         // Loads (+1)
-        case OP_LOAD_CONST: case OP_LOAD_NAME: case OP_LOAD_GLOBAL:
+        // LOAD_NAME / LOAD_GLOBAL with the low argument bit set also push
+        // the NULL marker of a call (+2): counting them +1 underestimated
+        // every call by one slot, so a frame with many calls could
+        // overflow its operand stack on a later wide expression (a list
+        // literal of ~30 items after a few dozen calls).
+        case OP_LOAD_NAME: case OP_LOAD_GLOBAL:
+            return 1 + (arg & 1);
+        case OP_LOAD_CONST:
         case OP_LOAD_FAST:  case OP_LOAD_DEREF:
         case OP_LOAD_CLOSURE: case OP_LOAD_CLASSDEREF:
         case OP_DUP_TOP:    case OP_PUSH_NULL:

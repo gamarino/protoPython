@@ -633,7 +633,7 @@ print(1 + 2)
 ```text
 code 0: <module> (01-arithmetic.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 35: operand stack from 0
+  slots 36: operand stack from 0
   constants:
     #0   int     1
     #1   int     2
@@ -832,7 +832,7 @@ print(greet("world"))
 ```text
 code 0: <module> (04-def-call.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 35: operand stack from 0
+  slots 37: operand stack from 0
   constants:
     #0   code    <code greet, line 2>  -> code 0.0
     #1   str     'world'
@@ -894,7 +894,7 @@ print(fib(20))
 ```text
 code 0: <module> (05-fib.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 35: operand stack from 0
+  slots 37: operand stack from 0
   constants:
     #0   code    <code fib, line 2>  -> code 0.0
     #1   int     20
@@ -917,7 +917,7 @@ code 0: <module> (05-fib.py, line 1)
 
 code 0.0: fib (05-fib.py, line 2)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
-  slots 132: variables 0..0, operand stack from 1
+  slots 134: variables 0..0, operand stack from 1
   constants:
     #0   int     2
     #1   int     1
@@ -1241,7 +1241,7 @@ connect("example.org", timeout=5)
 ```text
 code 0: <module> (08-defaults.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 38: operand stack from 0
+  slots 39: operand stack from 0
   constants:
     #0   code    <code connect, line 2>  -> code 0.0
     #1   int     80
@@ -1513,7 +1513,7 @@ code 0: <module> (11-builtin-call.py, line 1)
 
 code 0.0: size (11-builtin-call.py, line 2)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
-  slots 131: variables 0..0, operand stack from 1
+  slots 132: variables 0..0, operand stack from 1
   constants:
     #0   none    None
   names:
@@ -1553,7 +1553,7 @@ def sum_squares(xs):
 ```text
 code 0: <module> (12-higher-order.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 34: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   str     'functools'
     #1   code    <code total, line 5>  -> code 0.0
@@ -1616,7 +1616,7 @@ code 0.0.0: <lambda> (12-higher-order.py, line 5)
 
 code 0.1: sum_squares (12-higher-order.py, line 9)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
-  slots 133: variables 0..0, operand stack from 1
+  slots 135: variables 0..0, operand stack from 1
   constants:
     #0   code    <code <lambda>, line 9>  -> code 0.1.0
     #1   none    None
@@ -1780,7 +1780,7 @@ code 0.0: safe_div (13-exceptions.py, line 2)
 
 code 0.1: fail (13-exceptions.py, line 12)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 0 (0 positional-only, 0 keyword-only)
-  slots 130: operand stack from 0
+  slots 131: operand stack from 0
   constants:
     #0   str     'bad'
     #1   none    None
@@ -1832,7 +1832,7 @@ squares = {x: x * x for x in range(3)}
 ```text
 code 0: <module> (14-decorators-comprehensions.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 36: operand stack from 0
+  slots 37: operand stack from 0
   constants:
     #0   code    <code trace, line 2>  -> code 0.0
     #1   code    <code double, line 7>  -> code 0.1
@@ -1990,7 +1990,7 @@ doubled = (x * 2 for x in range(3))
 ```text
 code 0: <module> (15-generators.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 36: operand stack from 0
+  slots 37: operand stack from 0
   constants:
     #0   code    <code countdown, line 2>  -> code 0.0
     #1   code    <code chain, line 8>  -> code 0.1
@@ -2265,7 +2265,7 @@ code 0: <module> (17-misc.py, line 1)
 
 code 0.0: read (17-misc.py, line 2)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
-  slots 132: variables 0..1, operand stack from 2
+  slots 133: variables 0..1, operand stack from 2
   constants:
     #0   none    None
   names:
@@ -2306,7 +2306,7 @@ code 0.0: read (17-misc.py, line 2)
 
 code 0.1: largest (17-misc.py, line 7)
   flags 0x17 (OPTIMIZED | NEWLOCALS | VARARGS | NESTED), parameters 0 (0 positional-only, 0 keyword-only)
-  slots 132: variables 0..0, operand stack from 1
+  slots 133: variables 0..0, operand stack from 1
   constants:
     #0   none    None
   names:
@@ -2326,7 +2326,7 @@ code 0.1: largest (17-misc.py, line 7)
 
 code 0.2: label (17-misc.py, line 11)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 2 (0 positional-only, 0 keyword-only)
-  slots 134: variables 0..1, operand stack from 2
+  slots 135: variables 0..1, operand stack from 2
   constants:
     #0   str     ': '
     #1   none    None

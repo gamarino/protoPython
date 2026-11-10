@@ -1,6 +1,6 @@
 code 0: <module> (12-higher-order.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 34: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   str     'functools'
     #1   code    <code total, line 5>  -> code 0.0
@@ -63,7 +63,7 @@ code 0.0.0: <lambda> (12-higher-order.py, line 5)
 
 code 0.1: sum_squares (12-higher-order.py, line 9)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
-  slots 133: variables 0..0, operand stack from 1
+  slots 135: variables 0..0, operand stack from 1
   constants:
     #0   code    <code <lambda>, line 9>  -> code 0.1.0
     #1   none    None

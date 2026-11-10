@@ -368,6 +368,62 @@ static const proto::ProtoObject* py_deque_getitem(
 // calls this on its waiters deque to drop the lock that was just released.
 // deque.count(x): the number of elements equal to x, compared as list.count
 // does (identity first, then ==; an exception from __eq__ propagates).
+// deque.index(x[, start[, stop]]): the first position of an item equal to
+// x in [start, stop), negative bounds counted from the end; ValueError if
+// none.
+static const proto::ProtoObject* py_deque_index(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwArgs*/) {
+    proto::proto_ulong argOff = 0;
+    DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!state) {
+        if (env) env->raiseTypeError(ctx,
+            "descriptor 'index' for 'collections.deque' objects "
+            "doesn't apply to a non-deque object");
+        return nullptr;
+    }
+    const proto::proto_ulong given = posArgs ? posArgs->getSize(ctx) - argOff : 0;
+    if (given < 1 || given > 3) {
+        if (env) env->raiseTypeError(ctx, "index expected at least 1 argument, got " + std::to_string(given));
+        return nullptr;
+    }
+    const proto::ProtoObject* value = posArgs->getAt(ctx, static_cast<int>(argOff));
+    const proto::ProtoObject* receiver = argOff > 0 ? posArgs->getAt(ctx, 0) : self;
+    const proto::ProtoObject* raw = nullptr;
+    const proto::ProtoList* items = deque_items(ctx, receiver, raw);
+    const long long n = items ? static_cast<long long>(items->getSize(ctx)) : 0;
+    auto bound = [&](proto::proto_ulong at, long long dflt, long long& out) {
+        if (given <= at) { out = dflt; return true; }
+        const proto::ProtoObject* b = posArgs->getAt(ctx, static_cast<int>(argOff + at));
+        if (!b || !b->isInteger(ctx)) {
+            if (env) env->raiseTypeError(ctx, "slice indices must be integers or have an __index__ method");
+            return false;
+        }
+        long long v = b->asLong(ctx);
+        if (v < 0) { v += n; if (v < 0) v = 0; }
+        if (v > n) v = n;
+        out = v;
+        return true;
+    };
+    long long start = 0, stop = n;
+    if (!bound(1, 0, start) || !bound(2, n, stop)) return nullptr;
+    // A snapshot: __eq__ calls that mutate the deque do not disturb the walk;
+    // it is pinned once a comparison may run Python code.
+    PythonEnvironment::LazyComparePins pins(ctx, items ? items->asObject(ctx) : nullptr);
+    for (long long i = start; i < stop; ++i) {
+        const proto::ProtoObject* item = items->getAt(ctx, static_cast<int>(i));
+        if (item == value) return ctx->fromInteger(i);
+        pins.beforeCompare(item, value);
+        if (env && env->objectsEqual(ctx, item, value)) return ctx->fromInteger(i);
+    }
+    if (env) env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, "deque.index(x): x not in deque")->asObject(ctx));
+    return nullptr;
+}
+
 static const proto::ProtoObject* py_deque_count(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
@@ -922,6 +978,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
                                                  ctx->fromMethod(nullptr, py_deque_remove));
     dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "count"),
                                                  ctx->fromMethod(nullptr, py_deque_count));
+    dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "index"),
+                                                 ctx->fromMethod(nullptr, py_deque_index));
     dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__getitem__"),
                                                  ctx->fromMethod(nullptr, py_deque_getitem));
     dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "clear"),

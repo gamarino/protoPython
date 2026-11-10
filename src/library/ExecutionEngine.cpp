@@ -35,6 +35,9 @@ proto::proto_ulong pyDictKeyHash(proto::ProtoContext* context, const proto::Prot
 // unhashable key raises TypeError: they return false / nullptr.
 bool pyDictFind(proto::ProtoContext* context, const proto::ProtoSparseList* data,
                 const proto::ProtoObject* key, const proto::ProtoObject** value);
+bool pyDictFindInOwner(proto::ProtoContext* context, const proto::ProtoObject* owner,
+                       const proto::ProtoSparseList* data, const proto::ProtoObject* key,
+                       const proto::ProtoObject** value);
 const proto::ProtoSparseList* pyDictPut(proto::ProtoContext* context, const proto::ProtoSparseList* data,
                                         const proto::ProtoObject* key,
                                         const proto::ProtoObject* value, bool& isNew);
@@ -2768,7 +2771,7 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
                     // The key is looked up by the hash the dict stores it
                     // under; an unhashable key raises TypeError.
                     const proto::ProtoObject* hit = nullptr;
-                    if (!::protoPython::pyDictFind(ctx, data->asSparseList(ctx), a, &hit)) return nullptr;
+                    if (!::protoPython::pyDictFindInOwner(ctx, b, data->asSparseList(ctx), a, &hit)) return nullptr;
                     if (hit) {
                         found = true;
                         result = (op == 6) ? found : !found;
@@ -2794,14 +2797,18 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
             // identity-equal objects.
             PythonEnvironment* env_local = PythonEnvironment::fromContext(ctx);
             // __eq__ may replace the container's storage: keep this list
-            // version reachable (docs/GC_BRIDGING.md).
-            PythonEnvironment::TransientPin pinList(env_local, lst->asObject(ctx));
+            // version reachable once a comparison may run Python code
+            // (docs/GC_BRIDGING.md).
+            PythonEnvironment::LazyComparePins pins(ctx, lst->asObject(ctx));
             size_t size = lst->getSize(ctx);
             for (size_t i = 0; i < size; ++i) {
                 bool eq = false;
                 if (env_local) {
                     // Identity first (`x is e or x == e`), so NaN is found.
-                    eq = env_local->objectsEqual(ctx, a, lst->getAt(ctx, static_cast<int>(i)));
+                    const proto::ProtoObject* e = lst->getAt(ctx, static_cast<int>(i));
+                    if (e == a) { found = true; break; }
+                    pins.beforeCompare(a, e);
+                    eq = env_local->objectsEqual(ctx, a, e);
                 } else {
                     eq = (a->compare(ctx, lst->getAt(ctx, static_cast<int>(i))) == 0);
                 }

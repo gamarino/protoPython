@@ -2,6 +2,7 @@
 #define PROTOPYTHON_BUILTINSIGNATURE_H
 
 #include <protoCore.h>
+#include <atomic>
 #include <vector>
 
 namespace protoPython {
@@ -15,9 +16,15 @@ namespace protoPython {
 // (sorted's key=, print's sep=) are listed so they pass through unchanged.
 struct BuiltinParam {
     const char* name;
-    enum Default { Required, None, Int, Bool, Str } kind;
+    enum Default { Required, None, Int, Bool } kind;
     long long value;
-    const char* text = nullptr;   // the default of a Str parameter
+};
+// The interned names of a signature's parameters, built on its first call
+// with keywords: keywords are matched by the identity of their interned
+// names (protoCore's calling convention), never by text.
+struct BuiltinSignatureNames {
+    std::vector<const proto::ProtoString*> positional;
+    std::vector<const proto::ProtoString*> keywordOnly;
 };
 struct BuiltinSignature {
     const char* fn;                  // the name in error messages
@@ -27,6 +34,8 @@ struct BuiltinSignature {
     // Unknown keywords pass through instead of raising: for a __new__ that,
     // as in CPython, leaves the other arguments to a subclass's __init__.
     bool passUnknown = false;
+    // Filled once by callWithSignature; never freed (signatures are static).
+    mutable std::atomic<const BuiltinSignatureNames*> names{nullptr};
 };
 
 // Calls `impl` with the keywords that name positional parameters moved to

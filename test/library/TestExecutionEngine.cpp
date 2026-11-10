@@ -1347,3 +1347,29 @@ TEST(ExecutionEngineTest, KeywordArgumentsFromCppByNamePointer) {
         "import sys\n"
         "assert sys.kwdict == {'b': 2, 'extra': 3, 'long_keyword_name': 4}, sys.kwdict\n", "<kwcheck2>"), 0);
 }
+
+namespace proto { proto_ulong globalSymbolCount(); }
+
+// Probing a module namespace for a name it does not bind (`name in
+// globals()`, `globals().get(name)`) reads by content: it does not intern
+// the probed name, which would stay in the symbol table for the life of the
+// process.
+TEST(ExecutionEngineTest, NamespaceProbeMissDoesNotInternTheName) {
+    protoPython::PythonEnvironment env(STDLIB_PATH);
+    ASSERT_EQ(env.executeString(
+        "def probe(n):\n"
+        "    g = globals()\n"
+        "    hits = 0\n"
+        "    for i in range(n):\n"
+        "        name = 'unbound_probe_name_' + str(i) + '_with_a_long_tail'\n"
+        "        if name in g: hits += 1\n"
+        "        if g.get(name) is not None: hits += 1\n"
+        "    return hits\n"
+        "assert probe(50) == 0\n", "<probe-warmup>"), 0);
+    const proto::proto_ulong before = proto::globalSymbolCount();
+    ASSERT_EQ(env.executeString("assert probe(2000) == 0\n", "<probe>"), 0);
+    const proto::proto_ulong after = proto::globalSymbolCount();
+    // 2000 distinct names were probed; a few symbols may come from the
+    // compilation of the snippet itself.
+    EXPECT_LT(after - before, 100u) << "symbols before " << before << ", after " << after;
+}

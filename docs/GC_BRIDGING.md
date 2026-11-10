@@ -252,10 +252,22 @@ For every native function you write or modify, answer these questions:
   iterators, `list.index` / `count` / `remove` / `sort`, list, tuple and dict
   comparison, `sorted`, `min` and `max` (values and keys through
   `TransientPinSet`), the dict views' membership and set operations, and
-  `vars(module).update()`. A dict or set lookup whose comparison replaced the
-  container's storage restarts on the new storage, as CPython's does;
-  test/regression/eq_mutates_container.py runs these paths with a collection
-  inside every comparison.
+  `vars(module).update()`. A dict or set lookup restarts only when a
+  comparison replaced the table or changed the slot it compared, as CPython's
+  does; test/regression/eq_mutates_container.py and gc_pins_lists.py run these
+  paths with a collection inside every comparison.
+- Lazy pins (1.2.2): these sites do not pin on entry. `LazyComparePins` and
+  `LazyPinSet` (`PythonEnvironment.h`) record what must stay reachable and pin
+  it only before the first comparison whose operands are not trivial (a `str`
+  or an embedded value: `int`, `float`, `bool`, `None`), the first point where
+  Python code can run; a walk over trivial values never touches the pin
+  tables. Code that may run Python code below such a site without passing
+  through it (`compareObjects`, a user `__hash__` or `__repr__`) arms the
+  innermost pending site through `LazyComparePins::armAmbient()`, a
+  thread-local chain of the sites in progress. A new site that holds storage
+  across a call into Python either declares a `LazyComparePins` and calls
+  `beforeCompare` before each comparison, or pins eagerly with
+  `TransientPin`.
 
 When you add a native function that iterates or calls back into Python, follow
 the same pattern. The audit in [docs/audits/03-gc-roots.md](audits/03-gc-roots.md)

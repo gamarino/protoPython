@@ -1,6 +1,6 @@
 code 0: <module> (15-generators.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 36: operand stack from 0
+  slots 37: operand stack from 0
   constants:
     #0   code    <code countdown, line 2>  -> code 0.0
     #1   code    <code chain, line 8>  -> code 0.1

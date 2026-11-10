@@ -583,6 +583,170 @@ set_tests_properties(protopy_eq_mutates_container PROPERTIES
     ENVIRONMENT "PROTOCORE_GC_CONTEXT_THRESHOLD=100"
     PASS_REGULAR_EXPRESSION "eq_mutates_container: ok"
     LABELS "regression_gate")
+# A key's __eq__ that writes to the container: one comparison per probe, as in CPython.
+add_test(NAME protopy_dict_set_eq_side_write
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/dict_set_eq_side_write.py)
+set_tests_properties(protopy_dict_set_eq_side_write PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 300
+    PASS_REGULAR_EXPRESSION "dict_set_eq_side_write: ok"
+    LABELS "regression_gate")
+# A key's __hash__ that writes to the dict: the lookup reads the storage after it.
+add_test(NAME protopy_dict_hash_then_read
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/dict_hash_then_read.py)
+set_tests_properties(protopy_dict_hash_then_read PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "dict_hash_then_read: ok"
+    LABELS "regression_gate")
+# int & | ^ return int; bool's own and reflected operators keep bool.
+add_test(NAME protopy_int_bool_bitwise
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/int_bool_bitwise.py)
+set_tests_properties(protopy_int_bool_bitwise PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "int_bool_bitwise: ok"
+    LABELS "regression_gate")
+# __hash__ results: int subclasses are accepted, other types raise TypeError.
+add_test(NAME protopy_hash_result_int_subclass
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/hash_result_int_subclass.py)
+set_tests_properties(protopy_hash_result_int_subclass PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "hash_result_int_subclass: ok"
+    LABELS "regression_gate")
+# bytes(str, encoding, errors) in positional and keyword forms, as CPython 3.14.
+add_test(NAME protopy_bytes_constructor_encoding
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/bytes_constructor_encoding.py)
+set_tests_properties(protopy_bytes_constructor_encoding PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "bytes_constructor_encoding: ok"
+    LABELS "regression_gate")
+# bytearray is its own mutable, unhashable type.
+add_test(NAME protopy_bytearray_type
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/bytearray_type.py)
+set_tests_properties(protopy_bytearray_type PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "bytearray_type: ok"
+    LABELS "regression_gate")
+# eval with a dict or mapping as locals reads and writes it, as exec does.
+add_test(NAME protopy_eval_locals_mapping
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/eval_locals_mapping.py)
+set_tests_properties(protopy_eval_locals_mapping PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "eval_locals_mapping: ok"
+    LABELS "regression_gate")
+# pow inverse, d |= pairs, deque.index, slice assignment from an iterator, subnormal floats, wide literals, set subclass repr.
+add_test(NAME protopy_builtins_conformance_gaps
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/builtins_conformance_gaps.py)
+set_tests_properties(protopy_builtins_conformance_gaps PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "builtins_conformance_gaps: ok"
+    LABELS "regression_gate")
+# Native code holding a container's storage while Python code runs keeps it
+# reachable under GC pressure (list_in).
+add_test(NAME protopy_gc_pins_list_in
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/gc_pins_lists.py 40 list_in)
+set_tests_properties(protopy_gc_pins_list_in PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 300
+    ENVIRONMENT "PROTOCORE_GC_CONTEXT_THRESHOLD=100"
+    PASS_REGULAR_EXPRESSION "gc_pins_lists: ok"
+    LABELS "regression_gate")
+# Native code holding a container's storage while Python code runs keeps it
+# reachable under GC pressure (list_count).
+add_test(NAME protopy_gc_pins_list_count
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/gc_pins_lists.py 40 list_count)
+set_tests_properties(protopy_gc_pins_list_count PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 300
+    ENVIRONMENT "PROTOCORE_GC_CONTEXT_THRESHOLD=100"
+    PASS_REGULAR_EXPRESSION "gc_pins_lists: ok"
+    LABELS "regression_gate")
+# Native code holding a container's storage while Python code runs keeps it
+# reachable under GC pressure (list_index).
+add_test(NAME protopy_gc_pins_list_index
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/gc_pins_lists.py 40 list_index)
+set_tests_properties(protopy_gc_pins_list_index PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 300
+    ENVIRONMENT "PROTOCORE_GC_CONTEXT_THRESHOLD=100"
+    PASS_REGULAR_EXPRESSION "gc_pins_lists: ok"
+    LABELS "regression_gate")
+# Native code holding a container's storage while Python code runs keeps it
+# reachable under GC pressure (list_remove).
+add_test(NAME protopy_gc_pins_list_remove
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/gc_pins_lists.py 40 list_remove)
+set_tests_properties(protopy_gc_pins_list_remove PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 300
+    ENVIRONMENT "PROTOCORE_GC_CONTEXT_THRESHOLD=100"
+    PASS_REGULAR_EXPRESSION "gc_pins_lists: ok"
+    LABELS "regression_gate")
+# Native code holding a container's storage while Python code runs keeps it
+# reachable under GC pressure (list_compare).
+add_test(NAME protopy_gc_pins_list_compare
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/gc_pins_lists.py 40 list_compare)
+set_tests_properties(protopy_gc_pins_list_compare PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 300
+    ENVIRONMENT "PROTOCORE_GC_CONTEXT_THRESHOLD=100"
+    PASS_REGULAR_EXPRESSION "gc_pins_lists: ok"
+    LABELS "regression_gate")
+# Native code holding a container's storage while Python code runs keeps it
+# reachable under GC pressure (list_sort).
+add_test(NAME protopy_gc_pins_list_sort
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/gc_pins_lists.py 40 list_sort)
+set_tests_properties(protopy_gc_pins_list_sort PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 300
+    ENVIRONMENT "PROTOCORE_GC_CONTEXT_THRESHOLD=100"
+    PASS_REGULAR_EXPRESSION "gc_pins_lists: ok"
+    LABELS "regression_gate")
+# Native code holding a container's storage while Python code runs keeps it
+# reachable under GC pressure (sorted_key).
+add_test(NAME protopy_gc_pins_sorted_key
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/gc_pins_lists.py 40 sorted_key)
+set_tests_properties(protopy_gc_pins_sorted_key PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 300
+    ENVIRONMENT "PROTOCORE_GC_CONTEXT_THRESHOLD=100"
+    PASS_REGULAR_EXPRESSION "gc_pins_lists: ok"
+    LABELS "regression_gate")
+# Native code holding a container's storage while Python code runs keeps it
+# reachable under GC pressure (min_max_key).
+add_test(NAME protopy_gc_pins_min_max_key
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/gc_pins_lists.py 40 min_max_key)
+set_tests_properties(protopy_gc_pins_min_max_key PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 300
+    ENVIRONMENT "PROTOCORE_GC_CONTEXT_THRESHOLD=100"
+    PASS_REGULAR_EXPRESSION "gc_pins_lists: ok"
+    LABELS "regression_gate")
+# Native code holding a container's storage while Python code runs keeps it
+# reachable under GC pressure (dict_eq).
+add_test(NAME protopy_gc_pins_dict_eq
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/gc_pins_lists.py 40 dict_eq)
+set_tests_properties(protopy_gc_pins_dict_eq PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 300
+    ENVIRONMENT "PROTOCORE_GC_CONTEXT_THRESHOLD=100"
+    PASS_REGULAR_EXPRESSION "gc_pins_lists: ok"
+    LABELS "regression_gate")
+# Native code holding a container's storage while Python code runs keeps it
+# reachable under GC pressure (dict_views).
+add_test(NAME protopy_gc_pins_dict_views
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/gc_pins_lists.py 40 dict_views)
+set_tests_properties(protopy_gc_pins_dict_views PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 300
+    ENVIRONMENT "PROTOCORE_GC_CONTEXT_THRESHOLD=100"
+    PASS_REGULAR_EXPRESSION "gc_pins_lists: ok"
+    LABELS "regression_gate")
 # Unequal set elements with one hash stay distinct; membership calls __eq__.
 add_test(NAME protopy_set_colliding_hash
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/set_colliding_hash.py)

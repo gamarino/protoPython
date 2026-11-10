@@ -2,6 +2,7 @@
 #include <protoPython/DiagUtils.h>
 #include <protoPython/UnicodeNames.h>
 #include <cctype>
+#include <cstdlib>
 #include <cstdio>
 #include <stdexcept>
 #include <iostream>
@@ -390,11 +391,13 @@ Token Tokenizer::scanNumber() {
             // can emit a complex(0, numValue) constant instead of a
             // plain float.
             if (cleanValue.back() == 'j' || cleanValue.back() == 'J') cleanValue.pop_back();
-            t.numValue = std::stod(cleanValue);
+            // strtod: a literal beyond the double range is a subnormal, 0.0
+            // or inf in Python, where std::stod throws for ERANGE.
+            t.numValue = std::strtod(cleanValue.c_str(), nullptr);
             t.isInteger = false;
             t.isImaginary = true;
         } else if (isFloat) {
-            t.numValue = std::stod(cleanValue);
+            t.numValue = std::strtod(cleanValue.c_str(), nullptr);
             t.isInteger = false;
         } else {
             try {

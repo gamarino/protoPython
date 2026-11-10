@@ -1,6 +1,6 @@
 code 0: <module> (04-def-call.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 35: operand stack from 0
+  slots 37: operand stack from 0
   constants:
     #0   code    <code greet, line 2>  -> code 0.0
     #1   str     'world'

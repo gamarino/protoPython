@@ -185,7 +185,7 @@ static const proto::ProtoObject* py_weakref_ref(
                 || c == env->getFloatPrototype()
                 || c == env->getComplexPrototype()
                 || c == env->getStrPrototype()
-                || c == env->getBytesPrototype()
+                || env->isBytesOrBytearrayType(c)
                 || c == env->getTuplePrototype()
                 || c == env->getFrozensetPrototype();
             // Classes (instances of type) are weak-referenceable, as in
