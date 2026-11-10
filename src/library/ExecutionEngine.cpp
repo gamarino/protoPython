@@ -2791,6 +2791,9 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
             // raw ProtoObject pointer-style compare which only succeeds for
             // identity-equal objects.
             PythonEnvironment* env_local = PythonEnvironment::fromContext(ctx);
+            // __eq__ may replace the container's storage: keep this list
+            // version reachable (docs/GC_BRIDGING.md).
+            PythonEnvironment::TransientPin pinList(env_local, lst->asObject(ctx));
             size_t size = lst->getSize(ctx);
             for (size_t i = 0; i < size; ++i) {
                 bool eq = false;
@@ -2835,6 +2838,7 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
                     notIterable = true;
                 }
                 if (it) {
+                    PythonEnvironment::TransientPin pinIt(env, it);
                     for (;;) {
                         // An error from the iteration ends it, as before.
                         const proto::ProtoObject* item = nullptr;

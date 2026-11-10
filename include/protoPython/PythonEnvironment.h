@@ -1831,6 +1831,32 @@ public:
         proto::ProtoRootSet::Handle h_;
     };
 
+    /**
+     * @brief TransientPin for a growing collection of values: every add()ed
+     * object stays pinned until the set goes out of scope.
+     *
+     * For native code that gathers values in a C++ container (a
+     * std::vector of sort keys, the items of an iterable) while it runs
+     * Python code: the collector does not trace the container.
+     */
+    class TransientPinSet {
+    public:
+        explicit TransientPinSet(PythonEnvironment* env)
+            : roots_(env ? env->getTransientArgsRoots() : nullptr) {}
+        ~TransientPinSet() {
+            if (!roots_) return;
+            for (proto::ProtoRootSet::Handle h : handles_) roots_->remove(h);
+        }
+        void add(const proto::ProtoObject* obj) {
+            if (roots_ && obj) handles_.push_back(roots_->add(obj));
+        }
+        TransientPinSet(const TransientPinSet&) = delete;
+        TransientPinSet& operator=(const TransientPinSet&) = delete;
+    private:
+        proto::ProtoRootSet* roots_;
+        std::vector<proto::ProtoRootSet::Handle> handles_;
+    };
+
 private:
 
     const proto::ProtoObject* rangeIteratorProto{nullptr};
