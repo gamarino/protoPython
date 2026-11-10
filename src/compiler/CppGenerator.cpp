@@ -324,15 +324,15 @@ const proto::ProtoObject* __withDefaults(proto::ProtoContext* ctx, const proto::
     return fs->setAttribute(ctx, protoPython::PythonEnvironment::getInternedString(ctx, "__defaults__"), list->asObject(ctx));
 }
 
-// The default value of a keyword-only parameter, stored likewise (a sparse
-// list keyed by the name's hash).
+// The default value of a keyword-only parameter, stored likewise (dict
+// storage keyed by the name, PythonEnvironment::dictDataPut).
 const proto::ProtoObject* __withKwDefault(proto::ProtoContext* ctx, const proto::ProtoObject* fs,
                                           const char* name, const proto::ProtoObject* value) {
     const proto::ProtoString* key = protoPython::PythonEnvironment::getInternedString(ctx, "__kwdefaults__");
     const proto::ProtoObject* cur = fs->getAttribute(ctx, key);
     const proto::ProtoSparseList* map = (cur && cur != PROTO_NONE) ? cur->asSparseList(ctx) : nullptr;
-    if (!map) map = ctx->newSparseList();
-    map = map->setAt(ctx, protoPython::PythonEnvironment::getInternedString(ctx, name)->getHash(ctx), value);
+    map = protoPython::PythonEnvironment::dictDataPut(ctx, map,
+        protoPython::PythonEnvironment::getInternedString(ctx, name)->asObject(ctx), value);
     return fs->setAttribute(ctx, key, map->asObject(ctx));
 }
 
@@ -2646,16 +2646,18 @@ bool CppGenerator::generateDictLiteral(DictLiteralNode* n) {
             *out_ << "                auto* k = env->next(i);\n";
             *out_ << "                if (!k || k == PROTO_NONE) break;\n";
             *out_ << "                auto* v = env->getItem(unpacked, k);\n";
-            *out_ << "                data = data->setAt(ctx, k->getHash(ctx), v);\n";
-            *out_ << "                keys = keys->appendLast(ctx, k);\n";
+            *out_ << "                bool isNew = false;\n";
+            *out_ << "                data = protoPython::PythonEnvironment::dictDataPut(ctx, data, k, v, &isNew);\n";
+            *out_ << "                if (isNew) keys = keys->appendLast(ctx, k);\n";
             *out_ << "            }\n";
             *out_ << "        }\n";
         } else {
             *out_ << "        {\n";
             *out_ << "            auto* k = "; if (!generateNode(n->keys[i].get())) return false; *out_ << ";\n";
             *out_ << "            auto* v = "; if (!generateNode(n->values[i].get())) return false; *out_ << ";\n";
-            *out_ << "            data = data->setAt(ctx, k->getHash(ctx), v);\n";
-            *out_ << "            keys = keys->appendLast(ctx, k);\n";
+            *out_ << "            bool isNew = false;\n";
+            *out_ << "            data = protoPython::PythonEnvironment::dictDataPut(ctx, data, k, v, &isNew);\n";
+            *out_ << "            if (isNew) keys = keys->appendLast(ctx, k);\n";
             *out_ << "        }\n";
         }
     }

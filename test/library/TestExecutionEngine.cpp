@@ -400,10 +400,9 @@ TEST(ExecutionEngineTest, BuildMap) {
     ASSERT_NE(keys->asList(&ctx), nullptr);
     const proto::ProtoList* keysList = keys->asList(&ctx);
     EXPECT_EQ(keysList->getSize(&ctx), 2u);
-    proto::proto_ulong h0 = keysList->getAt(&ctx, 0)->getHash(&ctx);
-    proto::proto_ulong h1 = keysList->getAt(&ctx, 1)->getHash(&ctx);
-    const proto::ProtoObject* v0 = data->asSparseList(&ctx)->getAt(&ctx, h0);
-    const proto::ProtoObject* v1 = data->asSparseList(&ctx)->getAt(&ctx, h1);
+    // A str key's slot is a bucket beside its key: read through the helper.
+    const proto::ProtoObject* v0 = protoPython::PythonEnvironment::dictDataGet(&ctx, data->asSparseList(&ctx), keysList->getAt(&ctx, 0));
+    const proto::ProtoObject* v1 = protoPython::PythonEnvironment::dictDataGet(&ctx, data->asSparseList(&ctx), keysList->getAt(&ctx, 1));
     ASSERT_NE(v0, nullptr);
     ASSERT_NE(v1, nullptr);
     proto::proto_long a0 = v0->asLong(&ctx);

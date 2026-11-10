@@ -559,7 +559,7 @@ protoCore's tagged 56-bit integers; leaving the range promotes to a
 | `BUILD_TUPLE` | 118 | count | `a1..an -> tuple` | A tuple backed by a `ProtoList` (never a `ProtoTuple`, which protoCore interns forever). | tuple displays, defaults, bases |
 | `BUILD_LIST` | 114 | count | `a1..an -> list` | A `list` instance whose `__data__` is a `ProtoList`. | list displays, `*args` call sequences |
 | `BUILD_SET` | 171 | count | `a1..an -> set` | `TypeError` for an unhashable item. | set displays, set comprehensions |
-| `BUILD_MAP` | 116 | pair count | `k1 v1 .. kn vn -> dict` | A `dict` (`__data__` sparse list keyed by hash, `__keys__` in insertion order); keys hashed with the user's `__hash__`. | dict displays, keyword defaults, `**` call mappings |
+| `BUILD_MAP` | 116 | pair count | `k1 v1 .. kn vn -> dict` | A `dict` (`__data__` sparse list indexed by key hash, hits confirmed by equality, `__keys__` in insertion order); keys hashed with the user's `__hash__`. | dict displays, keyword defaults, `**` call mappings |
 | `BUILD_STRING` | 179 | count | `s1..sn -> str` | Joins the parts. | f-strings (`compileJoinedStr`) |
 | `LIST_APPEND` | 168 | depth | `.. list .. v -> .. list ..` | Appends to the list `arg` slots below the value. | list comprehensions, list displays with `*` |
 | `SET_ADD` | 170 | depth | `.. set .. v -> .. set ..` | | set comprehensions and displays |

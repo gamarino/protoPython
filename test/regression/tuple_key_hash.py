@@ -147,8 +147,8 @@ assert len(dt) == 2 and dt[t] == "tuple" and dt[n] == "int", dt
 assert len({t, n}) == 2 and n not in {t} and t not in {n}
 
 # Sets confirm every single-element hit, so str and bytes elements whose
-# digest equals an int's key hash stay distinct. (Dicts still trust those
-# digests; see "Dict entries under colliding hashes" in PythonEnvironment.cpp.)
+# digest equals an int's key hash stay distinct (dicts likewise; see
+# dict_digest_key_collision.py).
 st, n = find(lambda i: "k" + str(i), hash)
 assert len({st, n}) == 2 and n not in {st} and st not in {n}
 s2 = {st}

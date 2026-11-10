@@ -101,9 +101,11 @@ compiler diagnostics and native debuggers (GDB, LLDB) can point at Python source
 - **Collections**:
   - list literals build a `ProtoList` with `appendLast` and store it in the `__data__`
     attribute of an object whose parent is the `list` prototype;
-  - dict literals store values in a `ProtoSparseList` keyed by hash (`__data__`) and the
-    keys in insertion order in a `ProtoList` (`__keys__`), on an object whose parent is
-    the `dict` prototype;
+  - dict literals store entries through `PythonEnvironment::dictDataPut` in a
+    `ProtoSparseList` indexed by key hash (`__data__`; a slot is a value only for an
+    embedded int or None key, a bucket of key/value pairs otherwise) and the keys in
+    insertion order in a `ProtoList` (`__keys__`), on an object whose parent is the
+    `dict` prototype;
   - tuple literals are built as a list and converted with `ctx->newTupleFromList`.
 - **Garbage collection.** Generated code keeps every object it still uses where
   protoCore's collector sees it (protoCore `docs/EMBEDDER-CONFORMANCE.md`, rule 3):

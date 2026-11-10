@@ -491,6 +491,15 @@ set_tests_properties(protopy_tuple_key_hash PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "tuple_key_hash: ok"
     LABELS "regression_gate")
+# Digest-keyed dict entries (str, bytes, float, tuple, user __hash__) whose
+# hash equals an int's key word stay distinct on every dict path.
+add_test(NAME protopy_dict_digest_key_collision
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/dict_digest_key_collision.py)
+set_tests_properties(protopy_dict_digest_key_collision PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "dict_digest_key_collision: ok"
+    LABELS "regression_gate")
 # Unequal set elements with one hash stay distinct; membership calls __eq__.
 add_test(NAME protopy_set_colliding_hash
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/set_colliding_hash.py)

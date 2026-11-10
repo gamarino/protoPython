@@ -306,9 +306,9 @@ struct FrameLocalsSnapshot {
 
     void add(const proto::ProtoString* name, const proto::ProtoObject* value) {
         if (!name || !value || value == unbound) return;
-        proto::proto_ulong h = name->getHash(ctx);
-        if (!data->has(ctx, h)) keys = keys->appendLast(ctx, name->asObject(ctx));
-        data = data->setAt(ctx, h, value);
+        bool isNew = false;
+        data = PythonEnvironment::dictDataPut(ctx, data, name->asObject(ctx), value, &isNew);
+        if (isNew) keys = keys->appendLast(ctx, name->asObject(ctx));
     }
 };
 }
@@ -1529,7 +1529,7 @@ void PythonEnvironment::applyClassCell(proto::ProtoContext* ctx, const proto::Pr
     } else if (ns->hasOwnAttribute(ctx, getDataString()) == PROTO_TRUE) {
         const proto::ProtoObject* data = ns->getOwnAttributeDirect(ctx, getDataString());
         const proto::ProtoSparseList* sl = (data && data != PROTO_NONE) ? data->asSparseList(ctx) : nullptr;
-        if (sl && sl->has(ctx, classCellS->getHash(ctx))) classCell = sl->getAt(ctx, classCellS->getHash(ctx));
+        if (sl) classCell = dictDataGet(ctx, sl, classCellS->asObject(ctx));
     }
     if (!classCell || !isCell(ctx, classCell)) return;
     if (cellGet(ctx, classCell) != cls) cellSet(ctx, classCell, cls);
@@ -2278,7 +2278,7 @@ static void instanceDictOwnerSet(proto::ProtoContext* ctx, PythonEnvironment* en
     const proto::ProtoObject* dataObj = owner->hasOwnAttribute(ctx, dS) == PROTO_TRUE
         ? owner->getOwnAttributeDirect(ctx, dS) : nullptr;
     if (dataObj && dataObj->asSparseList(ctx)) {
-        o->setAttribute(ctx, dS, dataObj->asSparseList(ctx)->setAt(ctx, nm->getHash(ctx), value)->asObject(ctx));
+        o->setAttribute(ctx, dS, PythonEnvironment::dictDataPut(ctx, dataObj->asSparseList(ctx), key, value)->asObject(ctx));
     }
     const proto::ProtoObject* keysObj = owner->hasOwnAttribute(ctx, kS) == PROTO_TRUE
         ? owner->getOwnAttributeDirect(ctx, kS) : nullptr;
@@ -2296,7 +2296,6 @@ static void instanceDictOwnerRemove(proto::ProtoContext* ctx, PythonEnvironment*
                                     const proto::ProtoObject* owner, const proto::ProtoObject* key) {
     if (!key || !key->isString(ctx)) return;
     const proto::ProtoString* nm = key->asString(ctx);
-    const proto::proto_ulong h = nm->getHash(ctx);
     const proto::ProtoString* dS = nullptr;
     const proto::ProtoString* kS = nullptr;
     instanceDictMirrorSlots(ctx, env, owner, dS, kS);
@@ -2305,19 +2304,16 @@ static void instanceDictOwnerRemove(proto::ProtoContext* ctx, PythonEnvironment*
         ? owner->getOwnAttributeDirect(ctx, dS) : nullptr;
     const proto::ProtoSparseList* dl = dataObj ? dataObj->asSparseList(ctx) : nullptr;
     // removeAt returns a new list: it is published, or the entry stays.
-    if (dl && dl->has(ctx, h)) o->setAttribute(ctx, dS, dl->removeAt(ctx, h)->asObject(ctx));
+    if (dl) {
+        const proto::ProtoSparseList* rest = PythonEnvironment::dictDataRemove(ctx, dl, key);
+        if (rest != dl) o->setAttribute(ctx, dS, rest->asObject(ctx));
+    }
     const proto::ProtoObject* keysObj = owner->hasOwnAttribute(ctx, kS) == PROTO_TRUE
         ? owner->getOwnAttributeDirect(ctx, kS) : nullptr;
     const proto::ProtoList* kl = keysObj ? ::protoPython::listStorage(ctx, keysObj) : nullptr;
     if (kl) {
-        const proto::ProtoList* nl = ctx->newList();
-        bool dropped = false;
-        for (proto::proto_ulong i = 0; i < kl->getSize(ctx); ++i) {
-            const proto::ProtoObject* k = kl->getAt(ctx, static_cast<int>(i));
-            if (k && k->isString(ctx) && k->getHash(ctx) == h) { dropped = true; continue; }
-            nl = nl->appendLast(ctx, k);
-        }
-        if (dropped) o->setAttribute(ctx, kS, nl->asObject(ctx));
+        const proto::ProtoList* nl = PythonEnvironment::dictKeysWithout(ctx, kl, key);
+        if (nl != kl) o->setAttribute(ctx, kS, nl->asObject(ctx));
     }
     // The attribute is removed, not overwritten with None: `"a" in vars(o)`
     // and `o.a` must both see it gone.
@@ -2593,8 +2589,9 @@ static const proto::ProtoObject* py_object_get_dict(
                         if (nm == "__class__" || nm == "__name__"
                             || nm == "__bases__" || nm == "__mro__") return;
                     }
-                    s->dl = s->dl->setAt(ctx, ks->getHash(ctx), val);
-                    s->kl = s->kl->appendLast(ctx, ks->asObject(ctx));
+                    bool isNew = false;
+                    s->dl = PythonEnvironment::dictDataPut(ctx, s->dl, ks->asObject(ctx), val, &isNew);
+                    if (isNew) s->kl = s->kl->appendLast(ctx, ks->asObject(ctx));
                 });
             dl = sn.dl;
             kl = sn.kl;
@@ -4869,9 +4866,10 @@ static proto::proto_ulong nanIdentityHash(const proto::ProtoObject* obj) {
 //
 // A combined 64-bit hash of several values cannot identify them (tuples of
 // two ints alone outnumber the hash values), so the hash of a tuple is never
-// exact: a dict or set confirms a tuple key found under its hash with __eq__.
+// exact (see keyHash): a dict or set confirms a tuple key found under its
+// hash with __eq__.
 static bool tupleKeyHash(proto::ProtoContext* context, const TupleView& t, bool raiseUnhashable, proto::proto_ulong& out,
-                         bool* exact, bool allowUserCode) {
+                         bool allowUserCode) {
     const proto::proto_ulong size = t.size(context);
     proto::proto_ulong h = PROTO_UL(2870177450012600261);
     for (proto::proto_ulong i = 0; i < size; ++i) {
@@ -4882,9 +4880,18 @@ static bool tupleKeyHash(proto::ProtoContext* context, const TupleView& t, bool 
         h = (h << 31) | (h >> 33);
         h *= PROTO_UL(11400714785074694791);
     }
-    if (exact) *exact = false;
     out = h + (size ^ (PROTO_UL(2870177450012600261) ^ PROTO_UL(3527539)));
     return true;
+}
+
+// A key that is its own tagged word: a SmallInteger or None. protoCore hashes
+// it as that word, so a hash equal to the word decodes back to the key.
+static inline bool isEmbeddedKey(const proto::ProtoObject* o) {
+    return proto::isSmallInt(o) || o == PROTO_NONE;
+}
+
+static inline proto::proto_ulong embeddedKeyWord(const proto::ProtoObject* o) {
+    return static_cast<proto::proto_ulong>(reinterpret_cast<uintptr_t>(o));
 }
 
 // The hash a dict or a set stores `key` under. Python makes 1 == 1.0 == True
@@ -4895,30 +4902,36 @@ static bool tupleKeyHash(proto::ProtoContext* context, const TupleView& t, bool 
 // __hash__ makes it return false with the exception pending; with
 // raiseUnhashable false (dicts) such a key falls back to its protoCore hash.
 //
-// `exact`, when given, is cleared if the hash does not identify the key: a
-// hash from a class's own __hash__ (or from a built-in digest such as a
-// frozenset's, or a tuple's: see tupleKeyHash) may be shared by unequal keys,
-// so a dict must compare such a key with __eq__. Value hashes of the other
-// built-in primitives and identity hashes leave it set. Only part of those are
-// injective: a SmallInteger (and a bool, keyed as the int it equals) hashes as
-// its tagged word, None as its own tagged word and an identity hash is a cell
-// address, and these never collide; but a str (FNV-1a), a bytes object
-// (salted FNV-1a), a LargeInteger and a non-integral float hash by a digest
-// that can equal another key's hash. Sets confirm every single-element hit by
-// equality (setSlotMatches); a dict's single-value slot does not keep its
-// key, so a dict still trusts those digests (see "Dict entries under
-// colliding hashes" below). With allowUserCode false no Python __hash__ runs:
-// such a key makes the function return false with nothing pending.
-static bool keyHash(proto::ProtoContext* context, const proto::ProtoObject* key, bool raiseUnhashable, proto::proto_ulong& out,
-                    bool* exact, bool allowUserCode) {
+// `exact`, when given, is cleared unless the hash *is* the key: the tagged
+// word of an embedded int (a SmallInteger, or the int a bool or an integral
+// float equals) or of None, which protoCore hashes as the word itself. Such a
+// hash is injective and decodes back to the key, so a dict stores the value
+// alone under it and a lookup needs no comparison. Every other hash may be
+// shared by an unequal key, whatever its type: a class's own __hash__, the
+// digests of str (FNV-1a), bytes (salted FNV-1a), LargeInteger, a
+// non-integral float, a tuple or a frozenset, the identity hash of
+// object.__hash__ (its address >> 4) and a NaN's; any of these can equal
+// another key's hash, including an int's word. With allowUserCode false no
+// Python __hash__ runs: such a key makes the function return false with
+// nothing pending.
+static bool keyHashOf(proto::ProtoContext* context, const proto::ProtoObject* key, bool raiseUnhashable, proto::proto_ulong& out,
+                      bool& injective, bool allowUserCode) {
     out = 0;
+    injective = false;
     if (!key) return true;
-    if (key == PROTO_TRUE) { out = context->fromInteger(1)->getHash(context); return true; }
-    if (key == PROTO_FALSE) { out = context->fromInteger(0)->getHash(context); return true; }
+    // A str value (inline, heap or interned) hashes by its content.
+    if (proto::ProtoObject::isStringTagFast(key)) { out = key->getHash(context); return true; }
+    if (key == PROTO_TRUE || key == PROTO_FALSE) {
+        out = embeddedKeyWord(context->fromInteger(key == PROTO_TRUE ? 1 : 0));
+        injective = true;
+        return true;
+    }
     if (key->isFloat(context)) {
         const double v = key->asDouble(context);
         if (std::isfinite(v) && v == std::trunc(v)) {
-            out = integralDoubleToInt(context, v)->getHash(context);
+            const proto::ProtoObject* i = integralDoubleToInt(context, v);
+            out = i->getHash(context);
+            injective = isEmbeddedKey(i);
             return true;
         }
         // protoCore hashes a double by its bits, which made every NaN the
@@ -4933,7 +4946,7 @@ static bool keyHash(proto::ProtoContext* context, const proto::ProtoObject* key,
         const proto::ProtoObject* cls = env->getType(context, key);
         if (cls == env->getTuplePrototype()) {
             const TupleView t = PythonEnvironment::tupleView(context, key);
-            if (t) return tupleKeyHash(context, t, raiseUnhashable, out, exact, allowUserCode);
+            if (t) return tupleKeyHash(context, t, raiseUnhashable, out, allowUserCode);
         }
         if (cls == env->getBytesPrototype() && bytesKeyHash(context, key, out)) return true;
         // The other built-in primitives keep protoCore's value-based hash.
@@ -4967,7 +4980,7 @@ static bool keyHash(proto::ProtoContext* context, const proto::ProtoObject* key,
                     // by its items, as a tuple.
                     if (m == py_tuple_hash) {
                         const TupleView tv = PythonEnvironment::tupleView(context, key);
-                        if (tv) return tupleKeyHash(context, tv, raiseUnhashable, out, exact, allowUserCode);
+                        if (tv) return tupleKeyHash(context, tv, raiseUnhashable, out, allowUserCode);
                     }
                     const proto::ProtoObject* data = key->getAttribute(context, env->getDataString());
                     if (data && data != key) {
@@ -4977,14 +4990,11 @@ static bool keyHash(proto::ProtoContext* context, const proto::ProtoObject* key,
                             out = nanIdentityHash(key);
                             return true;
                         }
-                        return keyHash(context, data, raiseUnhashable, out, exact, allowUserCode);
+                        return keyHashOf(context, data, raiseUnhashable, out, injective, allowUserCode);
                     }
                 }
                 const proto::ProtoObject* res = nullptr;
                 if (!m && !allowUserCode) return false;
-                // object.__hash__ is the identity: equal hashes mean the same
-                // object. Any other __hash__ may be shared by unequal keys.
-                if (exact && m != py_object_hash) *exact = false;
                 if (m) {
                     res = m(context, key, nullptr, argsView(proto::ProtoListArguments(context, env->getEmptyList())), nullptr);
                 } else {
@@ -5011,8 +5021,18 @@ static bool keyHash(proto::ProtoContext* context, const proto::ProtoObject* key,
         if (s) { out = s->getHash(context); return true; }
     }
     out = key->getHash(context);
+    injective = isEmbeddedKey(key) && out == embeddedKeyWord(key);
     return true;
 }
+
+static bool keyHash(proto::ProtoContext* context, const proto::ProtoObject* key, bool raiseUnhashable, proto::proto_ulong& out,
+                    bool* exact, bool allowUserCode) {
+    bool injective = false;
+    if (!keyHashOf(context, key, raiseUnhashable, out, injective, allowUserCode)) return false;
+    if (exact && !injective) *exact = false;
+    return true;
+}
+
 
 static proto::proto_ulong dictKeyHash(proto::ProtoContext* context, const proto::ProtoObject* key) {
     proto::proto_ulong h = 0;
@@ -5023,26 +5043,24 @@ static proto::proto_ulong dictKeyHash(proto::ProtoContext* context, const proto:
 // --- Dict entries under colliding hashes ---
 //
 // A dict keeps its values in `__data__`, a ProtoSparseList indexed by the
-// key hash. Two unequal keys can share a hash (a class's own __hash__ need
-// not be unique), so a slot is either
-//  - the value itself, when the slot holds one key whose hash is exact (see
-//    keyHash): built-in primitive keys and identity-hashed objects, the
-//    common case, keep a single lookup; or
-//  - a bucket: a ProtoMap from each stored key object to its value, for any
-//    slot that holds a key with an inexact hash or more than one key.
-// A lookup that reaches a bucket compares the key with the stored keys by
-// identity, then with __eq__, as CPython compares keys of equal hash. A
-// ProtoMap is never a Python value, so a bucket is recognised by its tag.
-// `__keys__` lists every stored key in insertion order, so it is longer than
-// `__data__` when keys collide.
+// key hash (keyHash). A slot is either
+//  - the value itself, when its key is an embedded int or None: the index is
+//    then that key's tagged word (an exact hash, see keyHash), so the slot
+//    names its key without storing it and a lookup needs no comparison; or
+//  - a bucket: a ProtoMap from each stored key object to its value, for
+//    every other key (str, bytes, a large int, a float, a tuple, an object)
+//    and for an embedded key sharing its index with another key. A hash that
+//    is not the key itself may be shared by an unequal key, so the key is
+//    kept and every hit is confirmed: by identity, then with __eq__, as
+//    CPython compares keys of equal hash. An exact key sits in a bucket under
+//    its canonical object, the word its index decodes to.
+// A ProtoMap is never a Python value, so a bucket is recognised by its tag.
+// `__keys__` lists every stored key in insertion order.
 //
-// Known limitation: a single-value slot trusts an exact hash to identify its
-// key, and the digests of str, bytes, LargeInteger and non-integral float
-// keys can equal another exact key's hash (a SmallInteger's tagged word, or
-// another digest), so two such unequal keys become one entry. Confirming the
-// hit needs the slot's key, which a single-value slot does not keep (and C++
-// writers fill `__data__` with str-keyed values directly), so closing it is a
-// storage change, not a local one.
+// Code outside this file reads and writes dict storage through
+// PythonEnvironment::dictDataGet / dictDataPut / dictDataRemove (or the
+// pyDict* entry points), never by indexing `__data__` with a hash: a str
+// key's slot is a bucket, not its value.
 struct DictKey {
     const proto::ProtoObject* key = nullptr;
     proto::proto_ulong hash = 0;
@@ -5059,64 +5077,63 @@ static inline const proto::ProtoMap* dictBucket(proto::ProtoContext* context, co
     return slot ? slot->asMap(context) : nullptr;
 }
 
-// The stored key of `bucket` equal to `key`: the same object, else the first
+// The key an exact hash stands for: the embedded word itself.
+static inline const proto::ProtoObject* dictWordKey(proto::proto_ulong hash) {
+    return reinterpret_cast<const proto::ProtoObject*>(static_cast<uintptr_t>(hash));
+}
+
+// The object `dk` is filed under in a bucket: an exact key's canonical word
+// (so True and 1 are one entry), any other key as given.
+static inline const proto::ProtoObject* dictBucketKey(const DictKey& dk) {
+    return dk.exact ? dictWordKey(dk.hash) : dk.key;
+}
+
+// The stored key of `bucket` equal to `dk`: the same object, else the first
 // one __eq__ accepts; nullptr if none.
 static const proto::ProtoObject* dictBucketMatch(proto::ProtoContext* context, const proto::ProtoMap* bucket,
-                                                 const proto::ProtoObject* key) {
-    if (bucket->has(context, key)) return key;
+                                                 const DictKey& dk) {
+    const proto::ProtoObject* bk = dictBucketKey(dk);
+    if (bucket->has(context, bk)) return bk;
+    if (dk.key != bk && bucket->has(context, dk.key)) return dk.key;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     for (const proto::ProtoMapIterator* it = bucket->getIterator(context); it && it->hasNext(context); it = it->advance(context)) {
         const proto::ProtoObject* stored = it->nextKey(context);
-        if (env && env->objectsEqual(context, key, stored)) return stored;
+        if (env && env->objectsEqual(context, dk.key, stored)) return stored;
     }
     return nullptr;
 }
 
-// The key stored in a single-value slot `hash`: the one key of `keys` with an
-// exact hash equal to it. No Python __hash__ runs (keys with an inexact hash
-// live in buckets). nullptr when the dict keeps no key list.
-static const proto::ProtoObject* dictSlotOccupant(proto::ProtoContext* context, const proto::ProtoList* keys,
-                                                  proto::proto_ulong hash) {
-    if (!keys) return nullptr;
-    const proto::proto_ulong n = keys->getSize(context);
-    for (proto::proto_ulong i = 0; i < n; ++i) {
-        const proto::ProtoObject* k = keys->getAt(context, static_cast<int>(i));
-        proto::proto_ulong h = 0;
-        bool exact = true;
-        if (k && keyHash(context, k, false, h, &exact, false) && exact && h == hash) return k;
-    }
-    return nullptr;
+// Whether `dk` is the key of the single-value slot at its index, whose key is
+// the embedded word the index decodes to.
+static bool dictSlotMatches(proto::ProtoContext* context, const DictKey& dk) {
+    if (dk.exact) return true;
+    const proto::ProtoObject* occupant = dictWordKey(dk.hash);
+    if (!isEmbeddedKey(occupant)) return false;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    return env && env->objectsEqual(context, dk.key, occupant);
 }
 
 // The value stored for `dk` (nullptr if absent); `stored` receives the key
-// object it is stored under, or nullptr for a single-value slot.
+// object it is filed under in a bucket, or nullptr for a single-value slot.
 static const proto::ProtoObject* dictFind(proto::ProtoContext* context, const proto::ProtoSparseList* data,
-                                          const proto::ProtoList* keys, const DictKey& dk,
-                                          const proto::ProtoObject** stored = nullptr) {
+                                          const DictKey& dk, const proto::ProtoObject** stored = nullptr) {
     if (stored) *stored = nullptr;
     if (!data || !data->has(context, dk.hash)) return nullptr;
     const proto::ProtoObject* slot = data->getAt(context, dk.hash);
     if (const proto::ProtoMap* bucket = dictBucket(context, slot)) {
-        const proto::ProtoObject* match = dictBucketMatch(context, bucket, dk.key);
+        const proto::ProtoObject* match = dictBucketMatch(context, bucket, dk);
         if (!match) return nullptr;
         if (stored) *stored = match;
         return bucket->getAt(context, match);
     }
-    if (dk.exact) return slot;
-    // An inexact key reaching a single-value slot: that slot's key has an
-    // exact hash, so it is found in the key list and compared.
-    const proto::ProtoObject* occupant = dictSlotOccupant(context, keys, dk.hash);
-    if (!occupant || occupant == dk.key) return slot;
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    return (env && env->objectsEqual(context, dk.key, occupant)) ? slot : nullptr;
+    return dictSlotMatches(context, dk) ? slot : nullptr;
 }
 
 // `data` with `value` stored for `dk`. `isNew` tells whether the key was
 // absent (the caller then appends dk.key to `__keys__`); an equal stored key
 // keeps its place and object, as in CPython.
 static const proto::ProtoSparseList* dictPut(proto::ProtoContext* context, const proto::ProtoSparseList* data,
-                                             const proto::ProtoList* keys, const DictKey& dk,
-                                             const proto::ProtoObject* value, bool& isNew) {
+                                             const DictKey& dk, const proto::ProtoObject* value, bool& isNew) {
     isNew = false;
     if (!data->has(context, dk.hash)) {
         isNew = true;
@@ -5125,79 +5142,82 @@ static const proto::ProtoSparseList* dictPut(proto::ProtoContext* context, const
     }
     const proto::ProtoObject* slot = data->getAt(context, dk.hash);
     if (const proto::ProtoMap* bucket = dictBucket(context, slot)) {
-        const proto::ProtoObject* match = dictBucketMatch(context, bucket, dk.key);
-        if (!match) { isNew = true; match = dk.key; }
+        const proto::ProtoObject* match = dictBucketMatch(context, bucket, dk);
+        if (!match) { isNew = true; match = dictBucketKey(dk); }
         return data->setAt(context, dk.hash, bucket->setAt(context, match, value)->asObject(context));
     }
-    if (dk.exact) return data->setAt(context, dk.hash, value);
-    const proto::ProtoObject* occupant = dictSlotOccupant(context, keys, dk.hash);
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    if (!occupant || occupant == dk.key || (env && env->objectsEqual(context, dk.key, occupant))) {
-        return data->setAt(context, dk.hash, value);
-    }
-    // Two unequal keys under one hash: the slot becomes a bucket.
+    if (dictSlotMatches(context, dk)) return data->setAt(context, dk.hash, value);
+    // Two unequal keys under one index: the slot becomes a bucket.
     isNew = true;
-    const proto::ProtoMap* bucket = context->newMap()->setAt(context, occupant, slot)->setAt(context, dk.key, value);
+    const proto::ProtoMap* bucket = context->newMap()
+        ->setAt(context, dictWordKey(dk.hash), slot)->setAt(context, dk.key, value);
     return data->setAt(context, dk.hash, bucket->asObject(context));
 }
 
 // `data` without the entry for `dk`; nullptr when the key is absent.
-// `stored` receives the removed key object (nullptr for a single-value slot,
-// whose key is the one of `__keys__` with that hash).
+// `stored` receives the removed key's bucket object (nullptr for a
+// single-value slot, whose key is the one of `__keys__` with that exact hash).
 static const proto::ProtoSparseList* dictRemove(proto::ProtoContext* context, const proto::ProtoSparseList* data,
-                                                const proto::ProtoList* keys, const DictKey& dk,
-                                                const proto::ProtoObject** stored) {
+                                                const DictKey& dk, const proto::ProtoObject** stored) {
     *stored = nullptr;
     if (!data || !data->has(context, dk.hash)) return nullptr;
     const proto::ProtoObject* slot = data->getAt(context, dk.hash);
     if (const proto::ProtoMap* bucket = dictBucket(context, slot)) {
-        const proto::ProtoObject* match = dictBucketMatch(context, bucket, dk.key);
+        const proto::ProtoObject* match = dictBucketMatch(context, bucket, dk);
         if (!match) return nullptr;
         *stored = match;
         const proto::ProtoMap* rest = bucket->removeAt(context, match);
         if (rest->getSize(context) == 0) return data->removeAt(context, dk.hash);
         return data->setAt(context, dk.hash, rest->asObject(context));
     }
-    if (!dk.exact) {
-        const proto::ProtoObject* occupant = dictSlotOccupant(context, keys, dk.hash);
-        PythonEnvironment* env = PythonEnvironment::fromContext(context);
-        if (occupant && occupant != dk.key && !(env && env->objectsEqual(context, dk.key, occupant))) return nullptr;
-        *stored = occupant;
-    }
+    if (!dictSlotMatches(context, dk)) return nullptr;
     return data->removeAt(context, dk.hash);
 }
 
-// The value of a key object taken from `__keys__` (stored as is, so it is
-// found by identity in a bucket); nullptr if absent.
+// The value of a key object taken from `__keys__`; nullptr if absent. No
+// __eq__ runs: the key is found by identity, or by its canonical word.
 static const proto::ProtoObject* dictStoredValue(proto::ProtoContext* context, const proto::ProtoSparseList* data,
                                                  const proto::ProtoObject* storedKey) {
     if (!data || !storedKey) return nullptr;
-    const proto::proto_ulong h = dictKeyHash(context, storedKey);
-    if (!data->has(context, h)) return nullptr;
-    const proto::ProtoObject* slot = data->getAt(context, h);
+    DictKey dk;
+    dictKeyResolve(context, storedKey, false, dk);
+    if (!data->has(context, dk.hash)) return nullptr;
+    const proto::ProtoObject* slot = data->getAt(context, dk.hash);
     if (const proto::ProtoMap* bucket = dictBucket(context, slot)) {
+        const proto::ProtoObject* bk = dictBucketKey(dk);
+        if (bucket->has(context, bk)) return bucket->getAt(context, bk);
         return bucket->has(context, storedKey) ? bucket->getAt(context, storedKey) : nullptr;
     }
-    return slot;
+    return dk.exact ? slot : nullptr;
 }
 
-// `keys` without the stored key `stored` (by identity), or, for a
-// single-value slot (stored == nullptr), without the key filed under `hash`.
+// `keys` without the key removed from storage: `stored` (by identity), or,
+// when `stored` is nullptr or an exact key's canonical word, the key of
+// `keys` whose exact hash is `hash` (True for the word of 1).
 static const proto::ProtoList* dictKeysWithout(proto::ProtoContext* context, const proto::ProtoList* keys,
                                                const proto::ProtoObject* stored, proto::proto_ulong hash) {
     if (!keys) return keys;
     const proto::proto_ulong n = keys->getSize(context);
+    if (stored) {
+        for (proto::proto_ulong i = 0; i < n; ++i) {
+            if (keys->getAt(context, static_cast<int>(i)) == stored) return keys->removeAt(context, static_cast<int>(i));
+        }
+        if (stored != dictWordKey(hash)) return keys;
+    }
     for (proto::proto_ulong i = 0; i < n; ++i) {
         const proto::ProtoObject* k = keys->getAt(context, static_cast<int>(i));
-        if (stored ? (k == stored) : (dictKeyHash(context, k) == hash)) return keys->removeAt(context, static_cast<int>(i));
+        proto::proto_ulong h = 0;
+        bool exact = true;
+        if (k && keyHash(context, k, false, h, &exact, false) && exact && h == hash) {
+            return keys->removeAt(context, static_cast<int>(i));
+        }
     }
     return keys;
 }
 
-// The number of keys of a dict: one per `__data__` slot, more when buckets
-// hold several. `__keys__` counts them all; a namespace some C++ writer fills
-// through `__data__` alone keeps no complete key list, so the larger count
-// is the length.
+// The number of keys of a dict: one per `__keys__` entry. A namespace some
+// C++ writer fills through `__data__` alone keeps no complete key list, so
+// the larger of the two counts is the length.
 static proto::proto_ulong dictSize(proto::ProtoContext* context, const proto::ProtoSparseList* data,
                                    const proto::ProtoObject* keysObj) {
     const proto::proto_ulong slots = data ? data->getSize(context) : 0;
@@ -5214,35 +5234,140 @@ static void dictStore(proto::ProtoContext* context, const proto::ProtoSparseList
     DictKey dk;
     dictKeyResolve(context, key, false, dk);
     bool isNew = false;
-    data = dictPut(context, data, keys, dk, value, isNew);
+    data = dictPut(context, data, dk, value, isNew);
     if (isNew) keys = keys->appendLast(context, key);
 }
 
-// Whether a key-list-less dict state holds `key` (unhashable: false).
+// Whether a dict state holds `key` (unhashable: false).
 static bool dictHasKey(proto::ProtoContext* context, const proto::ProtoSparseList* data, const proto::ProtoObject* key) {
     DictKey dk;
     dictKeyResolve(context, key, false, dk);
-    return dictFind(context, data, nullptr, dk) != nullptr;
+    return dictFind(context, data, dk) != nullptr;
 }
 
 // Python-visible entry points for the other translation units.
-bool pyDictFind(proto::ProtoContext* context, const proto::ProtoSparseList* data, const proto::ProtoList* keys,
+bool pyDictFind(proto::ProtoContext* context, const proto::ProtoSparseList* data,
                 const proto::ProtoObject* key, const proto::ProtoObject** value) {
     DictKey dk;
     if (!dictKeyResolve(context, key, true, dk)) return false;
-    *value = dictFind(context, data, keys, dk);
+    *value = dictFind(context, data, dk);
     return true;
 }
 const proto::ProtoSparseList* pyDictPut(proto::ProtoContext* context, const proto::ProtoSparseList* data,
-                                        const proto::ProtoList* keys, const proto::ProtoObject* key,
+                                        const proto::ProtoObject* key,
                                         const proto::ProtoObject* value, bool& isNew) {
     DictKey dk;
     if (!dictKeyResolve(context, key, true, dk)) return nullptr;
-    return dictPut(context, data, keys, dk, value, isNew);
+    return dictPut(context, data, dk, value, isNew);
 }
 const proto::ProtoObject* pyDictStoredValue(proto::ProtoContext* context, const proto::ProtoSparseList* data,
                                             const proto::ProtoObject* storedKey) {
     return dictStoredValue(context, data, storedKey);
+}
+
+const proto::ProtoObject* PythonEnvironment::dictDataGet(proto::ProtoContext* ctx, const proto::ProtoSparseList* data,
+                                                         const proto::ProtoObject* key) {
+    if (!data || !key) return nullptr;
+    DictKey dk;
+    dictKeyResolve(ctx, key, false, dk);
+    return dictFind(ctx, data, dk);
+}
+
+const proto::ProtoSparseList* PythonEnvironment::dictDataPut(proto::ProtoContext* ctx, const proto::ProtoSparseList* data,
+                                                             const proto::ProtoObject* key, const proto::ProtoObject* value,
+                                                             bool* isNew) {
+    DictKey dk;
+    dictKeyResolve(ctx, key, false, dk);
+    bool fresh = false;
+    const proto::ProtoSparseList* out = dictPut(ctx, data ? data : ctx->newSparseList(), dk, value, fresh);
+    if (isNew) *isNew = fresh;
+    return out;
+}
+
+const proto::ProtoSparseList* PythonEnvironment::dictDataRemove(proto::ProtoContext* ctx, const proto::ProtoSparseList* data,
+                                                                const proto::ProtoObject* key) {
+    if (!data || !key) return data;
+    DictKey dk;
+    dictKeyResolve(ctx, key, false, dk);
+    const proto::ProtoObject* stored = nullptr;
+    const proto::ProtoSparseList* out = dictRemove(ctx, data, dk, &stored);
+    return out ? out : data;
+}
+
+const proto::ProtoList* PythonEnvironment::dictKeysWithout(proto::ProtoContext* ctx, const proto::ProtoList* keys,
+                                                           const proto::ProtoObject* key) {
+    if (!keys || !key) return keys;
+    const proto::proto_ulong n = keys->getSize(ctx);
+    for (proto::proto_ulong i = 0; i < n; ++i) {
+        if (keys->getAt(ctx, static_cast<int>(i)) == key) return keys->removeAt(ctx, static_cast<int>(i));
+    }
+    DictKey dk;
+    dictKeyResolve(ctx, key, false, dk);
+    for (proto::proto_ulong i = 0; i < n; ++i) {
+        const proto::ProtoObject* k = keys->getAt(ctx, static_cast<int>(i));
+        DictKey kk;
+        if (!k || !keyHash(ctx, k, false, kk.hash, &kk.exact, false) || kk.hash != dk.hash) continue;
+        kk.key = k;
+        PythonEnvironment* env = fromContext(ctx);
+        if ((dk.exact && kk.exact) || (env && env->objectsEqual(ctx, k, key))) return keys->removeAt(ctx, static_cast<int>(i));
+    }
+    return keys;
+}
+
+const proto::ProtoSparseList* PythonEnvironment::keywordArgumentsFromDict(proto::ProtoContext* ctx,
+                                                                         const proto::ProtoObject* dictObj) {
+    PythonEnvironment* env = fromContext(ctx);
+    if (!env || !dictObj || dictObj == PROTO_NONE) return nullptr;
+    const proto::ProtoObject* dataObj = dictObj->getAttribute(ctx, env->getDataString());
+    const proto::ProtoSparseList* data = dataObj ? dataObj->asSparseList(ctx) : nullptr;
+    const proto::ProtoObject* keysObj = dictObj->getAttribute(ctx, env->getKeysString());
+    const proto::ProtoList* keys = keysObj ? ::protoPython::listStorage(ctx, keysObj) : nullptr;
+    if (!data) return nullptr;
+    const proto::ProtoSparseList* out = ctx->newSparseList();
+    if (!keys) {
+        // Storage some C++ writer filled without a key list: a str key
+        // lives in a bucket beside its value.
+        for (const proto::ProtoSparseListIterator* it = data->getIterator(ctx); it && it->hasNext(ctx);
+             it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(ctx)) {
+            const proto::ProtoMap* bucket = dictBucket(ctx, it->nextValue(ctx));
+            if (!bucket) continue;
+            for (const proto::ProtoMapIterator* b = bucket->getIterator(ctx); b && b->hasNext(ctx); b = b->advance(ctx)) {
+                const proto::ProtoObject* k = b->nextKey(ctx);
+                if (k && k->isString(ctx)) out = out->setAt(ctx, k->asString(ctx)->getHash(ctx), bucket->getAt(ctx, k));
+            }
+        }
+        return out;
+    }
+    const proto::proto_ulong n = keys->getSize(ctx);
+    for (proto::proto_ulong i = 0; i < n; ++i) {
+        const proto::ProtoObject* k = keys->getAt(ctx, static_cast<int>(i));
+        if (!k || !k->isString(ctx)) continue;
+        const proto::ProtoObject* v = dictStoredValue(ctx, data, k);
+        if (v) out = out->setAt(ctx, k->asString(ctx)->getHash(ctx), v);
+    }
+    return out;
+}
+
+bool PythonEnvironment::sameStringKey(proto::ProtoContext* ctx, const proto::ProtoObject* k, const proto::ProtoObject* name) {
+    if (k == name) return true;
+    if (!k || !name || !k->isString(ctx) || !name->isString(ctx)) return false;
+    return k->getHash(ctx) == name->getHash(ctx) && k->compare(ctx, name) == 0;
+}
+
+void PythonEnvironment::forEachDictValue(proto::ProtoContext* ctx, const proto::ProtoSparseList* data,
+                                         const std::function<void(const proto::ProtoObject*)>& fn) {
+    if (!data) return;
+    for (const proto::ProtoSparseListIterator* it = data->getIterator(ctx); it && it->hasNext(ctx);
+         it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(ctx)) {
+        const proto::ProtoObject* slot = it->nextValue(ctx);
+        if (const proto::ProtoMap* bucket = dictBucket(ctx, slot)) {
+            for (const proto::ProtoMapIterator* b = bucket->getIterator(ctx); b && b->hasNext(ctx); b = b->advance(ctx)) {
+                fn(bucket->getAt(ctx, b->nextKey(ctx)));
+            }
+        } else {
+            fn(slot);
+        }
+    }
 }
 
 bool PythonEnvironment::hashKey(proto::ProtoContext* ctx, const proto::ProtoObject* value, proto::proto_ulong& hash) {
@@ -5403,7 +5528,7 @@ static const proto::ProtoSparseList* setPut(proto::ProtoContext* context, const 
                                             const DictKey& dk) {
     const proto::proto_ulong index = setSlotIndex(dk.hash);
     if (!table->has(context, index)) {
-        if (dk.exact && !setBucket(context, dk.key)) return table->setAt(context, index, dk.key);
+        if (!setBucket(context, dk.key)) return table->setAt(context, index, dk.key);
         return table->setAt(context, index, context->newList()->appendLast(context, dk.key)->asObject(context));
     }
     const proto::ProtoObject* slot = table->getAt(context, index);
@@ -5545,10 +5670,7 @@ static const proto::ProtoObject* py_dict_getitem(
             }
         }
         {
-            const proto::ProtoObject* keysObj = dk.exact ? nullptr
-                : realSelf->getAttribute(context, env ? env->getKeysString() : PythonEnvironment::getInternalString(context, "__keys__"));
-            const proto::ProtoObject* found = dictFind(context, dict,
-                keysObj ? ::protoPython::listStorage(context, keysObj) : nullptr, dk);
+            const proto::ProtoObject* found = dictFind(context, dict, dk);
             if (found) return found;
         }
         // CPython: if this is a dict subclass that overrides __missing__,
@@ -5622,8 +5744,7 @@ static const proto::ProtoObject* py_dict_setitem(
         if (!data || !data->asSparseList(context)) return PROTO_NONE;
         const proto::ProtoObject* keysObj = realSelf->getAttribute(context, keysName);
         bool isNew = false;
-        const proto::ProtoSparseList* newSparse = dictPut(context, data->asSparseList(context),
-            keysObj ? ::protoPython::listStorage(context, keysObj) : nullptr, dk, value, isNew);
+        const proto::ProtoSparseList* newSparse = dictPut(context, data->asSparseList(context), dk, value, isNew);
         const proto::ProtoObject* newKeysObj = keysObj;
         if (isNew) {
             const proto::ProtoList* keysList = keysObj && ::protoPython::listStorage(context, keysObj) ? ::protoPython::listStorage(context, keysObj) : context->newList();
@@ -5666,7 +5787,7 @@ static const proto::ProtoObject* py_dict_delitem(
         const proto::ProtoObject* keysObj = realSelf->getAttribute(context, keysName);
         const proto::ProtoList* list = keysObj ? ::protoPython::listStorage(context, keysObj) : nullptr;
         const proto::ProtoObject* stored = nullptr;
-        const proto::ProtoSparseList* newSparse = dictRemove(context, data->asSparseList(context), list, dk, &stored);
+        const proto::ProtoSparseList* newSparse = dictRemove(context, data->asSparseList(context), dk, &stored);
         if (!newSparse) {
             env->raiseKeyError(context, key);
             return PROTO_NONE;
@@ -5797,10 +5918,7 @@ static const proto::ProtoObject* py_dict_contains(
     if (dict) {
         DictKey dk;
         if (!dictKeyResolve(context, key, true, dk)) return nullptr;
-        const proto::ProtoObject* keysObj = dk.exact ? nullptr
-            : self->getAttribute(context, PythonEnvironment::getInternalString(context, "__keys__"));
-        return dictFind(context, dict, keysObj ? ::protoPython::listStorage(context, keysObj) : nullptr, dk)
-            ? PROTO_TRUE : PROTO_FALSE;
+        return dictFind(context, dict, dk) ? PROTO_TRUE : PROTO_FALSE;
     }
     
     // Fallback for objects used as dicts (like modules)
@@ -5857,7 +5975,7 @@ static const proto::ProtoObject* py_dict_eq(
         const proto::ProtoObject* vA = dictStoredValue(context, dictA, key);
         DictKey dk;
         dictKeyResolve(context, key, false, dk);
-        const proto::ProtoObject* vB = dictFind(context, dictB, keysB, dk);
+        const proto::ProtoObject* vB = dictFind(context, dictB, dk);
         if (!vA || !vB) return PROTO_FALSE;
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         if (env && !env->objectsEqual(context, vA, vB)) return PROTO_FALSE;
@@ -8395,10 +8513,11 @@ static const proto::ProtoObject* py_dict_call(
                 // (e.g. f(x, kw=val) calling dict(pairs) internally), causing spurious entries.
                 if (!keywordParameters->has(context, hash)) continue;
                 const proto::ProtoObject* val = keywordParameters->getAt(context, hash);
-                if (!d->has(context, hash)) {
-                    keysList = const_cast<proto::ProtoList*>(keysList->appendLast(context, keyObj));
-                }
-                d = const_cast<proto::ProtoSparseList*>(d->setAt(context, hash, val ? val : PROTO_NONE));
+                const proto::ProtoSparseList* nd = d;
+                const proto::ProtoList* nk = keysList;
+                dictStore(context, nd, nk, keyObj, val ? val : PROTO_NONE);
+                d = const_cast<proto::ProtoSparseList*>(nd);
+                keysList = const_cast<proto::ProtoList*>(nk);
             }
         }
     }
@@ -8435,11 +8554,9 @@ static const proto::ProtoObject* py_str_maketrans(
     const proto::ProtoList* keysList = context->newList();
     auto setEntry = [&](long long key, const proto::ProtoObject* value) {
         const proto::ProtoObject* keyObj = context->fromInteger(key);
-        proto::proto_ulong hash = keyObj->getHash(context);
-        if (!result->has(context, hash)) {
-            keysList = keysList->appendLast(context, keyObj);
-        }
-        result = const_cast<proto::ProtoSparseList*>(result->setAt(context, hash, value));
+        const proto::ProtoSparseList* nd = result;
+        dictStore(context, nd, keysList, keyObj, value);
+        result = const_cast<proto::ProtoSparseList*>(nd);
     };
     if (argc == 1) {
         // Single-arg form: x must be a dict mapping int-or-str keys to
@@ -8567,12 +8684,11 @@ static const proto::ProtoObject* py_str_translate(
     for (char ch : s) {
         long long key = static_cast<unsigned char>(ch);
         const proto::ProtoObject* keyObj = context->fromInteger(key);
-        proto::proto_ulong hash = keyObj->getHash(context);
-        if (!sl->has(context, hash)) {
+        const proto::ProtoObject* v = PythonEnvironment::dictDataGet(context, sl, keyObj);
+        if (!v) {
             out.push_back(ch);
             continue;
         }
-        const proto::ProtoObject* v = sl->getAt(context, hash);
         if (!v || v == PROTO_NONE) continue;   // drop char
         if (v->isInteger(context)) {
             long long cp = v->asLong(context);
@@ -11000,7 +11116,7 @@ static const proto::ProtoObject* py_tuple_hash(
     if (!t) return context->fromInteger(0);
     // The hash a dict or set keys the tuple by, so hash((1, 2)) == hash((1.0, 2)).
     proto::proto_ulong h = 0;
-    if (!tupleKeyHash(context, t, true, h, nullptr, true)) return nullptr;
+    if (!tupleKeyHash(context, t, true, h, true)) return nullptr;
     return context->fromInteger(static_cast<long long>(h));
 }
 
@@ -16642,10 +16758,10 @@ static const proto::ProtoObject* py_mappingproxy_values(
                 bool already = false;
                 if (kObj && ::protoPython::listStorage(context, kObj)) {
                     const proto::ProtoList* il = ::protoPython::listStorage(context, kObj);
-                    proto::proto_ulong h = PythonEnvironment::getInternedString(context, synth)->getHash(context);
+                    const proto::ProtoObject* synthKey = PythonEnvironment::getInternedString(context, synth)->asObject(context);
                     for (proto::proto_ulong i = 0; i < il->getSize(context); ++i) {
                         const proto::ProtoObject* k = il->getAt(context, static_cast<int>(i));
-                        if (k && k->isString(context) && k->getHash(context) == h) {
+                        if (PythonEnvironment::sameStringKey(context, k, synthKey)) {
                             already = true;
                             break;
                         }
@@ -16918,9 +17034,7 @@ static const proto::ProtoObject* py_dict_get(
     if (!dict) return defaultVal;
     DictKey dk;
     if (!dictKeyResolve(context, key, true, dk)) return nullptr;
-    const proto::ProtoObject* keysObj = dk.exact ? nullptr
-        : receiver->getAttribute(context, PythonEnvironment::getInternalString(context, "__keys__"));
-    const proto::ProtoObject* res = dictFind(context, dict, keysObj ? ::protoPython::listStorage(context, keysObj) : nullptr, dk);
+    const proto::ProtoObject* res = dictFind(context, dict, dk);
     return res ? res : defaultVal;
 }
 
@@ -17228,13 +17342,13 @@ kwargs_phase:
                 const proto::ProtoObject* k = keys->getAt(context, static_cast<int>(i));
                 if (!k || !k->isString(context)) continue;
                 const proto::ProtoString* nm = k->asString(context);
-                const proto::ProtoObject* v = dict->getAt(context, nm->getHash(context));
+                const proto::ProtoObject* v = dictStoredValue(context, dict, k);
                 if (!v) continue;
                 // Underlying __data__ / __keys__.
                 const proto::ProtoObject* uDataObj = underlying->hasOwnAttribute(context, dS) == PROTO_TRUE
                     ? underlying->getAttribute(context, dS) : nullptr;
                 const proto::ProtoSparseList* uDl = uDataObj ? uDataObj->asSparseList(context) : context->newSparseList();
-                uDl = uDl->setAt(context, nm->getHash(context), v);
+                uDl = PythonEnvironment::dictDataPut(context, uDl, k, v);
                 const_cast<proto::ProtoObject*>(underlying)->setAttribute(context, dS, uDl->asObject(context));
                 const proto::ProtoObject* uKeysObj = underlying->hasOwnAttribute(context, kS) == PROTO_TRUE
                     ? underlying->getAttribute(context, kS) : nullptr;
@@ -17562,10 +17676,10 @@ static const proto::ProtoObject* py_dict_setdefault(
 
         const proto::ProtoObject* keysObj = receiver->getAttribute(context, keysName);
         const proto::ProtoList* keysList = keysObj && ::protoPython::listStorage(context, keysObj) ? ::protoPython::listStorage(context, keysObj) : context->newList();
-        if (const proto::ProtoObject* found = dictFind(context, dict, keysList, dk)) return found;
+        if (const proto::ProtoObject* found = dictFind(context, dict, dk)) return found;
 
         bool isNew = false;
-        const proto::ProtoSparseList* newDict = dictPut(context, dict, keysList, dk, defaultVal, isNew);
+        const proto::ProtoSparseList* newDict = dictPut(context, dict, dk, defaultVal, isNew);
         keysList = keysList->appendLast(context, key);
         if (publishDictState(context, receiver, dataName, keysName, data, keysObj,
                              newDict->asObject(context), keysList->asObject(context))) {
@@ -17614,8 +17728,8 @@ static const proto::ProtoObject* py_dict_pop(
             return nullptr;
         }
         const proto::ProtoObject* stored = nullptr;
-        const proto::ProtoObject* value = dictFind(context, dict, keys, dk, &stored);
-        const proto::ProtoSparseList* newDict = value ? dictRemove(context, dict, keys, dk, &stored) : nullptr;
+        const proto::ProtoObject* value = dictFind(context, dict, dk, &stored);
+        const proto::ProtoSparseList* newDict = value ? dictRemove(context, dict, dk, &stored) : nullptr;
         if (!newDict) {
             if (defaultVal) return defaultVal;
             PythonEnvironment* env = PythonEnvironment::fromContext(context);
@@ -17667,7 +17781,7 @@ static const proto::ProtoObject* py_dict_popitem(
         dictKeyResolve(context, key, false, dk);
         const proto::ProtoObject* stored = nullptr;
         const proto::ProtoObject* value = dictStoredValue(context, dict, key);
-        const proto::ProtoSparseList* newDict = dictRemove(context, dict, keys, dk, &stored);
+        const proto::ProtoSparseList* newDict = dictRemove(context, dict, dk, &stored);
         if (!newDict) newDict = dict;
         const proto::ProtoList* newKeys = keys->removeAt(context, static_cast<int>(lastIdx));
         if (!publishDictState(context, receiver, dataName, keysName, dataObj, keysObj,
@@ -18822,8 +18936,9 @@ static const proto::ProtoObject* py_module_copy(
         keyObj->asString(context)->toUTF8String(context, nameStr);
         if (isModuleInternalAttr(nameStr)) return;
         if (!val) return;
-        outKeys = outKeys->appendLast(context, keyObj);
-        outData = outData->setAt(context, keyObj->asString(context)->getHash(context), val);
+        bool isNew = false;
+        outData = PythonEnvironment::dictDataPut(context, outData, keyObj, val, &isNew);
+        if (isNew) outKeys = outKeys->appendLast(context, keyObj);
     };
 
     const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
@@ -18898,7 +19013,7 @@ static const proto::ProtoObject* py_module_update(
             bool isDunder = keyName.size() >= 4 && keyName[0] == '_' && keyName[1] == '_'
                              && keyName[keyName.size()-1] == '_' && keyName[keyName.size()-2] == '_';
             if (isDunder || isModuleInternalAttr(keyName)) continue;
-            const proto::ProtoObject* value = dict->getAt(context, key->getHash(context));
+            const proto::ProtoObject* value = dictStoredValue(context, dict, key);
             if (!value) continue;
             if (protoPython::diagModUpdateEnabled()) {
                 fprintf(stderr, "py_module_update: setting self=%p key='%s'\n", (void*)self, keyName.c_str());
@@ -18986,11 +19101,10 @@ static void moduleNamespaceTrackKey(proto::ProtoContext* context, PythonEnvironm
     const proto::ProtoList* keys = keysObj ? ::protoPython::listStorage(context, keysObj) : nullptr;
     if (!keys) return;
     const proto::ProtoObject* nameObj = name->asObject(context);
-    const proto::proto_ulong h = nameObj->getHash(context);
     const int n = static_cast<int>(keys->getSize(context));
     for (int i = 0; i < n; ++i) {
         const proto::ProtoObject* k = keys->getAt(context, i);
-        if (k == nameObj || (k && k->isString(context) && k->getHash(context) == h)) {
+        if (PythonEnvironment::sameStringKey(context, k, nameObj)) {
             if (!present) {
                 const_cast<proto::ProtoObject*>(self)->setAttribute(context, keysS,
                     keys->removeAt(context, i)->asObject(context));
@@ -19021,7 +19135,7 @@ static void moduleNamespaceSet(proto::ProtoContext* context, PythonEnvironment* 
         const proto::ProtoSparseList* data = dataObj ? dataObj->asSparseList(context) : nullptr;
         if (data) {
             target->setAttribute(context, dataS,
-                data->setAt(context, name->asObject(context)->getHash(context), value)->asObject(context));
+                PythonEnvironment::dictDataPut(context, data, name->asObject(context), value)->asObject(context));
         }
     }
     moduleNamespaceTrackKey(context, env, self, name, true);
@@ -19039,9 +19153,9 @@ static void moduleNamespaceRemove(proto::ProtoContext* context, PythonEnvironmen
     if (target->hasOwnAttribute(context, dataS) == PROTO_TRUE) {
         const proto::ProtoObject* dataObj = target->getOwnAttributeDirect(context, dataS);
         const proto::ProtoSparseList* data = dataObj ? dataObj->asSparseList(context) : nullptr;
-        const proto::proto_ulong h = name->asObject(context)->getHash(context);
-        if (data && data->has(context, h)) {
-            target->setAttribute(context, dataS, data->removeAt(context, h)->asObject(context));
+        if (data) {
+            const proto::ProtoSparseList* rest = PythonEnvironment::dictDataRemove(context, data, name->asObject(context));
+            if (rest != data) target->setAttribute(context, dataS, rest->asObject(context));
         }
     }
     moduleNamespaceTrackKey(context, env, self, name, false);
@@ -20053,10 +20167,11 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                         const proto::ProtoList* kl =
                             keysS ? ::protoPython::listStorage(ctx, keysS) : nullptr;
                         if (dl && kl) {
+                            bool isNew = false;
                             const proto::ProtoSparseList* dl2 =
-                                dl->setAt(ctx, origKey->getHash(ctx), v);
+                                PythonEnvironment::dictDataPut(ctx, dl, origKey->asObject(ctx), v, &isNew);
                             const proto::ProtoList* kl2 =
-                                kl->appendLast(ctx, origKey->asObject(ctx));
+                                isNew ? kl->appendLast(ctx, origKey->asObject(ctx)) : kl;
                             slotsDict = const_cast<proto::ProtoObject*>(
                                 slotsDict->setAttribute(ctx, env->getDataString(), dl2->asObject(ctx)));
                             slotsDict = const_cast<proto::ProtoObject*>(
@@ -20135,10 +20250,11 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                                     const proto::ProtoList* kl =
                                         keysS ? ::protoPython::listStorage(ctx, keysS) : nullptr;
                                     if (dl && kl) {
+                                        bool isNew = false;
                                         const proto::ProtoSparseList* dl2 =
-                                            dl->setAt(ctx, attrK->getHash(ctx), v);
+                                            PythonEnvironment::dictDataPut(ctx, dl, attrK->asObject(ctx), v, &isNew);
                                         const proto::ProtoList* kl2 =
-                                            kl->appendLast(ctx, attrK->asObject(ctx));
+                                            isNew ? kl->appendLast(ctx, attrK->asObject(ctx)) : kl;
                                         slotsDict = const_cast<proto::ProtoObject*>(
                                             slotsDict->setAttribute(ctx, env->getDataString(), dl2->asObject(ctx)));
                                         slotsDict = const_cast<proto::ProtoObject*>(
@@ -23264,9 +23380,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                         if (nm == internalNames[i]) return;
                     }
                     ++s->selfUserCount;
-                    proto::proto_ulong hashKey = name->getHash(c);
-                    if (!s->otherDict || !s->otherDict->has(c, hashKey)) { s->mismatch = true; return; }
-                    const proto::ProtoObject* otherVal = s->otherDict->getAt(c, hashKey);
+                    const proto::ProtoObject* otherVal = s->otherDict
+                        ? PythonEnvironment::dictDataGet(c, s->otherDict, name->asObject(c)) : nullptr;
+                    if (!otherVal) { s->mismatch = true; return; }
                     if (s->env->compareObjects(c, val, otherVal, 0) != PROTO_TRUE) s->mismatch = true;
                 });
             if (sink.mismatch) return PROTO_FALSE;
@@ -24293,8 +24409,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             ? const_cast<proto::ProtoSparseList*>(dataAttr->asSparseList(rootContext_))
             : const_cast<proto::ProtoSparseList*>(rootContext_->newSparseList());
             
-        d = const_cast<proto::ProtoSparseList*>(d->setAt(rootContext_, sysS->getHash(rootContext_), sysModule));
-        d = const_cast<proto::ProtoSparseList*>(d->setAt(rootContext_, builtinsS->getHash(rootContext_), builtinsModule));
+        d = const_cast<proto::ProtoSparseList*>(dictDataPut(rootContext_, d, sysS->asObject(rootContext_), sysModule));
+        d = const_cast<proto::ProtoSparseList*>(dictDataPut(rootContext_, d, builtinsS->asObject(rootContext_), builtinsModule));
         
         modulesDictObj = modulesDictObj->setAttribute(rootContext_, dataString, d->asObject(rootContext_));
         
@@ -24328,7 +24444,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             if (finalDataAttr && finalDataAttr != PROTO_NONE) {
                 const proto::ProtoSparseList* finalD = finalDataAttr->asSparseList(rootContext_);
                 if (finalD) {
-                    finalD = finalD->setAt(rootContext_, sysS->getHash(rootContext_), sysModule);
+                    finalD = dictDataPut(rootContext_, finalD, sysS->asObject(rootContext_), sysModule);
                     const_cast<proto::ProtoObject*>(modulesDictObj)->setAttribute(
                         rootContext_, dataString, finalD->asObject(rootContext_));
                 }
@@ -24722,7 +24838,7 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                 if (mods && mods != PROTO_NONE) {
                     const proto::ProtoObject* dataAttr = mods->getAttribute(ctx, dataString);
                     const proto::ProtoSparseList* dict = (dataAttr && dataAttr != PROTO_NONE) ? dataAttr->asSparseList(ctx) : nullptr;
-                    if (dict && dict->has(ctx, PythonEnvironment::getInternedString(ctx, parentPkgName.c_str())->getHash(ctx))) {
+                    if (dictDataGet(ctx, dict, PythonEnvironment::getInternedString(ctx, parentPkgName.c_str())->asObject(ctx))) {
                         parentAlreadyLoaded = true;
                     }
                 }
@@ -24815,8 +24931,8 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
             const proto::ProtoObject* dataAttr = (modules && modules != PROTO_NONE)
                 ? modules->getAttribute(ctx, dataString) : nullptr;
             const proto::ProtoSparseList* dict = (dataAttr && dataAttr != PROTO_NONE) ? dataAttr->asSparseList(ctx) : nullptr;
-            const proto::proto_ulong h = PythonEnvironment::getInternedString(ctx, moduleName.substr(0, lastDot).c_str())->getHash(ctx);
-            const proto::ProtoObject* parentMod = (dict && dict->has(ctx, h)) ? dict->getAt(ctx, h) : nullptr;
+            const proto::ProtoObject* parentMod = dictDataGet(ctx, dict,
+                PythonEnvironment::getInternedString(ctx, moduleName.substr(0, lastDot).c_str())->asObject(ctx));
             if (parentMod && parentMod != PROTO_NONE) {
                 const_cast<proto::ProtoObject*>(parentMod)->setAttribute(ctx,
                     PythonEnvironment::getInternedString(ctx, moduleName.substr(lastDot + 1).c_str()), ns);
@@ -24967,7 +25083,7 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                                                     const proto::ProtoSparseList* checkDict = checkData ? checkData->asSparseList(ctx) : nullptr;
                                                     fprintf(stderr, "DEBUG_MODDATA_AFTER: module=%s stored=%d\n",
                                                             moduleName.c_str(),
-                                                            (checkDict && checkDict->has(ctx, modNameS->getHash(ctx))) ? 1 : 0);
+                                                            dictDataGet(ctx, checkDict, modNameS->asObject(ctx)) ? 1 : 0);
                                                     fflush(stderr);
                                                 }
                                             }
@@ -24984,9 +25100,7 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
 
                                         if (dataAttr && dataAttr != PROTO_NONE) {
                                             const proto::ProtoSparseList* dict = dataAttr->asSparseList(ctx);
-                                            if (dict && dict->has(ctx, parentNameS->getHash(ctx))) {
-                                                parentMod = dict->getAt(ctx, parentNameS->getHash(ctx));
-                                            }
+                                            parentMod = dictDataGet(ctx, dict, parentNameS->asObject(ctx));
                                         }
                                         if (!parentMod || parentMod == PROTO_NONE) {
                                             parentMod = mods->getAttribute(ctx, parentNameS);
@@ -25064,11 +25178,9 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                                     const proto::ProtoString* modNameS = PythonEnvironment::getInternedString(ctx, moduleName.c_str());
                                     const proto::ProtoObject* dataAttr = mods->getAttribute(ctx, getDataString());
                                     const proto::ProtoSparseList* dict = (dataAttr && dataAttr != PROTO_NONE) ? dataAttr->asSparseList(ctx) : nullptr;
-                                    if (dict && dict->has(ctx, modNameS->getHash(ctx))) {
-                                        const proto::ProtoObject* current = dict->getAt(ctx, modNameS->getHash(ctx));
-                                        if (current && current != PROTO_NONE && current != mutableMod) {
-                                            swappedMod = current;
-                                        }
+                                    const proto::ProtoObject* current = dictDataGet(ctx, dict, modNameS->asObject(ctx));
+                                    if (current && current != PROTO_NONE && current != mutableMod) {
+                                        swappedMod = current;
                                     }
                                 }
                             }
@@ -25178,7 +25290,7 @@ void PythonEnvironment::waitForThreadShutdown() {
     const proto::ProtoSparseList* entries = (data && data != PROTO_NONE) ? data->asSparseList(ctx) : nullptr;
     if (!entries) return;
     const proto::ProtoString* name = PythonEnvironment::getInternedString(ctx, "threading");
-    const proto::ProtoObject* threading = entries->getAt(ctx, name->getHash(ctx));
+    const proto::ProtoObject* threading = dictDataGet(ctx, entries, name->asObject(ctx));
     if (!threading || threading == PROTO_NONE) return;
     const proto::ProtoObject* shutdownFn = threading->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "_shutdown"));
     if (!shutdownFn || shutdownFn == PROTO_NONE) return;
@@ -25994,10 +26106,10 @@ void PythonEnvironment::setBuiltinsAttribute(proto::ProtoContext* ctx, const pro
                 ? modules->getAttribute(ctx, getDataString()) : nullptr;
             const proto::ProtoSparseList* dict = (dataAttr && dataAttr != PROTO_NONE)
                 ? dataAttr->asSparseList(ctx) : nullptr;
-            proto::proto_ulong h = getInternedString(ctx, "builtins")->getHash(ctx);
-            if (dict && dict->has(ctx, h) && dict->getAt(ctx, h) == old) {
+            const proto::ProtoObject* builtinsKey = getInternedString(ctx, "builtins")->asObject(ctx);
+            if (dict && dictDataGet(ctx, dict, builtinsKey) == old) {
                 const_cast<proto::ProtoObject*>(modules)->setAttribute(ctx, getDataString(),
-                    dict->setAt(ctx, h, updated)->asObject(ctx));
+                    dictDataPut(ctx, dict, builtinsKey, updated)->asObject(ctx));
             }
         }
         // protoCore's import cache, as syncModuleIdentity updates it.
@@ -27114,8 +27226,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         // name — getHash() is cheap and reliable).
         static thread_local const proto::ProtoString* qualnameSym = nullptr;
         if (!qualnameSym) qualnameSym = PythonEnvironment::getInternedString(ctx, "__qualname__");
-        if (name == qualnameSym
-            || name->getHash(ctx) == qualnameSym->getHash(ctx)) {
+        if (PythonEnvironment::sameStringName(ctx, name, qualnameSym)) {
             static thread_local const proto::ProtoString* tpQualSym = nullptr;
             if (!tpQualSym) tpQualSym = PythonEnvironment::getInternedString(ctx, "__tp_qualname__");
             if (obj->hasOwnAttribute(ctx, tpQualSym) == PROTO_TRUE) {
@@ -27130,7 +27241,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         // with `__slots__ = ('__name__',)` owns a member_descriptor there.
         // Class-level reads then report the name from the qualname.
         const proto::ProtoString* nameSym = getNameString();
-        if (nameSym && (name == nameSym || name->getHash(ctx) == nameSym->getHash(ctx))
+        if (nameSym && (PythonEnvironment::sameStringName(ctx, name, nameSym))
             && obj->hasOwnAttribute(ctx, nameSym) == PROTO_TRUE) {
             const proto::ProtoObject* own = obj->getOwnAttributeDirect(ctx, nameSym);
             if (own && own != PROTO_NONE && !own->isString(ctx)) {
@@ -28050,24 +28161,22 @@ bool PythonEnvironment::deleteAttribute(proto::ProtoContext* ctx, const proto::P
     const proto::ProtoObject* k = (keysName && obj->hasOwnAttribute(ctx, keysName) == PROTO_TRUE) ? obj->getAttribute(ctx, keysName) : nullptr;
     // A set's __data__ is its element table, never an attribute mirror.
     if (d && d != PROTO_NONE && d->asSparseList(ctx) && !dataHoldsBuiltinStorage(ctx, obj, d)) {
-        proto::proto_ulong h = nameS->getHash(ctx);
         const proto::ProtoSparseList* sl = d->asSparseList(ctx);
-        if (sl->has(ctx, h)) {
-            // SparseList::removeAt returns a NEW immutable list; rebind
-            // __data__ so later reads (vars/keys/items) see the entry gone.
-            const proto::ProtoSparseList* newSl = sl->removeAt(ctx, h);
+        // The removal returns a NEW immutable list; rebind __data__ so later
+        // reads (vars/keys/items) see the entry gone.
+        const proto::ProtoSparseList* newSl = dictDataRemove(ctx, sl, nameS->asObject(ctx));
+        if (newSl != sl) {
             const_cast<proto::ProtoObject*>(obj)->setAttribute(ctx, dataName, newSl->asObject(ctx));
             removed = true;
         }
     }
     if (k && k != PROTO_NONE && ::protoPython::listStorage(ctx, k)) {
-        proto::proto_ulong targetHash = nameS->getHash(ctx);
         const proto::ProtoList* listIn = ::protoPython::listStorage(ctx, k);
         const proto::ProtoList* newKeys = ctx->newList();
         bool anyDropped = false;
         for (proto::proto_ulong ki = 0; ki < listIn->getSize(ctx); ++ki) {
             const proto::ProtoObject* key = listIn->getAt(ctx, static_cast<int>(ki));
-            if (key && key->isString(ctx) && key->getHash(ctx) == targetHash) {
+            if (sameStringKey(ctx, key, nameS->asObject(ctx))) {
                 anyDropped = true;
                 continue;
             }
@@ -28119,8 +28228,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
     // probes `list.__bases__ = (dict,)` silently mutates the live
     // listPrototype, breaking every subsequent type / MRO check in
     // the runtime.
-    if (name == basesString
-        || (name && basesString && name->getHash(ctx) == basesString->getHash(ctx))) {
+    if (PythonEnvironment::sameStringName(ctx, name, basesString)) {
         // STRUCT-300: capture obj.__bases__ NOW so STRUCT-45 below
         // (outside the `if (value)` block) can recover it after the
         // pre-write inside that block replaces obj.__bases__ with
@@ -28945,8 +29053,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
             // Exception: allow setting __class__ (handled by the
             // dedicated branch below; reaching here means the value
             // path validates the new class).
-            bool isClassAttr = (name == classString
-                || (name && classString && name->getHash(ctx) == classString->getHash(ctx)));
+            bool isClassAttr = (PythonEnvironment::sameStringName(ctx, name, classString));
             if (!isClassAttr) {
                 std::string nm;
                 name->toUTF8String(ctx, nm);
@@ -28963,7 +29070,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
     // because embedded primitives (int/float/bool tagged pointers) used
     // to silently no-op on any setAttribute, which hid the missing
     // TypeError for `(1).__class__ = MyInt` style breakage.
-    if (name == classString || (name && classString && name->getHash(ctx) == classString->getHash(ctx))) {
+    if (PythonEnvironment::sameStringName(ctx, name, classString)) {
         bool isImmutablePrim = false;
         const char* primName = nullptr;
         if (obj->isInteger(ctx)) { isImmutablePrim = true; primName = "int"; }
@@ -29262,7 +29369,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
     // instance's __data__ / __keys__.  Without this, the assignment
     // would store the dict literal as a regular attribute named
     // `__dict__` and `obj.attr` would no longer find the new entries.
-    if (name == dictString || (name && dictString && name->getHash(ctx) == dictString->getHash(ctx))) {
+    if (PythonEnvironment::sameStringName(ctx, name, dictString)) {
         // CPython rejects `cls.__dict__ = {…}` on classes — the
         // class dict is exposed read-only via mappingproxy and only
         // type's tp_setattro can mutate it (through the normal class-
@@ -29355,7 +29462,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                 const proto::ProtoObject* k = srcKeys->getAt(ctx, static_cast<int>(i));
                 if (!k || !k->isString(ctx)) continue;
                 const proto::ProtoString* nm = k->asString(ctx);
-                const proto::ProtoObject* v = srcData->getAt(ctx, nm->getHash(ctx));
+                const proto::ProtoObject* v = dictStoredValue(ctx, srcData, k);
                 if (!v) continue;
                 // Append to keys, set in data, mirror as native attr.
                 const proto::ProtoObject* kObj = mobj->getAttribute(ctx, keysS);
@@ -29364,7 +29471,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                 mobj->setAttribute(ctx, keysS, kl->asObject(ctx));
                 const proto::ProtoObject* dObj = mobj->getAttribute(ctx, dataS);
                 const proto::ProtoSparseList* dl = dObj ? dObj->asSparseList(ctx) : ctx->newSparseList();
-                dl = dl->setAt(ctx, nm->getHash(ctx), v);
+                dl = dictDataPut(ctx, dl, nm->asObject(ctx), v);
                 mobj->setAttribute(ctx, dataS, dl->asObject(ctx));
                 mobj->setAttribute(ctx, nm, v);
             }
@@ -29519,10 +29626,9 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
             const proto::ProtoList* keysList = (keysObj && keysObj != PROTO_NONE) ? ::protoPython::listStorage(ctx, keysObj) : nullptr;
             bool present = false;
             if (keysList) {
-                proto::proto_ulong h = name->getHash(ctx);
                 for (proto::proto_ulong i = 0; i < keysList->getSize(ctx); ++i) {
                     const proto::ProtoObject* k = keysList->getAt(ctx, static_cast<int>(i));
-                    if (k && k->isString(ctx) && k->getHash(ctx) == h) { present = true; break; }
+                    if (sameStringKey(ctx, k, name->asObject(ctx))) { present = true; break; }
                 }
             } else {
                 keysList = ctx->newList();
@@ -29819,8 +29925,9 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
             proto::ProtoSparseList* dataList = const_cast<proto::ProtoSparseList*>(d->asSparseList(ctx));
             proto::ProtoList* keysList = const_cast<proto::ProtoList*>(::protoPython::listStorage(ctx, k));
             if (dataList && keysList) {
-                proto::proto_ulong hash = name->getHash(ctx);
-                dataList = const_cast<proto::ProtoSparseList*>(dataList->setAt(ctx, hash, value));
+                // Membership is the key list's (it may name a key stored
+                // only as an attribute), as before the storage change.
+                dataList = const_cast<proto::ProtoSparseList*>(dictDataPut(ctx, dataList, name->asObject(ctx), value));
                 if (!keysList->has(ctx, name->asObject(ctx))) {
                     keysList = const_cast<proto::ProtoList*>(keysList->appendLast(ctx, name->asObject(ctx)));
                 }
@@ -29847,12 +29954,10 @@ const proto::ProtoObject* PythonEnvironment::lookupGlobalName(const proto::Proto
             const proto::ProtoObject* dataAttr = s_currentGlobals->getAttribute(ctx, ds);
             if (dataAttr && dataAttr != PROTO_NONE) {
                 const proto::ProtoSparseList* dict = dataAttr->asSparseList(ctx);
-                if (dict && dict->has(ctx, nameObj->getHash(ctx))) {
-                    // The __data__ mirror holds the module's copies of
-                    // modulePrototype's methods too.
-                    const proto::ProtoObject* global = dict->getAt(ctx, nameObj->getHash(ctx));
-                    if (!isInheritedModuleName(ctx, s_currentGlobals, nameObj, global)) return global;
-                }
+                // The __data__ mirror holds the module's copies of
+                // modulePrototype's methods too.
+                const proto::ProtoObject* global = dict ? dictDataGet(ctx, dict, nameObj->asObject(ctx)) : nullptr;
+                if (global && !isInheritedModuleName(ctx, s_currentGlobals, nameObj, global)) return global;
             }
         }
     }
@@ -29896,8 +30001,8 @@ bool PythonEnvironment::isInheritedModuleName(proto::ProtoContext* ctx, const pr
     // recognised by function, as getAttribute's module binding does.
     const proto::ProtoString* classS = getClassString();
     const proto::ProtoString* dictS = getDictDunderString();
-    if ((classS && (name == classS || name->getHash(ctx) == classS->getHash(ctx)))
-        || (dictS && (name == dictS || name->getHash(ctx) == dictS->getHash(ctx)))) {
+    if ((classS && (PythonEnvironment::sameStringName(ctx, name, classS)))
+        || (dictS && (PythonEnvironment::sameStringName(ctx, name, dictS)))) {
         return getType(ctx, ns) == modulePrototype;
     }
     // The module type's class attributes (__bases__, __mro__, __qualname__,
@@ -29997,8 +30102,8 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
                 const proto::ProtoObject* dataAttr = modules->getAttribute(ctx, dataString);
                 const proto::ProtoSparseList* dict = (dataAttr && dataAttr != PROTO_NONE) ? dataAttr->asSparseList(ctx) : modules->asSparseList(ctx);
 
-                if (dict && dict->has(ctx, nameObj->getHash(ctx))) {
-                    return dict->getAt(ctx, nameObj->getHash(ctx));
+                if (const proto::ProtoObject* hit = dictDataGet(ctx, dict, nameObj->asObject(ctx))) {
+                    return hit;
                 }
             }
         }
@@ -30023,8 +30128,8 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
                         if (modules && modules != PROTO_NONE) {
                             const proto::ProtoObject* dataAttr = modules->getAttribute(ctx, dataString);
                             const proto::ProtoSparseList* dict = (dataAttr && dataAttr != PROTO_NONE) ? dataAttr->asSparseList(ctx) : modules->asSparseList(ctx);
-                            if (dict && dict->has(ctx, nameObj->getHash(ctx))) {
-                                return dict->getAt(ctx, nameObj->getHash(ctx));
+                            if (const proto::ProtoObject* hit = dictDataGet(ctx, dict, nameObj->asObject(ctx))) {
+                                return hit;
                             }
                         }
                     }
@@ -30072,7 +30177,7 @@ void PythonEnvironment::registerInSysModules(proto::ProtoContext* ctx, const pro
     const proto::ProtoObject* dataAttr = modules->getAttribute(ctx, dataString);
     const proto::ProtoSparseList* dict = (dataAttr && dataAttr != PROTO_NONE) ? dataAttr->asSparseList(ctx) : modules->asSparseList(ctx);
     
-    if (!dict || !dict->has(ctx, nameObj->getHash(ctx)) || dict->getAt(ctx, nameObj->getHash(ctx)) != mod) {
+    if (!dict || dictDataGet(ctx, dict, nameObj->asObject(ctx)) != mod) {
         if (dataAttr && dataAttr != PROTO_NONE) {
             sysModulesStore(ctx, modules, nameObj, mod);
         } else {
@@ -30270,8 +30375,7 @@ const proto::ProtoObject* PythonEnvironment::sysModuleEntry(proto::ProtoContext*
     const proto::ProtoObject* modules = sysModule->getAttribute(ctx, modulesS);
     const proto::ProtoObject* dataAttr = (modules && modules != PROTO_NONE) ? modules->getAttribute(ctx, dataString) : nullptr;
     const proto::ProtoSparseList* dict = (dataAttr && dataAttr != PROTO_NONE) ? dataAttr->asSparseList(ctx) : nullptr;
-    const proto::proto_ulong h = getInternedString(ctx, name.c_str())->getHash(ctx);
-    const proto::ProtoObject* mod = (dict && dict->has(ctx, h)) ? dict->getAt(ctx, h) : nullptr;
+    const proto::ProtoObject* mod = dictDataGet(ctx, dict, getInternedString(ctx, name.c_str())->asObject(ctx));
     return (mod && mod != PROTO_NONE) ? mod : nullptr;
 }
 
@@ -30314,7 +30418,9 @@ const proto::ProtoObject* PythonEnvironment::resolveModule(const std::string& na
                 if (modules && modules != PROTO_NONE) {
                     const proto::ProtoObject* dataAttr = modules->getAttribute(ctx, dataString);
                     const proto::ProtoSparseList* dict = (dataAttr && dataAttr != PROTO_NONE) ? dataAttr->asSparseList(ctx) : modules->asSparseList(ctx);
-                    const bool listed = dict && dict->has(ctx, PythonEnvironment::getInternedString(ctx, nameStr.c_str())->getHash(ctx));
+                    const proto::ProtoObject* sysMod = dictDataGet(ctx, dict,
+                        PythonEnvironment::getInternedString(ctx, nameStr.c_str())->asObject(ctx));
+                    const bool listed = sysMod != nullptr;
                     // A source module removed from sys.modules is imported
                     // anew, as CPython does (test.support.import_fresh_module
                     // deletes it to get a fresh copy); the cache entry would
@@ -30324,7 +30430,6 @@ const proto::ProtoObject* PythonEnvironment::resolveModule(const std::string& na
                         goto skip_cache_label;
                     }
                     if (listed) {
-                        const proto::ProtoObject* sysMod = dict->getAt(ctx, PythonEnvironment::getInternedString(ctx, nameStr.c_str())->getHash(ctx));
                         if (sysMod == result) {
                             isNative = true;
                         } else if (sysMod) {
@@ -30361,8 +30466,7 @@ skip_cache_label:
             const proto::ProtoObject* dataAttr = modules->getAttribute(ctx, dataString);
             const proto::ProtoSparseList* dict = (dataAttr && dataAttr != PROTO_NONE) ? dataAttr->asSparseList(ctx) : modules->asSparseList(ctx);
             
-            if (dict && dict->has(ctx, nameObj->getHash(ctx))) {
-                const proto::ProtoObject* mod = dict->getAt(ctx, nameObj->getHash(ctx));
+            if (const proto::ProtoObject* mod = dictDataGet(ctx, dict, nameObj->asObject(ctx))) {
                 if (get_env_diag()) {
                     fprintf(stderr, "DEBUG: resolveModule %s - FOUND in sys.modules (mod=%p)\n", nameStr.c_str(), (void*)mod);
                 }
@@ -30386,8 +30490,7 @@ skip_cache_label:
                     ? modules->getAttribute(ctx, dataString) : nullptr;
                 const proto::ProtoSparseList* dict = (dataAttr && dataAttr != PROTO_NONE)
                     ? dataAttr->asSparseList(ctx) : nullptr;
-                const proto::proto_ulong h = PythonEnvironment::getInternedString(ctx, name.c_str())->getHash(ctx);
-                return (dict && dict->has(ctx, h)) ? dict->getAt(ctx, h) : nullptr;
+                return dictDataGet(ctx, dict, PythonEnvironment::getInternedString(ctx, name.c_str())->asObject(ctx));
             };
             const std::string parentName = nameStr.substr(0, lastDot);
             auto& cache = threadResolveCache(resolveCacheGeneration());
@@ -30424,8 +30527,8 @@ skip_cache_label:
                     if (modules && modules != PROTO_NONE) {
                         const proto::ProtoObject* dataAttr = modules->getAttribute(ctx, dataString);
                         const proto::ProtoSparseList* dict = (dataAttr && dataAttr != PROTO_NONE) ? dataAttr->asSparseList(ctx) : modules->asSparseList(ctx);
-                        if (dict && dict->has(ctx, nameObj->getHash(ctx))) {
-                            return dict->getAt(ctx, nameObj->getHash(ctx));
+                        if (const proto::ProtoObject* hit = dictDataGet(ctx, dict, nameObj->asObject(ctx))) {
+                            return hit;
                         }
                     }
                 }
@@ -31580,8 +31683,9 @@ bool PythonEnvironment::bindArgumentsCore(proto::ProtoContext* ctx, const Argume
             }
             if (target < 0) {
                 if (sig.hasKwargs) {
-                    kwData = kwData->setAt(ctx, h, value);
-                    kwKeys = kwKeys->appendLast(ctx, k);
+                    bool isNew = false;
+                    kwData = dictDataPut(ctx, kwData, k, value, &isNew);
+                    if (isNew) kwKeys = kwKeys->appendLast(ctx, k);
                     continue;
                 }
                 bool posOnly = false;
@@ -31651,9 +31755,10 @@ bool PythonEnvironment::bindArgumentsCore(proto::ProtoContext* ctx, const Argume
     // Keyword-only parameters take theirs.
     for (unsigned i = nPos; i < nPos + nKw; ++i) {
         if (out[i]) continue;
-        const proto::proto_ulong h = names[i]->getHash(ctx);
-        if (kwDefaults && kwDefaults->has(ctx, h)) {
-            out[i] = kwDefaults->getAt(ctx, h);
+        // kwDefaults is dict storage (a __kwdefaults__ dict's, or the one
+        // protopyc's __withKwDefault fills).
+        if (const proto::ProtoObject* d = kwDefaults ? dictDataGet(ctx, kwDefaults, names[i]->asObject(ctx)) : nullptr) {
+            out[i] = d;
             continue;
         }
         missing.push_back(nameOf(i));
@@ -32654,8 +32759,7 @@ const proto::ProtoObject* scopeModuleName(const proto::ProtoObject* globals) {
     if (globals->hasOwnAttribute(ctx, env->getDataString()) == PROTO_TRUE) {
         const proto::ProtoObject* dataObj = globals->getAttribute(ctx, env->getDataString());
         const proto::ProtoSparseList* data = dataObj ? dataObj->asSparseList(ctx) : nullptr;
-        const proto::proto_ulong h = nameS->getHash(ctx);
-        const proto::ProtoObject* name = (data && data->has(ctx, h)) ? data->getAt(ctx, h) : nullptr;
+        const proto::ProtoObject* name = PythonEnvironment::dictDataGet(ctx, data, nameS->asObject(ctx));
         if (name && name->isString(ctx)) return name;
     }
     const proto::ProtoObject* name = globals->getAttribute(ctx, nameS);
@@ -32811,16 +32915,13 @@ static void syncAttr(proto::ProtoContext* ctx, void* self, const proto::ProtoStr
                 && kstr != "__class__" && kstr != "__name__"
                 && kstr != "__bases__" && kstr != "__mro__") {
                 // protoCore's attribute SparseList is keyed by the
-                // `ProtoString*` pointer cast to ulong, but a Python `dict`
-                // keys by `key->getHash(ctx)` (string content hash). The
-                // two are NOT the same — pointer-keyed storage made
-                // `obj.__dict__[name]` lookups miss, so `vars(obj)`
-                // appeared to have the right keys with `None` values.
-                // Re-key with the content hash so the dict-proxy hot path
-                // (`py_dict_getitem` → `dictKeyHash` → `dataList->getAt(hash)`)
-                // resolves to the actual value.
-                proto::proto_ulong contentHash = ks->getHash(ctx);
-                sCtx->dataList = const_cast<proto::ProtoSparseList*>(sCtx->dataList->setAt(ctx, contentHash, val));
+                // `ProtoString*` pointer cast to ulong; a Python `dict`
+                // files a key under its key hash with the key kept beside
+                // the value (dictDataPut), so `obj.__dict__[name]` finds it.
+                // The key list may already name a key whose value is only an
+                // attribute: membership is the key list's, not the storage's.
+                sCtx->dataList = const_cast<proto::ProtoSparseList*>(
+                    PythonEnvironment::dictDataPut(ctx, sCtx->dataList, ks->asObject(ctx), val));
                 if (!sCtx->keysList->has(ctx, keyObj)) {
                     sCtx->keysList = const_cast<proto::ProtoList*>(sCtx->keysList->appendLast(ctx, keyObj));
                     sCtx->count++;

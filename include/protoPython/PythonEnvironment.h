@@ -1447,6 +1447,49 @@ public:
     static bool hashKey(proto::ProtoContext* ctx, const proto::ProtoObject* value, proto::proto_ulong& hash);
 
     /**
+     * @name Dict storage
+     * A dict keeps its values in `__data__`, a ProtoSparseList indexed by the key hash, whose
+     * slots hold the value of an embedded int or None key (the index is then the key) or a
+     * bucket (a ProtoMap) from each stored key to its value; a hit is confirmed by identity, then
+     * with __eq__. The layout is described next to its implementation ("Dict entries under
+     * colliding hashes" in PythonEnvironment.cpp). Code that holds a dict's `__data__` reads and
+     * writes it through these functions and never indexes it with a hash: a str key's slot is a
+     * bucket, not its value. They hash a key as dicts do; an unhashable key falls back to its
+     * protoCore hash and raises nothing. The caller keeps `__keys__` in step.
+     * @{
+     */
+    /** The value stored under `key` in `data`, or nullptr if absent. */
+    static const proto::ProtoObject* dictDataGet(proto::ProtoContext* ctx, const proto::ProtoSparseList* data,
+                                                 const proto::ProtoObject* key);
+    /** `data` (a new sparse list when null) with `value` stored under `key`; `isNew` tells whether
+     *  the key was absent (an equal stored key keeps its object). */
+    static const proto::ProtoSparseList* dictDataPut(proto::ProtoContext* ctx, const proto::ProtoSparseList* data,
+                                                     const proto::ProtoObject* key, const proto::ProtoObject* value,
+                                                     bool* isNew = nullptr);
+    /** `data` without the entry for `key` (`data` itself when absent). */
+    static const proto::ProtoSparseList* dictDataRemove(proto::ProtoContext* ctx, const proto::ProtoSparseList* data,
+                                                        const proto::ProtoObject* key);
+    /** `keys` (a dict's `__keys__` storage) without the key equal to `key`. */
+    static const proto::ProtoList* dictKeysWithout(proto::ProtoContext* ctx, const proto::ProtoList* keys,
+                                                   const proto::ProtoObject* key);
+    /** Whether `k` is the str key `name`: the same object, or a str of equal content (an equal
+     *  hash alone does not tell two strings apart). */
+    static bool sameStringKey(proto::ProtoContext* ctx, const proto::ProtoObject* k, const proto::ProtoObject* name);
+    /** sameStringKey for two names (either may be null). */
+    static bool sameStringName(proto::ProtoContext* ctx, const proto::ProtoString* a, const proto::ProtoString* b) {
+        return a == b || (a && b && sameStringKey(ctx, a->asObject(ctx), b->asObject(ctx)));
+    }
+    /** The keyword arguments of a `**mapping` call taken from a dict object: a sparse list from
+     *  each str key's hash to its value, the form a callee receives keywords in (never a dict's
+     *  own storage, whose str slots are buckets). nullptr when `dictObj` keeps no dict storage. */
+    static const proto::ProtoSparseList* keywordArgumentsFromDict(proto::ProtoContext* ctx,
+                                                                  const proto::ProtoObject* dictObj);
+    /** Calls `fn` with every value stored in `data`, in slot order. */
+    static void forEachDictValue(proto::ProtoContext* ctx, const proto::ProtoSparseList* data,
+                                 const std::function<void(const proto::ProtoObject*)>& fn);
+    /** @} */
+
+    /**
      * @name Set storage
      * A set or frozenset keeps its elements in `__data__`, a set table: a ProtoSparseList indexed
      * by the key hash, whose slots hold an element or a bucket (a ProtoList) of the distinct

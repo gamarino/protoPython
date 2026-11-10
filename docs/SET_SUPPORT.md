@@ -5,13 +5,10 @@ table*: a protoCore `ProtoSparseList` indexed by the element's key hash, the
 hash dict keys are filed under (so `1`, `1.0` and `True` are one element, and a
 class's own `__hash__` is honoured). A slot holds
 
-- the element itself, when it is the only element with that hash and the hash
-  comes from a built-in primitive other than a tuple, or is an identity hash;
-  or
-- a bucket, a `ProtoList` of the distinct elements sharing that hash, for any
-  element with a user-defined `__hash__`, for tuples and frozensets (whose
-  hashes combine several values and cannot identify them), and for colliding
-  elements.
+- the element itself, when it is the only element with that hash (an element
+  whose own representation is a raw `ProtoList` goes in a bucket of one, so it
+  cannot be taken for a bucket); or
+- a bucket, a `ProtoList` of the distinct elements sharing that hash.
 
 Membership compares a candidate with a single element, or with the elements of
 a bucket, by identity, then with `__eq__`, as CPython does; an exception raised
